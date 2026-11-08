@@ -23,8 +23,9 @@ description: >-
   Implement remove_prompt by registry_key: pop both maps and call remove_callback_from_all_lists
   if a callback exists. Implement delete_prompts_by_base_id: find all keys matching the
   base_prompt_id (scoped to optional environment), delete each one via remove_prompt, and
-  return the list of deleted registry keys. Declare the module-level IN_MEMORY_PROMPT_REGISTRY
-  singleton as InMemoryPromptRegistry().
+  return the list of deleted registry keys. There is no module-level IN_MEMORY_PROMPT_REGISTRY: the server
+  makes one InMemoryPromptRegistry at startup and holds it in Shared.prompts (B8610), and every caller reads and
+  mutates that instance.
 
   Preserve: the equality test in sync_prompt_from_db (skip reload if litellm_params and
   prompt_info are equal), callback removal ordering (pop dict entry, then call remove_callback_from_all_lists),
@@ -49,7 +50,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L310-L335
     why: "remove_prompt method (310-316) popping maps and calling remove_callback_from_all_lists; delete_prompts_by_base_id method (318-335) finding, deleting, and returning deleted keys."
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L338
-    why: "IN_MEMORY_PROMPT_REGISTRY global singleton instantiation."
+    why: "IN_MEMORY_PROMPT_REGISTRY, the module-level instance betterlite does not copy; the server holds the one registry in Shared.prompts."
 dod:
   - text: get_prompt_initializer_from_integrations returns a map of integration names to initializer callables (or similar) for dotprompt, gitlab, bitbucket, and generic_prompt_management, without scanning directories at runtime.
     proof: [initializer-discovery-tests]
@@ -73,8 +74,6 @@ dod:
     proof: [remove-prompt-tests]
   - text: delete_prompts_by_base_id finds all registry keys with matching base_prompt_id (filtered by environment if given), calls remove_prompt for each, and returns the list of deleted keys.
     proof: [delete-by-base-id-tests]
-  - text: IN_MEMORY_PROMPT_REGISTRY is instantiated once at module level as InMemoryPromptRegistry().
-    proof: [module-singleton-tests]
 checks:
   optional: []
   commands:
@@ -111,14 +110,14 @@ checks:
     - id: delete-by-base-id-tests
       why: delete_prompts_by_base_id fails or does not exist
       run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^registry::mutation::(.*::)?prompt_registry_mutation::delete_by_base_id::/)'
-    - id: module-singleton-tests
-      why: IN_MEMORY_PROMPT_REGISTRY singleton is not declared at module level
-      run: grep -qE 'const|static.*IN_MEMORY_PROMPT_REGISTRY' crates/betterlite-prompts/src/registry/mutation.rs
 oracle_cases: []
 deviations:
   - what: betterlite uses a compile-time known set of supported integrations instead of scanning directories at runtime; the available backends are static and adding a new integration requires code changes and recompilation.
     why: Runtime module discovery via importlib and dynamic registry updates are not idiomatic in Rust; static composition is safer and decouples startup from filesystem state.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L99-L163
+  - what: There is no module-level IN_MEMORY_PROMPT_REGISTRY. The server makes one InMemoryPromptRegistry at startup and holds it in Shared.prompts.
+    why: Module-level state is not allowed; one instance passed through Shared keeps config load, the database sync, chat and the prompt routes on the same registry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L338
 out_of_scope:
   - litellm/proxy/prompts/prompt_registry.py:21-96 (get_base_prompt_id, get_version_number, prompt_environment_or_default, registry_key_for_prompt, parse_prompt_version, _spec_version, _default_serve_environment); owned by B4059 for registry selection.
   - litellm/proxy/prompts/prompt_registry.py:171-183 (InMemoryPromptRegistry.__init__); owned by B4059.

@@ -1,7 +1,7 @@
 id: B8274
 title: Serve the public agent skills index and archive routes
 description: >-
-  Register three unauthenticated GET routes in betterlite-server, from LiteLLM's discovery_endpoints/agent_skills_endpoints.py: `/.well-known/agent-skills/index.json`, its hidden alias `/.well-known/skills/index.json` (same handler, left out of the OpenAPI document) and `/v1/skills/{skill_id}/archive`. Code in `crates/betterlite-server/src/agent_skills_routes.rs` and its folder; `pub fn routes()` is built like the sibling route modules and the architect mounts it. Discovery clients (`npx skills add <proxy url>`) send no key, so none of the three routes has the key check.
+  Register three unauthenticated GET routes in betterlite-server, from LiteLLM's discovery_endpoints/agent_skills_endpoints.py: `/.well-known/agent-skills/index.json`, its hidden alias `/.well-known/skills/index.json` (same handler, left out of the OpenAPI document) and `/v1/skills/{skill_id}/archive`. Code in `crates/betterlite-server/src/agent_skills_routes.rs` and its folder; `pub fn routes()` is built like the sibling route modules and B8648 mounts it. Discovery clients (`npx skills add <proxy url>`) send no key, so none of the three routes has the key check.
 
   Off switch. The route state takes `index_enabled: bool` from the config key `litellm_settings.public_skills_index` (default false, LiteLLM's `litellm.public_skills_index`), read by this task's config section public_skills_index. When it is not true, all three routes answer 404 `{"detail": "Not Found"}` before anything else runs, the stored skills are not read, and no archive is built.
 
@@ -18,7 +18,6 @@ scope:
     - crates/betterlite-server/src/agent_skills_routes/**
     - crates/betterlite-config/src/sections/public_skills_index.rs
     - crates/betterlite-config/src/sections/public_skills_index/**
-    - tools/oracle/cases/agent-skills/**
     - tools/oracle/helpers/b8274.py
     - tools/oracle/helpers/b8274/**
     - tools/oracle/src/helpers/server/b8274.rs
@@ -37,7 +36,7 @@ dod:
   - text: The three routes exist for GET only, need no key, and the alias is left out of the OpenAPI document.
     proof: [route-tests]
   - text: With public_skills_index off (the default) all three answer 404 "Not Found" without reading any skill.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: The index lists installable skills oldest first, skips skills with no file or a bad archive, and carries name, type, description, url and digest with the $schema key first.
     proof: [index-tests]
   - text: Names are slugs of at most 64 characters, fall back through declared name, title and id to "skill", and duplicates get -2, -3 suffixes within the 64-character limit.
@@ -50,6 +49,8 @@ dod:
     proof: [cache-tests]
   - text: The config section public_skills_index (crates/betterlite-config/src/sections/public_skills_index.rs, under litellm_settings) adds the bool field public_skills_index, true only when litellm_settings.public_skills_index is the YAML boolean true and false when the key is absent or holds any other value; its tests load a config with the key set to true and one without it.
     proof: [config-tests]
+  - text: The handlers are tested with tower's oneshot over routes() and fake ports; B8648 mounts them outside the key check and proves the HTTP answers with the oracle cases moved there.
+    proof: [route-tests, archive-tests]
 checks:
   optional: [mutants]
   commands:
@@ -68,21 +69,15 @@ checks:
     - id: cache-tests
       why: the archive cache key or limits are wrong
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_skills_routes::tests::cache_/)'
-    - id: new-cases
-      why: the agent skills routes have no HTTP parity case on this branch
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/agent-skills)"
     - id: config-tests
       why: the public_skills_index config field is missing or a config with or without the key reads wrongly
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::public_skills_index::/)'
-oracle_cases:
-  - tools/oracle/cases/agent-skills/index-disabled.yaml
-  - tools/oracle/cases/agent-skills/legacy-index-disabled.yaml
-  - tools/oracle/cases/agent-skills/archive-disabled.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - "SkillArchive and build_skill_archive: B3210. Stored skill reads and owner checks: B3212. The TTL cache itself: B2226. get_custom_url: B7323."
   - "Creating, listing and deleting skills through /v1/skills: other entries."
-  - "Mounting routes() and handing config.sections.public_skills_index to the route state: the architect."
+  - "Mounting routes() and handing config.sections.public_skills_index to the route state: B8648."
 pitfalls:
   - "The off switch runs before the skill lookup, so a disabled proxy answers 404 even for an id that does not exist, with the plain Not Found body, not the archive message."
   - "The index walks the stored list in reverse, so the oldest skill comes first and wins the plain name; the newest gets the -2 suffix."

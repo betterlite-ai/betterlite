@@ -7,7 +7,7 @@ description: >-
   (declared in lib.rs by the skeleton) as `register_background_jobs(inputs: BackgroundJobInputs, rng) ->
   Result<RegisteredJobs, BackgroundJobError>`, on B8370's ProxyScheduler. `BackgroundJobInputs` holds the typed general
   settings view, the database handle, the shared PodLockManager from the spend writer, the alerting interface, the router
-  handle, the auth cache, the env map, and B8381's DeploymentSync,
+  handle, the auth cache, the env map, B3102's GatewayRequestAccumulator (the one Shared holds, which update_gateway_requests_job flushes), B8381's DeploymentSync,
   B8384's DbObjectSync and B8385's PeriodicReloads; `RegisteredJobs` returns the scheduler and the B731 worker heartbeat so B8374 can
   stop both at shutdown.
 
@@ -52,10 +52,6 @@ description: >-
   refresh_model_info (the router's model info refresh from B845) with an interval of MODEL_INFO_REFRESH_SECONDS, first run now,
   max_instances 1 and replace_existing, on the proxy scheduler when there is one, else on a scheduler of its own that it
   starts; the returned handle says which, so shutdown removes the job and stops only the private one.
-  The ROI calculator sync job also lives here, as `register_roi_sync(scheduler: Option<&mut ProxyScheduler>, ...)` from
-  proxy_startup_event L1566-L1569 (register_scheduled_sync): when there is a proxy scheduler and a database, add
-  roi_calculator_refresh every 30 seconds with max_instances 1 and replace_existing, running B8588's run_scheduled_sync.
-  B8374 calls it right after the model info refresh.
 
   Every job that uses a lock (reset budget, key rotation, UI session cleanup, capture rate, PTU) shares the spend writer's
   one PodLockManager; never build another. Jobs added without replace_existing in LiteLLM (key_rotation_job and the UI
@@ -94,8 +90,6 @@ dod:
     proof: [jobs-tests]
   - text: refresh_model_info runs on the proxy scheduler when there is one, on a private one otherwise, and not at all when disable_model_info_refresh is true.
     proof: [jobs-tests]
-  - text: roi_calculator_refresh runs B8588's run_scheduled_sync every 30 seconds on the proxy scheduler, only when there is a scheduler and a database.
-    proof: [jobs-tests]
 checks:
   optional: []
   commands:
@@ -107,7 +101,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - "CheckBatchCost and CheckResponsesCost: imported from litellm_enterprise, so never registered in open-source LiteLLM; not built."
-  - "run_scheduled_sync, the ROI calculator sync this task registers as roi_calculator_refresh: B8588."
+  - "The ROI calculator sync job (roi_calculator_refresh, B8588's run_scheduled_sync): B8677 runs it in app::admin start on the routes' own SyncManager."
   - "The spend log cleanup job's trigger and rescheduling: B8371."
   - "The scheduler itself and its shutdown: B8370; B8374 calls the shutdown steps."
 pitfalls:

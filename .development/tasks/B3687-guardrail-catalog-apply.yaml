@@ -1,7 +1,7 @@
 id: B3687
 title: Guardrail catalog downloads and direct apply API
 description: >-
-  Build four admin routes of the guardrail API in betterlite-server: the category file download, the airline list, the blocked-words file check and the direct apply route. Everything goes in crates/betterlite-server/src/guardrails/catalog_apply.rs and catalog_apply/. The list, info and form routes are B3684, create, change and delete are B3685, submissions and the custom-code test route are B3686 and the usage routes are B3689 (B104 mounts them). Expose `pub fn routes()` the way the sibling modules in crates/betterlite-server/src/guardrails/ do. The architect's skeleton mounts it, so do not touch app.rs. Every route sits behind the normal key check: any valid key, any role, no other permission.
+  Build four admin routes of the guardrail API in betterlite-server: the category file download, the airline list, the blocked-words file check and the direct apply route. Everything goes in crates/betterlite-server/src/guardrails/catalog_apply.rs and catalog_apply/. The list, info and form routes are B3684, create, change and delete are B3685, submissions and the custom-code test route are B3686 and the usage routes are B3689 (B104 mounts them). Expose `pub fn routes()` the way the sibling modules in crates/betterlite-server/src/guardrails/ do. B8668 mounts it, so do not touch app.rs. Every route sits behind the normal key check: any valid key, any role, no other permission.
 
   Files under catalog_apply/, each below 300 lines: `error.rs`, `category.rs`, `airlines.rs`, `blocked_words.rs`, `input_type.rs`, `ports.rs`, `apply.rs`, `success_logs.rs`, `tests.rs`.
 
@@ -39,7 +39,6 @@ scope:
     - crates/betterlite-server/fuzz/corpus/blocked_words_file/**
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-guardrails/src/content_filter/competitor_intent_airline.rs
-    - tools/oracle/cases/guardrails/catalog-apply/**
     - tools/oracle/helpers/b3687.py
     - tools/oracle/helpers/b3687/**
     - tools/oracle/src/helpers/server/b3687.rs
@@ -76,22 +75,22 @@ references:
 dod:
   - text: >-
       category_yaml returns the raw file text with `category_name`, `yaml_content` and `file_type`, prefers yaml over json, answers 400 "Invalid category name" for a NUL byte and for a symlink that points out of the folder, and 404 with the exact "tried .yaml and .json" text for an unknown name.
-    proof: [catalog-category-tests, oracle]
+    proof: [catalog-category-tests]
   - text: >-
       major_airlines returns the 351 entries of B3697's file as `{"airlines": [...]}` in file order.
-    proof: [catalog-airlines-tests, oracle]
+    proof: [catalog-airlines-tests]
   - text: >-
       validate_blocked_words_file gives each verdict body exactly (missing content, YAML syntax error, wrong shape, non-list, per-entry messages in order, valid with the count) and always answers 200.
-    proof: [catalog-blocked-words-tests, oracle]
+    proof: [catalog-blocked-words-tests]
   - text: >-
       The blocked-words decoder never panics, its fuzz target exists and its corpus replays.
     proof: [catalog-blocked-words-corpus]
   - text: >-
       apply_guardrail answers `response_text` from the first returned text, falls back to the request text when no text comes back, and serves both paths.
-    proof: [catalog-apply-tests, oracle]
+    proof: [catalog-apply-tests]
   - text: >-
       An unknown guardrail name gives the exact 404 message in the proxy's error body and runs the failure hook once.
-    proof: [catalog-apply-tests, oracle]
+    proof: [catalog-apply-tests]
   - text: >-
       The input type becomes response for a post_call guardrail only when `request` was sent, an unknown input type becomes request, and the invocation record is opened before the guardrail call and finished after it.
     proof: [catalog-input-type-tests]
@@ -99,8 +98,10 @@ dod:
       Failure and success logging follow the order and the swallow rules (a failing hook or handler is logged and never changes the answer; the failure handlers do not run for an HTTP error or after a success-hook error).
     proof: [catalog-apply-logging-tests]
   - text: >-
-      Every route needs a valid key; a request without one gets the usual 401 body.
-    proof: [oracle]
+      Every route needs a valid key; a oneshot test without a key gets the usual 401 body, and B8668 proves it over HTTP.
+    proof: [catalog-apply-tests]
+  - text: The handlers are tested with tower's oneshot over the module's own Router and fake ports. B8668 mounts the routes and owns their HTTP oracle cases, so write no HTTP case here.
+    proof: [catalog-apply-tests]
 checks:
   optional: []
   commands:
@@ -129,21 +130,7 @@ checks:
     - id: catalog-apply-logging-tests
       why: a success or failure logging step, or its swallow rule, is missing
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::catalog_apply::tests::logging_/)'
-oracle_cases:
-  - tools/oracle/cases/guardrails/catalog-apply/category-yaml-found.yaml
-  - tools/oracle/cases/guardrails/catalog-apply/category-json-found.yaml
-  - tools/oracle/cases/guardrails/catalog-apply/category-not-found.yaml
-  - tools/oracle/cases/guardrails/catalog-apply/category-invalid-name.yaml
-  - tools/oracle/cases/guardrails/catalog-apply/major-airlines.yaml
-  - tools/oracle/cases/guardrails/catalog-apply/blocked-words-valid.yaml
-  - tools/oracle/cases/guardrails/catalog-apply/blocked-words-entry-errors.yaml
-  - tools/oracle/cases/guardrails/catalog-apply/blocked-words-bad-shape.yaml
-  - tools/oracle/cases/guardrails/catalog-apply/blocked-words-empty.yaml
-  - tools/oracle/cases/guardrails/catalog-apply/apply-echo-text.yaml
-  - tools/oracle/cases/guardrails/catalog-apply/apply-alias-echo-text.yaml
-  - tools/oracle/cases/guardrails/catalog-apply/apply-unknown-guardrail.yaml
-  - tools/oracle/cases/guardrails/catalog-apply/apply-missing-text.yaml
-  - tools/oracle/cases/guardrails/catalog-apply/auth-required.yaml
+oracle_cases: []
 deviations:
   - what: >-
       major_airlines never answers 404 or 500; the list is compiled into the binary.
@@ -159,7 +146,7 @@ deviations:
       Same rule as every other admin route in the crate; the body decoder is B3662's.
 out_of_scope:
   - "get_initialized_guardrail_with_read_through and the registry re-sync behind it (registry_read_through.py): B8231 owns the code, B3683 builds `sync_locked` and `poll_database`. B8231 also declares the `GuardrailLookup` port in registry_read_through/lookup.rs; this task imports it and calls get_guardrail_with_read_through."
-  - "common_processing_pre_call_logic, post_call_failure_hook, post_call_success_hook and the proxy logging object (async_failure_handler, failure_handler, async_success_handler, success_handler, update_messages): B004, B014 and B124. This task declares `ApplyHooks` and `ApplyLog` and calls them."
+  - "common_processing_pre_call_logic: B8801. post_call_failure_hook, post_call_success_hook and the proxy logging object (async_failure_handler, failure_handler, async_success_handler, success_handler, update_messages): B004, B014 and B124. This task declares `ApplyHooks` and `ApplyLog` and calls them."
   - "handle_exception_on_proxy and ProxyException (proxy/utils.py): B124. This task builds only the mapping from its own error to status and message, and the shared error renderer of the server turns it into the body."
   - "Category file decoding and loading (content_filter.py): B3692. DATA_ROOTS, category_dirs and find_category_file: B3691. safe_join and is_within: B4260. major_airlines.json and its use in the competitor intent check: B3697."
   - "The guardrail's own apply_guardrail logic and the GuardrailContract trait: B5471 and each provider task."

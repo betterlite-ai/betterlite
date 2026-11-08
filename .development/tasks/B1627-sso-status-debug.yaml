@@ -33,7 +33,6 @@ scope:
     - crates/betterlite-config/src/sso_status_debug.rs
     - crates/betterlite-config/src/sso_status_debug/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-status-debug-*
-    - tools/oracle/cases/sso/status-debug/**
     - tools/oracle/helpers/b1627.py
     - tools/oracle/helpers/b1627/**
     - tools/oracle/src/helpers/server/b1627.rs
@@ -47,10 +46,12 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1589-L1591
     why: Spend-row threshold environment default.
 dod:
+  - text: The handlers are tested with tower's oneshot over this task's own Router and fake ports; B8770 mounts them through B063 and B8771 proves them over HTTP.
+    proof: [status-debug-tests]
   - text: Authenticated settings/readiness and public debug gating have the pinned status, error and header contracts.
-    proof: [status-debug-tests, oracle]
+    proof: [status-debug-tests]
   - text: Debug rendering never exposes bearer fields or executable claim markup and does not create user sessions.
-    proof: [status-debug-tests, oracle]
+    proof: [status-debug-tests]
   - text: Debug opt-in, URL settings, team-disable precedence and spend threshold are supported by actual config loading.
     proof: [status-debug-config, status-debug-corpus]
 checks:
@@ -65,15 +66,7 @@ checks:
     - id: status-debug-corpus
       why: Status/debug config changes lack newly added production-loader replay data.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-status-debug-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-oracle_cases:
-  - tools/oracle/cases/sso/status-debug/settings-and-readiness-require-auth.yaml
-  - tools/oracle/cases/sso/status-debug/saml-enabled-but-oauth-readiness-unconfigured.yaml
-  - tools/oracle/cases/sso/status-debug/microsoft-missing-secret-and-tenant.yaml
-  - tools/oracle/cases/sso/status-debug/generic-required-variable-order.yaml
-  - tools/oracle/cases/sso/status-debug/disabled-debug-is-404.yaml
-  - tools/oracle/cases/sso/status-debug/enabled-callback-without-provider.yaml
-  - tools/oracle/cases/sso/status-debug/generic-claim-display.yaml
-  - tools/oracle/cases/sso/status-debug/default-team-disable-cannot-be-forced-off.yaml
+oracle_cases: []
 deviations:
   - what: ENABLE_SSO_DEBUG=true allows the configured provider's debug login without an Enterprise license.
     why: Paid-tier enforcement is removed by the README decision; the explicit debug opt-in still applies.

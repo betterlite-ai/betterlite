@@ -1,0 +1,17 @@
+kind: helper
+name: aws-secret-reads-timeout-returns-none
+env: {}
+compare: {ignore: []}
+call:
+  b4414:
+    env:
+      AWS_ACCESS_KEY_ID: AKIAORACLEEXAMPLE
+      AWS_SECRET_ACCESS_KEY: oracle-secret-key
+      AWS_REGION_NAME: us-east-1
+    routes:
+      - route: "POST https://secretsmanager.us-east-1.amazonaws.com"
+        replies:
+          - {timeout: true}
+    steps:
+      - {op: read, path: async, secret: prod/db/password}
+      - {op: read, path: sync, secret: prod/db/password}

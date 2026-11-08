@@ -1,0 +1,147 @@
+id: B8651
+title: Build the semantic response cache backends with router embeddings
+description: >-
+  LiteLLM builds every response cache in one place, Cache.__init__ in litellm/caching/caching.py. For the types
+  "redis-semantic", "valkey-semantic" and "qdrant-semantic" it constructs RedisSemanticCache, ValkeySemanticCache or
+  QdrantSemanticCache, and each of those embeds prompts through the proxy Router or a direct embedding call. betterlite
+  splits that across crates. B4299 ports Cache.__init__ in betterlite-cache. B4382 (RedisSemanticCache), B8296
+  (ValkeySemanticCache) and B4383 (QdrantSemanticCache) live in betterlite-prompts and take their embedder as a port.
+  B4381 builds the embedding calls in betterlite-router. deny.toml lets only betterlite-server, betterlite-oracle and
+  betterlite-router-fuzz depend on betterlite-router, so neither betterlite-cache nor betterlite-prompts can build the
+  embedder. That is why B4299 raises CacheTypeNotSupportedError for the semantic types and nothing builds them today.
+  This task builds them in betterlite-server and hands the result to B4299's Cache constructor as its injected
+  backend, the Rust form of LiteLLM's `_backend` argument. It mounts no route.
+
+
+  Code goes in a top-level betterlite-server module, crates/betterlite-server/src/semantic_cache.rs and semantic_cache/ (embedder.rs, backend.rs,
+  build.rs, tests.rs), which the skeleton declares as `pub mod semantic_cache;` in lib.rs. It is not under app/cache_secrets because the binary needs it too, and the app area modules are pub(crate). Add betterlite-cache,
+  betterlite-prompts and betterlite-redis to crates/betterlite-server/Cargo.toml if they are not there yet.
+
+
+  embedder.rs. `RouterEmbedder` implements B4382's `SemanticEmbedder` (B8296 reuses the same trait). It holds
+  `Arc<RouterHandle>` (B8611), the outbound HTTP client, and its own copies of `embedding_model`,
+  `embedding_max_input_tokens` and the resolved `embedding_timeout`. `embed(prompt, metadata)` calls B4381's async
+  Redis path (LiteLLM's RedisSemanticCache._get_async_embedding): the Router when B4310's resolve_embedding_router finds
+  a deployment for the model in the router `RouterHandle::get` returns at that call, otherwise the direct call (also when the handle holds no router yet), and returns the first vector. Its error becomes a
+  `SemanticEmbedError` that keeps B4381's text. `QdrantEmbedder` implements the embedding port that B4383's
+  constructor takes, over B4381's Qdrant path, which returns the whole embedding response and does not rewrap errors.
+  Neither adapter holds a cache. B4382 builds its index on first use by embedding the text "dimension test", so an
+  embedder that reached back into the cache would wait on the same OnceCell forever.
+
+
+  backend.rs. `SemanticBackend` is an enum with one variant per cache (`Redis(RedisSemanticCache)`,
+  `Valkey(ValkeySemanticCache)`, `Qdrant(QdrantSemanticCache)`) and implements B4290's backend trait, LiteLLM's
+  BaseCache. Each async read, write and pipeline method forwards to the cache's own method with the same key, value
+  and kwargs. B4382 and B8296 build no sync operations (their deviations say why), so a sync method of the trait
+  returns an error that names the operation and the cache type and never blocks on the async one. Expose
+  `fn redis_semantic(&self) -> Option<&RedisSemanticCache>` so B8540's readiness report can call
+  `RedisSemanticCache::index_info` on the server's response cache.
+
+
+  build.rs. `SemanticDeps` has public fields: `router: Arc<RouterHandle>`, `factory: Arc<LiveClientFactory>` (B5220, the one the
+  server's Redis clients use, so cloud credential sources apply), the outbound HTTP client for Qdrant, and `env:
+  BTreeMap<String, String>` with the process environment. `build_semantic_backend(params: &Map<String, Json>, deps:
+  &SemanticDeps) -> Result<Option<SemanticBackend>, SemanticBuildError>` reads `type` from the cache params map (the
+  map ProxyConfig._init_cache passes as Cache(**cache_params)) and maps keys as caching.py L220-L260 does:
+
+  "redis-semantic": host, port, password, similarity_threshold, `redis_url` from the same map, embedding_model from
+  redis_semantic_cache_embedding_model (default "text-embedding-ada-002"), index_name from
+  redis_semantic_cache_index_name, embedding_max_input_tokens from semantic_cache_embedding_max_input_tokens,
+  embedding_timeout from semantic_cache_embedding_timeout. `RedisEnv` takes REDIS_HOST, REDIS_PORT and REDIS_PASSWORD
+  from `env`. The connector is B4382's `LiveSemanticIndex` connector over `deps.factory`.
+
+  "valkey-semantic": the same names with valkey_semantic_cache_embedding_model and valkey_semantic_cache_index_name,
+  plus `ssl` from the map (default false) and redis_startup_nodes passed as startup_nodes, so B8296 can refuse a
+  cluster endpoint with its own message. `ValkeyEnv` takes VALKEY_HOST, VALKEY_PORT, VALKEY_PASSWORD, REDIS_HOST,
+  REDIS_PORT and REDIS_PASSWORD. The connector is B8296's live connector over `deps.factory`.
+
+  "qdrant-semantic": qdrant_api_base, qdrant_api_key, qdrant_collection_name as the collection name,
+  similarity_threshold, qdrant_quantization_config, qdrant_semantic_cache_embedding_model (default
+  "text-embedding-ada-002"), qdrant_semantic_cache_vector_size, and the two shared semantic_cache_embedding_* keys.
+  LiteLLM passes no other key to QdrantSemanticCache, so pass none.
+
+  Every embedding_timeout goes through B4310's resolve_embedding_timeout before it reaches a constructor, as B4382 and
+  B8296 expect a resolved value. Any other type, a missing type included, returns Ok(None). A constructor error
+  (for example "similarity_threshold must be provided, passed None" or "Missing required Redis configuration:
+  REDIS_HOST. Provide REDIS_HOST or redis_url.") comes back inside `SemanticBuildError` with its text unchanged,
+  because LiteLLM raises it from Cache(**cache_params) as it is.
+
+  `build_response_cache(params: &Map<String, Json>, deps: &SemanticDeps) -> Result<Cache, SemanticBuildError>` calls
+  build_semantic_backend. With a backend it calls B4299's Cache constructor with the same params and the backend
+  injected; without one it calls the constructor with the params alone. The Cache keeps the type string from the map,
+  so GET /cache/ping still reports "redis-semantic". Make SemanticDeps and its fields, SemanticBackend, SemanticBuildError and both functions `pub`, so B8612 and B8613 reach them as `betterlite_server::semantic_cache::*`. B8612's CacheReinit and
+  B8613's startup in crates/betterlite, which builds SemanticDeps, call build_response_cache in place of B4299's constructor (see out_of_scope).
+
+
+  Tests in `semantic_cache::tests`, named by prefix. `build_` tests check the key mapping for each type
+  with the injected fakes B4382, B8296 and B4383 accept (index names, the three embedding model keys and their
+  default, the env fallbacks, startup_nodes reaching Valkey, Qdrant getting no extra key, None for "local", "redis"
+  and a missing type, error texts unchanged). `embedder_` tests check that RouterEmbedder and QdrantEmbedder pass the
+  model, max input tokens and resolved timeout to B4381 and keep its error text; build their router the way B4381's
+  own tests do. `backend_` tests check that each variant forwards async calls to its cache and that a sync call
+  errors without blocking. `response_cache_` tests check that a semantic type reaches B4299 as an injected backend with
+  its type string kept, and that other types reach the constructor unchanged.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/semantic_cache.rs
+    - crates/betterlite-server/src/semantic_cache/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L80-L130
+    why: Cache.__init__ arguments, with the per-type embedding model and index name keys, the shared semantic_cache_embedding_* keys and `_backend`.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L187-L260
+    why: The injected backend wins, then the redis-semantic, valkey-semantic and qdrant-semantic branches and which ones get **kwargs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L55-L110
+    why: RedisSemanticCache's constructor and where it resolves the embedding timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L508-L550
+    why: _get_async_embedding, the call RouterEmbedder stands for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/valkey_semantic_cache.py#L53-L90
+    why: ValkeySemanticCache's constructor with ssl and startup_nodes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L254-L281
+    why: Qdrant's async embedding, which returns the whole response and lets errors through.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5955-L5999
+    why: ProxyConfig._init_cache passes the cache params map straight to Cache(**cache_params).
+dod:
+  - text: build_semantic_backend maps each semantic type's keys and env fallbacks to its cache, returns None for every other type and keeps constructor error texts.
+    proof: [build-tests]
+  - text: RouterEmbedder and QdrantEmbedder call B4381 with the cache's model, input limit and resolved timeout and hold no cache.
+    proof: [embedder-tests]
+  - text: SemanticBackend implements B4290's backend trait by forwarding async calls, and sync calls error without blocking.
+    proof: [backend-tests]
+  - text: build_response_cache hands a semantic backend to B4299's Cache with the type string kept and passes other types through.
+    proof: [response-cache-tests]
+checks:
+  optional: []
+  commands:
+    - id: build-tests
+      why: a semantic type maps a key wrongly, misses an env fallback or rewrites an error
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^semantic_cache::tests::build_/)'
+    - id: embedder-tests
+      why: an embedder adapter passes the wrong settings to B4381 or loses its error text
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^semantic_cache::tests::embedder_/)'
+    - id: backend-tests
+      why: the backend enum does not forward a call or blocks on a sync call
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^semantic_cache::tests::backend_/)'
+    - id: response-cache-tests
+      why: the Cache is built without the injected backend or loses its type string
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^semantic_cache::tests::response_cache_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Cache.__init__ for the other types, the injected backend rule and callback registration: B4299."
+  - "RedisSemanticCache and its live index (B4382), ValkeySemanticCache (B8296), QdrantSemanticCache (B4383)."
+  - "Embedding calls, Router lookup, truncation and timeouts: B4381 and B4310."
+  - "Calling build_response_cache from the production CacheReinit (ProxyConfig._init_cache for B8502) and from the startup cache build: B8612 (ResponseCacheReinit) and B8613 (crates/betterlite lifespan)."
+  - "Passing B8501's cloud credential source to the LiveClientFactory: B8610, which builds Shared.redis."
+  - "The readiness report that calls index_info: B8540."
+pitfalls:
+  - "Each semantic type has its own embedding model key (redis_semantic_cache_embedding_model, valkey_semantic_cache_embedding_model, qdrant_semantic_cache_embedding_model); only semantic_cache_embedding_max_input_tokens and semantic_cache_embedding_timeout are shared."
+  - "Qdrant reads its collection from qdrant_collection_name, not from an index name key."
+  - "Dropping redis_startup_nodes for valkey-semantic would let a cluster endpoint start and fail later on FT.SEARCH instead of B8296's clear error."
+  - "The params map holds password and qdrant_api_key, so never log it or put it in an error text."
+  - "An injected backend must not change the Cache's type string, because GET /cache/ping returns str(litellm.cache.type)."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

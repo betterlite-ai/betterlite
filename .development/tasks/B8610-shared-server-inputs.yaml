@@ -1,0 +1,239 @@
+id: B8610
+title: Shared state, server inputs, the area mount aggregator and the WebSocket auth pass
+description: >-
+  On main, server::run(config, chat, host, port) gets only the Config and the chat executor, so nothing the lifespan
+  builds (database, Redis, caches, guardrails, plugins, router, registries) reaches a route. B1100 declares an empty
+  `Shared` in crates/betterlite-server/src/state/shared.rs that application() builds once and puts into ServerState as
+  `shared: Arc<Shared>`, so every Slot::new(config, shared) and every handler can read it. This task fills Shared,
+  widens the server inputs to carry what the lifespan made (B8613's Started), adds the area mount aggregator with its
+  startup step, and lets WebSocket upgrades reach their own auth. Area wiring parts read `state.shared.<field>` or
+  `shared.<field>` and never edit these files.
+
+
+  Shared fields, with exactly these names (wave 17 parts already use them). Each Arc is the one instance B8613 made or
+  application() derives; nothing builds a second.
+
+  `db: Option<Arc<PostgresStore>>`: betterlite-db's store from B051's startup, None without DATABASE_URL (if B051
+  returns a wrapper around the store, hold that wrapper). `redis: SharedRedis`, a struct in shared.rs with `factory:
+  Arc<LiveClientFactory>` (B5220's one factory, made by B8613 with B8501's cloud Redis credential source), `usage` and
+  `buffer`, each an Option of B5630's RedisCache built through that factory (the usage client B8377 selected or
+  init_cache returned, and the transaction buffer client). A part that needs the shared usage connection reads
+  `redis.usage`; a part that must open its own client builds it with `redis.factory`, never with a fresh factory.
+  `http: ProxiedClient`: betterlite-http's client, the clone of `chat.client`. Its task tracker is the server's
+  TaskTracker (B8633, B4444, B4445, B1303 and B2318 spawn on it), and server::run keeps draining that same client at
+  shutdown with OUTBOUND_DRAIN_TIMEOUT, as it does today. `auth_cache: Arc<UserApiKeyCache>` (B733). `cache:
+  Arc<DualCache>`: B4293's memory and Redis cache over `redis.usage` with LiteLLM's default TTLs, built here once
+  (DualCache(redis_cache=redis_usage_cache)). `response_cache: Arc<ResponseCacheSlot>`, `cache_reinit:
+  Arc<ResponseCacheReinit>` and `cache_settings: Arc<CacheSettingsManager>` (B8612's CacheRuntime, B8502's manager).
+  `cache_writes: Arc<CacheWriteTracker>` (B4304). `secrets: Arc<SecretLookup>` (B8500 values from B8612's builder, with
+  the manager B8590 installed). `guardrails: SharedGuardrails`, a struct in shared.rs with `runtime:
+  Arc<GuardrailRuntime<PostgresGuardrailRows>>` (B3683, wrapping B3682's handler; without a database the rows value answers a database error, as LiteLLM with prisma None does), `router_list: Arc<Vec<RouterGuardrail>>` (the list start_from_config returned, for B8399's GuardrailBalancer) and `classes: Arc<GuardrailClasses<PostgresGuardrailRows>>` (B8666's pub module guardrail_dispatch, the one value B8613 built over the same runtime; B8790 fills its embedder slot at start and the policy routes reuse it). `plugins:
+  Arc<PluginRegistry>` (B8230). `agents: Arc<SharedAgents>` (B8612: B4776's registry and the one B8231 read-through,
+  built here with SharedAgents::new over the registry B8613 made, `db` and `proxy_config`). `jwt_signer:
+  Arc<JwtSignerSlot>` (B8254). `general_settings: Arc<ProxySettingsStore>` (B8612, built here over `db`,
+  `proxy_config` and `plugins`). `proxy_logging: Arc<ProxyLogging>` (B8399). `router: Arc<RouterHandle>` and
+  `router_views: Arc<RouterViews>` (B8611; router_views is built here over the same handle). `mcp_registry:
+  Arc<McpRegistry>`, `vector_stores: Arc<VectorStores>` and `pass_through: Arc<PassThroughState>` (B8614; the
+  pass-through credential router, Vertex token state and route table that startup, B8384 and B8640 share).
+  `proxy_config: Arc<ProxyConfigState>` (B8380). `mcp_area: std::sync::OnceLock<Arc<crate::app::mcp::state::McpState>>`,
+  created empty here: app::mcp's mount, mount_public and start need the same McpState, and B8620 fills the cell on first
+  use (the skeleton stubs `pub struct McpState` in app/mcp/state.rs, so this field compiles before B8620).
+
+  `budget: Arc<BudgetServices>` (B8481), built here once with `BudgetServices::new` over the inputs its merged
+  constructor lists: the spend counter cache, made once here as LiteLLM's module-level spend_counter_cache, and the
+  Shared values it asks for. The auth slots (B753, B755), B1225's admission slot and the edge's release layer all read
+  this one value, so they share one limiter and one counter cache. The constructor fails when reservations are enabled
+  without a settlement backend; application() returns that error and run stops before it binds. `prompts`: B4059's
+  one InMemoryPromptRegistry (betterlite-prompts) that B8613 made and config load filled, read by chat and by B8672's
+  prompt routes. B8293's init_prompts and B4060's mutations take &mut, so it is an Arc of a RwLock: use the lock type
+  the merged prompt route modules (B4061, B4062) take. `periodic_reloads: Arc<PeriodicReloads>` (B8385, a
+  betterlite-server type): the one reload state the lifespan timer checks write and B8586's routes read.
+  `deployment_sync: Arc<dyn DeploymentSyncPort>` (B8611's port; B8613 implements it over B8381's DeploymentSync, which
+  lives in crates/betterlite) for the add_deployment call of B8594 and B8596, and `auto_router_catalog: Arc<dyn
+  AutoRouterCatalog>` (B379's trait, backed by the same DeploymentSync) for B8676. `gateway_requests:
+  Arc<GatewayRequestAccumulator>` (B3102, betterlite-db): the one accumulator B8680's billable sink records into, the
+  B8372's periodic flush job drains and B8613's stop drains last. `prometheus_registry: Arc<CollectorRegistry>` (B3875,
+  betterlite-logging, which this task adds to betterlite-server's dependencies): the one registry B8613 made at startup; B8655 registers its collectors into it and B3886's
+  metrics_router renders it. `spend_producer: Arc<std::sync::OnceLock<P>>`, where P is the drainable producer
+  value B069's `spend::startup::start` returns (read its merged signature): B8613 makes the slot empty and keeps a
+  clone, B8662 sets it from what start returns in app::spend::start, and B8613's stop drains it at L1625. It stays
+  empty without a database or collector.
+
+
+  Server inputs. crates/betterlite-server/src/server/inputs.rs (declared in server.rs) holds `StartupOutputs`, one public
+  field per value B8613 made (every field above except http, cache, router_views, agents, general_settings, mcp_area
+  and budget, which application() derives; agents arrives as the bare AgentRegistry) plus `shutdown:
+  Arc<ShutdownState>` and `in_flight` (B022's in-flight source that ShutdownState reads), and `ServerInputs { config, chat, host, port, startup: StartupOutputs }`. `server::run(inputs:
+  ServerInputs)` replaces the four-argument run. `application(config, chat, startup)` builds Shared once, puts it into
+  ServerState as B1100 does, keeps the RootPaths wrap and returns the router and the Arc<ServerState>. run then awaits `app::start(&state)` once, before it binds the listener,
+  so no request arrives before every area finished its startup work. In crates/betterlite/src/lifespan.rs, run_proxy
+  turns B8613's `Started` into StartupOutputs (cloning the Arcs, so stop still holds its own) and calls the new run. If
+  main.rs still calls server::run itself, change that call too. Update the callers of application() in server/tests.rs
+  to pass StartupOutputs built from in-memory values.
+
+  Shutdown state and the health slot. ServerState (crates/betterlite-server/src/state.rs) holds `shutdown:
+  Arc<ShutdownState>`, B4448's value from StartupOutputs (B8613 made it; B8374's teardown calls start_shutdown and
+  wait_for_drain on it), in place of the Arc<AtomicBool> application() takes today. run keeps its local accept-loop flag
+  and its signal task; when the signal fires it also calls start_shutdown on that ShutdownState, so the health routes
+  answer 503 from SIGTERM on as they do today. state.rs also declares `pub mod health;` and gives ServerState `health:
+  health::HealthSlot`, built with `HealthSlot::new(&config, &shared)` like every B1100 slot. This task writes
+  state/health.rs with an empty HealthSlot and that constructor, since Shared comes from this task. B8540 fills it. The in-flight
+  layer B022 installs counts with `startup.in_flight`, the source ShutdownState reads, never a fresh one.
+
+  The health area. B003's three handlers (GET /health/liveliness, /health/liveness and /health/readiness) move out of
+  routes.rs into the app/health.rs stub's mount_public, with the same bodies (liveliness and liveness 200 "I'm alive!",
+  readiness 200 {"status": "healthy"}, all three 503 {"status": "shutting_down"} once shutdown started), now reading
+  `state.shutdown.is_shutting_down()`. They keep answering
+  without a key until B8540 replaces the stub, and routes.rs registers none of them, so no health path is registered
+  twice.
+
+
+  Area aggregator. crates/betterlite-server/src/app.rs declares `pub mod <area>;` (pub, not pub(crate), so a part whose
+  ports nothing calls yet passes its own dead_code lint) for mcp, inference, pass_through, agents, cache_secrets,
+  callbacks, spend, guardrails, management, admin, health and edge, in that order. The skeleton leaves each app/<area>.rs empty, since ServerState comes from B1100, and this task stubs each with
+  `mount(router, state)`, `mount_public(router, state)` and `async fn start(state)`, all returning at once or the router
+  unchanged, and app/edge.rs also with `wrap(router, state)`. app.rs has four functions, each calling every area once
+  in that order: `pub fn mount(router: Router, state: &Arc<ServerState>) -> Router` (routes that need a key),
+  `pub fn mount_public(router: Router, state: &Arc<ServerState>) -> Router` (routes LiteLLM serves with no key check),
+  `pub fn wrap(router: Router, state: &Arc<ServerState>) -> Router`, which calls only edge::wrap, and `pub async fn
+  start(state: &Arc<ServerState>)`.
+
+  routes.rs router() changes in three places. It calls app::mount after it merges chat, embeddings and B1100's route
+  modules and before the two auth layers, so area routes pass the same auth stages as every other route. After the auth
+  layers it merges app::mount_public, so public routes skip them. Then it calls app::wrap last, so edge's outer layers
+  (CORS preflight, the outer 500 handler of B789 and B8591) sit outside everything. Fallback: axum keeps one fallback,
+  and Router::merge panics when both routers carry one. routes.rs keeps setting its Not Found fallback before app::mount,
+  the pass-through area's mount replaces it with B8643's configured_fallback (same 404 body when nothing matches), and
+  nothing after app::mount sets a fallback: mount_public and wrap must merge only routers without one.
+
+
+  WebSocket auth. LiteLLM's WebSocket routes authenticate with user_api_key_auth_websocket (user_api_key_auth.py L644,
+  B052), which also reads the key from the WebSocket subprotocol, so the global HTTP master key stage must not reject
+  their upgrade first. In routes.rs, the auth_route_patterns stage layer is replaced by `http_auth_stage`, which calls
+  `next` directly when the request is a GET whose `upgrade` header equals "websocket" (ASCII case-insensitive) and whose
+  path is one LiteLLM serves as a WebSocket: /v1/realtime, /realtime, /openai/v1/realtime, /v1/responses, /responses,
+  /vertex_ai/live, /deepgram/v1/listen, /deepgram/listen, or a path under /openai/ or /openai_passthrough/. Every other
+  request goes through auth_route_patterns::stage unchanged, and the route_match stage still runs for all.
+
+  Reusable key auth. Some public routers key only some of their paths (B4720's CatalogViews keys every path but
+  /v1/mcp/registry.json; B7321's OauthRoot keys only /introspect). So routes.rs exposes `pub fn with_key_auth(router:
+  Router, state: &Arc<ServerState>) -> Router`, which applies exactly the auth layers router() applies to keyed routes
+  (http_auth_stage with B052's key auth, then the route_match stage), and router() itself uses it for those layers. An
+  area builds the keyed part of a public router, passes it through with_key_auth, merges the unkeyed part, and returns
+  the result from mount_public.
+
+
+  Tests in state/shared/tests.rs (names start with `shared_`) build Shared from StartupOutputs with in-memory values and
+  assert that http is the chat client clone, cache uses the usage Redis when one is given and memory only when not,
+  router_views reads the same RouterHandle (installing a router makes current() answer), agents and
+  general_settings use the given registry and database, budget is built once (two reads give the same Arc), and
+  spend_producer is the slot passed in StartupOutputs and starts empty. Tests
+  in server/tests.rs (names start with `inputs_`) boot application() and assert the health routes and the Not Found
+  fallback still answer, start_shutdown on the ShutdownState passed in StartupOutputs turns the three health routes to
+  503 shutting_down, app::start ran before the first request, a route merged through mount_public answers without a key while one merged through mount answers 401, and
+  for WebSocket: an upgrade GET on /v1/realtime without a key reaches a test handler at that path, the same GET without
+  the upgrade header gets 401, and an upgrade GET on /key/info without a key gets 401; a router passed through with_key_auth and merged through mount_public answers 401 without a key on its keyed path and 200 on its unkeyed one. Every existing server, routes and
+  lifespan test stays green. No new oracle case: the area parts add cases for the routes they mount, and the realtime
+  route task adds the WebSocket ones.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/state/shared.rs
+    - crates/betterlite-server/src/state/shared/**
+    - crates/betterlite-server/src/server.rs
+    - crates/betterlite-server/src/server/inputs.rs
+    - crates/betterlite-server/src/server/inputs/**
+    - crates/betterlite-server/src/server/tests.rs
+    - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/app/health.rs
+    - crates/betterlite-server/src/app/mcp.rs
+    - crates/betterlite-server/src/app/inference.rs
+    - crates/betterlite-server/src/app/pass_through.rs
+    - crates/betterlite-server/src/app/agents.rs
+    - crates/betterlite-server/src/app/cache_secrets.rs
+    - crates/betterlite-server/src/app/callbacks.rs
+    - crates/betterlite-server/src/app/spend.rs
+    - crates/betterlite-server/src/app/guardrails.rs
+    - crates/betterlite-server/src/app/management.rs
+    - crates/betterlite-server/src/app/admin.rs
+    - crates/betterlite-server/src/app/edge.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/state/health.rs
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite/Cargo.toml
+    - crates/betterlite/src/lifespan.rs
+    - crates/betterlite/src/lifespan/**
+    - crates/betterlite/src/main.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2584-L2661
+    why: The proxy_server module globals that Shared replaces.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12908-L12910
+    why: The realtime WebSocket paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12813
+    why: The /vertex_ai/live WebSocket path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1474-L1475
+    why: The Responses API WebSocket paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3105-L3106
+    why: The OpenAI pass-through WebSocket paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3188-L3189
+    why: The Deepgram WebSocket paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L644-L650
+    why: user_api_key_auth_websocket, the auth those paths use instead of the HTTP dependency.
+dod:
+  - text: Shared carries every listed field under its fixed name, pass_through, an empty mcp_area and an empty spend_producer slot included, built once in application() from StartupOutputs plus the derived http, cache, router_views, agents, general_settings, mcp_area and budget, and a failing budget build stops run before it binds.
+    proof: [shared-tests]
+  - text: server::run takes ServerInputs, awaits app::start before it listens, drains the chat client at shutdown, the lifespan hands over its values without building a second copy, and the health routes and fallback still answer.
+    proof: [inputs-tests, server-regression]
+  - text: app.rs declares every area as pub mod and calls each area's mount, mount_public and start once, and edge's wrap once; router() calls app::mount inside the auth layers, app::mount_public outside them and app::wrap last, and sets no fallback after app::mount.
+    proof: [app-mount, inputs-tests]
+  - text: ServerState holds the ShutdownState from StartupOutputs and the HealthSlot, the signal calls start_shutdown while the accept loop still stops only on the signal, and the three health routes answer from app::health mount_public, read ShutdownState and are not registered in routes.rs.
+    proof: [inputs-tests, app-mount]
+  - text: A WebSocket upgrade GET on a LiteLLM WebSocket path skips the HTTP master key stage, any other request, an upgrade on another path included, still needs a key, and with_key_auth gives a public router the same key check on the paths an area chooses.
+    proof: [inputs-tests]
+checks:
+  optional: []
+  commands:
+    - id: shared-tests
+      why: a Shared field is missing, built twice or derived from the wrong value
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^state::shared::/)'
+    - id: inputs-tests
+      why: the server ignores its startup inputs, skips app::start, puts a public route behind auth or a keyed route outside it, or lets an upgrade header skip auth on a path that is not a WebSocket route
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::tests::inputs_/)'
+    - id: app-mount
+      why: an area is not declared or not called exactly once in one of the aggregator functions, or router() calls an aggregator twice
+      run: |-
+        for call in 'app::mount(' 'app::mount_public(' 'app::wrap('; do
+          test "$(grep -cF "$call" crates/betterlite-server/src/routes.rs)" = 1 || { echo "routes.rs must call $call once"; exit 1; }
+        done
+        test "$(grep -cF 'edge::wrap(' crates/betterlite-server/src/app.rs)" = 1 || exit 1
+        if grep -qF '.route("/health/' crates/betterlite-server/src/routes.rs; then echo "routes.rs still registers a health route"; exit 1; fi
+        for area in mcp inference pass_through agents cache_secrets callbacks spend guardrails management admin health edge; do
+          grep -qE "^pub mod $area;" crates/betterlite-server/src/app.rs || { echo "area $area is not declared pub"; exit 1; }
+          for f in mount mount_public start; do
+            test "$(grep -cF "$area::$f(" crates/betterlite-server/src/app.rs)" = 1 || { echo "area $area $f is not called once"; exit 1; }
+          done
+        done
+    - id: server-regression
+      why: the wider inputs broke the existing server, route or lifespan tests
+      run: grep -q 'pub struct StartupOutputs' crates/betterlite-server/src/server/inputs.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::/) | test(/^routes::/)' && cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^lifespan::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The router, router views, shared port and registry types: B8611, B8612 and B8614. The values made during startup: B8613."
+  - "Each area's mount, mount_public, start and edge's wrap: the area wiring parts, in app/<area>.rs and app/<area>/**."
+  - "The route and state registry, ServerState and the stub modules: B1100. user_api_key_auth_websocket: B052."
+  - "HealthSlot's contents and the five health routers: B8540. ShutdownState and its drain: B4448. The in-flight counter and the admission layer: B022."
+  - "A router embedder field: not in Shared; the router's embedding call is built by the inference part from ServerState (see the report notes)."
+pitfalls:
+  - axum applies a layer only to routes added before it, so an area route merged after the auth layers would skip authentication, and a public route merged before them would need a key.
+  - Router::merge panics when both routers have a fallback, so a mount_public router or the wrap step that sets one crashes the server at boot.
+  - The WebSocket pass must check both the upgrade header and the path; an upgrade header alone would let any GET skip the master key stage.
+  - The usage Redis in Shared must be the client B8613 attached to the router, not a fresh one built from REDIS_*, or rate limits and router cooldowns count in different places.
+  - The http field is the chat client's clone because run drains that client on shutdown and other tasks spawn on its tracker; a second ProxiedClient would leave its requests undrained.
+  - The accept loop must keep stopping on the signal only. B4448's /health/drain also calls start_shutdown, and a loop that stopped on ShutdownState would refuse new connections after a preStop drain.
+  - ShutdownState counts in-flight requests through B022's source, so the in-flight layer in routes.rs must count with that same source; a second one leaves wait_for_drain at zero and the drain returns at once.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

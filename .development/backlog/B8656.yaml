@@ -1,0 +1,13 @@
+id: B8656
+milestone: M8 platform
+title: SlackAlerting logger events, alerting ports and spend report jobs
+status: todo
+depends_on: [B8610, B8611, B8399, B8390, B8394, B3678, B4020, B4024, B4026, B4028, B4029, B1690, B1725, B7320]
+file: tasks/B8656-alerting-callback-wiring.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

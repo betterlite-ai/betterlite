@@ -1,0 +1,91 @@
+id: B8661
+title: Mount the analytics and agent activity routes
+description: >-
+  Four route families of the spend area are built but nothing merges them, since no B1100 entry covers them: the user agent analytics routes (B3100 and B3101), the gateway request activity route (B3102) and the agent daily activity route (B4787). This task finishes crates/betterlite-server/src/app/spend.rs after B8482, so these routes answer through the booted proxy for the first time.
+
+  Routes. In `mount(router, state)` (inside the auth layers), keep B8482's merge of `daily_activity_router::routes()` first, then merge in LiteLLM's include order (proxy_server.py L19971-L20005: daily_activity_router, then user_agent_analytics_router, then gateway_request_router):
+  - B3100's and B3101's routes from `user_agent_analytics`: GET /tag/distinct, /tag/dau, /tag/wau (B3100) and GET /tag/mau, /tag/summary, /tag/user-agent/per-user-analytics (B3101), in the order the LiteLLM file declares them (user_agent_analytics_endpoints.py).
+  - B3102's GET /gateway/daily/activity from its route function in `management::gateway_request_activity`.
+  - B4787's `crate::routes::agent_daily_activity::routes(state)` for GET /agent/daily/activity. routes.rs declares that module `pub(crate)` on main, but router() does not merge it, so this is its only merge.
+  Read each part's merged signature first and pass the state or handles it asks for (`state.shared.db` for the database). Merge each router once: axum panics on a duplicate path. None of these paths has an alias in LiteLLM.
+
+  HTTP oracle cases, through the booted proxy with B860's Postgres fixtures. The route tasks tested their handlers with tower's oneshot over their own routers; their booted cases moved here, with the file names below. tools/oracle/cases/analytics/ holds B3100's and B3101's cases (distinct, DAU, WAU, MAU, summary and per-user answers, query errors with the "Failed to fetch ..." messages, invalid summary dates, the empty key set and the missing database). tools/oracle/cases/gateway_activity/ holds B3102's (the default 30 day range, a custom range, proxy_admin_viewer allowed, a non-admin 403 and the missing database). tools/oracle/cases/agent-activity/ holds B4787's (admin scopes, owned and granted agents, the empty page, the agents feature gate and the missing database). Read each route task's DoD and pitfalls for the exact defaults, bounds and messages its cases check.
+
+  Tests in crates/betterlite-server/src/app/spend/tests.rs (names start with `spend_`): build `mount` over fake state and assert that every path above answers its GET (not 404 or 405) and that building the router does not panic.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/spend.rs
+    - crates/betterlite-server/src/app/spend/tests.rs
+    - tools/oracle/cases/analytics/**
+    - tools/oracle/cases/gateway_activity/**
+    - tools/oracle/cases/agent-activity/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19971-L20005
+    why: The include order of daily_activity_router, user_agent_analytics_router and gateway_request_router.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/user_agent_analytics_endpoints.py#L163
+    why: The first user agent analytics route; the file declares the other five after it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/gateway_request_endpoints.py#L95
+    why: GET /gateway/daily/activity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1333-L1403
+    why: GET /agent/daily/activity from its decorator.
+dod:
+  - text: Every user agent analytics path, GET /gateway/daily/activity and GET /agent/daily/activity answer through the booted proxy behind auth, each merged once after the daily activity routes.
+    proof: [spend-tests, new-cases, oracle]
+  - text: Over HTTP, the analytics, gateway activity and agent activity routes answer the same status, body and error fields as LiteLLM for the defaults, filters, access errors, query errors and the missing database.
+    proof: [new-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: spend-tests
+      why: a route family is not merged, or a path is merged twice
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::spend::tests::spend_/)'
+    - id: new-cases
+      why: one of the three moved case folders has no booted-proxy case on this branch
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/analytics)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/gateway_activity)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/agent-activity)"
+oracle_cases:
+  - tools/oracle/cases/analytics/user-agent-distinct.yaml
+  - tools/oracle/cases/analytics/user-agent-dau.yaml
+  - tools/oracle/cases/analytics/user-agent-wau.yaml
+  - tools/oracle/cases/analytics/user-agent-distinct-query-error.yaml
+  - tools/oracle/cases/analytics/user-agent-dau-query-error.yaml
+  - tools/oracle/cases/analytics/user-agent-wau-query-error.yaml
+  - tools/oracle/cases/analytics/user-agent-mau.yaml
+  - tools/oracle/cases/analytics/user-agent-summary.yaml
+  - tools/oracle/cases/analytics/user-agent-per-user.yaml
+  - tools/oracle/cases/analytics/user-agent-mau-query-error.yaml
+  - tools/oracle/cases/analytics/user-agent-summary-query-error.yaml
+  - tools/oracle/cases/analytics/user-agent-per-user-query-error.yaml
+  - tools/oracle/cases/analytics/user-agent-summary-invalid-dates.yaml
+  - tools/oracle/cases/analytics/user-agent-per-user-empty-keyset.yaml
+  - tools/oracle/cases/analytics/user-agent-mau-prisma-unavailable.yaml
+  - tools/oracle/cases/analytics/user-agent-summary-prisma-unavailable.yaml
+  - tools/oracle/cases/analytics/user-agent-per-user-prisma-unavailable.yaml
+  - tools/oracle/cases/gateway_activity/admin-default-range.yaml
+  - tools/oracle/cases/gateway_activity/admin-view-only.yaml
+  - tools/oracle/cases/gateway_activity/non-admin-denied.yaml
+  - tools/oracle/cases/gateway_activity/custom-date-range.yaml
+  - tools/oracle/cases/gateway_activity/missing-database.yaml
+  - tools/oracle/cases/agent-activity/no-database.yaml
+  - tools/oracle/cases/agent-activity/admin-all-agents.yaml
+  - tools/oracle/cases/agent-activity/admin-requested-ids-and-exclusions.yaml
+  - tools/oracle/cases/agent-activity/user-unrestricted-owned-only.yaml
+  - tools/oracle/cases/agent-activity/user-restricted-grants.yaml
+  - tools/oracle/cases/agent-activity/user-no-grants-empty-page.yaml
+  - tools/oracle/cases/agent-activity/requested-ids-filtered-to-permitted.yaml
+  - tools/oracle/cases/agent-activity/feature-disabled-for-internal-user.yaml
+deviations: []
+out_of_scope:
+  - "The handlers: B3100, B3101, B3102 and B4787. The daily activity routes and the first lines of app/spend.rs: B8482."
+  - "B8270's release layer, and B3102's accumulator feed and the flush schedule of flush_gateway_requests: the edge part (B8680) installs them with B3889's billable request metrics middleware. The route itself reads only the database."
+  - "The spend report and spend log routes (B1721 to B1732) and GET /spend/capture_rate: B069 composes them and B8662 merges them."
+pitfalls:
+  - "B4787's routes() function lives in routes/agent_daily_activity.rs but router() does not merge it; merging it there as well as here would panic on the duplicate path."
+  - "The per-user analytics path is /tag/user-agent/per-user-analytics, not /tag/user."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
