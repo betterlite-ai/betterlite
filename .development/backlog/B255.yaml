@@ -1,7 +1,7 @@
 id: B255
 milestone: M1 openai data plane
 title: Typed mock chat, stream and embedding calls
-status: todo
+status: done
 depends_on: [B198, B004, B005, B006, B184]
 file: tasks/B255-mock-calls.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/utils.py"
 parent: B014
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 831

@@ -1,0 +1,171 @@
+id: B3612
+title: Pass-through WebSocket relay lifecycle
+description: >-
+  Build LiteLLM's websocket_passthrough_request in betterlite-server, in the new module websocket
+  (crates/betterlite-server/src/pass_through_lifecycle/websocket.rs and its folder; the folder exists, add `pub mod websocket;` next to B6510's request_prep and B3613's handler).
+  It accepts the client socket, opens one upstream socket, copies frames both ways until one side ends, relays an upstream close, logs the session and reports failures.
+  The routes that call it are B3628 (OpenAI, Deepgram, Nvidia) and B3629 (Vertex Live), so this task registers no route and adds no HTTP or WebSocket oracle case.
+  Every test is a native test with fake sockets. LiteLLM's create_websocket_passthrough_route (L2159-L2207) is not built, see out_of_scope.
+
+  Entry point. `WebSocketRelay::new(deps: WebSocketDeps)` and `relay(&self, args: &WebSocketArgs, client: &dyn ClientSocket, auth: &UserApiKeyAuth) -> Result<(), WebSocketRelayError>`.
+  `WebSocketArgs` holds target (String, the ws or wss URL), custom_headers (indexmap::IndexMap<String,String>), forward_headers (bool, default false), endpoint (Option<String>, only a label for logs and the "/vertex_ai/live" test),
+  cost_per_request (Option<f64>), accept_websocket (bool, default true) and setup_model_rewriter (Option of the rewriter type B3611 takes; read its merged name). `WebSocketRelayError` is a thiserror enum with three variants,
+  Accept(String), PreCallHook(PassThroughError) and FailureHook(PassThroughError), and nothing else: every other problem is handled inside, as the Python does. `WebSocketDeps` holds hooks (`Arc<dyn ProxyHooks>`, B6510 declares the trait and its pre_call_hook,
+  post_call_success_hook and post_call_failure_hook; do not edit it), logs (B247's logging object factory, the same handle B6510's PassThroughDeps uses), worker (the B191 handle), completion (`Arc<PassThroughSuccessCompletion>`, B3607),
+  binder (`Arc<dyn ReservationBinder>`, declared by B3607) and connector (`Arc<dyn UpstreamConnector>`, declared here).
+
+  Socket seams, declared here so tests use fakes. `ClientSocket` has `&self` methods: accept, receive (returns `ClientFrame`: Text(String), Binary(Bytes), Disconnect, or Other for a message with neither text nor bytes),
+  send_text, send_bytes, close(code: u16, reason: &str), headers (the client's `http::HeaderMap`) and the two state reads that B3611's client_socket_is_open needs (client side and application side, each connected or disconnected; read B3611's merged signature and implement
+  its trait if it declared one instead of adding a second). `UpstreamConnector::connect(&self, target: &url::Url, headers: &IndexMap<String,String>) -> Result<Box<dyn UpstreamSocket>, ConnectError>`.
+  `ConnectError` is Rejected { status: u16 } (the upstream answered the upgrade with a non-101 status; LiteLLM's InvalidStatus) or Failed(String) (DNS, TLS, timeout, bad URL or scheme, anything else). `UpstreamSocket` has `&self` methods:
+  send_text, send_bytes, recv (returns `UpstreamEvent`: Text, Binary, or Closed(Option<CloseFrame>) for a clean or error close the peer announced, with the received code and reason, or an Err for any other failure) and close.
+  CloseFrame is B3611's close record if it has one, else a struct of code (u16) and reason (String). A production adapter over axum's WebSocket and tokio-tungstenite is not part of this task (see notes in the planner report); the contract an adapter must keep is what websockets 15.0.1 does at the pin:
+  open timeout 10 seconds, ping interval 20 seconds, ping timeout 20 seconds, largest incoming message 1048576 bytes (a larger one closes the socket with 1009 and the relay sees Closed(None)), permessage-deflate on.
+
+  Flow of `relay`, in this order.
+  (1) start_time = now, a fresh call id (uuid v4 string), an empty `websocket_messages` list of JSON objects. Log at info "WebSocket passthrough (<endpoint>): Starting WebSocket connection to <target>" (an absent endpoint prints as None).
+  (2) When accept_websocket is true, call client.accept() and log at debug that the connection was accepted. An accept error is returned at once as Accept with nothing else run, since LiteLLM raises there before any logging object exists.
+  (3) upstream headers = custom_headers, then, only when forward_headers is true, every client header whose lowercase name is "x-goog-user-project" (plain string keys, so a custom "X-Goog-User-Project" and the forwarded lowercase one both stay), then B3610's with_trace_context with the auth record's parent span.
+  (4) Team callbacks with B3610's resolve_team_callback_wiring, route description "websocket_passthrough".
+  (5) Create the logging object with B247: model "unknown", messages one user message with content "WebSocket connection", stream true, call_type "pass_through_endpoint", start_time, the call id, function_id "websocket_passthrough", and the team callbacks' success, failure and kwargs.
+  Unlike the HTTP path, passthrough_guardrails_config is not set.
+  (6) Build B3600's PassthroughStandardLoggingPayload: url = target, request_body = empty map, request_method "WEBSOCKET", cost_per_request. The request stand-in for kwargs has url = target, method "WEBSOCKET" (an extension `http::Method`) and the client headers, no scope and no state.
+  kwargs = B3610's init_kwargs_for_pass_through_endpoint with the auth record, an empty body, the payload, the call id, that stand-in and the logging object. Because the stand-in has no scope, request_dispatched_to_pass_through_endpoint is false for it,
+  so the four model max budget keys are stamped into metadata. Call it with that flag false; do not treat a WebSocket as a user-defined route.
+  (7) Call the logging object's update_environment_variables with model "unknown", user "unknown", optional_params empty, the kwargs' litellm_params and call_type "pass_through_endpoint", then set model_call_details["litellm_call_id"] to the call id.
+  (8) Call the logging object's pre_call (B249) with input one user message "WebSocket connection", api_key "", and additional_args complete_input_dict (empty), api_base (target) and headers (the upstream headers).
+  (9) Call hooks.pre_call_hook with an empty body, call_type "pass_through_endpoint" and B3600's Generic endpoint type. Its returned map is not used. LiteLLM does not put the logging object into this body; B6510's PreCallInput carries the handle as a field, so pass it (see deviations).
+  An Err here is returned at once as PreCallHook and nothing is closed: this call sits outside the try block, and the `finally` close does not run.
+  (10) The try block. Connect with the connector (debug log "WebSocket passthrough (<endpoint>): Establishing upstream connection to <target>"), then log at info "WebSocket passthrough (<endpoint>): Upstream connection established successfully".
+  (11) Run two loops at the same time on the same task, for example with `tokio::select!` with `biased;` so the client loop is polled first, and stop when the first one finishes; the other loop is dropped (LiteLLM cancels it). Both loops touch kwargs, the logging object and websocket_messages,
+  so keep those in one shared session struct behind a `std::sync::Mutex` that is never held across an await.
+
+  Client loop (forward_client_to_upstream). Repeat: receive a client frame. Disconnect: close the upstream and end the loop with Ok. Text: when the endpoint contains "/vertex_ai/live" (substring test), log at debug, then try to read the model from the frame.
+  Parse the text as JSON; when it is an object with a "setup" key, and setup is an object with a "model" key, call B3611's resolved_vertex_live_setup (with the rewriter) and B3611's extract_model_from_vertex_ai_setup on the result.
+  A model found: kwargs["model"] = it, kwargs["custom_llm_provider"] = "vertex_ai-language-models" (hyphens), logging_obj.model and model_call_details["model"] = it, model_call_details["custom_llm_provider"] = "vertex_ai", info log "WebSocket passthrough (<endpoint>): Successfully extracted model '<m>' and set provider to 'vertex_ai' from client setup message".
+  No model found: warn "WebSocket passthrough (<endpoint>): Failed to extract model from client setup data: <setup>". Setup without "model": debug "Setup data does not contain model field". Message without setup: debug "Client message does not contain setup data". A parse failure or wrong shape: debug "Client message is not a valid setup message: <error>" and go on.
+  Then send B3611's rewrite_vertex_live_setup_model(text, rewriter) upstream (this runs for every text frame, with or without a vertex endpoint, and returns the text unchanged when there is no rewriter). Binary: send the bytes upstream. Other: do nothing and read the next frame.
+  Any error in this loop (client receive error, upstream send error): log at error "WebSocket passthrough (<endpoint>): error forwarding client message" with the error, close the upstream (ignore a close error), and end the loop with Ok. This loop never reports an Err.
+
+  Upstream loop (forward_upstream_to_client). Repeat: recv one event. Closed(close): log at debug "Upstream WebSocket connection closed: <close>" and end with Ok(close). Text or Binary: send it to the client with send_text or send_bytes first, then B3611's json_object_frame on it;
+  not a JSON object: nothing more. For the endpoint containing "/vertex_ai/live", the first JSON object frame of the session (count only JSON object frames; non-JSON and non-object frames do not count) is the setup response: call B3611's extract_model_from_vertex_ai_setup on it;
+  a model found: kwargs["model"] = it, kwargs["custom_llm_provider"] = "vertex_ai_language_models" (underscores), logging_obj.model, model_call_details["model"] = it and model_call_details["custom_llm_provider"] = "vertex_ai_language_models";
+  none found: warn "WebSocket passthrough (<endpoint>): Failed to extract model from server setup response: <frame>". That first frame is never added to websocket_messages. Every other JSON object frame is appended to websocket_messages.
+  Any other error (recv failure, client send failure): debug "Exception in forward_upstream_to_client: <error>", error log "WebSocket passthrough (<endpoint>): error forwarding upstream message" with the error, and end the loop with Err(error).
+
+  After the first loop ends. If the finished loop returned Err, that error goes to the unexpected-error arm below. Otherwise take the upstream close: B3611's upstream_close_to_relay over the finished loop's value (the client loop's Ok gives none). When it is Some and B3611's client_socket_is_open is true,
+  call client.close(code, B3611's truncated_close_reason(reason)). A close error goes to the unexpected-error arm. Then end_time = now, payload.response_body = websocket_messages, payload.end_time = end_time.
+  Success logging: build an UpstreamExchange (B3607) with status 200, empty response headers, request_method WEBSOCKET, request_url = target, request_headers = the upstream headers and body Text("WebSocket connection successful").
+  Enqueue one event on the B191 worker that runs `completion.complete` with CompletionInput: upstream = that exchange, response_body = Some(List(websocket_messages)) (B3606's PassThroughResponseBody), url_route = endpoint or "", result "websocket_connection_successful", start_time, end_time,
+  the logging object, cache_hit false, request_body empty, custom_llm_provider None (the provider rides inside kwargs, as in LiteLLM's **success_kwargs), the request state (B3607's PassThroughRequestState from B3605's default PassThroughCallState and the payload) and the kwargs.
+  Right after an accepted enqueue call the binder with the logging object's litellm_params. A rejected enqueue binds nothing (B3607's deviation). Then call hooks.post_call_success_hook with an empty body, the auth record and the JSON object {"status": "websocket_connection_successful"}; its result is ignored and an Err goes to the unexpected-error arm.
+
+  Failure arms, matched in this order. (a) The connector returned Rejected: log the error with its trace at error level "WebSocket passthrough (<endpoint>): upstream rejected WebSocket connection". (b) Any other error, from connect, a loop, the close or the success hook: error log
+  "WebSocket passthrough (<endpoint>): unexpected error while proxying WebSocket". Both arms then build request_payload with B3610's build_passthrough_failure_request_payload (empty body, kwargs, logging object, no provider, no upstream usage; that is exactly LiteLLM's kwargs copy plus "litellm_logging_obj"),
+  call hooks.post_call_failure_hook with FailureCause::Other(text) (text for (a) is "server rejected WebSocket connection: HTTP <status>"; for (b) the error's text), the payload and the trace cut to MAXIMUM_TRACEBACK_LINES_TO_LOG (default 100, env var of the same name; read how B3613 cuts it),
+  then close the client if B3611's client_socket_is_open is true: (a) with code 1011 and reason "Upstream connection rejected", (b) with code 1011 and reason "WebSocket passthrough error". The carry_guardrail_logging_info step of the HTTP path is not run here.
+  Finally, always: when the client is still open, client.close(1000, ""). If the failure hook itself returned an Err, run this final close first and then return FailureHook(error).
+
+  The model and provider a Vertex frame sets in kwargs are what the failure payload and the success completion read later, so write them under the same lock the loops use.
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_lifecycle/websocket.rs
+    - crates/betterlite-server/src/pass_through_lifecycle/websocket/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2311-L2457
+    why: The signature, the start, the accept, the upstream headers, team callbacks, the logging object, the DummyRequest, kwargs, pre_call and the pre-call hook. Read the order, because later lines use what earlier ones wrote.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2458-L2538
+    why: The client loop, including the Vertex Live setup read, the provider string with hyphens and the catch-all that closes the upstream.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2539-L2591
+    why: The server setup response read (provider string with underscores), the per-frame relay that keeps the first Vertex JSON frame out of the message list, and the upstream loop with its close handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2592-L2680
+    why: First-finished wait, cancel, exception check, upstream close relay, the stand-in response, the enqueue and the reservation bind.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2680-L2735
+    why: The success hook, the two failure arms with their close codes and the finally close.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2210-L2308
+    why: "The helpers this task calls (B3611 owns them): setup model rewrite, resolved setup, JSON object frame, close reason truncation, sendable close codes, socket open test, upstream close choice, trace context."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L768-L800
+    why: _build_passthrough_failure_request_payload, which gives the WebSocket failure payload when the body is empty and no provider or usage is passed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3150-L3170
+    why: How the route tasks call the relay (OpenAI route, no rewriter, accept_websocket as the route decides).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3722-L3742
+    why: The Vertex Live call, with endpoint "/vertex_ai/live", accept_websocket false and the setup rewriter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L393-L401
+    why: bind_budget_reservation_to_callbacks, which the ReservationBinder wraps.
+dod:
+  - text: With accept_websocket true the client is accepted before anything else, with false it is not accepted, and the upstream headers hold custom_headers, x-goog-user-project only when forward_headers is true, and the trace context.
+    proof: [accept-tests]
+  - text: The logging object, kwargs, update_environment_variables, pre_call and the pre-call hook run in the stated order with the WebSocket values, and a pre-call hook error is returned as PreCallHook without closing the client.
+    proof: [setup-tests]
+  - text: Text and binary client frames reach the upstream, a client disconnect closes the upstream, and a client loop error is logged, closes the upstream and does not fail the session.
+    proof: [client-tests]
+  - text: Upstream text and binary frames reach the client unchanged, JSON object frames are kept in order, other frames are not kept, and a send failure ends the session through the unexpected-error arm.
+    proof: [upstream-tests]
+  - text: The Vertex Live setup frame is rewritten and read on the client side and on the server side with the two different provider strings, and the first JSON object frame of the session is not kept in the message list.
+    proof: [vertex-tests]
+  - text: An upstream close is relayed to the client only when it is not a plain 1000 with an empty reason and the client is still open, with the reason cut to the close frame limit, and a client disconnect relays nothing.
+    proof: [close-tests]
+  - text: A finished session enqueues one completion with the stand-in WebSocket exchange and the collected messages, binds the reservation only after an accepted enqueue, and then calls the success hook.
+    proof: [success-tests]
+  - text: A rejected upgrade and any other error call the failure hook with the merged payload, close the client with 1011 and the matching reason, always end with a close of an open client, and return a failure hook error as FailureHook after that final close.
+    proof: [fail-tests]
+checks:
+  optional: []
+  commands:
+    - id: accept-tests
+      why: the accept flag, the header merge or the trace context is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::websocket::tests::accept_/)'
+    - id: setup-tests
+      why: the logging setup order, the stand-in request values or the pre-call hook error path is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::websocket::tests::setup_/)'
+    - id: client-tests
+      why: client frames are not forwarded, a disconnect does not close the upstream, or a client loop error fails the session
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::websocket::tests::client_/)'
+    - id: upstream-tests
+      why: upstream frames are changed, the message list keeps the wrong frames, or a send failure is not routed to the failure arm
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::websocket::tests::upstream_/)'
+    - id: vertex-tests
+      why: the Vertex Live model read, the rewrite or the two provider strings are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::websocket::tests::vertex_/)'
+    - id: close-tests
+      why: the upstream close is relayed in the wrong cases, with the wrong reason, or to a closed client
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::websocket::tests::close_/)'
+    - id: success-tests
+      why: the completion event, the reservation bind order or the success hook call is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::websocket::tests::success_/)'
+    - id: fail-tests
+      why: the failure payload, the close codes, the final close or the failure hook error return is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::websocket::tests::fail_/)'
+oracle_cases: []
+deviations:
+  - what: Errors the Python lets escape are returned as WebSocketRelayError (an accept error, a pre-call hook error, a failure hook error) instead of raised.
+    why: Rust has no exceptions. The route task that calls the relay gets the same error at the same point.
+  - what: The pre-call hook input carries the logging object handle as a field, where LiteLLM's WebSocket call passes a body without it.
+    why: B6510 declares PreCallInput with the handle for the HTTP path, and the handle is not part of any upstream message. A guardrail that reads it sees one it would not see in LiteLLM.
+  - what: When both loops are ready at the same instant, only the client loop's result is looked at.
+    why: asyncio.wait can report both tasks done and LiteLLM then checks both for errors. A single select cannot, and the dropped loop's error would be lost only in a race that has no observable order.
+out_of_scope:
+  - "create_websocket_passthrough_route (L2159-L2207) is not built: its only caller is create_generic_websocket_passthrough_endpoint in llm_passthrough_endpoints.py, which nothing calls at the pin. No caller at the pin."
+  - "rewrite_vertex_live_setup_model, resolved_vertex_live_setup, json_object_frame, truncated_close_reason, SENDABLE_CLOSE_CODES, client_socket_is_open, upstream_close_to_relay and extract_model_from_vertex_ai_setup belong to B3611; with_trace_context, resolve_team_callback_wiring, init_kwargs_for_pass_through_endpoint and build_passthrough_failure_request_payload to B3610. This task only calls them."
+  - "The success completion, UpstreamExchange, PassThroughRequestState, ReservationBinder and PassThroughSuccessCompletion belong to B3607; PassThroughCallState to B3605; the ProxyHooks trait, FailureCause and PassThroughError to B6510."
+  - "The route functions, their auth (user_api_key_auth_websocket), model allowlists, the Vertex Live credentials and upstream URL belong to B3628 and B3629, and the registration to B3616."
+  - "ProxyLogging.pre_call_hook, post_call_success_hook and post_call_failure_hook are reached through B6510's trait. Their real implementations have no owner in this task."
+  - "The production ClientSocket (axum) and UpstreamConnector (tokio-tungstenite) adapters are not built here; a task that wires the routes must supply them."
+pitfalls:
+  - "The two Vertex provider strings differ on purpose: the client setup read writes kwargs custom_llm_provider as vertex_ai-language-models (hyphens) and model_call_details as vertex_ai, the server setup response read writes vertex_ai_language_models (underscores) to both. Keep both, because the later one wins."
+  - "The first JSON object frame from the upstream is consumed as the setup response for a /vertex_ai/live endpoint and is not in websocket_messages. The counter counts only JSON object frames, so a leading binary or non-JSON frame does not use it up."
+  - "The frame is sent to the client before it is parsed, so a frame that fails to parse still reaches the client."
+  - "websockets 15.0.1 InvalidStatus has a response and no status_code attribute, so LiteLLM's getattr(exc, 'status_code', 1011) always gives 1011. Close with 1011 for a rejected upgrade, whatever the upstream status was."
+  - "The failure hook runs before the failure close. If the hook fails, the close with 1011 never happens and only the final close(1000) runs, and the hook error still comes out."
+  - "The final close uses code 1000 and an empty reason, and only when the client is still open. B3611's open test needs both the client-side and the application-side state to be connected, so a socket that is already closed on either side is not closed again."
+  - "A client disconnect ends the client loop first, so the upstream loop is dropped and its Closed value is never looked at. No close is relayed to a client that is gone."
+  - "A plain upstream close (code 1000, empty reason) is not relayed, so the client is closed by the final close(1000) instead. An upstream close with code 1005, 1006 or 1015 is not relayed either; a code from 3000 to 4999 is."
+  - "The pre-call hook runs outside the try block. An error from it leaves the client open and unclosed, and no failure hook runs."
+  - "The success hook runs after the completion is enqueued and the reservation bound. If the hook fails, the failure arm also runs, so a session can log a success and a failure."
+  - "The stand-in response has no custom_llm_provider argument; the provider lives in the kwargs the completion gets. Passing it as the argument too would change which value B3606 reads."
+  - "The upstream headers are a plain dict with exact-case keys, so merge them without case folding. Only the x-goog-user-project test lowercases the incoming name."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

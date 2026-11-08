@@ -2,8 +2,8 @@ id: B4726
 milestone: M9 agents and mcp
 title: MCP REST acting identity, headers and server access
 status: todo
-depends_on: [B4713, B4715, B743, B732]
-file: null
+depends_on: [B732, B4654, B4667, B4672, B4713, B4715, B4731, B6590, B6591, B6592]
+file: tasks/B4726-mcp-rest-acting-identity.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/rest_endpoints.py"
 parent: B139

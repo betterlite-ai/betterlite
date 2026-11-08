@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use betterlite_config::sections::mock_response::selection::{MockPlan, resolve_mock};
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, StreamResponse, UpstreamResponse};
@@ -10,10 +11,14 @@ use rand::rngs::StdRng;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value};
 use thiserror::Error;
+use uuid::Uuid;
 
+use super::{client_mock, mock_model};
 use crate::chat::deployment::{ChatDeployment, Provider};
 use crate::chat::response::ChatResponse;
-use crate::chat::{ChatRequest, RequestError};
+use crate::chat::{
+    ChatRequest, MockChatBuilder, MockEmbeddingBuilder, MockSettings, RequestError, mock_failure,
+};
 use crate::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
 };
@@ -70,6 +75,11 @@ pub struct ChatExecutor {
     pub deployments: Vec<ChatDeployment>,
     pub catalog: CatalogCapabilities,
     pub random: Mutex<StdRng>,
+    pub clock: fn() -> u64,
+    pub next_id: fn() -> Uuid,
+    pub mock: MockSettings,
+    pub mock_chat: MockChatBuilder,
+    pub mock_embedding: MockEmbeddingBuilder,
 }
 
 impl ChatExecutor {
@@ -80,6 +90,18 @@ impl ChatExecutor {
     ) -> Result<ChatOutcome, ChatError> {
         if request.stream {
             return Err(ChatError::Streaming);
+        }
+        let (client_response, client_tool_calls) =
+            client_mock(&request.passthrough, self.mock.permission)
+                .map_err(|source| ChatError::from(RequestError::Body { source }))?;
+        let resolved = resolve_mock(
+            self.mock.responses.get(&deployment.model_id),
+            client_response.as_ref(),
+            client_tool_calls.as_deref(),
+            request.choice_count,
+        );
+        if let Some(plan) = resolved {
+            return self.mocked_outcome(&plan, deployment, request);
         }
         let outbound = self.outbound(deployment, request, "application/json")?;
         let started = Instant::now();
@@ -101,6 +123,32 @@ impl ChatExecutor {
             response: decoded.for_client(request.model.as_deref()),
             upstream,
             upstream_time,
+        })
+    }
+
+    fn mocked_outcome(
+        &self,
+        plan: &MockPlan<'_>,
+        deployment: &ChatDeployment,
+        request: &ChatRequest,
+    ) -> Result<ChatOutcome, ChatError> {
+        let id = format!("chatcmpl-{}", (self.next_id)());
+        let response = (self.mock_chat)(
+            plan,
+            self.mock.usage,
+            mock_model(&deployment.litellm_model),
+            &id,
+            (self.clock)(),
+        )
+        .map_err(mock_failure)?;
+        Ok(ChatOutcome {
+            response: response.for_client(request.model.as_deref()),
+            upstream: UpstreamResponse {
+                status: 200,
+                headers: HeaderMap::new(),
+                body: Vec::new(),
+            },
+            upstream_time: Duration::ZERO,
         })
     }
 
@@ -168,6 +216,9 @@ impl ChatExecutor {
             .unwrap_or(Value::Array(Vec::new()));
         requested.remove("model");
         requested.remove("stream");
+        // the mock control fields are read here and never reach the provider
+        requested.remove("mock_response");
+        requested.remove("mock_tool_calls");
         let (known, forwarded): (Map<String, Value>, Map<String, Value>) = requested
             .into_iter()
             .partition(|(name, _)| KNOWN_PARAMS.split(' ').any(|known| known == name));

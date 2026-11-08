@@ -18,6 +18,7 @@ pub mod cometapi_iterator;
 pub mod compatible_chat_call;
 pub mod compatible_embedding_call;
 pub mod compatible_providers;
+pub mod compatible_providers_m_z;
 pub mod databricks_auth;
 pub mod databricks_chat;
 pub mod databricks_cost;

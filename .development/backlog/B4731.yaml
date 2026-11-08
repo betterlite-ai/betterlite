@@ -1,10 +1,11 @@
 id: B4731
 milestone: M9 agents and mcp
-title: MCP manager and auth-context helpers
+title: MCP server registry reads and server resolution
 status: todo
-depends_on: [B4711, B732]
-file: null
-covers: []
+depends_on: [B6590, B743, B858, B4682, B4672, B6594]
+file: tasks/B4731-mcp-server-registry-reads.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/server_resolution.py"
 parent: B139
 split_from: B139
 resolution: null

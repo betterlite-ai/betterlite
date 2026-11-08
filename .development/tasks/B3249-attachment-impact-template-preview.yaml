@@ -1,0 +1,292 @@
+id: B3249
+title: Attachment impact and template guardrail previews
+description: >-
+  Build two management routes that preview a change before it is made, both in betterlite-server. POST `/policies/attachments/estimate-impact`
+  counts the keys and teams a policy attachment would reach. POST `/policy/templates/test` runs a policy template's guardrail definitions
+  against one text and reports what each would do. Neither route writes anything. B3242 gives the request and response records
+  (`PolicyAttachmentCreateRequest`, `AttachmentImpactResponse`) in betterlite-policy. B722 and B724 give the key and team table handles in
+  betterlite-db, built on B700's `find_many`. B882 gives the wildcard matcher `route_matches_wildcard_pattern`. B865 gives the
+  `management_endpoint_wrapper` equivalent and B2400 gives `handle_exception_on_proxy`. B732, B855 and B756 own auth. Use the names and
+  types as they exist when you start and re-implement none of them. B3250 owns `/policies/resolve` in the same LiteLLM file and B3252 owns
+  the other `/policy/templates/...` routes; do not touch their code.
+
+  Part 1, attachment impact. Code goes in crates/betterlite-server/src/attachment_impact.rs and attachment_impact/. Files: matching.rs,
+  store.rs, estimate.rs, request.rs, route.rs, error.rs and tests.rs. `AttachmentImpactError` is a `thiserror` enum in error.rs. The
+  service struct `AttachmentImpact` takes the key table handle, the team table handle and `row_limit: u32` through its constructor, and the
+  route state takes `Option<AttachmentImpact>` (None stands for LiteLLM's `prisma_client is None`). No module-level state.
+
+  Row limit. LiteLLM's `MAX_POLICY_ESTIMATE_IMPACT_ROWS` (constants.py L1885) is the env var of that name, default 1000. Add
+  `row_limit_from_env(value: Option<&str>) -> Result<u32, AttachmentImpactError>` in estimate.rs: unset is 1000, a non-integer or negative
+  text is an error (LiteLLM's `int()` fails at import). The caller reads the env var and passes the text. Every table read below uses
+  this as `take`, ordered by `created_at` descending. That means counts are over the newest `row_limit` rows, not over all rows.
+
+  Matching (matching.rs, pure functions, tested without a database). `route_matches_wildcard_pattern(route, pattern)` is B882's: a
+  pattern ending in `*` is a prefix test on everything before the star, any other pattern is equality, both case-sensitive.
+  - `parse_metadata(raw)` (L67-L76): null gives an empty object, a string is parsed as JSON and a parse failure gives an empty object, an
+    object is kept, anything else is an empty object.
+  - `tags_of(metadata)` (L79-L83): parse the metadata (this schema has no `metadata_json` column, so only `metadata` is read), take its
+    `tags` value, and use an empty list when it is missing, null or empty. Only an array's string elements count (see deviations).
+  - `filter_by_tags(rows, tag_patterns)` (L95-L117 for keys, L120-L142 for teams): for each row in the given order, take its alias (empty
+    when null). If the row has at least one tag and any tag matches any pattern, then a non-empty alias is pushed to the named list and an
+    empty alias adds one to the unnamed count. Return `(named, unnamed)`. The named list keeps duplicates and row order. Keys read the tags
+    from the key's `metadata`; teams read them from the team's `metadata`.
+  - `alias_filter(field, patterns)` (L40-L64): build the database filter. Patterns that end in `*` become a starts-with test on the text
+    before the star; the others are collected into one `in` list. The conditions are the `in` test first (when any exact pattern exists)
+    and then each starts-with test in pattern order. One condition is used alone, several are joined with OR, and none gives "the field is
+    not null". Starts-with is case-sensitive and a `%`, `_` or backslash in the prefix is literal, so build it with bound parameters and
+    escape the three characters, never by pasting text into SQL.
+
+  Store (store.rs, the three reads over B722 and B724). `all_teams()` reads teams with no filter. `all_keys()` reads keys with no filter.
+  `keys_in_teams(team_ids)` reads keys where `team_id` is in the list. `keys_by_alias(patterns)` reads keys with `alias_filter("key_alias",
+  patterns)`. All four order by `created_at` descending and take `row_limit`. Rows are raw (B722 and B724 raw reads), so `metadata` may be
+  a JSON string or an object and `matching.rs` decodes it. Database errors propagate as `AttachmentImpactError`.
+
+  Estimate (estimate.rs, `AttachmentImpact::estimate(request) -> Result<AttachmentImpactResponse, AttachmentImpactError>`), steps in this
+  order, copying `estimate_attachment_impact` (L323-L425):
+  1. `scope == "*"` returns at once, without reading the database: `affected_keys_count` -1, `affected_teams_count` -1,
+     `unnamed_keys_count` and `unnamed_teams_count` left at their default 0, `sample_keys` the one string `(global scope`, a space,
+     an em dash (U+2014), a space, `affects all keys)`, and `sample_teams` the same with `teams` in place of `keys`. Any other scope, or
+     none, continues.
+  2. `tag_patterns` is `tags` or empty and `team_patterns` is `teams` or empty. When either is non-empty, read `all_teams()` once and
+     reuse it in steps 3 and 4.
+  3. Tags, when `tag_patterns` is non-empty: read `all_keys()`, run `filter_by_tags` on the keys to get `affected_keys` and
+     `unnamed_keys`, and on the teams to get `affected_teams` and `unnamed_teams`.
+  4. Team patterns, when `team_patterns` is non-empty (L145-L185). Walk the teams read in step 2 in order. A team whose alias is
+     non-empty, matches any team pattern, and is not already in `affected_teams` (the list as it stands after step 3, not updated while
+     walking) is pushed to `new_teams`, and its `team_id` text to the matched ids. A repeated alias in the rows is pushed twice. When any
+     id matched, call `keys_in_teams(ids)`: a key with a non-empty alias that is not in `affected_keys` (the list after step 3) is pushed
+     to `new_keys`; a key with an empty alias adds one to the unnamed count, even if step 3 already counted it. Then extend
+     `affected_teams` with `new_teams`, `affected_keys` with `new_keys` and add the unnamed count to `unnamed_keys`.
+  5. Key patterns, when `keys` is non-empty (L188-L212): call `keys_by_alias(patterns)`, and keep each row whose alias is non-empty,
+     matches any key pattern and is not in `affected_keys` (the list after step 4). Extend `affected_keys` with them. Keys with no alias
+     are not counted in this step.
+  6. Return `affected_keys_count` = named keys + `unnamed_keys`, `affected_teams_count` = named teams + `unnamed_teams`, both unnamed
+     counts, and `sample_keys` and `sample_teams` as the first 10 entries of each named list. A request with only `models`, or with no
+     pattern field at all, returns zeros and empty samples after reading nothing.
+
+  Route (route.rs). POST `/policies/attachments/estimate-impact`, tag `Policies`, response model `AttachmentImpactResponse`, in the
+  standard authenticated group (B855 and B756 own the auth; LiteLLM's read-only admin viewer list holds only `/policies/attachments/list`,
+  so this route gets no special case). Order of answers: shared 422 for a body that fails the decoder, then, with no database, HTTP 500
+  with `detail` `Database not connected` (this applies to a global-scope request too), then the estimate. Any other failure is HTTP 500
+  with `detail` set to the error text, and the failure is logged at error level with the text `Error estimating attachment impact: <error>`.
+  This route does not use `handle_exception_on_proxy`; its errors are FastAPI-style `{"detail": ...}`. `request.rs` has
+  `decode_impact_request(bytes: &[u8]) -> Result<PolicyAttachmentCreateRequest, ImpactRequestError>`: a JSON object where `policy_name`
+  is a required string, `scope` is a string or null, `teams`, `keys`, `models` and `tags` are arrays of strings or null, `priority` is an
+  integer from -2147483648 to 2147483647 or null, `default` is a boolean (default false), and unknown fields are ignored.
+
+  Part 2, template preview. Code goes in crates/betterlite-server/src/template_preview.rs and template_preview/. Files: run.rs,
+  overall.rs, request.rs, route.rs, error.rs and tests.rs. LiteLLM instantiates a `ContentFilterGuardrail` for each definition. Its
+  constructor and its `apply_guardrail` wrapper have no planned Rust owner yet (B3695 owns only `_filter_single_text`), so this task
+  does not build a content filter. It defines the port the production adapter will implement, in run.rs:
+  `trait ContentFilterRunner { async fn run(&self, params: &ContentFilterParams, text: &str) -> Result<Vec<String>, RunFailure>; }`.
+  `ContentFilterParams` holds `guardrail_name: String`, `patterns`, `blocked_words` and `categories` as optional `serde_json::Value`
+  (passed through untouched, the content filter's own constructor validates them), `pattern_redaction_format: Option<String>` and
+  `default_on: bool`. The runner makes a filter from these, with an empty `request_data` and input type `request`, runs it on the one
+  text, and returns the resulting `texts`. `RunFailure` has `Blocked { detail: serde_json::Value }` for LiteLLM's HTTPException and
+  `Failed { message: String }` for any other error. The service struct `TemplatePreview` takes the runner through its constructor.
+  Tests use a fake runner.
+
+  `preview(definitions, text) -> Vec<GuardrailTestResultEntry>` copies `_test_guardrail_definitions` (L1174-L1255). For each definition in
+  order:
+  - `guardrail_name` is the definition's `guardrail_name` or `unknown`. `litellm_params` is the definition's `litellm_params` or an
+    empty object. `guardrail_type` is `litellm_params.guardrail` or an empty string.
+  - A type other than `litellm_content_filter` gives an entry with action `unsupported`, `output_text` the input text, and `details`
+    `Preview not available for guardrail type: <type>` (an empty type leaves the text ending after the colon and space).
+  - Otherwise build `ContentFilterParams` from `litellm_params`: `patterns`, `blocked_words`, `categories` and
+    `pattern_redaction_format` as given or absent, and `default_on` (default false). Only those five keys are passed. `guardrail_id`,
+    `policy_template`, `severity_threshold`, `event_hook`, `blocked_words_file`, `image_model` and `competitor_intent_config` in the
+    params are ignored, so the constructor defaults apply to them.
+  - Run it. On `Ok(texts)`, `output_text` is the first element when the list is non-empty, else the input text. When `output_text` differs
+    from the input the action is `masked` with details `Content was modified (masked)`, else `passed` with details `No issues detected`.
+  - `RunFailure::Blocked` gives action `blocked`, `output_text` empty, and `details` the detail's string `error` member when the detail
+    is an object that has one, else the detail as a string (JSON text for an object without a string `error`).
+  - `RunFailure::Failed` gives action `error`, `output_text` the input text, `details` the message.
+  - One definition's failure never stops the others, and the results keep definition order.
+
+  `overall_action(results)` (overall.rs, L1258-L1265) returns the worst action by priority blocked 4, masked 3, error 2, unsupported 1,
+  passed 0, starting from `passed`, with a later entry replacing the current only when strictly greater. An empty list is `passed`.
+
+  Route (route.rs). POST `/policy/templates/test`, tag `policy management`, in the standard authenticated group, wrapped once with B865's
+  management wrapper as LiteLLM's `@management_endpoint_wrapper` does. It needs no database. The body is `guardrail_definitions` (required
+  array of objects) and `text` (required string). The answer is `{"overall_action": ..., "results": [{"guardrail_name", "action",
+  "output_text", "details"}, ...]}` with those key names and order. Any error that escapes `preview` goes through B2400's
+  `handle_exception_on_proxy`, which gives the OpenAI-style error body. `request.rs` has `decode_template_test(bytes: &[u8]) ->
+  Result<TestPolicyTemplateRequest, TemplateTestRequestError>`, shared 422 on failure.
+
+  Fuzz and corpus. One cargo-fuzz target, `preview_request`, feeds both decoders. Commit corpus inputs for malformed JSON, a wrong top-level
+  type, wrong field types, an out-of-range `priority`, a non-object definition and missing `text`.
+
+  Tests. Native tests live in `attachment_impact::tests` with prefixes `matching_`, `store_`, `estimate_`, `limit_` and `route_`, and in
+  `template_preview::tests` with prefixes `preview_`, `overall_` and `route_`; the checks filter on them. Store tests run against a real
+  Postgres through POSTGRES_TEST_URL or testcontainers and cover the starts-with escaping, the order, the take limit and the team-id
+  membership read. `estimate_` tests run the service over that same database with rows for keys with and without alias and tags, teams
+  with and without alias, tag-only, team-only, key-only and combined requests. There are no helper oracle cases: the estimate reads
+  tables and the preview needs the content filter, which a pure helper adapter cannot reach.
+
+  Oracle. HTTP cases go in tools/oracle/cases/policies/attachment-impact/ and tools/oracle/cases/policies/template-test/. They send the
+  real request to the booted proxy with the master key and no database. Compare status and body, and for 422 compare the status only (see
+  deviations). The impact cases cover the no-database 500 (scope `*` and a tags request), the 422 for a body without `policy_name` and the
+  401 without a key. The template cases cover an empty definition list, one definition of another guardrail type, a definition with no
+  `litellm_params`, two unsupported definitions in order, the 422 for a missing `text` and the 401 without a key. Cases that need a
+  working content filter are left to the task that adds the production runner; this task covers those paths with the fake runner.
+
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-server/src/attachment_impact.rs
+    - crates/betterlite-server/src/attachment_impact/**
+    - crates/betterlite-server/src/template_preview.rs
+    - crates/betterlite-server/src/template_preview/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/preview_request.rs
+    - crates/betterlite-server/fuzz/corpus/preview_request/**
+    - tools/oracle/cases/policies/attachment-impact/**
+    - tools/oracle/cases/policies/template-test/**
+    - tools/oracle/helpers/b3249.py
+    - tools/oracle/helpers/b3249/**
+    - tools/oracle/src/helpers/server/b3249.rs
+    - tools/oracle/src/helpers/server/b3249/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolve_endpoints.py#L40-L92
+    why: The alias filter builder, metadata parsing, tag extraction and the capped team read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolve_endpoints.py#L95-L142
+    why: Tag filters for keys and teams, named and unnamed counts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolve_endpoints.py#L145-L212
+    why: Team-pattern and key-alias lookups, including which list each one de-duplicates against.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolve_endpoints.py#L323-L425
+    why: The estimate-impact route from its decorator, the global-scope shortcut, the step order and the response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L558-L584
+    why: route_matches_wildcard_pattern, owned by B882 and used for every alias and tag test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1885
+    why: MAX_POLICY_ESTIMATE_IMPACT_ROWS and its default of 1000.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/resolver_types.py#L284-L318
+    why: PolicyAttachmentCreateRequest fields and the priority range.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/resolver_types.py#L413-L433
+    why: AttachmentImpactResponse fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L1123-L1171
+    why: The preview request and response shapes and the /policy/templates/test route from its decorator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L1174-L1265
+    why: The per-definition preview loop and the worst-case action ranking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1309-L1318
+    why: Shape of a BLOCK failure (HTTP 400 with a detail object that has an error member), which the preview turns into details.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L76-L91
+    why: The /policy/ and /policies/attachments/estimate-impact prefixes that load these routes.
+
+dod:
+  - text: >-
+      Wildcard matching, metadata decoding and tag extraction behave as LiteLLM: a trailing star is a case-sensitive prefix test, other
+      patterns are equality, a JSON-string metadata is decoded, bad JSON or a non-object gives no tags, and only an array of strings counts.
+    proof: [matching-tests]
+  - text: >-
+      The alias filter builds an in-list for exact patterns and starts-with tests for star patterns, in LiteLLM's order, treats `%`, `_` and
+      backslash in a prefix as literal, and reads rows newest first up to the row limit.
+    proof: [store-tests]
+  - text: >-
+      The estimate returns -1 counts and the two global-scope sample strings for scope `*` without reading the database, and zeros for a
+      request with no tags, teams or keys.
+    proof: [estimate-tests]
+  - text: >-
+      The tag, team and key steps run in LiteLLM's order with its de-duplication quirks: each step compares against the list as it stood
+      after the previous step, repeated aliases are kept, unnamed keys of matched teams are always counted, and samples hold the first 10.
+    proof: [estimate-tests]
+  - text: >-
+      The row limit defaults to 1000, reads MAX_POLICY_ESTIMATE_IMPACT_ROWS text, and rejects a non-integer or negative value.
+    proof: [estimate-tests]
+  - text: >-
+      The estimate-impact route answers 422 for a bad body, 500 `Database not connected` with no database (also for scope `*`), and 500
+      with the error text for a database failure.
+    proof: [impact-route-tests, oracle]
+  - text: >-
+      The preview gives `unsupported` with LiteLLM's text for any guardrail type other than litellm_content_filter, including a missing
+      type, and keeps definition order.
+    proof: [preview-tests, oracle]
+  - text: >-
+      The preview maps a runner result to `passed`, `masked`, `blocked` (empty output text, the detail's `error` member as details) or
+      `error` (input text, the message), one definition at a time, and passes only the five content filter params.
+    proof: [preview-tests]
+  - text: >-
+      overall_action ranks blocked over masked over error over unsupported over passed, and an empty list is `passed`.
+    proof: [preview-tests]
+  - text: >-
+      POST /policy/templates/test answers with overall_action and results in LiteLLM's key order, needs no database, and answers 422 for a
+      missing `text` or a non-array `guardrail_definitions`.
+    proof: [template-route-tests, oracle]
+  - text: >-
+      Both request decoders reject malformed bytes and wrong shapes without panicking and have committed corpus inputs.
+    proof: [request-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: matching-tests
+      why: wildcard matching, metadata decoding or tag extraction is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^attachment_impact::.*tests::matching_/)'
+    - id: store-tests
+      why: an alias filter, the escaping, the ordering or the row limit read is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^attachment_impact::.*tests::store_/)'
+    - id: estimate-tests
+      why: the estimate steps, their de-duplication, the global shortcut or the row limit setting is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^attachment_impact::.*tests::(estimate_|limit_)/)'
+    - id: impact-route-tests
+      why: the estimate-impact route, its validation or its no-database answer is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^attachment_impact::.*tests::route_/)'
+    - id: preview-tests
+      why: the per-definition preview, its action mapping or the overall ranking is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^template_preview::.*tests::(preview_|overall_)/)'
+    - id: template-route-tests
+      why: the template test route, its body validation or its response shape is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^template_preview::.*tests::route_/)'
+    - id: request-corpus
+      why: the request decoders have no committed malformed-input regressions or no replay test
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/preview_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_preview_request_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/policies/attachment-impact/no-database-500.yaml
+  - tools/oracle/cases/policies/attachment-impact/global-scope-no-database-500.yaml
+  - tools/oracle/cases/policies/attachment-impact/missing-policy-name-422.yaml
+  - tools/oracle/cases/policies/attachment-impact/no-auth-401.yaml
+  - tools/oracle/cases/policies/template-test/empty-definitions.yaml
+  - tools/oracle/cases/policies/template-test/unsupported-type.yaml
+  - tools/oracle/cases/policies/template-test/missing-litellm-params.yaml
+  - tools/oracle/cases/policies/template-test/two-unsupported-in-order.yaml
+  - tools/oracle/cases/policies/template-test/missing-text-422.yaml
+  - tools/oracle/cases/policies/template-test/no-auth-401.yaml
+
+deviations:
+  - what: The 422 body for a bad request body uses the server's shared validation response and wording, not FastAPI's `loc` and `msg` strings. Status 422 matches.
+    why: Every route in the server shares one validation response.
+  - what: A `tags` value in key or team metadata that is not an array, and array elements that are not strings, are ignored. LiteLLM iterates a string tag value by character and fails with HTTP 500 on a non-string element.
+    why: No working setup relies on either result (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolve_endpoints.py#L79-L83).
+  - what: A definition in `guardrail_definitions` whose `guardrail_name` or `litellm_params.guardrail` is not a string, whose `litellm_params` is not an object, or whose `default_on` is not a boolean is HTTP 422. LiteLLM calls `.get` on the value and answers 500 with an AttributeError text.
+    why: A 500 from an unhandled exception on malformed input belongs to 4xx (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L1174-L1195).
+  - what: The content filter is reached through the `ContentFilterRunner` port, not constructed inside the route.
+    why: The constructor and `apply_guardrail` wrapper have no Rust owner yet, and the port keeps this task testable until one lands.
+
+out_of_scope:
+  - "B3250 owns resolve_policies_for_context, POST /policies/resolve (policy_resolve_endpoints.py L215-L320) and the module's router and imports."
+  - "B3252 owns POST /policy/templates/enrich and its stream; B3253 owns GET /policy/templates and POST /policy/templates/suggest; B3251 and B3250 own the other endpoints.py routes (apply_policies, validate, list, info, match)."
+  - "B3242 owns PolicyAttachmentCreateRequest and AttachmentImpactResponse; B722 and B724 own the key and team table handles; B700 owns find_many; B882 owns route_matches_wildcard_pattern."
+  - "The ContentFilterGuardrail constructor (content_filter.py L210-L330) and apply_guardrail (L1874-L1955) have no owner at the time of writing; B3695 owns _filter_single_text only. The production ContentFilterRunner adapter belongs to whoever takes them."
+  - "B865 owns management_endpoint_wrapper and B2400 owns handle_exception_on_proxy; this task calls them."
+  - "PolicyAttachmentCreateRequest validation of `policy_name` existence is not done by this route: LiteLLM never looks the policy up when estimating."
+
+pitfalls:
+  - "Scope `*` is checked before any database read, but the `Database not connected` 500 comes first, so with no database even a global-scope request is 500."
+  - "The global-scope answer leaves `unnamed_keys_count` and `unnamed_teams_count` at 0 and puts an em dash (U+2014) in both sample strings; copy the bytes exactly."
+  - "Tag matching tests every tag of a row against every pattern, and a row with no tags never counts, even for pattern `*`."
+  - "The team step compares an alias only against `affected_teams` as it was after the tag step, so two teams with the same alias both enter `new_teams`, and a team already found by tag is skipped along with its keys."
+  - "Unnamed keys of matched teams add to `unnamed_keys` without checking whether the tag step counted the same key, so the count can exceed the number of distinct keys."
+  - "The key-alias step re-checks each returned row with the wildcard matcher, and only the trailing `*` is a wildcard: `dev-*-x` is an exact pattern."
+  - "Counts come from at most `row_limit` newest rows per read, so a large deployment under-counts; that is LiteLLM's behavior and the response does not say so."
+  - "Starts-with in the database is case-sensitive and the prefix must be escaped for `%`, `_` and backslash, or `dev_*` would also match `devX`."
+  - "The preview passes only patterns, blocked_words, categories, pattern_redaction_format and default_on; `severity_threshold` and `competitor_intent_config` in the definition do nothing."
+  - "A blocked entry has an empty `output_text`, while an `error` entry keeps the input text; the two are easy to swap."
+  - "`/policy/templates/test` works without a database; only the impact route checks for one."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

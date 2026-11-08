@@ -71,6 +71,8 @@ description: >-
   (B5471), and pass the same `Option<&str>` to the recorder and to every translation call. B6161 and B6164 take it
   from B3661's trait argument.
 
+  Global skip flags. B3680 owns the config section `guardrail_message_skip` (crates/betterlite-config/src/sections/guardrail_message_skip.rs) with `Settings { skip_system_message: bool, skip_tool_message: bool }`, both default false. It reads the `litellm_settings` keys `skip_system_message_in_guardrail` and `skip_tool_message_in_guardrail`. LiteLLM sets them as module attributes of litellm (defaults False, litellm/__init__.py L238-L239) and reads them only in `effective_skip_system_message_for_guardrail` and `effective_skip_tool_message_for_guardrail` (llms/base_llm/guardrail_translation/utils.py L194-L209, B3663's), each as `bool(...)` when the guardrail's own value is None. Where the pinned code reads the same module attribute elsewhere (the registry's scoping check in guardrail_registry.py) B3682 takes it as its `global_skip_tool_message` argument. B3680 gives both values to the hooks: `UnifiedGuardrailHooks` is built with `skip_defaults: GuardrailSkipDefaults { system: bool, tool: bool }` filled by the server from `config.sections.guardrail_message_skip`, and the same `tool` value is what the server passes to B3682's `InMemoryGuardrailHandler::new` as `global_skip_tool_message`. In `pre_call` and `moderation`, the hook resolves the two flags with B3663's effective functions (the guardrail's own scoping value when set, else the default) and passes them in the per-call context to the translation's `process_input_messages`. Nothing else in betterlite reads the two keys.
+
   HTTP oracle cases. Each case boots both gateways with a `litellm_content_filter` guardrail (B3693, no network)
   that blocks a fixed word, sends the request, and compares status, error body, headers and the upstream request.
   Put them in tools/oracle/cases/guardrails/unified-lifecycle/. One file per case, named in oracle_cases below: chat pre-call block and mask, chat post-call block, chat during-call block,
@@ -84,6 +86,8 @@ scope:
   paths:
     - crates/betterlite-server/src/guardrails/unified_guardrail.rs
     - crates/betterlite-server/src/guardrails/unified_guardrail/**
+    - crates/betterlite-config/src/sections/guardrail_message_skip.rs
+    - crates/betterlite-config/src/sections/guardrail_message_skip/**
     - tools/oracle/cases/guardrails/unified-lifecycle/**
     - tools/oracle/helpers/b3680.py
     - tools/oracle/helpers/b3680/**
@@ -114,6 +118,8 @@ dod:
     proof: [recorder-tests, oracle]
   - text: The post-call hook resolves the call type in the order route, response kind, logging call type, warns and returns the response when unresolved or unmapped, and sets `original_response` on a block.
     proof: [post-call-tests, oracle]
+  - text: The guardrail_message_skip section reads litellm_settings.skip_system_message_in_guardrail and skip_tool_message_in_guardrail as booleans that default to false, and the pre-call and moderation hooks use them only when the guardrail's own value is unset.
+    proof: [skip-defaults-tests]
   - text: Pre-call, during-call and post-call blocks and masks reach clients through the booted proxy with the same status, error body and headers as LiteLLM on the endpoint families the cases cover.
     proof: [oracle, http-case-corpus]
 
@@ -138,6 +144,9 @@ checks:
     - id: post-call-tests
       why: the call type order, a warning path or the original_response handling is missing
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_guardrail::hooks::tests::post_call_/)'
+    - id: skip-defaults-tests
+      why: the two global skip flags are not read from litellm_settings or do not reach the hooks
+      run: cargo nextest run --locked -p betterlite-config -p betterlite-server --no-tests=fail -E 'test(/^(sections::guardrail_message_skip::|guardrails::unified_guardrail::hooks::tests::skip_)/)'
     - id: http-case-corpus
       why: the HTTP cases are not added in this change
       run: >-
@@ -185,6 +194,7 @@ pitfalls:
   - MCP call types use the pre_mcp_call and during_mcp_call events; every other call type uses pre_call and during_call.
   - The sync `llm_passthrough_route` call type has no entry and must stay that way.
   - The cases use the content filter guardrail only, so they need no network beyond the mock provider.
+  - "The global skip flags are `litellm_settings` keys, not environment variables, and a guardrail's own value of false still beats a global true: only an unset (None) own value falls back to the global."
 
 review_level: security
 

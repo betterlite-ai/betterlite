@@ -2,7 +2,7 @@ id: B5834
 milestone: M3 providers
 title: Perplexity provider
 status: todo
-depends_on: [B6120, B2202, B006, B506, B507, B508, B3270, B3511]
+depends_on: [B6120, B2202, B006, B506, B507, B508, B3270, B3276, B3511]
 file: tasks/B5834-perplexity-provider.yaml
 covers:
   - "litellm/llms/perplexity/embedding/**"

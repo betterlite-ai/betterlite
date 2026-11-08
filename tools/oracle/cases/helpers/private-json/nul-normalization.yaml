@@ -1,0 +1,1 @@
+{kind: helper, name: nul-normalization, call: {private_json: {function: structure, data: {"ke\u0000y": "va\u0000lue", "list": ["a\u0000b", {"deep\u0000": "x\u0000"}]}}}, env: {}, compare: {ignore: []}}

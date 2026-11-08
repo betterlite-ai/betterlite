@@ -2,8 +2,8 @@ id: B4788
 milestone: M9 agents and mcp
 title: Prepare A2A forwarding and route agent model names
 status: todo
-depends_on: [B4770, B4780, B4782, B009, B173, B732, B1105]
-file: null
+depends_on: [B6950, B4770, B4780, B4782, B3501, B009, B173, B732, B1105]
+file: tasks/B4788-a2a-forwarding-routing.yaml
 covers:
   - "litellm/proxy/agent_endpoints/a2a_endpoints.py"
   - "litellm/proxy/agent_endpoints/a2a_routing.py"

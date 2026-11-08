@@ -1,0 +1,101 @@
+id: B6560
+title: Guardrail form field projection and core provider forms
+description: >-
+  Build the part of GET /guardrails/ui/provider_specific_params that turns a provider's settings model into the form field dictionary the dashboard draws. LiteLLM does it by reflecting over Pydantic classes. Rust has no such reflection, so a model's fields are written down once as data, and one projection function turns that data into the same JSON LiteLLM sends. Everything goes in crates/betterlite-server/src/guardrails/provider_forms.rs and provider_forms/. B6561 and B6562 add the tables for the other providers and B3684 serves the route.
+
+  Types, in `spec.rs`. `FormModel { ui_friendly_name: Option<&'static str>, fields: Vec<FormField> }`. `FormField { name: &'static str, description: Option<&'static str>, required: bool, shape: FormShape, default: Option<serde_json::Value>, extra: FormExtra }`. `FormShape` is the declared Python type after Optional is removed: `Text`, `Number` (int and float), `Boolean`, `Mapping { keys: Vec<Value>, value: Box<FormShape> }` (`keys` is the Literal values of the key type, empty when the key type is not a Literal), `List { options: Vec<Value> }` (the Literal values of the element type, empty otherwise), `Choice(Vec<Value>)` (a Literal), `Nested(Box<FormModel>)`, `RawObject`, `RawList` and `Other` (any type LiteLLM does not know, which becomes text). `FormExtra` holds what LiteLLM reads from `json_schema_extra`: `ui_type: Option<String>`, `type_override: Option<String>`, `options: Option<Vec<Value>>`, `min`, `max`, `step` and `default_value`, each optional. A field whose annotation is a TypeVar that was never filled in is simply left out of the table.
+
+  Projection, in `project.rs`: `project_model(model: &FormModel, max_depth: usize) -> Result<serde_json::Map<String, Value>, FormError>`, with `FormError` a thiserror enum in `error.rs`. It follows `_extract_fields_recursive`, `_build_field_dict` and the helpers around them (L1621-L1907). Per field: `description` is the declared description or the field name. A `Nested` field becomes `{description, required, type: "nested", fields: <recursive>}`. Any other field becomes `{description, required, type}` where type comes from the shape: Text "string", Number "number", Boolean "boolean", Mapping "dict", List "array", Choice "select", RawObject "object", RawList "array", Other "string". Then in this order: `ui_type` replaces the type, else `type_override` does; a "dict" gets `dict_key_options` when keys are not empty and always `dict_value_type` (the value shape's type string, "string" when the value shape is Other); an "array" with options gets `options` and the type "multiselect"; `extra.options` wins over those, else a "select" gets the Choice values as `options`; `default_value` is the default when it is present and not null; then `min`, `max`, `step` and `default_value` from `extra` overwrite when set. The recursion depth limit is the `max_depth` argument (B3684 passes the value of the env var `DEFAULT_MAX_RECURSE_DEPTH`, default 100): a model nested deeper gives `FormError::TooDeep { limit }`, which B3684 turns into HTTP 400 with "Max depth of {limit} exceeded while processing model fields. Please check the model structure for excessive nesting.".
+
+  Tables, in `core_tables.rs`: `pub fn core_tables() -> Vec<(&'static str, FormModel)>` returning the registry key and the model for the providers the route names itself: `bedrock` (BedrockGuardrailConfigModel fields, then BedrockGuardrailStreamingParams fields merged into the same map, later key wins), `presidio` (PresidioPresidioConfigModelUserInterface), `lakera_v2` (LakeraV2GuardrailConfigModel), `tool_permission` (ToolPermissionGuardrailConfigModel, with `ui_friendly_name` added as a plain string entry) and `hide-secrets` (the wire value of SupportedGuardrailIntegrations.HIDE_SECRETS, HideSecretsGuardrailConfigModel, also with `ui_friendly_name`). The Bedrock `checks` field is nested (BedrockChecksConfigModel); write that model out too. Read each class for its exact descriptions, defaults and Literal values. The two `ui_friendly_name` entries sit beside the fields, so `project_model` output for these models is merged with `{"ui_friendly_name": "<name>"}` by a `with_friendly_name` function in `project.rs`; the same function is used by B6561, B6562 and B3684 for every model that has a name.
+
+  Oracle: the helper operation for this task takes `model`. Names of real models (`bedrock`, `presidio`, `lakera_v2`, `tool_permission`, `hide-secrets`) make the Python side call `_get_fields_from_model` on the real classes (merge and friendly name as the route does); Rust projects its table. The Python adapter also defines fixed synthetic Pydantic classes the real models do not cover, and the Rust adapter builds the same specs by hand: `synthetic_literal_list` (List[Literal], Dict[Literal, float], Literal, ui_type, min/max/step, options override), `synthetic_nested` and `synthetic_generic` (unfilled and BaseModel-filled `optional_params`). Both sides answer the JSON map.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/provider_forms.rs
+    - crates/betterlite-server/src/guardrails/provider_forms/**
+    - tools/oracle/cases/helpers/guardrail-form-fields/**
+    - tools/oracle/fuzz/corpus/helper_case/guardrail-form-fields-*
+    - tools/oracle/helpers/b6560.py
+    - tools/oracle/helpers/b6560/**
+    - tools/oracle/src/helpers/server/b6560.rs
+    - tools/oracle/src/helpers/server/b6560/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1621-L1778
+    why: Annotation helpers. _get_field_type_from_annotation, Literal, dict key and list element extraction, and when optional_params is skipped.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1779-L1907
+    why: _build_field_dict, _extract_fields_recursive and _get_fields_from_model, including the depth limit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1910-L2003
+    why: The route body that builds the five named providers and merges the Bedrock models.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L442-L473
+    why: PresidioPresidioConfigModelUserInterface, with the one ui_type override.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L594-L732
+    why: BedrockGuardrailConfigModel, BedrockGuardrailStreamingParams and LakeraV2GuardrailConfigModel.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/tool_permission.py#L77-L110
+    why: ToolPermissionGuardrailConfigModel and its friendly name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/hide_secrets.py#L1-L20
+    why: HideSecretsGuardrailConfigModel and its friendly name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85
+    why: DEFAULT_MAX_RECURSE_DEPTH, the env var and its default of 100 that B3684 passes in as max_depth.
+dod:
+  - text: A field's type string, `options`, `dict_key_options`, `dict_value_type`, multiselect upgrade, `ui_type` and `type_override` replacement, `min`, `max`, `step` and `default_value` come out exactly as LiteLLM's _build_field_dict gives them, and a field with no description uses its name.
+    proof: [form-projection-tests, oracle, helper-python]
+  - text: A nested model becomes a field of type `nested` with a `fields` map, and a model nested deeper than max_depth returns FormError::TooDeep with the limit.
+    proof: [form-projection-tests]
+  - text: The bedrock, presidio, lakera_v2, tool_permission and hide-secrets tables project to the same JSON as LiteLLM's classes, with `ui_friendly_name` on the last two and the two Bedrock models merged.
+    proof: [form-core-tables-tests, oracle, helper-python]
+  - text: The synthetic models project the same on both sides, including the skipped and the BaseModel-filled `optional_params`.
+    proof: [oracle, helper-python]
+  - text: The new helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: form-projection-tests
+      why: the projection rules, the depth limit or the friendly-name merge are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::provider_forms::tests::projection_/)'
+    - id: form-core-tables-tests
+      why: a core table is missing or differs from the expected JSON
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::provider_forms::tests::core_table_/)'
+    - id: helper-python
+      why: the oracle adapter is missing or fails strict lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6560)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no new helper case was added or the shared parser fails on one
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-form-fields-*)" &&
+        grep -lE '^[[:space:]]+b6560:' tools/oracle/fuzz/corpus/helper_case/guardrail-form-fields-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-form-fields/core-bedrock.yaml
+  - tools/oracle/cases/helpers/guardrail-form-fields/core-presidio.yaml
+  - tools/oracle/cases/helpers/guardrail-form-fields/core-lakera-v2.yaml
+  - tools/oracle/cases/helpers/guardrail-form-fields/core-tool-permission.yaml
+  - tools/oracle/cases/helpers/guardrail-form-fields/core-hide-secrets.yaml
+  - tools/oracle/cases/helpers/guardrail-form-fields/synthetic-literal-list.yaml
+  - tools/oracle/cases/helpers/guardrail-form-fields/synthetic-nested.yaml
+  - tools/oracle/cases/helpers/guardrail-form-fields/synthetic-generic.yaml
+deviations:
+  - what: Provider settings are written as data tables and no longer read off the classes.
+    why: Rust has no annotation reflection. Each table is checked against LiteLLM's real class by an oracle case, so a drift shows up as a failing case.
+  - what: A model nested deeper than the limit returns an error value and B3684 maps it to 400, where LiteLLM raises HTTPException inside the helper.
+    why: A pure function should not know HTTP. The status and text the client sees are the same.
+out_of_scope:
+  - "The route /guardrails/ui/provider_specific_params and the registry loop that adds every other provider: B3684 serves it, B6561 and B6562 hold the tables."
+  - "The settings structs the guardrails read at run time (BedrockGuardrailConfigModel and the rest as request-time config): B3660, B3661, B3662 and the provider tasks own them. The tables here only describe form fields."
+  - "Fields of PresidioConfigModel beyond the UI class: the route uses only PresidioPresidioConfigModelUserInterface."
+pitfalls:
+  - "`optional_params` is skipped when its annotation is a TypeVar that was never filled in (GuardrailConfigModel without a type argument), but a model declared as GuardrailConfigModel[BaseModel] gets the field as a plain string field, because BaseModel itself is not treated as a nested model."
+  - "The type check for Literal compares the origin's `__name__` to 'Literal'; do not assume it gives 'select'. Run the synthetic Literal case against the real adapter and copy what comes out."
+  - "`default_value` is left out when the default is null, so a field with `default=None` has no such key, while `default=False` keeps `default_value: false`."
+  - "A Dict whose key type is a union of an Enum and str has no Literal values, so `dict_key_options` is missing and only `dict_value_type` is present."
+  - "`options` from `json_schema_extra` beat both the multiselect options and the Literal options, and `ui_type: multiselect` is a plain type override, not a list upgrade."
+  - "`ui_friendly_name` is a sibling of the field entries in the map, a plain string, so a field called `ui_friendly_name` would be overwritten."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
