@@ -65,6 +65,11 @@ struct FailureCase {
     failure: Failure,
 }
 
+struct PreservedCase {
+    call: Call,
+    expected: &'static str,
+}
+
 enum Failure {
     Role,
     MissingName,
@@ -74,7 +79,7 @@ enum Failure {
 enum Scenario {
     Convert(ConvertCase),
     Failure(FailureCase),
-    Preserved(Call),
+    Preserved(PreservedCase),
     ParseFailure(&'static str),
     OversizedMessage,
     MessageAtByteLimit,
@@ -133,19 +138,32 @@ async fn assert_failure_case(case: &FailureCase) {
     }
 }
 
-async fn assert_preserved(call: &Call) {
-    let message = parse_message(call.message);
+async fn assert_preserved(case: &PreservedCase) {
+    let message = parse_message(case.call.message);
     let untouched = message.clone();
-    let last = call
+    let last = case
+        .call
         .last
         .map(|text| serde_json::from_str::<LastToolCallMessage>(text).unwrap());
-    let data_urls = BTreeMap::new();
+    let data_urls = case
+        .call
+        .urls
+        .iter()
+        .map(|(url, data)| ((*url).to_owned(), (*data).to_owned()))
+        .collect::<BTreeMap<String, String>>();
     let source = MapSource {
         data_urls: &data_urls,
     };
-    drop(convert_tool_result_to_gemini(&message, last.as_ref(), true, &source).await);
-    drop(convert_tool_result_to_gemini(&message, last.as_ref(), false, &source).await);
+    let converted =
+        convert_tool_result_to_gemini(&message, last.as_ref(), case.call.forward, &source)
+            .await
+            .unwrap();
+    drop(convert_tool_result_to_gemini(&message, last.as_ref(), !case.call.forward, &source).await);
     assert_eq!(message, untouched);
+    assert_eq!(
+        serde_json::to_value(&converted).unwrap(),
+        serde_json::to_value(parsed_json(case.expected)).unwrap()
+    );
 }
 
 fn assert_parse_failure(text: &str) {
@@ -249,7 +267,7 @@ async fn run(scenario: Scenario) {
     match scenario {
         Scenario::Convert(case) => assert_converted(&case).await,
         Scenario::Failure(case) => assert_failure_case(&case).await,
-        Scenario::Preserved(call) => assert_preserved(&call).await,
+        Scenario::Preserved(case) => assert_preserved(&case).await,
         Scenario::ParseFailure(text) => assert_parse_failure(text),
         Scenario::OversizedMessage => assert_oversized_message(),
         Scenario::MessageAtByteLimit => assert_message_at_byte_limit(),
@@ -729,11 +747,14 @@ async fn run(scenario: Scenario) {
     },
     expected: r#"{"function_response":{"name":"n","response":{"content":"x"}}}"#,
 }))]
-#[case::conversion_leaves_the_message_untouched(Scenario::Preserved(Call {
-    message: r#"{"role":"tool","tool_call_id":"call_a__thought__sig","name":"n","content":[{"type":"text","text":"x"},{"type":"image","source":{"type":"base64","data":"QUJD"}}]}"#,
-    last: Some(r#"{"tool_calls":[{"id":"call_a__thought__sig","function":{"name":"n","arguments":"{}"}}]}"#),
-    forward: true,
-    urls: &[],
+#[case::conversion_leaves_the_message_untouched(Scenario::Preserved(PreservedCase {
+    call: Call {
+        message: r#"{"role":"tool","tool_call_id":"call_a__thought__sig","name":"n","content":[{"type":"text","text":"x"},{"type":"image","source":{"type":"base64","data":"QUJD"}}]}"#,
+        last: Some(r#"{"tool_calls":[{"id":"call_a__thought__sig","function":{"name":"n","arguments":"{}"}}]}"#),
+        forward: true,
+        urls: &[],
+    },
+    expected: r#"[{"function_response":{"name":"n","response":{"content":"x"},"id":"call_a","parts":[{"inline_data":{"data":"QUJD","mime_type":"image/jpeg"}}]}}]"#,
 }))]
 #[case::a_user_role_is_refused(Scenario::Failure(FailureCase {
     call: Call {
@@ -862,7 +883,7 @@ async fn run(scenario: Scenario) {
     failure: Failure::Field("tool_call_id"),
 }))]
 #[case::invalid_message_bytes_are_refused(Scenario::ParseFailure("{not json"))]
-#[case::trailing_bytes_are_refused(Scenario::ParseFailure("{} trailing"))]
+#[case::trailing_bytes_are_refused(Scenario::ParseFailure(r#"{"role":"tool"} trailing"#))]
 #[case::oversized_message_bytes_are_refused(Scenario::OversizedMessage)]
 #[case::a_message_at_the_byte_limit_parses(Scenario::MessageAtByteLimit)]
 #[case::too_many_content_parts_are_refused(Scenario::TooManyParts)]
