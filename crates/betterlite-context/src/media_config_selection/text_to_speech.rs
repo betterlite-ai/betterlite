@@ -2,7 +2,7 @@ use betterlite_models::identity::provider_id::ProviderId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextToSpeechConfigTag {
-    AzureAva,
+    AzureAVA,
     ElevenLabs,
     RunwayML,
     VertexAILyria,
@@ -31,7 +31,7 @@ pub fn select_text_to_speech(
     if provider == ProviderId::Azure {
         return model
             .starts_with("speech/")
-            .then_some(TextToSpeechConfigTag::AzureAva);
+            .then_some(TextToSpeechConfigTag::AzureAVA);
     }
     if provider == ProviderId::VertexAi {
         if model.contains("gemini") {

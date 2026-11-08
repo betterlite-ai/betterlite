@@ -242,7 +242,7 @@ fn image_edit_outside_list() {
     "speech/tts",
     ProviderId::Azure,
     false,
-    Some(TextToSpeechConfigTag::AzureAva)
+    Some(TextToSpeechConfigTag::AzureAVA)
 )]
 #[case::azure_openai_tts("azure-tts", ProviderId::Azure, false, None)]
 #[case::elevenlabs(
