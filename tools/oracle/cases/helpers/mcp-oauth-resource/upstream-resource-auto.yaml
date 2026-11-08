@@ -1,0 +1,5 @@
+kind: helper
+name: "upstream-resource-auto"
+call: {"b4654":{"function":"resolve_resource","upstream_resource":"auto","url":"https://H:443/mcp/","server_id":"srv"}}
+env: {}
+compare: {"ignore":[]}

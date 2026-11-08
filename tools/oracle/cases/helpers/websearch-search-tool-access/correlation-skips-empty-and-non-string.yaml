@@ -1,0 +1,18 @@
+kind: helper
+name: correlation-skips-empty-and-non-string
+call:
+  b4114:
+    operation: parent_correlation
+    kwargs:
+      litellm_session_id: 7
+      litellm_trace_id: ""
+      litellm_call_id: false
+      metadata:
+        session_id: ""
+        trace_id: 5
+      litellm_metadata:
+        session_id: session
+        trace_id: trace
+    caller: null
+env: {}
+compare: {ignore: []}

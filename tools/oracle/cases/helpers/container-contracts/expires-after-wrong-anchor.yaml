@@ -1,0 +1,9 @@
+kind: helper
+name: expires-after-wrong-anchor
+call:
+  b3360:
+    operation: record_decode
+    records:
+      - {kind: container_object, value: {id: container_abc, object: container, created_at: 1, status: running, expires_after: {anchor: created_at, minutes: 30}}}
+env: {}
+compare: {ignore: []}

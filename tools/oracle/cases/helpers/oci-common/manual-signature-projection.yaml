@@ -1,0 +1,45 @@
+kind: helper
+name: oci-common-manual-signature-projection
+call:
+  b5940:
+    function: sign
+    explicit:
+      oci_user: ocid1.user.oc1..aaaa
+      oci_fingerprint: aa:bb:cc
+      oci_tenancy: ocid1.tenancy.oc1..bbbb
+      oci_key: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCaROE13JhgADUq
+        G9yW2Os9gsm75C6c1mBEgfTQTrtqQHAXW2gdbMzoxNLmTm3JaXWAojncAKQqFk/A
+        oclo5hKrt2B7lj4BgCcXopmGFAzmucZpyc/gcrZH5EwTWG5Ew434kDAoJ1EVNMp/
+        4wFgsYChnM5CrlfNV8rEUyouUegF5B5Cd0+DVpsaTzZztyAcQGa6tFH46/4ydnUM
+        QMzmv3KsYSsDvmZI1cYaB3Vi9/sKr1UL96Q/VO/36VddUcLOnPwfhOE4KYgvGS/a
+        KNEKz70xEaiAgL1oZIxEErBz3B6J5xPNxnvhfneQDLmfj+Glt2G64uB/mFJTdfXD
+        zg19Mo6vAgMBAAECggEAKBkQOqpIdueG6heM2i6u0nGs0ugoD38PTa9DvWNBhogS
+        Opf5M3DEwBnswY0QL0J4lsNT67HE+eWLvEOxMNFgd/61ltoB6uzu/E84vWd3xP7z
+        qiqZHDtk0sHt3jdljf0QaVO9GKrDghITMnOEN6hbiWZTHHTpgIe5vhbpx1llyCXQ
+        QmYsljHNxB3LIHjoIOd2/dBrj6G5BDnrbDY8xGTHstUrSxWlZsUgMQ4TyJmK22FA
+        e0pQjww3ZI31hoT4hILW+ZYqNryS+V4+mdw6LvQkwjRQzhGXx7Mz8P8jD/tWzz2o
+        cN2xulPwf3zF+vB9KkYgpEm9QAgkFTWCmpbda4sUFQKBgQDHZJq8CjWKmAILrrGh
+        drolE0zI51xzxTV745HgidZU+Po2O9Al0HBghFvjJv5AoMX+bMaAwB4dair8xh4C
+        GFFK3DHfyJqlajy3csALRSOlZRi1A8HoT9hVjm1i1jDsB1CE76pHhvUBHtfzQSpr
+        RkBjR/ic3F0NSzafLMxP5dsLowKBgQDGEMdRl0j+zov3fxoHhwP6PDGV6sLFIryf
+        xLo9bHqvvo4gKAuUb0+g/SihwYE5ZY8j9AW7Sudn+9fiwzpKH7TcYV8L2hUEmT7o
+        BIpeIlT8T+9gwKFCSYw93CtuGvgIYm99PTE+JO+ZB++o/DOkVUVuifZ7TlSkrLsk
+        9wAtcNyhhQKBgGYeq3UVEXjrA1kyXn1gjlOAv/nBLMOKRCswUT0buy8H2TY/igpj
+        57o278y14s/8x4rX8Q5t1r6f6mZNnX7bL39UqSKA3ltLvs8BsUPUZD5IOdAznXM6
+        uYSQDovpQWMRF/cNvDsn7oFlZ5qJTI1mjIGMkdLctbeiRtZdHkLpaTdbAoGAMcsu
+        ENkTxNtwXLxbcuECovpXDPWEGcNt4Ey49ZA8F8q0OGlY3+xL/JEokeHv9toNbmB+
+        wGNIYd/ymlOyZ8go0+620mf1OL6+Dd52WswOyY/fAlfrMpsC4tpjIL8u9AyrMrUb
+        mB/5DGPuYHFnGj1Fw1Bz4vQCW5QBSH3AUaw6C3ECgYBOkxz86C6PVyrw/BAL54SB
+        aYnpHm+zMJaca5kIllrH18L5Pas93746gSTMPI+h7BmXRTLs3aCSorWPk8B8KMfO
+        AU1KIb7lHikc3XHmiJZwkn6fdo5L72jucFMyz2J7x0PbZFQ/MlSuQWuIPRRSs8KJ
+        mDHvtKJTftEdGxdGqGZsqA==
+        -----END PRIVATE KEY-----
+    env: {}
+    api_base: https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com/20231130/actions/chat?x=1
+    request: {}
+    headers:
+      content-type: application/json
+env: {}
+compare: {ignore: []}
