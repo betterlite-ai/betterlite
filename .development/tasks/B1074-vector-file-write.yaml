@@ -24,7 +24,7 @@ scope:
   - crates/betterlite-config/src/api/vector_file_write/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-write-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/vector_file_write.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/vector_file_write.py
   - tools/oracle/cases/sdk-http/vector-file-write/**

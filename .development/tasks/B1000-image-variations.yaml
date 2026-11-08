@@ -25,7 +25,7 @@ scope:
   - crates/betterlite-core/src/api/image_variations/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/image-variations-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/image_variations.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/image_variations.py
   - tools/oracle/cases/sdk-http/image-variations/**

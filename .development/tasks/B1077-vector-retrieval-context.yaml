@@ -27,7 +27,7 @@ scope:
   - crates/betterlite-core/src/api/vector_retrieval_context.rs
   - crates/betterlite-core/src/api/vector_retrieval_context/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/vector_retrieval_context.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/vector_retrieval_context.py
   - tools/oracle/cases/sdk-http/vector-retrieval-context/**

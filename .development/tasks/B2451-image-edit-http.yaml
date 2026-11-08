@@ -26,7 +26,7 @@ scope:
   - crates/betterlite-provider/src/api/image_edit_http.rs
   - crates/betterlite-provider/src/api/image_edit_http/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/image_edit_http.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/image_edit_http.py
   - tools/oracle/cases/sdk-http/image-edit-http/**
