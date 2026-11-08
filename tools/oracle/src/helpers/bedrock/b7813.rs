@@ -166,28 +166,23 @@ fn results_value(call: &ResultsCall) -> Option<Value> {
 }
 
 fn timeouts_value(call: &TimeoutsCall) -> Option<Value> {
-    let pairs = call
-        .timeouts
-        .iter()
-        .map(timeout_value)
-        .collect::<Option<Vec<Value>>>()?;
+    let mut pairs = Vec::with_capacity(call.timeouts.len());
+    for timeout in &call.timeouts {
+        let chosen = match *timeout {
+            TimeoutCall::None => ValkeyTimeout::None,
+            TimeoutCall::Seconds { seconds } => {
+                ValkeyTimeout::Uniform(Duration::try_from_secs_f64(seconds).ok()?)
+            }
+            TimeoutCall::Object { connect, read } => ValkeyTimeout::ConnectRead {
+                connect: connect.and_then(|seconds| Duration::try_from_secs_f64(seconds).ok()),
+                read: read.and_then(|seconds| Duration::try_from_secs_f64(seconds).ok()),
+            },
+        };
+        let timeouts = socket_timeouts(chosen);
+        pairs.push(json!([
+            timeouts.connect.as_secs_f64(),
+            timeouts.read.as_secs_f64()
+        ]));
+    }
     Some(Value::Array(pairs))
-}
-
-fn timeout_value(call: &TimeoutCall) -> Option<Value> {
-    let timeout = match *call {
-        TimeoutCall::None => ValkeyTimeout::None,
-        TimeoutCall::Seconds { seconds } => {
-            ValkeyTimeout::Uniform(Duration::try_from_secs_f64(seconds).ok()?)
-        }
-        TimeoutCall::Object { connect, read } => ValkeyTimeout::ConnectRead {
-            connect: connect.and_then(|seconds| Duration::try_from_secs_f64(seconds).ok()),
-            read: read.and_then(|seconds| Duration::try_from_secs_f64(seconds).ok()),
-        },
-    };
-    let timeouts = socket_timeouts(timeout);
-    Some(json!([
-        timeouts.connect.as_secs_f64(),
-        timeouts.read.as_secs_f64()
-    ]))
 }

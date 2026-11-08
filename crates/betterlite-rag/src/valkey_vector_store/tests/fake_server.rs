@@ -20,6 +20,11 @@ impl Drop for FakeValkey {
     }
 }
 
+pub(crate) struct Handler {
+    log: Arc<Mutex<Vec<Vec<Vec<u8>>>>>,
+    reply: Vec<u8>,
+}
+
 impl FakeValkey {
     pub(crate) async fn start(reply: Vec<u8>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0")
@@ -27,9 +32,12 @@ impl FakeValkey {
             .expect("an ephemeral listener");
         let addr = listener.local_addr().expect("the listener address");
         let commands = Arc::new(Mutex::new(Vec::new()));
+        let handler = Arc::new(Handler {
+            log: Arc::clone(&commands),
+            reply,
+        });
         let mut tasks = JoinSet::new();
-        let log = Arc::clone(&commands);
-        tasks.spawn(accept_loop(listener, log, reply));
+        tasks.spawn(accept_loop(listener, handler));
         Self {
             addr,
             commands,
@@ -42,41 +50,43 @@ impl FakeValkey {
     }
 }
 
-async fn accept_loop(listener: TcpListener, log: Arc<Mutex<Vec<Vec<Vec<u8>>>>>, reply: Vec<u8>) {
+async fn accept_loop(listener: TcpListener, handler: Arc<Handler>) {
     let mut connections = JoinSet::new();
-    loop {
-        let Ok((socket, _peer)) = listener.accept().await else {
-            return;
-        };
-        let connection_log = Arc::clone(&log);
-        let connection_reply = reply.clone();
-        connections.spawn(async move { serve(socket, connection_log, connection_reply).await });
+    while let Ok((socket, _peer)) = listener.accept().await {
+        let connection = Arc::clone(&handler);
+        connections.spawn(async move { serve(socket, connection).await });
         while connections.try_join_next().is_some() {}
     }
 }
 
-async fn serve(socket: TcpStream, log: Arc<Mutex<Vec<Vec<Vec<u8>>>>>, reply: Vec<u8>) {
+async fn serve(socket: TcpStream, handler: Arc<Handler>) {
     let (read_half, mut write_half) = socket.into_split();
     let mut reader = BufReader::new(read_half);
-    while let Ok(Some(command)) = read_command(&mut reader).await {
-        let searched = command
-            .first()
-            .is_some_and(|name| name.as_slice() == b"FT.SEARCH");
-        let pinged = command
-            .first()
-            .is_some_and(|name| name.as_slice() == b"PING");
-        log.lock().expect("the command log").push(command);
-        let answer = if searched {
-            reply.clone()
-        } else if pinged {
-            b"+PONG\r\n".to_vec()
-        } else {
-            b"+OK\r\n".to_vec()
-        };
-        if write_half.write_all(&answer).await.is_err() {
-            return;
+    loop {
+        match read_command(&mut reader).await {
+            Ok(Some(command)) => {
+                let answer = answer_for(&command, &handler.reply);
+                handler.log.lock().expect("the command log").push(command);
+                if write_half.write_all(&answer).await.is_err() {
+                    return;
+                }
+            }
+            Ok(None) | Err(_) => return,
         }
     }
+}
+
+fn answer_for(command: &[Vec<u8>], reply: &[u8]) -> Vec<u8> {
+    let Some(name) = command.first() else {
+        return b"+OK\r\n".to_vec();
+    };
+    if name.as_slice() == b"FT.SEARCH" {
+        return reply.to_vec();
+    }
+    if name.as_slice() == b"PING" {
+        return b"+PONG\r\n".to_vec();
+    }
+    b"+OK\r\n".to_vec()
 }
 
 async fn read_command<R>(reader: &mut R) -> io::Result<Option<Vec<Vec<u8>>>>
