@@ -3,7 +3,7 @@ name: image-url
 call:
   b5240:
     function: "output_choices"
-    response: {"data": [{"url": "https://example.com/a.png"}]}
+    response: {"data": [{"url": "https://example.com/a.png", "b64_json": "aGVsbG8="}, {"url": null, "b64_json": "aGVsbG8=", "revised_prompt": null}]}
 env: {}
 compare:
   ignore: []

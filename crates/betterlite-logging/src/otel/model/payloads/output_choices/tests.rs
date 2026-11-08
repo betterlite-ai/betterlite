@@ -28,6 +28,10 @@ fn assert_choices(actual: &[MetadataMap], expected: &str) {
     r#"{"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"folded"}]}],"pages":[{"markdown":"scanned"}]}"#,
     r#"[{"message":{"role":"assistant","content":"folded","refusal":null,"tool_calls":null},"finish_reason":null}]"#
 )]
+#[case::ocr_before_transcription(
+    r#"{"pages":[{"markdown":"scanned"}],"text":"spoken"}"#,
+    r#"[{"message":{"role":"assistant","content":"scanned","refusal":null,"tool_calls":null},"finish_reason":null}]"#
+)]
 #[case::ocr_before_moderation(
     r#"{"pages":[{"markdown":"scanned"}],"results":[{"flagged":false}]}"#,
     r#"[{"message":{"role":"assistant","content":"scanned","refusal":null,"tool_calls":null},"finish_reason":null}]"#
@@ -279,6 +283,14 @@ fn moderation_rerank_and_search_lines(#[case] response: &str, #[case] expected: 
 #[case::image_b64_without_padding(
     r#"{"data":[{"b64_json":"aGVsbG8"}]}"#,
     r#"[{"message":{"role":"assistant","content":"b64_json image (5 bytes)","refusal":null,"tool_calls":null},"finish_reason":null}]"#
+)]
+#[case::image_null_url_uses_b64(
+    r#"{"data":[{"url":null,"b64_json":"aGVsbG8=","revised_prompt":null}]}"#,
+    r#"[{"message":{"role":"assistant","content":"b64_json image (5 bytes)","refusal":null,"tool_calls":null},"finish_reason":null}]"#
+)]
+#[case::image_empty_url_beats_b64(
+    r#"{"data":[{"url":"","b64_json":"aGVsbG8="}]}"#,
+    r#"[{"message":{"role":"assistant","content":"","refusal":null,"tool_calls":null},"finish_reason":null}]"#
 )]
 #[case::image_revised_prompt(
     r#"{"data":[{"url":"https://example.com/a.png","revised_prompt":"better"}]}"#,
