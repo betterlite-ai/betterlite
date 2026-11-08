@@ -337,7 +337,14 @@ async fn a_failed_callback_is_isolated_from_the_model_response() {
 
 #[tokio::test]
 async fn a_panicking_callback_is_counted_under_its_span() {
-    let (buffer, _guard) = capture_warnings();
+    let buffer = Buffer::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(Level::INFO)
+        .with_writer(buffer.clone())
+        .finish();
+    let _guard = set_default(subscriber);
     let record = Arc::new(Record::default());
     let spans = Arc::new(SpanContexts::default());
     let worker = LoggingWorker::start(settings(8, 2)).unwrap();
