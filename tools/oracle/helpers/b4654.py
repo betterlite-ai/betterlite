@@ -99,16 +99,24 @@ def _header_servers(data: dict[str, Json]) -> list[str] | None:
     return cast(list[str], raw)
 
 
-def _strip_default_port(data: dict[str, Json]) -> object:
-    netloc = oauth_utils._strip_default_port(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-        _string(data, "scheme"), _string(data, "netloc")
-    )
-    return {"netloc": netloc}
-
-
-def _proxy_base_url(data: dict[str, Json]) -> object:
-    del data
-    return {"value": oauth_utils._resolve_proxy_base_url_env()}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+def _simple(data: dict[str, Json]) -> object:
+    function = data.get("function")
+    if function == "strip_default_port":
+        netloc = oauth_utils._strip_default_port(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+            _string(data, "scheme"), _string(data, "netloc")
+        )
+        return {"netloc": netloc}
+    if function == "proxy_base_url":
+        return {"value": oauth_utils._resolve_proxy_base_url_env()}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    if function == "well_known_root_suffix":
+        return {"value": oauth_utils.well_known_root_suffix()}
+    if function == "route_relative_path":
+        return {"value": oauth_utils.get_route_relative_request_path(_scope(data, "path"))}
+    if function == "redact_url":
+        return {"value": oauth_utils._redact_mcp_resource_url(_optional_string(data, "url"))}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    if function == "resolve_resource":
+        return {"value": oauth_utils.resolve_upstream_resource(_server(data))}
+    raise ValueError(f"unknown simple b4654 function: {function}")
 
 
 def _request_base_url(data: dict[str, Json]) -> object:
@@ -128,15 +136,6 @@ def _request_base_url(data: dict[str, Json]) -> object:
         return_value=_boolean(data, "from_trusted_proxy"),
     ):
         return {"base_url": oauth_utils.get_request_base_url(request)}
-
-
-def _well_known_root_suffix(data: dict[str, Json]) -> object:
-    del data
-    return {"value": oauth_utils.well_known_root_suffix()}
-
-
-def _route_relative_path(data: dict[str, Json]) -> object:
-    return {"value": oauth_utils.get_route_relative_request_path(_scope(data, "path"))}
 
 
 def _challenge(data: dict[str, Json]) -> object:
@@ -173,14 +172,6 @@ def _canonicalize(data: dict[str, Json]) -> object:
     if data.get("resource_only"):
         return {"value": oauth_utils.canonical_resource_uri(url)}
     return {"value": oauth_utils.canonicalize_url_identity(url)}
-
-
-def _redact_url(data: dict[str, Json]) -> object:
-    return {"value": oauth_utils._redact_mcp_resource_url(_optional_string(data, "url"))}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-
-
-def _resolve_resource(data: dict[str, Json]) -> object:
-    return {"value": oauth_utils.resolve_upstream_resource(_server(data))}
 
 
 def _token_request(data: dict[str, Json]) -> object:
@@ -266,17 +257,17 @@ def _target_selection(data: dict[str, Json]) -> object:
 
 
 _HANDLERS: dict[str, Callable[[dict[str, Json]], object]] = {
-    "strip_default_port": _strip_default_port,
-    "proxy_base_url": _proxy_base_url,
+    "strip_default_port": _simple,
+    "proxy_base_url": _simple,
     "request_base_url": _request_base_url,
-    "well_known_root_suffix": _well_known_root_suffix,
-    "route_relative_path": _route_relative_path,
+    "well_known_root_suffix": _simple,
+    "route_relative_path": _simple,
     "metadata_url": _challenge,
     "www_authenticate": _challenge,
     "byok_authenticate": _byok_authenticate,
     "canonicalize": _canonicalize,
-    "redact_url": _redact_url,
-    "resolve_resource": _resolve_resource,
+    "redact_url": _simple,
+    "resolve_resource": _simple,
     "token_request": _token_request,
     "safe_headers": _safe_headers,
     "litellm_key": _litellm_key,

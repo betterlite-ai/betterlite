@@ -15,15 +15,9 @@ deviations:
   - what: The fallback to empty headers when an ASGI header entry is malformed (the AttributeError and TypeError branch) does not exist. RawHeaders takes typed name and value byte pairs.
     why: The server layer hands over bytes from the HTTP parser, so a malformed entry cannot occur.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1519-L1529
-  - what: A PROXY_BASE_URL that urlparse rejects (for example an unmatched IPv6 bracket) is treated like any other invalid value, warned about once and ignored. LiteLLM raises the ValueError out of the request.
-    why: A typo in an operator setting surfaces at every OAuth discovery request as an unhandled 500 in LiteLLM; warning and falling back to the request origin is what a working setup needs. No working configuration relies on the crash.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L110-L127
-  - what: get_request_base_url returns a typed error for a base URL that urlparse rejects, including when the caller is not a trusted proxy. LiteLLM raises an unhandled ValueError for the same input.
-    why: The base URL comes from the inbound Host header, so an attacker can reach that ValueError; a typed error lets the caller answer 4xx instead of 500. Well-formed requests behave identically.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L138-L177
-  - what: resolve_upstream_resource warns and omits the resource when upstream_resource=auto and the server URL is unparsable. LiteLLM lets the ValueError escape.
-    why: The URL comes from the MCP server row; a bad row should not turn every token request for that server into an unhandled 500. Omitting resource is the same outcome LiteLLM already documents for a URL that is not absolute.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L688-L729
+  - what: A URL that urlparse rejects (an unmatched bracket) warns and is ignored for PROXY_BASE_URL and for upstream_resource=auto, and get_request_base_url returns a typed error for it. LiteLLM lets the ValueError escape as an unhandled 500.
+    why: These URLs come from an operator setting, the Host header and the server row; a bad value should not turn every OAuth request into a 500, and the typed error lets the caller answer 4xx. Well-formed values behave identically.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L110-L177
   - what: A URL with leading C0 controls or spaces, or with tab, CR or LF inside it, is not normalized. Python's urlsplit strips and removes those bytes before parsing.
     why: An HTTP request target cannot carry raw controls, config scalars are trimmed, and a URL stored in a server row with a stray tab is malformed rather than a behavior a working setup relies on.
     link: https://github.com/python/cpython/blob/3.13/Lib/urllib/parse.py#L494-L501

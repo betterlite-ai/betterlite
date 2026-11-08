@@ -82,11 +82,11 @@ fn single_server_targets(servers_and_path: &str) -> Vec<String> {
     let Ok(single_pattern) = Regex::new(SINGLE_SERVER_PATTERN) else {
         return Vec::new();
     };
-    let single = single_pattern
+    if let Some(single) = single_pattern
         .captures(servers_and_path)
-        .and_then(|found| found.get(1));
-    single.map_or_else(
-        || vec![servers_and_path.to_owned()],
-        |capture| vec![capture.as_str().to_owned()],
-    )
+        .and_then(|found| found.get(1))
+    {
+        return vec![single.as_str().to_owned()];
+    }
+    vec![servers_and_path.to_owned()]
 }

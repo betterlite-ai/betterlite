@@ -144,39 +144,30 @@ fn oauth2_headers_are_empty_without_an_authorization_header() {
 }
 
 #[rstest]
-#[case::trimmed(" s1 , ,s2 ", true, vec!["s1", "s2"])]
-#[case::empty("", true, vec![])]
-#[case::blank("   ", true, vec![])]
-#[case::commas(",,,", true, vec![])]
-#[case::absent("", false, vec![])]
-fn mcp_servers_header_matches_litellm(
+#[case::servers_trimmed("x-mcp-servers", " s1 , ,s2 ", true, vec!["s1", "s2"])]
+#[case::servers_empty("x-mcp-servers", "", true, vec![])]
+#[case::servers_blank("x-mcp-servers", "   ", true, vec![])]
+#[case::servers_commas("x-mcp-servers", ",,,", true, vec![])]
+#[case::servers_absent("x-mcp-servers", "", false, vec![])]
+#[case::groups_trimmed("x-mcp-access-groups", " g1,g2 ", true, vec!["g1", "g2"])]
+#[case::groups_empty("x-mcp-access-groups", "", true, vec![])]
+#[case::groups_absent("x-mcp-access-groups", "", false, vec![])]
+fn comma_list_headers_match_litellm(
+    #[case] raw_name: &str,
     #[case] value: &str,
     #[case] present: bool,
     #[case] expected: Vec<&str>,
 ) {
     let headers = if present {
-        raw_headers(&[("x-mcp-servers", value)])
+        raw_headers(&[(raw_name, value)])
     } else {
         raw_headers(&[])
     };
     let wanted = present.then(|| names(&expected));
-    assert_eq!(parse_mcp_servers_header(&headers), wanted);
-}
-
-#[rstest]
-#[case::trimmed(" g1,g2 ", true, vec!["g1", "g2"])]
-#[case::empty("", true, vec![])]
-#[case::absent("", false, vec![])]
-fn mcp_access_groups_header_matches_litellm(
-    #[case] value: &str,
-    #[case] present: bool,
-    #[case] expected: Vec<&str>,
-) {
-    let headers = if present {
-        raw_headers(&[("x-mcp-access-groups", value)])
+    let parsed = if raw_name == "x-mcp-servers" {
+        parse_mcp_servers_header(&headers)
     } else {
-        raw_headers(&[])
+        parse_mcp_access_groups_header(&headers)
     };
-    let wanted = present.then(|| names(&expected));
-    assert_eq!(parse_mcp_access_groups_header(&headers), wanted);
+    assert_eq!(parsed, wanted);
 }

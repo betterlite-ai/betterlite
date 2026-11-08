@@ -47,6 +47,19 @@ pub(super) fn invalid_operation(name: &str) -> Box<HelperError> {
     )
 }
 
+pub(super) fn function_name(input: &Value) -> Result<&str, Box<HelperError>> {
+    input
+        .get("function")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            invalid(
+                "InvalidInput",
+                None,
+                "every b4654 call names a function".to_owned(),
+            )
+        })
+}
+
 pub(super) fn string<'input>(
     input: &'input Value,
     name: &str,
