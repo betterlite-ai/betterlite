@@ -173,35 +173,40 @@ pub(super) async fn stream_missing_variant_keys_match_the_sdk_dump() {
 }
 
 fn assert_unknown_variants(events: &[RunEvent]) {
+    let expected = [
+        (
+            13,
+            r#"{"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"completed","content":[{"type":"audio","image_file":null}],"assistant_id":null,"attachments":null,"completed_at":null,"incomplete_at":null,"incomplete_details":null,"metadata":null,"run_id":null}"#,
+        ),
+        (
+            14,
+            r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"weird","message_creation":null}}}"#,
+        ),
+        (
+            15,
+            r#"{"id":"step_2","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"weird","status":"completed","step_details":{"type":"weird","message_creation":null},"cancelled_at":null,"completed_at":null,"expired_at":null,"failed_at":null,"last_error":null,"metadata":null,"usage":null}"#,
+        ),
+        (
+            16,
+            r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"weird","id":null,"code_interpreter":null}]}}}"#,
+        ),
+        (
+            17,
+            r#"{"id":"step_3","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"id":null,"code_interpreter":null,"type":"weird"}]},"cancelled_at":null,"completed_at":null,"expired_at":null,"failed_at":null,"last_error":null,"metadata":null,"usage":null}"#,
+        ),
+        (
+            18,
+            r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"weird","id":null,"code_interpreter":{"input":null,"outputs":null}}]}}}"#,
+        ),
+        (
+            19,
+            r#"{"id":"step_4","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"id":null,"code_interpreter":{"input":null,"outputs":null},"type":"weird"}]},"cancelled_at":null,"completed_at":null,"expired_at":null,"failed_at":null,"last_error":null,"metadata":null,"usage":null}"#,
+        ),
+    ];
     assert!(events.len() > 19);
-    let message = parse(
-        r#"{"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"completed","content":[{"type":"audio","image_file":null}],"assistant_id":null,"attachments":null,"completed_at":null,"incomplete_at":null,"incomplete_details":null,"metadata":null,"run_id":null}"#,
-    );
-    assert_eq!(data_value(&events[13]), message);
-    let delta = parse(
-        r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"weird","message_creation":null}}}"#,
-    );
-    assert_eq!(data_value(&events[14]), delta);
-    let step = parse(
-        r#"{"id":"step_2","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"weird","status":"completed","step_details":{"type":"weird","message_creation":null},"cancelled_at":null,"completed_at":null,"expired_at":null,"failed_at":null,"last_error":null,"metadata":null,"usage":null}"#,
-    );
-    assert_eq!(data_value(&events[15]), step);
-    let delta_call = parse(
-        r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"weird","id":null,"code_interpreter":null}]}}}"#,
-    );
-    assert_eq!(data_value(&events[16]), delta_call);
-    let full_call = parse(
-        r#"{"id":"step_3","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"id":null,"code_interpreter":null,"type":"weird"}]},"cancelled_at":null,"completed_at":null,"expired_at":null,"failed_at":null,"last_error":null,"metadata":null,"usage":null}"#,
-    );
-    assert_eq!(data_value(&events[17]), full_call);
-    let delta_call_empty = parse(
-        r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"weird","id":null,"code_interpreter":{"input":null,"outputs":null}}]}}}"#,
-    );
-    assert_eq!(data_value(&events[18]), delta_call_empty);
-    let full_call_empty = parse(
-        r#"{"id":"step_4","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"id":null,"code_interpreter":{"input":null,"outputs":null},"type":"weird"}]},"cancelled_at":null,"completed_at":null,"expired_at":null,"failed_at":null,"last_error":null,"metadata":null,"usage":null}"#,
-    );
-    assert_eq!(data_value(&events[19]), full_call_empty);
+    for (index, record) in expected {
+        assert_eq!(data_value(&events[index]), parse(record), "{index}");
+    }
 }
 
 async fn missing_variant_events() -> Vec<RunEvent> {
