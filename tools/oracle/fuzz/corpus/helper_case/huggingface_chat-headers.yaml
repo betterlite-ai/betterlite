@@ -1,0 +1,8 @@
+kind: helper
+name: headers
+call:
+  b5990:
+    steps:
+      - {kind: validate_environment, api_key: "sk-hf", headers: {x-call: kept}}
+env: {}
+compare: {ignore: []}

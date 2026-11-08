@@ -1,0 +1,14 @@
+kind: helper
+name: router-routes
+call:
+  b5990:
+    steps:
+      - {kind: complete_url, model: "hf-inference/org/model"}
+      - {kind: complete_url, model: "novita/org/model"}
+      - {kind: complete_url, model: "fireworks-ai/org/model"}
+      - {kind: complete_url, model: "together/org/model"}
+      - {kind: complete_url, model: "org/model"}
+      - {kind: complete_url, model: "https://model.example/v1"}
+      - {kind: complete_url, model: "https://model.example/chat/completions/"}
+env: {}
+compare: {ignore: []}

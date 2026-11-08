@@ -1,0 +1,13 @@
+kind: helper
+name: api-base-and-env
+call:
+  b5990:
+    steps:
+      - {kind: complete_url, model: "org/model", api_base: "https://api.example/v1/"}
+      - {kind: complete_url, model: "https://model.example/v1", api_base: "https://api.example"}
+      - {kind: complete_url, model: "org/model", env: {HF_API_BASE: "https://hf.example/v1"}}
+      - {kind: complete_url, model: "https://model.example/v1", env: {HF_API_BASE: "https://hf.example"}}
+      - {kind: complete_url, model: "org/model", env: {HUGGINGFACE_API_BASE: "https://other.example"}}
+      - {kind: complete_url, model: "org/model", env: {HF_API_BASE: "", HUGGINGFACE_API_BASE: "https://other.example"}}
+env: {}
+compare: {ignore: []}
