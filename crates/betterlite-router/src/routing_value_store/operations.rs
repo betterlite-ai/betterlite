@@ -79,7 +79,7 @@ impl RoutingValueStore {
         ttl_seconds: Option<f64>,
     ) -> Result<Vec<String>, StoreError> {
         let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut members = members(&mut cache, key)?;
+        let mut members = member_set(&mut cache, key)?;
         for value in values {
             members.insert(value.clone());
         }
@@ -97,54 +97,7 @@ impl RoutingValueStore {
         ttl_seconds: Option<f64>,
     ) -> Result<RouteValue, StoreError> {
         let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
-        let next = match (read(&mut cache, key)?, by) {
-            (StoreRead::Missing, RouteIncrement::Counter(increment)) => {
-                RouteValue::Counter(*increment)
-            }
-            (StoreRead::Missing, RouteIncrement::Spend(increment)) => RouteValue::Spend(*increment),
-            (
-                StoreRead::Value(RouteValue::Counter(current)),
-                RouteIncrement::Counter(increment),
-            ) => {
-                let sum =
-                    current
-                        .checked_add(*increment)
-                        .ok_or_else(|| StoreError::CounterOverflow {
-                            key: key.as_ref().to_owned(),
-                        })?;
-                RouteValue::Counter(sum)
-            }
-            (StoreRead::Value(RouteValue::Spend(current)), RouteIncrement::Spend(increment)) => {
-                let sum =
-                    current
-                        .checked_add(*increment)
-                        .ok_or_else(|| StoreError::SpendOverflow {
-                            key: key.as_ref().to_owned(),
-                        })?;
-                RouteValue::Spend(sum)
-            }
-            (StoreRead::Value(RouteValue::Counter(current)), RouteIncrement::Spend(increment)) => {
-                let sum = Decimal::from(current)
-                    .checked_add(*increment)
-                    .ok_or_else(|| StoreError::SpendOverflow {
-                        key: key.as_ref().to_owned(),
-                    })?;
-                RouteValue::Spend(sum)
-            }
-            (StoreRead::Value(RouteValue::Spend(current)), RouteIncrement::Counter(increment)) => {
-                let sum = current
-                    .checked_add(Decimal::from(*increment))
-                    .ok_or_else(|| StoreError::SpendOverflow {
-                        key: key.as_ref().to_owned(),
-                    })?;
-                RouteValue::Spend(sum)
-            }
-            (StoreRead::Value(_), RouteIncrement::Counter(_) | RouteIncrement::Spend(_)) => {
-                return Err(StoreError::NotIncrementable {
-                    key: key.as_ref().to_owned(),
-                });
-            }
-        };
+        let next = incremented(key, &read(&mut cache, key)?, by)?;
         let Some(encoded) = to_cache_value(&next)? else {
             return Ok(next);
         };
@@ -197,7 +150,40 @@ fn read(cache: &mut LocalTtlCache, key: &RouteKey) -> Result<StoreRead, StoreErr
     }
 }
 
-fn members(cache: &mut LocalTtlCache, key: &RouteKey) -> Result<BTreeSet<String>, StoreError> {
+fn incremented(
+    key: &RouteKey,
+    stored: &StoreRead,
+    by: &RouteIncrement,
+) -> Result<RouteValue, StoreError> {
+    let key = key.as_ref().to_owned();
+    match (stored, by) {
+        (StoreRead::Missing, RouteIncrement::Counter(value)) => Ok(RouteValue::Counter(*value)),
+        (StoreRead::Missing, RouteIncrement::Spend(value)) => Ok(RouteValue::Spend(*value)),
+        (StoreRead::Value(RouteValue::Counter(current)), RouteIncrement::Counter(value)) => current
+            .checked_add(*value)
+            .map(RouteValue::Counter)
+            .ok_or(StoreError::CounterOverflow { key }),
+        (StoreRead::Value(RouteValue::Spend(current)), RouteIncrement::Spend(value)) => current
+            .checked_add(*value)
+            .map(RouteValue::Spend)
+            .ok_or(StoreError::SpendOverflow { key }),
+        (StoreRead::Value(RouteValue::Counter(current)), RouteIncrement::Spend(value)) => {
+            Decimal::from(*current)
+                .checked_add(*value)
+                .map(RouteValue::Spend)
+                .ok_or(StoreError::SpendOverflow { key })
+        }
+        (StoreRead::Value(RouteValue::Spend(current)), RouteIncrement::Counter(value)) => current
+            .checked_add(Decimal::from(*value))
+            .map(RouteValue::Spend)
+            .ok_or(StoreError::SpendOverflow { key }),
+        (StoreRead::Value(_), RouteIncrement::Counter(_) | RouteIncrement::Spend(_)) => {
+            Err(StoreError::NotIncrementable { key })
+        }
+    }
+}
+
+fn member_set(cache: &mut LocalTtlCache, key: &RouteKey) -> Result<BTreeSet<String>, StoreError> {
     match read(cache, key)? {
         StoreRead::Missing => Ok(BTreeSet::new()),
         StoreRead::Value(RouteValue::Members(members)) => Ok(members),
