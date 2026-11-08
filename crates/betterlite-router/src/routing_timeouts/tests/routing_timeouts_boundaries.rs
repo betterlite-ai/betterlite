@@ -103,6 +103,23 @@ fn attempt_equal_to_deadline() {
 }
 
 #[test]
+fn later_attempt_is_clamped_to_the_deadline() {
+    let base = Instant::now();
+    let mut deployment = no_deployment();
+    deployment.timeout = Some(seconds(4.0));
+    let plan = TimeoutPlan::new(
+        base,
+        &router_settings(10.0),
+        &request_settings(false),
+        &deployment,
+    )
+    .unwrap();
+    assert_eq!(plan.deadline, at(base, 10));
+    assert_eq!(plan.attempt, seconds(4.0));
+    assert_eq!(plan.attempt_deadline(at(base, 8)).unwrap(), at(base, 10));
+}
+
+#[test]
 fn deadline_reached_at_now() {
     let base = Instant::now();
     let mut request = request_settings(false);
