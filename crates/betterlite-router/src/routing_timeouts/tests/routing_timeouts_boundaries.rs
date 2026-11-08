@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use super::{at, global_timeout, no_deployment, request_settings, router_settings, seconds};
-use crate::routing_timeouts::completion::{TimeoutKwargs, TimeoutValue, resolve};
+use crate::routing_timeouts::completion::{TimeoutKwargs, TimeoutPhases, TimeoutValue, resolve};
 use crate::routing_timeouts::error::TimeoutError;
 use crate::routing_timeouts::plan::{RouterTimeoutSources, TimeoutPlan, resolve_router_timeouts};
 use crate::routing_timeouts::seconds::Seconds;
@@ -50,6 +50,24 @@ fn zero_seconds_is_kept() {
     let value = resolve(None, &TimeoutKwargs::default(), Some(seconds(0.0)), true);
     assert_eq!(value, TimeoutValue::Seconds(seconds(0.0)));
     assert_eq!(value.transport(), seconds(0.0));
+}
+
+#[test]
+fn phases_transport_uses_read_or_600() {
+    let with_read = TimeoutValue::Phases(TimeoutPhases {
+        connect: Some(seconds(1.0)),
+        read: Some(seconds(2.5)),
+        write: Some(seconds(3.0)),
+        pool: Some(seconds(4.0)),
+    });
+    assert_eq!(with_read.transport(), seconds(2.5));
+    let without_read = TimeoutValue::Phases(TimeoutPhases {
+        connect: Some(seconds(1.0)),
+        read: None,
+        write: Some(seconds(3.0)),
+        pool: Some(seconds(4.0)),
+    });
+    assert_eq!(without_read.transport(), seconds(600.0));
 }
 
 #[test]

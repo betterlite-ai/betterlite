@@ -40,6 +40,7 @@ fn resolve_maps_every_level() {
     let router = ConfigRouter {
         timeout: Some(7.0_f64),
         stream_timeout: Some(3.0_f64),
+        default_timeout: Some(5.0_f64),
         default_stream_timeout: Some(4.0_f64),
     };
     let resolved = resolve(&section((300.0_f64, true), router, vec![deployment])).unwrap();
@@ -124,6 +125,7 @@ fn plan_keeps_the_request_deadline_apart_from_the_attempt() {
     let router = ConfigRouter {
         timeout: Some(5.0_f64),
         stream_timeout: None,
+        default_timeout: None,
         default_stream_timeout: None,
     };
     let settings = resolve(&section((6000.0_f64, false), router, vec![deployment])).unwrap();

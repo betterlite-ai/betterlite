@@ -45,8 +45,9 @@ fn fill_completion(
         return Ok(());
     };
     let supported = supports_httpx_timeout(&input.provider);
-    output.resolved = Some(TimeoutOutput::from(completion_timeout(input, supported)?));
-    output.transport = Some(TimeoutOutput::from(completion_timeout(input, false)?));
+    let resolved = completion_timeout(input, supported)?;
+    output.resolved = Some(TimeoutOutput::from(resolved));
+    output.transport = Some(TimeoutOutput::from(resolved.transport()));
     Ok(())
 }
 

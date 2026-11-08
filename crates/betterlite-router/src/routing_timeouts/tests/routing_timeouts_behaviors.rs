@@ -61,8 +61,96 @@ fn completion_global_fallback(
     assert_eq!(resolved, TimeoutValue::Seconds(seconds(expected)));
 }
 
+struct PrecedenceCase {
+    router_timeout: f64,
+    global_seconds: f64,
+    global_explicit: bool,
+    router_stream_timeout: Option<f64>,
+    default_stream_timeout: Option<f64>,
+    deployment_timeout: Option<f64>,
+    deployment_request_timeout: Option<f64>,
+    stream: bool,
+    expected_stream: Option<f64>,
+    expected_non_stream: f64,
+    expected_attempt: f64,
+}
+
+#[rstest]
+#[case::router_stream_timeout_beats_request_timeout(PrecedenceCase {
+    router_timeout: 10.0_f64,
+    global_seconds: 300.0_f64,
+    global_explicit: true,
+    router_stream_timeout: Some(7.0_f64),
+    default_stream_timeout: None,
+    deployment_timeout: None,
+    deployment_request_timeout: None,
+    stream: true,
+    expected_stream: Some(7.0_f64),
+    expected_non_stream: 300.0_f64,
+    expected_attempt: 7.0_f64,
+})]
+#[case::router_request_timeout_beats_default_stream_timeout(PrecedenceCase {
+    router_timeout: 10.0_f64,
+    global_seconds: 300.0_f64,
+    global_explicit: true,
+    router_stream_timeout: None,
+    default_stream_timeout: Some(4.0_f64),
+    deployment_timeout: None,
+    deployment_request_timeout: None,
+    stream: true,
+    expected_stream: Some(300.0_f64),
+    expected_non_stream: 300.0_f64,
+    expected_attempt: 300.0_f64,
+})]
+#[case::deployment_timeout_beats_deployment_request_timeout(PrecedenceCase {
+    router_timeout: 10.0_f64,
+    global_seconds: 6000.0_f64,
+    global_explicit: false,
+    router_stream_timeout: None,
+    default_stream_timeout: None,
+    deployment_timeout: Some(4.0_f64),
+    deployment_request_timeout: Some(8.0_f64),
+    stream: false,
+    expected_stream: None,
+    expected_non_stream: 4.0_f64,
+    expected_attempt: 4.0_f64,
+})]
+#[case::deployment_request_timeout_beats_router_request_timeout(PrecedenceCase {
+    router_timeout: 10.0_f64,
+    global_seconds: 300.0_f64,
+    global_explicit: true,
+    router_stream_timeout: None,
+    default_stream_timeout: None,
+    deployment_timeout: None,
+    deployment_request_timeout: Some(8.0_f64),
+    stream: false,
+    expected_stream: None,
+    expected_non_stream: 8.0_f64,
+    expected_attempt: 8.0_f64,
+})]
+fn adjacent_precedence(#[case] case: PrecedenceCase) {
+    let sources = RouterTimeoutSources {
+        timeout: Some(seconds(case.router_timeout)),
+        stream_timeout: case.router_stream_timeout.map(seconds),
+        default_stream_timeout: case.default_stream_timeout.map(seconds),
+    };
+    let router = resolve_router_timeouts(
+        &sources,
+        global_timeout(case.global_seconds, case.global_explicit),
+    );
+    let mut deployment = no_deployment();
+    deployment.timeout = case.deployment_timeout.map(seconds);
+    deployment.request_timeout = case.deployment_request_timeout.map(seconds);
+    let selected = select_timeouts(&request_settings(case.stream), &deployment, &router);
+    assert_eq!(selected.stream, case.expected_stream.map(seconds));
+    assert_eq!(selected.non_stream, seconds(case.expected_non_stream));
+    assert_eq!(selected.attempt, seconds(case.expected_attempt));
+}
+
 #[rstest]
 #[case::httpx_provider_keeps_phases("openai", Some(2.0_f64), true)]
+#[case::azure_provider_keeps_phases("azure", Some(2.0_f64), true)]
+#[case::bedrock_provider_keeps_phases("bedrock", Some(2.0_f64), true)]
 #[case::other_provider_collapses_to_read("groq", Some(2.5_f64), false)]
 #[case::missing_read_falls_back("groq", None, false)]
 fn completion_phases(
@@ -213,7 +301,7 @@ fn non_stream_global_default() {
 }
 
 #[test]
-fn plan_deadline_ignores_deployment_sources() {
+fn plan_deadline_never_shortens_the_attempt() {
     let base = Instant::now();
     let mut deployment = no_deployment();
     deployment.timeout = Some(seconds(4.0));
@@ -228,6 +316,23 @@ fn plan_deadline_ignores_deployment_sources() {
     assert_eq!(plan.attempt, seconds(4.0));
     assert_eq!(plan.stream, None);
     assert_eq!(plan.attempt_deadline(base).unwrap(), at(base, 4));
+}
+
+#[test]
+fn plan_deadline_covers_a_longer_deployment_timeout() {
+    let base = Instant::now();
+    let mut deployment = no_deployment();
+    deployment.timeout = Some(seconds(120.0));
+    let plan = TimeoutPlan::new(
+        base,
+        &router_settings(30.0),
+        &request_settings(false),
+        &deployment,
+    )
+    .unwrap();
+    assert_eq!(plan.deadline, at(base, 120));
+    assert_eq!(plan.attempt, seconds(120.0));
+    assert_eq!(plan.attempt_deadline(base).unwrap(), at(base, 120));
 }
 
 #[test]

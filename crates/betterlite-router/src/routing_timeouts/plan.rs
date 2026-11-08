@@ -107,13 +107,14 @@ impl TimeoutPlan {
         deployment: &DeploymentTimeouts,
     ) -> Result<Self, TimeoutError> {
         let whole = select_timeouts(request, &DeploymentTimeouts::default(), router).attempt;
-        // a deployment change only narrows the attempt; the routing deadline was fixed from the request's own sources
+        // the deadline covers the selected attempt, so a deployment's longer timeout is honoured once and later attempts share what remains
         let selected = select_timeouts(request, deployment, router);
+        let budget = Seconds(whole.0.max(selected.attempt.0));
         let deadline = now
-            .checked_add(whole.duration("the routing deadline")?)
+            .checked_add(budget.duration("the routing deadline")?)
             .ok_or_else(|| TimeoutError::OutOfRange {
                 field: "the routing deadline".to_owned(),
-                seconds: whole.0,
+                seconds: budget.0,
             })?;
         Ok(Self {
             deadline,

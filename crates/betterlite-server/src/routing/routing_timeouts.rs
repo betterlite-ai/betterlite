@@ -35,6 +35,7 @@ pub fn resolve(section: &config::Settings) -> Result<TimeoutSettings, RoutingTim
         seconds: Seconds::new("litellm_settings.request_timeout", section.global.seconds)?,
         explicitly_set: section.global.explicitly_set,
     };
+    // default_litellm_params.timeout is validated at config load; Router.timeout always wins, so the plan never receives it
     let sources = RouterTimeoutSources {
         timeout: optional("router_settings.timeout", section.router.timeout)?,
         stream_timeout: optional(

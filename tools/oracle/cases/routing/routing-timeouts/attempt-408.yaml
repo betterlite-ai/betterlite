@@ -19,4 +19,13 @@ probes:
           global_timeout: {seconds: "6000", explicitly_set: false}
           deployment: {timeout: "1"}
           elapsed_millis: 500
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        router:
+          timeout: "30"
+          global_timeout: {seconds: "6000", explicitly_set: false}
+          deployment: {timeout: "120"}
+          elapsed_millis: 60000
 compare: {ignore: []}

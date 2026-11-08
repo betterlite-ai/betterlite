@@ -43,6 +43,7 @@ struct RawRouter {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawDefaultParams {
+    timeout: Option<RawNumber>,
     stream_timeout: Option<RawNumber>,
 }
 
@@ -61,6 +62,7 @@ pub struct GlobalTimeout {
 pub struct RouterTimeouts {
     pub timeout: Option<f64>,
     pub stream_timeout: Option<f64>,
+    pub default_timeout: Option<f64>,
     pub default_stream_timeout: Option<f64>,
 }
 
@@ -135,6 +137,12 @@ where
         parse_float,
     )?;
     let defaults = raw.default_litellm_params;
+    let default_timeout = resolve_number(
+        defaults.timeout,
+        "router_settings.default_litellm_params.timeout",
+        lookup,
+        parse_float,
+    )?;
     let default_stream_timeout = resolve_number(
         defaults.stream_timeout,
         "router_settings.default_litellm_params.stream_timeout",
@@ -144,6 +152,7 @@ where
     Ok(RouterTimeouts {
         timeout,
         stream_timeout,
+        default_timeout,
         default_stream_timeout,
     })
 }

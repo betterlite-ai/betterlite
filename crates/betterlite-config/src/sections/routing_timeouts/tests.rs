@@ -56,14 +56,31 @@ fn global_timeout(
 
 #[test]
 fn router_timeouts_resolve_keys_and_environment() {
-    let source = "router_settings:\n  timeout: 7\n  stream_timeout: os.environ/STREAM_TIMEOUT\n  default_litellm_params:\n    stream_timeout: 4";
+    let source = "router_settings:\n  timeout: 7\n  stream_timeout: os.environ/STREAM_TIMEOUT\n  default_litellm_params:\n    timeout: 5\n    stream_timeout: 4";
     let resolved = settings(source, &[("STREAM_TIMEOUT", "3")]).unwrap();
     assert_eq!(
         resolved.router,
         RouterTimeouts {
             timeout: Some(7.0_f64),
             stream_timeout: Some(3.0_f64),
+            default_timeout: Some(5.0_f64),
             default_stream_timeout: Some(4.0_f64),
+        }
+    );
+}
+
+#[test]
+fn the_shipped_valid_seed_loads() {
+    let source = include_str!("../../../fuzz/corpus/config_yaml/routing-timeouts-valid.yaml");
+    let resolved = settings(source, &[]).unwrap();
+    assert_eq!(resolved.router.timeout, Some(30.0_f64));
+    assert_eq!(resolved.router.default_timeout, Some(40.0_f64));
+    assert_eq!(resolved.router.default_stream_timeout, Some(25.0_f64));
+    assert_eq!(
+        resolved.global,
+        GlobalTimeout {
+            seconds: 6000.0_f64,
+            explicitly_set: false,
         }
     );
 }

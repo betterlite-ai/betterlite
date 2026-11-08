@@ -273,12 +273,15 @@ def router_result(settings: RouterInput) -> RouterResult:
     stream = router._get_stream_timeout(kwargs, params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
     non_stream = router._get_non_stream_timeout(kwargs, params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
     whole = router._get_timeout(kwargs, {})  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
+    budget = None if whole is None else float(whole)
+    if budget is not None and attempt is not None:
+        budget = max(budget, float(attempt))
     expired_status, expired_code = expiry_status(settings, attempt)
     return RouterResult(
         stream=None if stream is None else timeout_output(stream),
         non_stream=None if non_stream is None else timeout_output(non_stream),
         attempt=None if attempt is None else timeout_output(attempt),
-        deadline_millis=None if whole is None else round(float(whole) * 1000),
+        deadline_millis=None if budget is None else round(budget * 1000),
         attempt_started=True,
         expired_status=expired_status,
         expired_code=expired_code,

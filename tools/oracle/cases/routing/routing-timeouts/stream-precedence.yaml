@@ -68,4 +68,40 @@ probes:
       routing_timeouts:
         router:
           global_timeout: {seconds: "300", explicitly_set: true}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        router:
+          timeout: "10"
+          stream_timeout: "7"
+          global_timeout: {seconds: "300", explicitly_set: true}
+          kwargs: {stream: true}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        router:
+          timeout: "10"
+          default_stream_timeout: "4"
+          global_timeout: {seconds: "300", explicitly_set: true}
+          kwargs: {stream: true}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        router:
+          timeout: "10"
+          global_timeout: {seconds: "6000", explicitly_set: false}
+          kwargs: {stream: false}
+          deployment: {timeout: "4", request_timeout: "8"}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        router:
+          timeout: "10"
+          global_timeout: {seconds: "300", explicitly_set: true}
+          kwargs: {stream: false}
+          deployment: {request_timeout: "8"}
 compare: {ignore: []}
