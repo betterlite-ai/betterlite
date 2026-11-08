@@ -1,0 +1,14 @@
+task: B8296
+deviations:
+  - what: Only the async cache operations are built. LiteLLM's sync set_cache and get_cache are not.
+    why: Same reason as B4382, the gateway calls the async cache methods and a blocking Valkey path would only duplicate the logic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/valkey_semantic_cache.py#L258-L295
+  - what: Responses are stored as JSON text, not Python str(value).
+    why: B4380's decoder reads JSON only, and docs/compatibility.md excludes Python repr text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/valkey_semantic_cache.py#L297-L331
+  - what: The Valkey URL, which holds the password, is never logged.
+    why: LiteLLM does not log it here either, but the rule is kept explicit since the URL carries the password.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/valkey_semantic_cache.py#L90-L118
+  - what: The debug entry logs that print the request kwargs are not ported; only the error and missing-prompt lines are.
+    why: Those lines carry the prompt and response text from the request, and betterlite does not log payloads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/valkey_semantic_cache.py#L297-L331
