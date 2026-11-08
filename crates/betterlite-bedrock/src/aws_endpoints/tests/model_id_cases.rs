@@ -119,21 +119,17 @@ fn routing_rewrites() {
 }
 
 fn precedence_rewrites() {
-    assert_eq!(model_id("x/nova/y", None), "x%2Fy");
-    assert_eq!(model_id("x/nova-2/y", None), "x%2Fy");
-    assert_eq!(
-        model_id("custom/openai/x", Some(Provider::Openai)),
-        "custom%2Fx"
-    );
-    assert_eq!(
-        model_id("a/llama/b/llama/c", Some(Provider::Llama)),
-        "a%2Fb%2Fc"
-    );
-    assert_eq!(model_id("a/invoke/b/invoke/c", None), "a/b/invoke/c");
-    assert_eq!(
-        model_id("a/nova/llama/x", Some(Provider::Llama)),
-        "a%2Fnova%2Fx"
-    );
+    let cases = [
+        ("x/nova/y", None, "x%2Fy"),
+        ("x/nova-2/y", None, "x%2Fy"),
+        ("custom/openai/x", Some(Provider::Openai), "custom%2Fx"),
+        ("a/llama/b/llama/c", Some(Provider::Llama), "a%2Fb%2Fc"),
+        ("a/invoke/b/invoke/c", None, "a/b/invoke/c"),
+        ("a/nova/llama/x", Some(Provider::Llama), "a%2Fnova%2Fx"),
+    ];
+    for (model, provider, expected) in cases {
+        assert_eq!(model_id(model, provider), expected, "{model}");
+    }
 }
 
 fn model_override_mutations() {
