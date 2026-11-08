@@ -1,0 +1,95 @@
+id: B8748
+title: LangSmith logger lifecycle, batching and catalog arm
+description: >-
+  B3911 builds LangSmith credentials and run payloads, and leaves the logger itself (lifecycle, queue and batch
+  delivery) to nobody. So langsmith is a known callback name that stops startup. This task builds LangsmithLogger
+  (litellm/integrations/langsmith.py L42-L525 minus what B3911 owns) and its catalog arm.
+
+
+  Code goes in crates/betterlite-logging/src/langsmith_logger.rs and langsmith_logger/ (the skeleton declares the
+  module in lib.rs), plus registry/catalog/langsmith.rs and langsmith/.
+
+
+  Construction (L45-L81). Default credentials come from B3911's get_credentials_from_env with no explicit values. The
+  sampling rate is 1.0 unless LANGSMITH_SAMPLING_RATE is set and its stripped text is all digits, in which case it is
+  that number; this keeps LiteLLM's expression, where a fractional value such as 0.5 falls back to 1.0. The default run
+  name is LANGSMITH_DEFAULT_RUN_NAME or "LLMRun". The batch size is LANGSMITH_BATCH_SIZE, else
+  litellm_settings.langsmith_batch_size, else B256's default. Read env through CatalogInputs.env and the config key
+  from a new section, crates/betterlite-config/src/sections/langsmith_settings.rs (the skeleton declares it and adds it
+  to the sections! list), reached as CatalogInputs.config.sections.langsmith_settings. The periodic flush runs on
+  CatalogInputs.tracker every B256 flush interval and stops on CatalogInputs.shutdown.
+
+
+  Events. The struct implements B8740's CallbackLogger. log_success_event (sync), async_log_success_event and
+  async_log_failure_event each read the sampling rate for the request (langsmith_sampling_rate from the dynamic params
+  when set, L475-L484), skip the call when a uniform random number is above it with the info line "Skipping Langsmith
+  logging. Sampling rate=<rate>, random_sample=<sample>", pick the credentials with B3911's
+  _get_credentials_to_use_for_request equivalent, build the run with B3911's _prepare_log_data equivalent and push
+  {data, credentials} on the queue. When the queue reaches the batch size, the async events flush and the sync event
+  starts a flush on the tracker (_send_batch, L509-L525). Every error is logged, never returned.
+
+
+  Delivery (L363-L473). A flush groups the queue by (api key, project, base url, tenant id), skipping and warning about
+  entries whose api key or project is missing, and posts each group to the base URL with "/api/v1" appended when absent
+  plus "runs/batch" (_add_endpoint_to_url), with headers x-api-key, Content-Type application/json and x-tenant-id when
+  set, and the body {"post": [runs...]}. A status of 300 or more is logged at error level; an HTTP error is logged with
+  its status and text. Use CatalogInputs.http (the ProxiedClient).
+
+
+  Catalog. registry/catalog/langsmith.rs builds one logger per process, as the langsmith arm (litellm_logging.py
+  L4558-L4564) returns the instance it holds.
+
+
+  Tests with a fake HTTP sender and a seeded random source: sampling rate parsing (unset, "1", "0.5"), a sampled out
+  call never queues, a full queue flushes once, grouping by credentials sends one post per group with the right URL and
+  headers, missing credentials skip with a warning, the sync event spawns the flush, and the catalog arm returns the
+  same Arc twice.
+scope:
+  paths:
+    - crates/betterlite-logging/src/langsmith_logger.rs
+    - crates/betterlite-logging/src/langsmith_logger/**
+    - crates/betterlite-logging/src/registry/catalog/langsmith.rs
+    - crates/betterlite-logging/src/registry/catalog/langsmith/**
+    - crates/betterlite-config/src/sections/langsmith_settings.rs
+    - crates/betterlite-config/src/sections/langsmith_settings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L42-L99
+    why: Constructor, sampling rate expression, batch size sources and the flush task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L252-L361
+    why: The three events with sampling and queueing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L363-L525
+    why: Batch grouping, URL building, the post and _send_batch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4558-L4564
+    why: The langsmith arm.
+dod:
+  - text: The logger reads sampling rate, run name and batch size as LiteLLM does, including the fallback to 1.0 for a fractional LANGSMITH_SAMPLING_RATE.
+    proof: [langsmith-tests]
+  - text: Sync success and async success and failure sample, queue and flush at the batch size; flushes group by credentials and post to runs/batch with LiteLLM's headers and body.
+    proof: [langsmith-tests]
+  - text: The langsmith catalog arm builds one logger, and litellm_settings.langsmith_batch_size is parsed by its section.
+    proof: [langsmith-tests, section-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: langsmith-tests
+      why: the logger, its batching or its catalog arm is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langsmith_logger::/) | test(/^registry::catalog::langsmith::/)'
+    - id: section-tests
+      why: litellm_settings.langsmith_batch_size is not loaded
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::langsmith_settings::/)'
+oracle_cases: []
+deviations:
+  - what: LANGSMITH_MOCK mock mode is not built; the logger always posts to the configured base URL.
+    why: Mock mode intercepts httpx for LiteLLM's own tests; point LANGSMITH_BASE_URL at a test server instead.
+out_of_scope:
+  - "Credentials, metadata, redaction and run payloads (get_credentials_from_env, _get_credentials_to_use_for_request, _extract_metadata_fields, _prepare_log_data and the rest): B3911."
+  - "get_run_by_id: a debugging read with no caller in the logging path."
+pitfalls:
+  - LiteLLM's sampling expression is (explicit or float(env)) if env is all digits else 1.0, so an explicit rate without the env var is ignored.
+  - The sync event cannot await, so it spawns the flush on the tracker instead of blocking the caller.
+  - Group keys include the tenant id, so two tenants with one key send two posts.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

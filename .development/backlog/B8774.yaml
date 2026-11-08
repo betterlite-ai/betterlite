@@ -1,0 +1,13 @@
+id: B8774
+milestone: M8 platform
+title: Mount the Google GenAI, interactions and agent collection routes with the interaction release port
+status: todo
+depends_on: [B8610, B8634, B8635, B8660, B8802, B3506, B3507, B3508]
+file: tasks/B8774-google-api-mount.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

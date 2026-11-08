@@ -41,7 +41,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "Mounting the routes and their HTTP oracle cases: the wave 17 model admin wiring part mounts them."
+  - "Mounting the routes and their HTTP oracle cases: B8676."
   - "The manual cost map and beta header reload, schedule, cancel, status and source routes: B8586. The snapshot itself: B339."
 pitfalls:
   - "The state route accepts an admin viewer, not only PROXY_ADMIN, and its 403 detail is the not_allowed_access text, not the reload routes' role message."

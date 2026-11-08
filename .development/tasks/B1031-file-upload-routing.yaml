@@ -36,7 +36,7 @@ scope:
   - tools/oracle/cases/helpers/file-upload-policy/**
   - tools/oracle/fuzz/corpus/helper_case/file_upload_policy-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/file_upload_routing.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/file_upload_routing.py
   - tools/oracle/cases/sdk-http/file-upload-routing/**

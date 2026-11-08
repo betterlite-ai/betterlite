@@ -3,7 +3,7 @@ title: Container route types, router wrappers, route choice and direct SDK calls
 description: >-
   Give the nine async container route types a path from the proxy to the SDK. The proxy's container routes (B3372 for the file routes) hand a data map and a route type
   ("aupload_container_file", "alist_container_files", "aretrieve_container_file", "adelete_container_file", "aretrieve_container_file_content", "acreate_container",
-  "alist_containers", "aretrieve_container", "adelete_container") to B004's common request processing. LiteLLM then runs route_llm_request.py L586-L598, which calls
+  "alist_containers", "aretrieve_container", "adelete_container") to the common request processing (B8801's shared pre-call step, then B004's routing). LiteLLM then runs route_llm_request.py L586-L598, which calls
   `llm_router.<route_type>(**data)`. Those Router methods are built by Router._initialize_container_endpoints (router.py L2143-L2170) with factory_function, and the factory's
   container branch calls Router._init_containers_api_endpoints (L7050-L7106). No other task owns this mapping: B3368 builds `acontainer_file_call` and B3369/B3370 build the container
   calls, but nothing connects a route type to them. This task is that connection, in three places that form no cycle. betterlite-core cannot import betterlite-sdk, so the core side
@@ -146,7 +146,7 @@ out_of_scope:
   - "The generic engine (_ageneric_api_call_with_fallbacks, its helper, _dispatch_generic_call_type) is B6021; selection, retries, slots and the refusal check are B016, B017, B303 and B310. This task only plugs executors into it."
   - "The generic parts of _route_request_single_attempt (user_config, router_settings_override, batch completion, the blocked-model check, mock-testing checks) belong to B004 and B014."
   - "The SDK calls the executors reach: B3368 (the five file calls), B3369 (create, list), B3370 (retrieve, delete), B3366 and B3367 (the explicit list and upload functions the direct path uses)."
-  - "The ContainerIdDecoder implementation over B903's _decode_container_id, the server implementation of the generic wiring, and the construction of RouterGeneric with container_executors: the architect's wiring, see notes."
+  - "The ContainerIdDecoder implementation over B903's _decode_container_id, the server implementation of the generic wiring, and the construction of RouterGeneric with container_executors: B8631 (RouterGeneric with container_executors) and B8635 (ContainerIdDecoder and the server wiring), see notes."
   - "The container HTTP routes themselves and the request data maps: B3372 (file routes) and the routes of proxy/container_endpoints/endpoints.py."
 pitfalls:
   - "async_wrapper takes custom_llm_provider and client as named parameters and passes neither through, so _init_containers_api_endpoints puts custom_llm_provider back only when kwargs has no such key, and client is dropped for good."

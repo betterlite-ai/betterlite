@@ -1,0 +1,110 @@
+id: B8746
+title: Catalog arms for the OpenTelemetry family of callback names
+description: >-
+  Twelve callback names build an OpenTelemetry based logger, and each arm chooses between the V2 adapter and a legacy
+  class owned by a different task: otel, arize, arize_phoenix, levo, agentops, langtrace, signoz, logfire, traceloop,
+  langfuse_otel, weave_otel and the global newrelic logger. No logger task owns these arms, since each spans two or
+  three of them. This task fills the twelve catalog modules from B8741 so the names resolve to loggers.
+
+
+  Code goes in crates/betterlite-logging/src/registry/catalog/<name>.rs and <name>/ for the twelve names, plus
+  registry/catalog/otel/phoenix_auto.rs for `_maybe_auto_initialize_arize_phoenix` (L5272-L5313). Each build returns
+  an Arc<dyn CallbackLogger>. OpenTelemetryV2 implements B8740's trait through B3852, the legacy OpenTelemetry through
+  B3859 and the New Relic agent logger through B3942. Arize, Phoenix, AgentOps, Levo, Logfire, Traceloop, Weave and
+  Langfuse OTel are configurations of one of the two OpenTelemetry loggers, built by B3862, B3863 and B3910; where one
+  is a separate type, implement the trait for it here by forwarding to its inner logger.
+
+
+  The shared shape (agentops L4513-L4523, arize L4710-L4737, arize_phoenix L4739-L4763, levo L4765-L4788, langtrace
+  L4941-L4962, signoz L4964-L4995, langfuse_otel L5013-L5025, weave_otel L5026-L5049): first call B3851's
+  `_maybe_construct_otel_v2` equivalent for the name; when it gives a V2 logger (B3853's OpenTelemetryV2) return it.
+  Otherwise build the legacy logger: Arize and Phoenix from B3862, AgentOps, Levo, Logfire, Traceloop and Weave from
+  B3863, LangfuseOtelLogger from B3910, the generic legacy OpenTelemetry from B3868 for langtrace and signoz with the
+  endpoint and header each arm computes. langtrace requires LANGTRACE_API_KEY and signoz requires the SigNoz ingestion
+  endpoint variable: without it return CatalogError::Init with LiteLLM's ValueError text, before trying V2, as the arms
+  check it first. Every arm reads the environment through inputs.env, never std::env.
+
+
+  otel (L4790-L4828): when LITELLM_OTEL_V2 is on (B3853's is_otel_v2_enabled), build the V2 logger from
+  `inputs.callback_settings["otel"]` (LiteLLM's _get_custom_logger_settings_from_proxy_server); otherwise build the
+  legacy OpenTelemetry from the same settings. Both paths then run the Phoenix auto start: when the Phoenix variables
+  are set and no arize_phoenix logger exists, resolve arize_phoenix too. That needs the catalog, so phoenix_auto.rs
+  returns a flag and LoggerCatalog's otel arm resolves arize_phoenix after storing otel; add that one call to the otel
+  branch of the match in catalog.rs (the only line of catalog.rs this task changes).
+
+
+  logfire (L4884-L4903) builds the legacy OpenTelemetry with LOGFIRE_TOKEN and LOGFIRE_BASE_URL (default
+  https://logfire-api.pydantic.dev). traceloop is the set_callbacks name (L4463-L4464) for B3863's Traceloop logger.
+  newrelic (L5161-L5180) is reached here only without a team key (B8742 asks B8655 first): V2 when
+  _maybe_construct_otel_v2 gives one, else B3942's New Relic agent logger.
+
+
+  Tests in each <name>/tests.rs with a fake environment: the legacy path when V2 is off, the V2 path when on, the
+  Init error for a missing required variable, and for otel that Phoenix variables also produce an arize_phoenix logger.
+scope:
+  paths:
+    - crates/betterlite-logging/src/registry/catalog.rs
+    - crates/betterlite-logging/src/registry/catalog/otel.rs
+    - crates/betterlite-logging/src/registry/catalog/otel/**
+    - crates/betterlite-logging/src/registry/catalog/arize.rs
+    - crates/betterlite-logging/src/registry/catalog/arize/**
+    - crates/betterlite-logging/src/registry/catalog/arize_phoenix.rs
+    - crates/betterlite-logging/src/registry/catalog/arize_phoenix/**
+    - crates/betterlite-logging/src/registry/catalog/levo.rs
+    - crates/betterlite-logging/src/registry/catalog/levo/**
+    - crates/betterlite-logging/src/registry/catalog/agentops.rs
+    - crates/betterlite-logging/src/registry/catalog/agentops/**
+    - crates/betterlite-logging/src/registry/catalog/langtrace.rs
+    - crates/betterlite-logging/src/registry/catalog/langtrace/**
+    - crates/betterlite-logging/src/registry/catalog/signoz.rs
+    - crates/betterlite-logging/src/registry/catalog/signoz/**
+    - crates/betterlite-logging/src/registry/catalog/logfire.rs
+    - crates/betterlite-logging/src/registry/catalog/logfire/**
+    - crates/betterlite-logging/src/registry/catalog/traceloop.rs
+    - crates/betterlite-logging/src/registry/catalog/traceloop/**
+    - crates/betterlite-logging/src/registry/catalog/langfuse_otel.rs
+    - crates/betterlite-logging/src/registry/catalog/langfuse_otel/**
+    - crates/betterlite-logging/src/registry/catalog/weave_otel.rs
+    - crates/betterlite-logging/src/registry/catalog/weave_otel/**
+    - crates/betterlite-logging/src/registry/catalog/newrelic.rs
+    - crates/betterlite-logging/src/registry/catalog/newrelic/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4513-L4523
+    why: The agentops arm, the first that asks _maybe_construct_otel_v2.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4710-L4828
+    why: The arize, arize_phoenix, levo and otel arms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4884-L4903
+    why: The logfire arm and its default base URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4941-L5049
+    why: The langtrace, signoz, langfuse_otel and weave_otel arms with their required variables.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5161-L5180
+    why: The global newrelic arm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5272-L5313
+    why: The Phoenix auto start after otel.
+dod:
+  - text: Each of the twelve names builds the V2 logger when its preset is enabled and the legacy logger otherwise, reading every variable through the injected environment.
+    proof: [otel-arm-tests]
+  - text: langtrace and signoz without their required variable give LiteLLM's init error before any V2 attempt.
+    proof: [otel-arm-tests]
+  - text: otel picks V2 or legacy by LITELLM_OTEL_V2 and starts arize_phoenix when the Phoenix variables are set.
+    proof: [otel-arm-tests]
+checks:
+  optional: []
+  commands:
+    - id: otel-arm-tests
+      why: an arm is missing, ignores the V2 switch or skips a required variable check
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::(otel|arize|arize_phoenix|levo|agentops|langtrace|signoz|logfire|traceloop|langfuse_otel|weave_otel|newrelic)::/)'
+oracle_cases: []
+deviations:
+  - what: The otel name always gets its own legacy OpenTelemetry logger; LiteLLM returns any plain OpenTelemetry instance built earlier, so after langtrace, signoz or logfire, otel reuses that one.
+    why: That reuse sends otel spans to another vendor's endpoint, which reads as a LiteLLM accident; each name keeps its own logger here.
+out_of_scope:
+  - "_maybe_construct_otel_v2: B3851. The loggers themselves: B3853, B3862, B3863, B3868, B3910 and B3942. The newrelic team arm: B8655."
+pitfalls:
+  - The langtrace and signoz arms raise before they try V2, so a missing key fails even when LITELLM_OTEL_V2 is on.
+  - The arize and levo arms set OTEL_EXPORTER_OTLP_TRACES_HEADERS in the process environment; pass the header to the exporter config instead of writing the environment.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

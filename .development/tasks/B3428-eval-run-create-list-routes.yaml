@@ -1,7 +1,7 @@
 id: B3428
 title: Eval run creation and listing routes
 description: >-
-  Register POST and GET `/v1/evals/{eval_id}/runs` routes in `betterlite-server::api::eval_run_create_list_routes`.
+  Register POST and GET `/v1/evals/{eval_id}/runs` routes in `betterlite-server::api::eval_run_create_list_routes`, returned by `pub fn routes(..)`, which B8775 mounts and B8776 proves over HTTP; test the handlers here with tower's oneshot over that Router.
   The module exports a function that registers these two routes with the server and returns a router factory.
   For create_run, decode the request body with orjson and apply model selection precedence: header `x-litellm-model`,
   then query `model`, then body `model`, then `completion.model` (only when completion is a dictionary).
@@ -18,7 +18,6 @@ scope:
   paths:
     - crates/betterlite-server/src/api/eval_run_create_list_routes.rs
     - crates/betterlite-server/src/api/eval_run_create_list_routes/**
-    - tools/oracle/cases/evals/runs/**
     - Cargo.toml
     - tools/oracle/helpers/b3428.py
     - tools/oracle/helpers/b3428/**
@@ -98,28 +97,7 @@ checks:
     - id: response-contracts
       why: response models do not use Run and ListRunsResponse from B3420
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_run_create_list_routes::tests::response_contracts(::|$)/)'
-oracle_cases:
-  - tools/oracle/cases/evals/runs/create-run-basic.yaml
-  - tools/oracle/cases/evals/runs/create-run-model-header.yaml
-  - tools/oracle/cases/evals/runs/create-run-model-query.yaml
-  - tools/oracle/cases/evals/runs/create-run-model-body.yaml
-  - tools/oracle/cases/evals/runs/create-run-model-completion.yaml
-  - tools/oracle/cases/evals/runs/create-run-completion-not-dict.yaml
-  - tools/oracle/cases/evals/runs/create-run-path-eval-id-override.yaml
-  - tools/oracle/cases/evals/runs/create-run-provider-body.yaml
-  - tools/oracle/cases/evals/runs/create-run-provider-null.yaml
-  - tools/oracle/cases/evals/runs/create-run-malformed-json.yaml
-  - tools/oracle/cases/evals/runs/list-runs-basic.yaml
-  - tools/oracle/cases/evals/runs/list-runs-limit-default.yaml
-  - tools/oracle/cases/evals/runs/list-runs-limit-explicit.yaml
-  - tools/oracle/cases/evals/runs/list-runs-pagination-after.yaml
-  - tools/oracle/cases/evals/runs/list-runs-pagination-before.yaml
-  - tools/oracle/cases/evals/runs/list-runs-pagination-order.yaml
-  - tools/oracle/cases/evals/runs/list-runs-model-header.yaml
-  - tools/oracle/cases/evals/runs/list-runs-model-query.yaml
-  - tools/oracle/cases/evals/runs/list-runs-provider-default.yaml
-  - tools/oracle/cases/evals/runs/list-runs-provider-query.yaml
-  - tools/oracle/cases/evals/runs/list-runs-no-body-support.yaml
+oracle_cases: []
 deviations:
   - what: "For create_run: request body decoding (JSON parse errors) occurs before the try/catch block so malformed bodies return 400 with a parse error, not a 500 from the handler."
     why: "LiteLLM's FastAPI route handler implicitly parses bodies as part of the request lifecycle; betterlite's explicit decode before try/catch preserves the same error surface (400 on bad JSON) without changing the visible contract."
@@ -128,7 +106,7 @@ deviations:
     why: "LiteLLM's list_runs GET route in FastAPI does not accept a request body parameter, so no body is available. Betterlite's implementation avoids reading request bytes when the operation does not use them, matching LiteLLM's behavior."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L677-L693"
 out_of_scope:
-  - "ProxyBaseLLMRequestProcessing.base_process_llm_request implementation and its internal processing steps; B004 owns that in litellm/proxy/common_request_processing.py, and routes only call it."
+  - "ProxyBaseLLMRequestProcessing.base_process_llm_request implementation and its internal processing steps; B8801 owns its pre-call step (take `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state constructor; the part that mounts these routes passes B8802's pre_call_step(state)) and B004 the rest in litellm/proxy/common_request_processing.py, and routes only call it."
   - "ProxyBaseLLMRequestProcessing._handle_llm_api_exception implementation and error envelope construction; B004 owns that in litellm/proxy/common_request_processing.py, and routes only catch and delegate to it."
   - "Authentication and user_api_key_auth dependency injection; B756 or another auth task owns that."
   - "The concrete operation implementations (acreate_run, alist_runs) owned by B3424; routes only dispatch to them."

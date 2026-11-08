@@ -19,7 +19,7 @@ scope:
   - crates/betterlite-core/src/api/file_provider_read.rs
   - crates/betterlite-core/src/api/file_provider_read/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/file_provider_read.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/file_provider_read.py
   - tools/oracle/cases/sdk-http/file-provider-read/**
