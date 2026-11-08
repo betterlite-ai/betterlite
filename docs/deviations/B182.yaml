@@ -1,0 +1,17 @@
+task: B182
+deviations:
+  - what: A Cohere conversion of an empty message list fails with a typed error that names the empty list, where LiteLLM's pop raises IndexError.
+    why: An empty list is a valid list value and LiteLLM answers 500 from an unhandled exception; the conversion refuses it as a 400 instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3043
+  - what: A Cohere last message whose content is null fails with a typed error, where LiteLLM iterates the null content and raises TypeError.
+    why: Assistant and function content may be null in the declared message types and LiteLLM answers 500; the conversion refuses it as a 400 instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3049-L3055
+  - what: cohere_message_pt refuses a non-empty list content with a typed error, where LiteLLM concatenates the list onto the prompt string and raises TypeError.
+    why: A user or system message content list is a declared message type and LiteLLM answers 500; the conversion refuses it as a 400 instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3149-L3151
+  - what: A Cohere tool call whose arguments are not valid JSON, or that carries no arguments key, fails with a typed error, where LiteLLM's json.loads raises JSONDecodeError or TypeError.
+    why: The arguments string is a declared message field and LiteLLM answers 500; the conversion refuses it as a 400 instead, and B178's repair is not applied because LiteLLM repairs arguments only in its Anthropic and Bedrock paths.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2940-L2946
+  - what: The conversions refuse more than 1024 messages, more than 256 content parts in one message, or more than 1024 tool calls across the list, where LiteLLM walks any size.
+    why: Rule bounded-inputs caps what an untrusted request can make the gateway allocate and iterate; the limits are the ones B183 and B232 already apply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3022-L3140

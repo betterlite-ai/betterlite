@@ -1,0 +1,1 @@
+[{"role":"system","content":"be brief"},{"role":"user","content":"hi"},{"role":"assistant","content":"calling","tool_calls":[{"id":"call_1","type":"function","function":{"name":"f","arguments":"{\"a\":1}"}}]},{"role":"tool","tool_call_id":"call_1","content":"{\"ok\":true}"},{"role":"user","content":"next"}]

@@ -1,0 +1,31 @@
+kind: helper
+name: provider-messages-azure-tools
+call:
+  provider_messages:
+    operation: convert_to_azure_openai_messages
+    messages:
+      - role: assistant
+        content: null
+        function_call:
+          name: get_weather
+          arguments: null
+      - role: assistant
+        content: hi
+        function_call:
+          name: get_time
+          arguments: '{"zone":"utc"}'
+      - role: assistant
+        content: with tools
+        tool_calls:
+          - id: call_1
+            type: function
+            function:
+              name: lookup
+              arguments: '{"q":"x"}'
+        cache_control:
+          type: ephemeral
+      - role: user
+        content: hello
+env: {}
+compare:
+  ignore: []

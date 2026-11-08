@@ -1,0 +1,46 @@
+kind: helper
+name: provider-messages-cohere-role-merging
+call:
+  provider_messages:
+    operation: cohere_messages
+    messages:
+      - role: user
+        content: one
+      - role: user
+        content: two
+      - role: system
+        content: s1
+      - role: system
+        content: s2
+      - role: assistant
+        content: call them
+        tool_calls:
+          - id: call_1
+            type: function
+            function:
+              name: first
+              arguments: '{"a":1}'
+          - id: call_2
+            type: function
+            function:
+              name: second
+              arguments: '{}'
+        function_call:
+          name: legacy
+          arguments: '{}'
+      - role: assistant
+        content: ' more'
+      - role: tool
+        tool_call_id: call_1
+        content: r1
+      - role: tool
+        tool_call_id: call_2
+        content: r2
+      - role: function
+        name: legacy_fn
+        content: r3
+      - role: user
+        content: final
+env: {}
+compare:
+  ignore: []

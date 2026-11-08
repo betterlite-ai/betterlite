@@ -1,0 +1,17 @@
+kind: helper
+name: provider-messages-cohere-last-user
+call:
+  provider_messages:
+    operation: cohere_messages
+    messages:
+      - role: system
+        content: be brief
+      - role: user
+        content: hi
+      - role: assistant
+        content: hello
+      - role: user
+        content: what now?
+env: {}
+compare:
+  ignore: []

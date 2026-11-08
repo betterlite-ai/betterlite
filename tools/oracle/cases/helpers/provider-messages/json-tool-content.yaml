@@ -1,0 +1,29 @@
+kind: helper
+name: provider-messages-json-tool-content
+call:
+  provider_messages:
+    operation: stringify_json_tool_call_content
+    messages:
+      - role: tool
+        tool_call_id: c1
+        content: '{"ok":true}'
+      - role: tool
+        tool_call_id: c2
+        content: plain text
+      - role: tool
+        tool_call_id: c3
+        content: '[1,2]'
+      - role: assistant
+        content: plain text
+        tool_calls: []
+      - role: tool
+        tool_call_id: c4
+        content:
+          - type: text
+            text: '{"a":1}'
+      - role: tool
+        tool_call_id: c5
+        content: ' 42 '
+env: {}
+compare:
+  ignore: []
