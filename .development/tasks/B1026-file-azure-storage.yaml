@@ -2,16 +2,16 @@ id: B1026
 title: Azure file storage backend
 description: >-
   Implement azure_blob_storage_backend.py completely in betterlite-core::api::file_azure_storage.
-  Consume B1025's storage contract, B2460 safe_filename, B171 segment quoting and B115's Azure
+  Consume B1025's storage contract, B2460 safe_filename, B171 segment quoting and B4000's Azure
   storage authentication/client/create/flush primitives through injected ports. B129 secret-manager
   integration is not the owner of AzureBlobStorageLogger and is not called here. All outbound I/O
   uses B173. periodic_flush and success/failure logging overrides do nothing, and inherited delete
   remains a successful no-op. No logger queue or paid-tier check is activated for file storage.
 
-  B115/B002 resolve AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_FILE_SYSTEM (required nonempty),
+  B4000/B002 resolve AZURE_STORAGE_ACCOUNT_NAME and AZURE_STORAGE_FILE_SYSTEM (required nonempty),
   AZURE_STORAGE_ACCOUNT_KEY, AZURE_STORAGE_TENANT_ID, AZURE_STORAGE_CLIENT_ID,
   AZURE_STORAGE_CLIENT_SECRET, and AZURE_STORAGE_ENDPOINT_SUFFIX (unset/empty => core.windows.net).
-  The account key wins when truthy; otherwise use B115 token management. Endpoints are configured
+  The account key wins when truthy; otherwise use B4000 token management. Endpoints are configured
   https://<account>.dfs.<suffix> and https://<account>.blob.<suffix>. Pass clock and UUID source in.
 
   SDK operations reach Azure HTTP: add B2401 SdkHttpCall::FileAzureStorage, Rust/Python dispatch
@@ -35,7 +35,7 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/file_azure_storage-*
   - tools/oracle/cases/helpers/file-azure-storage/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/file_azure_storage.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/file_azure_storage.py
   - tools/oracle/cases/sdk-http/file-azure-storage/**
@@ -46,7 +46,7 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L22-L311
   why: Owns basename/extension/naming helpers and all backend methods, with account-key versus token upload/download branches.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L59-L116
-  why: B115 owns credential initialization and configured DFS/blob origins; the file subclass reuses them.
+  why: B4000 owns credential initialization and configured DFS/blob origins; the file subclass reuses them.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1544-L1545
   why: REST x-ms-version is 2019-07-07 and the default endpoint suffix is core.windows.net.
 dod:
@@ -67,7 +67,7 @@ dod:
 - text: >-
     token_upload_sequence with no account key sends create PUT ?resource=file, PATCH
     ?action=append&position=0 with exact binary bytes and content-type=application/octet-stream,
-    then B115's flush request at the final byte length. Append carries x-ms-version=2019-07-07 and
+    then B4000's flush request at the final byte length. Append carries x-ms-version=2019-07-07 and
     Authorization=Bearer <resolved-token>. A slash-only truthy prefix produces /<filename> after
     stripping, unlike an absent prefix. Failed append propagates its 403/429/500 HTTP error and
     prevents flush; no compensating delete is issued. Errors are logged and rethrown.
@@ -115,7 +115,7 @@ oracle_cases:
 - tools/oracle/cases/sdk-http/file-azure-storage/azure-download-addressing.yaml
 deviations: []
 out_of_scope:
-- B115 owns inherited get_service_client, set_valid_azure_ad_token, _create_file, _flush_data and Azure environment/token lifetime rules; use those ports directly.
+- B4000 owns inherited get_service_client, set_valid_azure_ad_token, _create_file, _flush_data and Azure environment/token lifetime rules; use those ports directly.
 - B1025 owns the storage trait/default delete; B1027 selects the backend and builds the public file object.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as file_azure_storage in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/file_azure_storage.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/file_azure_storage.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

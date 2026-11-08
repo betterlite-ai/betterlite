@@ -1,0 +1,126 @@
+id: B8103
+title: LangGraph SSE stream parsing and custom stream wrappers
+description: >-
+  Build the streaming half of the LangGraph provider in the module langgraph_stream of betterlite-provider: the iterator in
+  litellm/llms/langgraph/chat/sse_iterator.py (LangGraphSSEStreamIterator, 180 code lines) and, in
+  litellm/llms/langgraph/chat/transformation.py, get_streaming_response, get_sync_custom_stream_wrapper,
+  get_async_custom_stream_wrapper and has_custom_stream_wrapper (true). The error type LangGraphError and the request side come from
+  B8102.
+
+
+  Line parsing. Each SSE line is trimmed. An empty line or a line that does not start with "data:" gives nothing. The text after
+  "data:" is trimmed, an empty remainder gives nothing, and a remainder that is not valid JSON is skipped with a debug log (first 100
+  characters). Parsed data goes to the data handler.
+
+
+  Data handler. A list of at least two items is [event_type, payload]: "messages" goes to the messages handler, "metadata" goes to the
+  metadata handler, any other event type gives nothing. A dict with a "content" key gives a content chunk of data content. A dict with
+  "messages" whose list is non-empty looks at the last item: only a dict with type ai gives a content chunk of its content. Anything
+  else gives nothing. A list shorter than two items gives nothing.
+
+
+  Messages handler. The payload must be a list, scanned in order, returning on the first match. An item that is a non-empty list takes
+  its first element as the message; a dict message with type ai or AIMessageChunk and non-empty content gives a content chunk.
+  An item that is a dict (not in a list) is read the same way with type in (ai, AIMessageChunk). An empty list item and items that are
+  neither lists nor dicts are skipped.
+
+
+  Metadata handler. A payload dict holding run_id marks the stream finished and returns the final chunk; any other payload gives nothing.
+  Chunks. A content chunk has id "chatcmpl-" plus a new uuid4, created 0, the model, object chat.completion.chunk, one choice index 0,
+  finish_reason none and a delta with the text and role assistant. The final chunk has the same envelope with finish_reason stop and an
+  empty delta.
+
+
+  Iteration. Sync and async iteration read lines from the HTTP response and return the first chunk found. When the lines end and no final
+  chunk was sent, send one final chunk once, then stop. A consumed or closed stream stops silently. Any other error is logged
+  "Error in LangGraph SSE stream: <error>" and ends the stream without raising. Before iteration starts, next ends at once.
+
+
+  Wrappers. get_sync_custom_stream_wrapper and the async twin POST the request body as JSON text to the URL with the given headers in
+  stream mode through the pooled client (B173), reuse the supplied client only when it is the right kind (sync client for sync, async
+  client for async) and otherwise create one with default params, fail with LangGraphError when the status is not 200, hand the
+  response to get_streaming_response and wrap the iterator in the shared streaming wrapper for the model and provider. They then log
+  post_call with input messages, empty api_key, original_response "first stream response received" and additional_args
+  complete_input_dict set to the body.
+
+
+  Fuzzing. The decoder function is parse_sse_line, fed arbitrary bytes read as lossy UTF-8 text. Add a cargo-fuzz target
+  crates/betterlite-provider/fuzz/fuzz_targets/langgraph_stream.rs, seed its corpus under crates/betterlite-provider/fuzz/corpus/langgraph_stream
+  with at least 8 real stream lines, and replay every corpus file in a normal test named replays_the_langgraph_stream_corpus.
+scope:
+  paths:
+    - crates/betterlite-provider/src/langgraph_stream.rs
+    - crates/betterlite-provider/src/langgraph_stream/**
+    - crates/betterlite-provider/fuzz/fuzz_targets/langgraph_stream.rs
+    - crates/betterlite-provider/fuzz/corpus/langgraph_stream/**
+    - tools/oracle/cases/helpers/langgraph-stream/**
+    - tools/oracle/helpers/b8103.py
+    - tools/oracle/helpers/b8103/**
+    - tools/oracle/src/helpers/provider/b8103.rs
+    - tools/oracle/src/helpers/provider/b8103/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langgraph/chat/sse_iterator.py#L17-L135
+    why: Line parsing, data handler, messages handler and metadata handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langgraph/chat/sse_iterator.py#L137-L229
+    why: Chunk construction and sync and async iteration with error swallowing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langgraph/chat/transformation.py#L267-L403
+    why: The streaming iterator hookup and both custom stream wrappers.
+  - url: https://langchain-ai.github.io/langgraph/cloud/reference/api/api_ref.html
+    why: The /runs/stream server-sent events format.
+dod:
+  - text: Only data lines with valid JSON are parsed, and bad JSON lines are skipped.
+    proof: [langgraph-stream-tests, oracle]
+  - text: The tuple and dict event formats give content chunks for ai and AIMessageChunk messages.
+    proof: [langgraph-stream-tests, oracle]
+  - text: A metadata event with run_id ends the stream with one stop chunk and no second final chunk follows.
+    proof: [langgraph-stream-tests, oracle]
+  - text: A stream that ends without metadata still sends one final stop chunk.
+    proof: [langgraph-stream-tests, oracle]
+  - text: A mid-stream error ends the stream without raising.
+    proof: [langgraph-stream-tests]
+  - text: A non-200 status raises LangGraphError and the wrappers use the right client kind and log post_call.
+    proof: [langgraph-wrapper-tests]
+  - text: The SSE line decoder is fuzzed and its corpus replays.
+    proof: [langgraph-fuzz-corpus]
+checks:
+  optional: []
+  commands:
+    - id: langgraph-stream-tests
+      why: the langgraph_stream parsing tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^langgraph_stream::/) - test(/^langgraph_stream::wrapper/) - test(replays_the_langgraph_stream_corpus)'
+    - id: langgraph-wrapper-tests
+      why: the wrapper tests for status handling, client kind and post_call are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^langgraph_stream::wrapper/)'
+    - id: langgraph-fuzz-corpus
+      why: the fuzz target for parse_sse_line is missing or its corpus does not replay
+      run: test -f crates/betterlite-provider/fuzz/fuzz_targets/langgraph_stream.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/langgraph_stream)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_langgraph_stream_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/langgraph-stream/line-not-data.yaml
+  - tools/oracle/cases/helpers/langgraph-stream/line-bad-json.yaml
+  - tools/oracle/cases/helpers/langgraph-stream/messages-tuple.yaml
+  - tools/oracle/cases/helpers/langgraph-stream/messages-chunk-type.yaml
+  - tools/oracle/cases/helpers/langgraph-stream/dict-content.yaml
+  - tools/oracle/cases/helpers/langgraph-stream/dict-messages-last.yaml
+  - tools/oracle/cases/helpers/langgraph-stream/metadata-run-id.yaml
+  - tools/oracle/cases/helpers/langgraph-stream/stream-ends-no-metadata.yaml
+deviations:
+  - what: A non-200 stream error message uses the lossy UTF-8 text of the body, not the Python repr of the bytes (b'...').
+    why: LiteLLM formats the body with str(bytes), which prints the b prefix and escapes; clients should see the text.
+  - what: Chunk ids are "chatcmpl-" plus a uuid4 as in LiteLLM, but tests and oracle cases ignore the id and keep created at 0.
+    why: The id is random in both implementations.
+out_of_scope:
+  - "The LangGraph request and response mapping, LangGraphError and the records belong to B8102."
+  - "The shared streaming wrapper (CustomStreamWrapper) and the pooled HTTP client belong to the shared streaming and B173 tasks."
+  - "main.py _complete_langgraph belongs to B050."
+pitfalls:
+  - The messages handler condition in LiteLLM is "ai and content or AIMessageChunk and content"; both need non-empty content, and an empty ai content falls through to the next item.
+  - A list event with an unknown type returns nothing and does NOT fall into the dict branch (the dict branch is an elif of the list check).
+  - The final chunk is sent once only; run_id metadata sets the finished flag, so natural end of stream sends nothing more.
+  - Errors during iteration end the stream with a log, they never reach the caller, but a non-200 status at connect time does raise.
+  - The sync wrapper accepts only the sync client kind and the async wrapper only the async kind, otherwise a fresh client is made even if the caller passed the other kind.
+  - created is 0 in every chunk, not the current time.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

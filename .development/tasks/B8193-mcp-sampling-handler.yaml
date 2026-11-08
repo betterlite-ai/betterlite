@@ -1,0 +1,83 @@
+id: B8193
+title: MCP sampling model access, budgets and completion
+description: >-
+  Port the effectful half of sampling_handler.py: _check_model_access (key and team model
+  permission, returning an ErrorData instead of raising), _run_budget_checks (key, user, team and
+  model budgets, each with its own error text), _build_sampling_request, _build_completion_kwargs,
+  _run_guardrails_and_call_llm and the entry point handle_sampling_create_message.
+
+  The handler resolves the model with B8192, checks access, checks budgets, runs guardrails,
+  calls the router for a completion and converts the answer back with B8192. Every refusal is an
+  ErrorData value with the Python's code and message, not a Rust error.
+
+  Owners of the checks this handler calls (call them, do not copy them): the key check `can_key_call_model`, the team check `can_team_access_model`, the user check `can_user_call_model` and the project check `can_project_access_model` are B886's (betterlite-auth, module `entity_model_access`). The team member check `_check_team_member_model_access` is B887's (module `team_budget_admission`). The budget check `common_checks` is B754's `CommonAuthChecks` (module `auth_common_checks`). The reads `get_team_object`, `get_user_object` and `get_project_object` are B737's, B736's and B879's.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/sampling_handler.rs
+    - crates/betterlite-server/src/mcp/sampling_handler/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-sampling-handler/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-sampling-handler-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/sampling_handler.py#L732-L900
+    why: Model access check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/sampling_handler.py#L901-L1043
+    why: Budget checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/sampling_handler.py#L1044-L1263
+    why: Request building, guardrails, completion call and the entry point.
+
+dod:
+  - text: >-
+      A key or team without access to the model gets the Python's ErrorData for each denial path.
+    proof: [handler-tests, handler-oracle]
+  - text: >-
+      Each exceeded budget (key, user, team, model) returns its own ErrorData text, and the first
+      exceeded budget wins in the Python's order.
+    proof: [handler-tests, handler-oracle]
+  - text: >-
+      A passing request builds the completion call with the Python's kwargs, runs guardrails
+      before the call, and returns the converted sampling result.
+    proof: [handler-tests]
+  - text: Every mutant in the access and budget logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: handler-tests
+      why: An access denial, budget order, request kwarg or guardrail step differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^mcp::sampling_handler::/)'
+    - id: handler-oracle
+      why: Refusals or results differ from LiteLLM on the same input.
+      run: >-
+        cargo run --locked -p betterlite-oracle -- --self-check
+        tools/oracle/cases/helpers/mcp-sampling-handler
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - Conversion helpers and model preference scoring (B8192).
+  - The budget and access checks themselves (B886, B887, B754, and the reads of B736, B737 and B879). Call those and
+    keep only the sampling-specific error wording here.
+
+pitfalls:
+  - >-
+    A denial is returned as ErrorData so the MCP session stays open. Do not turn it into a Rust
+    error that closes the stream.
+  - >-
+    Guardrails run before the completion call and see the converted OpenAI messages, not the
+    MCP content.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -109,8 +109,8 @@ deviations:
   - what: In Sync mode a chunk that fails to parse surfaces as a typed stream error, not a pydantic ValidationError.
     why: The Python exception class is a library detail. The caller sees the same failure at the same point.
 out_of_scope:
-  - The chat config that picks these iterators (get_model_response_iterator), and the HTTP read loop that supplies lines; B5845 and B042 own them.
-  - The class `GenAIHubOrchestration(BaseLLMHTTPHandler)` apart from `_add_stream_param_to_request_body`. Its inherited completion path is B042's dispatch.
+  - The chat config that picks these iterators (get_model_response_iterator), and the HTTP read loop that supplies lines; B5845 and the shared HTTP handler that B8331 calls own them.
+  - The class `GenAIHubOrchestration(BaseLLMHTTPHandler)` apart from `_add_stream_param_to_request_body`. Its inherited completion path is B8331's dispatch.
   - OpenAI chunk model validation itself; B004 and B005 own the chunk record, and this task calls them.
   - Streamed `usage` and cost accounting for the finished stream; the shared stream assembly tasks own those.
 pitfalls:

@@ -1,0 +1,61 @@
+id: B8643
+title: Serve configured pass-through endpoints at request time
+description: >-
+  LiteLLM installs each configured pass-through endpoint (general_settings.pass_through_endpoints in config.yaml and the stored ones in the config table) as a FastAPI route at runtime with app.add_api_route, and the create, update and delete routes of B8520 add and remove them while the server runs. An axum Router cannot change after it starts serving. B3616 and B8520 already keep the installed routes in B3614's `RouteTable` and the endpoint data in the registry that B2302 reads, but no task answers a request on such a path. This task does. Code goes in crates/betterlite-server/src/app/pass_through/configured.rs and configured/ (matching.rs, tests.rs).
+
+  `ConfiguredDispatch::new(handler, routes)` holds the one `Arc<PassThroughHandler>` the server builds (B3613) and the shared handle to the route table and registry that B3616 writes (read its merged type; the same handle must reach B3616's startup call and B8520's routes, so B8640 builds it once). `configured_fallback(State(dispatch), request)` is the axum handler that B8640 installs as the fallback of the app router, so it only sees requests that no static route took. That keeps LiteLLM's order: the app's own routes first, then the added ones.
+
+  Matching (matching.rs). `match_route(table, registry, path, method) -> RouteMatch`. The path is first passed through B2302's normalize_route_for_root_path (SERVER_ROOT_PATH), falling back to the raw path when it gives None, as B2302's lookup does. Then walk the installed routes in the table's order (B3614's `order()`; a route placed ahead of a lazy-owned one already sits first). An exact route matches when the path is equal to its path. A subpath route with path `P` matches `P/` followed by anything, including nothing, as Starlette's `{subpath:path}` does, and its subpath is that rest. The first route whose path matches and whose methods contain the request method wins. `RouteMatch` is `Found { entry, subpath }`, `WrongMethod` (some route matched the path but none the method) or `Missing`.
+  Answers. `Missing` gives the app's Not Found answer: status 404 and body `{"detail":"Not Found"}`, the same body B003's fallback sends. `WrongMethod` gives 405 with body `{"detail":"Method Not Allowed"}` and an `allow` header that lists the methods of the matched routes, as Starlette does. `Found` calls B3615's `create_pass_through_route` with the registry entry's path, target, custom_headers, forward_headers, merge_query_params, dependencies, cost_per_request, default_query_params, guardrails, timeout and the config_file_path the endpoint was installed with, and the handler Arc. Then it calls the returned endpoint function with the request, a fresh response and the authenticated key, and returns its result. The subpath reaches B3615 the way FastAPI passes the `subpath` path parameter (read B3615's merged signature).
+  The key is the auth record the global auth stage (B052) put in the request extensions. Whether a configured route needs a key is decided there through B2302's is_registered_pass_through_route and the route's `auth` flag; this task does not check auth again. A request with no auth record on a route that needs one never reaches this handler.
+  The handler is built per request from the registry entry. That is safe because LiteLLM's endpoint function also reads the registry params on every call, so an update through B8520 takes effect on the next request in both.
+  The table is read under its lock only to copy the match out. Never hold the lock across the handler call.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/pass_through/configured.rs
+    - crates/betterlite-server/src/app/pass_through/configured/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2956-L3121
+    why: add_exact_path_route and add_subpath_route, which install the route, its methods and the `{subpath:path}` wildcard.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3155-L3237
+    why: The registry lookup by normalized path that the dispatcher and auth share (B2302).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3240-L3345
+    why: _register_pass_through_endpoint, which sets the methods, the auth flag and the subpath route per endpoint.
+  - url: https://www.starlette.io/routing/
+    why: Route order, the path convertor and the 405 answer with its Allow header.
+dod:
+  - text: An exact configured route answers only on its own path and methods, and a subpath route answers on its path plus a slash and any rest.
+    proof: [matching-tests]
+  - text: The first installed route in table order wins, a path match with no method match answers 405 with an allow header, and no match answers the 404 Not Found body.
+    proof: [matching-tests]
+  - text: A matched request reaches create_pass_through_route with the registry entry's params and the subpath, and the handler's answer is returned unchanged.
+    proof: [dispatch-tests]
+  - text: An endpoint added or removed in the table after the router is built answers or stops answering on the next request.
+    proof: [dispatch-tests]
+checks:
+  optional: []
+  commands:
+    - id: matching-tests
+      why: a configured route matches the wrong path, method or order, or a miss answers the wrong status
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::configured::tests::matching(::|$)/)'
+    - id: dispatch-tests
+      why: a matched request does not reach the pass-through handler with the stored params, or a runtime change is not seen
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::configured::tests::dispatch(::|$)/)'
+oracle_cases: []
+deviations:
+  - what: A configured route whose path equals a static route's path but adds other methods is not reached for those methods; axum answers 405 from the static route.
+    why: Starlette keeps scanning later routes after a method miss, axum stops at the path. SafeRouteAdder refuses an exact collision on the same methods in both, so only this mixed case differs.
+out_of_scope:
+  - "Installing and removing routes: B3616 (startup and reload) and B8520 (the write routes). The table and collision rules: B3614. The registry read: B2302."
+  - "The handler and its target branches: B3615 and B3613. Auth: B052 with B2302's lookup."
+  - "Installing the fallback on the app router and the HTTP oracle cases through the booted proxy: B8640."
+pitfalls:
+  - "Starlette's `{subpath:path}` also matches an empty rest, so `/relay/` reaches a subpath route of `/relay`, while `/relay` reaches only the exact one."
+  - "The table holds several entries for one endpoint id (exact and subpath, and one per method set); match on path and method, never on id."
+  - "Do not cache built handlers by path: B8520 changes the target and headers in place, and the next request must see the new values."
+  - "The config_file_path the endpoint was installed with gates adapter targets in create_pass_through_route; runtime installs carry None, startup installs carry the config path."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

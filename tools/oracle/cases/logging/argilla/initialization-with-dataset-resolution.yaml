@@ -1,0 +1,21 @@
+# ArgillaLogger resolves the dataset id from items[0].id, defaults the base URL to http://localhost:6900/ and the name to litellm-completion
+kind: helper
+name: argilla-initialization-with-dataset-resolution
+call:
+  b3960:
+    scenarios:
+      - environment: {ARGILLA_API_KEY: key-1, ARGILLA_BASE_URL: "https://argilla.example", ARGILLA_DATASET_NAME: litellm-completion}
+        transformation_object: {input: messages, output: response}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions: []
+      - environment: {ARGILLA_API_KEY: key-2}
+        transformation_object: {input: messages}
+        replies: [{status: 200, body: '{"items": []}'}]
+        actions: []
+      - environment: {ARGILLA_API_KEY: env-key, ARGILLA_DATASET_NAME: env-name, ARGILLA_BASE_URL: "https://env.example"}
+        arguments: {api_key: arg-key, dataset_name: arg-name, base_url: "https://arg.example"}
+        transformation_object: {input: messages}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-9"}]}'}]
+        actions: []
+env: {}
+compare: {ignore: []}

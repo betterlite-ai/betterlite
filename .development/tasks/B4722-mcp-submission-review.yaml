@@ -1,0 +1,169 @@
+id: B4722
+title: MCP submission review and pinned tool catalogs
+description: >-
+  Build the six routes of the MCP management router that submit servers for review, review user-submitted servers and pin a server's tool catalog, in betterlite-server module mcp::submission_review.
+  All six sit under the router prefix /v1/mcp (LiteLLM mounts this router with that prefix only, so there is no /mcp/... or /openai/v1/... alias).
+  Errors are FastAPI HTTPException values with an object detail, so every error body here is {"detail": {"error": "..."}}. The one exception is a body that fails validation (route 4), which is FastAPI's 422 list.
+  Every route needs a valid key (the user_api_key_auth dependency) and is wrapped by B865's management completion wrapper, like @management_endpoint_wrapper. Read B865 for its Rust names.
+
+
+  Layout. crates/betterlite-server/src/mcp/submission_review.rs holds SubmissionReview (a struct whose fields are the ports the routes need, built by B8625 with a struct literal), the ReviewError enum (thiserror, one variant per failure, a status mapping used by the routes), the RejectMcpServerRequest type and `routes()` which returns the axum router with the six routes.
+  The files beside it, each with a tests.rs: submissions.rs (route 1), pinning.rs (routes 2 and 3 and the shared store step) and review.rs (routes 4 and 5).
+  No global state. The LiteLLM globals become fields: the database port, the registry, the registry mutator, the BYOM cache invalidator and the catalog fetcher.
+  Ports (traits defined in submission_review.rs, implemented by B8625 over the crates named in brackets):
+  a DbReads and writes port with get_mcp_server(server_id), get_mcp_submissions(), approve_mcp_server(server_id, touched_by), reject_mcp_server(server_id, touched_by, review_notes) and set_mcp_server_pinned_tools(server_id, pinned_tools: Option<BTreeMap<String, PinnedMCPTool>>, touched_by) [B4711, the Rust names are B4711's];
+  a RegistryView port with server_by_id(server_id) that passes no client ip [B4731];
+  a RegistryReload port with update(record) and reload() [B6765, update_server and reload_servers_from_database];
+  a SubmitterCache port with invalidate_submitted(user_id) [B6591, invalidate_byom_submitted_servers_cache];
+  a CatalogFetcher port with fetch_pinnable(server, request, auth) -> Result<BTreeMap<String, PinnedMCPTool>, CatalogFetchError> [B4727, fetch_pinnable_tool_catalog].
+  The database port is optional: a proxy started without a database makes every route answer the 500 below. The redact and sanitize functions come from B4717 (mcp::management_visibility), PinnedMCPTool and the approval status enum from B2305 and B858, the table row LiteLLM_MCPServerTable and MCPSubmissionsSummary from B858 and B4711, and UserApiKeyAuth and the role enum from B2314.
+
+
+  The database check. Every route gets its database from get_prisma_client_or_throw (B4711): with no database it raises 500 {"detail": {"error": "Database not connected. Connect a database to your proxy"}}. It runs after the role check and before any lookup.
+  touched_by in the write calls is the caller's user_id, else the constant LITELLM_PROXY_ADMIN_NAME (the string "default_user_id" in LiteLLM's constants; read it at constants.py and keep the value).
+
+
+  Route 1. GET /v1/mcp/server/submissions. Role check first: PROXY_ADMIN and PROXY_ADMIN_VIEW_ONLY pass, any other role gets 403 {"error": "Admin access required to view MCP server submissions."}.
+  Then the database check, then get_mcp_submissions, which returns MCPSubmissionsSummary {total, pending_review, active, rejected, items}: every row with submitted_at set, newest first, at most 500, and the three counts taken over the rows that were read.
+  Then items are replaced by B4717's _redact_mcp_credentials_list(items). A caller that is not a full admin (B4717's _user_is_full_admin is false, so the view-only admin) also gets _sanitize_mcp_server_list_for_non_admin(items). The counts are not recomputed. The body is the summary with every row field serialized, nulls included.
+
+  Route 2. POST /v1/mcp/server/{server_id}/pin. Only PROXY_ADMIN passes (view-only admin is rejected too): 403 {"error": "Admin access required to pin MCP server tools."}.
+  Then the database check. Then two lookups: get_mcp_server(server_id) from the database and the registry's server_by_id(server_id). If either is missing the answer is 404 {"error": "MCP server '<id>' not found in the database."}, the same text for both cases.
+  Then CatalogFetcher.fetch_pinnable(registry record, request, auth). An empty result is 400 {"error": "MCP server '<id>' exposes no tools that pass the guardrails; nothing to pin."}. A non-empty result goes to the store step and is returned as the body: an object from tool name to {"description": string, "input_schema": object}, in the order the fetcher gave it, with description "" when the upstream had none.
+
+  Route 3. DELETE /v1/mcp/server/{server_id}/pin. Only PROXY_ADMIN: 403 {"error": "Admin access required to unpin MCP server tools."}. Database check, then get_mcp_server; a missing row is 404 with the same "not found in the database" text as route 2. Registry membership is not required. Then the store step with None. The body is {"server_id": "<id>", "status": "unpinned"}.
+
+  Store step (_store_pinned_tools), shared by routes 2 and 3. It calls set_mcp_server_pinned_tools(server_id, tools, touched_by). A None result (the row vanished between the lookup and the write) is 404 with the same text. Otherwise it calls the registry's update(record) with the returned row, then reload(), in that order. Both run before the response is built, so a reload failure is a 500 after the row was already written.
+  Unpin passes None, and B4711 stores that as the JSON text "{}" (not SQL NULL); parse_pinned_tools (B2305) reads "{}" back as no pin. Do not rewrite that here.
+
+  Route 4. PUT /v1/mcp/server/{server_id}/approve. No body. Only PROXY_ADMIN: 403 {"error": "Admin access required to approve MCP server submissions."}. Database check, then get_mcp_server: a missing row is 404 {"error": "MCP server '<id>' not found."} (no "in the database" here), and a row whose approval_status is already "active" is 400 {"error": "MCP server is already active."}.
+  Any other status (pending_review, rejected, draft, null, "approved") is approved: approve_mcp_server sets active. Then SubmitterCache.invalidate_submitted(row.submitted_by) (a null submitted_by does nothing), then reload(). The body is _redact_mcp_credentials(approved row), the admin view with admin-config credential keys kept.
+
+  Route 5. PUT /v1/mcp/server/{server_id}/reject. Body RejectMcpServerRequest {review_notes: Option<String>}, default null. The body is validated before the handler runs, so a bad body gives 422 even for a caller who would get 403.
+  Only PROXY_ADMIN: 403 {"error": "Admin access required to reject MCP server submissions."}. Database check, then get_mcp_server: missing row 404 {"error": "MCP server '<id>' not found."}, approval_status already "rejected" 400 {"error": "MCP server is already rejected."}.
+  Remember was_active = (status was "active"). Then reject_mcp_server(server_id, touched_by, review_notes), where B4711 writes review_notes only when it is not null (an omitted or null note keeps the stored note). Then reload() only when was_active is true; a pending row, a draft or a null status skips the reload and does not touch the submitter cache. The body is _redact_mcp_credentials(rejected row).
+
+  Route 6. POST /v1/mcp/server/register, handler register_mcp_server (mcp_management_endpoints.py L1373-L1447, 75 lines). The body NewMCPServerRequest (B858) is parsed before anything else, so a bad body gives 422 even for a proxy admin. Any valid key may call it, and the checks run in this order: PROXY_ADMIN gets 403 {"error": "PROXY_ADMIN users should use POST /v1/mcp/server to create servers directly instead of the submission workflow."}; a key without team_id gets 400 {"error": "Registration requires an API key associated with a team. Use a team-scoped key."}; transport stdio gets 400 with the stdio text at L1397-L1405 (copy it exactly).
+  Then the database check, then B4716's validate_and_normalize_mcp_server_payload, stamp_omitted_oauth2_flow and _validate_mcp_required_fields in that order. The handler sets approval_status to pending_review, submitted_by to the caller's user_id and submitted_at to now (UTC), then calls B4712's create_mcp_server_if_identifier_free with touched_by set to the caller's user_id, else the team_id. A McpIdentifierConflict goes to B4716's raise_mcp_identifier_conflict. Any other write failure is a 500 {"error": "Error registering mcp server: <error>"} after an error log. The new row is not added to the live registry. The answer is status 201 with _redact_mcp_credentials(row).
+
+  Tests use synthetic servers (ids like test-srv-1, names like test-server) and in-memory fakes for the five ports. Cover every branch above: the role gate of each route with all four roles that matter (proxy admin, view-only admin, internal user, no role), the check order (role, database, lookup, state), the call order of the store step and the approve and reject steps recorded by the fakes, and the exact error texts.
+
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/submission_review.rs
+    - crates/betterlite-server/src/mcp/submission_review/**
+    - tools/oracle/helpers/b4722.py
+    - tools/oracle/helpers/b4722/**
+    - tools/oracle/src/helpers/server/b4722.rs
+    - tools/oracle/src/helpers/server/b4722/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L87
+    why: The router prefix /v1/mcp, the only mount point of these routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L981-L991
+    why: get_prisma_client_or_throw, the source of the 500 text every route uses (the function itself is B4711's).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1508-L1537
+    why: Route 1 from its decorator, the two-role check, the redact step and the non-full-admin sanitize step.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1538-L1578
+    why: Route 2 from its decorator, the admin check, the double lookup, the fetch and the empty-catalog 400.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1579-L1602
+    why: Route 3, unpin, with the DELETE method and the status body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1604-L1620
+    why: The store step shared by pin and unpin, with the vanished-row 404 and the update then reload order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1622-L1664
+    why: Route 4, approve, with the already-active 400, the submitter cache invalidation and the reload.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1666-L1711
+    why: Route 5, reject, with the already-rejected 400 and the reload only for a previously active server.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1878-L1887
+    why: RejectMCPServerRequest and MCPSubmissionsSummary, the request and response shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2119-L2205
+    why: What the four database writes and the submissions read do, so the fakes behave like them (B4711 owns the code).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L762-L788
+    why: fetch_pinnable_tool_catalog, the call route 2 makes (B4727 owns the code).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3357-L3365
+    why: invalidate_byom_submitted_servers_cache, the call route 4 makes (B6591 owns the code).
+
+dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports; B8625 mounts the routes and proves the items below over HTTP with the cases that moved there.
+    proof: [review-tests]
+  - text: >-
+      GET /v1/mcp/server/submissions rejects every role except the two admin roles with the 403 text, answers the 500 database text before reading, returns the summary with counts and redacted items,
+      and additionally sanitizes the items for the view-only admin without recomputing the counts.
+    proof: [submissions-tests]
+  - text: >-
+      POST /v1/mcp/server/{server_id}/pin admits only PROXY_ADMIN, answers 404 when the row or the registry record is missing, 400 when the fetched catalog is empty,
+      and otherwise stores the catalog, calls the registry update then reload in that order and returns the pinned map.
+    proof: [pinning-tests]
+  - text: >-
+      DELETE /v1/mcp/server/{server_id}/pin admits only PROXY_ADMIN, answers 404 when the row is missing, stores None through the same step as pin, and returns {"server_id", "status": "unpinned"}.
+      The store step answers 404 when the write finds no row.
+    proof: [pinning-tests]
+  - text: >-
+      PUT /v1/mcp/server/{server_id}/approve admits only PROXY_ADMIN, answers 404 for a missing row and 400 for an already active one, approves any other status,
+      invalidates the submitter cache for submitted_by, reloads the registry and returns the redacted row.
+    proof: [review-tests]
+  - text: >-
+      PUT /v1/mcp/server/{server_id}/reject admits only PROXY_ADMIN, validates its body before the role check (422), answers 404 for a missing row and 400 for an already rejected one,
+      passes review_notes through, reloads the registry only when the row was active and returns the redacted row.
+    proof: [review-tests]
+  - text: >-
+      POST /v1/mcp/server/register answers 403 for a proxy admin, 400 for a key without a team and for a stdio transport, creates the row as pending_review with submitted_by and submitted_at set, returns 201 with the redacted row
+      and does not touch the live registry.
+    proof: [submissions-tests]
+  - text: >-
+      Every route answers the 500 database text on a proxy without a database, after the role check and before any lookup.
+    proof: [review-tests]
+  - text: The module is registered through routes() with the six method and path pairs and no other route, so axum has no duplicate.
+    proof: [module-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: module-tests
+      why: the route table, the shared error mapping or the request type is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::submission_review::tests::/)'
+    - id: submissions-tests
+      why: the submissions route, its role gate, its redaction or its view-only sanitizing is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::submission_review::submissions::/)'
+    - id: pinning-tests
+      why: the pin route, the unpin route or the shared store step is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::submission_review::pinning::/)'
+    - id: review-tests
+      why: the approve route, the reject route or their database check is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::submission_review::review::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The catalog fetch, the registry update and reload, and the submitter cache invalidation are reached through ports, not through a global manager and module imports.
+    why: LiteLLM reads global_mcp_server_manager and imports rest_endpoints inside the handler; betterlite has no globals, and the owners are B4727, B6765 and B6591.
+
+out_of_scope:
+  - "get_prisma_client_or_throw, get_mcp_server, approve_mcp_server, reject_mcp_server, get_mcp_submissions and set_mcp_server_pinned_tools: owned by B4711; this task calls them."
+  - "_redact_mcp_credentials, _redact_mcp_credentials_list, _sanitize_mcp_server_list_for_non_admin and _user_is_full_admin: owned by B4717."
+  - "fetch_pinnable_tool_catalog and the tool scan it runs: owned by B4727. get_mcp_server_by_id: owned by B4731."
+  - "update_server and reload_servers_from_database: owned by B6765. invalidate_byom_submitted_servers_cache: owned by B6591."
+  - "management_endpoint_wrapper: owned by B865. PinnedMCPTool and parse_pinned_tools: owned by B2305."
+  - "validate_and_normalize_mcp_server_payload, stamp_omitted_oauth2_flow, _validate_mcp_required_fields and raise_mcp_identifier_conflict: owned by B4716. create_mcp_server_if_identifier_free: owned by B4712."
+  - "The other routes in mcp_management_endpoints.py: catalog and health views belong to B4720, create, import, edit and delete to B4721, credentials to B4723, env vars to B4724, toolsets and sessions to B4725, preview and test routes to B4729 and the temporary OAuth session routes to B4718."
+
+pitfalls:
+  - GET /v1/mcp/server/submissions and GET /v1/mcp/server/{server_id} (B4720 route 7) overlap in shape; the static segment must win, so register this route with the literal path and do not let the id route swallow "submissions".
+  - Pin and unpin accept only PROXY_ADMIN, while the submissions list also accepts PROXY_ADMIN_VIEW_ONLY; do not reuse one admin predicate for all five.
+  - Pin looks the server up twice, in the database and in the live registry, and both misses share the text "not found in the database."; approve and reject use the shorter "MCP server '<id>' not found." with no such suffix.
+  - Unpin stores the JSON text "{}" through the same write as pin, not NULL; the registry record reads it back as no pin because the parser turns an empty map into none.
+  - Pin passes the registry record to the fetcher, not the table row, and the fetcher itself strips existing pins and description overrides first, so pin never reads what is already pinned.
+  - Approve accepts a draft or a rejected row and a row with a null status, and only "active" is refused; a row already "approved" (the legacy spelling) is approved again.
+  - Approve calls the submitter cache invalidation with submitted_by even when it is null (the call then does nothing), and always reloads; reject reloads only when the row was active.
+  - Reject keeps the stored review_notes when the body note is null or the body is empty, because B4711 writes the field only for a non-null value.
+  - The reject body is parsed before the role check, so a non-admin with a bad body sees 422, and a non-admin with a good body sees 403.
+  - get_mcp_submissions counts only rows with submitted_at set, so an admin-created server never shows up, and the counts cover the 500-row cap, not the table.
+  - "POST /v1/mcp/server/register and GET /v1/mcp/server/submissions share a prefix; register is a POST with a literal path and must not be treated as an id route."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,96 @@
+id: B8594
+title: /config/update route and config audit redaction
+description: >-
+  The admin UI saves whole settings sections through POST /config/update, and every config write route records an
+  audit row with secrets redacted. Build crates/betterlite-server/src/config_update.rs (declared by the skeleton) with
+  `pub fn routes()`, error enum ConfigUpdateError.
+
+
+  Redaction, used by this route and by B8595 and B8596. `is_secret_setting(name)` is true for a name in
+  _EXTRA_SECRET_GENERAL_SETTINGS_FIELDS or one the sensitive data masker flags. `redact_secret_values(value, depth)`
+  walks objects and arrays, puts "REDACTED" on every secret key, and replaces the whole subtree with "REDACTED" at depth
+  10. `redact_param_for_logging(name, value)` redacts every value of environment_variables and walks the rest.
+  `redact_setting_value(name, value, is_full_admin)` returns the value for a proxy admin, "REDACTED" for a secret field,
+  else the walked value. `dump_redacted_config(value, redact_all)` is the JSON text (null stays null) with every value
+  redacted when redact_all and the value is an object. `config_audit_log(param, action, before, after, auth)` writes the
+  audit row through B2330's sink with object_id = param, table LiteLLM_Config, both values dumped, redact_all only for
+  environment_variables, and changed_by LITELLM_PROXY_ADMIN_NAME.
+
+
+  The route. Only PROXY_ADMIN may call it (403 "Only proxy admins can update config"). When router_settings in the raw
+  body is an object, keys outside the allowlist (RUNTIME_UPDATABLE_ROUTER_SETTINGS plus the Router init argument names
+  minus ROUTER_SETTINGS_MANAGED_OUTSIDE_CONFIG) give 400 {"error": "Unsupported router settings: <sorted, comma list> are
+  not valid router settings"}, and routing_groups must pass B323's parse_routing_groups (400 with its message). No
+  database is the error "No DB Connected". Before any write, B8380's reject_config_owned_writes runs for
+  general_settings, litellm_settings and router_settings. Then each section present in the body is read from its
+  LiteLLM_Config row, merged and upserted, B8397's invalidate_config_param runs, and an audit task is spawned:
+  general_settings (setting alert_to_webhook_url adds "slack" to alerting), environment_variables (values encrypted with
+  B8382's encrypt_env_for_db), litellm_settings (success_callback normalized, then the union of stored and incoming
+  names), router_settings (typed fields first, then raw keys not in the typed set and not null). It ends with add_deployment
+  through B8611's DeploymentSyncPort, an `Arc<dyn DeploymentSyncPort>` that `routes` takes as an argument, and answers {"message": "Config updated successfully"}. Every failure becomes a ProxyException of type
+  auth_error: an HTTP error keeps its detail and status, anything else is "Authentication Error, <text>" with 400.
+scope:
+  paths:
+    - crates/betterlite-server/src/config_update.rs
+    - crates/betterlite-server/src/config_update/**
+    - crates/betterlite-server/fuzz/fuzz_targets/config_update.rs
+    - crates/betterlite-server/fuzz/corpus/config_update/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - tools/oracle/cases/helpers/config-redaction/**
+    - tools/oracle/helpers/b8594.py
+    - tools/oracle/helpers/b8594/**
+    - tools/oracle/src/helpers/server/b8594.rs
+    - tools/oracle/src/helpers/server/b8594/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17954-L18213
+    why: update_config with the router settings allowlist, per-section merge and error mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18373-L18470
+    why: The secret field test, redaction helpers and create_config_audit_log.
+dod:
+  - text: The redaction helpers match LiteLLM for secret keys, nested values, the depth cap and environment_variables.
+    proof: [config-update-tests, oracle]
+  - text: /config/update refuses non-admins, unknown router settings and bad routing groups with LiteLLM's status and text, and checks config-owned keys before writing.
+    proof: [config-update-tests]
+  - text: Each sent section is merged, stored, invalidated and audited the way LiteLLM does, and unsent sections are untouched.
+    proof: [config-update-tests]
+  - text: decode_config_update, the request body decoder, survives the fuzz corpus.
+    proof: [config-update-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-update-tests
+      why: the redaction helpers or /config/update differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^config_update::/) - test(replays_the_config_update_corpus)'
+    - id: config-update-corpus
+      why: the config update fuzz target or its fresh replay corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-server/fuzz/fuzz_targets/config_update.rs &&
+        grep -q 'name = "config_update"' crates/betterlite-server/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/config_update)" &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_config_update_corpus)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8594)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8594 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8594/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/config-redaction/nested-secret-keys.yaml
+  - tools/oracle/cases/helpers/config-redaction/depth-cap.yaml
+  - tools/oracle/cases/helpers/config-redaction/environment-variables-all-redacted.yaml
+deviations: []
+out_of_scope:
+  - "Mounting the route and its HTTP oracle cases: B8675."
+  - "reject_config_owned_writes: B8380. invalidate_config_param: B8397. Env encryption: B8382. The add_deployment port: B8611 (B8613 implements it over B8381's DeploymentSync). Audit sink: B2330. routing groups: B323."
+  - "The callback role gates used by /get/config/callbacks: B8596. The /config/field and /config/list routes: B8595."
+pitfalls:
+  - The audit write is spawned, so a failing audit never fails the update.
+  - success_callback becomes a set union, so its order is not kept; tests compare as sets.
+  - router_settings is checked from the raw body, not the typed model, so unknown keys are caught even when the model drops them.
+  - An environment_variables audit hides every value, even keys that do not look secret, such as DATABASE_URL.
+  - "This task builds normalize_callback_names (callback_utils.py L704, called by update_config at proxy_server.py L18020 and L18128); no other task builds it."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

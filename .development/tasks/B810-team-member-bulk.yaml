@@ -79,8 +79,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/team_member_bulk.rs
     - crates/betterlite-server/src/routes/team_member_bulk/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-member-bulk/**
     - tools/oracle/helpers/b810.py
     - tools/oracle/helpers/b810/**

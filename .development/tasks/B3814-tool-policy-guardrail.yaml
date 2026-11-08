@@ -1,0 +1,132 @@
+id: B3814
+title: Enforce stored tool policies and conversation trust chains
+description: >-
+  Add the module `tool_policy` to betterlite-guardrails. It is LiteLLM's ToolPolicyGuardrail: a guardrail that reads the stored per-tool policies and refuses a request or a response that breaks them. It builds on `GuardrailBase`, `GuardrailSettings`, `GuardrailContract`, `GuardrailApiInputs`, `GuardrailInputType` and `GuardrailFailure` from B5471. Request bodies are `BTreeMap<String, GuardrailValue>`. The guardrail owns no storage. B1606 owns the policy registry in betterlite-db, and betterlite-guardrails must not depend on that crate or on betterlite-auth, so the guardrail takes two injected traits and the server implements them.
+
+  `ToolPolicyLookup` (Sync) has three methods. `is_initialized(&self) -> bool`. `effective_policies(&self, tool_names: &[String], key_permission_id: Option<&str>, team_permission_id: Option<&str>) -> BTreeMap<String, String>` returns the effective input policy per tool name (`blocked`, `trusted` or `untrusted`). `output_policy(&self, tool_name: &str) -> String` returns `trusted` or `untrusted`, and `untrusted` for a tool the store has never seen. `RequestToolNames` (Sync) has one method, `names(&self, route: &str, request_data: &BTreeMap<String, GuardrailValue>) -> Vec<String>`, which is B888's extract_request_tool_names. `ToolPolicyGuardrail { base: GuardrailBase, policies: Arc<dyn ToolPolicyLookup + Send + Sync>, names: Arc<dyn RequestToolNames + Send + Sync> }` is built by `ToolPolicyGuardrail::new(settings: GuardrailSettings, strict_modes: bool, policies, names) -> Result<Self, ToolPolicyError>`. When `settings.supported_event_hooks` is None, `new` sets it to `pre_call`, `post_call`, `during_call` before it calls `GuardrailBase::new`. A hook list already given is kept. `ToolPolicyError` wraps `GuardrailBaseError`.
+
+  `initialize_tool_policy(params: &LitellmParams, guardrail_name: Option<&str>, strict_modes: bool, policies, names) -> Result<ToolPolicyGuardrail, ToolPolicyError>` is LiteLLM's initialize_guardrail. The name is the given one, else `tool_policy`. `event_hook` is `params.mode` and `default_on` is `params.default_on`; nothing else is read from the params. Callback-manager registration is the registry's job (B3682), not this task's.
+
+  `apply_guardrail` implements `GuardrailContract` and follows the source in this order.
+
+  1. Collect tool names. For `GuardrailInputType::Request`, take `inputs.tools` and keep the `function.name` of each tool that has a non-empty name. Tools without a function block or name are skipped. When that gives nothing, read the route with `request_route_from_data` and, only if the route is non-empty, ask `RequestToolNames::names(route, request_data)`. For `Response`, take `function.name` of each entry in `inputs.tool_calls` that has a non-empty one. Duplicates and order are kept.
+  2. No names: return `inputs` unchanged.
+  3. Read the permission ids with `permission_ids_from_data`. Then, if `is_initialized()` is false, return `inputs` unchanged. The ids are read before this check, which only matters for ordering of side effects, so keep the order.
+  4. Stage 1, blocked tools. Call `effective_policies(names, key_id, team_id)`. Every name whose policy is `blocked` goes in the `blocked` list, in the order of `tool_names`, duplicates kept. When the list is not empty, log a warning `ToolPolicyGuardrail: blocking tool(s) {blocked:?} (input_policy=blocked)` and return `GuardrailFailure::HttpObject { status: 400, detail }`. `detail` is an IndexMap with the keys, in this order, `error` = `Violated tool policy`, `blocked_tools` (the list) and `message` = `Tool(s) {blocked} are blocked by policy.` where `{blocked}` prints the list the way Python prints a list of strings: `['a', 'b']`.
+  5. Stage 2, trust chain, `Response` only. Let `trusted_input_tools` be the names whose policy is `trusted`. When it is empty, return `inputs`. Otherwise read `request_data["messages"]` (empty when missing or null) and build a map from tool call id to tool name with `tool_call_names_from_messages`. Then walk the messages in order; for each message with `role` equal to `tool`, look up its `tool_call_id` in the map. A message without an id, or with an id that no assistant message announced, is skipped. When `output_policy(source_tool)` is exactly `untrusted`, add the source tool to `untrusted_sources` once, in first-seen order. When `untrusted_sources` is not empty, log a warning `ToolPolicyGuardrail: trust chain violation, {trusted_input_tools:?} require trusted input but conversation has untrusted output from {untrusted_sources:?}` and return `GuardrailFailure::HttpObject { status: 400, detail }`. The detail object has the keys `error` = `Violated tool policy`, `blocked_tools` (the trusted tools), `untrusted_sources` and `message` = `{trusted joined by ", "} requires trusted input but conversation contains untrusted output from {sources joined by ", "}.`
+  6. Otherwise return `inputs` unchanged.
+
+  Helpers, all private to the module and named as in the source. `permission_ids_from_data(request_data) -> (Option<String>, Option<String>)`: an empty body gives `(None, None)`. For the keys `litellm_metadata` then `metadata`, skip a value that is not an object. If that object has `user_api_key_auth` as an object, read its `object_permission_id` and `team_object_permission_id`; when either is not null, return both. Otherwise read the flat keys `user_api_key_object_permission_id` and `user_api_key_team_object_permission_id` of the same object; when either is not null, return both. Each returned id is the value's text trimmed, and a falsy value (null or empty string) becomes None. Once a bucket holds a non-null id, the search stops there even when both ids end up None after trimming rules. When nothing matches in either bucket, return `(None, None)`. `request_route_from_data(request_data) -> Option<String>` returns the top-level `user_api_key_request_route` when it is a non-empty string. Otherwise it takes the object under `metadata` when that is a non-empty object, else the one under `litellm_metadata`, else an empty one, and returns its `user_api_key_request_route`. `tool_call_names_from_messages(messages) -> BTreeMap<String, String>`: for each message with `role` equal to `assistant`, for each entry of its `tool_calls` (missing or null means none), take `id` and `function.name`; when both are non-empty, store `id -> name`. A later call with the same id overwrites an earlier one.
+
+  Python reads the auth object with getattr and accepts class instances as tool calls. betterlite reads only JSON objects, as docs/compatibility.md says for declared types, so there is no attribute branch. The native tests live in `tool_policy::tests` and use a fake `ToolPolicyLookup` that holds three maps. Name them with the prefixes in the checks below.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/tool_policy.rs
+    - crates/betterlite-guardrails/src/tool_policy/**
+    - tools/oracle/cases/helpers/tool-policy-guardrail/**
+    - "tools/oracle/fuzz/corpus/helper_case/policy-guardrail-*"
+    - tools/oracle/helpers/b3814.py
+    - tools/oracle/helpers/b3814/**
+    - tools/oracle/src/helpers/guardrails/b3814.rs
+    - tools/oracle/src/helpers/guardrails/b3814/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_policy/tool_policy_guardrail.py#L1-L45
+    why: The policy values (untrusted, trusted, blocked), the config example (mode post_call) and the guardrail name constant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_policy/tool_policy_guardrail.py#L47-L105
+    why: Permission id lookup, route lookup and the tool call id to tool name map.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_policy/tool_policy_guardrail.py#L108-L121
+    why: The constructor and its default event hooks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_policy/tool_policy_guardrail.py#L123-L232
+    why: apply_guardrail, with name collection, the blocked stage and the trust chain stage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_policy/__init__.py#L1-L18
+    why: initialize_guardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/tool_registry_writer.py#L367-L430
+    why: What is_initialized, get_output_policy and get_effective_policies return, which the lookup trait mirrors.
+dod:
+  - text: A request with a tool whose effective policy is blocked fails with status 400 and a detail holding error, blocked_tools and message in that order, with duplicates kept and the names in request order.
+    proof: [blocked-tests, oracle, helper-python, helper-case-corpus]
+  - text: Request tool names come from tools[].function.name first, from the injected route extractor only when that list is empty and a route is set, and from tool_calls on a response.
+    proof: [names-tests, oracle, helper-python, helper-case-corpus]
+  - text: An uninitialized store, or no tool names, returns the inputs unchanged and never fails.
+    proof: [passthrough-tests, oracle, helper-python, helper-case-corpus]
+  - text: A response that calls a trusted-input tool fails when a tool message in the request's messages comes from a tool whose output policy is untrusted, and the detail lists each source once in first-seen order.
+    proof: [trust-chain-tests, oracle, helper-python, helper-case-corpus]
+  - text: The trust chain is not checked on the request side, and tool messages with no id or an unknown id are ignored.
+    proof: [trust-chain-tests, oracle, helper-python, helper-case-corpus]
+  - text: Key and team permission ids are read from the nested auth object first and the flat metadata keys second, trimmed, with litellm_metadata searched before metadata.
+    proof: [permission-id-tests, oracle, helper-python, helper-case-corpus]
+  - text: The route is read from the top-level key first and from metadata, then litellm_metadata, after that.
+    proof: [permission-id-tests]
+  - text: The constructor defaults the supported hooks to pre_call, post_call and during_call, keeps a list the caller gives, and initialize_tool_policy reads only name, mode and default_on.
+    proof: [constructor-tests]
+checks:
+  optional: []
+  commands:
+    - id: blocked-tests
+      why: the blocked stage is missing or reports the wrong status or detail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_policy::tests::blocked_/)'
+    - id: names-tests
+      why: tool names are collected from the wrong place or the route fallback fires too early
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_policy::tests::names_/)'
+    - id: passthrough-tests
+      why: an uninitialized store or an empty name list blocks or changes a request
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_policy::tests::passthrough_/)'
+    - id: trust-chain-tests
+      why: the trust chain stage is missing, runs on requests, or lists the sources wrongly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_policy::tests::trust_/)'
+    - id: permission-id-tests
+      why: permission ids or the route are read from the wrong place or are not trimmed
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_policy::tests::ids_/)'
+    - id: constructor-tests
+      why: the default hooks or the initializer are wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_policy::tests::constructor_/)'
+    - id: helper-python
+      why: the strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3814)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3814 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3814/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added tool policy guardrail cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/policy-guardrail-*")" &&
+        grep -lE '^[[:space:]]+b3814:' tools/oracle/fuzz/corpus/helper_case/policy-guardrail-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/tool-policy-guardrail/blocked-request-tool.yaml
+  - tools/oracle/cases/helpers/tool-policy-guardrail/blocked-by-key-and-team.yaml
+  - tools/oracle/cases/helpers/tool-policy-guardrail/blocked-response-tool-call.yaml
+  - tools/oracle/cases/helpers/tool-policy-guardrail/uninitialized-store.yaml
+  - tools/oracle/cases/helpers/tool-policy-guardrail/trust-chain-violation.yaml
+  - tools/oracle/cases/helpers/tool-policy-guardrail/trust-chain-unknown-call-id.yaml
+  - tools/oracle/cases/helpers/tool-policy-guardrail/trust-chain-request-side.yaml
+  - tools/oracle/cases/helpers/tool-policy-guardrail/permission-id-flat-keys.yaml
+deviations:
+  - what: >-
+      The policy registry and the route tool-name extractor are injected traits, and the guardrail returns `GuardrailFailure::HttpObject { status: 400, detail }` where LiteLLM raises HTTPException with a dict detail.
+    why: betterlite-guardrails cannot depend on betterlite-db or betterlite-auth, and B5471's `HttpObject` variant carries the dict detail as an ordered map.
+  - what: A tool call or auth value that is a Python object instead of a JSON object is not read.
+    why: docs/compatibility.md leaves duck typing to the runtime; requests are JSON.
+out_of_scope:
+  - B1606 owns ToolPolicyRegistry, its refresh and get_tool_policy_registry. The server implements ToolPolicyLookup over it.
+  - B888 owns extract_request_tool_names and the extractors behind it. The server implements RequestToolNames over it.
+  - B3664 owns log_guardrail_information, which wraps apply_guardrail in LiteLLM. The caller of the hook starts and finishes the invocation record.
+  - B3682 owns the guardrail registry that calls the initializer by name, and the registration with the callback manager.
+  - B5471 owns CustomGuardrail's constructor checks, should_run_guardrail's callers and the other shared behavior.
+pitfalls:
+  - The trust chain reads `request_data["messages"]`, the request's own history, not the model response being checked, so the response tool_calls only supply the names.
+  - A tool the store has never seen has output policy `untrusted`, so a trusted-input tool fails after any tool message whose tool is unknown to the store.
+  - Only the exact text `untrusted` counts as tainted; `trusted` and any other value do not.
+  - Stage 1 runs on both request and response, and it runs before the trust chain, so a blocked tool wins over a trust failure.
+  - The nested `user_api_key_auth` branch stops the search for a bucket only when one of its ids is not null; otherwise the flat keys of the same bucket are tried before the next bucket.
+  - The route lookup tries `metadata` before `litellm_metadata` and treats an empty `metadata` object as missing, the opposite order of the permission id lookup.
+  - Tools without `function.name` give an empty list on purpose, and that is what triggers the route fallback, for example Responses API tools sent to /v1/responses.
+  - Python's `str(x).strip()` of a number gives its text, so an id sent as the number 7 becomes `7`.
+  - The blocked list keeps duplicates, so a request that sends the same blocked tool twice lists it twice in `blocked_tools` and in the message.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

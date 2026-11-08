@@ -98,7 +98,7 @@ deviations:
 out_of_scope:
   - B5071, B5073 and B5074 own the Dockerfiles that copy these scripts, strip CRLF and set the executable bit.
   - B1232 owns betterlite-db-admin, its migrate command and the 0/1/2 exit codes; B003 owns the betterlite binary and its --port flag.
-  - B151 owns docker/README.md, install_auto_router.sh and the non-root container test file.
+  - B8543 owns docker/README.md and the non-root container test file; install_auto_router.sh has no caller at the pin and is not built.
   - The enterprise admin UI build path in build_admin_ui.sh (curl, nvm and node install, ui/litellm-dashboard/build_ui.sh) is enterprise-only and not built.
 pitfalls:
   - The case pattern is [Tt][Rr][Uu][Ee] and nothing else, so USE_DDTRACE=1 or yes is not true; do not use a lowercase-and-compare shortcut that accepts more.

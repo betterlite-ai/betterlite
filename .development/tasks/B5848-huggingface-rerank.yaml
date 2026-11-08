@@ -3,7 +3,7 @@ title: Hugging Face rerank request and response
 description: >-
   Build huggingface_rerank in betterlite-openai (crates/betterlite-openai/src/huggingface_rerank.rs and its folder) over B1013's rerank records (OptionalRerankParams, RerankResponse and
   the result, meta and token records) and B5990's HuggingfaceError. It ports HuggingFaceRerankConfig from litellm/llms/huggingface/rerank/transformation.py. rerank/handler.py is a
-  docstring and nothing else. The module reads no env var and makes no HTTP call. The caller (B042 and B2454 wire it) passes the resolved api_key and api_base and an HuggingfaceEnv value
+  docstring and nothing else. The module reads no env var and makes no HTTP call. The caller (B8332 and B2454 wire it) passes the resolved api_key and api_base and an HuggingfaceEnv value
   with the HF_API_BASE and HUGGINGFACE_API_BASE values it read. Token counting is an injected TextTokenCounter trait, count(model, text) -> Result<u64, _>, backed in the helper adapter
   by B196's text counter. A request id comes from an injected id source, so cases can fix it.
 
@@ -120,7 +120,7 @@ deviations:
     why: The compatibility rules reject a value the declared type cannot hold at the point it enters; the status follows B2454's mapping of request errors.
 out_of_scope:
   - B2454 owns the rerank HTTP execution and the route behavior, and B1013 owns the rerank records and get_optional_rerank_params that feed map_cohere_rerank_params.
-  - B042 owns resolving the key (api_key, litellm.huggingface_key, HUGGINGFACE_API_KEY) and base for the call; the get_secret_str lookups in get_api_credentials are done by the caller.
+  - B8332 owns resolving the key (api_key, litellm.huggingface_key, HUGGINGFACE_API_KEY) and base for the call; the get_secret_str lookups in get_api_credentials are done by the caller.
   - The 5-line rerank/handler.py holds a docstring only.
   - B5990 owns HuggingfaceError and B196 owns the token counter that the trait is backed by.
 pitfalls:

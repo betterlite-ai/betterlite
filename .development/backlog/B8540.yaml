@@ -1,0 +1,13 @@
+id: B8540
+milestone: M8 platform
+title: Mount the health routes and build their production adapters
+status: todo
+depends_on: [B8610, B4449, B6809, B003, B052, B173, B189, B700, B731, B872, B3074, B3862, B3904, B3933, B3939, B3942, B3964, B3995, B4020, B4021, B4023, B4024, B4025, B4029, B4382, B4443, B4444, B4445, B4446, B4447, B4448, B5656, B7640]
+file: tasks/B8540-health-route-wiring.yaml
+covers: []
+parent: B130
+split_from: B130
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

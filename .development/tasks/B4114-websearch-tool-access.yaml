@@ -1,0 +1,114 @@
+id: B4114
+title: Search tool selection authorization and parent attribution
+description: >-
+  Build the part of the web search interception handler that picks the search tool for an intercepted search, checks that the caller may use it, and ties the search to the request that caused it.
+  Put it in crates/betterlite-websearch/src/search_tool_access.rs (with submodules under search_tool_access/ and adjacent tests). B4115 calls it from its search execution; nothing here runs a search.
+
+  Why it exists: when a model asks for a web search, the gateway runs the search itself. LiteLLM then has to (1) choose one of the router's configured search tools, (2) refuse the search if the key or team behind the request is not allowed that tool, and (3) log the search under the same key, team, session and trace as the original request so its cost lands on the right owner.
+
+  Build these pieces, all plain Rust types and functions with no Python-style maps in the public API.
+
+  Tool selection. `SearchToolConfig { search_tool_name: Option<String>, search_provider: Option<String>, litellm_params: the remaining params as a serde_json::Map }` mirrors one entry of the router's search_tools list. `SearchToolSelector::new(search_tool_name: Option<String>)` holds the logger's configured name (B4116 owns where it comes from). `select_from_router(Option<&[SearchToolConfig]>)` returns None when the router or its list is absent or empty. Otherwise `select_from_list` returns the first entry whose `search_tool_name` equals the configured name. If a name is configured but nothing matches, or no name is configured, it returns the first entry. It writes the same tracing debug lines as LiteLLM (found, not found and falling back, using first available), and the source label is "router". `selected_search_tool_name(Option<&SearchToolConfig>)` returns the name only when it is a non-empty string.
+
+  Caller lookup. The hook kwargs reach the handler as a loose dict. Model them as `SearchHookKwargs` with typed optional fields: `metadata`, `litellm_metadata`, `litellm_params` (itself holding `metadata` and `litellm_metadata`), `litellm_session_id`, `litellm_trace_id`, `litellm_call_id`. Each metadata block is `HookMetadata` with optional `user_api_key_auth: SearchCaller`, `session_id`, `trace_id` and `litellm_parent_otel_span`. `SearchCaller { team_id: Option<String>, parent_otel_span: Option<ParentOtelSpan> }` is the slice of the authenticated key object this module reads; `ParentOtelSpan` is an opaque newtype the tracing crate's span handle converts into at wiring time. `caller_from_kwargs(Option<&SearchHookKwargs>)` looks for a non-null `user_api_key_auth` in this order: kwargs.metadata, kwargs.litellm_metadata, then (only when litellm_params is present) litellm_params.metadata, litellm_params.litellm_metadata. Empty or absent kwargs give None.
+
+  Parent correlation. `ParentRequestCorrelation { session_id, trace_id, parent_request_id, parent_otel_span }`, all optional. `parent_correlation(kwargs, caller)` returns all None when kwargs is empty or absent, and does not look at the caller in that case. Otherwise the scopes are kwargs, then litellm_params when present. session_id is the first non-empty string among the scopes' `litellm_session_id`, then every metadata block's `session_id`; trace_id works the same with `litellm_trace_id` and `trace_id`; parent_request_id reads only the scopes' `litellm_call_id`. The metadata blocks are visited as kwargs.metadata, kwargs.litellm_metadata, litellm_params.metadata, litellm_params.litellm_metadata. The span is the first metadata block that has a non-null `litellm_parent_otel_span`, else the caller's own parent_otel_span, else None. `as_search_metadata()` returns an ordered list of the non-None entries in the order session_id, trace_id, parent_request_id, litellm_parent_otel_span. `as_search_kwargs()` returns only `litellm_session_id` and `litellm_trace_id`, when set.
+
+  Authorization. `SearchToolAuthorizer<G>` takes the grants port through its constructor. The port is a trait `SearchToolGrants` owned here, with an associated `Team` type and an associated `Error`: `check_key(name, &SearchCaller)`, `load_team(team_id, parent_otel_span)` returning `Team`, and `check_team(name, &Team)`. The server wires it to B749's can_key_call_search_tool and can_team_call_search_tool and to B737's get_team_object; this crate does not depend on betterlite-auth or betterlite-core, so those crates stay free of a cycle. `authorize(search_tool, kwargs)` does nothing when the tool has no non-empty name or when no caller is found. Otherwise it runs check_key, then, only if the caller's team_id is a non-empty string, load_team and check_team, in that order. The first error stops the sequence and is returned unchanged inside `SearchToolAccessError::Grants(E)`.
+
+  Spend metadata. `SearchMetadataSource` is a second port with `sanitized_key_metadata(&SearchCaller)` and `logged_api_key(&SearchCaller)`; the server wires it to B1106's get_sanitized_user_information_from_key and get_logged_api_key. `build_search_request_metadata(caller, search_tool_name, correlation)` returns `SearchRequestMetadata`, an ordered map that starts with the sanitized key metadata, then the correlation entries, then `model_group` (the tool name, may be null), `user_api_key` (the logged key) and `user_api_key_auth` (the caller). A later key overrides an earlier one with the same name, as in the dict merge.
+
+  Tests: adjacent tests.rs with modules tool_selection, caller_lookup, parent_correlation, tool_authorization and search_metadata under search_tool_access::. Authorization and metadata tests use recording fakes for the two ports and assert the call order.
+  Write the helper oracle cases named below for the pure parts (selection, caller lookup, correlation).
+scope:
+  paths:
+    - crates/betterlite-websearch/src/search_tool_access.rs
+    - crates/betterlite-websearch/src/search_tool_access/**
+    - tools/oracle/cases/helpers/websearch-search-tool-access/**
+    - tools/oracle/helpers/b4114.py
+    - tools/oracle/helpers/b4114/**
+    - tools/oracle/src/helpers/websearch/b4114.rs
+    - tools/oracle/src/helpers/websearch/b4114/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L106-L121
+    why: The typed views of one search tool entry (search_tool_name, litellm_params.search_provider) the selection reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L203-L241
+    why: _as_str_mapping and _ParentRequestCorrelation with as_search_metadata and as_search_kwargs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1626-L1668
+    why: _authorize_search_tool, key check first, then team lookup and team check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1670-L1692
+    why: _build_search_request_metadata and the order of its merged keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1694-L1730
+    why: _get_parent_request_correlation with the scope and metadata search order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1732-L1799
+    why: _selected_search_tool_name, _get_user_api_key_auth_from_kwargs, _select_search_tool_from_router and _select_search_tool_from_list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5351-L5403
+    why: The key and team search tool checks the authorizer calls through its port (owned by B749).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1614-L1650
+    why: get_logged_api_key and get_sanitized_user_information_from_key behind the metadata port (owned by B1106).
+dod:
+  - text: >-
+      select_from_list returns the entry whose search_tool_name equals the configured name, falls back to the first entry when the name is unset or unmatched, and returns None for an empty list; select_from_router returns None when the router or list is absent.
+    proof: [search-tool-access-tests, oracle]
+  - text: >-
+      selected_search_tool_name returns None for a missing tool, a missing name or an empty name, and the name otherwise.
+    proof: [search-tool-access-tests]
+  - text: >-
+      caller_from_kwargs finds user_api_key_auth in kwargs.metadata, then kwargs.litellm_metadata, then litellm_params.metadata, then litellm_params.litellm_metadata, skips blocks where it is null, and returns None for empty kwargs.
+    proof: [search-tool-access-tests, oracle]
+  - text: >-
+      parent_correlation takes the first non-empty string for session_id, trace_id and parent_request_id in the documented scope-then-metadata order, reads parent_request_id only from litellm_call_id, ignores non-string values, and returns all None for empty kwargs even when a caller is given.
+    proof: [search-tool-access-tests, oracle]
+  - text: >-
+      The parent span comes from the first metadata block with a non-null litellm_parent_otel_span, then from the caller, else None; as_search_metadata and as_search_kwargs list only set values in the documented order.
+    proof: [search-tool-access-tests, oracle]
+  - text: >-
+      authorize skips when the tool name is empty or no caller is found, runs check_key before load_team and check_team, skips the team steps when team_id is empty or absent, and returns the first port error without calling later steps.
+    proof: [search-tool-access-tests]
+  - text: >-
+      build_search_request_metadata merges sanitized key metadata, correlation entries, model_group, user_api_key and user_api_key_auth in that order, with later keys overriding earlier ones.
+    proof: [search-tool-access-tests]
+checks:
+  optional: []
+  commands:
+    - id: search-tool-access-tests
+      why: the search tool access tests are absent or fail
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^search_tool_access::(.*::)?(tool_selection|caller_lookup|parent_correlation|tool_authorization|search_metadata)(::|$)/) - test(/replays_the_.*_corpus/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/websearch-search-tool-access/select-by-name.yaml
+  - tools/oracle/cases/helpers/websearch-search-tool-access/select-name-not-found.yaml
+  - tools/oracle/cases/helpers/websearch-search-tool-access/select-no-name-first.yaml
+  - tools/oracle/cases/helpers/websearch-search-tool-access/select-empty-list.yaml
+  - tools/oracle/cases/helpers/websearch-search-tool-access/caller-metadata-order.yaml
+  - tools/oracle/cases/helpers/websearch-search-tool-access/caller-in-litellm-params.yaml
+  - tools/oracle/cases/helpers/websearch-search-tool-access/correlation-top-level-first.yaml
+  - tools/oracle/cases/helpers/websearch-search-tool-access/correlation-from-metadata.yaml
+  - tools/oracle/cases/helpers/websearch-search-tool-access/correlation-skips-empty-and-non-string.yaml
+  - tools/oracle/cases/helpers/websearch-search-tool-access/correlation-empty-kwargs.yaml
+  - tools/oracle/cases/helpers/websearch-search-tool-access/correlation-span-from-caller.yaml
+deviations:
+  - what: The search tool list, hook kwargs and caller are typed records (SearchToolConfig, SearchHookKwargs, SearchCaller) instead of loose dicts and a Python key object, and a router without a search_tools list is an absent Option.
+    why: Rust has no attribute probing or duck typing; the declared shapes are the ones LiteLLM's own TypedDict views use. A kwargs value of a different type than declared is out of scope per docs/compatibility.md.
+  - what: The parent OpenTelemetry span is an opaque ParentOtelSpan handle that the tracing crate converts at wiring time.
+    why: The Python span is an arbitrary object that this module only passes along.
+  - what: Authorization and spend metadata reach B749, B737 and B1106 through two ports (SearchToolGrants, SearchMetadataSource) wired by the server.
+    why: betterlite-auth and betterlite-core sit above this crate's allowed dependencies, so a direct call would risk a cycle. Behavior and call order are the same as LiteLLM's.
+out_of_scope:
+  - "_execute_search, the litellm.asearch call and the Perplexity fallback (B4115 owns them and calls this module)."
+  - "can_key_call_search_tool, can_team_call_search_tool and the ProxyException they raise (B749); get_team_object (B737); get_logged_api_key and get_sanitized_user_information_from_key (B1106)."
+  - "The logger constructor, from_config_yaml and where search_tool_name comes from (B4116)."
+  - "Writing the server wiring that implements SearchToolGrants and SearchMetadataSource; B8634 writes it (KeySearchGrants and KeySearchMetadata)."
+pitfalls:
+  - A configured search_tool_name that matches nothing is not an error. The selection logs a debug line and returns the first tool, the same as when no name is set.
+  - parent_correlation returns all None for empty kwargs without reading the caller, so the caller's parent_otel_span is not used in that case.
+  - parent_request_id reads only litellm_call_id from the scopes; there is no metadata key for it.
+  - Session and trace ids come from both scopes' litellm_session_id and litellm_trace_id before any metadata block's session_id and trace_id, and empty or non-string values are skipped, not taken.
+  - The metadata blocks are searched as metadata then litellm_metadata, first in kwargs and then in litellm_params. litellm_params only counts when it is a map.
+  - The caller lookup skips a block whose user_api_key_auth is null and keeps looking in the next block.
+  - authorize loads the team only when team_id is a non-empty string, and check_key runs even when there is no team.
+  - In the merged metadata, model_group, user_api_key and user_api_key_auth come last and win over same-named keys from the sanitized key metadata or the correlation.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

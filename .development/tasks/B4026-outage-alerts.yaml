@@ -1,0 +1,156 @@
+id: B4026
+title: Deployment and provider region outage alerts
+description: >-
+  Build the outage detector that turns failed requests into "Minor" and "Major" Service Outage alerts, in
+  crates/betterlite-logging/src/outage_alerts.rs and src/outage_alerts/. It has two detectors, one per deployment and
+  one per provider region, that share a message builder. Both only count errors with status 408 or 500 and above.
+
+  Records. `OutageRecord` (model_id, alerts, minor_alert_sent, major_alert_sent, last_updated_at) and
+  `RegionOutageRecord` (provider_region_id, the same four fields, and deployment_ids) are the cached values.
+  `alerts` is a list of i64 status codes and `last_updated_at` is Unix seconds as f64. deployment_ids is a
+  `BTreeSet<String>` that serializes as a sorted JSON list and reads back from a list, which is what LiteLLM's
+  `_prepare_outage_value_for_cache` and `_restore_outage_value_from_cache` do with a Python set. The thresholds and TTLs
+  are read from B4020's alert args: outage_alert_ttl 60, region_outage_alert_ttl 60, minor_outage_alert_threshold 5,
+  major_outage_alert_threshold 10, max_outage_alert_list_size 10.
+
+  Outside parts come in through small traits defined in this module, so the crate adds no dependency. `OutageStore`
+  reads and writes the two record kinds by cache key, and a write takes an optional TTL in seconds. `OutageDeployments`
+  looks up a deployment by id and returns a small `OutageDeployment` view (model, custom_llm_provider, region_name,
+  vertex_location, aws_region_name, watsonx_region_name) or None, and its error type is a typed error. `OutageApiBase`
+  returns LiteLLM's get_api_base for a deployment. B7320 builds the real lookup behind it: `betterlite_models::api_base_lookup::get_api_base`. `OutageSender` calls B4024's send entry point with the message, a
+  level, alert type outage_alerts and empty alerting metadata. A clock trait gives the current Unix seconds as f64.
+  B8656 wires the real implementations (ProxyLogging's internal usage cache, the router view lookup), so tests use fakes.
+
+  Message text. `count_outage_alerts(alerts)` counts 408 as "Timeout Errors", anything else at 500 or above as "API
+  Errors" and the rest as "Unknown Errors", then writes `\n{name}: {count}\n` for each count above zero, in that order.
+  `outage_alert_message` builds the Slack text exactly as `_outage_alert_msg_factory` does: header lines `*{key} Name:*
+  `{value}``, `*Provider:* `{provider}``, and `*API Base:* `{api_base}`` only when api_base is present, then the
+  "Service Outage" title with the warning sign, the Errors block, and `*Last Check:* `{seconds}s ago`` where seconds is
+  now minus last_updated_at rounded to 4 decimals and printed like Python prints a float (3.0, 0.0001). Copy the
+  blank lines and leading and trailing newlines from the Python source lines 759-785.
+
+  Per-deployment detector, `outage_alerts(status_code, deployment_id)`. The whole body is wrapped in a catch-all, so any
+  error from the store, the lookup or the sender ends the call silently and nothing is raised. Read the cached
+  OutageRecord first. Return when the status is missing, is not 408 and is below 500, or when no router lookup exists.
+  Look up the deployment and return on None. Take model and provider from the deployment. When custom_llm_provider is
+  None, resolve the provider with B174's get_llm_provider on the model, and use "" as provider and the unchanged model
+  when that fails. api_base comes from OutageApiBase. With no cached record, store a new one (alerts of just this
+  status, both flags false, last_updated_at now) with the outage_alert_ttl and return without sending. Otherwise append
+  the status when the list is shorter than max_outage_alert_list_size, set last_updated_at, then send a Minor alert
+  (level "Medium") when minor_alert_sent is false and the list reached the minor threshold, else a Major alert (level
+  "High") when major_alert_sent is false and the list reached the major threshold, and set the matching flag. Finally
+  store the record again with no TTL.
+
+  Region detector, `region_outage_alerts(status_code, deployment_id)`. It has no catch-all, so errors return to the
+  caller. Return when there is no router lookup or the deployment is None. Provider is custom_llm_provider, or comes from
+  get_llm_provider when None (an error here is returned). Region is the deployment's region_name, else B5365's
+  `_get_model_region` result for the provider, and return when both are None. The cache key is provider followed
+  directly by region_name, with no separator. Read the cached RegionOutageRecord, then apply the same status filter as
+  above. With no record, store a new one (deployment_ids holding this id) with region_outage_alert_ttl and return. Else
+  append the status under the same cap, add the deployment id, set last_updated_at, and send Minor or Major with the same
+  flag and threshold rules plus one more condition: deployment_ids must hold more than one id, so a single bad
+  deployment never alerts. The message uses key "Region", the region name and no api_base. Store the record again with
+  no TTL.
+
+  Entry point from the failure callback. `on_failure(alert_types, failure, deployment_id)` takes `FailureKind`, either
+  `ApiError { status_code: Option<i64> }` or `Other`. Only ApiError triggers anything. It runs outage_alerts when the
+  alert type name "outage_alerts" is in alert_types, then region_outage_alerts when "region_outage_alerts" is in it, and
+  drops any error from the region call, like the try/except in `async_log_failure_event`. Name the native tests so their
+  module path holds message, record, deployment, region or entry, which the five check filters match. deployment_id is the
+  deployment's model_info id, "" when missing.
+scope:
+  paths:
+    - crates/betterlite-logging/src/outage_alerts.rs
+    - crates/betterlite-logging/src/outage_alerts/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L173-L192
+    why: Outage value cache preparation (set to list) and restoration (list to set).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L735-L785
+    why: Error breakdown text and the Minor or Major outage message layout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L787-L921
+    why: region_outage_alerts, with provider and region resolution, the multi-deployment condition and cache writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L923-L1038
+    why: outage_alerts, the per-deployment detector wrapped in a catch-all.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1738-L1747
+    why: The only caller, which gates each detector on its alert type name and on APIError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/slack_alerting.py#L21-L35
+    why: OutageModel and ProviderRegionOutageModel record shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/slack_alerting.py#L44-L50
+    why: Outage TTL, threshold and list-size defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5245-L5267
+    why: _get_model_region, owned by B5365, which the region detector calls.
+dod:
+  - text: count_outage_alerts counts 408 as Timeout Errors, 500 and above as API Errors and every other code as Unknown Errors, and prints only non-zero counts in that order.
+    proof: [outage-message-tests]
+  - text: The outage message has the exact layout with Minor or Major, Model or Region name, Provider, API Base only when present, the Errors block and the Last Check seconds rounded to 4 decimals.
+    proof: [outage-message-tests]
+  - text: Records serialize deployment_ids as a sorted list and read a list back into a set.
+    proof: [outage-record-tests]
+  - text: The per-deployment detector ignores statuses other than 408 and 500 and above, and ignores a missing status, a missing router lookup and an unknown deployment.
+    proof: [outage-deployment-tests]
+  - text: The first qualifying error stores a record with outage_alert_ttl and sends nothing, and later updates are stored with no TTL.
+    proof: [outage-deployment-tests]
+  - text: A Minor alert at level Medium goes out once at the minor threshold, a Major alert at level High once at the major threshold, and the alerts list stops growing at max_outage_alert_list_size.
+    proof: [outage-deployment-tests]
+  - text: Provider falls back to get_llm_provider when custom_llm_provider is None, and to an empty string when that fails.
+    proof: [outage-deployment-tests]
+  - text: Any error from the store, the lookup or the sender inside the per-deployment detector is dropped and nothing is raised.
+    proof: [outage-deployment-tests]
+  - text: The region detector keys its cache on provider plus region name, takes the region from region_name first and then from _get_model_region, and does nothing when neither gives a region.
+    proof: [outage-region-tests]
+  - text: The region detector never alerts while only one deployment id is recorded, and alerts Minor or Major once the list and the deployment count both qualify.
+    proof: [outage-region-tests]
+  - text: The first qualifying region error stores a record with region_outage_alert_ttl and sends nothing.
+    proof: [outage-region-tests]
+  - text: on_failure runs each detector only when its alert type name is listed and the failure is an ApiError, and a region error does not escape.
+    proof: [outage-entry-tests]
+checks:
+  optional: []
+  commands:
+    - id: outage-message-tests
+      why: error counting or outage message layout tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^outage_alerts::.*message/)'
+    - id: outage-record-tests
+      why: record serialization tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^outage_alerts::.*record/)'
+    - id: outage-deployment-tests
+      why: per-deployment detector tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^outage_alerts::.*deployment/)'
+    - id: outage-region-tests
+      why: region detector tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^outage_alerts::.*region/)'
+    - id: outage-entry-tests
+      why: failure entry point tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^outage_alerts::.*entry/)'
+oracle_cases: []
+deviations:
+  - what: Cached deployment_ids are written as a sorted list.
+    why: Python writes list(set), whose order is arbitrary, and a stable order makes tests and cached values repeatable.
+  - what: Cache, router lookup, api_base, sender and clock are injected traits, not the proxy logging object's internal_usage_cache, llm_router and litellm.get_api_base.
+    why: betterlite has no module state, and betterlite-logging cannot depend on the router or cache crates.
+  - what: This task has no oracle cases.
+    why: No route reaches this code yet. The wiring umbrella adds the HTTP cases, and the message text is covered by exact-string native tests.
+out_of_scope:
+  - Registering the alerting callback when daily_reports, outage_alerts or region_outage_alerts is listed (proxy/utils.py L1329-L1338) belongs to the proxy wiring, not this task.
+  - async_log_failure_event's daily_reports branch and async_log_success_event belong to B4028, and B8656 calls B4028's update and on_failure from SlackAlerting's two log events.
+  - send_alert and the Slack, Teams and webhook delivery behind it belong to B4024 and B4021.
+  - The outage_alerts and region_outage_alerts alert type names, SlackAlertingArgs and its defaults belong to B4020.
+  - get_llm_provider belongs to B174, _get_model_region to B5365, and Router.get_deployment to B844.
+  - litellm.get_api_base (litellm_core_utils/llm_response_utils/get_api_base.py) belongs to B7320, and B7320 builds the real lookup. This task only defines the OutageApiBase trait, and B8656 wires B7320's lookup to it.
+  - deployment_in_cooldown (slack_alerting.py L194-L195) is a bare pass and nothing calls it at the pin.
+  - The health endpoint test alert for outage_alerts (_health_endpoints.py L506-L507) is owned by the health route task.
+pitfalls:
+  - Update writes after the first one pass no TTL, so the cache default TTL replaces the 60 second window; do not pass outage_alert_ttl on later writes.
+  - The Minor and Major checks are if and elif, so a single call sends at most one alert, and Major is only checked while the minor condition is false.
+  - A single error never alerts, because the first error only creates the record and returns; with thresholds of 1 the second error is the first one that can alert.
+  - The region detector reads the cache and returns on a bad status after it, so its order is lookup, provider, region, cache read, status check; keep the order for error behavior.
+  - The region cache key is provider + region_name with no separator, so "vertex_ai" and "us-east1" give "vertex_aius-east1".
+  - len(deployment_ids) > 1 is checked on the set after adding this deployment, and the per-deployment detector has no such check.
+  - "A 429 or 401 does not count: only 408 and codes at or above 500 pass the filter, even though the docstring of outage_alerts lists 401 and 429."
+  - Python prints round(x, 4) as 3.0 or 0.0001, so the Last Check text must show at least one decimal digit; Rust's Debug format for f64 does this.
+  - The per-deployment detector reads the cache before checking the status, and the status check does not remove the cached record.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

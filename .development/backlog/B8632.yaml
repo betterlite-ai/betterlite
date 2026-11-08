@@ -1,0 +1,13 @@
+id: B8632
+milestone: M8 platform
+title: SSE data generator ports and builder
+status: todo
+depends_on: [B8610, B8604, B8603, B8602, B7324, B8611, B8612, B8390, B6370, B8394, B8395, B937, B844, B562, B089]
+file: tasks/B8632-stream-generator-ports.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

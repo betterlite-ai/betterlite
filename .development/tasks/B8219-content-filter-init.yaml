@@ -1,0 +1,58 @@
+id: B8219
+title: Content filter initializer arguments
+description: >-
+  Port initialize_guardrail from litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/__init__.py. LiteLLM
+  builds a ContentFilterGuardrail from the configured guardrail and adds it to the callback manager. The class belongs
+  to the content filter tasks and the registry that calls the initializer is B3682's, so this task follows B3681: one
+  argument struct and one function, no class and no registration.
+
+  Code goes in crates/betterlite-guardrails/src/content_filter_init.rs and content_filter_init/ (args.rs, error.rs).
+  `LitellmParams` and the guardrail record fields come from B3662 (betterlite-config, sections::guardrail_params).
+
+  `initialize_content_filter(params: &LitellmParams, guardrail_name: Option<&str>, guardrail_id: Option<&str>,
+  policy_template: Option<&str>, router_present: bool) -> Result<ContentFilterArgs, ContentFilterInitError>`. The name
+  is required and an absent or empty name is "Content Filter: guardrail_name is required". ContentFilterArgs holds the
+  name, guardrail_id and policy_template (copied from the guardrail record), patterns, blocked_words,
+  blocked_words_file, event_hook (the mode), default_on (false when absent), categories, severity_threshold (default
+  "medium"), the router handle flag, image_model, competitor_intent_config, end_session_after_n_fails, on_violation and
+  realtime_violation_message. Fields copy without change and an absent value stays absent. The router handle is passed
+  to the class by the registry, so the struct keeps only whether one was given.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/content_filter_init.rs
+    - crates/betterlite-guardrails/src/content_filter_init/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/__init__.py
+    why: The initializer, its name check, its severity default and the fields it passes to ContentFilterGuardrail.
+
+dod:
+  - text: A missing or empty name is refused with the documented message.
+    proof: [init-tests]
+  - text: The fields copy as listed, severity_threshold defaults to "medium" and default_on defaults to false.
+    proof: [init-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: init-tests
+      why: an initializer argument, default or refusal differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter_init::/)'
+
+deviations:
+  - what: The initializer returns ContentFilterArgs and registers nothing.
+    why: The class has its own tasks and B3682 owns the registry and the registration, as with B3681.
+
+out_of_scope:
+  - 'The ContentFilterGuardrail class and its matching: the content filter tasks under B105.'
+  - 'The initializer registry and the callback registration: B3682.'
+
+pitfalls:
+  - 'severity_threshold defaults to "medium" only when the param is absent, and the other optional fields stay absent.'
+review_level: standard
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+
+oracle_cases: []

@@ -15,7 +15,7 @@ description: >-
   next_page is always null. Skill projection uses ISO datetime strings or empty strings for missing dates,
   retains latest_version and description, sets type skill and uses source custom when the row's source
   is falsey. Deletion projects id with a fallback type skill_deleted. Do not read proxy globals in native
-  code: the store and logging context are injected. The operations are callable from B095's routes without
+  code: the store and logging context are injected. The operations are callable from B994's and B995's routes without
   registering HTTP paths here.
 
   Exercise the actual production service in skills::operations tests and helper operation hosted_skill_ops.
@@ -67,7 +67,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B1502 owns _prisma_skill_to_litellm and every database/cache operation; no database access is duplicated here.
-  - Skills HTTP handlers and multipart decoding are B095; B161 exports the public sync and async functions.
+  - Skills HTTP handlers and multipart decoding are B994 and B995; B161 exports the public sync and async functions.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as hosted_skill_ops in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/hosted_skill_ops.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/hosted_skill_ops.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An empty file_content value permits the first files tuple to replace explicitly supplied filename and MIME type.

@@ -1,0 +1,13 @@
+id: B8382
+milestone: M8 platform
+title: Database model rows and stored secret decryption
+status: todo
+depends_on: [B016, B714, B725, B1035, B2303, B3211]
+file: tasks/B8382-db-row-decrypt.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

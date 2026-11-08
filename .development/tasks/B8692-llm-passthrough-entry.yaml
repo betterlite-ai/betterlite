@@ -1,0 +1,67 @@
+id: B8692
+title: Core LlmPassthrough dispatch entry and route choice
+description: >-
+  The proxy's passthrough route type, `allm_passthrough_route`, ends in LiteLLM's route_request (route_llm_request.py), which picks the router or the SDK call for the request data. The video and container routes copy their part of that choice into a core dispatch entry (B6460, B7430); this task does the same for the passthrough route type, so B8694's pipeline can hand the request to one core entry. betterlite-core cannot import betterlite-sdk or betterlite-router, so the router is reached through B8690's `PassthroughRouterCalls` and the router's model lists through B6460's `VideoRouteView`, both injected.
+
+  Dispatch entry. The architect adds one core entry to B014's core-stubs list, `LlmPassthrough` with module `llm_passthrough` (operation/llm_passthrough.rs and dispatch/llm_passthrough.rs); this task replaces its NotBuilt stub and stub test and leaves operation.rs and dispatch.rs as they are. The request is `LlmPassthroughRequest { args: PassthroughCallArgs, route: PassthroughRouteInput }`; the result is B8690's `PassthroughReply`.
+  `PassthroughRouteInput` holds `model: String` (the request data's model after pre-call), `team_id: Option<String>`, `is_proxy_admin_without_team: bool`, `has_api_key_or_base: bool` (the data has `api_key` or `api_base`), `has_user_config: bool`, `router_settings_override: Option<Map<String, Value>>` and `user_model: Option<String>`.
+
+  Route choice. `plan_passthrough_route(input, view: Option<&dyn VideoRouteView>, blocked: &dyn BlockedModels) -> PassthroughRoute` copies the passthrough path of _route_request_single_attempt (route_llm_request.py L493-L725). `PassthroughRoute` is `Router { specific_deployment: bool }`, `Direct`, `UserConfig`, `Blocked` or `NotFound`. Rules, in LiteLLM's order:
+  1. `has_api_key_or_base`: `Router` with a router (view present), `Direct` without one.
+  2. `has_user_config`: `UserConfig` (see deviations).
+  3. `router_settings_override` is set: `Router` with a router, `Direct` without one. Before the call the entry copies each of fallbacks, context_window_fallbacks, content_policy_fallbacks, num_retries, timeout, model_group_retry_policy, routing_strategy and enable_tag_filtering from the override into `args.extra` when the key is in the override and not already in the data.
+  4. With a router: first the blocked check. `BlockedModels` is a trait declared here with one method `all_blocked(&self, model: &str, team_id: Option<&str>) -> bool` (LiteLLM's get_model_list for the model and team, then _are_all_deployments_blocked). For a non-empty model where it answers true the plan is `Blocked`. Then: a team id that `map_team_model` answers gives `Router` with the mapped name written into `args.model`; `is_recognized_model(model)`, or an admin without a team whose model is not in `model_names` but is in the team public names, gives `Router`; a model not in `model_names` gives `Direct` when `pass_through_all_models`, `Router` when `has_default_or_pattern`, `Router { specific_deployment: true }` when it is in `deployment_names`, and `NotFound` otherwise. A model in `model_names` that none of these took is `NotFound`.
+  5. Without a router: `Direct`. (LiteLLM's `user_model is not None or route_type == "allm_passthrough_route"` branch is always true for this route type.)
+  `execute(request, router: Option<&dyn PassthroughRouterCalls>, view, blocked, direct)` runs the plan. `Router` calls the router trait with the args (and `specific_deployment: true` in `extra` when the plan says so). `Direct` calls `direct`, a small trait declared here with one async method that B8694 implements over B8690's `allm_passthrough_route` (it needs the logging state and the HTTP pool, which this crate does not hold). `Blocked` returns an error with status 403, message "Model is blocked" and the model (LiteLLM's PermissionDeniedError). `NotFound` returns the model-not-found error with route name `allm_passthrough_route` (ROUTE_ENDPOINT_MAPPING has no entry, so the route type itself is the name) and the model. `UserConfig` returns the error described in deviations. The entry's error type wraps `PassthroughCallError` and these three by `#[from]` or plain variants.
+
+  Tests: rstest functions in dispatch::llm_passthrough::tests with prefixes `plan_` (one case per rule above) and `entry_` (each plan reaches the right callee, the override keys are copied only when absent, the mapped team model reaches the router), with fakes for the view, the blocked check, the router trait and the direct call. The stub test `call_dispatch_tests_behavior` is replaced by these. No oracle case: the choice sits inside an async proxy function that reads proxy_server globals; B8640's HTTP cases cover it.
+scope:
+  paths:
+    - crates/betterlite-core/src/operation/llm_passthrough.rs
+    - crates/betterlite-core/src/operation/llm_passthrough/**
+    - crates/betterlite-core/src/dispatch/llm_passthrough.rs
+    - crates/betterlite-core/src/dispatch/llm_passthrough/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L493-L544
+    why: The api_key or api_base branch, the user_config branch and the router_settings_override merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L545-L548
+    why: The blocked check that runs first with a router.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L638-L659
+    why: Team mapping, recognized models, pass_through_all_models, default or pattern and deployment names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L717-L725
+    why: The SDK branch for allm_passthrough_route without a router and the model-not-found error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L58-L73
+    why: _raise_if_model_fully_blocked, its empty-model skip and its 403 message.
+dod:
+  - text: plan_passthrough_route gives Router or Direct for api_key or api_base, UserConfig for user_config, Router or Direct for a router settings override, and Direct without a router.
+    proof: [plan-tests]
+  - text: With a router, a fully blocked model gives Blocked, a team-mapped model, a recognized model and an admin's team public model give Router, an unknown model gives Direct, Router, Router with specific_deployment or NotFound in LiteLLM's order.
+    proof: [plan-tests]
+  - text: execute calls the router trait or the direct call per plan, copies the override keys only when absent, writes the mapped team model, and returns the 403 blocked error and the not-found error naming allm_passthrough_route.
+    proof: [entry-tests]
+checks:
+  optional: []
+  commands:
+    - id: plan-tests
+      why: a route rule is missing or in the wrong order
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^dispatch::llm_passthrough::tests::plan_/)'
+    - id: entry-tests
+      why: the entry calls the wrong side, loses an override key or returns the wrong error
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^dispatch::llm_passthrough::tests::entry_/)'
+oracle_cases: []
+deviations:
+  - what: A request whose data carries `user_config` gets a 400 invalid_request_error "user_config is not supported on pass-through routes" instead of a router built from that config.
+    why: LiteLLM builds a throwaway Router from client-supplied config per request; betterlite has no per-request router. Open question in the notes.
+out_of_scope:
+  - "The rest of route_request and its other route types: B6460 (video), B7430 (containers) and the other route families."
+  - "The pre-call steps that set the data's model and router_settings_override, and the reply shaping: B8694 and B8693."
+  - "Implementing VideoRouteView, BlockedModels and the direct call over the real router and SDK call: B8694."
+pitfalls:
+  - "The router path never falls back to the SDK call for an unknown model unless pass_through_all_models is set; a direct Bedrock model with a router and no wildcard is NotFound, as at the pin."
+  - "The blocked check skips an empty model and runs before the team mapping."
+  - "The router_settings_override merge never overwrites a key the data already has."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

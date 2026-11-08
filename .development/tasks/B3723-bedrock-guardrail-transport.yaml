@@ -63,7 +63,7 @@ description: >-
   - _GROUNDING_SOURCE_TRUSTED_ROLES = frozenset({"system", "developer"})
 
   Do not build the apply_guardrail, make_bedrock_api_request or any execution hooks in this task;
-  B3724/B3725 own those. Do not implement CustomGuardrail __init__ or update methods; B104 owns
+  B3724/B3725 own those. Do not implement CustomGuardrail __init__ or update methods; B5471 owns
   the guardrail lifecycle and config contracts. BedrockGuardrailStreamingParams.from_extras is
   unresolved (U1); accept it as a call from __init__ and build the _set_streaming_params receiver.
 

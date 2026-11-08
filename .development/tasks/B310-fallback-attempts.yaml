@@ -1,6 +1,6 @@
 id: B310
 title: Execute authorized fallback attempts
-description: 'Compose B309 plans with the B017 retry executor and B052/B071 access and budget checks.
+description: 'Compose B309 plans with the B017 retry executor and B052 access checks and B3008 budget rechecks.
   Recheck access and budget on every target before contacting a provider, preserve provider-scoped resources,
   and move capacity and reservation ownership between attempts. Emit B012 success/failure fallback events
   and the retry/fallback headers, including optional redacted error details. Expose the same engine to
@@ -115,6 +115,7 @@ out_of_scope:
   get_fallback_model_group (L441-L480).'
 - 'litellm/router_utils/fallback_event_handlers.py: B398 owns: log_success_fallback_event (L722-L747),
   log_failure_fallback_event (L750-L775).'
+- "B8350 builds `raise_mock_fallback_error` and `MockTestingParams::take_from` in `betterlite_router::router_predicates`. Router.async_function_with_fallbacks calls `raise_mock_fallback_error` with the group and its three fallback lists where LiteLLM calls _handle_mock_testing_fallbacks (router.py L7580), and does not rebuild the mock switches."
 pitfalls:
 - Authentication of the original model does not authorize all fallback targets.
 - Provider-owned IDs must not cross model groups.

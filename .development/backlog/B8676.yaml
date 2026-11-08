@@ -1,0 +1,13 @@
+id: B8676
+milestone: M8 platform
+title: Mount the model admin and public provider routes and pass the auto-router catalog
+status: todo
+depends_on: [B8610, B8611, B8597, B8586, B8385, B8272, B8386, B3190, B379]
+file: tasks/B8676-model-admin-mount.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

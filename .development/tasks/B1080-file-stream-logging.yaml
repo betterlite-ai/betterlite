@@ -27,7 +27,7 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/file_stream_projection-*
   - tools/oracle/cases/helpers/file-stream-projection/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/file_stream_logging.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/file_stream_logging.py
   - tools/oracle/fuzz/corpus/sdk_http_case/file-stream-logging-*

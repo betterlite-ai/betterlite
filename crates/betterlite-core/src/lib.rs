@@ -1,6 +1,7 @@
 pub mod a2a;
 pub mod agents;
 pub mod api;
+pub mod api_base_hooks;
 pub mod batch;
 pub mod budget_reset;
 pub mod caching;
@@ -23,6 +24,8 @@ pub mod guardrails;
 pub mod helpers;
 pub mod json_messages_policy;
 pub mod message_utilities;
+pub mod messages_host_binding;
+pub mod messages_selector_chain;
 pub mod meta_muse_realtime;
 pub mod mistral_ocr_guardrail;
 pub mod mock;

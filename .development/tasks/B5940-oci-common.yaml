@@ -4,14 +4,14 @@ description: >-
   Add oci_common in betterlite-provider for litellm/llms/oci/common_utils.py. It is the
   shared base of the OCI chat and embedding tasks (B5941, B5942, B5843), so it also owns
   OciServingMode, the small request object both of them send: servingType ON_DEMAND with
-  modelId, or DEDICATED with endpointId. B042 owns the pydantic types in
-  litellm/types/llms/oci.py, but nothing builds them yet, so each OCI task defines the Rust
+  modelId, or DEDICATED with endpointId. No task ports the pydantic types in
+  litellm/types/llms/oci.py on their own, so each OCI task defines the Rust
   types it needs inside its own module and serializes them with serde, skipping None fields.
 
   Credentials are plain arguments. OciExplicitParams holds the optional oci_region, oci_user,
   oci_fingerprint, oci_tenancy, oci_key, oci_key_file and oci_compartment_id values a caller
   passed. OciEnvValues holds the same seven values read from OCI_REGION, OCI_USER,
-  OCI_FINGERPRINT, OCI_TENANCY, OCI_KEY, OCI_KEY_FILE and OCI_COMPARTMENT_ID. B042 reads the
+  OCI_FINGERPRINT, OCI_TENANCY, OCI_KEY, OCI_KEY_FILE and OCI_COMPARTMENT_ID. B8330 reads the
   process environment and passes it in; this module never touches it.
   resolve_oci_credentials(explicit, env) returns OciCredentials: for each field the explicit
   value wins over the env value when it is non-empty, and oci_region falls back to
@@ -141,7 +141,7 @@ out_of_scope:
   - B5942 owns litellm/llms/oci/chat/cohere.py and generic.py and calls the schema helpers from here.
   - B5843 owns OCIChatConfig, the stream wrapper and get_vendor_from_model.
   - sign_with_oci_signer and OCISignerProtocol and OCIRequestWrapper have no Rust equivalent, see deviations.
-  - B042 owns reading the OCI_* environment variables, passing the values in and the proxy HTTP cases.
+  - B8330 owns reading the OCI_* environment variables, passing the values in and the proxy HTTP cases.
 pitfalls:
   - The request-target path is the URL path only. An api_base with a query string must not leak it into the signed line, and an empty path is /.
   - oci_key_file is trimmed, but oci_key is not; only oci_key gets the literal backslash-n and CRLF replacement.

@@ -1,0 +1,81 @@
+id: B8694
+title: Passthrough LLM request pipeline and router hop wiring
+description: >-
+  The pass-through route tasks hand an LLM request to two ports and leave their production values open: B7324's `LlmRequestProcessor` and `ExceptionMapper` (behind `LlmPassthroughProcessor`), and B3618's `RouterPassthrough` (used by B3618's relay and B3627's vllm route). This task writes all three, so B8640 can fill the route deps. Code goes in crates/betterlite-server/src/app/pass_through/llm_pipeline.rs and llm_pipeline/** (pipeline.rs, router_hop.rs, views.rs, tests.rs). Every name stays at 30 characters or fewer.
+  `LlmPipelinePorts::new(state: &Arc<ServerState>) -> LlmPipelinePorts` takes `RouterCalls` from B8631's `router_calls(state)` and builds, once: the `LlmPassthroughProcessor` (B7324) over `LlmPipeline` and B8693's `PassthroughErrors`; one `RouterHop`; and the hooks adapter. It reads `shared.router` and `shared.router_views` (B8611), `shared.proxy_logging`, `shared.general_settings` (B8612), `shared.guardrails`, `shared.http` (B8610), `shared.proxy_config`, and B8631's `RouterCalls` for the router trait. With no router configured, the router trait and RouterHop are None.
+
+  Router hop (router_hop.rs). `RouterHop` implements B3618's `RouterPassthrough`. It turns B3618's `RouterPassthroughCall` into B8690's `PassthroughCallArgs` (model, method, endpoint, request_query_params, request_headers, json, the None fields, and `stream` and `litellm_metadata` into `extra`) and calls B8691's `RouterPassthroughCalls` (built over B8631's `RouterCalls.call_types`). A `PassthroughReply` with a full body becomes `Buffered`, a stream becomes `StatusStream` with the reply's status and headers. `UpstreamStatus` becomes B3618's `UpstreamStatus` with that response; any other error becomes `Other` with its text.
+
+  Views (views.rs). `RouteViews` implements B6460's `VideoRouteView` over `shared.router_views` and the router (is_recognized_model, map_team_model, team public names, model_names, pass_through_all_models, default deployment or patterns, deployment_names), and B8692's `BlockedModels` with B844's get_model_list(model_name, team_id) and the router's _are_all_deployments_blocked (read the merged owner). `DirectCall` implements B8692's direct trait over B8690's `allm_passthrough_route` with the logging state from the pipeline and `shared.http`.
+
+  Pipeline (pipeline.rs). `LlmPipeline` implements B7324's `LlmRequestProcessor` for route type "allm_passthrough_route" and returns B8693's `PassthroughFailure` as its error. It replaces base_process_llm_request (L2461-L2524), the passthrough path of _process_llm_request (L2526-L2978) for this one route type, and runs B8801's shared step for common_processing_pre_call_logic (L1913-L2242). Steps, in LiteLLM's order; each names the task whose code it calls:
+  1. Pre-call. Take the call's record as `data` and run the shared pre-call step on it: B8802's `app::inference::pre_call_step(state)`, built once in `LlmPipelinePorts::new`, called through B8801's `PreCall` with route type allm_passthrough_route, the request parts, the key, the version, the call's separate model as the input model and skip_guardrails false. Keep the returned data and B247 logging state for this call; a `PreCallError` becomes `PassthroughFailure` with its data. The step already does every pre-call action LiteLLM runs (add_litellm_data_to_request, the fallback errors flag, queue time, model resolution, CLI values, aliases, router settings, call id, logging state, model-level guardrails, pre_call_hook), so none is repeated here.
+  2. GigaChat client. When the data's `custom_llm_provider` is "gigachat" and it has no `client`, set the call's client to a timeout of 600 seconds with a 5 second connect timeout (llm_passthrough_endpoints.py L3979-L3986); B3627 leaves this to the pipeline.
+  3. Route. Start ProxyLogging.during_call_hook for the data with call type allm_passthrough_route, and in parallel run B8692's entry with the args built from the data (named keys to the named fields, the rest to `extra`, the call's separate model as `model` when the data has none) and the route input from the data and the key. Wait for both; the hook's failure fails the call. With general_settings `cancel_on_disconnect` truthy, a client disconnect cancels both.
+  4. Post-call. Mark the request status success (ProxyLogging.update_request_status). For a streaming reply, or a request with `stream` true: get the stream callback headers from the response headers hook, build custom headers with B004's stream headers code, and return B8693's stream_reply as `ProcessedReply::Streaming`. Otherwise build custom headers with B004's success headers code (get_custom_headers with call id, model id, api base, version and response cost) and return B8693's full_reply as `ProcessedReply::Direct` when it answers; else run ProxyLogging.post_call_success_hook and return `ProcessedReply::Upstream` with the status, headers and read body, and with those custom headers as the call's response headers.
+  5. Keepalive. Wrap steps 1 to 4 with B7324's open_sse_before_first_byte, the interval from ttft_interval_for (B7324) over the router listing (B8641's `CatalogDeployments`) and `sse_keepalive_ping_interval_seconds`, and a `LateFailureHook` that runs post_call_failure_hook.
+  Every failure is returned as `PassthroughFailure` with its context filled (data, call id, model id from the logging state, version, request headers, and failure headers from B004's failure headers code), so B7324's processor maps it through `PassthroughErrors`.
+  Hooks. `ReplyHooksAdapter` implements B8693's `ReplyHooks` over ProxyLogging's post_call_response_headers_hook, post_call_success_hook and post_call_failure_hook. The event-stream rewrite in B8693 gets B8656's `ProxyPostCallHook` (from the callbacks wiring; read where it is built) as its B3678 hook, so de_anonymize_event_stream runs through ProxyLogging.post_call_success_hook.
+
+  Tests in llm_pipeline/tests.rs (`app::pass_through::llm_pipeline::tests`) with a real Router built from a two-deployment config.yaml against a local mock upstream where a route needs the router, and recording fakes for ProxyLogging where the merged type is a trait. Groups: `hop_` (RouterHop arguments, the three reply shapes and the two error kinds), `views_` (each view method and the blocked check), `pipeline_` (pre-call order, the GigaChat client, route choice reaching the router and the SDK call, streaming and buffered replies, the failure context) and `ports_` (built once, absent without a router).
+scope:
+  paths:
+    - crates/betterlite-server/src/app/pass_through/llm_pipeline.rs
+    - crates/betterlite-server/src/app/pass_through/llm_pipeline/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1913-L2242
+    why: common_processing_pre_call_logic, the pre-call order for every route type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2461-L2524
+    why: base_process_llm_request and its keepalive wrapper with the late failure hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2526-L2978
+    why: _process_llm_request, the during-call hook, the route call, the passthrough branches and the success headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3074-L3132
+    why: base_passthrough_process_llm_request, the caller B7324 builds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1972-L2072
+    why: _relay_router_model, the arguments RouterHop receives.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3979-L3986
+    why: The pooled GigaChat client with a 600 second timeout and a 5 second connect timeout.
+dod:
+  - text: RouterHop sends the relay's arguments to the router trait and returns Buffered, StatusStream, UpstreamStatus or Other as the reply or error says.
+    proof: [hop-tests]
+  - text: The views answer each router question from the shared router and router views, and the blocked check uses the model list for the model and team.
+    proof: [views-tests]
+  - text: The pipeline runs pre-call in LiteLLM's order, gives GigaChat its 600 second client, reaches the router or the SDK call through B8692's entry, and returns a streaming, direct or upstream reply with the custom headers.
+    proof: [pipeline-tests]
+  - text: The Bedrock event-stream rewrite runs through B8656's ProxyPostCallHook, and every failure carries its request context to PassthroughErrors.
+    proof: [pipeline-tests]
+  - text: LlmPipelinePorts builds the processor, the router hop and the hooks once, and leaves the router parts out without a router.
+    proof: [ports-tests]
+checks:
+  optional: []
+  commands:
+    - id: hop-tests
+      why: the router hop sends wrong arguments or maps a reply or error wrongly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::llm_pipeline::tests::hop_/)'
+    - id: views-tests
+      why: a route view answers from the wrong router data or skips the blocked check
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::llm_pipeline::tests::views_/)'
+    - id: pipeline-tests
+      why: a pre-call step, the route call or the reply branch is missing or out of order
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::llm_pipeline::tests::pipeline_/)'
+    - id: ports-tests
+      why: a port is built twice or exists without a router
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::llm_pipeline::tests::ports_/)'
+oracle_cases: []
+deviations:
+  - what: The pre-call runs through B8801's shared step instead of a method on one shared request processing class.
+    why: No task builds ProxyBaseLLMRequestProcessing as a whole; the pre-call steps and their order are LiteLLM's and live in B8801, shared by every route.
+out_of_scope:
+  - "The mount and the route deps: B8640, which proves these paths over HTTP. The other pass-through port adapters: B8641."
+  - "Reply shaping and exception mapping: B8693. The core entry and route choice: B8692. The SDK call: B8690. The router executor and trait: B8691."
+  - "The shared pre-call step: B8801, with B8800's ports and B8802's production adapters. The hook functions: B8399 with its parts. B004's header code."
+pitfalls:
+  - "The router_settings_override set in pre-call changes the route in B8692, so it must be set before the entry runs."
+  - "The during-call hook and the route call run in parallel; the reply is taken only after both finish."
+  - "A Bedrock direct-model request has no `model` in its record; the call's separate model fills it in pre-call, not the route task."
+  - "post_call_success_hook on the passthrough path gets the upstream reply object, not parsed JSON; only B8693's buffered path parses."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

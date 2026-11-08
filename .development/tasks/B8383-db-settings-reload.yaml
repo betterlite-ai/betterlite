@@ -1,0 +1,80 @@
+id: B8383
+title: Database settings reloads for search, SSO and secret managers
+description: >-
+  Every reconcile tick LiteLLM re-reads a few settings saved from the admin UI and re-initializes what they control
+  when they changed: web search interception, the MCP semantic tool filter, the SSO settings exported as env vars, and the Hashicorp Vault and
+  CyberArk overrides that rebuild the secret manager. B1646, B1647 and B1663 save these and leave the reload here. Build
+  crates/betterlite-server/src/db_settings_reload.rs (declared by the skeleton) with `SettingsReloader`, which keeps the last
+  applied value of each so unchanged settings do nothing. Error enum SettingsReloadError; every reload logs and
+  swallows its own errors so one bad row never stops the tick.
+
+  `reload_websearch(db, callbacks)` (init_websearch_interception_settings_in_db): read litellm_settings (a JSON string
+  is decoded), take websearch_interception_params; nothing when it is not a mapping. When it has no "enabled" key and
+  nothing was applied before, leave ownership with litellm_settings.callbacks (debug log). Otherwise enabled is the
+  coerced flag (default true); do nothing when the stored value equals the last one and the registered state matches.
+  Else remove every web search interception callback and, when enabled, register B1118's logger built from the params
+  with "enabled" dropped and enabled_providers dropped unless it is a non-empty list (_websearch_handler_params), logging
+  "Web search interception reinitialized from DB" or "Web search interception disabled", and remember the value.
+
+  `reload_semantic_filter(db, callbacks, router)` (_init_semantic_filter_settings_in_db): take
+  litellm_settings.mcp_semantic_tool_filter; nothing when absent. When it equals the last applied value and a
+  registered SemanticToolFilterHook has a filter with a built tool router, do nothing (debug "Semantic filter settings
+  unchanged, skipping reinitialization"); an equal value with no ready hook logs "Semantic filter settings unchanged,
+  but hook is missing or uninitialized. Reinitializing." and goes on. Remove every SemanticToolFilterHook, and when
+  enabled (default false) build one with B8201's initialize_from_config against the current router, registering it
+  when one comes back ("MCP Semantic Filter reinitialized from DB"); otherwise log "MCP Semantic Filter disabled".
+  Remember the value either way.
+
+  `reload_sso(db)` (_init_sso_settings_in_db): read the sso_config row through B1610's repository with the
+  reconnect retry, drop role_mappings, team_mappings and ui_access_mode, upper-case the keys and export them through
+  B8382's decrypt_and_export_env.
+
+  `reload_vault(db)` and `reload_cyberark(db)`: read the config_overrides row (config_type hashicorp_vault or cyberark)
+  with the reconnect retry. No row clears that manager's state through B1646's clear helper when something was applied
+  before. An unchanged value does nothing. Otherwise decrypt the values with B8382, snapshot the current env for the
+  manager's variable mapping (CyberArk also snapshots its boot env once), set the env, and re-run B4412's
+  initialize_secret_manager for that kind; when that fails, put the previous env back and re-raise into the logged
+  error.
+
+  Tests use in-memory rows and a fake secret manager. No oracle case: these run on a timer and their effect reaches a
+  client only through the features they configure, whose tasks own those cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/db_settings_reload.rs
+    - crates/betterlite-server/src/db_settings_reload/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8303-L8576
+    why: Semantic filter, web search, SSO, Vault and CyberArk reloads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5167-L5180
+    why: _websearch_handler_params.
+dod:
+  - text: Web search interception re-registers only on a change, keeps callbacks ownership without an enabled key, and cleans the handler params.
+    proof: [settings-reload-tests]
+  - text: The semantic filter hook is rebuilt on a change or when the registered hook is not ready, and removed when disabled.
+    proof: [settings-reload-tests]
+  - text: SSO settings drop the three mapping keys and export upper-cased decrypted values.
+    proof: [settings-reload-tests]
+  - text: Vault and CyberArk overrides apply only on change, clear on removal, and restore the previous env when the secret manager fails to start.
+    proof: [settings-reload-tests]
+checks:
+  optional: []
+  commands:
+    - id: settings-reload-tests
+      why: A database settings reload is missing, reloads unchanged values or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^db_settings_reload::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The semantic filter hook itself: B8201. The web search interception logger: B1118."
+  - "The Vault and CyberArk env mappings and state helpers in config_override_endpoints.py: B1646. Secret manager clients: B4412."
+  - "When these run: B8384 calls them from the non-LLM object sync, and B1663 calls the semantic filter and web search reloads right after a save. The safe litellm_settings overrides: B8384."
+pitfalls:
+  - A stored web search config without "enabled" must not take the callback away from litellm_settings.callbacks on a pod that never applied a database value.
+  - The Vault and CyberArk rollback restores only the variables in that manager's mapping.
+  - Comparison is against the last applied raw value, before decryption.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

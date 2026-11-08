@@ -3,7 +3,7 @@ title: Prometheus scrape rendering and authentication
 description: >-
   Port prometheus scrape rendering and endpoint authentication to Rust in three parts:
   crates/betterlite-prometheus for ASGI rendering, crates/betterlite-server for auth
-  middleware, and the integration point in crates/betterlite to mount the endpoint.
+  middleware, and the metrics endpoint router in betterlite-server. B8680 installs the middleware and mounts the endpoint.
 
   The scrape endpoint serves /metrics and /metrics/* with content negotiation, repeated
   name[] parameter selection, gzip compression, coalesced rendering (sharing one render
@@ -42,13 +42,13 @@ description: >-
   receive messages during auth (since virtual_key_auth reads the body) and replay
   them to the inner app if auth succeeds.
 
-  Wire the endpoint into the betterlite binary. At startup, check PROMETHEUS_MULTIPROC_DIR;
+  Build the endpoint router as `metrics_router(registry: Arc<CollectorRegistry>) -> axum::Router` in prometheus_auth_middleware.rs (B3875's registry type; the caller passes `shared.prometheus_registry`). When it is built, check PROMETHEUS_MULTIPROC_DIR;
   if set, create a new CollectorRegistry with MultiProcessCollector, otherwise use the
-  global REGISTRY. Call make_metrics_asgi_app with the registry. Mount the ASGI app at
-  /metrics on the main router using axum's mount. Add the auth middleware to the stack
-  before the mount (or wrap the metrics app with the middleware).
+  registry it was given, the one B8655's prometheus arm registers B3875's collectors into. Call make_metrics_asgi_app with that registry and serve it at /metrics and
+  every path under /metrics/. B8680 merges metrics_router through app::edge::mount_public and installs PrometheusAuthMiddleware in
+  app::edge::wrap, between the billable metrics layer and CORS as LiteLLM orders them; this task mounts and installs nothing.
 
-  Oracle cases with the real gateway and real proxy_server: every path under /metrics/,
+  Oracle cases, which B8680 owns because it mounts the endpoint, with the real gateway and real proxy_server: every path under /metrics/,
   requests with correct/missing/wrong auth headers (the six header names LiteLLM reads),
   gzip requests and non-gzip requests, repeated name[] parameters with valid and unknown
   metric names, and the fast-path pass-through when auth is disabled. Compare Content-Type,
@@ -61,15 +61,12 @@ scope:
     - crates/betterlite-prometheus/src/scrape_endpoint/tests.rs
     - crates/betterlite-server/src/prometheus_auth_middleware.rs
     - crates/betterlite-server/src/prometheus_auth_middleware/tests.rs
-    - crates/betterlite/src/prometheus_mount.rs
-    - tools/oracle/cases/prometheus-scrape/**
     - tools/oracle/helpers/b3886.py
     - tools/oracle/helpers/b3886/**
     - tools/oracle/src/helpers/prometheus/b3886.rs
     - tools/oracle/src/helpers/prometheus/b3886/**
     - crates/betterlite-prometheus/src/scrape_endpoint/tests/**
     - crates/betterlite-server/src/prometheus_auth_middleware/tests/**
-    - crates/betterlite/src/prometheus_mount/**
   lint_tables: false
 
 references:
@@ -103,7 +100,7 @@ dod:
     proof: [scrape-request-tests]
   - text: make_metrics_asgi_app returns an ASGI app that calls Request, parses the scrape,
       renders, and streams with correct Content-Type and optional Content-Encoding headers.
-    proof: [oracle-prometheus-scrape]
+    proof: [scrape-request-tests]
   - text: _is_metrics_route returns true for /metrics and /metrics/* paths but false for /metricsfoo.
     proof: [auth-middleware-tests]
   - text: PrometheusAuthMiddleware skips auth when require_auth_for_metrics_endpoint is false,
@@ -111,21 +108,23 @@ dod:
     proof: [auth-middleware-tests]
   - text: On auth failure, the middleware sends 401 with a JSON body containing the error message
       and a hint about the setting.
-    proof: [oracle-prometheus-scrape]
+    proof: [auth-middleware-tests]
   - text: The middleware buffers ASGI receive messages during auth and replays them to the inner
       app if auth succeeds.
     proof: [auth-middleware-tests]
-  - text: The binary creates a CollectorRegistry with MultiProcessCollector when PROMETHEUS_MULTIPROC_DIR
-      is set, and uses the global REGISTRY otherwise.
+  - text: metrics_router creates a CollectorRegistry with MultiProcessCollector when PROMETHEUS_MULTIPROC_DIR
+      is set, and otherwise renders the registry it was given, so collectors registered there show in the scrape.
     proof: [mount-tests]
   - text: The /metrics endpoint is mounted at /metrics and passes all oracle cases with correct
       Content-Type, Content-Encoding, status and response body.
-    proof: [oracle-prometheus-scrape]
+    proof: [mount-tests]
   - text: Concurrent scrapes with identical Accept/Accept-Encoding/name[] request the same render
       exactly once and share its bytes.
-    proof: [oracle-prometheus-scrape]
+    proof: [coalesced-scrape-tests]
   - text: Scrape responses stream in 64-KiB chunks when the body is larger than that.
-    proof: [oracle-prometheus-scrape]
+    proof: [scrape-request-tests]
+  - text: The middleware and metrics_router are tested with tower's oneshot over a test Router; B8680 installs and mounts them and proves the HTTP answers with the oracle cases moved there.
+    proof: [auth-middleware-tests, mount-tests]
 
 checks:
   optional: []
@@ -141,26 +140,9 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_auth_middleware::/)'
     - id: mount-tests
       why: Prometheus endpoint mounting tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^prometheus_mount::/)'
-    - id: oracle-prometheus-scrape
-      why: HTTP oracle cases for /metrics endpoint authentication and rendering fail
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(prometheus_scrape_)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_auth_middleware::(.*::)?metrics_router/)'
 
-oracle_cases:
-  - tools/oracle/cases/prometheus-scrape/auth-disabled.yaml
-  - tools/oracle/cases/prometheus-scrape/auth-missing-key.yaml
-  - tools/oracle/cases/prometheus-scrape/auth-wrong-key.yaml
-  - tools/oracle/cases/prometheus-scrape/header-authorization.yaml
-  - tools/oracle/cases/prometheus-scrape/header-api-key.yaml
-  - tools/oracle/cases/prometheus-scrape/header-x-api-key.yaml
-  - tools/oracle/cases/prometheus-scrape/content-negotiation-text.yaml
-  - tools/oracle/cases/prometheus-scrape/content-negotiation-proto.yaml
-  - tools/oracle/cases/prometheus-scrape/gzip-accept.yaml
-  - tools/oracle/cases/prometheus-scrape/gzip-no-accept.yaml
-  - tools/oracle/cases/prometheus-scrape/metric-name-filtering.yaml
-  - tools/oracle/cases/prometheus-scrape/unknown-metric-name.yaml
-  - tools/oracle/cases/prometheus-scrape/concurrent-identical-requests.yaml
-  - tools/oracle/cases/prometheus-scrape/large-response-chunking.yaml
+oracle_cases: []
 
 deviations:
   - what: Rendering happens in a Tokio blocking task (worker thread) instead of on the event loop,
@@ -179,7 +161,7 @@ out_of_scope:
   - Multiprocess-directory cleanup and worker-exit notifications. That is B3887's responsibility.
   - The Prometheus scrape protocol details beyond what prometheus_client.exposition module provides
     (encoder selection, content-type negotiation, gzip support).
-  - Routes other than /metrics and /metrics/*. This task mounts only /metrics.
+  - Routes other than /metrics and /metrics/*. This task builds only the /metrics router; B8680 mounts it.
 
 pitfalls:
   - Prometheus registry rendering is CPU-intensive for large metric sets. The worker thread must

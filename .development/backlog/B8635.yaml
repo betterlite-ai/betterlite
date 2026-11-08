@@ -1,0 +1,13 @@
+id: B8635
+milestone: M8 platform
+title: Container, utils and model listing wiring
+status: todo
+depends_on: [B8610, B8634, B8631, B8611, B8612, B1100, B3371, B3372, B7326, B7430, B903, B3362, B8598, B940, B085, B1103, B8393, B8395, B003, B8802]
+file: tasks/B8635-container-utils-mounts.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

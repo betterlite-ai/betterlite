@@ -1,0 +1,190 @@
+id: B4505
+title: Lens worker leases and verified results
+description: >-
+  Build the worker side of litellm/proxy/lens/endpoints.py: the seven routes under /lens/worker, the worker credential check and the helpers behind them.
+  One module in betterlite-server, lens_worker_routes (a file plus a folder of submodules with adjacent tests.rs files), with the submodules
+  credential (worker_auth), lease (assigned), claim (the claim route and claim_candidate), progress (progress and heartbeat), sample, content, model, result, merge (merge_results),
+  evidence (validate_finding), router and error. The admin routes, user_scope, LensRoutesState and the Clock and IdSource ports belong to B4503.
+  This task imports `crate::lens_access::lookup::get_lens`, `crate::lens_access::lookup::required`, `crate::lens_access::storage::source_reader` and `crate::lens_access::state::LensRoutesState` (B4503, all `pub(crate)` in the same crate) and registers its seven routes in one function
+  `lens_worker_routes::router(state)`. B8682 mounts it through app::edge::mount_public, beside B4503's router, so nothing is registered twice. No new crate dependency is needed
+  (the server already has sha2, hex, base64 and chrono; B4503 added betterlite-lens and betterlite-db).
+
+  State. `WorkerRoutesState` holds the B4503 `LensRoutesState` (`crate::lens_access::state::LensRoutesState`: repository, storage, Clock) and the value B4504 exports to run lens_inference::analyze (its ports bundled, so tests pass a fake).
+  Tests use fakes for all of them, and B4501's fake Database if it exports one, else a small one in tests.rs that answers by SQL text. A missing repository is 503 "Lens needs a connected Postgres database" (B4503's lens_repository).
+
+  Auth is not the user key layer. These routes are never behind B003/B052 key auth: they take only `Authorization: Bearer <token>`. lens_worker_routes::credential::worker_auth(state, header):
+  parse the bearer header the way FastAPI's HTTPBearer does at the pinned fastapi 0.136.3 (a missing header or a scheme other than bearer is rejected before any database call;
+  copy the status, detail and WWW-Authenticate header from what the oracle sees on LiteLLM, do not guess), then the repository (503 when absent), then
+  repo.worker(lowercase hex SHA-256 of the token's UTF-8 bytes). None or revoked is 401 "Worker credential is invalid or revoked". Return the Worker. The token and its digest are never logged.
+  Dependencies resolve before body and query decoding, so a request with a bearer header and no database is 503 even when its body or query is also bad; a request without a bearer header is the bearer error first.
+  A body that is not valid JSON is the shared 422 from the server; do not add a case for the order between it and auth.
+
+  lens_worker_routes::lease::assigned(repo, lens_id, job_id, worker) -> (Lens, Job): get_lens(lens_id, worker.scope) (404 "Lens not found" when missing or can_access false; this is the only caller that passes a non-all_teams scope),
+  then current_job(lens) (B4500). 409 "This worker no longer owns the job" when there is no current job, or its id differs, or its status is not "running", or its worker_id differs, or lease_until is None or at or before the clock's now.
+  An expired lease is 409 at once; nothing renews it here.
+
+  claim: POST /lens/worker/claim with query protocol_version (integer, default 1; a non-integer is 422, decoded after auth). Steps: protocol_version other than 2 is 409 "Upgrade the Lens worker using the current Connect worker command";
+  worker.analysis_key_id None is 409 "Assign an analysis key to this worker in Lens setup"; now = clock; repo.heartbeat(worker.id, now as Python isoformat text);
+  then for each lens in repo.lenses() in repository order, skip it when can_access(worker.scope, lens.scope) is false, and call claim_candidate; return the first Claim. When none claims, the body is the JSON value null with status 200.
+  The isoformat text is "YYYY-MM-DDTHH:MM:SS+00:00", with ".ffffff" microseconds only when they are not zero; it is stored as text in last_seen.
+  claim_candidate(candidate, worker, now): job id = new uuid from IdSource; repo.update(candidate.id, transform, changed_only = true) where transform queues first with B4500 queue_job(lens, now, job id) only when lens.settings.enabled and lens.next_run_at <= now (otherwise keeps the lens),
+  then applies B4500 claim_job(that, worker, now). update returning None (nothing changed, or the lens vanished) gives no claim. Otherwise take current_job of the updated lens; it is a claim only when that job has worker_id equal to this worker, status "running" and differs from current_job(candidate) (the job as it was before)
+  by record equality. The Claim is { lens_id, job, findings = updated lens findings }.
+
+  progress: POST /lens/worker/{lens_id}/{job_id}/progress with a Progress body (B4500). assigned first. now = clock. repo.update with a transform: current_job missing, or its id differs, or worker_id differs returns the lens unchanged; otherwise replace_job with the job having stage and coverage from the body and lease_until = now + 5 minutes.
+  required(result); then repo.heartbeat(worker.id, now isoformat). The body is true. An unchanged transform is still a 200 true (update gives the current lens back), not 409.
+  heartbeat: POST /lens/worker/{lens_id}/{job_id}/heartbeat, no body. assigned, then run progress with Progress { stage = job.stage, coverage = job.coverage } for the same ids, which runs assigned again and renews the lease. The body is true.
+
+  sample: GET /lens/worker/{lens_id}/{job_id}/sample. assigned. A job whose sample is already set returns it with no storage call (so no 501 either). Otherwise page through the SourceReader (B4502; 501 from source_reader when no storage):
+  cursor starts as "", each call is reader.sample(lens.scope, job.settings, start_ms, end_ms, cursor = cursor) with start_ms and end_ms the job's start and end in milliseconds (integer arithmetic on microseconds, see deviations). Push each page; stop when the page has no next_cursor or when the executions gathered so far reach the first page's `selected`; else continue with the page's next_cursor.
+  The frozen Sample is { executions = all pages' executions in order, eligible = first page's eligible, selected = the number of gathered executions }. Freeze it with repo.update: the transform reads current_job; if it is missing, or its id differs, or its worker_id differs, it fails with 409 "Job was cancelled or reassigned" (the error leaves repo.update and is not retried);
+  if that job already holds a sample the transform leaves the lens unchanged, else replace_job with the sample set. required(result), then return the sample of the job with job_id in the updated lens; None there is 409 "Could not freeze the sample".
+  B4501's `update<E>` takes `impl FnMut(Lens) -> Result<Lens, E>` and returns `Result<Option<Lens>, LensUpdateError<E>>`. The freeze transform uses the error type `JobMoved` (owned here, in error.rs) and returns `Err(JobMoved)` for that 409; `LensUpdateError::Transform(JobMoved)` maps to 409 "Job was cancelled or reassigned". Every other transform in this task (claim_candidate, progress, finish) returns `Ok` and uses `std::convert::Infallible` as `E`. The heartbeat calls take `&str`: `repo.heartbeat(&worker.id, &isoformat(now))`.
+
+  content: GET /lens/worker/{lens_id}/{job_id}/content with required query execution_id (missing is 422 after auth), cursor (default "") and offset (integer, 0 or more, default 0). assigned. selected = job.sample, or an empty Sample when none. Find the execution with that id; none is 404 "Execution is outside this job's sample".
+  Only then source_reader(storage) (501) and reader.content(lens.scope, execution, cursor, offset). Return the ExecutionContent.
+
+  model: POST /lens/worker/{lens_id}/{job_id}/model with a ModelRequest body. assigned, then B4504 lens_inference::analyze(repo, lens, job, worker, body, the incoming request). Return its ModelResult. All failures come from analyze and propagate with its status and detail.
+
+  result: POST /lens/worker/{lens_id}/{job_id}/result with a Result body (B4500; assessments, findings, coverage, error). Steps in this order:
+  1) lens = get_lens(lens_id, worker.scope). 2) If the lens has a job with job_id, status "completed" or "failed" and worker_id equal to this worker, return the lens at once (200, an upload retried after success). 3) assigned. 4) now = clock; selected = job.sample, or an empty Sample when none; allowed = the set of selected execution ids.
+  5) Four checks, each 422: assessments whose execution_id values are not all distinct: "Each run must have one assessment"; an assessment execution_id outside allowed: "Assessment references a run outside this job"; check_ids = ids of job.settings.analysis_checks, and an assessment whose issue_checks plus pattern_checks are not all in check_ids: "Assessment references an unknown check";
+  a finding whose check_id is not in check_ids, or whose evidence names an execution_id outside allowed: "Finding references evidence outside the job".
+  6) validate_finding for each finding in order, using the lens read in step 1. 7) repo.update with the finish transform below; required(result) is the response.
+
+  lens_worker_routes::evidence::validate_finding(lens, selected, finding, storage): previous = the lens finding whose id equals finding.existing_finding_id. When existing_finding_id is set and previous is None or its check_id differs from the draft's: 422 "Existing finding must belong to the same check".
+  Then for each evidence entry in order, build source_reader(storage) (501 when no storage) and call reader.verify_evidence(lens.scope, the selected execution with evidence.execution_id, evidence); false is 422 "Evidence quote does not match stored content".
+
+  finish transform on lens e: active = current_job(e). When active is missing, or its id differs, or its worker_id differs from this worker, return e unchanged (the response is then 200 with the current lens, not a 409). Otherwise:
+  merged = merge_results(e, body, job.revision, now).findings, where job is the job read by assigned; merged_ids = their ids. The active job becomes: status "failed" if body.error is non-empty else "completed", stage "Failed" or "Complete", finished_at = now, coverage = the old coverage when body.error is set else body.coverage, error = body.error, assessments = body.assessments,
+  findings = for each draft, B4500 snapshot_finding(e, draft, job.revision, now). The lens becomes: findings = merged followed by the findings of e whose id is not in merged_ids; last_scan_at = e.last_scan_at when body.error is set, else the later of (e.last_scan_at, or job.end when that is None) and job.end;
+  next_run_at = now + e.settings.interval_minutes minutes.
+  merge_results(lens, result, revision, now): fold over result.findings starting with the lens; for each draft take B4500 merge_finding(current, draft, revision, now) and set current.findings to that finding first, then the old findings whose id differs. The last draft ends up first.
+
+  Route table: exactly these seven (method path): POST /lens/worker/claim, POST /lens/worker/{lens_id}/{job_id}/progress, GET /lens/worker/{lens_id}/{job_id}/sample, GET /lens/worker/{lens_id}/{job_id}/content, POST /lens/worker/{lens_id}/{job_id}/model,
+  POST /lens/worker/{lens_id}/{job_id}/result, POST /lens/worker/{lens_id}/{job_id}/heartbeat. None clashes with B4503's routes (their paths have fewer segments or other literals). No /v1 or provider alias exists.
+
+  Errors: lens_worker_routes::error owns LensWorkerError with status() and detail(), wrapping LensAccessError (B4503), the repository error, the B4502 source error and the B4504 analyze error. A repository or storage error that is not a listed detail is a 500 and is not hidden. Every error body is {"detail": "<text>"}.
+scope:
+  paths:
+    - crates/betterlite-server/src/lens_worker_routes.rs
+    - crates/betterlite-server/src/lens_worker_routes/**
+    - tools/oracle/helpers/b4505.py
+    - tools/oracle/helpers/b4505/**
+    - tools/oracle/src/helpers/server/b4505.rs
+    - tools/oracle/src/helpers/server/b4505/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L51-L54
+    why: The router prefix, the HTTPBearer scheme and the storage dependency that the worker routes use instead of user_api_key_auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L82-L117
+    why: get_lens (B4503 owns it), worker_auth with its SHA-256 lookup and 401 text, and assigned with the lease checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L349-L386
+    why: Decorators and bodies of claim and progress, with the protocol and analysis key checks and the lease renewal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L388-L453
+    why: Sample freezing with cursor paging, the content route and the model route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L455-L528
+    why: The result route with its idempotent early return and four 422 checks, finish transform, merge_results and heartbeat.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L530-L554
+    why: claim_candidate and validate_finding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/state.py#L27-L135
+    why: queue_job, claim_job, merge_finding and snapshot_finding as the handlers call them (owned by B4500).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/repository.py#L48-L75
+    why: update with changed_only, which claim_candidate relies on (owned by B4501).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/repository.py#L160-L165
+    why: heartbeat takes the time as text (owned by B4501).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/inference.py#L89-L154
+    why: analyze, the one call the model route makes (owned by B4504).
+dod:
+  - text: worker_auth hashes the bearer token with SHA-256, answers 401 for an unknown or revoked worker, and checks the header before the database.
+    proof: [credential-tests]
+  - text: assigned answers 404 for a missing lens and 409 for a missing, other, non-running, foreign or expired job.
+    proof: [lease-tests]
+  - text: claim answers 409 for protocol versions other than 2 and for a worker without an analysis key, heartbeats, and returns the first lens whose claim_candidate takes a new running job for this worker, else null.
+    proof: [claim-tests]
+  - text: claim_candidate queues a job only when the lens is enabled and due, then claims it, and gives no claim when update changed nothing or the job was already this worker's.
+    proof: [claim-tests]
+  - text: progress and heartbeat set stage, coverage and a five minute lease, write the worker heartbeat, and answer true even when the transform changed nothing.
+    proof: [progress-tests]
+  - text: sample returns a frozen sample without storage, otherwise pages by cursor until the first page's selected count is reached, freezes it once, and answers 409 when the job moved.
+    proof: [sample-tests]
+  - text: content answers 404 for an execution outside the frozen sample before it needs storage, then returns the reader's content.
+    proof: [content-tests]
+  - text: model calls analyze after assigned and returns its result or its error unchanged.
+    proof: [model-tests]
+  - text: result applies the idempotent early return and the four 422 checks in order, validates every finding, and finishes the job with the stated job and lens fields.
+    proof: [result-tests]
+  - text: validate_finding and merge_results apply the same-check 422, the evidence 422 and the newest-first merge order.
+    proof: [evidence-tests, merge-tests]
+  - text: The router mounts exactly the seven worker routes and no B4503 route.
+    proof: [router-tests]
+  - text: The handlers are tested with tower's oneshot over lens_worker_routes::router and fake ports; B8682 mounts them and proves the HTTP answers with the oracle cases moved there.
+    proof: [router-tests, credential-tests]
+checks:
+  optional: []
+  commands:
+    - id: credential-tests
+      why: the bearer parsing, token hashing or revoked worker rule is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_worker_routes::credential::/)'
+    - id: lease-tests
+      why: the assigned lease checks are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_worker_routes::lease::/)'
+    - id: claim-tests
+      why: the claim route or claim_candidate is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_worker_routes::claim::/)'
+    - id: progress-tests
+      why: the progress or heartbeat handler is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_worker_routes::progress::/)'
+    - id: sample-tests
+      why: the sample route is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_worker_routes::sample::/)'
+    - id: content-tests
+      why: the content route is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_worker_routes::content::/)'
+    - id: model-tests
+      why: the model route is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_worker_routes::model::/)'
+    - id: result-tests
+      why: the result route is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_worker_routes::result::/)'
+    - id: evidence-tests
+      why: validate_finding is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_worker_routes::evidence::/)'
+    - id: merge-tests
+      why: merge_results is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_worker_routes::merge::/)'
+    - id: router-tests
+      why: the worker route table is missing or mounts a wrong route
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_worker_routes::router::/)'
+oracle_cases: []
+deviations:
+  - what: The sample route computes the start and end milliseconds from the job's integer microsecond timestamps, not from a float seconds value multiplied by 1000.
+    why: LiteLLM's int(timestamp() * 1000) can land one millisecond low when the float is just under a whole millisecond. Integer arithmetic is exact, and the same choice is made for the preview window in B4503.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L400-L405
+out_of_scope:
+  - "B4503 owns get_lens, required, source_reader, user_scope, LensRoutesState, Clock and IdSource, and the 16 admin routes. This task only imports them."
+  - "B4500 owns the records (Claim, Progress, Result, ModelRequest, ModelResult, Sample, Worker), queue_job, claim_job, current_job, replace_job, merge_finding and snapshot_finding. B4501 owns LensRepository and its SQL, B4502 the SourceReader, B4504 analyze."
+  - "The cases need no database and no tracing store, so the claim loop, leases, sample freezing, result merging and every 401 for an unknown worker are covered by native tests only. The oracle worker sandbox has no Postgres for either gateway."
+  - "B8682 mounts /lens/worker paths through app::edge::mount_public, outside the key auth layer. LiteLLM runs no key auth on them (no user_api_key_auth dependency, not in litellm_native_routes), and B742's route policy says so; B8682 also mounts this router."
+pitfalls:
+  - The worker routes never call user_api_key_auth, so a worker token is not a virtual key and the master key does not open them; only the SHA-256 of the bearer token in LiteLLM_LensWorker does.
+  - claim defaults protocol_version to 1, so a worker that sends no query gets 409 "Upgrade the Lens worker using the current Connect worker command" and never reaches the analysis key check.
+  - claim writes the heartbeat before it looks at any lens, so a worker with nothing to claim still refreshes last_seen, and the null answer is a 200 with body null.
+  - claim_candidate calls update with changed_only = true, which returns None when the transform changed nothing; that is a normal "no work", not an error.
+  - A claim needs the job to differ from current_job(candidate), so a worker that already holds a running job with a live lease gets the lens back unchanged from claim_job and no second claim of the same job.
+  - assigned compares lease_until against the current time with "at or before" as expired, so a lease ending exactly now is a 409.
+  - progress and result use transforms that return the lens unchanged when the job is gone or moved, and required() only fails on None, so those cases answer 200 with the current lens or true, not 409.
+  - heartbeat runs assigned twice (once itself, once inside progress), and that second call can turn a lease that expired between them into 409.
+  - The sample route returns a stored sample without touching storage, so a worker with no tracing gets 501 only on the first call that has to build the sample.
+  - The sample paging stops on the first page's selected count, not on a short page, and keeps going while next_cursor is set; do not add a page limit.
+  - If another request froze the sample first, the freeze transform leaves the lens alone and the route returns that other sample, not the one this call built.
+  - content checks the execution against the frozen sample before it builds the SourceReader, so a bad execution_id is 404 even when tracing is off.
+  - The result route's early return needs worker_id equal to this worker and status completed or failed; a different worker, or a queued or running job, goes on to assigned and gets 409 when it does not own the job.
+  - The four 422 checks of result run before any storage call, and validate_finding runs its same-check 422 before it needs storage, so a bad existing_finding_id is 422 even with tracing off, while any other finding without tracing is 501.
+  - In finish, the lens-level findings come from merge_results and the job's own findings come from snapshot_finding on the original e, so the two lists can differ for the same draft (snapshot resets occurrences).
+  - On a result with an error, coverage on the job stays the old coverage and last_scan_at does not move, but next_run_at still advances by interval_minutes.
+  - Python's HTTPBearer rejects before the database is touched, so a request with no or a wrong scheme header never shows 503 even when the database is absent.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

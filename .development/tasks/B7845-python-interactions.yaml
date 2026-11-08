@@ -1,0 +1,138 @@
+id: B7845
+title: Python Interactions create, get, delete and cancel functions
+description: >-
+  Add `betterlite.interactions.create`, `acreate`, `get`, `aget`, `delete`, `adelete`, `cancel` and `acancel` so they work
+  where LiteLLM's do. The Rust owners are B3499 (create, native or Responses-backed), B3495 (get through the public pipeline)
+  and B3500 (cancel and settled delete). They hold provider choice, the Responses bridge, stream decoding, billing and cost
+  settling. Python collects the arguments and moves JSON. It adds none of that logic.
+
+
+  Native side, the family `interactions`, in `crates/betterlite-python`. It follows B5659's shape: `src/interactions.rs` has
+  `pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()>` that adds the class `NativeInteractionsSession`, the
+  class `NativeInteractionsStream` and the exception `NativeInteractionsError` (made with `pyo3::create_exception!`). The
+  architect writes the `mod` and `register` lines in `src/lib.rs` and the import in the `.pyi` package, so never edit `lib.rs`.
+  The session is built from the JSON settings text. Its methods are `create`, `get`, `delete` and `cancel`, each with an
+  `a`-prefixed twin that returns an awaitable through `future_into_py`. Each takes `(payload_text, blobs)` as B6040's
+  `to_call_payload` builds it. The blocking ones run on the tokio runtime inside `py.detach`. `get`, `delete` and `cancel`
+  return the result as JSON text. `create` returns `(kind, value)`: kind "response" with JSON text, or kind "stream" with a
+  `NativeInteractionsStream`. The stream has `next_chunk()`, `anext_chunk()`, `close()` and `aclose()`, and a chunk is one
+  event as JSON text, or None at the end. Read B3499, B3495 and B3500 for the Rust entry names and B5659 for the error JSON
+  keys. Conversions sit in `src/interactions/convert.rs` and need no interpreter, with tests that start with `request_` and
+  `error_`.
+
+
+  Python side, the package `python/betterlite/_interactions/` with files under 300 lines and an explicit `__all__`, and the
+  package `python/betterlite/interactions/__init__.py` with `main.py` that re-exports the eight names, as
+  litellm/interactions/__init__.py does. The architect writes one star line in `python/betterlite/__init__.py`. Never edit that
+  file. The `agents` sub-module of LiteLLM is not part of this task. Use `to_call_payload`, `call_native`, `acall_native`,
+  `read_settings` and `proxy_headers` from B6040's `_endpoints` package and do not write a second copy.
+
+
+  Signatures follow litellm/interactions/main.py. `create` and `acreate` (L70-L104, L195-L229) take, all with default None:
+  `model, agent, input, tools, system_instruction, generation_config, stream, store, background, environment,
+  response_modalities, response_format, response_mime_type, previous_interaction_id, extra_headers, extra_body, timeout,
+  custom_llm_provider`, then `**kwargs`. `get`, `aget`, `delete`, `adelete`, `cancel` and `acancel` (L359-L615) take
+  `(interaction_id, extra_headers=None, timeout=None, custom_llm_provider=None, **kwargs)`. A test compares
+  `inspect.signature` for the eight.
+
+
+  The sync functions pop `acreate_interaction`, `aget_interaction`, `adelete_interaction` or `acancel_interaction` from
+  `kwargs` (the source tests each with `is True`) and return a coroutine when it is set. The async functions set that flag.
+  `create` does no model-or-agent check in Python: a call with neither goes to Rust as it is (the source defaults the provider to gemini, L275-L289),
+  and Rust owns that. `client` and `shared_session` in `kwargs` raise B158's `UnsupportedCallArgument`, through
+  `to_call_payload`. A `litellm_logging_obj` is dropped. `read_settings` supplies `api_key`, `api_base`, `vertex_project`,
+  `vertex_location` and `vertex_credentials`, read at call time.
+
+
+  Results: the result classes of litellm/types/interactions/generated.py (`InteractionsAPIResponse`,
+  `InteractionsAPIStreamingResponse`, `DeleteInteractionResult`, `CancelInteractionResult`) have no Python owner at this pin.
+  So this task returns a B5657 `ResponseObject` built from the JSON for every result and every stream event, and the dumped dict
+  is what tests compare. A "stream" result is an `InteractionsStream` with `__iter__`/`__next__` for the sync call and
+  `__aiter__`/`__anext__` for the async call, plus `close` and `aclose`. A provider error raises the class from B158's table,
+  with the native error as `__cause__`.
+
+
+  Tests use `tests/interactions_server.py`, a local `http.server` in a thread. It answers POST `/v1beta/interactions` with fixed
+  JSON, or with server-sent events when the body has `"stream": true`, and GET, DELETE and POST `.../{id}:cancel` on
+  `/v1beta/interactions/{id}`. It records each request, and gives a 400 body in Google's error shape when the key is
+  "bad-key". Tests call both packages with the same arguments and compare `model_dump()` and the dicts, and the request
+  bodies.
+scope:
+  paths:
+  - crates/betterlite-python/Cargo.toml
+  - crates/betterlite-python/src/interactions.rs
+  - crates/betterlite-python/src/interactions/**
+  - crates/betterlite-python/python/betterlite/_native_interactions.pyi
+  - crates/betterlite-python/python/betterlite/_interactions/**
+  - crates/betterlite-python/python/betterlite/interactions/**
+  - crates/betterlite-python/tests/interactions_server.py
+  - crates/betterlite-python/tests/test_interactions.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L70-L659
+  why: The eight public signatures, the async flags and the provider defaulting.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/__init__.py
+  why: The eight names the package exports.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py#L1057-L1140
+  why: The four result classes this task stands in for with ResponseObject.
+- url: https://github.com/PyO3/pyo3-async-runtimes
+  why: The future_into_py bridge.
+dod:
+- text: The eight functions keep LiteLLM's signatures.
+  proof: [interactions-signature]
+- text: Create, get, delete and cancel send the same method, path and body as LiteLLM and return the same dumped data.
+  proof: [interactions-calls]
+- text: The async functions run on the event loop, each sync function returns a coroutine when its async flag is True.
+  proof: [interactions-async]
+- text: A stream gives the same events as LiteLLM on both iteration paths, ends cleanly and closes.
+  proof: [interactions-stream]
+- text: A provider 400 raises the right class with the native error as cause, and `client` is refused.
+  proof: [interactions-error]
+- text: The native register function adds the session, the stream and the error class, and conversion has tests without an interpreter.
+  proof: [interactions-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: interactions-signature
+    why: A renamed or reordered parameter breaks positional callers.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_interactions.py -k signature
+  - id: interactions-calls
+    why: A route or body field differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_interactions.py -k "create or get or delete or cancel"
+  - id: interactions-async
+    why: An async call blocks the loop or a sync flag returns the wrong type.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_interactions.py -k "async or coroutine"
+  - id: interactions-stream
+    why: Iteration differs from LiteLLM or never ends.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_interactions.py -k stream
+  - id: interactions-error
+    why: A provider error shows up as a generic exception, or a client is dropped silently.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_interactions.py -k "error or client"
+  - id: interactions-native
+    why: The native conversion drops a field of the request or the error.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^interactions::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Untyped dicts and ignores creep in at the native boundary.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`client` and `shared_session` raise `UnsupportedCallArgument`."
+  why: A Python HTTP client can't drive the Rust call, and ignoring it could send a request past a caller's proxy or custom TLS.
+- what: Results and stream events are `ResponseObject` values, not the generated pydantic classes.
+  why: The wheel has no pydantic, and the generated classes have no Python owner at this pin. The dumped dict is the same.
+out_of_scope:
+- Provider choice, the Responses bridge, stream decoding, billing and the background cost poll run in Rust (B3499, B3495, B3500 and their parts).
+- "`litellm.interactions.agents` (provider-side agent creation) is not part of this task."
+- The error table and `UnsupportedCallArgument` are B158, and the payload, runner and settings helpers are B6040.
+pitfalls:
+- '`create` takes `model` and `agent` as ordinary parameters with default None, not keyword-only. Keep that, or the signature test fails.'
+- '`get`, `delete` and `cancel` have no `extra_body`. Do not add it.'
+- 'Pop the async flag from `kwargs` before the payload is built, or it reaches Rust as a request field.'
+- 'Close a stream once: `close` after the end does nothing and does not raise.'
+- 'The names `get`, `delete` and `create` shadow nothing inside the package, but `from betterlite.interactions import *` must give only the eight names in `__all__`.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

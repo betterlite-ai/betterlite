@@ -1,0 +1,223 @@
+id: B4720
+title: MCP server catalog and health views
+description: >-
+  Build the nine read-only routes of the MCP management router that list and describe servers, in betterlite-server module mcp::catalog_views, plus one config section.
+  All nine sit under the router prefix /v1/mcp (LiteLLM mounts this router with that prefix only, so there is no /mcp/... or /openai/v1/... alias).
+  Errors are FastAPI HTTPException values: a string detail gives {"detail": "..."} and an object detail gives {"detail": {"error": "..."}}. The texts below say which one each error uses.
+  Nothing here writes to the database. The one write-like effect is the registry add in route 7.
+
+
+  Layout. crates/betterlite-server/src/mcp/catalog_views.rs holds CatalogViews (a struct whose fields are the ports and values the routes need, built by B8625 with a struct literal), the CatalogError enum (thiserror, one variant per failure, a status mapping used by the routes) and `routes()` which returns the axum router with the nine routes.
+  The files beside it, each with a tests.rs: small_reads.rs (routes 1 to 3), registry_feed.rs (route 4), server_list.rs (route 5), health_routes.rs (route 6), server_detail.rs (route 7), discovery.rs (routes 8 and 9).
+  No global state. The LiteLLM globals become fields: the registry (B4731 ServerRegistry behind B6592's shared handle), the health service (B6592), the database port (B4711), the settings (B4717's management mode, this task's registry flag), the clock and the tool lister.
+
+
+  Config section. crates/betterlite-config/src/sections/mcp_registry.rs reads general_settings.enable_mcp_registry, a boolean that defaults to false, and exposes it as config.sections.mcp_registry. LiteLLM tests it with bool(...), and the declared type is a boolean, so only a boolean is accepted. Its tests live in the section's tests.rs and load a config file with the key set to true, to false and absent. The skeleton adds the stub, the `pub mod` line and the name in the sections! list; do not edit sections.rs or any shared config file.
+
+
+  Route 1. GET /v1/mcp/tools (any valid key) returns {"tools": [...]}, every tool of the caller's key serialized with its aliased field names (inputSchema, not input_schema) and with null fields kept.
+  The tool list comes from LiteLLM's _list_mcp_tools called with only the auth: no auth header, no server filter, no per-server headers, no client ip. Define a port trait ToolLister with one async method list_tools(auth) -> Result<Vec<tool>, ListToolsError>, where the tool type is the one the MCP client crates already define (read crates/betterlite-mcp for the Tool type and its serde names). B8625 wires the real lister; this task only calls the port. Only the tools are returned, not the per-server outcome that the listing also carries.
+
+  Route 2. GET /v1/mcp/access_groups (any valid key, no role check) returns {"access_groups": [...]}, the sorted union of the access group names of every config-loaded server and of every row of the MCP server table.
+  Config servers carry the names in their access_groups field and table rows carry them in mcp_access_groups, so the two spellings differ. Skip empty lists.
+  The table read is a plain find-many on the server table through B4711's table handle, with no approval filter, so draft and pending rows count. It is skipped when there is no database. A database error is logged at debug level and swallowed, and the answer is built from what was read so far (the config groups). Sort by string code point and remove duplicates.
+
+  Route 3. GET /v1/mcp/network/client-ip (any valid key) returns {"ip": <string or null>} where the ip is B743's get_mcp_client_ip(request), the caller's address as the proxy sees it.
+
+  Route 4. GET /v1/mcp/registry.json is the only route here that takes no key. It serves the public MCP registry document (spec https://github.com/modelcontextprotocol/registry).
+  When the flag enable_mcp_registry is false the answer is 404 with detail "MCP registry is not enabled" (a plain string). The flag is checked before anything else, including the ip.
+  Otherwise: client_ip is B743's get_mcp_client_ip(request); base_url is B4654's get_request_base_url(request); the response is {"servers": [{"server": entry}, ...]}. The first element is the built-in entry for this gateway, then one element per record of B4731's filtered_registry(client_ip) (get_filtered_registry), values only, sorted by the registry name, a stable sort on the plain string.
+  The registry name of a record is its alias, else its server_name, else its server_id (the first non-empty one).
+  An entry is {"name": N, "title": N, "description": N, "version": "1.0.0", "remotes": [{"type": "streamable-http", "url": U}]} with N the registry name. For a record U is base_url with trailing slashes removed, then "/", then B6594's get_server_prefix(record), then "/mcp". A record whose prefix is empty is skipped (LiteLLM raises ValueError and the loop catches it, logging at debug level "Skipping MCP server %s in registry: %s").
+  The built-in entry uses the gateway name and description and U = base_url without trailing slashes + "/mcp". The gateway name is the env var LITELLM_MCP_SERVER_NAME (default "litellm-mcp-server") and the description is LITELLM_MCP_SERVER_DESCRIPTION (default "MCP Server for LiteLLM"). CatalogViews takes both as plain string fields that B8625 fills from B8620's config section; the module reads no environment variable itself.
+  Key order inside an entry is name, title, description, version, remotes.
+
+  Route 5. GET /v1/mcp/server lists servers for the dashboard. Query: team_id (optional string) and connected_app_view (bool, default false). The response model is a list of B858's LiteLLM_MCPServerTable, every field serialized, nulls included.
+  Steps, in this order.
+  a. Let restricted = B4717's is_restricted_virtual_key_request(auth). A team_id that is a string with non-blank content takes the team branch (a blank or whitespace-only value takes the normal branch, not an error).
+  b. Team branch. A restricted key gets 403 with the string detail "Restricted virtual keys cannot query team-scoped MCP servers." The id is trimmed. A caller without admin view (B2314's user_api_key_has_admin_view: PROXY_ADMIN and PROXY_ADMIN_VIEW_ONLY) loads the team with B737's get_team_object(team_id, check_db_only true), which raises its own error for an unknown team and that error passes through unchanged. If no member of the team has user_id equal to the caller's user_id (members with a None user_id never match) the answer is 403 with the string detail "You do not have permission to view MCP servers for this team." Then the list is the team-scoped list (step c), sorted.
+  c. Team-scoped list (`_get_team_scoped_mcp_server_list`). Load the team again with get_team_object(team_id, check_db_only true). The id set is B818's _get_team_allowed_mcp_servers(team) united with B817's _get_allow_all_keys_server_ids(). An empty set gives []. Otherwise each id is read with B4731's server_by_id (no ip), ids the registry does not know are skipped, and each found record becomes a table row with B4731's server_table. The rows are then redacted with B4717's redact list function.
+  d. Normal branch: B4717's resolve_accessible_mcp_servers(auth), then B4717's redact list function, then sorted.
+  e. Sort key (`_mcp_server_display_order`): the lowercase of server_name, else alias, else server_id, then the server_id as a tie breaker.
+  f. connected_app_view: only when the flag is true and B4672's is_ui_session_credential(auth) is true, set connected_app_reachable on every row to whether its server_id is in the reachable set. The reachable set (`_connected_app_reachable_server_ids`) is empty when B4672's admitted_user_context(auth) is None, else B6591's allowed_servers(admitted).
+  g. has_user_credential: only when the caller has a non-empty user_id and a database exists. Take the rows with is_byok true. If there are any, read the credential rows of B4711's _db_find_user_credential_rows with where user_id = the caller and server_id in those ids (one query), and set has_user_credential on each BYOK row to whether its id is among them. Any credential row counts, BYOK or OAuth, because both share the table and the query has no type filter.
+  h. A restricted key gets B4717's sanitize list for virtual key. Else a caller who is not a full admin (B4717's user_is_full_admin: PROXY_ADMIN only) gets B4717's sanitize list for non-admin. Else the redacted rows are returned.
+  This route needs no database for the normal branch: without one the answer is built from the registry alone.
+
+  Route 6. GET /v1/mcp/server/health. Query: server_ids (repeatable, optional) and include_reachability (bool, default false). It returns a JSON list of {"server_id": id, "status": s}.
+  s goes through `_mcp_health_status_for_response`: the value "reachable" becomes "unknown" unless include_reachability is true, and every other value (healthy, unhealthy, unknown, or null) is unchanged, null staying null.
+  When B4717's get_user_mcp_management_mode is "view_all" and the key is not restricted, the rows come from B6592's with_health_unfiltered(server_ids), in its order.
+  Otherwise, for each context in B4672's build_effective_auth_contexts(auth), call B6592's with_health_and_teams(context, server_ids, checked) where checked is a copy of the ids already collected before this call, and keep a server's status the first time it is seen. The output order is the order of first sight. Nothing is health-checked twice.
+
+  Route 7. GET /v1/mcp/server/{server_id} describes one server. Query: include_reachability (bool, default false). The static path /server/health must win over this path.
+  Steps, in this order.
+  a. No database gives 500 with the object detail {"error": "Database not connected. Connect a database to your proxy"} (B4711's get_prisma_client_or_throw). This runs first, before the id is looked at.
+  b. client_ip = B743's get_mcp_client_ip(request). is_admin_view = user_api_key_has_admin_view(auth).
+  c. B4731's resolve_server(server_id, no temp lookup, db lookup = B4711's get_mcp_server, id_client_ip = client_ip, name_client_ip = client_ip, match_name true), then authorize_server with: is_admin_view; not_found_detail {"error": "MCP Server with id <id> not found"}; forbidden_detail {"error": "User does not have permission to view mcp server with id <id>. You can only view mcp servers that you have access to."}; non_admin_missing "not_found"; and allow_catalog_view = management mode is "view_all" AND key not restricted AND the resolved row exists AND its approval_status is None, "active" or "approved" AND the registry knows the id (server_by_id with no ip is Some).
+  d. When the authorized source is the database, add the server to the registry with B6592's add_server(row). This changes shared state on a read.
+  e. Health: B6592's check_server(server_id). On success set status to the `_mcp_health_status_for_response` value (null becomes "unknown"), last_health_check and health_check_error from the result. On any error from it: status "unknown", last_health_check = the current time as a naive ISO-8601 datetime in the process's local time (no zone suffix), health_check_error = the error text, and a debug log line "Error performing health check on server %s: %s".
+  f. B4717's redact. A restricted key gets sanitize for virtual key; else a non-full-admin gets sanitize for non-admin; else the redacted row.
+
+  Route 8. GET /v1/mcp/discover is the curated list of well-known servers for the dashboard's add-server grid. Query: query (optional) and category (optional).
+  A caller without admin view gets 403 with the object detail {"error": "Only proxy admins can access MCP discovery. Your role=<user_role>"}, where <user_role> is the role's string value as LiteLLM prints it (read B2314 for the enum's text; a key without a role prints None).
+  Data: crates/betterlite-server/data/mcp_registry.json, a byte-for-byte copy of litellm/proxy/mcp_registry.json at the pin (32 entries), embedded with include_str!. Parse it once when CatalogViews is built; a parse failure logs a warning and uses an empty server list. Typed entries (DiscoveryServer): name, title, description, icon_url, category, registry_url, transport, then url (http and sse entries) or command and args (stdio entries), then env_vars, a list of {name, description, secret}. Serialize in that order and omit the keys an entry does not have. The catalog is the file's "servers" array.
+  The answer is {"servers": S, "categories": C}. S is the entries after filtering. query is a case-insensitive substring test against name, title and description (any one matches), applied only when query is non-empty. category is an exact, case-sensitive match against the entry's category, applied only when non-empty; an entry without a category never matches. C is the sorted set of every entry's category from the full unfiltered list, with "Other" for an entry that has none. The order is the file's order for S and code point order for C.
+
+  Route 9. GET /v1/mcp/openapi-registry returns the OpenAPI picker catalog. A caller without admin view gets 403 with the object detail {"error": "Only proxy admins can access the OpenAPI registry. Your role=<user_role>"}. Otherwise it returns the catalog that B4231's openapi_registry module loads, unchanged, and {"apis": []} when that loader reports a failure (log a warning "Failed to load OpenAPI registry from <path>: <error>" in LiteLLM; here the path is the embedded resource's name).
+
+  Tests use synthetic servers (ids like test-srv-1, urls like https://mcp.example.test/sse), fakes for the registry, the health service, the database port, the tool lister and the team lookup, and a fixed clock. They cover every branch above, including the order of the checks in routes 5 and 7.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/catalog_views.rs
+    - crates/betterlite-server/src/mcp/catalog_views/**
+    - crates/betterlite-server/data/mcp_registry.json
+    - crates/betterlite-config/src/sections/mcp_registry.rs
+    - crates/betterlite-config/src/sections/mcp_registry/**
+    - tools/oracle/helpers/b4720.py
+    - tools/oracle/helpers/b4720/**
+    - tools/oracle/src/helpers/server/b4720.rs
+    - tools/oracle/src/helpers/server/b4720/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L87
+    why: The router prefix /v1/mcp, the only mount point of these routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L112
+    why: DEFAULT_MCP_REGISTRY_VERSION, "1.0.0".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L403-L472
+    why: The registry flag read, the remote url builder, the registry name rule, the entry types and both entry builders.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L994-L1067
+    why: Routes 1 to 3 from their decorators, including the config plus table access group union with its swallowed error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1069-L1107
+    why: Route 4, registry.json, with no auth dependency, the flag gate, the ip filter, the sort and the per-record skip.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1109-L1190
+    why: The display sort key, the team-scoped server list and the connected app reachable set (the management mode and accessible-server helpers in the same range belong to B4717).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1191-L1300
+    why: Route 5 from its decorator, the team branch, the connected app annotation, the BYOK annotation and the two sanitizer exits.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1302-L1371
+    why: The status mapping helper and route 6 with its view_all branch and the first-seen merge over auth contexts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1713-L1799
+    why: Route 7 from its decorator, the resolve and authorize arguments, the registry add and the health fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L3165-L3241
+    why: The curated registry path and loader, and route 8 with its filters and category list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L3244-L3283
+    why: "Route 9, the OpenAPI registry route and its empty apis list fallback."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/mcp_registry.json
+    why: The 32 discovery entries to embed byte for byte.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L43-L45
+    why: The defaults of LITELLM_MCP_SERVER_NAME and LITELLM_MCP_SERVER_DESCRIPTION used by the built-in registry entry.
+
+dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports; B8625 mounts the routes and proves the items below over HTTP with the cases that moved there.
+    proof: [catalog-tests]
+  - text: >-
+      GET /v1/mcp/registry.json answers 404 "MCP registry is not enabled" when enable_mcp_registry is false or absent without needing a key,
+      and when it is true returns the built-in gateway entry first, then the ip-filtered servers sorted by alias, server_name or server_id, with the exact entry shape and the remote url built from the request base url and the server prefix.
+    proof: [registry-feed-tests, config-tests]
+  - text: >-
+      The enable_mcp_registry key is read by a betterlite-config section that defaults it to false and loads true and false from a config file.
+    proof: [config-tests]
+  - text: >-
+      GET /v1/mcp/tools returns {"tools": [...]} from the tool lister called with the auth only, GET /v1/mcp/access_groups returns the sorted union of config and table groups and survives a table error,
+      and GET /v1/mcp/network/client-ip returns the resolved ip or null.
+    proof: [small-reads-tests]
+  - text: >-
+      GET /v1/mcp/server follows steps a to h: team_id handling (blank value ignored, restricted key 403, non-member 403, admin bypass), team-scoped union with allow-all-keys servers, display-order sorting,
+      the connected app and has_user_credential annotations with their conditions, and the virtual key, non-admin and full-admin exits.
+    proof: [server-list-tests]
+  - text: >-
+      GET /v1/mcp/server/health returns server_id and status rows, maps reachable to unknown unless include_reachability is true, uses the unfiltered check in view_all mode,
+      and merges auth contexts first-seen without checking a server twice.
+    proof: [health-routes-tests]
+  - text: >-
+      GET /v1/mcp/server/{server_id} checks the database first (500 object detail), resolves and authorizes with the exact 404 and 403 texts and the catalog-view rule,
+      adds database servers to the registry, attaches the health result or the unknown fallback, and redacts or sanitizes by role.
+    proof: [server-detail-tests]
+  - text: >-
+      GET /v1/mcp/discover and GET /v1/mcp/openapi-registry answer 403 with the exact role text to callers without admin view;
+      discover filters by query and category and lists categories from the full catalog, and the embedded catalog equals the pinned file.
+    proof: [discovery-tests, catalog-data]
+  - text: All nine routes are registered once under /v1/mcp with the methods and paths in the description, and /server/health does not fall into the /server/{server_id} handler.
+    proof: [catalog-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: catalog-tests
+      why: the module's route table or shared error mapping is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_views::tests::/)'
+    - id: small-reads-tests
+      why: the tools, access group or client ip route is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_views::small_reads::/)'
+    - id: registry-feed-tests
+      why: the public registry document, its flag gate, its ordering or its entry shape is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_views::registry_feed::/)'
+    - id: server-list-tests
+      why: the server list route, its team branch, its annotations or its role exits are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_views::server_list::/)'
+    - id: health-routes-tests
+      why: the health route or its status mapping is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_views::health_routes::/)'
+    - id: server-detail-tests
+      why: the single server route, its authorization, its registry add or its health fallback is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_views::server_detail::/)'
+    - id: discovery-tests
+      why: the discovery or OpenAPI registry route is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::catalog_views::discovery::/)'
+    - id: config-tests
+      why: the enable_mcp_registry section is missing or does not load the key
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_registry::/)'
+    - id: catalog-data
+      why: the embedded discovery catalog is missing or differs from the pinned LiteLLM file
+      run: |
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/data/mcp_registry.json)" && sha256sum --check --quiet <<'SUMS'
+        d05e9b1e729d659440e4a0799563c0cea5d4b2bbb64baa8986566da53ad01be2  crates/betterlite-server/data/mcp_registry.json
+        SUMS
+
+oracle_cases: []
+
+deviations:
+  - what: The discovery catalog is embedded in the binary at build time and read from memory, not opened from a file next to the code on the first request.
+    why: A binary has no source tree beside it. The only visible difference is that a missing file can no longer give an empty list with a warning; a catalog that fails to parse still does.
+  - what: The Role text in the discover and openapi-registry 403 details prints the role's string value; a key without a role prints "None".
+    why: LiteLLM formats the enum or None with Python's str; betterlite follows the text B2314 defines for the role values.
+  - what: The tool listing behind GET /v1/mcp/tools is reached through the ToolLister port.
+    why: LiteLLM's _list_mcp_tools lives in operations.py, which no task owns yet. See the report notes.
+
+out_of_scope:
+  - "_get_user_mcp_management_mode, _resolve_accessible_mcp_servers, _is_restricted_virtual_key_request, _user_is_full_admin, _redact_mcp_credentials, _redact_mcp_credentials_list and the four sanitize functions: owned by B4717; this task only calls them."
+  - "get_prisma_client_or_throw, get_mcp_server, _db_find_user_credential_rows and the server table handle: owned by B4711."
+  - "resolve_mcp_server, authorize_mcp_server, get_mcp_server_by_id, get_filtered_registry and _build_mcp_server_table: owned by B4731."
+  - "get_allowed_mcp_servers: owned by B6591. health_check_server, get_all_mcp_servers_with_health_and_teams, get_all_mcp_servers_with_health_unfiltered and add_server: owned by B6592."
+  - "is_ui_session_credential, admitted_user_context and build_effective_auth_contexts: owned by B4672. user_api_key_has_admin_view: owned by B2314."
+  - "get_team_object: owned by B737. _get_team_allowed_mcp_servers: owned by B818. _get_allow_all_keys_server_ids: owned by B817."
+  - "get_mcp_client_ip: owned by B743. get_request_base_url: owned by B4654. get_server_prefix: owned by B6594."
+  - "The OpenAPI catalog data and its loader (_load_openapi_registry): owned by B4231; route 9 only serves what it loads."
+  - "_list_mcp_tools (operations.py): no task owns it at the time of writing; this task calls it through a port."
+  - "The other routes in mcp_management_endpoints.py: the user credential routes belong to B4723, the toolset and session routes to B4725, the env var routes to B4724, the OAuth browser routes to B4719, the create, import, edit, delete and make-public routes to B4721, the submission and pinned tool routes to B4722, the preview and test routes to B4729 and the temporary OAuth session routes to B4718."
+
+pitfalls:
+  - GET /v1/mcp/registry.json is the one route here without the key dependency, so a missing Authorization header must not give 401; the flag check is the only gate.
+  - Config servers store access groups in access_groups and table rows in mcp_access_groups, and the access group route reads both spellings, with draft rows included and a database error swallowed after a debug log.
+  - The registry document skips a server with an empty prefix silently, so the list can be shorter than the registry, and the built-in entry is never subject to the ip filter.
+  - The registry sort key is alias, then server_name, then server_id, not the dashboard's lowercase display order, so "Zeta" sorts before "alpha" there.
+  - A team_id of "   " is treated as no team_id, not as an error, and a restricted virtual key only gets the 403 for a non-blank team_id.
+  - The 403 strings in route 5 are plain strings under "detail", while the 403 and 404 texts of routes 7, 8 and 9 and the 500 of route 7 are objects with an "error" key.
+  - Route 5 loads the team a second time inside the team-scoped list, after the membership check loaded it once, so a fake team lookup is called twice for a non-admin.
+  - has_user_credential counts any credential row for the user and server, including an OAuth row, because BYOK and OAuth rows share one table and the batch query has no type filter.
+  - The annotations in route 5 are set before the sanitizers run; B4717 decides which of them survive for a restricted key or a non-admin, so do not strip them here.
+  - Route 6 passes the ids collected before each auth context as checked_server_ids, so a server reachable through two contexts is checked once and keeps its first status; with include_reachability false a "reachable" status is reported as "unknown".
+  - Route 6 in view_all mode never builds auth contexts, so a key with no MCP grant still sees every registered server's status.
+  - Route 7 checks the database before anything else, so a config-only server also answers 500 on a proxy started without a database.
+  - Route 7 calls add_server for a server that came from the database, so a plain GET can put a row into the live registry; do not skip it as a side effect.
+  - Route 7 allows a catalog view only for a row that is both in the registry and has approval_status None, "active" or "approved"; a pending or rejected row stays 404 for a non-admin, not 403 (non_admin_missing is "not_found").
+  - The health fallback in route 7 stamps last_health_check with the local naive time, so its text has no "Z" or offset, unlike the stored timestamps elsewhere.
+  - The discover query filter reads the keys with a default of the empty string, and categories use the default "Other" only for the category list, not for the category filter.
+  - Route 9 has no dependencies entry on the decorator; the key still comes from the handler argument's Depends, so it is still required.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

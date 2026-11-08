@@ -1,0 +1,63 @@
+id: B7932
+title: Python types for guardrail hooks agent_365 to cisco_ai_defense (types/proxy/guardrails/guardrail_hooks)
+description: >-
+  Each guardrail vendor has a small types file under `litellm/types/proxy/guardrails/guardrail_hooks/`. This task ports these 11
+  entries into `crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/`: `agent_365`, `aim`, `akto`, `alice`, `aporia_ai`, `azure/` (base,
+  azure_prompt_shield, azure_text_moderation), `base`, `bedrock_guardrails`, `block_code_execution`, `cato_networks` and
+  `cisco_ai_defense`. It is Python only.
+
+
+  `base.py` holds `GuardrailConfigModel(BaseModel, Generic[T], ABC)`, which most vendor config models derive from, so the
+  port keeps a generic base class with the same abstract method. `bedrock_guardrails.py` is the largest (209 lines) with TypedDicts
+  for the request, usage, output and the policy items. `cisco_ai_defense.py` has a rule model and a config model that derives
+  from `GuardrailConfigModel[CiscoAIDefenseGuardrailConfigModelOptionalParams]`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/agent_365.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/aim.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/akto.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/alice.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/aporia_ai.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/azure/**
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/base.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/block_code_execution.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/cato_networks.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/cisco_ai_defense.py
+  - crates/betterlite-python/tests/test_types_guardrail_hooks_a.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/base.py#L1-L20
+  why: The generic config base class.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L1-L209
+  why: Bedrock guardrail request and output TypedDicts.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/cisco_ai_defense.py#L1-L146
+  why: A config model built on the generic base.
+out_of_scope:
+- >-
+  The other hook files are in B7933 to B7936. The nested `__init__.py` files are written by the architect.
+pitfalls:
+- >-
+  `GuardrailConfigModel` is generic over its optional params type. If `ResponseObject` cannot be combined with `Generic`, name the gap in the notes and do not wrap the class in a function.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_guardrail_hooks_a.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

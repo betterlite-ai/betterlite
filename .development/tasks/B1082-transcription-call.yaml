@@ -41,7 +41,7 @@ scope:
   - crates/betterlite-core/src/api/transcription_call/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/transcription-call-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/transcription_call.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/transcription_call.py
   - tools/oracle/cases/sdk-http/transcription-call/**

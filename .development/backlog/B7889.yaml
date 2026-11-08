@@ -1,0 +1,14 @@
+id: B7889
+milestone: M12 python
+title: Python realtime client secrets, transcription session, calls and websocket
+status: todo
+depends_on: [B6040, B158, B167, B1010, B1011]
+file: tasks/B7889-python-realtime.yaml
+covers:
+  - "litellm/realtime_api/**"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

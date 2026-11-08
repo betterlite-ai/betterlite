@@ -1,7 +1,7 @@
 id: B988
 title: Messages mcp
 description: >-
-  Run native Messages MCP tools through the shared Responses MCP selector/executor and B136 registry, producing
+  Run native Messages MCP tools through the shared Responses MCP selector, discovery and executor (B948, B949, B950), producing
   Anthropic tool_result turns and follow-up calls. Preserve stop_reason and maximum iterations and carry authenticated
   server permissions through every round. MAX_MCP_TOOL_USE_ITERATIONS is the pinned constant 10, not a new setting.
 
@@ -51,7 +51,7 @@ description: >-
   30 wiring; 423 total within the 430-line cap. The estimate includes tests and adapters, not just production code.
 
 
-  Direct inputs come from B136 (MCP gateway server, transports and server registry), B171 (Direct helper oracle
+  Direct inputs come from B948, B949 and B950 (Responses MCP selection, discovery and execution), B171 (Direct helper oracle
   and URL path encoding), B948 (Responses mcp selection), B950 (Responses mcp execute), B982 (Messages native call),
   B1087 (Api boundaries), B949 (Responses mcp discovery), B002 (Load LiteLLM config.yaml into typed config). These
   are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on

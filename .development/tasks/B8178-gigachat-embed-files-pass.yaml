@@ -1,0 +1,109 @@
+id: B8178
+title: GigaChat embedding, file upload and pass-through
+description: >-
+  Build gigachat_embedding, gigachat_files and gigachat_passthrough in crates/betterlite-openai. They cover
+  litellm/llms/gigachat/embedding/transformation.py, file_handler.py and passthrough/transformation.py. The two __init__.py
+  files (gigachat/embedding, gigachat/passthrough) only re-export. Nothing reads an environment variable. The caller passes
+  each value as a plain argument. The bearer token comes from the GigachatBearer trait that B8177 defines (B8312's GigachatTokenBearer
+  in betterlite-provider implements it over B7325's GigachatTokens). This task does not fetch tokens.
+
+  gigachat_embedding. GigaChatEmbeddingConfig supports no options and returns the options untouched. The URL is
+  {base}/embeddings, with the base from B8177's get_api_base. The body is {model with a leading "gigachat/" removed, input as a
+  list}, a single string becoming a one item list. The reply: for every item in data, add its usage.prompt_tokens to a total
+  and remove its usage. Then set usage to {prompt_tokens: total, total_tokens: total}. This is done even when data is absent
+  (total 0). Headers are Content-Type application/json and Authorization Bearer {token}, then the caller headers on top.
+  GigaChatEmbeddingError carries status, message and headers. The reply decoder gets a fuzz target.
+
+  gigachat_files. GigachatImageUploader is the trait B8177 defined. This task implements it over an injected HTTP client
+  trait. upload(url, token, base) works like this. The cache key is the sha256 of the URL text. A cache hit returns the stored
+  id. A data URL "data:<mime>;base64,<data>" is decoded locally. Any other URL is downloaded with certificate checks off
+  (same as LiteLLM). The file is posted as multipart to {base}/files with purpose "general", a 60 second timeout and
+  Authorization Bearer {token}. The reply id is cached and returned. Any failure at any step returns none after the caller's
+  log line, never an error. LiteLLM keeps the cache in a process-wide dict. Here the cache is a bounded map owned by the
+  uploader value (capacity is a constructor argument) and the oldest entry leaves first when it is full.
+
+  gigachat_passthrough. GigaChatPassthroughConfig. is_streaming_request(request) is the request's stream field, false when
+  absent. The URL is {base}/{endpoint with leading "/" removed}, with the base from api_base, else the GIGACHAT_API_BASE value,
+  else the default. It returns the URL and the base. Headers get Authorization Bearer {token}, Content-Type application/json
+  and Accept application/json. The key is api_key, else the GIGACHAT_API_KEY value. get_base_model returns the model as is.
+  Non-streaming logging: an endpoint containing "completions" is parsed with the GigaChat chat reply conversion of B8177, and
+  an endpoint containing "embeddings" with the embedding reply conversion above. Any other endpoint gives none. Streaming
+  logging: each collected chunk is trimmed, skipped when empty or "[DONE]", stripped of "data: ", skipped when it is not
+  JSON, parsed with B8177's chunk parser, and the parsed chunks are returned in order for the cost layer. No chunks gives
+  none. B3570 owns the pass-through contract and B3627 owns the GigaChat pass-through routes, which call this config.
+
+  Size. About 330 nonblank, non-comment LiteLLM lines. Plan 300 production, 360 tests, 80 adapters, 50 fuzz and 20 wiring
+  lines. No split.
+scope:
+  paths:
+    - crates/betterlite-openai/src/gigachat_embedding.rs
+    - crates/betterlite-openai/src/gigachat_embedding/**
+    - crates/betterlite-openai/src/gigachat_files.rs
+    - crates/betterlite-openai/src/gigachat_files/**
+    - crates/betterlite-openai/src/gigachat_passthrough.rs
+    - crates/betterlite-openai/src/gigachat_passthrough/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/gigachat_embedding_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/gigachat_embedding_reply/**
+    - tools/oracle/cases/helpers/gigachat-extra/**
+    - tools/oracle/helpers/b8178.py
+    - tools/oracle/helpers/b8178/**
+    - tools/oracle/src/helpers/openai/b8178.rs
+    - tools/oracle/src/helpers/openai/b8178/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/embedding/transformation.py
+    why: Embedding URL, body and the usage rewrite.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py
+    why: Image download, cache and upload.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/passthrough/transformation.py
+    why: Pass-through URL, headers and logging parse.
+dod:
+  - text: Embedding URL, body, usage rewrite and headers match LiteLLM.
+    proof: [gigachat-extra-tests, oracle]
+  - text: The uploader caches by URL hash, decodes data URLs locally, returns none on any failure and keeps its cache bounded.
+    proof: [gigachat-extra-tests]
+  - text: Pass-through streaming check, URL, headers and both logging parses match LiteLLM.
+    proof: [gigachat-extra-tests, oracle]
+  - text: A malformed embedding reply fails with a typed error and does not panic, and the corpus replays.
+    proof: [gigachat-extra-corpus]
+  - text: The new oracle cases exist and call this task's helper.
+    proof: [gigachat-extra-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: gigachat-extra-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^(gigachat_embedding|gigachat_files|gigachat_passthrough)::/) - test(/replays_the_/)'
+      why: An OpenAI embedding config would keep per-item usage and the OpenAI pass-through would send no GigaChat bearer or Accept header.
+    - id: gigachat-extra-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/gigachat_embedding_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/gigachat_embedding_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_gigachat_embedding_reply_corpus)'
+      why: The reply body comes from the network and needs a fuzz target with a replayed corpus.
+    - id: gigachat-extra-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/gigachat-extra)" && /usr/bin/grep -rlE '^  b8178:' tools/oracle/cases/helpers/gigachat-extra
+      why: Without cases that call the B8178 helper nothing compares these functions with LiteLLM.
+oracle_cases:
+  - tools/oracle/cases/helpers/gigachat-extra/embedding-request.yaml
+  - tools/oracle/cases/helpers/gigachat-extra/embedding-reply-usage.yaml
+  - tools/oracle/cases/helpers/gigachat-extra/passthrough-url-headers.yaml
+  - tools/oracle/cases/helpers/gigachat-extra/passthrough-logging.yaml
+deviations:
+  - what: The upload cache is bounded and owned by the uploader value, not a process-wide dict.
+    why: A global unbounded cache breaks tests and grows without limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py
+  - what: An embedding reply that is not JSON, or has a field of the wrong type, fails with a typed GigaChatEmbeddingError, status 500.
+    why: LiteLLM raises a raw exception there. 500 is its generic status for an unclassified exception (to be confirmed by the architect, see notes).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/embedding/transformation.py
+out_of_scope:
+  - B7325 owns access tokens. B8177 owns the chat config, the stream parser, get_api_base and the two traits.
+  - B3570 owns the pass-through contract and B3627 the GigaChat pass-through routes.
+  - B2230 and B5360 own picking a config from the provider name. B8312 owns wiring.
+pitfalls:
+  - The embedding usage is rebuilt from the per-item prompt_tokens. The reply's own usage field is overwritten.
+  - Certificate checks are off only for the image download, never for the upload or the API calls.
+  - Any upload failure returns none, so the chat message goes out without the attachment. It must not fail the call.
+  - The cache key is the hash of the URL text, not of the image bytes.
+  - The pass-through URL strips only the leading "/" of the endpoint. The pass-through key reads GIGACHAT_API_KEY only, not GIGACHAT_CREDENTIALS.
+  - A chunk that is not JSON is skipped in pass-through logging, which differs from the chat parser that returns an empty chunk.
+  - "The embedding reply type is the shared EmbeddingResponse, with EmbeddingRecord and EmbeddingUsage, in crates/betterlite-openai/src/embedding.rs (from B006). Decode into it and define no second response type. EmbeddingRecord has no usage field, so read each item usage.prompt_tokens from the raw JSON before decoding."
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

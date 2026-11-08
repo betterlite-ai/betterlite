@@ -1,0 +1,163 @@
+id: B8460
+title: MCP upstream credential header rules
+description: >-
+  Build mcp::upstream_auth in betterlite-server. It holds the module-level rules in LiteLLM's
+  mcp_server_manager.py that decide which caller credential may travel to an upstream MCP server
+  and which one must stay at the gateway. Everything here is a pure function over the server record
+  (B6590's MCPServer), the inbound headers and the admitted auth record (UserAPIKeyAuth). Nothing
+  here opens a connection. The operations code (B8196) and the client, listing and tool call parts
+  (B8461 to B8465) all call these, so the strip decision has one source and the paths cannot drift.
+
+
+  should_strip_caller_auth is _should_strip_caller_authorization. It answers true, in this order:
+  auth_type oauth2_token_exchange; has_client_credentials; auth_type oauth2 when B4667's
+  to_server_spec returns a spec (a migrated per-user authorization_code server). Then a server that
+  is neither is_oauth_passthrough nor delegated (is_oauth_delegate, or auth_type oauth2 with
+  delegate_auth_to_upstream) answers false. A delegated server strips unless the caller sent a
+  non-empty x-litellm-api-key, and it also strips when auth_is_admission_cred is true. A
+  pass-through server strips when auth_is_admission_cred is true, or when there is no auth record
+  and no explicit x-litellm-api-key.
+
+
+  raw_header_value(headers, name) returns the first header whose lowercased name equals name.
+  has_explicit_admission_header is true only for a non-empty x-litellm-api-key.
+  auth_is_admission_cred is _authorization_is_litellm_admission_credential: when both
+  x-litellm-api-key and authorization are non-empty it compares them after B4741's
+  strip_auth_scheme(value, "Bearer"); otherwise it is true when the auth record has a non-empty
+  api_key and x-litellm-api-key is empty or absent.
+
+
+  The OpenAPI arm: format_byok_openapi_auth prefixes a raw BYOK secret by auth type (api_key gives
+  "ApiKey <secret>", basic gives "Basic <secret>", anything else "Bearer <secret>", each after
+  stripping that same scheme first). openapi_forwarded_headers copies the server's extra_headers
+  names out of the inbound headers (case-insensitive lookup, the configured spelling kept as the
+  key), skips authorization when should_strip_caller_auth is true, and returns None for an empty
+  result. resolve_openapi_tool_auth returns three values: the Authorization value to inject, the
+  headers to forward and the credential for B8465's resolve_openapi_upstream_auth. A per-server
+  x-mcp-{alias}-* map (B6594's lookup_mcp_server_auth_in_headers) wins: its Authorization is used
+  verbatim, its other headers merge over the forwarded ones through B6594's merge_mcp_headers, and
+  without an Authorization in it the BYOK header is formatted. A per-server string is used verbatim.
+  Otherwise the BYOK header is formatted, else nothing.
+
+
+  The client-forwarded and pass-through arms: client_forwarded_auth_headers copies the oauth2
+  headers and drops Authorization (B4741's without_header) when should_strip_caller_auth is true.
+  take_forwarded_authorization pops Authorization (case-insensitive) out of a header map and
+  returns it with the rest. passthrough_token returns a non-empty string credential as is, the
+  Authorization entry of a map credential, else None. consumes_caller_auth is true for
+  is_true_passthrough, is_oauth_delegate or is_oauth_passthrough, and for an oauth2 server whose
+  delegate_auth_to_upstream is exactly true and that has no client credentials.
+  caller_auth_fans_out(server, scope) is false when scope is None, else true when another server
+  in the scope (different server_id) consumes the caller's Authorization.
+
+
+  Token helpers: extract_bearer_token reads oauth2_headers["Authorization"] (exact key) first, else
+  the inbound authorization header (case-insensitive), and strips "Bearer". extract_subject_token
+  returns None when auth_is_admission_cred is true or the bearer starts with "sk-"
+  (LITELLM_VIRTUAL_KEY_PREFIX), else the bearer. obo_subject_token returns extract_subject_token
+  with no oauth2 headers, only for an oauth2_token_exchange server. obo_retry_applies is true for
+  oauth2_id_jag, and for oauth2_token_exchange when a subject token is present.
+
+
+  Failure helpers: spec_fail_closed is _to_server_spec_fail_closed. It returns to_server_spec, but
+  an oauth2_id_jag server with no spec fails with B4667's misconfigured credential error and the
+  exact message "oauth2_id_jag requires token_exchange_endpoint, id_jag_resource_token_endpoint,
+  client_id, and a client_secret or client_private_key; refusing to fall back to a static
+  credential.". upstream_auth_failure returns B7970's upstream_auth_challenge (status and
+  WWW-Authenticate) for an error chain. upstream_failure_suffix returns "\n  upstream exchange: "
+  plus B8194's describe_upstream_http_failure text, or "" when there is none.
+  materialize_auth_headers turns a resolved credential from B4667 into a one-entry header map
+  (header name to value) when the credential sets a named header with a non-empty value, else None.
+
+
+  build_stdio_env is MCPServerManager._build_stdio_env: None unless the transport is stdio and env
+  is non-empty. Each value is trimmed and matched against ^\$\{(X-[^}]+)\}$. A match takes the
+  named inbound header (case-insensitive) and skips the key when the header is missing; any other
+  value is kept unchanged, untrimmed.
+
+
+  Helper cases cover each function with a server record, a header list and an optional auth
+  record as input. The skeleton gives this task its helper operation.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/upstream_auth.rs
+    - crates/betterlite-server/src/mcp/upstream_auth/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-upstream-auth/**
+    - tools/oracle/helpers/b8460.py
+    - tools/oracle/helpers/b8460/**
+    - tools/oracle/src/helpers/server/b8460.rs
+    - tools/oracle/src/helpers/server/b8460/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1088-L1178
+    why: The strip decision, the admission-header test and LITELLM_VIRTUAL_KEY_PREFIX.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1180-L1267
+    why: BYOK formatting, OpenAPI forwarded headers and resolve_openapi_tool_auth precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1305-L1402
+    why: Client-forwarded headers, Authorization pop, pass-through token, header materialization and consumes_caller_auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1421-L1487
+    why: Fail-closed spec, fan-out test, upstream failure helpers and the OBO retry rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3846-L3927
+    why: Bearer and subject token extraction, obo_subject_token and build_stdio_env.
+
+dod:
+  - text: >-
+      should_strip_caller_auth and auth_is_admission_cred give the Python's answer for every auth
+      type, delegate and pass-through flag, header combination and auth record, including a key
+      repeated in both headers.
+    proof: [upstream-auth-tests, oracle]
+  - text: >-
+      resolve_openapi_tool_auth returns the same three values as the Python for a per-server map,
+      a per-server string, a BYOK secret per auth type and no credential.
+    proof: [upstream-auth-tests, oracle]
+  - text: >-
+      extract_subject_token, obo_subject_token, caller_auth_fans_out and build_stdio_env match the
+      Python, and spec_fail_closed refuses a half-configured oauth2_id_jag server with the exact
+      message.
+    proof: [upstream-auth-tests, oracle]
+  - text: Every mutant in the strip and precedence rules is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: upstream-auth-tests
+      why: A strip branch, header precedence or token rule differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^mcp::upstream_auth::/)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-upstream-auth
+
+deviations: []
+
+out_of_scope:
+  - _resolve_byok_mcp_auth_header calls the BYOK checks in operations.py, so it lives with call_tool in B8465.
+  - _redacted_registry_dump is B6764's; _warn_on_* config warnings are B6763's.
+  - "_prepare_mcp_server_headers in operations.py, the caller of these rules on the listing path: B8196."
+  - "lookup_mcp_server_auth_in_headers and merge_mcp_headers: B6594. without_header, has_header and strip_auth_scheme: B4741."
+
+pitfalls:
+  - >-
+    oauth2_headers is read with the exact key "Authorization" in extract_bearer_token, while the
+    inbound headers are read case-insensitively; a lowercase "authorization" in oauth2_headers is
+    not seen there.
+  - >-
+    A delegated server strips the caller's Authorization whenever x-litellm-api-key is absent, even
+    when the auth record has no api_key (an SSO or JWT session); do not reuse the pass-through test.
+  - >-
+    build_stdio_env drops an env key whose header is missing instead of passing the literal
+    "${X-...}" text, and it stores the untrimmed value for a non-template entry.
+  - >-
+    consumes_caller_auth needs delegate_auth_to_upstream to be exactly true; an unset flag on an
+    oauth2 row is not a consumer.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

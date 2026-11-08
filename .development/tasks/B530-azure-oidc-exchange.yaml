@@ -23,7 +23,7 @@ description: >-
   stripping a trailing slash. Client/tenant use truthy explicit values then AZURE_CLIENT_ID/AZURE_TENANT_ID; empty
   environment values survive the None-only validation. missing_client_tenant: Missing client or tenant None raises
   AzureOpenAIError 422 message AZURE_CLIENT_ID and AZURE_TENANT_ID must be set before secret resolution or transport.
-  unresolved_oidc_token: Resolve the complete azure_ad_token string through B129 get_secret_str; None raises AzureOpenAIError
+  unresolved_oidc_token: Resolve the complete azure_ad_token string through B8500 get_secret_str; None raises AzureOpenAIError
   401 message OIDC token could not be retrieved from secret manager.; an empty resolved token is sent. missing_access_token:
   A missing/null access_token raises AzureOpenAIError 422 message Azure AD Token access_token not returned; check
   it before expires_in. missing_expires_in: A missing/null expires_in raises AzureOpenAIError 422 message Azure
@@ -144,7 +144,7 @@ dod:
   - case-missing-client-tenant
   - oracle
   - helper-python
-- text: 'unresolved_oidc_token: Resolve the complete azure_ad_token string through B129 get_secret_str; None raises
+- text: 'unresolved_oidc_token: Resolve the complete azure_ad_token string through B8500 get_secret_str; None raises
     AzureOpenAIError 401 message OIDC token could not be retrieved from secret manager.; an empty resolved token
     is sent.'
   proof:
@@ -220,7 +220,7 @@ checks:
       be set before secret resolution or transport.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::oidc_exchange_cases::case_[0-9]+_missing_client_tenant$/)'
   - id: case-unresolved-oidc-token
-    why: Resolve the complete azure_ad_token string through B129 get_secret_str; None raises AzureOpenAIError 401
+    why: Resolve the complete azure_ad_token string through B8500 get_secret_str; None raises AzureOpenAIError 401
       message OIDC token could not be retrieved from secret manager.; an empty resolved token is sent.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::oidc_exchange_cases::case_[0-9]+_unresolved_oidc_token$/)'
   - id: case-missing-access-token

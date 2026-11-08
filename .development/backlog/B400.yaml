@@ -2,7 +2,7 @@ id: B400
 milestone: M2 routing
 title: Automatic strategy construction and retirement
 status: todo
-depends_on: [B327, B334, B338, B339, B331, B335, B363, B301, B328, B330]
+depends_on: [B327, B334, B338, B339, B331, B335, B363, B301, B328, B330, B8350]
 file: tasks/B400-strategy-registration.yaml
 covers:
   - "litellm/router.py"

@@ -54,6 +54,9 @@ references:
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3579-L3599
   why: _handle_callback_failure
 dod:
+- text: "Every CallbackSink::Logger the registry lists for the Success phase (B8740) gets the call: a sync request calls log_success_event, or log_stream_event for a chunk without the complete response; an async request calls async_log_success_event or async_log_stream_event on the payload B3931 redacted with that logger's two message flags; a logger error is a warning plus _handle_callback_failure and never changes the response."
+  proof:
+  - behavior-tests
 - text: >-
     Each listed helper case compares its named production function with the pinned Python function, including precedence,
     omissions and error facts.

@@ -105,8 +105,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/central_auth_checks.rs
     - crates/betterlite-server/src/state/central_auth_checks/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/central-auth-checks/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/central-auth-checks-*
@@ -123,7 +121,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2755-L3110
     why: Own _run_centralized_common_checks; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/carried_budget_state.py#L18-L34
-    why: Move this single-caller helper below the B071 budget job instead of creating an auth-to-job cycle.
+    why: Own this single-caller helper in auth beside B2325's carried budget helpers, not in a budget part, so auth does not depend on its consumers.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2806-L2811
     why: general_settings.pass_through_endpoints default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2824-L2829
@@ -191,7 +189,7 @@ oracle_cases:
   - tools/oracle/cases/auth/central-auth-checks/carried-team-and-user-budget-state.yaml
 deviations: []
 out_of_scope:
-  - B071 retains carried_budget_state.py carry_organization_budget_state (L37-L43) and carried_budget_metadata (L46-L59).
+  - B2325 built carried_budget_state.py carry_organization_budget_state (L37-L43) and carried_budget_metadata (L46-L59) as betterlite_auth::budget_primitives::carried::carry_organization and carried_metadata.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model

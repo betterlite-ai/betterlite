@@ -1,0 +1,23 @@
+kind: helper
+name: content-inspection-reasoning-items
+call:
+  b5470:
+    function: build_inspection_messages
+    data:
+      input:
+        - type: reasoning
+          content:
+            - {type: reasoning_text, text: "thinking"}
+          summary:
+            - {type: summary_text, text: "summary"}
+        - type: reasoning
+          content: "plain content"
+        - type: reasoning
+          summary: "not a list"
+        - type: reasoning
+          role: assistant
+          content:
+            - {type: reasoning_text, text: "second thought"}
+env: {}
+compare:
+  ignore: []

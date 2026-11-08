@@ -1,0 +1,85 @@
+id: B8197
+title: "MCP operations: listing tools, prompts and resources"
+description: >-
+  Third part of operations.py. This part owns listing from upstream servers and merging the
+  answers.
+
+  It owns _aggregate_server_key, _get_tools_from_mcp_servers (per-server calls run together, one
+  failure does not fail the others, and each server has an outcome the caller can show),
+  _get_prompts_from_mcp_servers, _get_resources_from_mcp_servers,
+  _get_resource_templates_from_mcp_servers, filter_tools_by_key_team_permissions, _list_mcp_tools,
+  _list_mcp_prompts, _list_mcp_resources, _list_mcp_resource_templates and
+  _list_tools_before_first_call (the warm-up listing before a first tool call).
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/ops_listing.rs
+    - crates/betterlite-server/src/mcp/ops_listing/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-ops-listing/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-ops-listing-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L936-L1236
+    why: Tool listing across servers with per-server outcomes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L1237-L1420
+    why: Prompt, resource and resource template listing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L1421-L1604
+    why: Key and team permission filter and the list entry points.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L1769-L1805
+    why: Warm-up listing before the first call.
+
+dod:
+  - text: >-
+      Tools from several servers merge with the Python's name prefixing, display names and
+      duplicate handling. A server that fails adds an outcome entry and the rest still list.
+    proof: [listing-tests, listing-oracle]
+  - text: >-
+      Prompts, resources and resource templates list and merge the same way, with the same
+      per-server failure handling.
+    proof: [listing-tests, listing-oracle]
+  - text: >-
+      The key and team permission filter removes tools the key or team may not call, and a key
+      with no restriction sees every allowed tool.
+    proof: [listing-tests]
+  - text: The warm-up listing runs once before a first call and its failure is handled as in the Python.
+    proof: [listing-tests]
+  - text: Every mutant in the listing logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: listing-tests
+      why: A branch, message or ordering rule in this task differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^mcp::ops_listing::/)'
+    - id: listing-oracle
+      why: Results or errors differ from LiteLLM on the same input.
+      run: >-
+        cargo run --locked -p betterlite-oracle -- --self-check
+        tools/oracle/cases/helpers/mcp-ops-listing
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - Server scoping (B8195) and header preparation (B8196). Call them.
+  - Execution (B8198).
+
+pitfalls:
+  - >-
+    Listings run in parallel. A slow server must not delay the answer past the Python's timeout
+    handling, and a panic in one listing must not drop the others.
+  - >-
+    Name prefixing depends on how many servers the caller may use. Test one server and several.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

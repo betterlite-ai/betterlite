@@ -1,0 +1,206 @@
+id: B6594
+title: MCP server utils for tool names, env references and headers
+description: >-
+  Build the small pure functions of litellm/proxy/_experimental/mcp_server/utils.py that no other task owns: tool-name prefixing and matching, the allowlist switch, the tool-result error text, the ${NAME} env var helpers for static headers, the header merge, and the synthetic request that carries an MCP connection's headers. Nothing here touches a database, the network or the process environment. B4716 took the base validators of that file, B4682 the header sanitizing and the server-local prefix copy that stays in betterlite-server, B4726 the header lookup, B3818 the result-content rewriting, and B4741 strip_auth_scheme (it lives in experimental_mcp_client/client.py and is already on main in crates/betterlite-mcp/src/credentials.rs).
+
+
+  Put the code in the new module server_utils of betterlite-mcp: crates/betterlite-mcp/src/server_utils.rs with the submodules names, prefixes, allowlist, env_vars, headers and synthetic, each with a tests.rs beside it. Add regex and percent-encoding (both workspace dependencies) to crates/betterlite-mcp/Cargo.toml. B6590 adds betterlite-db there, which gives MCPInfo (betterlite_db::mcp_stored_contracts::pinned::MCPInfo).
+
+
+  Values LiteLLM reads from the environment at call time come in as arguments, and B8620 reads them once at startup. These are MCP_TOOL_PREFIX_SEPARATOR (default "-"), LITELLM_USE_SHORT_MCP_TOOL_PREFIX and PROXY_BASE_URL. Rust names are shortened to 30 characters, so the mapping is: is_short_mcp_tool_prefix_enabled is short_tool_prefix_enabled, is_server_tool_allowlist_enforced is allowlist_enforced, extract_mcp_tool_result_error_message is tool_result_error_message. All other names stay as in LiteLLM.
+
+
+  names. add_server_prefix_to_name(name, server_name, separator) returns normalize_server_name(server_name) + separator + name, where normalize_server_name is B4716's (server_payload::names) and replaces each space with an underscore. The tool name itself is not normalized. short_tool_prefix_enabled(raw: Option<&str>) -> bool is true when the trimmed, lowercased text is one of 1, true, yes or on; absent, empty and every other text is false (no error). known_tool_name_spellings(tool_name, known_prefixes: &[String], separator) is LiteLLM's iter_known_tool_name_spellings: the bare name first, then add_server_prefix_to_name(tool_name, prefix, separator) for each prefix. The caller passes the server's known prefixes (iter_known_server_prefixes from the prefixes submodule below). openapi_tool_name(operation_id) replaces every space with an underscore and lowercases. match_known_tool_name(tool_name, is_openapi, known_prefixes, names: impl IntoIterator<Item = &str>) -> Option<&str> builds the set of normalized spellings, where the normalizer is openapi_tool_name when the server has a spec_path (is_openapi) and the identity otherwise, and returns the first entry of names whose normalized form is in the set, in the order names are given. It returns the entry as written in names, so a caller can tell an empty allowed_params list from nothing configured. is_tool_name_prefixed uses match_known_server_prefix from the prefixes submodule (one copy, no private duplicate here). is_tool_name_prefixed(tool_name, known_server_prefixes: Option<&BTreeSet<String>>, separator) -> bool is false when the separator is not in the name; when a prefix set is given it is match_known_server_prefix(...).is_some(); when no set is given it is true (the legacy rule, which wrongly treats "text-to-speech" as prefixed).
+
+
+  prefixes. B4682's crates/betterlite-server/src/mcp/catalog_guard/prefix.rs holds these as pub(super) over a server-local MCPServer view, so code in this crate cannot call them. Port them as pub functions of crates/betterlite-mcp/src/server_utils/prefixes.rs over B6590's MCPServer, with the same behavior and constants (base62 and base52 alphabets, SHORT_PREFIX_LENGTH 3, sha2 over server_id, "#attempt" seed), together with PrefixPolicy { separator: String, short_prefix_enabled: bool } (default separator "-", short prefix off) and PrefixError { EmptyServerId, IndexOverflow }. Signatures: compute_short_server_prefix(server_id: &str, attempt: u32) -> Result<String, PrefixError>; get_server_prefix(server: &MCPServer, policy: &PrefixPolicy) -> String; iter_known_server_prefixes(server: &MCPServer, policy: &PrefixPolicy) -> Vec<String>; match_known_server_prefix(name: &str, known_prefixes: &[String], policy: &PrefixPolicy) -> Option<(String, String)>. The last one replaces each space with an underscore, drops empty and duplicate prefixes, sorts longest first and returns (prefix, rest) for the first one where name starts with prefix + policy.separator. Read the merged file for the bodies. Add sha2 and thiserror to the Cargo.toml only if they are missing (both are already there).
+
+
+  allowlist. allowlist_enforced(mcp_info: Option<&MCPInfo>) -> bool serializes the MCPInfo to a JSON object with serde_json::to_value and is true only when the key tool_allowlist_enforced is the JSON value true; no mcp_info, a missing key or any other value is false. server_applies_tool_allowlist(mcp_info, allowed_tools: Option<&[String]>) -> bool is allowlist_enforced(mcp_info) or allowed_tools is present and non-empty. LiteLLM also accepts mcp_info as a JSON string; the record types it as MCPInfo, so that form is not built.
+
+
+  tool results. tool_result_error_message(result: &serde_json::Value) -> Option<String>. A JSON object reports an error when its isError value, or its is_error value when isError is absent or null, is the JSON value true; any other value, a non-object result and a result that is not an error return None. For an error, return the first text of the content array: the first item that is an object whose text is a non-empty string. With no such item, or when content is missing or not an array, return the fixed text "MCP tool call returned isError=true".
+
+
+  env_vars. parse_admin_env_vars(env_vars: Option<&[serde_json::Value]>) -> (BTreeMap<String, String>, Vec<UserEnvSpec>) with UserEnvSpec { name: String, description: Option<String> }. B6590 stores the entries as JSON values when B858 has not defined a typed row, so the input is JSON. Skip an entry that is null or not an object, or whose name is missing, not a string or empty. The scope is the entry's scope when present and non-empty, else "global". Scope "user" appends a UserEnvSpec in input order; every other scope text puts name into the map with value (null or missing becomes "", a string as is, any other JSON type its JSON text), and a later entry with the same name replaces an earlier one. None input returns an empty map and an empty list. find_env_var_references(value) returns the set of NAME from every ${NAME} match of the regex \$\{([A-Za-z_][A-Za-z0-9_]*)\} (ASCII only), and the empty set for empty text. collect_env_var_references(strings: impl IntoIterator<Item = &str>) is the union over the strings. interpolate_env_vars(value, variables: &BTreeMap<String, String>) replaces each ${NAME} whose name is a key with its value and leaves an unknown reference untouched. It makes one pass, so a replacement that contains ${OTHER} is not expanded again, and empty input is returned as is. interpolate_headers(headers, variables) returns a new map with the same keys and every value interpolated. build_env_var_setup_url(proxy_base_url: Option<&str>, server_id) is "/ui/mcp-servers?fill_env_vars=" + the server id percent-encoded with every byte outside A-Z a-z 0-9 - . _ ~ escaped (Python quote with safe=""), prefixed by the base url with trailing slashes removed when the base is present and non-empty. MCPMissingUserEnvVarsError is a thiserror struct with server_id, server_name: Option<String>, missing: Vec<String> and setup_url. Its Display text is exactly: Cannot connect to MCP server "<label>". then a blank line, then "Your administrator configured this server to require per-user variables, but you haven't set the following yet:", a newline, one "- NAME" line per missing name, a blank line, "Set your credentials here:", a newline and the setup url. The label is server_name when it is present and non-empty, else server_id.
+
+
+  headers. merge_mcp_headers(extra_headers: Option<&BTreeMap<String, String>>, static_headers: Option<&BTreeMap<String, String>>) -> Option<BTreeMap<String, String>> starts from extra_headers, overlays static_headers (static wins on an equal key, compared exactly, so X-Api and x-api both stay), and returns None when the result is empty.
+
+
+  synthetic. build_synthetic_mcp_request(path, raw_headers: Option<&[(String, String)]>, client_ip: Option<&str>, extra_excluded: &[String]) -> SyntheticMcpRequest. LiteLLM builds a FastAPI Request from an ASGI scope; betterlite returns the scope as data: SyntheticMcpRequest { method: "POST", path, scheme: "http", server: ("127.0.0.1", 4000), query_string: empty, root_path: empty, headers: Vec<(Vec<u8>, Vec<u8>)>, client: Option<(String, u16)> }. The header list is, in order, (b"content-type", b"application/json"), then every raw header whose lowercased name is not excluded (lowercased name encoded as Latin-1 with characters above U+00FF replaced by b"?", value as UTF-8, original order kept), then (b"x-forwarded-for", client_ip) when client_ip is present. client is (client_ip, 0) when client_ip is present. The excluded names are the hop-by-hop headers content-length, transfer-encoding, connection, keep-alive, upgrade, te and trailer, plus content-type, host and x-forwarded-for, plus extra_excluded (lowercased by the function). The caller fills extra_excluded with B4682's upstream_credential_headers for these header names and the lowercased custom litellm_key_header_name when the deployment sets one; this crate cannot reach that code, and the Python side reads proxy_server settings that betterlite passes in.
+
+
+  Tests are named per module: names (every function above, with a space in a server name, an OpenAPI server where "Get Pets" matches "get_pets", an empty allowed_params list that returns None, a prefix that contains the separator winning over its leading segment, and the legacy true), allowlist, env_vars, headers and synthetic. They live under server_utils::<module>::tests. Add oracle helper cases for the pure functions; no route reaches this code yet, so there are no HTTP cases.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/src/server_utils.rs
+    - crates/betterlite-mcp/src/server_utils/prefixes.rs
+    - crates/betterlite-mcp/src/server_utils/prefixes/tests.rs
+    - crates/betterlite-mcp/src/server_utils/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/mcp-server-utils/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-server-utils-*
+    - tools/oracle/helpers/b6594.py
+    - tools/oracle/helpers/b6594/**
+    - tools/oracle/src/helpers/mcp/b6594.rs
+    - tools/oracle/src/helpers/mcp/b6594/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L43-L47
+    why: The separator default "-" and the prefix format {server_name}{separator}{tool_name}.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L90-L97
+    why: The short-prefix flag and the four accepted spellings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L133-L141
+    why: is_mcp_available, an import probe that has no Rust counterpart.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L219-L246
+    why: The tool_allowlist_enforced key and the two allowlist predicates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L292-L300
+    why: add_server_prefix_to_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L365-L405
+    why: The tool-name spellings, openapi_tool_name and match_known_tool_name with the reason for the OpenAPI normalizer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L425-L443
+    why: match_known_server_prefix, longest prefix first.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L467-L499
+    why: is_tool_name_prefixed with its known-prefix and legacy branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L524-L544
+    why: The isError check and the text picked for the error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L633-L782
+    why: The missing-variables error text, the ${NAME} pattern, admin env parsing, interpolation, the setup url and the header merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L893-L911
+    why: The excluded header sets and the fixed server address of the synthetic request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L1007-L1057
+    why: build_synthetic_mcp_request, the header filter and the ASGI scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L1895-L1955
+    why: The caller of is_tool_name_prefixed and add_server_prefix_to_name with a known-prefix set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3970-L4040
+    why: The caller of parse_admin_env_vars, collect_env_var_references, MCPMissingUserEnvVarsError and interpolate_headers.
+
+dod:
+  - text: add_server_prefix_to_name normalizes spaces in the server name only and joins with the given separator; short_tool_prefix_enabled is true only for 1, true, yes and on after trim and lowercase; openapi_tool_name replaces spaces and lowercases.
+    proof: [names-tests, oracle]
+  - text: match_known_tool_name matches the bare name and every prefixed spelling, normalizes both sides with openapi_tool_name only for an OpenAPI server, and returns the entry as written in names or None.
+    proof: [names-tests, oracle]
+  - text: is_tool_name_prefixed returns false without the separator, checks the longest known prefix first when a set is given, and returns true for any separator hit when no set is given.
+    proof: [names-tests, oracle]
+  - text: compute_short_server_prefix, get_server_prefix, iter_known_server_prefixes and match_known_server_prefix are public in server_utils::prefixes over MCPServer with PrefixPolicy and PrefixError, behave like the merged server copy (longest prefix first, same short-prefix hash), and crates/betterlite-server/src/mcp/catalog_guard/prefix.rs is untouched.
+    proof: [prefixes-tests]
+  - text: allowlist_enforced is true only for the JSON value true under tool_allowlist_enforced, and server_applies_tool_allowlist also turns on for a non-empty allowed_tools.
+    proof: [allowlist-tests, oracle]
+  - text: tool_result_error_message returns None unless isError (or is_error when isError is absent or null) is true, then the first non-empty text of content, else the fixed text.
+    proof: [allowlist-tests, oracle]
+  - text: parse_admin_env_vars splits global values from user specs, skips malformed entries and defaults the scope to global.
+    proof: [env-tests, oracle]
+  - text: find_env_var_references and collect_env_var_references read only well-formed ${NAME} references with an ASCII identifier.
+    proof: [env-tests, oracle]
+  - text: interpolate_env_vars and interpolate_headers replace known names in a single pass and leave unknown references untouched.
+    proof: [env-tests, oracle]
+  - text: build_env_var_setup_url percent-encodes the server id like Python quote with safe empty, trims trailing slashes from the base url and returns the bare path when there is no base.
+    proof: [env-tests, oracle]
+  - text: The MCPMissingUserEnvVarsError Display text matches LiteLLM's message for one and several missing names, with the server name or the id as label.
+    proof: [env-tests, oracle]
+  - text: merge_mcp_headers lets static headers win on an exactly equal key and returns None for an empty result.
+    proof: [headers-tests, oracle]
+  - text: build_synthetic_mcp_request builds the fixed scope, drops hop-by-hop, host, content-type, x-forwarded-for and the extra excluded names case-insensitively, keeps the other headers in order, and adds x-forwarded-for and client from the resolved client ip.
+    proof: [synthetic-tests, oracle]
+  - text: The oracle helper adapter passes strict Python checks and the new helper cases replay through the shared parser.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: names-tests
+      why: the tool-name prefixing, matching or prefix check is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_utils::names::tests::/)'
+    - id: prefixes-tests
+      why: the ported prefix derivation or the known-prefix match is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_utils::prefixes::tests::/)'
+    - id: allowlist-tests
+      why: the allowlist predicates or the tool-result error text is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_utils::allowlist::tests::/)'
+    - id: env-tests
+      why: the env var parsing, interpolation, setup url or missing-variables error is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_utils::env_vars::tests::/)'
+    - id: headers-tests
+      why: the header merge is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_utils::headers::tests::/)'
+    - id: synthetic-tests
+      why: the synthetic request scope or its header filtering is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_utils::synthetic::tests::/)'
+    - id: helper-python
+      why: the strict oracle adapter lint or type checks fail
+      run: >-
+        git diff --name-only "$GATE_BASE" -- tools/oracle/helpers | grep -q b6594 &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-server-utils-*')" &&
+        grep -lE '^[[:space:]]+b6594:' tools/oracle/fuzz/corpus/helper_case/mcp-server-utils-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-server-utils/prefix-with-spaces.yaml
+  - tools/oracle/cases/helpers/mcp-server-utils/short-prefix-flag.yaml
+  - tools/oracle/cases/helpers/mcp-server-utils/known-tool-name-plain.yaml
+  - tools/oracle/cases/helpers/mcp-server-utils/known-tool-name-openapi.yaml
+  - tools/oracle/cases/helpers/mcp-server-utils/known-tool-name-empty-list.yaml
+  - tools/oracle/cases/helpers/mcp-server-utils/prefixed-legacy.yaml
+  - tools/oracle/cases/helpers/mcp-server-utils/prefixed-known-prefixes.yaml
+  - tools/oracle/cases/helpers/mcp-server-utils/allowlist-switch.yaml
+  - tools/oracle/cases/helpers/mcp-server-utils/tool-result-error.yaml
+  - tools/oracle/cases/helpers/mcp-server-utils/admin-env-vars.yaml
+  - tools/oracle/cases/helpers/mcp-server-utils/env-references.yaml
+  - tools/oracle/cases/helpers/mcp-server-utils/interpolate.yaml
+  - tools/oracle/cases/helpers/mcp-server-utils/setup-url.yaml
+  - tools/oracle/cases/helpers/mcp-server-utils/missing-vars-message.yaml
+  - tools/oracle/cases/helpers/mcp-server-utils/merge-headers.yaml
+  - tools/oracle/cases/helpers/mcp-server-utils/synthetic-headers.yaml
+
+deviations:
+  - what: The short-prefix flag, the tool prefix separator and PROXY_BASE_URL are read once at startup and passed in, where LiteLLM reads them from the environment at call time.
+    why: Library code reads no environment (rule on constructor wiring); a change to those variables takes effect on restart.
+  - what: is_mcp_available is not built; the MCP code is compiled in, so the proxy_server gates on it (utils.py lines 133-141, callers at proxy_server.py 8916, 8967, 20129, 20152) are always open.
+    why: LiteLLM tests whether the optional mcp package imports. betterlite has no such optional package.
+  - what: build_synthetic_mcp_request returns the request scope as data (SyntheticMcpRequest) instead of a FastAPI Request.
+    why: There is no FastAPI Request in Rust; the fields are the ones LiteLLM puts in its ASGI scope, so the caller that builds the http request sees the same method, path, headers and client.
+  - what: The credential and key-header exclusions of the synthetic request come in as extra_excluded, where LiteLLM computes them inside the function from proxy_server settings and the MCP server manager.
+    why: That code is B4682's in betterlite-server, which this crate cannot depend on; the caller passes the same lowercased names.
+  - what: allowlist_enforced reads mcp_info as the typed MCPInfo and does not accept a JSON string.
+    why: LiteLLM's server record types mcp_info as MCPInfo; the string form exists for untyped rows only.
+
+out_of_scope:
+  - "split_server_prefix_from_name, strip_known_server_prefix, upstream_credential_headers and logging_safe_mcp_headers with their private helpers: B4682, in betterlite-server."
+  - "normalize_server_name, validate_mcp_server_name, validate_tool_display_names and validate_and_normalize_mcp_server_payload: B4716."
+  - "lookup_mcp_server_auth_in_headers, sanitize_mcp_alias_for_header and the header-key helpers: B4726."
+  - "mcp_tool_result_content_list, mcp_content_item_text, with_mcp_content_item_text, json_string_leaves, with_json_string_leaves, json_unrewritable_labels, mcp_tool_result_structured_content and set_mcp_tool_result_structured_content: B3818."
+  - "strip_auth_scheme: not in utils.py. It is in experimental_mcp_client/client.py, owned by B4741 and already on main in crates/betterlite-mcp/src/credentials.rs."
+  - "The constants LITELLM_MCP_SERVER_NAME, LITELLM_MCP_SERVER_VERSION, LITELLM_MCP_SERVER_DESCRIPTION and MCP_TOOL_PREFIX_FORMAT: the first three describe the served MCP endpoint and belong to the task that builds that endpoint; the format is inlined in add_server_prefix_to_name."
+  - "The callers: MCPServerManager and operations.py decide when to call these functions (B6763, B6764 and the tool-call tasks)."
+
+pitfalls:
+  - "add_server_prefix_to_name normalizes only the server part; a tool name with a space keeps it, and get_server_prefix output is normalized a second time by this call."
+  - "known_tool_name_spellings must keep the bare name first and the caller must include every historical prefix, or a tool called by an old alias stops matching its allowed_tools entry."
+  - "On an OpenAPI server both the configured entry and the spelling go through openapi_tool_name, so 'Get Pets' in allowed_tools matches the tool 'get_pets'; on any other server the compare is exact and case-sensitive."
+  - "match_known_tool_name returns the entry from names, not the tool name; an explicitly empty allowed_params list gives None, not an empty match."
+  - "The real iter_known_server_prefixes also yields the 3-character hash of server_id in every mode, so oracle cases must not use that spelling; the Rust adapter takes alias, server_name and server_id only."
+  - "is_tool_name_prefixed with no prefix set is true for 'text-to-speech'; only a passed set makes it exact, and the set must hold normalized prefixes."
+  - "A prefix that itself contains the separator (a UUID server_id, a legacy hyphenated alias) must win over its leading segment, so candidates are sorted longest first before the starts-with test."
+  - "The ${NAME} pattern is ASCII only, needs braces and cannot start with a digit; $NAME, ${1A} and ${A-B} are not references."
+  - "interpolate_env_vars is one pass: a value that contains ${OTHER} is inserted as text and not expanded, and an unknown ${NAME} stays literally in the header."
+  - "parse_admin_env_vars sends only the exact scope text user to the per-user list; a missing, empty or unknown scope text is global."
+  - "merge_mcp_headers compares keys exactly, so Authorization from extra_headers and authorization from static_headers both survive."
+  - "The synthetic request drops host and x-forwarded-for from the caller and takes x-forwarded-for from the resolved client ip only, so a client cannot spoof either."
+  - "The synthetic header names are lowercased before the Latin-1 encode, while the excluded check lowercases the original name; both give the same result for ASCII names."
+  - "B6594 does not edit crates/betterlite-server/src/mcp/catalog_guard/prefix.rs; the server keeps its pub(super) copy, so a change to the prefix rules has to land in both files."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

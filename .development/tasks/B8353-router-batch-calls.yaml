@@ -1,0 +1,93 @@
+id: B8353
+title: Router file, vector store create and batch calls
+description: >-
+  The proxy's batch retrieve route (B1051) calls `Router.aretrieve_batch` when the id is a unified id or `enable_loadbalancing_on_batch_endpoints` is true, and the Python `Router` exposes `acreate_file`, `avector_store_create`, `acreate_batch`, `aretrieve_batch`, `acancel_batch` and `alist_batches`. None of them has a Rust owner today. Build them in one object next to B6020's and B8352's, so the server and the Python crate call the same code.
+
+
+  Put the code in the new module `crates/betterlite-sdk/src/router_batch_calls.rs` and its folder. `RouterBatchCalls` is built from B6020's `RouterCompletionParts` (selection, fallback executor, slots, clients, counters, `cache_responses`), B844's model list, B303's credential lookup and one `GenericCallExecutor` (B6021's trait) per call type: `acreate_file`, `avector_store_create`, `acreate_batch`, `aretrieve_batch`, `acancel_batch` and `alist_batches`. A missing executor answers `GenericError::UnknownCallType` with the name. The provider for a deployment comes from B014's `get_llm_provider` on `litellm_params.model` and `custom_llm_provider`, and the deployment's own `custom_llm_provider` wins over the inferred one. betterlite-sdk may not depend on betterlite-router, so B844's model list, B303's credential lookup and B016's healthy deployment list are ports: small traits this module defines with only these calls, next to B6020's ports. B8631 implements them in betterlite-server.
+
+
+  `acreate_file` (router.py L5997-L6018) sets `model`, puts `create_file_attempt` under `original_function`, runs B310's update-before-fallbacks step and the fallback-with-retries executor. `create_file_attempt` (L6020-L6137) asks B016 for the healthy deployments of the group (fake message `files-api-fake-text`, `specific_deployment` taken out), and uploads the file to every one of them at once. For each deployment: deep-copy the request, update the copy with the deployment under the function name `acreate_file` (B303), add one to `total_calls`, and refuse with the message `file and file_purpose are required for create_file` when `file` or `purpose` is missing. When B1035's `should_replace_model_in_jsonl(purpose, passthrough)` is true, B1035's `replace_model_in_jsonl` rewrites the JSONL `model` fields to the provider's stripped model name. For the `litellm_proxy` provider add `target_model_names` set to the stripped name to `extra_body`, keeping the keys already there. A deployment with `gcs_bucket_name` copies it into `litellm_metadata.gcs_bucket_name`. Hold the slot, call the executor with params, `custom_llm_provider`, `caching`, `client`, then the copy, and add one to `success_calls`. With no answers, fail with `No healthy deployments found.`. Return the first answer with hidden param `model_file_id_mapping` set to B082's `add_model_file_id_mappings` for the deployments and answers. A failure adds one to `fail_calls` for the group name.
+
+
+  `avector_store_create(model, request)` (L6140-L6216). With no model, run B8354's call type table for `avector_store_create`. Otherwise pick one deployment (fake message `vector-store-api-fake-text`), update the request under the function name `avector_store_create`, take the client, add one to `total_calls`, hold the slot and call the executor with params, `custom_llm_provider`, `caching`, `client` and the request. There is no fallback executor on this path.
+
+
+  `acreate_batch` and `acancel_batch` (L6229-L6255, L6424-L6453) set `model`, put their attempt under `original_function`, run update-before-fallbacks with the metadata key that `_get_router_metadata_variable_name` gives for `_acreate_batch` and `_acancel_batch` (B6021 reads the same helper), and run the fallback executor. Their attempts (L6257-L6312, L6455-L6517) pick one deployment (fake messages `files-api-fake-text` and `batch-api-fake-text`), update the request under `_acreate_batch` or `_acancel_batch`, add one to `total_calls`, hold the slot and call the executor with params, `custom_llm_provider`, `caching`, `client` and the request. The cancel attempt first merges B303's `get_deployment_credentials_with_provider` for the picked deployment id (or the group name when there is no id) into the params, then drops `litellm_credential_name`. Errors add one to `fail_calls` for the group and stamp the failed deployment (B017).
+
+
+  `aretrieve_batch(model, request)` (L6314-L6422) uses the metadata key for `aretrieve_batch`. With a model it asks B016 for the healthy deployments (fake message `retrieve-api-fake-text`); without one it takes every deployment from B844. None gives `Router not yet initialized.`. It tries every deployment at once: copy the params, refuse a deployment without `litellm_params.model`, infer the provider when the params have none, deep-copy the request, update it with the deployment under `aretrieve_batch`, set `model_group` in the metadata to the requested model or the deployment's `model_name` when it is not set already, drop `custom_llm_provider` from the request and the params, and call the executor with params, the provider and the request. A failed try is recorded and gives no answer. Return the first answer that is a batch object. Otherwise raise the first recorded error, or `Unable to find batch in any model. Received errors - []` when there was none. An empty list gives `No healthy deployments found.`.
+
+
+  `alist_batches(model, request)` (L6519-L6562) runs the executor for every deployment of the group with params then request, ignores failures, and merges the lists into `{"object":"list","data":[...],"first_id":...,"last_id":...,"has_more":...}`: `first_id` from the first answer that has one, `last_id` from the last answer, `data` joined in order, `has_more` true when any answer says so. A group with no deployments gives `Router not yet initialized.`.
+
+
+  Tests are in `router_batch_calls/tests.rs`, driven by fake executors and fake router services, with names that start with `file_`, `vector_create_`, `batch_create_`, `batch_cancel_`, `batch_retrieve_` and `batch_list_`. There is no fuzz target: B1035 owns the JSONL rewrite.
+scope:
+  paths:
+  - crates/betterlite-sdk/src/router_batch_calls.rs
+  - crates/betterlite-sdk/src/router_batch_calls/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5997-L6137
+    why: The file upload to every healthy deployment and the file id mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6140-L6224
+    why: Vector store create with and without a model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6229-L6312
+    why: Batch create.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6314-L6422
+    why: Batch retrieve across deployments and its error order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6424-L6562
+    why: Batch cancel with credentials and the batch list merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/batch_utils.py#L63-L153
+    why: The JSONL rewrite rule and the metadata key helper.
+dod:
+  - text: A file upload goes to every healthy deployment with its own request copy, the JSONL model is rewritten when B1035 says so, and the answer carries `model_file_id_mapping`.
+    proof: [batch-calls-file]
+  - text: Vector store create routes by model, or goes to the call type table without one.
+    proof: [batch-calls-vector-create]
+  - text: Batch create and cancel run the fallback executor with their metadata key, and cancel merges the deployment credentials.
+    proof: [batch-calls-create, batch-calls-cancel]
+  - text: Batch retrieve tries every deployment, returns the first batch, and raises the first error or LiteLLM's messages otherwise.
+    proof: [batch-calls-retrieve]
+  - text: Batch list merges the pages of every deployment and ignores failures.
+    proof: [batch-calls-list]
+checks:
+  optional: []
+  commands:
+  - id: batch-calls-file
+    why: A deployment is skipped, the JSONL keeps the public model, or the id mapping is missing.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_batch_calls::tests::file_/)'
+  - id: batch-calls-vector-create
+    why: A vector store create without a model fails, or one with a model skips selection.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_batch_calls::tests::vector_create_/)'
+  - id: batch-calls-create
+    why: Batch create uses the wrong metadata key or no slot.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_batch_calls::tests::batch_create_/)'
+  - id: batch-calls-cancel
+    why: Batch cancel loses the deployment credentials or leaks `litellm_credential_name`.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_batch_calls::tests::batch_cancel_/)'
+  - id: batch-calls-retrieve
+    why: Retrieve stops at the first failing deployment or raises the wrong error.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_batch_calls::tests::batch_retrieve_/)'
+  - id: batch-calls-list
+    why: Pages are dropped or `has_more` is lost.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_batch_calls::tests::batch_list_/)'
+oracle_cases: []
+deviations:
+  - what: Each call type reaches its provider function through an injected executor, and no `litellm.<call>` module function is looked up.
+    why: Rust has no module state, and the rules ask for constructor wiring.
+out_of_scope:
+  - "B1051 calls `aretrieve_batch` from the proxy route and owns its HTTP cases; B8355 passes the executors from the Python crate."
+  - "B1035 owns the JSONL rewrite, B082 the file id mapping, B303 credentials, slots and request update, B016 selection and healthy deployments, B310 the fallback executor, B844 the model list."
+  - "Router._override_vector_store_methods_for_router has a docstring and no statements at the pin, so there is nothing to build."
+pitfalls:
+  - "`aretrieve_batch` drops `custom_llm_provider` from both the request copy and the params before adding the resolved one, so a request value never overrides the deployment."
+  - "`create_file_attempt` refuses a missing `file` or `purpose` per deployment, after `total_calls` is already incremented."
+  - "`alist_batches` takes `last_id` from the last answer even when it is null, so a later empty page clears it."
+  - "`avector_store_create` with a model has no retries; only the no-model path goes through the call type table."
+  - "There is no exception alert sink: `router_settings.alerting_config` is refused at config load with an error naming the key, so LiteLLM's `send_llm_exception_alert` call point is left out."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

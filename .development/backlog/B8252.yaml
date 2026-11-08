@@ -1,0 +1,15 @@
+id: B8252
+milestone: M7 observability
+title: Generic API logger and compatible callback configs
+status: todo
+depends_on: [B002, B173, B189, B191, B192, B256, B8740]
+file: tasks/B8252-generic-api-logger.yaml
+covers:
+  - "litellm/integrations/generic_api/generic_api_callback.py"
+  - "litellm/integrations/generic_api/generic_api_compatible_callbacks.json"
+parent: B114
+split_from: B114
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

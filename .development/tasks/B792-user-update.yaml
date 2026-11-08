@@ -3,7 +3,7 @@ title: Update users and invalidate live entitlements
 description: >-
   Implement authenticated POST /user/update with B865 effects and an injected update service reusable
   by login and bulk routes. Defaults litellm_changed_by=null,password_prevalidated=false,hibp_client=null
-  apply to the service; the route passes neither changed-by nor a header. B124 owns request validation:
+  apply to the service; the route passes neither changed-by nor a header. B8411 owns request validation:
   both selectors null fails with 422 before the handler, but empty strings reach the helper and raise
   ValueError 'Either user_id or user_email must be provided'. Missing DB raises 'Not connected to DB!'
   first. Then B892 caller-permission validation, exclude_unset dump, patch preparation and B790 password
@@ -42,7 +42,7 @@ description: >-
   permission_upsert_before_user_write prove these differences, including orphaned permission rows on
   a later user-write failure. No transaction joins these operations.
 
-  A truthy ID calls B124 update_data(table_name=user). Otherwise fetch ALL exact-email matches and
+  A truthy ID calls B2362 update_data(table_name=user). Otherwise fetch ALL exact-email matches and
   update only the first list row; a missing/nonlist result inserts a UUID user with the requested
   email. Authorization used an earlier find_first, so preserve the second query and its race window.
   Cases id_update_precedence, email_first_match_only, email_missing_insert and email_race_second_read
@@ -53,7 +53,7 @@ description: >-
   user for an asynchronously scheduled B797 audit with action=updated, changed_by=explicit-or-caller,
   before/after JSON excluding nulls. No DB skips audit; missing reread skips it; any reread/scheduling
   exception warns and continues, including the bare-model email-insert response indexing failure.
-  Then invalidate spend:user:{id} through B124 when prepared spend is non-null; invalidate/broadcast
+  Then invalidate spend:user:{id} through B3015's _invalidate_spend_counter (betterlite-auth::spend_writes) when prepared spend is non-null; invalidate/broadcast
   user ID through B878 only for prepared max_budget/model_max_budget or explicitly supplied metadata.
   Other fields alone do not trigger this broadcast. These failures can surface AFTER persistence.
   Cases password_revokes_all_after_write, password_revoke_failure_success, audit_missing_and_warning,
@@ -147,8 +147,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/user_update.rs
     - crates/betterlite-server/src/routes/user_update/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/user-update/**
     - crates/betterlite-server/src/user_update/fixtures.rs
     - crates/betterlite-server/src/user_update/fixtures/**
@@ -251,7 +249,7 @@ oracle_cases:
   - tools/oracle/cases/management/user-update/failure-write-order.yaml
 deviations: []
 out_of_scope:
-  - B124 owns request byte decoding, PrismaClient convenience operations and spend-counter invalidation;
+  - B8411 owns UpdateUserRequest decoding and B3015 the spend-counter invalidation; B2362 owns the PrismaClient user update_data and insert_data branches;
     B2214 owns BudgetConfig; B894 owns metadata encryption; B797 owns the user-audit sink;
     B789 owns session revocation; B2334 owns query decoding formerly grouped under B790.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'

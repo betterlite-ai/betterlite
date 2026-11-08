@@ -43,6 +43,7 @@ description: >-
     web_search_tool_result blocks. Calls B4113's WebSearchTransformation.format_search_response
     to format results as text. Raises exceptions on provider/authorization/network failures;
     _short_circuit_search_outcome catches and converts to SearchFailed.
+    The Rust signature is `execute_search(&self, query, kwargs, rich) -> Result<(String, Option<SearchResponse>), SearchFailure>`.
 
   - `_create_empty_search_result()` returns ("No search query provided", None) for tool calls
     without queries.

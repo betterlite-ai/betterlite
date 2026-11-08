@@ -218,7 +218,7 @@ out_of_scope:
   - "IPAddressUtils.is_request_from_trusted_proxy and get_mcp_client_ip: B743. The caller passes the trust decision in as from_trusted_proxy."
   - "build_token_client_auth, normalize_token_auth_method and TokenEndpointClientAuth: B4650, which this task calls."
   - "The MCPServer type (url, upstream_resource, server_id): owned by the MCP types task; this task takes the three fields as arguments."
-  - "get_secret_str and secret manager lookup: the secret manager task (B129 covers secret_managers/main.py)."
+  - "get_secret_str and secret manager lookup: the secret manager task (B8500 covers secret_managers/main.py)."
   - "process_mcp_request, the admission arms, _admission_failure_fallback, the cold-start checks (_is_mcp_passthrough_cold_start, _is_legacy_delegate_cold_start) and the DCR bridge and gateway session admission: B4673, which covers user_api_key_auth_mcp.py and calls the parsers built here."
   - "_is_gateway_admission_credential and _scrub_gateway_admission_credentials: B4679, which covers user_api_key_auth_mcp.py."
   - "_target_servers_are_true_passthrough: B4673 (it reads the server registry; this task only supplies resolve_target_server_names)."

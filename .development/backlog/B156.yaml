@@ -1,14 +1,14 @@
 id: B156
 milestone: M11 distribution
 title: LiteLLM's VS Code extension working against betterlite
-status: todo
-depends_on: [B081, B007]
-file: null
+status: blocked
+depends_on: [B7770, B005, B060]
+file: tasks/B156-vscode-extension-contract.yaml
 covers:
-  - "vscode-extension/**"
+  - "vscode-extension/README.md"
 parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "waits for Max: the gate has no pinned node and npm, the lockfile needs a budget exclude and the publisher name needs his pick"
 pr: null

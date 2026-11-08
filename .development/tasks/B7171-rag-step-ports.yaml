@@ -1,0 +1,96 @@
+id: B7171
+title: RAG OCR, URL fetch, credential and embedding ports
+description: >-
+  Build the real implementations of the injected step ports that B3451 (ingestion state and document
+  preparation) and B3459 (S3 Vectors) declare, in a new module `rag_step_ports` of betterlite-server
+  (crates/betterlite-server/src/rag_step_ports.rs and the folder beside it). B3460 puts them into its
+  `RagIngestDeps`. Read the B3451 and B3459 task files and the merged code in crates/betterlite-core/src/rag/ingestion.rs
+  and betterlite-rag first and use the merged trait names. If a trait is private or missing, stop and say so.
+
+  OCR port. `OcrCall` implements B3451's injected OCR operation (the Python `litellm.aocr` or `router.aocr`
+  that the base ingestion calls). Take the router when the state holds one and the direct native OCR operation
+  otherwise, following the same choice base_ingestion.py makes; read the router seam in betterlite-router and
+  the OCR operation in betterlite-ocr, and report it in notes if either does not expose an async OCR call.
+  The result is the text pages B3451 expects, in order.
+
+  URL fetch port. `UrlFetch` implements B3451's file-download port with B5082's SSRF-checked fetch. B3451's
+  deviation said URL downloads are rejected at the HTTP boundary, and B5082 replaced that plan, so this port
+  uses the checked fetch and the same size and timeout limits B5082 sets. Return the bytes, the filename taken
+  from the URL path and the content type from the reply, as B3451 defines.
+
+  Credential port. `CredentialLookup` implements the port B3451 uses to resolve a named credential into its
+  values (the Python `CredentialAccessor`), over the credential store in B1100. A missing name is the typed
+  not-found error B3451 declares. The values are secrecy types and never appear in Debug or error text.
+
+  Embedding port. `ListEmbedder` implements B3459's `RagEmbedder` trait, which embeds a list of chunk texts with
+  the model and options from the request. B1058's executors embed one query only, so call the native embedding
+  function that takes a list of inputs (the Python `litellm.aembedding`), through the router seam when the
+  state holds a router. Return one vector per chunk, in input order, and fail with a typed error when the count
+  differs.
+
+  Use fake native operations in tests and assert the exact arguments they receive. No oracle case belongs here.
+
+  Size. About 150 implementation lines, 220 test lines.
+
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-server/src/rag_step_ports.rs
+    - crates/betterlite-server/src/rag_step_ports/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L98-L242
+    why: the OCR, file download and credential calls the base class makes through the ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L399-L440
+    why: the embed call S3 Vectors makes for a list of chunks.
+
+dod:
+  - text: OcrCall uses the router's OCR when the state holds a router and the direct operation otherwise, and returns the pages in order.
+    proof: [ocr-call]
+  - text: UrlFetch uses the SSRF-checked fetch and returns bytes, filename and content type, and refuses blocked addresses with B5082's error.
+    proof: [url-fetch]
+  - text: CredentialLookup returns the values for a known name, the typed not-found error for an unknown one, and shows no value in Debug or error text.
+    proof: [credential-lookup]
+  - text: ListEmbedder returns one vector per chunk in input order and fails on a count mismatch.
+    proof: [list-embedder]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: ocr-call
+      why: the router choice or page order is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_step_ports::ocr::tests::/)'
+    - id: url-fetch
+      why: the fetch skips the SSRF check or drops the filename or content type
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_step_ports::url_fetch::tests::/)'
+    - id: credential-lookup
+      why: lookup, the not-found error or secret hiding is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_step_ports::credential::tests::/)'
+    - id: list-embedder
+      why: embedding order, router use or the count check is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_step_ports::embedder::tests::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: B3451's note that URL downloads are rejected at the HTTP boundary is not followed.
+    why: B5082 added an SSRF-checked fetch and B3462 passes file_url through, so the port downloads with that fetch.
+
+out_of_scope:
+  - The port trait definitions. B3451 and B3459 own them.
+  - The native OCR, credential store, fetch and embedding operations. Their own tasks own them.
+  - The provider store ports. B7170 owns them.
+  - Choosing a provider or building the ingest objects. B3460 owns them.
+
+pitfalls:
+  - Do not write a second SSRF check; call B5082's fetch.
+  - Embedding must keep input order and must not drop empty chunk texts silently.
+  - Never put credential values in Debug, logs or error text.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

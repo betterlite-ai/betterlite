@@ -247,7 +247,7 @@ deviations:
 out_of_scope:
   - Guardrail decorator registration and CustomGuardrail.__init__; owned by B104 (U1).
   - add_guardrail_to_applied_guardrails_header; owned by B104 (U3).
-  - get_secret_str and full secret-manager dispatch; owned by B129 (U4).
+  - get_secret_str and full secret-manager dispatch; owned by B8500 (U4).
   - Content extraction helpers _extract_prompt_text, _extract_response_text, and all their nested functions; owned by B3793.
   - stream_chunk_builder and streaming response assembly; owned by B2227.
   - Framework method should_run_guardrail on CustomGuardrail; owned by B104 (U1).

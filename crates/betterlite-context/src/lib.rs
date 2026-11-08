@@ -1,5 +1,6 @@
 pub mod a2a_text;
 pub mod agentic_followup_kwargs;
+pub mod agentic_loop_plan;
 pub mod anthropic_catalog_lookup;
 pub mod aws_partition;
 pub mod bedrock_config_selection;

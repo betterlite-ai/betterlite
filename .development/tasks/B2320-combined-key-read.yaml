@@ -1,11 +1,11 @@
 id: B2320
 title: Combined key reads and deprecated-token grace lookup
 description: >-
-  Build betterlite-db::combined_key_read below B738, replacing its reverse dependency on B124.
+  Build betterlite-db::combined_key_read below B738, replacing its reverse dependency on the proxy utils remainder.
   Own utils.py on_backoff L4174-L4176, deprecated-cache constants L4196-L4197,
   _lookup_deprecated_key L4201-L4247, _query_first_with_cached_plan_fallback L4792-L4852,
   only get_data's combined_view branch L5122-L5244 with its common decorators/error boundary
-  L4854-L4861/L5245-L5266, and _hash_token_if_needed L7188-L7197. Other get_data branches stay B124.
+  L4854-L4861/L5245-L5266, and _hash_token_if_needed L7188-L7197. Other get_data branches belong to B8397.
   Use B714 routed/writer handles, B715 metrics, B2323 reconnect, B722 key storage, B721 joined rows
   and B2314 hash/result types. No key creation, mutation or encryption is performed.
 
@@ -109,7 +109,7 @@ deviations:
     why: Prevent stored credential identifiers leaking; native_database_diagnostics_hide_token_and_hash checks both diagnostics and callback payload.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5245-L5266
 out_of_scope:
-  - B124 owns all remaining utils.py functions/get_data branches, except reconnect policy moved to B2323 and this entry's explicit ranges.
+  - B8397 owns the remaining get_data branches and B8390 to B8401 the other utils.py functions; B2323 owns reconnect policy, and this entry keeps its explicit ranges.
   - B738 owns request auth caching, permissions and transport retry; B2314 owns the verification record and hash format.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as combined_key_read in the db group. Replace the stub Op in tools/oracle/src/helpers/db/combined_key_read.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/combined_key_read.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

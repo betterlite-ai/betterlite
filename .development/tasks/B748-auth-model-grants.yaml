@@ -18,7 +18,7 @@ description: >-
 
   Own an AgentAccessSource port with managed policy, managed/unmanaged ceilings, caller auth and
   caller team/user reads corresponding to those six MIT collaborators in B141's agent auth module.
-  B141 installs its implementation when agent routes are composed; B732 supplies it to these checks.
+  B8646 installs its implementation in state/auth_model_grants.rs; B732 supplies it to these checks.
   A configured agent without that service is an initialization error, not an empty ceiling. Native
   recording-port tests prove lookup order; actual agent registry storage remains B141's responsibility.
 
@@ -107,8 +107,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/auth_model_grants.rs
     - crates/betterlite-server/src/state/auth_model_grants/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-model-grants/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-model-grants-*

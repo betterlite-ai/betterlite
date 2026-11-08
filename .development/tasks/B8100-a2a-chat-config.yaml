@@ -1,0 +1,136 @@
+id: B8100
+title: A2A chat provider config, registry resolution and stream chunks
+description: >-
+  Build the chat provider that talks to an A2A agent as a model named a2a/<agent-name>. It lives in the module a2a_chat of
+  betterlite-provider and covers litellm/llms/a2a/chat/transformation.py (A2AConfig and its four registry helpers),
+  litellm/llms/a2a/chat/streaming_iterator.py and the part of litellm/llms/a2a/common_utils.py that B2210 does not own
+  (A2AError, convert_messages_to_prompt, a2a_hop_uses_entra, resolve_a2a_hop_auth_header). The text extraction functions in
+  that file are B2210's: call them from betterlite-context, do not copy them. Add betterlite-context to
+  crates/betterlite-provider/Cargo.toml.
+
+
+  Registry lookup. resolve_agent_config_from_registry(agent_name, api_base, api_key, headers, optional_params) returns
+  (api_base, api_key, headers). It returns the inputs untouched when agent_name is empty, or when api_base and api_key are both
+  set and headers is non-empty. Otherwise it asks an injected agent lookup for the agent. This task owns that trait in betterlite-provider, module a2a_chat: `pub trait A2aAgentLookup { fn agent_by_name(&self, name: &str) -> Option<RegisteredA2aAgent>; }`, with `RegisteredA2aAgent { agent_card_params: Object, litellm_params: Object }` holding the two agent maps this function reads. betterlite-provider cannot depend on the proxy crate, so B4776's registry does not implement it here (B8100 already depends on B4776, so the reverse edge would be a cycle). B8645 implements `A2aAgentLookup` with a small adapter over B4776's AgentRegistry get_agent_by_name and passes it in. LiteLLM
+  swallows ImportError when the proxy registry module is missing, so with no lookup injected the function returns the inputs
+  unchanged. For a found agent: api_base comes from agent_card_params url when api_base is None; api_key comes from the agent
+  litellm_params when api_key is None (an Entra agent gets get_azure_ai_agent_entra_token from B549 instead, and only a string
+  api_key is used); headers come from the agent litellm_params headers when the caller headers are empty (a Mapping only, and
+  the authorization header is dropped, any case, when the agent uses Entra). An agent uses Entra when custom_llm_provider is
+  falsy and B549's has_azure_entra_params is true. Every other agent litellm_params key is merged into optional_params unless
+  it is api_key, api_base, headers, model, one of B549's AZURE_ENTRA_LITELLM_PARAM_KEYS, or already present in optional_params.
+  If optional_params has a truthy stream and the agent card capabilities is a mapping without a truthy streaming value, also set
+  stream=false and fake_stream=true.
+
+
+  Request side. get_supported_openai_params returns stream, temperature, max_tokens, top_p. map_openai_params copies stream only
+  when it is exactly true. validate_environment returns a new header map: the caller headers, plus Content-Type
+  application/json unless content-type or Content-Type is already there, plus Authorization "Bearer <key>" when a key is set.
+  get_complete_url fails with "api_base is required for A2A provider" when api_base is None, else strips trailing slashes.
+  transform_request fails with "At least one message is required for A2A completion" on empty messages, joins every message with
+  convert_messages_to_prompt ("role: text" lines, messages with empty text skipped), and builds one JSON-RPC 2.0 body: jsonrpc
+  "2.0", id a fresh uuid4, method message/stream when optional_params stream is truthy else message/send, params.message
+  {kind message, role user, parts [{kind text, text}], messageId uuid4}, and for non-streaming also params.configuration
+  {blocking: true}.
+
+
+  Response side. transform_response parses the body as JSON; a parse failure raises A2AError with the HTTP status and the message
+  "Failed to parse A2A response: <error>". A body with an "error" key raises A2AError with the HTTP status code of the reply
+  (often 200) and "A2A error: <message or Unknown error>". Otherwise the text is B2210's extract_text_from_a2a_response; the
+  reply is one choice, finish_reason stop, role assistant, model set to the requested model, id the body "id" else a new uuid4.
+  Usage is estimated with B196's token counter using the gpt-3.5-turbo encoding for both prompt messages and the reply text;
+  any counter failure is ignored and usage stays unset. get_error_class returns A2AError with the status, message and headers.
+  _openai_message_to_a2a_message has no caller at the pin and is not built.
+
+
+  Streaming chunks. The stream iterator turns each parsed JSON-RPC chunk into a text piece. An "error" object raises A2AError
+  500 "A2A error: <message or Unknown error>". Otherwise text is extract_text_from_a2a_response of the chunk. The finish reason
+  is stop when result.status.state is completed or failed, or when chunk.done is true, else none; is_finished is true exactly
+  when a finish reason exists. Any failure while building the chunk yields an empty unfinished chunk. Usage is always none and
+  index 0.
+
+
+  A2AError carries status_code, message and headers (default empty). resolve_a2a_hop_auth_header returns None unless the hop
+  uses Entra, and then calls the injected Entra header resolver. The dispatch in main.py (_complete_a2a) is B050's.
+scope:
+  paths:
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-provider/src/a2a_chat.rs
+    - crates/betterlite-provider/src/a2a_chat/**
+    - tools/oracle/cases/helpers/a2a-chat/**
+    - tools/oracle/helpers/b8100.py
+    - tools/oracle/helpers/b8100/**
+    - tools/oracle/src/helpers/provider/b8100.rs
+    - tools/oracle/src/helpers/provider/b8100/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/transformation.py#L28-L60
+    why: The registry parameter exclusion set and the Entra helpers that pick key and headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/transformation.py#L63-L131
+    why: resolve_agent_config_from_registry, the early return, the merged litellm_params and the fake-stream fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/transformation.py#L133-L225
+    why: Supported params, stream mapping, headers and the endpoint URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/transformation.py#L227-L375
+    why: JSON-RPC request body, error handling and the usage estimate in transform_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/transformation.py#L377-L427
+    why: Iterator hookup, the unused message converter and the error class.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/streaming_iterator.py#L12-L108
+    why: Chunk parsing, the error object, the empty-chunk fallback and the finish reasons.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/common_utils.py#L18-L63
+    why: A2AError and convert_messages_to_prompt.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/common_utils.py#L148-L163
+    why: The Entra hop predicate and resolve_a2a_hop_auth_header.
+  - url: https://a2a-protocol.org/latest/specification/
+    why: JSON-RPC methods message/send and message/stream and the message and task shapes.
+dod:
+  - text: Registry resolution fills api_base, api_key and headers only for the missing values, merges the other agent params and sets the fake-stream pair when the card has no streaming.
+    proof: [a2a-chat-tests, oracle]
+  - text: The Entra agent path takes its key from the Entra token and drops its stored authorization header.
+    proof: [a2a-chat-tests]
+  - text: The request body is a message/send or message/stream JSON-RPC call with the joined conversation and the blocking flag only for non-streaming.
+    proof: [a2a-chat-tests, oracle]
+  - text: Replies map to one stop choice, a JSON-RPC error becomes A2AError with the reply status, and a bad body becomes the parse error.
+    proof: [a2a-chat-tests, oracle]
+  - text: Stream chunks carry text, finish on completed, failed or done, raise on an error object and fall back to an empty chunk.
+    proof: [a2a-chat-tests, oracle]
+  - text: The module adds no copy of B2210's text extraction.
+    proof: [a2a-no-text-copy]
+checks:
+  optional: []
+  commands:
+    - id: a2a-chat-tests
+      why: the a2a_chat behavior tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^a2a_chat::/)'
+    - id: a2a-no-text-copy
+      why: the module must call B2210's extractor and the module must exist
+      run: test -s crates/betterlite-provider/src/a2a_chat.rs && ! grep -rq 'fn extract_text_from_a2a' crates/betterlite-provider/src/a2a_chat.rs crates/betterlite-provider/src/a2a_chat
+oracle_cases:
+  - tools/oracle/cases/helpers/a2a-chat/registry-early-return.yaml
+  - tools/oracle/cases/helpers/a2a-chat/registry-fills-missing.yaml
+  - tools/oracle/cases/helpers/a2a-chat/registry-card-no-streaming.yaml
+  - tools/oracle/cases/helpers/a2a-chat/request-send-blocking.yaml
+  - tools/oracle/cases/helpers/a2a-chat/request-stream.yaml
+  - tools/oracle/cases/helpers/a2a-chat/request-empty-messages.yaml
+  - tools/oracle/cases/helpers/a2a-chat/response-error-key.yaml
+  - tools/oracle/cases/helpers/a2a-chat/stream-chunk-finish.yaml
+deviations:
+  - what: Usage is estimated with betterlite's tokenizer (B196) for gpt-3.5-turbo, so counts match LiteLLM only where B196 matches tiktoken.
+    why: LiteLLM calls its own token_counter, which is B196's job; the counts are whatever that task produces.
+out_of_scope:
+  - "llms/a2a/common_utils.py extract_text_from_a2a_message and extract_text_from_a2a_response (L66-L145) belong to B2210."
+  - "llms/a2a/chat/transformation.py _openai_message_to_a2a_message (L400-L417): no caller at the pin."
+  - "llms/a2a/chat/guardrail_translation/** belongs to B6163."
+  - "main.py _complete_a2a and the a2a arm of the dispatch belong to B050."
+  - "The agent registry itself (global_agent_registry.get_agent_by_name) belongs to B4776; this task owns only the A2aAgentLookup trait and takes an injected lookup. The adapter that implements it over AgentRegistry is B8645's."
+pitfalls:
+  - The early return needs api_base AND api_key both not None AND headers truthy; an empty headers map still triggers the lookup.
+  - A JSON-RPC "error" key raises with the HTTP status of the reply, which is usually 200, not 500; only the stream iterator uses 500.
+  - transform_request reads stream from optional_params (not litellm_params), and the blocking flag is absent when streaming.
+  - Messages whose text is empty are skipped by convert_messages_to_prompt, so a request of only empty messages sends an empty prompt, not an error.
+  - The fake_stream pair is set only when optional_params stream is truthy and the card capabilities object exists and has a falsy streaming value; a card without capabilities keeps stream.
+  - "Entra agents lose the stored authorization header in any letter case (Authorization, authorization)."
+  - A chunk whose text extraction throws returns an empty unfinished chunk, never an error.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

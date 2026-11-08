@@ -1,0 +1,111 @@
+id: B8373
+title: Proxy startup checks, budget seeding and tuning baselines
+description: >-
+  LiteLLM's ProxyStartupEvent class holds the small steps proxy_startup_event runs between loading config and starting the
+  scheduler: warnings about settings that do nothing, a hard check for the Redis transaction buffer, JWT and prompt
+  injection setup, the proxy-wide budget row, a spend cache warm-up, default team budgets, UI settings and the heuristic
+  tuning baseline gate. Build them as plain functions in crates/betterlite/src/startup_checks.rs (declared in lib.rs by the
+  skeleton), each taking its inputs as parameters, so B8374 calls them in order. The error enum is StartupCheckError.
+
+  Warnings, each a single tracing warn with LiteLLM's text: `warn_budget_without_db(max_budget: Option<f64>, has_db: bool)`
+  warns only when there is no database and max_budget is above 0, with the "A proxy-wide budget (litellm.max_budget={n}) is
+  configured but no database is connected..." message from L10157-L10168. `warn_fail_closed_without_redis(enabled, has_redis)`
+  warns when general_settings.fail_closed_rate_limit_enforcement is on and no Redis is configured. `warn_mock_testing(settings,
+  gated_names: &[&str])` prints the 72-character "=" banner block with "DANGEROUS SETTING ENABLED" and one indented line per
+  gated mock param name when the mock testing key is exactly true; the key name and the names come from the route crate's
+  constants for route_llm_request.py's MOCK_TESTING_CONFIG_KEY and GATED_MOCK_PARAM_NAMES.
+
+  Checks: `check_transaction_buffer(settings, has_redis) -> Result<(), StartupCheckError>` reads
+  general_settings.use_redis_transaction_buffer (a bool, or a string through str_to_bool) and, when it is on with no Redis,
+  fails with LiteLLM's multi-line message that starts "`use_redis_transaction_buffer` is enabled in general_settings but no
+  Redis is configured." and shows the litellm_settings cache example; startup stops. `wants_buffer_redis(settings) -> bool`
+  is the same flag read for _get_transaction_buffer_redis_cache, so B8374 builds the standalone Redis from REDIS_* env only when
+  it is true.
+
+  Setup steps: `init_jwt_auth(settings, ...)` builds B053's JWT settings from general_settings.litellm_jwtauth, resolving each
+  string value that starts with "os.environ/" through the secret lookup and leaving the rest as is, or the defaults when the
+  key is absent, then updates the JWT handler with the database and auth cache and binds the agent lookup. `attach_router_to_detectors`
+  hands the router to every registered B3703 prompt injection detector. `seed_proxy_budget(...)` ports _add_proxy_budget_to_db
+  and _upsert_proxy_budget_with_reset_at_backfill: with litellm.max_budget above 0 and a database, budget_duration must be
+  set or startup fails with "budget_duration not set on Proxy. budget_duration is required to use max_budget."; then, as a
+  background task, upsert the user row litellm-proxy-budget with max_budget and budget_duration, and backfill budget_reset_at
+  and spend 0 only where budget_reset_at is null, logging a warning on a backfill failure. `warm_global_spend(...)` reads the
+  global proxy spend once through the auth crate's global spend fetch and swallows errors at debug. `sync_ui_settings(...)`
+  applies B1659's persisted UI settings and logs "Synced UI settings to general_settings on startup: {keys}" when any applied.
+  `update_default_team_budgets(...)` runs only when litellm_settings.default_internal_user_params.teams is a non-empty list of
+  objects, calling the team member budget update as the proxy admin (the hashed master key).
+
+  Tuning gate: `load_tuning_baselines(db, deployments)` reads the litellm_config row heuristic tuning baseline (B343's
+  TUNING_BASELINE_PARAM_NAME), decoding a JSON string or object into identity to fingerprint strings; with no row it
+  records B343's snapshot of the current routers and, on a unique violation (another pod won), reads the winner's row
+  instead. Any other error warns "Heuristic-v1 tuning baseline unavailable, gate not enforced this boot: {error}" and returns
+  None. `enforce_tuning_baseline(...)` combines config and database deployments, loads the baselines and fails startup with
+  "model_list: {violation} {remedy}" when B343's tuning_limit_violation reports one.
+
+  Oracle cases are helper cases on the pure parts (operation b8373 with an `operation:` field): the transaction buffer check
+  for bool, "true" string, "false" string and no Redis; the budget-without-DB and fail-closed warning conditions; and the
+  baseline decode of a JSON string versus an object row. The worker writes them under tools/oracle/cases/helpers/startup-checks/.
+scope:
+  paths:
+    - crates/betterlite/src/startup_checks.rs
+    - crates/betterlite/src/startup_checks/**
+    - tools/oracle/cases/helpers/startup-checks/**
+    - tools/oracle/helpers/b8373.py
+    - tools/oracle/helpers/b8373/**
+    - tools/oracle/src/helpers/server/b8373.rs
+    - tools/oracle/src/helpers/server/b8373/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10143-L10396
+    why: Prompt injection attach, the three warnings, startup logging, mock testing banner, transaction buffer check, coordination Redis from DB, semantic filter and JWT setup, proxy budget.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10398-L10560
+    why: Budget backfill, spend warm-up, default team budgets, UI settings sync and the heuristic tuning baseline gate.
+dod:
+  - text: The budget, fail-closed and mock testing warnings fire only under LiteLLM's conditions with its text.
+    proof: [checks-tests, oracle, helper-python]
+  - text: check_transaction_buffer stops startup with LiteLLM's message for a true or truthy-string flag without Redis.
+    proof: [checks-tests, oracle, helper-python]
+  - text: JWT settings resolve only os.environ/ string values, and the router reaches every prompt injection detector.
+    proof: [checks-tests]
+  - text: seed_proxy_budget refuses a missing budget_duration, upserts the proxy budget row and backfills reset time and spend only where reset time is null.
+    proof: [checks-tests]
+  - text: The UI settings sync, default team budgets and spend warm-up run under their conditions and never stop startup on a read failure.
+    proof: [checks-tests]
+  - text: The tuning baseline gate records a first baseline, adopts a competing pod's row, skips on errors and fails startup on a quota violation.
+    proof: [checks-tests, oracle, helper-python]
+checks:
+  optional: []
+  commands:
+    - id: checks-tests
+      why: A startup warning, check, seeding step or tuning gate is missing or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^startup_checks::/)'
+    - id: helper-python
+      why: The strict oracle adapter for the startup check cases fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8373)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8373 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8373/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/startup-checks/buffer-true-no-redis.yaml
+  - tools/oracle/cases/helpers/startup-checks/buffer-string-false.yaml
+  - tools/oracle/cases/helpers/startup-checks/budget-warning-without-db.yaml
+  - tools/oracle/cases/helpers/startup-checks/fail-closed-warning.yaml
+  - tools/oracle/cases/helpers/startup-checks/baseline-json-string-row.yaml
+deviations: []
+out_of_scope:
+  - "_init_coordination_redis_from_db, _get_transaction_buffer_redis_cache's Redis build and the Redis usage cache helpers it calls (L4861-L4962): B8377. This task only supplies wants_buffer_redis."
+  - "_initialize_semantic_tool_filter: SemanticToolFilterHook has no owner yet; the notes name the gap."
+  - "_initialize_startup_logging (cost_tracking and ProxyLogging.startup_event): B8374 calls the logging setup owners directly."
+  - "_init_dd_tracer and _init_pyroscope: they start Python's ddtrace and pyroscope profilers in-process, which betterlite does not embed; not built."
+  - "refresh_model_info and the scheduled jobs: B8372."
+pitfalls:
+  - use_redis_transaction_buffer may be a string, and only str_to_bool's true values turn it on, so "false" or "no" must not stop startup.
+  - The proxy budget upsert and backfill run as a background task, so a database write failure there never stops startup; only the missing budget_duration does.
+  - The backfill filter is budget_reset_at IS NULL, so a restart never slides an active reset window forward.
+  - JWT settings resolve only values that are strings starting with "os.environ/"; nested or non-string values pass through untouched.
+  - A unique violation while recording the first tuning baseline means another pod recorded one first, and the winner's row is the baseline for this boot.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

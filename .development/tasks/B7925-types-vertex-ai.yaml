@@ -1,0 +1,73 @@
+id: B7925
+title: Python types for Vertex AI and Gemini request, response, tuning, embedding and batch shapes (types/llms/vertex_ai)
+description: >-
+  Users read and write Vertex dicts such as `GenerationConfig`, `Tools`, `UsageMetadata` and `GenerateContentResponseBody`
+  through `litellm.types.llms.vertex_ai`. This task ports that whole file (787 lines) and `vertex_ai_gemma.py` into the package
+  `crates/betterlite-python/python/betterlite/types/llms/vertex_ai/` and the module `crates/betterlite-python/python/betterlite/types/llms/vertex_ai_gemma.py`. It is Python only.
+
+
+  Contents in order: the part types (`FunctionResponse`, `FunctionCall`, `BlobType`, `PartType`, and the Httpx twins
+  `HttpxPartType`, `HttpxContentType`), `ContentType`, `Schema`, `FunctionDeclaration`, `Retrieval`, the generation and thinking
+  configs (`GenerationConfig`, `GeminiThinkingConfig`, `GeminiImageConfig`, `SpeechConfig`), `VertexToolName`, `Tools`, `ToolConfig`,
+  cached content shapes (`TTL`, `CachedContent`, `CachedContentRequestBody`), `UsageMetadata`, citation, grounding, logprobs and
+  URL metadata TypedDicts, `Candidates`, `GenerateContentResponseBody`, fine-tune job shapes, multimodal embedding
+  (`Instance`, `VertexMultimodalEmbeddingRequest`, `MultimodalPredictions`), `TaskTypeEnum`, text and batch embedding bodies,
+  the GCS batch prediction shapes (`GcsSource` to `VertexBatchPredictionResponse`), the video generation shapes
+  (`VertexVideoImage` to `VertexVideoGenerationResponse`), `VertexAccessTokenResolver` (a callable Protocol with `__call__`,
+  L763) and `VertexPartnerProvider` (L774). `GeminiEmbeddingInput` (L14) is `EmbeddingInput | list[list[str]]` and comes from B7920's
+  `EmbeddingInput`. `VertexGemmaContainerError` is a small exception class.
+
+
+  The Protocol keeps its signature exactly, since a user passes a callable matching it. Several short names between
+  classes (L169-L187, L209-L213, L428, L649-L694, L781) are aliases or Literals; keep each.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/llms/vertex_ai/**
+  - crates/betterlite-python/python/betterlite/types/llms/vertex_ai_gemma.py
+  - crates/betterlite-python/tests/test_types_vertex_ai.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L1-L365
+  why: Part, content, schema, tool and generation config types.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L366-L713
+  why: Response, tuning, embedding and batch shapes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L714-L787
+  why: Video generation shapes, the access token Protocol and partner providers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_gemma.py#L1-L10
+  why: VertexGemmaContainerError.
+dod:
+- text: Every name exists with the same keys, required keys, Literal values and Enum members as LiteLLM.
+  proof: [names]
+- text: '`VertexAccessTokenResolver` accepts a callable with the same parameters, and `VertexGemmaContainerError` carries the same message and attributes.'
+  proof: [protocol]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A part, config or response key is missing.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_vertex_ai.py -k names
+  - id: protocol
+    why: The token resolver or the error class differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_vertex_ai.py -k protocol
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+- >-
+  Gemini Live, image generation and files shapes live in llms/gemini.py and belong to B7927.
+pitfalls:
+- >-
+  `PartType` and `HttpxPartType` look alike but have different keys (the Httpx one holds function call, executable code, code
+  execution result and server side tool shapes); a test builds one of each.
+- >-
+  `FunctionResponse.parts` is typed with `FunctionResponsePartType` (L44); a fix that reuses `PartType` there changes the keys a caller may send.
+- >-
+  `TaskTypeEnum` (L575) is an Enum used in the embedding request body; compare its members and values.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

@@ -2,7 +2,7 @@ id: B078
 milestone: M4 keys, spend and management
 title: Discovery endpoints for the UI and agent skills
 status: todo
-depends_on: [B001, B002, B003, B858, B860, B2226, B3210, B3211, B3212]
+depends_on: [B001, B002, B003, B858, B860, B2226, B3210, B3211, B3212, B8648, B8670]
 file: null
 covers:
   - "litellm/proxy/discovery_endpoints/__init__.py"

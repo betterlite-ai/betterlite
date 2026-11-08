@@ -1,0 +1,70 @@
+id: B8253
+title: litellm_agent model name resolver
+description: >-
+  Build the `litellm_agent` prompt-management hook of `litellm/integrations/litellm_agent/litellm_agent_model_resolver.py`
+  in betterlite-prompts as the module `litellm_agent_resolver`. It lets a model entry such as `litellm_agent/gpt-3.5-turbo`
+  run as `gpt-3.5-turbo`: the hook strips the prefix from the model name before the completion call and touches nothing
+  else. No prompt id is needed.
+
+  `LITELLM_AGENT_PREFIX` is the text `litellm_agent/`. `LitellmAgentResolver` is a unit struct with
+  `get_chat_completion_prompt(model, messages, non_default_params, ignore_prompt_manager_model) -> (model, messages,
+  non_default_params)`. Use the same message and parameter types that B4124's `get_chat_completion_prompt` and B4050's
+  contracts use, and return `messages` and `non_default_params` exactly as given, moved and not copied. When
+  `ignore_prompt_manager_model` is true it returns the model unchanged. Otherwise the new model is the old one with the
+  FIRST occurrence of `litellm_agent/` removed, wherever it sits in the text (`str.replace(prefix, "", 1)`). So
+  `litellm_agent/gpt-4` becomes `gpt-4`, `openai/litellm_agent/gpt-4` becomes `openai/gpt-4`, a model without the text is
+  unchanged, and only one occurrence goes (`litellm_agent/litellm_agent/x` becomes `litellm_agent/x`).
+  `async_get_chat_completion_prompt` takes the same inputs and does the same thing; it delegates to the sync method.
+  The other inputs of the Python methods (prompt id and variables, the dynamic callback params, the prompt spec, label
+  and version, the tools, the logging object, and the optional-params ignore flag) are not read, so the Rust methods do
+  not take them; the caller B4058 passes only what is used.
+
+  Also expose `is_litellm_agent_model(model: &str) -> bool`, true when the model starts with `litellm_agent/`. LiteLLM's
+  hook gate (`_should_run_prompt_management_hooks` in litellm_logging.py) and the router use that start-of-string test to
+  run the hook without a prompt id, so their Rust callers need one shared definition. It is a prefix test, unlike the
+  strip, which finds the first occurrence anywhere.
+scope:
+  paths:
+    - crates/betterlite-prompts/src/litellm_agent_resolver.rs
+    - crates/betterlite-prompts/src/litellm_agent_resolver/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/litellm_agent/litellm_agent_model_resolver.py#L1-L79
+    why: The whole resolver, its prefix constant and the ignore flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1015-L1032
+    why: The start-of-string gate that runs the hook without a prompt id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4558-L4563
+    why: The router's own litellm_agent prefix test.
+dod:
+  - text: >-
+      The model has its first litellm_agent/ removed wherever it appears, only once, and a model without it is unchanged.
+    proof: [resolver-tests]
+  - text: >-
+      With ignore_prompt_manager_model true the model is unchanged; messages and params always come back as given.
+    proof: [resolver-tests]
+  - text: >-
+      The async method returns what the sync one returns, and is_litellm_agent_model is a start-of-string test.
+    proof: [resolver-tests]
+checks:
+  optional: []
+  commands:
+    - id: resolver-tests
+      why: fails while the strip rule, the ignore flag, the async delegate or the prefix test is missing
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^litellm_agent_resolver::/)'
+oracle_cases: []
+deviations:
+  - what: The Rust methods take only the inputs the hook reads.
+    why: The Python signature carries ten unused inputs that exist for the shared hook interface; Rust passes only what is used.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/litellm_agent/litellm_agent_model_resolver.py#L25-L47
+out_of_scope:
+  - "Registering the resolver under the name litellm_agent (custom_logger_registry.py L72 and the litellm_agent arms of _init_custom_logger_compatible_class): B189 is merged without it, so B8655 adds the arm to its callback logger catalog and implements B8560's CompatibleLoggerFactory over it."
+  - "Calling the hook from the completion path and the router: B4058 and the router tasks own the call sites. They should use is_litellm_agent_model for the gate."
+pitfalls:
+  - >-
+    The strip is `replace(prefix, "", 1)`, not `removeprefix`. A model such as `openai/litellm_agent/x` is changed.
+  - >-
+    Do not trim or lower-case anything else in the model name.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: standard
