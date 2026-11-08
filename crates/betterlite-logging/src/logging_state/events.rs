@@ -26,6 +26,26 @@ impl LoggingEvent {
     }
 }
 
+const ASYNC_CALL_TYPE_KEYS: [&str; 10] = [
+    "acompletion",
+    "aresponses",
+    "aembedding",
+    "aimage_generation",
+    "atranscription",
+    "allm_passthrough_route",
+    "aanthropic_messages",
+    "agenerate_content",
+    "agenerate_content_stream",
+    "_arealtime",
+];
+
+#[must_use]
+pub fn is_sync_litellm_request(litellm_params: &IndexMap<String, Json>) -> bool {
+    !ASYNC_CALL_TYPE_KEYS
+        .iter()
+        .any(|key| matches!(litellm_params.get(*key), Some(Json::Bool(true))))
+}
+
 #[must_use]
 pub fn should_run_logging(state: &LoggingState, event: LoggingEvent) -> bool {
     if state.model_call_details.get(event.key()) == Some(&Json::Bool(true)) {
