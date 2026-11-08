@@ -474,7 +474,9 @@ fn predicates_combine_the_flags_like_litellm(
 ) {
     let capabilities = build_capabilities(flags);
     assert_eq!(capabilities.has_streaming_callbacks(), expected.0);
-    assert_eq!(capabilities.needs_per_chunk_streaming_hook(), expected.1);
+    let per_chunk = capabilities.streaming.has_streaming_chunk_override
+        || capabilities.guardrails.has_guardrail;
+    assert_eq!(per_chunk, expected.1);
     assert_eq!(capabilities.streaming.has_iterator_override, flags.0);
     assert_eq!(capabilities.guardrails.has_guardrail, flags.2);
 }

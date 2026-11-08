@@ -63,14 +63,6 @@ impl CallbackCapabilities {
     }
 
     #[must_use]
-    pub const fn needs_per_chunk_streaming_hook(&self) -> bool {
-        if self.streaming.has_streaming_chunk_override {
-            return true;
-        }
-        self.guardrails.has_guardrail
-    }
-
-    #[must_use]
     pub fn partition_post_call(&self) -> (CallbackList, CallbackList) {
         let mut guardrails = Vec::new();
         let mut others = Vec::new();
