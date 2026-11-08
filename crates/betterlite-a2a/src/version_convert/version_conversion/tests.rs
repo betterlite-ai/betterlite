@@ -372,6 +372,21 @@ fn keeps_a_stream_event_whose_envelope_cannot_be_converted() {
     r#"{"id":"t","historyLength":"4"}"#,
     r#"{"id":"t","historyLength":4}"#
 )]
+#[case::get_from_float_integer(
+    "tasks/get",
+    r#"{"id":"t","historyLength":4.0}"#,
+    r#"{"id":"t","historyLength":4}"#
+)]
+#[case::get_from_float_string(
+    "tasks/get",
+    r#"{"id":"t","historyLength":"4.0"}"#,
+    r#"{"id":"t","historyLength":4}"#
+)]
+#[case::get_from_spaced_string(
+    "tasks/get",
+    r#"{"id":"t","historyLength":" 4","tenant":"x"}"#,
+    r#"{"id":"t","historyLength":" 4","tenant":"x"}"#
+)]
 #[case::set_from_parent(
     "tasks/pushNotificationConfig/set",
     r#"{"parent":"tasks/T1/config","configId":"c1","config":{"url":"https://cb","token":"tok"}}"#,
@@ -423,6 +438,8 @@ fn lowers_request_params(#[case] method: &str, #[case] input: &str, #[case] expe
 #[case::string_page_size(r#"{"pageSize":"5"}"#, r#"{"pageSize":5}"#)]
 #[case::non_proto_status_name(r#"{"status":"working"}"#, "{}")]
 #[case::numeric_status(r#"{"status":2}"#, r#"{"status":"working"}"#)]
+#[case::numeric_string_status(r#"{"status":"2"}"#, r#"{"status":"working"}"#)]
+#[case::float_status(r#"{"status":2.0}"#, r#"{"status":"working"}"#)]
 #[case::unmapped_status(r#"{"status":"TASK_STATE_BOGUS","tenant":"x"}"#, r#"{"tenant":"x"}"#)]
 #[case::history_and_timestamp(
     r#"{"historyLength":3,"statusTimestampAfter":"2026-01-01T00:00:00Z"}"#,
@@ -504,6 +521,17 @@ fn upgrades_a_03_card_to_the_10_shape() {
 #[test]
 fn keeps_a_card_that_lacks_required_03_members() {
     let card = object(r#"{"name":"agent","url":"https://a","capabilities":{}}"#);
+    assert_eq!(
+        normalize_agent_card(card.clone(), ProtocolVersion::V1_0),
+        card
+    );
+}
+
+#[test]
+fn keeps_a_card_whose_skill_lacks_required_members() {
+    let card = object(
+        r#"{"name":"agent","description":"d","version":"1","url":"https://a","capabilities":{},"defaultInputModes":["text"],"defaultOutputModes":["text"],"skills":[{"id":"s","name":"n"}]}"#,
+    );
     assert_eq!(
         normalize_agent_card(card.clone(), ProtocolVersion::V1_0),
         card

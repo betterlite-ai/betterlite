@@ -10,8 +10,9 @@ mod records;
 
 use records::{
     CancelTaskRequest, DeletePushConfigParams, DeletePushConfigRequest, GetPushConfigRequest,
-    GetTaskRequest, ListPushConfigsRequest, ListTasksParams, ListTasksRequest, PushConfigParams,
-    SubscribeToTaskRequest, TaskIdParams, TaskQueryParams, TaskState, integer_value,
+    GetTaskRequest, IntegerRepr, ListPushConfigsRequest, ListTasksParams, ListTasksRequest,
+    PushConfigParams, SubscribeToTaskRequest, TaskIdParams, TaskQueryParams, TaskState,
+    integer_value,
 };
 
 const V0_3_TASK_STATES: [&str; 9] = [
@@ -133,15 +134,21 @@ fn lower_list_tasks(request: &AgentJson) -> Result<JsonObject, ConvertError> {
 fn task_state(value: TaskState) -> Option<String> {
     match value {
         TaskState::Name(name) => {
-            if !PROTO_TASK_STATES.contains(&name.as_str()) {
-                return None;
+            if PROTO_TASK_STATES.contains(&name.as_str()) {
+                return map_task_state(&name);
             }
-            map_task_state(&name)
+            let index = integer_value(IntegerRepr::Text(name), "status").ok()?;
+            state_name(index)
         }
-        TaskState::Number(index) => {
-            let position = usize::try_from(index).ok()?;
-            let name = PROTO_TASK_STATES.get(position)?;
-            map_task_state(name)
+        TaskState::Number(number) => {
+            let index = integer_value(IntegerRepr::Number(number), "status").ok()?;
+            state_name(index)
         }
     }
+}
+
+fn state_name(index: i64) -> Option<String> {
+    let position = usize::try_from(index).ok()?;
+    let name = PROTO_TASK_STATES.get(position)?;
+    map_task_state(name)
 }

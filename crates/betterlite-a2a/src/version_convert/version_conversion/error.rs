@@ -1,5 +1,3 @@
-use std::num::ParseIntError;
-
 use thiserror::Error;
 
 use crate::client::convert::ConvertError as PartConvertError;
@@ -19,11 +17,7 @@ pub(super) enum ConvertError {
     #[error("the A2A agent card has no interface a 0.3 client can use")]
     NoLegacyInterface,
     #[error("the A2A integer field {field} is not a number")]
-    Integer {
-        field: &'static str,
-        #[source]
-        source: ParseIntError,
-    },
+    Integer { field: &'static str },
     #[error("the A2A card is missing the required {field} member")]
     MissingCardField { field: &'static str },
 }

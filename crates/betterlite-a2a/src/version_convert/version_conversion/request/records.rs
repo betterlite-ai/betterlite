@@ -57,29 +57,41 @@ pub(super) struct ListTasksRequest {
     pub include_artifacts: Option<bool>,
 }
 
-// ProtoJSON accepts an integer either as a number or as a decimal string
+// ProtoJSON accepts an integer as a number or as a string, including integral floats
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub(super) enum IntegerRepr {
-    Number(i64),
+    Number(serde_json::Number),
     Text(String),
 }
 
 pub(super) fn integer_value(value: IntegerRepr, field: &'static str) -> Result<i64, ConvertError> {
-    match value {
-        IntegerRepr::Number(number) => Ok(number),
-        IntegerRepr::Text(text) => text
-            .trim()
-            .parse::<i64>()
-            .map_err(|source| ConvertError::Integer { field, source }),
+    let text = match value {
+        IntegerRepr::Number(number) => number.to_string(),
+        IntegerRepr::Text(text) => text,
+    };
+    parse_integer(&text).ok_or(ConvertError::Integer { field })
+}
+
+fn parse_integer(text: &str) -> Option<i64> {
+    if text.contains(' ') {
+        return None;
     }
+    if let Ok(number) = text.parse::<i64>() {
+        return Some(number);
+    }
+    let value: f64 = text.parse().ok()?;
+    if value.fract().abs() > f64::EPSILON {
+        return None;
+    }
+    format!("{value:.0}").parse::<i64>().ok()
 }
 
 #[derive(Deserialize)]
 #[serde(untagged)]
 pub(super) enum TaskState {
     Name(String),
-    Number(i64),
+    Number(serde_json::Number),
 }
 
 #[derive(Default, Deserialize)]

@@ -34,7 +34,7 @@ pub(super) fn upgrade(card: &JsonObject) -> Result<JsonObject, ConvertError> {
 }
 
 fn require_03_members(record: &Card) -> Result<(), ConvertError> {
-    let required = [
+    require_present(&[
         ("name", record.name.is_some()),
         ("description", record.description.is_some()),
         ("version", record.version.is_some()),
@@ -43,8 +43,23 @@ fn require_03_members(record: &Card) -> Result<(), ConvertError> {
         ("defaultInputModes", record.default_input_modes.is_some()),
         ("defaultOutputModes", record.default_output_modes.is_some()),
         ("skills", record.skills.is_some()),
-    ];
-    for (field, present) in required {
+    ])?;
+    require_nested_members(record)
+}
+
+// every nested record types_v03.AgentCard validates has its own required members
+#[rustfmt::skip]
+fn require_nested_members(record: &Card) -> Result<(), ConvertError> {
+    for skill in record.skills.iter().flatten() { require_present(&[("skills.id", skill.id.is_some()), ("skills.name", skill.name.is_some()), ("skills.description", skill.description.is_some()), ("skills.tags", skill.tags.is_some())])?; }
+    if let Some(provider) = &record.provider { require_present(&[("provider.organization", provider.organization.is_some()), ("provider.url", provider.url.is_some())])?; }
+    for extension in record.capabilities.iter().flat_map(|capabilities| capabilities.extensions.iter().flatten()) { require_present(&[("extensions.uri", extension.uri.is_some())])?; }
+    for signature in record.signatures.iter().flatten() { require_present(&[("signatures.protected", signature.protected.is_some()), ("signatures.signature", signature.signature.is_some())])?; }
+    for interface in record.additional_interfaces.iter().flatten() { require_present(&[("additionalInterfaces.url", interface.url.is_some()), ("additionalInterfaces.transport", interface.transport.is_some())])?; }
+    Ok(())
+}
+
+fn require_present(fields: &[(&'static str, bool)]) -> Result<(), ConvertError> {
+    for (field, present) in fields {
         if !present {
             return Err(ConvertError::MissingCardField { field });
         }
