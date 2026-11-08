@@ -1,7 +1,7 @@
 id: B3931
 milestone: M7 observability
 title: Native exporter options, truncation and health payloads
-status: todo
+status: done
 depends_on: [B254, B002]
 file: tasks/B3931-exporter-options.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/litellm_core_utils/litellm_logging.py"
 parent: B113
 split_from: B113
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 936
