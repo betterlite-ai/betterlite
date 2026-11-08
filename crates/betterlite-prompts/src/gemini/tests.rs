@@ -52,6 +52,7 @@ struct ResultCase {
 enum Failure {
     Arguments,
     MissingName,
+    Field(&'static str),
 }
 
 enum Scenario {
@@ -106,13 +107,23 @@ fn assert_invoke_failure(source: &str, failure: &Failure) {
     let message = parse_message(source);
     let error =
         convert_tool_calls_to_gemini(&message, Some("gemini-3-pro-preview"), false).unwrap_err();
-    assert!(
-        matches!(
-            (&error, failure),
-            (GeminiToolInvokesError::Arguments { .. }, Failure::Arguments)
+    match failure {
+        Failure::Arguments => assert!(
+            matches!(error, GeminiToolInvokesError::Arguments { .. }),
+            "unexpected {error}"
         ),
-        "unexpected {error}"
-    );
+        Failure::Field(path) => {
+            assert!(
+                matches!(error, GeminiToolInvokesError::Fields { .. }),
+                "unexpected {error}"
+            );
+            assert!(
+                error.to_string().contains(path),
+                "{error} does not name {path}"
+            );
+        }
+        Failure::MissingName => panic!("a missing name is a tool result failure"),
+    }
 }
 
 fn assert_result_failure(case: &ResultCase, failure: &Failure) {
@@ -166,6 +177,10 @@ fn assert_result_failure(case: &ResultCase, failure: &Failure) {
 #[case::malformed_arguments_fail(Scenario::InvokeFailure(
     r#"{"role":"assistant","content":"hi","tool_calls":[{"id":"call_1","type":"function","function":{"name":"f","arguments":"{"}}]}"#,
     Failure::Arguments,
+))]
+#[case::malformed_signatures_fail(Scenario::InvokeFailure(
+    r#"{"role":"assistant","content":"hi","tool_calls":[{"id":"call_1","type":"function","function":{"name":"f","arguments":"{}","provider_specific_fields":{"thought_signature":5}}}]}"#,
+    Failure::Field("thought_signature"),
 ))]
 #[case::too_many_tool_calls_fail(Scenario::TooManyCalls)]
 #[case::the_tool_call_limit_is_accepted(Scenario::MaxCalls)]
