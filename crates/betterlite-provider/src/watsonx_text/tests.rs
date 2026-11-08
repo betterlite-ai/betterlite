@@ -444,6 +444,7 @@ fn done_line_finishes_the_stream() {
 #[rstest]
 #[case::truncated(r#"data: {"results":"#)]
 #[case::not_an_object("data: []")]
+#[case::empty_object("data: {}")]
 #[case::blank("")]
 fn malformed_line_gives_the_empty_chunk(#[case] line: &str) {
     let chunk = decode_stream_line(line);

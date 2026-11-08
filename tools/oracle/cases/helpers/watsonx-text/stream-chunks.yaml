@@ -16,4 +16,5 @@ call:
       - 'data: [DONE]'
       - 'data: {"results":'
       - 'data: []'
+      - 'data: {}'
       - ''

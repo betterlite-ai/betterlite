@@ -1,3 +1,6 @@
+use std::collections::BTreeMap;
+
+use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -19,6 +22,9 @@ pub struct TextGenerationChunk {
 struct StreamChunkBody {
     #[serde(default)]
     results: Option<Vec<StreamResult>>,
+    // `elif stripped_json_chunk:` is Python truthiness, so an object with no keys never reaches chunk_parser
+    #[serde(flatten)]
+    fields: BTreeMap<String, Option<IgnoredAny>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,21 +54,21 @@ pub fn decode_stream_line(line: &str) -> TextGenerationChunk {
         .strip_prefix("data: ")
         .or_else(|| line.strip_prefix("data:"))
         .unwrap_or(line);
-    // serde also deserializes a struct from a JSON array, but only a parsed object reaches chunk_parser
+    // serde also deserializes a struct from a JSON array, but only a parsed non-empty object reaches chunk_parser
     let parsed = if stripped.trim_start().starts_with('{') {
         serde_json::from_str::<StreamChunkBody>(stripped).ok()
     } else {
         None
     };
-    let Some(body) = parsed else {
-        return TextGenerationChunk {
+    match parsed {
+        Some(body) if body.results.is_some() || !body.fields.is_empty() => chunk_from_body(body),
+        _ => TextGenerationChunk {
             text: String::new(),
             is_finished: false,
             finish_reason: Some(String::new()),
             usage: None,
-        };
-    };
-    chunk_from_body(body)
+        },
+    }
 }
 
 fn chunk_from_body(body: StreamChunkBody) -> TextGenerationChunk {
