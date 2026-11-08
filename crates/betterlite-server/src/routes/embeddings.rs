@@ -101,13 +101,15 @@ fn failure(error: &EmbeddingError, call_id: &str, deployment: Option<&ChatDeploy
             provider_message(response.status, &response.body, error)
         }
         EmbeddingError::Body { .. }
+        | EmbeddingError::Unsupported { .. }
         | EmbeddingError::Encode { .. }
         | EmbeddingError::Decode { .. }
         | EmbeddingError::Http { .. }
         | EmbeddingError::UnknownModel { .. }
         | EmbeddingError::UnsupportedProvider { .. }
         | EmbeddingError::MissingApiKey
-        | EmbeddingError::Endpoint { .. } => error.to_string(),
+        | EmbeddingError::Endpoint { .. }
+        | EmbeddingError::Mock { .. } => error.to_string(),
     };
     let body = ErrorBody {
         error: ErrorObject {
@@ -128,7 +130,9 @@ fn embedding_failure(error: &EmbeddingError) -> ProviderFailure {
         EmbeddingError::Provider { response } => {
             classify(response.status, &response.body, ErrorBodyKind::MessageOnly)
         }
-        EmbeddingError::UnknownModel { .. } | EmbeddingError::Body { .. } => ProviderFailure {
+        EmbeddingError::UnknownModel { .. }
+        | EmbeddingError::Body { .. }
+        | EmbeddingError::Unsupported { .. } => ProviderFailure {
             status: 400,
             error_type: String::from("invalid_request_error"),
             param: None,
@@ -146,7 +150,8 @@ fn embedding_failure(error: &EmbeddingError) -> ProviderFailure {
         EmbeddingError::Http { .. }
         | EmbeddingError::Decode { .. }
         | EmbeddingError::Encode { .. }
-        | EmbeddingError::Endpoint { .. } => ProviderFailure {
+        | EmbeddingError::Endpoint { .. }
+        | EmbeddingError::Mock { .. } => ProviderFailure {
             status: 500,
             error_type: String::from("internal_server_error"),
             param: None,
@@ -164,13 +169,15 @@ fn failure_headers_for_embedding(
             failure_headers(None, Some(&response.headers), call_id, deployment)
         }
         EmbeddingError::Body { .. }
+        | EmbeddingError::Unsupported { .. }
         | EmbeddingError::Encode { .. }
         | EmbeddingError::Decode { .. }
         | EmbeddingError::Http { .. }
         | EmbeddingError::UnknownModel { .. }
         | EmbeddingError::UnsupportedProvider { .. }
         | EmbeddingError::MissingApiKey
-        | EmbeddingError::Endpoint { .. } => {
+        | EmbeddingError::Endpoint { .. }
+        | EmbeddingError::Mock { .. } => {
             let chat_error = ChatError::UnknownModel {
                 model: String::new(),
             };

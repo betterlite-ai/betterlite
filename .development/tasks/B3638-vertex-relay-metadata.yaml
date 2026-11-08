@@ -1,11 +1,11 @@
 id: B3638
 title: Vertex passthrough metadata and Interactions usage
 description: >-
-  Build shared Vertex model/provider URL helpers, credentials records and Interactions usage projection for passthrough
+  Build shared Vertex model/provider URL helpers and Interactions usage projection for passthrough
   endpoints. Implement model extraction from URLs, provider/publisher resolution, Interactions route detection, and
   the response logging payload factory. Preserve response-model-before-request-model selection and treat absent
   model or usage as unpriceable. The common payload helper writes model and custom_llm_provider but not
-  model_call_details.response_cost when costing fails, keeping that asymmetry from the source. The response logging payload factory takes completion_cost through an injected trait declared in vertex_relay_metadata, since betterlite-vertex is a leaf that core, provider and logging use and it can't import betterlite-core. B3640 passes B068's cost service. Tests use a fake for the trait. Dependencies: B1668 InteractionsUsageObjectTransformation.is_interactions_usage_object and
+  model_call_details.response_cost when costing fails, keeping that asymmetry from the source. The response logging payload factory takes completion_cost through an injected trait declared in vertex_relay_metadata. The trait method takes the response (chat, embedding or image), the model, the custom_llm_provider, an optional call type (B3642 passes "create_video" and "vector_store_search" among others) and the optional vertex location, as the completion_cost calls in vertex_passthrough_logging_handler.py do. It is injected because betterlite-vertex is a leaf that core, provider and logging use and it can't import betterlite-core. B3640 passes B068's cost service. Tests use a fake for the trait. Dependencies: B1668 InteractionsUsageObjectTransformation.is_interactions_usage_object and
   transform_interactions_usage_object (betterlite-models::cost_usage). Errors in costing or model resolution
   surface as warnings with zero cost, leaving the spend row intact for downstream subscribers.
 scope:
@@ -24,8 +24,6 @@ references:
   why: Provider/publisher detection and custom LLM provider identification.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L754-L788
   why: Vertex response logging payload construction with cost calculation and model enrichment.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/vertex_ai.py#L1-L18
-  why: VertexPassThroughCredentials type with nullable project, location and credentials fields.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/usage_object_transformation.py
   why: InteractionsUsageObjectTransformation contract for detecting and transforming Interactions usage.
 dod:
@@ -46,11 +44,9 @@ dod:
 - text: Vertex response logging payload sets model, custom_llm_provider and response_cost in kwargs, and enriches
     logging_obj.model and model_call_details.
   proof: [logging-payload]
-- text: Response cost calculation uses completion_cost, through the injected trait, with vertex_location when available, and missing cost does
+- text: Response cost calculation uses completion_cost, through the injected trait (it takes the call type, the vertex_location and a chat, embedding or image response) and passes the location when available, and missing cost does
     not populate model_call_details.response_cost.
   proof: [cost-calculation]
-- text: VertexPassThroughCredentials has nullable vertex_project, vertex_location and vertex_credentials fields.
-  proof: [credentials-type]
 - text: Interactions handler calls transform_interactions_usage_object only when usage is a valid Interactions object.
   proof: [interactions-usage]
 checks:
@@ -80,12 +76,6 @@ checks:
   - id: cost-calculation
     why: Response cost calculation or logging_obj enrichment is missing or incorrect
     run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_relay_metadata::/)' -- cost
-  - id: credentials-type
-    why: VertexPassThroughCredentials is missing or fields are not nullable
-    run: >-
-      grep -q 'vertex_project.*Option' crates/betterlite-models/src/passthrough/vertex.rs
-      && grep -q 'vertex_location.*Option' crates/betterlite-models/src/passthrough/vertex.rs
-      && grep -q 'vertex_credentials.*Option' crates/betterlite-models/src/passthrough/vertex.rs
   - id: interactions-usage
     why: Interactions usage object validation or transformation is missing
     run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_relay_metadata::/)' -- interactions_usage
@@ -101,6 +91,7 @@ deviations:
     that depends on its absence.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L754-L788
 out_of_scope:
+- "VertexPassThroughCredentials: B3602 owns it in betterlite-server."
 - Vertex credential source resolution (project/location/credentials retrieval from config or runtime state).
 - Provider-response dispatch or selection (vertex_passthrough_handler and its branches, owned by B3642).
 - Batch prediction job handling (batch_prediction_jobs_handler and extract_model_name_from_vertex_path, owned by B3641).

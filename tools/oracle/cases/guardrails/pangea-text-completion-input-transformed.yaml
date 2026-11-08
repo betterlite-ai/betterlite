@@ -1,0 +1,22 @@
+kind: helper
+name: pangea-text-completion-input-transformed
+call:
+  b3785:
+    pre_call:
+      api_key: test-key
+      guardrail_name: pangea-ai-guard
+      call_type: text_completion
+      prompt: "Here is an SSN for one my employees: 078-05-1120"
+      input_recipe: guard_llm_request
+      answer:
+        status: 200
+        headers: {}
+        body:
+          result:
+            blocked: false
+            transformed: true
+            output:
+              messages:
+                - {role: user, content: "Here is an SSN for one my employees: <US_SSN>"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+model_list:
+  - model_name: mock-chat
+    litellm_params:
+      model: openai/gpt-4o
+      mock_response: This is a mock request
+  - model_name: mock-embedding
+    litellm_params:
+      model: openai/text-embedding-3-small
+      mock_response: [0.1, 0.2]
+  - model_name: mock-object
+    litellm_params:
+      model: openai/gpt-4o
+      mock_response:
+        id: given
+        choices:
+          - message: {content: hello}
+        usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}

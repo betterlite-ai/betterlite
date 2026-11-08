@@ -1,0 +1,170 @@
+id: B3683
+title: Guardrail startup, database reconciliation and legacy guardrail config
+description: >-
+  Build what starts guardrails and keeps them in step with the database. It covers the reconciliation pair of litellm/proxy/guardrails/guardrail_registry.py (`reconcile_db_guardrails`, `sync_guardrail_from_db`), its two module-level objects (`IN_MEMORY_GUARDRAIL_HANDLER` and `GUARDRAIL_RECONCILE_LOCK`) and all of litellm/proxy/guardrails/init_guardrails.py. The auto router compression file (auto_router_compression.py) is not built here, see out_of_scope.
+
+  Module-level state is forbidden, so the two objects become one value built at startup and passed to whoever needs it: `GuardrailRuntime<R: GuardrailRows>`. Types from B3682 (crates/betterlite-guardrails/src/guardrail_registry/) are used by name: `InMemoryGuardrailHandler`, `GuardrailRegistry`, `GuardrailRows`, `GuardrailCallback`, `GuardrailFactories`, `RegistryError`, `params_changed`. `Guardrail`, `GuardrailDefinitionLocation` (`db`, `config`) and the config `Settings` with `guardrails: Vec<Guardrail>` and `rejected: Vec<RejectedGuardrail>` are B3662's (betterlite-config, sections::guardrail_params). `GuardrailItem`, `GuardrailValue`, `CallbackArgs` and `default_enabled_roles` are B3660's (sections::guardrail_identity::item). Read those files for exact field names, and read B3682's error.rs for the `RegistryError` variants before you write code. Everything goes in crates/betterlite-guardrails/src/guardrail_startup.rs and guardrail_startup/, except the config section named below. Add the `sync` feature to the crate's `tokio` line (and `macros`, `rt` as dev features if tests.rs needs them).
+
+  Files under guardrail_startup/, each below 300 lines: `error.rs`, `reconcile.rs`, `runtime.rs`, `from_config.rs`, `router_list.rs`, `poll.rs`, `legacy.rs`, `starter.rs`, `tests.rs`.
+
+  `error.rs` holds `StartupError`, a thiserror enum: `Guardrail { guardrail_name: String, source: RegistryError }` (startup stops), `Legacy { message: String }` and `Database { source: RegistryError }`. No variant holds a parameter value, since the params carry keys.
+
+  `reconcile.rs` adds two methods to `InMemoryGuardrailHandler` in an `impl` block of this module, using only its public methods. `reconcile_db_guardrails(&mut self, db_guardrail_ids: &BTreeSet<String>) -> Vec<String>`: collect the ids of the held guardrails whose `get_source` is `db` and that are not in the set, log each at info ("Reconcile: removing stale DB-backed guardrail '{id}' from memory (deleted in DB by another pod)"), call `delete_in_memory_guardrail` for each and return the ids in the order found. A `config` guardrail is never touched, even when its id is missing from the set. `sync_guardrail_from_db(&mut self, guardrail: Guardrail) -> Result<Option<Guardrail>, RegistryError>`: no `guardrail_id` logs the error "Cannot sync guardrail without guardrail_id" and returns `Ok(None)`. When `params_changed(self.get_guardrail_by_id(id), &guardrail)` is true, log at info "Guardrail '{name}' (ID: {id}) params changed, re-initializing..." and return `reinitialize_guardrail(guardrail, GuardrailDefinitionLocation::Db)`. Otherwise call `initialize_guardrail(guardrail, Db)`: the id is already held, so it builds nothing, rewrites the source to `db` and returns the held guardrail. That is exactly LiteLLM's "make sure the source marker reflects db" branch (a config entry whose id later collided with a DB row becomes `db`).
+
+  `runtime.rs` holds `GuardrailRuntime<R: GuardrailRows>` with `new(handler: InMemoryGuardrailHandler, registry: GuardrailRegistry<R>)`, `handler(&self) -> &tokio::sync::RwLock<InMemoryGuardrailHandler>` and `registry(&self) -> &GuardrailRegistry<R>`. It also holds a private `tokio::sync::Mutex<()>`, LiteLLM's `GUARDRAIL_RECONCILE_LOCK`. The caller builds the handler with B3682's `InMemoryGuardrailHandler::new(factories, env, strict_modes, global_skip_tool_message)` once at startup and shares the runtime behind an `Arc`. Request code reads callbacks through `handler().read()`. LiteLLM readers take no lock, but Rust needs the RwLock for memory safety. The reconcile mutex only serialises writers of the poll and read-through paths, as in LiteLLM. `sync_locked(&self, guardrail: Guardrail) -> Result<Option<Guardrail>, RegistryError>` takes the mutex, then the handler write lock, and calls `sync_guardrail_from_db`. It is the body LiteLLM's `_resync_guardrails` (registry_read_through.py, owned by B124) runs after it has found the active row. Always take the mutex first and the write lock second, and never hold the write lock across an await on the database.
+
+  `from_config.rs` holds `GuardrailRuntime::start_from_config(&self, settings: &guardrail_params::Settings) -> Result<Vec<RouterGuardrail>, StartupError>`, LiteLLM's `init_guardrails_v2`. First, each `settings.rejected` entry is logged at error as "Skipping guardrail '{guardrail_name}': invalid configuration, proxy is starting WITHOUT this guardrail: {reason}" (B3662 collects them while loading the file and leaves the log to this task). Then, for each guardrail in file order, take the write lock and call `initialize_guardrail(guardrail, Config)`. LiteLLM catches only `ValueError` and `TypeError` here, so the same split applies. These `RegistryError` variants are the ValueError ones: `Unsupported`, `MissingGuardrailType`, `ScanOnlyUnsupported`, `ScanOnlyWithSkipTool`, `Base` and `InitFailed`. They get the same error log line as above with the error text, and the loop continues. Any other variant (the `hide-secrets` missing enterprise package error is a plain `Exception` in LiteLLM) stops startup with `StartupError::Guardrail`. Collect the guardrails that came back, then return `router_guardrail_list` of them (see router_list.rs). LiteLLM only calls `init_guardrails_v2` when the config has a non-empty `guardrails` list and passes the router in. Here the caller (the startup code of B124) skips the call when the list is empty and hands the returned list to the router.
+
+  `router_list.rs` holds `RouterGuardrail { guardrail_name: String, id: Option<String>, guardrail: String, mode: LitellmParamsMode, api_key: Option<SecretString>, api_base: Option<String> }` and `router_guardrail_list(guardrails: &[Guardrail]) -> Vec<RouterGuardrail>`, LiteLLM's `_populate_router_guardrail_list` minus the router assignment. One entry per guardrail in order, `guardrail_name` empty when the guardrail has none, and the four params copied from the guardrail as it is held (so an `os.environ/` api_key is already replaced). LiteLLM also stores the callback in the entry. The router asks `GuardrailRuntime::handler()` by `id` instead, so the router crate imports only this plain type and never the callback. No task text owns `Router.guardrail_list` or `get_available_guardrail` yet: B016 and B302 name neither, B086 only lists `get_available_guardrail` in a coverage line, and `Router.__init__` belongs to B162, and B162 has no task file. The router receives the list as a plain `Vec<RouterGuardrail>` from the startup code of B124. betterlite-guardrails does not depend on betterlite-router (checked in both Cargo.toml files), so the router side may import `RouterGuardrail` from here, and that must stay true. The function logs at debug "Populated router guardrail_list with {n} guardrails".
+
+  `poll.rs` holds `GuardrailRuntime::poll_database(&self)`, the body of `ProxyConfig._init_guardrails_in_db` in proxy_server.py (owned by B124; B124 calls it every poll tick and once at startup). Under the reconcile mutex: read `registry().get_all_guardrails_from_db()`. If that fails, log the error and return, touching nothing, because a failed read must not purge memory. Otherwise, for each row, remember its id and call `sync_guardrail_from_db` under the write lock. A row that fails is logged at error as "skipping guardrail '{name}' (ID: {id}): {error}" and the loop continues. After the loop call `reconcile_db_guardrails` with the collected ids, under the write lock.
+
+  `legacy.rs` holds the old `litellm_settings.guardrails` path, LiteLLM's `initialize_guardrails`. The config part is a new section `crates/betterlite-config/src/sections/legacy_guardrails.rs` and `legacy_guardrails/` (`Raw`, `Settings`, `impl Section for Raw`, `tests.rs`). It reads `litellm_settings.guardrails`, a list of maps from guardrail name to a spec: `callbacks` (required list of text), `default_on` (false by default), `logging_only` (null by default), `enabled_roles` (the three default roles when the key is absent, null when it is null, via B3660's `default_enabled_roles`) and `callback_args` (empty by default). A spec with any other key, or with its own `guardrail_name` key, fails the load, as LiteLLM's `GuardrailItem(**v, guardrail_name=k)` raises `TypeError` and the proxy does not start. Use `#[serde(deny_unknown_fields)]` on the spec. `Settings` has `items: Vec<GuardrailItem>` in file order (LiteLLM's `all_guardrails`) and `by_name: BTreeMap<String, GuardrailItem>` where a later item with the same name replaces the earlier one (LiteLLM's `litellm.guardrail_name_config_map`). Other crates read that map as `config.sections.legacy_guardrails.by_name`. A section for `litellm_settings.guardrails` is new, so config loading must no longer report it as `ConfigError::Unsupported`.
+
+  In legacy.rs, `LegacyCallbackStarter` is a trait with `is_started(&self, callback: &str) -> bool` (LiteLLM's `callback in litellm.callbacks`) and `start(&mut self, callbacks: &[String], callback_args: &CallbackArgs) -> Result<(), StartupError>` (LiteLLM's `initialize_callbacks_on_proxy`, implemented in this task by `starter.rs`). `LegacyPlan { callbacks: Vec<String>, callback_args: CallbackArgs }` and `plan_legacy_callbacks(items: &[GuardrailItem], started: &dyn LegacyCallbackStarter) -> LegacyPlan` follow the loop in LiteLLM. Go through the items in order. For each, replace the top-level keys of `callback_args` with the item's `callback_args` (a shallow update, not a deep merge). If `default_on` is true, then for each callback: add it to `callbacks` when it is not started and not already listed, and, if `logging_only` is `Some(true)` and the callback is `presidio`, set `callback_args["presidio"]` to `{"logging_only": true}`, replacing whatever the user gave for presidio. The `presidio` rewrite runs even when presidio is already started. `start_legacy_guardrails(settings: &legacy_guardrails::Settings, starter: &mut dyn LegacyCallbackStarter) -> Result<(), StartupError>` builds the plan and calls `starter.start` only when `callbacks` is not empty. A failure is logged at error as "error initializing guardrails {error}" and returned as `StartupError::Legacy`. LiteLLM logs and re-raises, so the proxy stops.
+
+  `starter.rs` holds `RegistryStarter<'a> { registry: &'a mut CallbackRegistry, flags: FeatureFlags }`, the only implementer of `LegacyCallbackStarter`. B189 is merged and does not port `initialize_callbacks_on_proxy`, so this task ports only the part the legacy default_on guardrails need, on top of B189's registry (`betterlite_logging::registry::CallbackRegistry`). `is_started` is true when `registry.list_identities(CallbackList::Callbacks)` holds an identity whose `class_name` equals the name (LiteLLM's `callback in litellm.callbacks`). `start` calls `CallbackRegistry::register_configured(name, &CallbackVars::new(), CallbackList::Callbacks, flags)` for each name in order (LiteLLM's `litellm.callbacks.extend(imported_list)`) and maps a `RegistryError` to `StartupError::Legacy` with its text. `Registration::AlreadyRegistered` and `SkippedCapacity` are not errors. The registry takes no per-callback args, so `callback_args` is not forwarded here and stays in the plan for the guardrail callbacks. Not ported: the named branches for compression_interception, websearch_interception, code_interpreter_interception, the enterprise hooks and custom `get_instance_fn` imports, the `prometheus` mount and the non-list `value` branch. Until B189's catalog installs an adapter for a name, `register_configured` returns `UnavailableAdapter` and startup stops, the way LiteLLM stops on a callback that fails to load. Add `betterlite-logging = { path = "../betterlite-logging" }` to this crate's Cargo.toml (betterlite-logging does not depend on betterlite-guardrails).
+
+  Oracle: the helper operation for this task takes `function` (only `legacy_plan`), `guardrails` (the list as written in the config) and `started` (callback names already in `litellm.callbacks`). The Python side clears `init_guardrails.all_guardrails` and `litellm.guardrail_name_config_map`, sets `litellm.callbacks` to `started`, replaces `init_guardrails.initialize_callbacks_on_proxy` with a recorder and calls `initialize_guardrails(guardrails, premium_user=True, config_file_path="", litellm_settings={})`. Both sides answer `{"callbacks": [...], "callback_args": {...} or null, "by_name": {name: {"callbacks": [...], "default_on": bool, "logging_only": bool or null, "enabled_roles": [...] or null, "callback_args": {...}}}}`. `callbacks` is sorted, because LiteLLM builds it from a set, and `callback_args` is null when the recorder was never called. The Rust side parses the list with the section's own decoder and calls `plan_legacy_callbacks`. Cases: one default_on guardrail with callback args; a guardrail that is not default_on (its args are still collected, no callback starts); a callback that is already started; `logging_only` true with `presidio` and user args for presidio; two guardrails with the same name (the map keeps the second, both feed the plan); a spec without `enabled_roles`.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/guardrail_startup.rs
+    - crates/betterlite-guardrails/src/guardrail_startup/**
+    - crates/betterlite-guardrails/Cargo.toml
+    - crates/betterlite-config/src/sections/legacy_guardrails.rs
+    - crates/betterlite-config/src/sections/legacy_guardrails/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/guardrail-startup/**
+    - tools/oracle/fuzz/corpus/helper_case/guardrail-startup-*
+    - tools/oracle/helpers/b3683.py
+    - tools/oracle/helpers/b3683/**
+    - tools/oracle/src/helpers/guardrails/b3683.rs
+    - tools/oracle/src/helpers/guardrails/b3683/**
+  lint_tables: false
+
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-startup/legacy-default-on-args.yaml
+  - tools/oracle/cases/helpers/guardrail-startup/legacy-not-default-on.yaml
+  - tools/oracle/cases/helpers/guardrail-startup/legacy-already-started.yaml
+  - tools/oracle/cases/helpers/guardrail-startup/legacy-presidio-logging-only.yaml
+  - tools/oracle/cases/helpers/guardrail-startup/legacy-duplicate-name.yaml
+  - tools/oracle/cases/helpers/guardrail-startup/legacy-default-roles.yaml
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L19-L49
+    why: init_guardrails_v2, the ValueError and TypeError skip with its log line, and the call that fills the router list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L52-L97
+    why: The router guardrail_list entries and which four params they copy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L101-L152
+    why: The legacy initialize_guardrails loop, the default_on callback set, the presidio logging_only rewrite and the log and re-raise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L726-L746
+    why: reconcile_db_guardrails, db entries only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L860-L893
+    why: sync_guardrail_from_db with the source rewrite, and the two module-level objects.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8795-L8832
+    why: The poll tick that holds the lock, syncs each row, skips a bad row and then reconciles.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7008-L7018
+    why: init_guardrails_v2 runs only for a non-empty top-level guardrails list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6380-L6388
+    why: The legacy call from litellm_settings.guardrails and the assignment of the returned map.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L133-L156
+    why: The caller that takes the lock around sync_guardrail_from_db.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L164-L198
+    why: GuardrailItemSpec and the GuardrailItem constructor defaults.
+
+dod:
+  - text: reconcile_db_guardrails removes the held guardrails whose source is db and whose id is not in the given set, returns their ids, and never touches a config guardrail.
+    proof: [reconcile-tests]
+  - text: sync_guardrail_from_db returns None without an id, re-initializes on changed params, and for unchanged params keeps the callbacks and sets the source to db.
+    proof: [sync-tests]
+  - text: GuardrailRuntime holds the handler, the registry and the reconcile mutex, and sync_locked takes the mutex before the write lock.
+    proof: [runtime-tests]
+  - text: start_from_config starts the config guardrails in file order, logs and skips a rejected entry and a ValueError-class start failure, and stops startup on any other error.
+    proof: [from-config-tests]
+  - text: router_guardrail_list gives one entry per guardrail with name, id, guardrail, mode, api_key and api_base as held.
+    proof: [router-list-tests]
+  - text: poll_database syncs each active row, skips a bad row, reconciles the stale db entries, and leaves memory alone when the database read fails.
+    proof: [poll-tests]
+  - text: The legacy_guardrails section loads litellm_settings.guardrails with LiteLLM's defaults, keeps the last item per name in by_name, and rejects an unknown spec key.
+    proof: [legacy-config-tests]
+  - text: plan_legacy_callbacks and start_legacy_guardrails match LiteLLM on every oracle case and call the starter only when a callback is to start.
+    proof: [legacy-plan-tests, oracle]
+  - text: RegistryStarter implements LegacyCallbackStarter on B189's CallbackRegistry, so is_started sees a registered callback and start maps a RegistryError to StartupError::Legacy (test `guardrail_startup::tests::legacy_starter_registers_callbacks`).
+    proof: [legacy-plan-tests]
+  - text: The crate builds with the new tokio feature and the new section is wired into the config crate.
+    proof: [crate-build]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: reconcile-tests
+      why: reconcile removes a config entry, keeps a stale db entry or returns the wrong ids
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_startup::tests::reconcile_/)'
+    - id: sync-tests
+      why: sync rebuilds unchanged guardrails, skips changed ones or leaves the source as config
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_startup::tests::sync_/)'
+    - id: runtime-tests
+      why: sync_locked does not serialise with the poll or takes the locks in the wrong order
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_startup::tests::runtime_/)'
+    - id: from-config-tests
+      why: startup keeps a bad entry, aborts on a skippable one or hides the skip log
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_startup::tests::from_config_/)'
+    - id: router-list-tests
+      why: the router list loses a guardrail or a copied param
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_startup::tests::router_list_/)'
+    - id: poll-tests
+      why: a bad row stops the poll, or a failed read purges memory
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_startup::tests::poll_/)'
+    - id: legacy-config-tests
+      why: the legacy section misses a default, a key or the last-wins map
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::legacy_guardrails::/)'
+    - id: legacy-plan-tests
+      why: the legacy plan differs from LiteLLM in callbacks, args or the presidio rewrite
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_startup::tests::legacy_/)'
+    - id: crate-build
+      why: the new section or the tokio feature does not build
+      run: cargo check --locked -p betterlite-guardrails -p betterlite-config --all-targets && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-guardrails/src/guardrail_startup crates/betterlite-config/src/sections/legacy_guardrails)"
+
+deviations:
+  - what: >-
+      `IN_MEMORY_GUARDRAIL_HANDLER`, the registry instance and `GUARDRAIL_RECONCILE_LOCK` are fields of one `GuardrailRuntime` built at startup and shared by `Arc`, and the handler sits behind a `tokio::sync::RwLock`.
+    why: Module-level state is forbidden in this codebase. LiteLLM readers take no lock, but Rust cannot share a mutable handler without one.
+  - what: >-
+      `init_guardrails_v2` returns the router guardrail list and the caller assigns it to the router. The entries have no `callback` field.
+    why: A callback object is built by the guardrails crate, so the entry holds only the id and the router asks the runtime for the callback.
+  - what: >-
+      The default_on callbacks of the legacy path are passed on in the order of first appearance. LiteLLM passes `list(set)`, whose order changes between runs.
+    why: A fixed order is the only stable choice, and no behavior depends on the set order.
+  - what: >-
+      The legacy path hands the callbacks to a `LegacyCallbackStarter` trait, and `starter.rs` implements it on B189's `CallbackRegistry`. Only the registration of named callbacks is ported.
+    why: LiteLLM's `initialize_callbacks_on_proxy` (callback_utils.py) is not ported by B189 (merged), and the legacy default_on guardrails need only registration by name, so `starter.rs` does that on B189's registry.
+  - what: >-
+      A legacy spec with an unknown key fails the config load with a betterlite-config error, not a Python `TypeError` traceback at startup.
+    why: The effect is the same (the proxy does not start) and the config crate reports load errors with the path.
+
+out_of_scope:
+  - "auto_router_compression.py in full (`suppressed_compression_guardrails`, `model_hop_compression_armed`, `AutoRouterCompressionPolicy`, `policy_from_litellm_params`, `policy_for_model`, `is_compression_guardrail`, `arm_pre_call`, `messages_for_routing` and the two context variables): B3546 owns it and its covers include the file. B3546 depends on this task for the runtime and the read-through lookup."
+  - "registry_read_through.py (`_resync_guardrails`, `get_initialized_guardrail_with_read_through`) and the call sites in proxy_server.py: B124. It calls `sync_locked` and `poll_database`."
+  - "The routes that call `sync_guardrail_from_db` without the lock (guardrail_endpoints.py): B3684 to B3687. They take the handler write lock and call the method directly."
+  - "initialize_callbacks_on_proxy in callback_utils.py beyond registration by name (the named enterprise and integration branches, custom imports, the prometheus mount): no task owns it. B189 owns the registry that `starter.rs` calls."
+  - "reinitialize_guardrail, `_has_guardrail_params_changed`, `initialize_guardrail`, `delete_in_memory_guardrail` and the registry class: B3682."
+  - "The legacy readers of `guardrail_name_config_map` (guardrail_helpers.py, lakera_ai.py): B3663 and B888 for the helpers, the Lakera task for lakera_ai.py. They read `config.sections.legacy_guardrails.by_name`."
+  - "Router.guardrail_list and Router.get_available_guardrail: no task text owns them yet, see router_list.rs above (B162 holds Router.__init__ but has no task file)."
+
+pitfalls:
+  - "`reconcile_db_guardrails` only drops `db` entries, so a guardrail from the config file stays when the database has no row for it."
+  - "`sync_guardrail_from_db` with unchanged params does not rebuild anything, but it sets the source to `db`, so a config guardrail whose id matches a DB row turns into a `db` guardrail and the next reconcile can remove it."
+  - "`init_guardrails_v2` catches only `ValueError` and `TypeError`. The `hide-secrets` error is a plain `Exception`, so a config with that guardrail stops the proxy while a bad `mode` only skips the entry."
+  - "The poll skips reconcile when the database read fails. Running it with an empty id set would delete every db guardrail from memory."
+  - "In the legacy loop the presidio `logging_only` rewrite sits outside the `callback not in litellm.callbacks` test, so it also applies when presidio is already started."
+  - "`callback_specific_params.update(...)` runs for every legacy item, default_on or not, and replaces whole top-level keys. Two items with args for the same callback keep only the later args."
+  - "Two legacy items with one name both stay in `all_guardrails` and both feed the default_on callbacks. Only the name map keeps just the later one."
+  - "`initialize_callbacks_on_proxy` is not called when no callback is to start, so `callback_args` is unused then."
+  - "The router list copies `api_key` and `api_base` after the `os.environ/` replacement, so it holds the secret itself. `RouterGuardrail` must keep `api_key` as `SecretString` so Debug never prints it."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

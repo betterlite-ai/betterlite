@@ -4,28 +4,25 @@ pub mod execution;
 pub mod provider_error;
 pub mod response;
 
+use crate::chat::execution::ChatError;
+use crate::chat::response::ChatResponse;
+use crate::embedding::EmbeddingResponse;
+use crate::text_completion_policy::reply::mapped_finish_reason;
+use betterlite_config::sections::mock_response::failure::MockError;
+use betterlite_config::sections::mock_response::selection::{MockPermission, MockPlan};
+use betterlite_config::sections::mock_response::{MockResponse, MockToolCall, UsageDefaults};
+use betterlite_http::proxy::UpstreamResponse;
+use http::HeaderMap;
 use indexmap::IndexMap;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use serde_with::skip_serializing_none;
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 // LiteLLM reads these request keys itself and never forwards them, and betterlite does not act on them yet
-const LITELLM_REQUEST_KEYS: [&str; 13] = [
-    "api_base",
-    "api_key",
-    "api_version",
-    "base_url",
-    "caching",
-    "context_window_fallback_dict",
-    "extra_headers",
-    "fallbacks",
-    "max_retries",
-    "mock_response",
-    "num_retries",
-    "stream_timeout",
-    "timeout",
-];
+const LITELLM_REQUEST_KEYS: &str = "api_base api_key api_version base_url caching context_window_fallback_dict extra_headers fallbacks max_retries mock_delay mock_timeout num_retries stream_timeout timeout";
 
 #[derive(Debug, Error)]
 pub enum RequestError {
@@ -37,7 +34,45 @@ pub enum RequestError {
     #[error("betterlite does not support the {name} request parameter yet")]
     Unsupported { name: String },
 }
-
+pub type MockChatBuilder =
+    fn(&MockPlan<'_>, UsageDefaults, &str, &str, u64) -> Result<ChatResponse, MockError>;
+pub type MockEmbeddingBuilder =
+    fn(Option<&MockResponse>, &str) -> Result<EmbeddingResponse, MockError>;
+#[derive(Debug, Clone, Default)]
+pub struct MockSettings {
+    pub responses: BTreeMap<String, MockResponse>,
+    pub usage: UsageDefaults,
+    pub permission: MockPermission,
+}
+// the shared failure classifier maps this status to LiteLLM's type and code; no provider was called
+#[must_use]
+pub fn mock_failure(error: MockError) -> ChatError {
+    if error == MockError::Timeout {
+        return ChatError::Timeout;
+    }
+    ChatError::Provider {
+        response: Box::new(UpstreamResponse {
+            status: error.status().unwrap_or(500),
+            headers: HeaderMap::new(),
+            body: Vec::new(),
+        }),
+    }
+}
+// LiteLLM's Choices maps a given finish_reason and keeps the raw value when the mapping changed it
+#[must_use]
+pub fn choice_finish_reason(raw: Option<&str>) -> (String, BTreeMap<String, Value>) {
+    let Some(given) = raw else {
+        return (String::from("stop"), BTreeMap::new());
+    };
+    let mapped = mapped_finish_reason(given);
+    let native = (mapped != given).then(|| {
+        BTreeMap::from([(
+            String::from("native_finish_reason"),
+            Value::String(given.to_owned()),
+        )])
+    });
+    (mapped.to_owned(), native.unwrap_or_default())
+}
 #[skip_serializing_none]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ChatRequest {
@@ -69,7 +104,6 @@ pub struct ChatRequest {
     #[serde(flatten)]
     pub passthrough: IndexMap<String, Value>,
 }
-
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct StreamOptions {
@@ -81,17 +115,80 @@ impl ChatRequest {
     pub fn parse(bytes: &[u8]) -> Result<Self, RequestError> {
         let request: Self =
             serde_json::from_slice(bytes).map_err(|source| RequestError::Body { source })?;
-        if let Some(name) = request
-            .passthrough
-            .keys()
-            .find(|name| LITELLM_REQUEST_KEYS.contains(&name.as_str()))
-        {
+        if let Some(name) = request.passthrough.keys().find(|name| {
+            LITELLM_REQUEST_KEYS
+                .split(' ')
+                .any(|known| known == name.as_str())
+        }) {
             return Err(RequestError::Unsupported { name: name.clone() });
         }
         Ok(request)
     }
 }
 
+// LiteLLM strips a client mock field before it reads it, so a denied field is never decoded
+pub fn client_mock(
+    fields: &IndexMap<String, Value>,
+    permission: MockPermission,
+) -> Result<(Option<MockResponse>, Option<Vec<MockToolCall>>), serde_json::Error> {
+    let (response, tool_calls) = (fields.get("mock_response"), fields.get("mock_tool_calls"));
+    if !permission.allow_client_mock_response {
+        for field in ["mock_response", "mock_tool_calls"] {
+            if fields.contains_key(field) {
+                tracing::warn!(
+                    field,
+                    "a client-supplied mock field is stripped; set allow_client_mock_response on the key or team metadata to keep it"
+                );
+            }
+        }
+        return Ok((None, None));
+    }
+    Ok((decode(response)?, decode(tool_calls)?))
+}
+fn decode<T>(value: Option<&Value>) -> Result<Option<T>, serde_json::Error>
+where
+    T: DeserializeOwned,
+{
+    value
+        .filter(|raw| !raw.is_null())
+        .map(|raw| {
+            let mut owned = raw.clone();
+            encode_arguments(&mut owned);
+            serde_json::from_value(owned)
+        })
+        .transpose()
+}
+// Function json-encodes an object arguments or parameters value, and a tool call ignores keys betterlite does not model
+fn encode_arguments(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            if let Some(Value::Object(function)) = object.get_mut("function") {
+                let given = function
+                    .remove("arguments")
+                    .filter(|given| !given.is_null())
+                    .or_else(|| function.remove("parameters").filter(Value::is_object));
+                let text = given.map_or_else(String::new, |raw| {
+                    raw.as_str()
+                        .map_or_else(|| raw.to_string(), ToOwned::to_owned)
+                });
+                function.retain(|key, _| key.as_str() == "name");
+                function.insert(String::from("arguments"), Value::String(text));
+            }
+            if object.contains_key("function") {
+                object.retain(|key, _| matches!(key.as_str(), "id" | "type" | "function"));
+            }
+            object.values_mut().for_each(encode_arguments);
+        }
+        Value::Array(values) => values.iter_mut().for_each(encode_arguments),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+// LiteLLM strips the provider prefix before mock_completion receives the model
+pub(crate) fn mock_model(litellm_model: &str) -> &str {
+    litellm_model
+        .split_once('/')
+        .map_or(litellm_model, |(_, model)| model)
+}
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
@@ -102,7 +199,6 @@ pub enum Role {
     Tool,
     Function,
 }
-
 #[skip_serializing_none]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ChatMessage {
@@ -115,14 +211,12 @@ pub struct ChatMessage {
     #[serde(flatten)]
     pub passthrough: IndexMap<String, Value>,
 }
-
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum MessageContent {
     Text(String),
     Parts(Vec<ContentPart>),
 }
-
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ContentPart {
     #[serde(rename = "type")]

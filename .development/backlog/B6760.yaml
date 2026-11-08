@@ -1,0 +1,14 @@
+id: B6760
+milestone: M9 agents and mcp
+title: MCP upstream OAuth endpoint rules and flow resolution
+status: todo
+depends_on: [B6590, B2305, B4654]
+file: tasks/B6760-mcp-oauth-endpoint-rules.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"
+parent: B139
+split_from: B6592
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

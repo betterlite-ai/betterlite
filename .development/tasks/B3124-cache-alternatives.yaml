@@ -1,0 +1,198 @@
+id: B3124
+title: Select authorized warm cache alternatives within the routing deadline
+description: >-
+  Build the proxy side of cache-aware complexity routing in betterlite-server, module `routing::cache_alternatives`.
+  After the complexity router classifies a request, this module may swap the classified model for a model in the same
+  or a higher tier that already holds a fresh prompt cache entry and costs less. It returns `Option<CacheAwareChoice>`
+  and never fails the request: every error, timeout or doubt returns None and the classified model stays.
+  B337's router code calls it through the `CachedModelChooser` trait and stamps the routing decision. B3123 owns `AnthropicCacheRouting`
+  (from_body, request_body, supports, is_warm, predict, cost, fits, count_tokens) and the cache scenario types, and this
+  task only calls them.
+
+  Types. `CacheAwareChoice` (model, tier, deployment_id, original_cost and estimated_cost) is B337's record in betterlite-router, and this module imports it. B337 also defines the trait `CachedModelChooser`; `CacheAlternatives` implements it here, and its `choose` method is `choose_cached_model` below. A private `Candidate` holds model, tier and the deployment record.
+  Everything the module reads from the live proxy (router lookups, the caller, the shared cache, the limiter, request
+  transform and compaction state) comes in through one trait `CacheRoutingHost` that the caller builds, passed in
+  the constructor of a `CacheAlternatives` struct. No globals. LiteLLM's `counter_for_model` closure becomes a small struct
+  `CapacityCounter` that implements B3123's token-counter trait: it holds the host, the caller, the model name and
+  the request data, takes `request_capacity` (B3055) for that model, runs `AnthropicCacheRouting::count_tokens`, and returns
+  None when capacity is denied or counting fails.
+
+  `eligible_models(config, decision)` returns the (tier name, model) pairs that may compete, or an empty list when
+  cache routing must not touch this request. It returns empty when the decision tier is missing or not in
+  `config.tier_names()`, when the decision cause is not one of the classified causes (heuristic_scorer, heuristic_v2,
+  reasoning_override, llm_classifier, llm_v2_classifier, jev_classifier, capability_classifier,
+  heuristic_first_short_circuit, hybrid_short_circuit, classifier_plugin), when the config has custom tiers, plugins,
+  adaptive, session_affinity or a classification_mode other than every_request, when any tier model entry carries
+  litellm_params, or when any tier value is not a plain model name (a pool). Otherwise it keeps the tiers at or above
+  the decision tier in `tier_names()` order, and drops a model that already appeared in an earlier kept tier, so a model
+  used in two tiers competes once under its first tier.
+
+  `supported_router_marker(host, alias, request_kwargs)` is true only when the alias has at least one deployment
+  (from `deployments_for_request`) and every one has litellm model `auto_router/complexity_router` and sets nothing
+  beyond model, complexity_router_config, rpm, tpm, tags, timeout, stream_timeout and num_retries.
+
+  `candidate(...)` takes the single deployment for a model (zero or several deployments, a blocked deployment, an empty
+  model_info.id, or `AnthropicCacheRouting::supports` false all give None). `available(...)` is true when
+  `can_key_call_resolved_model` (B886) accepts the caller for the model and the router's healthy deployments
+  (`async_get_healthy_deployments`, B302 and B844) include the candidate's model_info.id. Any error there means false.
+
+  `select_cached_model` runs the steps in this order and stops at the first None. 1) The setting `cache_aware_routing`
+  is on, the response has a routing decision, `AnthropicCacheRouting::from_body(body)` is Some and the caller has an
+  api_key. 2) `eligible_models` is not empty and the response model is one of them. 3) Build candidates; the one for
+  the response model is the original and is required; all others are alternatives. 4) Run `is_warm` for every alternative
+  concurrently (with `now` or the current time) and keep the warm ones; none warm returns None before any authorization
+  or provider call. 5) Run `available` for the original and the warm alternatives concurrently; the original must be
+  available, and only available alternatives stay. 6) For the original and each stay, take the output limit from
+  `params_for_model(tier, model)["max_tokens"]`, else `provider.requested_output_limit`; any limit that is not a positive
+  integer returns None. 7) Run `predict` for all compared candidates concurrently with a `CapacityCounter` each. 8) Cost each
+  arm with `min(config.cache_aware_routing_output_tokens, limit)`; a None original cost returns None. 9) Read the time
+  again (`now` if given). Keep an alternative only when its cost is Some and strictly below the original cost, its
+  cache_state is "warm" or "partial", its evidence exists and `expires_at` is after that second time, it has an estimate,
+  and `fits(deployment, estimate total_tokens, limit)` is true. 10) Return the lowest estimated_cost; on a tie in cost
+  the earlier tier order wins.
+
+  `choose_cached_model` is the entry point and the body of `CachedModelChooser::choose`. Outer check: `cache_aware_routing` on, a response with a routing decision,
+  and `eligible_models` not empty. Then each of these returns None: the proxy's router is not the one passed in; the host reports routing plugins configured (see below); the host reports request transforms (B3123 `has_request_transforms`); context compaction
+  is pending for the request (B336 `compaction_pending`); the decision's router_model_name is not a supported router
+  marker. The caller is the `user_api_key_auth` entry under the metadata key picked by B206's metadata-name helper
+  (`metadata` or `litellm_metadata`); a missing caller returns None, and so does a caller with a non-empty per-key `config`.
+  Routing plugins. LiteLLM fills `Router.routing_plugins` only from the `plugins` list in `router_settings` (proxy_server.py `resolve_routing_plugins`, called at L6978 for `router_settings.plugins`; the L5015 caller resolves `complexity_router_config.plugins`, which belongs to the complexity router and never reaches `Router.routing_plugins`). So the production `CacheRoutingHost` answers "are routing plugins configured" with true when the loaded config has a non-empty `router_settings.plugins` list. No betterlite config section holds that key yet (`sections/routing_plugins.rs` is an empty stub owned by B363), so the host reads the raw `router_settings` entry from the loaded config and does not depend on B363. A missing key, null or empty list is false.
+  The `proxy_server_request` entry must parse as url (string), body (JSON object) and headers (string map), else None.
+  None is returned when any of these request fields is set and non-empty: guardrails, cache_control_injection_points,
+  api_key, api_base, extra_headers, prompt_id, mock_response, model_info, custom_llm_provider. The body then comes from
+  `AnthropicCacheRouting::request_body(url, headers, body, request_kwargs, messages)`, None when unsupported. The host must
+  hand over the v3 parallel request limiter through B3055's `main_limiter` accessor; if the proxy runs another limiter, return None. The whole call runs under a
+  deadline of `cache_aware_routing_timeout_ms` (default 2000, must be above 0) with `tokio::time::timeout`; when it expires the
+  inner future is dropped and the result is None. Every error becomes None with one debug log line "Cache-aware routing
+  unavailable; keeping the classified model". The config values come from B374's ComplexityRouterConfig:
+  cache_aware_routing (default false), cache_aware_routing_output_tokens (default 1024, may be 0) and
+  cache_aware_routing_timeout_ms (default 2000).
+
+  Errors. The module has its own error enum `CacheAlternativesError` for the steps that can fail (host lookups,
+  parsing the proxy request, counting). Only `choose_cached_model` swallows them into None; the lower functions return
+  Result so tests can see the cause. Use B3123's and B886's types, never new copies.
+
+  Tests. Fakes of `CacheRoutingHost` and a fake provider live in the tests module. Group the tests as
+  `cache_alternatives::eligibility::`, `cache_alternatives::candidates::`, `cache_alternatives::selection::` and
+  `cache_alternatives::entry::` so the checks below match them. Port the 15 cases of LiteLLM's
+  tests/unit/proxy/common_utils/test_cache_aware_routing.py (warm stronger model wins, output price outweighs saving,
+  no discount without fresh authorized evidence, disabled setting touches nothing, equal costs keep the classified model,
+  repeated model counted once, output cap, per-candidate output limit, authorization order before provider counts, failure
+  semantics and the model that cannot fit).
+
+scope:
+  paths:
+    - crates/betterlite-server/src/routing/cache_alternatives.rs
+    - crates/betterlite-server/src/routing/cache_alternatives/**
+    - tools/oracle/cases/helpers/cache-alternatives/**
+    - "tools/oracle/fuzz/corpus/helper_case/cache_alternatives-*"
+    - tools/oracle/helpers/b3124.py
+    - tools/oracle/helpers/b3124/**
+    - tools/oracle/src/helpers/server/b3124.rs
+    - tools/oracle/src/helpers/server/b3124/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L24-L74
+    why: Option names allowed on a router marker, the classified-cause list, and the request and choice record shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L75-L145
+    why: eligible_models, candidate, availability check and supported_router_marker.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L146-L226
+    why: select_cached_model, the order of warm check, authorization, limits, prediction and strict cost comparison.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L229-L343
+    why: Proxy-state gates, per-key config and request-field refusals, limiter capacity counting and the timeout wrapper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L4427-L4472
+    why: The only caller; shows what the router does with a choice (B337 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1428-L1447
+    why: The three cache_aware_routing settings and their defaults and bounds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/README.md#L70-L108
+    why: The documented supported surface and the cases that keep the classified route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/common_utils/test_cache_aware_routing.py
+    why: LiteLLM's own tests, the model for the native tests.
+
+dod:
+  - text: eligible_models returns the deduplicated tiers at or above the decision tier and returns empty for every refused configuration (unknown tier, unlisted cause, custom tiers, plugins, adaptive, session_affinity, other classification_mode, litellm_params on a tier entry, pool tier values).
+    proof: [eligibility-tests, oracle]
+  - text: supported_router_marker accepts only auto_router/complexity_router markers with the listed options and rejects an alias with no deployment.
+    proof: [eligibility-tests]
+  - text: candidate and available skip multi-deployment, blocked, id-less and unsupported deployments, and treat an authorization or health error as unavailable.
+    proof: [candidate-tests]
+  - text: select_cached_model makes no authorization or provider count call when no alternative is warm, and requires the original to be available.
+    proof: [selection-tests]
+  - text: select_cached_model picks only a strictly cheaper alternative with cache_state warm or partial, unexpired evidence and a fit within the model limits, and breaks a cost tie in favour of the classified model.
+    proof: [selection-tests]
+  - text: Output tokens are capped per candidate at min(cache_aware_routing_output_tokens, limit) and a non-positive limit returns None.
+    proof: [selection-tests]
+  - text: choose_cached_model returns None for each gate (foreign router, plugins, request transforms, pending compaction, bad marker, missing caller, per-key config, bad proxy request, refused request field, wrong limiter).
+    proof: [entry-tests]
+  - text: choose_cached_model returns None when the deadline expires or any step errors, and logs the debug line once.
+    proof: [entry-tests]
+  - text: The helper cases for eligible_models match LiteLLM through the oracle.
+    proof: [oracle, helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: eligibility-tests
+      why: eligible_models or supported_router_marker tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routing::cache_alternatives::tests::eligibility::/)'
+    - id: candidate-tests
+      why: candidate or availability tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routing::cache_alternatives::tests::candidates::/)'
+    - id: selection-tests
+      why: warm filtering, authorization order, limits or the cost comparison tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routing::cache_alternatives::tests::selection::/)'
+    - id: entry-tests
+      why: the proxy-state gates, the deadline or the error-to-None tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routing::cache_alternatives::tests::entry::/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3124)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3124 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3124/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/cache_alternatives-*")" &&
+        grep -lE '^[[:space:]]+b3124:' tools/oracle/fuzz/corpus/helper_case/cache_alternatives-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/cache-alternatives/eligible-tier-ladder.yaml
+  - tools/oracle/cases/helpers/cache-alternatives/eligible-refused-configs.yaml
+
+deviations:
+  - what: Errors inside the optional steps are typed `CacheAlternativesError` values that `choose_cached_model` turns into None, instead of one broad `except Exception`.
+    why: The rules forbid broad catches. A client sees the same thing as in LiteLLM, the classified model, and the debug log line is kept.
+  - what: A max_tokens output limit that is not a positive integer cannot arrive as a bool or a string, since params are typed.
+    why: Python's duck typing beyond declared types follows docs/compatibility.md; only zero and negative limits are cases.
+  - what: The deadline drops the in-flight prediction futures when it expires.
+    why: Python's wait_for cancels the task the same way; Rust cancellation by drop ends provider count requests that are still open.
+
+out_of_scope:
+  - "AnthropicCacheRouting and its helpers (from_body, request_body, supports, is_warm, predict, cost, fits, count_tokens), pricing and has_request_transforms: B3123."
+  - "Cache observations and the observation store: B3122. Prompt parsing and target resolution: B3120 and B3121."
+  - "ComplexityRouter._apply_prompt_cache_routing, the decision stamp and the cache_aware_routing config section: B337."
+  - "can_key_call_resolved_model: B886. request_capacity: B3055. compaction_pending: B336. ComplexityRouterConfig: B374."
+  - "Router.deployments_for_request, get_model_list and async_get_healthy_deployments: B302 and B844."
+  - "The /cost/predict-cache and prompt-caching-requests routes: B3125."
+
+pitfalls:
+  - "Equal cost keeps the classified model; the comparison is strictly less than."
+  - "The deadline covers `_choose_cached_model` as a whole, including the limiter-gated token counts, so a slow count returns None rather than a late choice."
+  - "The expiry check reads the clock again after predictions finish; a fresh evidence entry that expired during the counts is dropped. With `now` given, both reads use it."
+  - "Alternatives are authorized and health-checked only when warm, and the original is checked in the same batch; a failed original check returns None even with a good alternative."
+  - "Candidates need exactly one deployment per tier model group; two deployments for one model make that model absent, and an absent original returns None."
+  - "The metadata key is `metadata` or `litellm_metadata` depending on the endpoint, so read it through the shared name helper, not a fixed key."
+  - "A caller whose key has a non-empty `config` is refused, since per-key config can reroute the call after the comparison."
+  - "Only the v3 parallel request limiter is accepted; its `request_capacity` is taken for each count, and a denied count means no estimate, not an error."
+  - "The request refusal list tests truthiness (an empty guardrails list passes), and it includes `model_info` and `custom_llm_provider`."
+  - "A model repeated across tiers competes once under its first tier name, but the tier floor still comes from the decision tier."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
