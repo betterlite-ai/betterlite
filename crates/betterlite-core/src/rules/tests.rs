@@ -6,7 +6,7 @@ use betterlite_error::envelope::WireField;
 use rstest::rstest;
 
 use crate::mock::chat::{self, ChatAnswer};
-use crate::rules::{RuleDecision, RuleError, RuleEvaluator, RulePhase, post_call, pre_call};
+use crate::rules::{RuleDecision, RuleError, RuleEvaluator, RulePhase, evaluate};
 
 struct Fixed<'rules> {
     rules: &'rules [Option<RuleDecision>],
@@ -33,6 +33,7 @@ impl RuleEvaluator for Unreachable {
 #[case::pre_false_rejects(RulePhase::PreCall, Some("answer"), vec![Some(RuleDecision::Boolean(true)), Some(RuleDecision::Boolean(false))], true)]
 #[case::pre_dict_false_passes(RulePhase::PreCall, Some("answer"), vec![Some(RuleDecision::Dict { decision: Some(false), message: None })], false)]
 #[case::pre_not_callable_is_skipped(RulePhase::PreCall, Some("answer"), vec![None, Some(RuleDecision::Boolean(false))], true)]
+#[case::pre_none_input_is_an_error(RulePhase::PreCall, None, vec![Some(RuleDecision::Boolean(true))], true)]
 #[case::post_true_allows(RulePhase::PostCall, Some("answer"), vec![Some(RuleDecision::Boolean(true))], false)]
 #[case::post_false_rejects(RulePhase::PostCall, Some("answer"), vec![Some(RuleDecision::Boolean(false))], true)]
 #[case::post_dict_true_allows(RulePhase::PostCall, Some("answer"), vec![Some(RuleDecision::Dict { decision: Some(true), message: None })], false)]
@@ -47,16 +48,21 @@ fn call_rules_tests_behavior(
     #[case] rejected: bool,
 ) {
     let evaluator = Fixed { rules: &rules };
-    let result = match phase {
-        RulePhase::PreCall => pre_call(&evaluator, input.unwrap_or_default(), "gpt-4o"),
-        RulePhase::PostCall => post_call(&evaluator, input, "gpt-4o"),
-    };
-    assert_eq!(result.is_err(), rejected);
+    assert_eq!(
+        evaluate(phase, &evaluator, input, "gpt-4o").is_err(),
+        rejected
+    );
 }
 
 #[test]
 fn post_call_without_an_input_skips_the_evaluator() {
-    post_call(&Unreachable, None, "gpt-4o").unwrap();
+    evaluate(RulePhase::PostCall, &Unreachable, None, "gpt-4o").unwrap();
+}
+
+#[test]
+fn pre_call_without_an_input_is_an_error() {
+    let error = evaluate(RulePhase::PreCall, &Unreachable, None, "gpt-4o").unwrap_err();
+    assert!(matches!(error, RuleError::MissingInput));
 }
 
 #[test]
@@ -65,12 +71,21 @@ fn post_call_uses_the_message_a_dict_decision_names() {
         decision: Some(false),
         message: Some(String::from("refused by policy")),
     })];
-    let error = post_call(&Fixed { rules: &rules }, Some("answer"), "gpt-4o").unwrap_err();
+    let error = evaluate(
+        RulePhase::PostCall,
+        &Fixed { rules: &rules },
+        Some("answer"),
+        "gpt-4o",
+    )
+    .unwrap_err();
     let RuleError::Rejected {
         phase,
         model,
         message,
-    } = error;
+    } = error
+    else {
+        panic!("a rejecting rule answers with RuleError::Rejected");
+    };
     assert_eq!(phase, RulePhase::PostCall);
     assert_eq!(model, "gpt-4o");
     assert_eq!(message, "refused by policy");
@@ -79,16 +94,32 @@ fn post_call_uses_the_message_a_dict_decision_names() {
 #[test]
 fn post_call_falls_back_to_the_fixed_message() {
     let rules = [Some(RuleDecision::Boolean(false))];
-    let error = post_call(&Fixed { rules: &rules }, Some("answer"), "gpt-4o").unwrap_err();
-    let RuleError::Rejected { message, .. } = error;
+    let error = evaluate(
+        RulePhase::PostCall,
+        &Fixed { rules: &rules },
+        Some("answer"),
+        "gpt-4o",
+    )
+    .unwrap_err();
+    let RuleError::Rejected { message, .. } = error else {
+        panic!("a rejecting rule answers with RuleError::Rejected");
+    };
     assert_eq!(message, "LLM Response failed post-call-rule check");
 }
 
 #[test]
 fn pre_call_carries_the_fixed_message_and_the_phase() {
     let rules = [Some(RuleDecision::Boolean(false))];
-    let error = pre_call(&Fixed { rules: &rules }, "answer", "gpt-4o").unwrap_err();
-    let RuleError::Rejected { phase, message, .. } = error;
+    let error = evaluate(
+        RulePhase::PreCall,
+        &Fixed { rules: &rules },
+        Some("answer"),
+        "gpt-4o",
+    )
+    .unwrap_err();
+    let RuleError::Rejected { phase, message, .. } = error else {
+        panic!("a rejecting rule answers with RuleError::Rejected");
+    };
     assert_eq!(phase, RulePhase::PreCall);
     assert_eq!(message, "LLM Response failed post-call-rule check");
 }
@@ -96,7 +127,13 @@ fn pre_call_carries_the_fixed_message_and_the_phase() {
 #[test]
 fn a_rule_rejection_classifies_as_an_api_response_validation_error() {
     let rules = [Some(RuleDecision::Boolean(false))];
-    let error = post_call(&Fixed { rules: &rules }, Some("answer"), "gpt-4o").unwrap_err();
+    let error = evaluate(
+        RulePhase::PostCall,
+        &Fixed { rules: &rules },
+        Some("answer"),
+        "gpt-4o",
+    )
+    .unwrap_err();
     let metadata = error.classify().metadata();
     assert_eq!(metadata.status_code, 500);
     assert_eq!(metadata.error_type, WireField::Null);
@@ -122,10 +159,22 @@ fn a_mock_chat_answer_feeds_the_post_call_rules() {
         decision: Some(false),
         message: None,
     })];
-    drop(post_call(&Fixed { rules: &reject }, Some(content), "gpt-4o").unwrap_err());
+    let rejected = evaluate(
+        RulePhase::PostCall,
+        &Fixed { rules: &reject },
+        Some(content),
+        "gpt-4o",
+    );
+    drop(rejected.unwrap_err());
     let allow = [Some(RuleDecision::Dict {
         decision: None,
         message: None,
     })];
-    post_call(&Fixed { rules: &allow }, Some(content), "gpt-4o").unwrap();
+    evaluate(
+        RulePhase::PostCall,
+        &Fixed { rules: &allow },
+        Some(content),
+        "gpt-4o",
+    )
+    .unwrap();
 }

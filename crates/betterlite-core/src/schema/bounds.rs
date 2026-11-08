@@ -4,12 +4,24 @@ const SCALAR_BYTES: usize = 8;
 const CONTAINER_BYTES: usize = 2;
 const QUOTES: usize = 2;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SchemaCheck {
+    // normalization may truncate a deep schema and never follows a reference, so it only measures size
+    Size,
+    // validation also refuses a schema too deep to compile and any reference outside the document
+    Validation,
+}
+
 // the schema is measured before anything reads it, so a huge document never reaches normalization or the validator
-pub(super) fn check_size(schema: &SchemaJson, limits: &SchemaLimits) -> Result<(), SchemaError> {
-    let mut pending = vec![schema];
+pub(super) fn check_schema(
+    schema: &SchemaJson,
+    limits: &SchemaLimits,
+    check: SchemaCheck,
+) -> Result<(), SchemaError> {
+    let mut pending: Vec<(&SchemaJson, Option<&str>, usize)> = vec![(schema, None, 0_usize)];
     let mut nodes = 0_usize;
     let mut bytes = 0_usize;
-    while let Some(value) = pending.pop() {
+    while let Some((value, key, depth)) = pending.pop() {
         nodes = nodes.saturating_add(1);
         if nodes > limits.max_nodes {
             return Err(SchemaError::TooManyNodes {
@@ -17,54 +29,22 @@ pub(super) fn check_size(schema: &SchemaJson, limits: &SchemaLimits) -> Result<(
             });
         }
         add_bytes(&mut bytes, value_bytes(value), limits)?;
-        match value {
-            SchemaJson::Object(object) => {
-                for (key, child) in object {
-                    add_bytes(&mut bytes, key.len().saturating_add(QUOTES), limits)?;
-                    pending.push(child);
-                }
-            }
-            SchemaJson::Array(items) => pending.extend(items),
-            SchemaJson::Null
-            | SchemaJson::Bool(_)
-            | SchemaJson::Number(_)
-            | SchemaJson::String(_) => {}
+        if let Some(name) = key {
+            add_bytes(&mut bytes, name.len().saturating_add(QUOTES), limits)?;
         }
-    }
-    Ok(())
-}
-
-const fn add_bytes(
-    bytes: &mut usize,
-    amount: usize,
-    limits: &SchemaLimits,
-) -> Result<(), SchemaError> {
-    *bytes = bytes.saturating_add(amount);
-    if *bytes > limits.max_schema_bytes {
-        return Err(SchemaError::SchemaTooLarge {
-            limit: limits.max_schema_bytes,
-        });
-    }
-    Ok(())
-}
-
-// every reference a validator may follow has to stay inside the document, so no fetch or file read can start
-pub(super) fn check_references(
-    schema: &SchemaJson,
-    limits: &SchemaLimits,
-) -> Result<(), SchemaError> {
-    let mut pending = vec![(schema, 0_usize)];
-    while let Some((value, depth)) = pending.pop() {
+        if check == SchemaCheck::Validation {
+            check_reference(value, key, depth, limits)?;
+        }
+        let next = depth.saturating_add(1);
         match value {
             SchemaJson::Object(object) => {
-                for (key, child) in object {
-                    reject_external_reference(key, child)?;
-                    push_child(&mut pending, child, depth, limits)?;
+                for (child_key, child) in object {
+                    pending.push((child, Some(child_key.as_str()), next));
                 }
             }
             SchemaJson::Array(items) => {
                 for child in items {
-                    push_child(&mut pending, child, depth, limits)?;
+                    pending.push((child, None, next));
                 }
             }
             SchemaJson::Null
@@ -74,6 +54,20 @@ pub(super) fn check_references(
         }
     }
     Ok(())
+}
+
+fn check_reference(
+    value: &SchemaJson,
+    key: Option<&str>,
+    depth: usize,
+    limits: &SchemaLimits,
+) -> Result<(), SchemaError> {
+    if depth > limits.max_depth {
+        return Err(SchemaError::SchemaTooDeep {
+            limit: limits.max_depth,
+        });
+    }
+    key.map_or_else(|| Ok(()), |name| reject_external_reference(name, value))
 }
 
 fn reject_external_reference(key: &str, value: &SchemaJson) -> Result<(), SchemaError> {
@@ -89,19 +83,17 @@ fn reject_external_reference(key: &str, value: &SchemaJson) -> Result<(), Schema
     Ok(())
 }
 
-fn push_child<'schema>(
-    pending: &mut Vec<(&'schema SchemaJson, usize)>,
-    value: &'schema SchemaJson,
-    depth: usize,
+const fn add_bytes(
+    bytes: &mut usize,
+    amount: usize,
     limits: &SchemaLimits,
 ) -> Result<(), SchemaError> {
-    let next = depth.saturating_add(1);
-    if next > limits.max_depth {
-        return Err(SchemaError::SchemaTooDeep {
-            limit: limits.max_depth,
+    *bytes = bytes.saturating_add(amount);
+    if *bytes > limits.max_schema_bytes {
+        return Err(SchemaError::SchemaTooLarge {
+            limit: limits.max_schema_bytes,
         });
     }
-    pending.push((value, next));
     Ok(())
 }
 

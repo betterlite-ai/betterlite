@@ -2,7 +2,7 @@ use betterlite_config::sections::mock_response::MockResponse;
 use betterlite_config::sections::mock_response::failure::MockError;
 use betterlite_config::sections::mock_response::selection::MockPlan;
 use betterlite_core::mock::chat::{self, ChatAnswer};
-use betterlite_core::rules::{RuleDecision, RuleError, RuleEvaluator, post_call, pre_call};
+use betterlite_core::rules::{RuleDecision, RuleError, RuleEvaluator, RulePhase, evaluate};
 use betterlite_openai::chat::mock_failure;
 use serde::Deserialize;
 
@@ -16,17 +16,12 @@ impl crate::helpers::Helper for Op {
             rules: &input.rules,
         };
         let text = rule_input(input)?;
-        match input.phase {
-            Phase::Pre => {
-                let content = text.as_deref().ok_or_else(missing_input)?;
-                pre_call(&evaluator, content, &input.model)
-                    .map_err(|error| rule_failure(&error))?;
-            }
-            Phase::Post => {
-                post_call(&evaluator, text.as_deref(), &input.model)
-                    .map_err(|error| rule_failure(&error))?;
-            }
-        }
+        let phase = match input.phase {
+            Phase::Pre => RulePhase::PreCall,
+            Phase::Post => RulePhase::PostCall,
+        };
+        evaluate(phase, &evaluator, text.as_deref(), &input.model)
+            .map_err(|error| rule_failure(&error))?;
         Ok(serde_json::Value::Bool(true))
     }
 }
@@ -97,47 +92,40 @@ fn rule_input(input: &RuleCall) -> Result<Option<String>, Box<crate::helpers::He
 }
 
 fn rule_failure(error: &RuleError) -> Box<crate::helpers::HelperError> {
-    let metadata = error.classify().metadata();
-    Box::new(crate::helpers::HelperError {
-        class: String::from("APIResponseValidationError"),
-        status: Some(metadata.status_code),
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
+    let (class, status) = match error {
+        RuleError::Rejected { .. } => (
+            "APIResponseValidationError",
+            Some(error.classify().metadata().status_code),
+        ),
+        RuleError::MissingInput => ("RuleInput", None),
+    };
+    failure(class, status, error.to_string())
 }
 
 fn mock_answer_failure(error: MockError) -> Box<crate::helpers::HelperError> {
     let facts = mock_failure(error).failure();
-    Box::new(crate::helpers::HelperError {
-        class: String::from("MockException"),
-        status: Some(facts.status),
-        error_type: None,
-        param: None,
-        code: None,
-        message: String::from("the mock answer failed"),
-    })
-}
-
-fn missing_input() -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
-        class: String::from("RuleInput"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: String::from("a pre-call rule needs an input"),
-    })
+    failure(
+        "MockException",
+        Some(facts.status),
+        String::from("the mock answer failed"),
+    )
 }
 
 fn object_answer() -> Box<crate::helpers::HelperError> {
+    failure(
+        "RuleInput",
+        None,
+        String::from("a rule input needs a text mock_response"),
+    )
+}
+
+fn failure(class: &str, status: Option<u16>, message: String) -> Box<crate::helpers::HelperError> {
     Box::new(crate::helpers::HelperError {
-        class: String::from("RuleInput"),
-        status: None,
+        class: class.to_owned(),
+        status,
         error_type: None,
         param: None,
         code: None,
-        message: String::from("a rule input needs a text mock_response"),
+        message,
     })
 }

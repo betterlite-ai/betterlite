@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use betterlite_error::error::ErrorClass;
 use rstest::rstest;
 
-use super::bounds::check_references;
+use super::bounds::{SchemaCheck, check_schema};
 use super::normalize::{normalize_json_schema_types, normalize_tool_schema};
 use super::validate::validate_schema;
 use super::{SchemaError, SchemaJson, SchemaLimits};
@@ -327,7 +327,7 @@ fn format_keywords_are_annotations() {
 #[test]
 fn a_local_reference_is_kept() {
     let schema = serde_json::json!({"$ref": "", "definitions": {"x": {"type": "string"}}});
-    check_references(&schema, &SchemaLimits::default()).unwrap();
+    check_schema(&schema, &SchemaLimits::default(), SchemaCheck::Validation).unwrap();
 }
 
 #[test]

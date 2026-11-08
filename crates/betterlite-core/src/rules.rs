@@ -37,6 +37,8 @@ pub enum RuleError {
         model: String,
         message: String,
     },
+    #[error("a pre-call rule check needs the message buffer")]
+    MissingInput,
 }
 
 impl RuleError {
@@ -55,22 +57,43 @@ impl RuleError {
                     body_code: None,
                 }))
             }
+            Self::MissingInput => ErrorClass::InternalServer(Box::new(ErrorContext {
+                message: self.to_string(),
+                model: None,
+                provider: None,
+                max_retries: None,
+                num_retries: None,
+                body_type: None,
+                body_param: None,
+                body_code: None,
+            })),
         }
     }
 }
 
-// pre_call_rules only fails on a literal False; a dict decision is not False and passes
-pub fn pre_call<E>(evaluator: &E, input: &str, model: &str) -> Result<(), RuleError>
+// pre_call_rules only fails on a literal False; post_call_rules reads a dict decision and its message
+pub fn evaluate<E>(
+    phase: RulePhase,
+    evaluator: &E,
+    input: Option<&str>,
+    model: &str,
+) -> Result<(), RuleError>
 where
     E: RuleEvaluator,
 {
+    let Some(text) = input else {
+        return match phase {
+            RulePhase::PreCall => Err(RuleError::MissingInput),
+            RulePhase::PostCall => Ok(()),
+        };
+    };
     let mut index = 0_usize;
-    while let Some(answer) = evaluator.evaluate(index, input) {
-        if answer == RuleDecision::Boolean(false) {
+    while let Some(answer) = evaluator.evaluate(index, text) {
+        if let Some(message) = rejection(phase, &answer) {
             return Err(RuleError::Rejected {
-                phase: RulePhase::PreCall,
+                phase,
                 model: model.to_owned(),
-                message: String::from(REJECTION),
+                message,
             });
         }
         index = index.saturating_add(1);
@@ -78,36 +101,14 @@ where
     Ok(())
 }
 
-// post_call_rules reads a false dict decision and its message, and never runs when the input is None
-pub fn post_call<E>(evaluator: &E, input: Option<&str>, model: &str) -> Result<(), RuleError>
-where
-    E: RuleEvaluator,
-{
-    let Some(text) = input else {
-        return Ok(());
-    };
-    let mut index = 0_usize;
-    while let Some(answer) = evaluator.evaluate(index, text) {
-        match answer {
-            RuleDecision::NotCallable | RuleDecision::Boolean(true) => {}
-            RuleDecision::Boolean(false) => {
-                return Err(RuleError::Rejected {
-                    phase: RulePhase::PostCall,
-                    model: model.to_owned(),
-                    message: String::from(REJECTION),
-                });
-            }
-            RuleDecision::Dict { decision, message } => {
-                if decision == Some(false) {
-                    return Err(RuleError::Rejected {
-                        phase: RulePhase::PostCall,
-                        model: model.to_owned(),
-                        message: message.unwrap_or_else(|| String::from(REJECTION)),
-                    });
-                }
-            }
-        }
-        index = index.saturating_add(1);
+fn rejection(phase: RulePhase, answer: &RuleDecision) -> Option<String> {
+    match answer {
+        RuleDecision::NotCallable | RuleDecision::Boolean(true) => None,
+        RuleDecision::Boolean(false) => Some(String::from(REJECTION)),
+        RuleDecision::Dict { decision, message } => match phase {
+            RulePhase::PreCall => None,
+            RulePhase::PostCall => (decision == &Some(false))
+                .then(|| message.clone().unwrap_or_else(|| String::from(REJECTION))),
+        },
     }
-    Ok(())
 }

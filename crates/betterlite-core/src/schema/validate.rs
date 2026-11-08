@@ -1,4 +1,4 @@
-use super::bounds::{check_references, check_size};
+use super::bounds::{SchemaCheck, check_schema};
 use super::{SchemaError, SchemaJson, SchemaLimits};
 
 // LiteLLM's validate_schema, bounded: it parses the response, compiles the schema offline and validates once
@@ -13,8 +13,7 @@ pub fn validate_schema(
             limit: limits.max_response_bytes,
         });
     }
-    check_size(schema, limits)?;
-    check_references(schema, limits)?;
+    check_schema(schema, limits, SchemaCheck::Validation)?;
     let instance: SchemaJson =
         serde_json::from_str(response).map_err(|source| SchemaError::InvalidJson { source })?;
     // Python's jsonschema only checks formats when a caller passes a format checker, and LiteLLM passes none
