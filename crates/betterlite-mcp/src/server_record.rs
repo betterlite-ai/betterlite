@@ -1,3 +1,9 @@
+#![expect(
+    clippy::struct_excessive_bools,
+    clippy::too_many_lines,
+    reason = "LiteLLM's MCPServer is a 77-field wire record with nine independent flags, and its unchecked twin names every field once"
+)]
+
 pub mod binding;
 mod methods;
 mod raw;
@@ -63,10 +69,6 @@ pub enum OAuth2Flow {
 #[serde(try_from = "raw::RawMCPServer")]
 #[display(
     "MCPServer(server_id={server_id:?}, name={name:?}, transport={transport:?}, auth_type={auth_type:?})"
-)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "LiteLLM's MCPServer carries independent bool fields"
 )]
 pub struct MCPServer {
     pub server_id: String,

@@ -108,10 +108,6 @@ fn default_token_exchange_profile() -> String {
     "rfc8693".to_owned()
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "every field of the 77-field record is named once"
-)]
 impl TryFrom<RawMCPServer> for MCPServer {
     type Error = ServerRecordError;
 
