@@ -8,7 +8,7 @@ use crate::otel::span_attributes::SafeSetAttribute as _;
 use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps, safe_json_loads};
 
 use super::keys::LangfuseSpanAttributes;
-use super::wire::{array, field, object};
+use super::wire::{array, field, object, text};
 
 // litellm.integrations.langfuse.langfuse_otel.LangfuseOtelLogger._set_observation_output
 pub(crate) fn set_observation_output<S>(span: &mut S, response: Option<&Json>)
@@ -29,7 +29,7 @@ where
         .filter(|choices| !choices.is_empty())
         && let Some(choice) = choices.first()
     {
-        set_choice_output(span, fields, choice);
+        set_choice_output(span, body, choice);
     }
     if let Some(output) = field(body, "output")
         .and_then(array)
@@ -39,7 +39,7 @@ where
     }
 }
 
-fn set_choice_output<S>(span: &mut S, response: &IndexMap<String, Json>, choice: &Json)
+fn set_choice_output<S>(span: &mut S, response: &Json, choice: &Json)
 where
     S: Span,
 {
@@ -84,37 +84,40 @@ where
     }
 }
 
-fn transformed_tool_call(response: &IndexMap<String, Json>, tool_call: &Json) -> Json {
-    let function = field(tool_call, "function").and_then(object);
-    let arguments = match function.and_then(|fields| fields.get("arguments")) {
+fn function_call_entry(id: Json, name: Json, call_id: Json, arguments: Json) -> Json {
+    let mut entry = IndexMap::new();
+    entry.insert("id".to_owned(), id);
+    entry.insert("name".to_owned(), name);
+    entry.insert("call_id".to_owned(), call_id);
+    entry.insert("type".to_owned(), Json::Text("function_call".to_owned()));
+    entry.insert("arguments".to_owned(), arguments);
+    Json::Object(entry)
+}
+
+fn text_or_empty(value: &Json, name: &str) -> Json {
+    if let Some(found) = field(value, name) {
+        return found.clone();
+    }
+    Json::Text(String::new())
+}
+
+fn transformed_tool_call(response: &Json, call: &Json) -> Json {
+    let function = field(call, "function");
+    let arguments = match function.and_then(|body| field(body, "arguments")) {
         Some(Json::Text(text)) => parse_arguments(text),
         Some(other) => other.clone(),
         None => Json::Object(IndexMap::new()),
     };
-    let mut call = IndexMap::new();
-    call.insert(
-        "id".to_owned(),
-        response
-            .get("id")
-            .cloned()
-            .unwrap_or_else(|| Json::Text(String::new())),
+    let name = function.map_or_else(
+        || Json::Text(String::new()),
+        |body| text_or_empty(body, "name"),
     );
-    call.insert(
-        "name".to_owned(),
-        function
-            .and_then(|fields| fields.get("name"))
-            .cloned()
-            .unwrap_or_else(|| Json::Text(String::new())),
-    );
-    call.insert(
-        "call_id".to_owned(),
-        field(tool_call, "id")
-            .cloned()
-            .unwrap_or_else(|| Json::Text(String::new())),
-    );
-    call.insert("type".to_owned(), Json::Text("function_call".to_owned()));
-    call.insert("arguments".to_owned(), arguments);
-    Json::Object(call)
+    function_call_entry(
+        text_or_empty(response, "id"),
+        name,
+        text_or_empty(call, "id"),
+        arguments,
+    )
 }
 
 fn parse_arguments(text: &str) -> Json {
@@ -130,7 +133,7 @@ where
 {
     let mut items = Vec::new();
     for item in output {
-        let Some(item_type) = field(item, "type").and_then(super::wire::text) else {
+        let Some(item_type) = field(item, "type").and_then(text) else {
             continue;
         };
         match item_type {
@@ -191,28 +194,12 @@ fn function_call_item(item: &Json) -> Json {
         Some(other) => other.clone(),
         None => Json::Object(IndexMap::new()),
     };
-    let mut call = IndexMap::new();
-    call.insert(
-        "id".to_owned(),
-        field(item, "id")
-            .cloned()
-            .unwrap_or_else(|| Json::Text(String::new())),
-    );
-    call.insert(
-        "name".to_owned(),
-        field(item, "name")
-            .cloned()
-            .unwrap_or_else(|| Json::Text(String::new())),
-    );
-    call.insert(
-        "call_id".to_owned(),
-        field(item, "call_id")
-            .cloned()
-            .unwrap_or_else(|| Json::Text(String::new())),
-    );
-    call.insert("type".to_owned(), Json::Text("function_call".to_owned()));
-    call.insert("arguments".to_owned(), arguments);
-    Json::Object(call)
+    function_call_entry(
+        text_or_empty(item, "id"),
+        text_or_empty(item, "name"),
+        text_or_empty(item, "call_id"),
+        arguments,
+    )
 }
 
 fn safe_arguments(text: &str) -> Json {
