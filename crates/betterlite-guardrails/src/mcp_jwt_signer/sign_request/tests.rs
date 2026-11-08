@@ -168,6 +168,8 @@ fn decode_claims(signer: &JwtSigner, token: &str) -> Claims {
     let mut validation = Validation::new(Algorithm::RS256);
     validation.required_spec_claims.clear();
     validation.validate_aud = false;
+    // the signer is driven by the fixed test clock, which is in the past
+    validation.validate_exp = false;
     jsonwebtoken::decode::<Claims>(token, &decoding, &validation)
         .expect("verified token")
         .claims
@@ -300,6 +302,7 @@ async fn a_channel_token_uses_its_own_audience_and_ttl() {
         DecodingKey::from_rsa_components(&entry.modulus, &entry.exponent).expect("decoding key");
     let mut validation = Validation::new(Algorithm::RS256);
     validation.required_spec_claims.clear();
+    validation.validate_exp = false;
     validation.set_audience(&["channel"]);
     let claims = jsonwebtoken::decode::<Claims>(channel, &decoding, &validation)
         .expect("channel token")

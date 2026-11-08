@@ -469,7 +469,8 @@ async fn an_unusable_key_next_to_a_good_one_is_skipped() {
 
 #[tokio::test]
 async fn a_token_header_that_is_not_base64url_is_an_error() {
-    let (base, _server) = idp_server("{}".to_owned()).await;
+    let key = idp_key();
+    let (base, _server) = idp_server(jwks_body(&key)).await;
     let error = verify_incoming_jwt(
         &build_signer(&options(&base)),
         &SecretString::from("not base64!.a.b"),

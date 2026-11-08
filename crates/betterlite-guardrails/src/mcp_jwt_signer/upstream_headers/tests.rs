@@ -120,6 +120,8 @@ fn decode_claims(signer: &JwtSigner, token: &str) -> Claims {
     let mut validation = Validation::new(Algorithm::RS256);
     validation.required_spec_claims.clear();
     validation.validate_aud = false;
+    // the signer is driven by the fixed test clock, which is in the past
+    validation.validate_exp = false;
     jsonwebtoken::decode::<Claims>(token, &decoding, &validation)
         .expect("verified token")
         .claims
