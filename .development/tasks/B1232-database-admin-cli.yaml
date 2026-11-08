@@ -11,12 +11,12 @@ description: >-
 
   Own main in migrations/run.py and litellm/proxy/prisma_migration.py only as the replacement native executable/exit
   boundary. No Prisma generate, Python, Node or subprocess runs in production. Parse --config and the
-  explicit operation name; configuration resolution remains B002/B710. Define DbAdminBackend::run(DbAdminCommand,ResolvedConfig)->Future<Result<DbAdminOutcome,DbAdminError>>;
+  explicit operation name; --config is a clap global flag, accepted before or after the subcommand (B5070 runs "betterlite-db-admin migrate \"$@\"", so the flag arrives after migrate); configuration resolution remains B002/B710. Define DbAdminBackend::run(DbAdminCommand,ResolvedConfig)->Future<Result<DbAdminOutcome,DbAdminError>>;
   consumers register concrete native services and an unregistered operation fails explicitly. Native migration
   completion returns success 0, exhausted retries/index-job failure 1, or unrecoverable migration error
   2 as already chosen by B051. That last value matches proxy_cli's RuntimeError handling, not migrations/run.py,
   whose uncaught exception exits 1; record the difference below. Help exits 0; unknown operations and malformed
-  argv use clap's usage error exit 2 without loading config or contacting a DB. B121 alone owns the proxy
+  argv use clap's usage error exit 2 without loading config or contacting a DB. B8375 alone owns the proxy
   --skip_server_startup compatibility flag and forwards to migrate; this executable does not redefine
   the proxy CLI.
 
@@ -42,7 +42,7 @@ description: >-
 
   Use clap for argv decoding and B002 for config; add no parallel parser or dummy fuzz target. Tests in
   command_shell::tests exercise help_lists_registered_operations, unknown_operation_fails,
-  malformed_argv_exits_two_before_config, unregistered_backend_fails, config_path_forwarded,
+  malformed_argv_exits_two_before_config, unregistered_backend_fails, config_path_forwarded (both orders: before and after the subcommand),
   pinned_url_not_replaced, missing_url_exits_one_before_backend, url_resolution_error_stops_dispatch,
   migration_flags_defaults, migration_flags_case_and_whitespace, push_inverts_use_migrate,
   start_log_precedes_backend, retry_and_index_failure_exit_one, success_after_indexes_exit_zero,
@@ -68,6 +68,9 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1426-L1447
     why: Compatibility forwarding and exit 2 versus exhausted-retry exit 1.
 dod:
+  - text: --config is a global flag, so "betterlite-db-admin --config f migrate" and "betterlite-db-admin migrate --config f" forward the same config path.
+    proof:
+      - command-tests
   - text: The native command shell dispatches registered operations, forwards typed config and rejects
       unknown/unregistered operations.
     proof:
@@ -97,7 +100,7 @@ deviations:
 out_of_scope:
   - B051 owns native migration startup/index-job assembly; B716/B873 own deploy/recovery SQL.
   - B852, B853 and B874 own their SQL/CSV operations and real database tests.
-  - B121 owns proxy CLI compatibility flags; B002/B710 own config and environment resolution.
+  - B8375 owns proxy CLI compatibility flags; B002/B710 own config and environment resolution.
   - B2307 owns extras str_to_bool; B051 owns migration retries, index-job waiting and registered service execution.
 pitfalls:
   - The admin package cannot depend on betterlite-server under the server crate boundary rule.

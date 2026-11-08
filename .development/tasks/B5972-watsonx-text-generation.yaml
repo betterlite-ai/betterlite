@@ -125,7 +125,7 @@ out_of_scope:
   - "IBMWatsonXAIConfig.__init__ (class-level defaults) and get_config have no caller at the pin."
   - "ibm_granite_pt and mistral_instruct_pt belong to B214, hf_chat_template to B215, custom_prompt and prompt_factory to B177, map_finish_reason to B024."
   - "The logging_obj.post_call call in transform_response belongs to the caller that runs the request."
-  - B042 owns the main.py registration of the watsonx_text provider and its HTTP oracle cases.
+  - B8331 owns the main.py registration of the watsonx_text provider and its HTTP oracle cases.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as b5972 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task''s to edit.'
   - moderations is a text param and is read in the request body, but map_openai_params never maps it, so it only arrives as an explicit option.

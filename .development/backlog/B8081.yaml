@@ -1,0 +1,13 @@
+id: B8081
+milestone: M12 python
+title: Native A2A client calls in the Python crate
+status: todo
+depends_on: [B5659, B4800, B4801, B4814]
+file: tasks/B8081-native-a2a-client.yaml
+covers: []
+parent: B168
+split_from: B168
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

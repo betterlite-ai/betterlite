@@ -1,0 +1,25 @@
+id: B8217
+milestone: M6 guardrails
+title: Hook initializer arguments A to L
+status: todo
+depends_on: [B3662, B3766]
+file: tasks/B8217-hook-initializers-a-l.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/aim/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/akto/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/aporia_ai/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/conduct/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/deepkeep/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/grayswan/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/headroom/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/lasso/__init__.py"
+parent: B107
+split_from: B107
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

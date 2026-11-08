@@ -1,0 +1,74 @@
+id: B8355
+title: Router endpoint methods in the Python crate
+description: >-
+  A LiteLLM `Router` has more than 150 call methods besides `completion`: `aembedding`, `image_generation`, `aretrieve_batch`, `amoderation`, `avector_store_search`, `acreate_interaction` and the rest. `Router.initialize_router_endpoints` (router.py L2237-L2239) and the `_initialize_*_endpoints` methods it calls (L1899-L2235) set them as attributes, and `factory_function` builds each one. B8352, B8353 and B8354 built the Rust side. This task makes them callable from the Python `Router`: a native class in B6022's `router_call` family and a Python mixin with the method names.
+
+
+  Native side. Put it in `crates/betterlite-python/src/router_call/endpoints.rs` and `src/router_call/endpoints/**`. The architect's skeleton declares `mod endpoints;` in `src/router_call.rs` and adds `endpoints::register(module)?;` to B6022's `register`; if those lines are missing when you start, stop and report a blocker, and never edit `lib.rs`, `_native.pyi` or `betterlite/__init__.py`. `NativeRouterEndpoints` is a `#[pyclass]` built from a `NativeRouter` (B6022), sharing its `RouterCompletionParts`, `RouterGeneric`, HTTP client, clock and sleeper. It owns B8352's `RouterSingleCalls`, B8353's `RouterBatchCalls` and B8354's `RouterCallTypes`, and passes each one a `GenericCallExecutor` per call type that calls B014's dispatch for that call type with the merged arguments. A call type B014 does not dispatch answers B6021's `GenericError::UnknownCallType`, which reaches Python as `NativeError` of type `ValueError` naming it. Methods: `call(call_type, request)` blocks inside `py.detach` on the shared runtime, `acall(call_type, request)` returns an awaitable through `future_into_py`; each takes and gives JSON text, a finished answer carries `_hidden_params` as B6022's answers do, and a byte stream answer is a `NativeMessagesStream`-style object with `anext_chunk()` and `aclose()`. Errors use B5659's `NativeError`. Stubs go in `python/betterlite/_native_router_call.pyi` next to B6022's.
+
+
+  Python side. `python/betterlite/_router/endpoints.py` holds the mixin `RouterEndpoints`. Its method names are exactly the attribute names LiteLLM's `Router` gets from `_initialize_core_endpoints`, `_initialize_vector_store_endpoints`, `_initialize_vector_store_file_endpoints`, `_initialize_google_genai_endpoints`, `_initialize_ocr_search_endpoints`, `_initialize_video_endpoints`, `_initialize_container_endpoints`, `_initialize_skills_endpoints`, `_initialize_interactions_endpoints`, `_initialize_managed_agents_endpoints`, `_initialize_specialized_endpoints` and `initialize_assistants_endpoint`, each bound to its `call_type`, plus the explicit methods `embedding`, `aembedding`, `image_generation`, `aimage_generation`, `atranscription`, `aspeech`, `arerank`, `text_completion`, `atext_completion`, `aadapter_completion`, `abatch_completion`, `acreate_file`, `avector_store_create`, `acreate_batch`, `aretrieve_batch`, `acancel_batch` and `alist_batches` with LiteLLM's parameter names and defaults. Build the bound ones from one explicit class-level table of (attribute, call type, async flag) and one small descriptor class whose `__get__` returns a bound caller, so there is no closure and no reflection. A name LiteLLM builds as a sync function calls `call`, an async one awaits `acall`. Arguments go to JSON the way B158 converts completion kwargs (reuse its helper, never copy it); a file argument is read as bytes and sent base64-encoded under the same key with the key `_file_encoding` set to `base64`. Answers become B158's and B5658's response objects where one exists for the call type, and a plain dict otherwise. A `NativeError` becomes the B163 class through B158's mapping. If the file grows past 300 lines, split the table into `_router/endpoint_table.py`.
+
+
+  Tests: `cargo nextest` covers the JSON conversion in `router_call/endpoints/tests.rs` (names start with `endpoint_`), and `tests/test_router_endpoints.py` checks against a local mock server that `aembedding`, `image_generation`, `aretrieve_batch`, `amoderation` and `avector_store_search` reach the server through the router, and that the set of public method names on a betterlite `Router` mixin equals the set of factory-built attribute names on a LiteLLM `Router(model_list=[])` instance.
+scope:
+  paths:
+  - crates/betterlite-python/src/router_call/endpoints.rs
+  - crates/betterlite-python/src/router_call/endpoints/**
+  - crates/betterlite-python/python/betterlite/_native_router_call.pyi
+  - crates/betterlite-python/python/betterlite/_router/endpoints.py
+  - crates/betterlite-python/python/betterlite/_router/endpoint_table.py
+  - crates/betterlite-python/tests/test_router_endpoints.py
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1899-L2239
+    why: Every attribute name, its call type and whether it is sync or async.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4619-L5154
+    why: Parameter names and defaults of the explicit call methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5863-L6562
+    why: Embedding, file, vector store and batch method signatures.
+  - url: https://github.com/PyO3/pyo3-async-runtimes
+    why: The awaitable bridge, as B6022 uses it.
+dod:
+  - text: A request text turns into the typed call for each call type, an unknown call type is refused by name, and nothing panics.
+    proof: [endpoints-convert]
+  - text: The Python mixin has exactly LiteLLM's factory-built method names, each bound to its call type and sync or async form.
+    proof: [endpoints-names]
+  - text: Embedding, image, batch retrieve, moderation and vector store search calls reach a mock server through the router and return LiteLLM's response types.
+    proof: [endpoints-calls]
+  - text: The stubs pass strict basedpyright and the Python files pass ruff.
+    proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: endpoints-convert
+    why: A call type is lost or a bad request panics across the boundary.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^router_call::endpoints::tests::endpoint_/)'
+  - id: endpoints-names
+    why: A Router method LiteLLM users call is missing or bound to the wrong call type.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_router_endpoints.py -k names
+  - id: endpoints-calls
+    why: A call does not reach the provider or returns the wrong type.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_router_endpoints.py -k calls
+  - id: python-lint
+    why: Stubs that drift from the native names break typed callers.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+  - what: A file argument crosses into Rust as base64 bytes, so an open file object is read in full before the call.
+    why: A Python file handle cannot cross the native boundary.
+  - what: A call type that B014 does not dispatch yet raises `ValueError` naming it.
+    why: LiteLLM would call its module function; betterlite only has the dispatched ones.
+out_of_scope:
+  - "B6022 owns `NativeRouter`, the family root and the chat and messages methods; B5078 owns the chat Python methods."
+  - "B8352, B8353 and B8354 own the routing logic; B014 owns the provider dispatch behind each executor."
+  - "B8356 builds the Router class that mixes this in."
+pitfalls:
+  - "`aanthropic_messages` and `anthropic_messages` are both async in LiteLLM and B6022 already exposes them, so leave them out of this table."
+  - "LiteLLM assigns `responses`, `generate_content`, `ocr`, `search` and the blocking video and container names as sync functions; keep them sync here."
+  - "A descriptor that returns a new bound object on each access must keep `inspect.iscoroutinefunction` true for async names, or async callers break."
+  - "`_arealtime` and `_aresponses_websocket` start with an underscore in LiteLLM and are still set; keep the names."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

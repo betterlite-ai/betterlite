@@ -1,0 +1,75 @@
+id: B8596
+title: Callback config routes and the /config/yaml stub
+description: >-
+  The admin UI's logging page reads /get/config/callbacks and removes a callback with /config/callback/delete. Build
+  both, and the /config/yaml documentation stub, in crates/betterlite-server/src/callback_config.rs (declared by the
+  skeleton) with `pub fn routes()`, error enum CallbackConfigError.
+
+
+  POST /config/callback/delete: no database is 400 db_not_connected_error; not PROXY_ADMIN is 400 not_allowed_access
+  with ", your role=<role>"; store_model_in_db not true is 500 {"error": "Set `'STORE_MODEL_IN_DB='True'` in your env
+  to enable this feature."}. The name is lower-cased; a name not in litellm_settings.success_callback is 404 "Callback
+  '<name>' not found in active configuration". It removes the first match, saves the config through B8380, audits the
+  before and after success_callback through B8594, calls B8381's add_deployment and answers message, removed_callback,
+  remaining_callbacks and deleted_at (ISO local time).
+
+
+  GET /get/config/callbacks: success_callback, failure_callback and callbacks from the stored config (a string is one
+  entry, null none) become rows through process_callback with their type (success, failure, success_and_failure).
+  Runtime callbacks from the logging callback manager are added as read_only rows when their alias-normalized name
+  (`normalize_callback_alias`: opentelemetry to otel, s3_v2 to s3, aws_sqs to sqs, custom_callback_api to generic_api)
+  is not configured and not hidden; `hidden_runtime_callbacks` hides cache, vector_store_pre_call_hook, guardrails,
+  LiteLLM-internal loggers that are not registered integrations, instances of configured classes that carry the same
+  name, and loggers from a configured module path; the rows are sorted. For anyone but PROXY_ADMIN every sensitive
+  variable (is_sensitive_callback_key plus ALERTING_WEBHOOK_URL, GALILEO_USERNAME, GENERIC_LOGGER_HEADERS, OTEL_HEADERS,
+  SLACK_WEBHOOK_URL, SMTP_USERNAME) shows "REDACTED". Alerts: slack (only when in general_settings.alerting) with its
+  variables, active alerts and webhook map, email and ms_teams, each resolved from the stored env then the process env
+  through B4140's resolve_fields; admins get mask_sensitive_keys on alerting variables, others get the redaction, and
+  the webhook map shows "REDACTED" per alert type for non-admins. It answers status, callbacks, alerts,
+  active_alerting_destinations, router_settings and available_callbacks.
+
+
+  GET /config/yaml answers {"hello": "world"}; it exists only to document ConfigYAML in the API schema.
+scope:
+  paths:
+    - crates/betterlite-server/src/callback_config.rs
+    - crates/betterlite-server/src/callback_config/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18473-L18510
+    why: The callback and alerting role gates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18991-L19079
+    why: /config/callback/delete.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19081-L19139
+    why: Alias normalization and the hidden runtime callback rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19141-L19307
+    why: /get/config/callbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19309-L19333
+    why: /config/yaml.
+dod:
+  - text: /config/callback/delete refuses, removes, saves, audits and answers like LiteLLM.
+    proof: [callback-config-tests]
+  - text: /get/config/callbacks lists configured and visible runtime callbacks with LiteLLM's alias, hiding and redaction rules.
+    proof: [callback-config-tests]
+  - text: The alert destinations resolve stored then process env values and apply the admin and non-admin gates.
+    proof: [callback-config-tests]
+checks:
+  optional: []
+  commands:
+    - id: callback-config-tests
+      why: a callback config route differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^callback_config::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Mounting the routes and their HTTP oracle cases: the wave 17 config admin wiring part."
+  - "Audit log: B8594. Config read and save: B8380. add_deployment: B8381. resolve_fields and the descriptors: B4140. Sensitive callback keys: B2304."
+pitfalls:
+  - The delete compares the lower-cased name against stored names without lower-casing them.
+  - Configured names are alias-normalized before runtime rows are compared, so a configured opentelemetry hides a runtime otel.
+  - mask_sensitive_keys for admins is not the same as REDACTED for viewers; admins see partly masked values.
+  - "This task builds process_callback (callback_utils.py L692, called by get_config at proxy_server.py L19199 and L19202) and the _types.py records CallbackDelete (L2565) and AllCallbacks (L3986); no other task builds them."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

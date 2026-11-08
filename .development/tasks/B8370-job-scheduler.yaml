@@ -1,0 +1,144 @@
+id: B8370
+title: In-process job scheduler and shutdown stop
+description: >-
+  LiteLLM runs every periodic proxy job (budget reset, spend flush, cleanup, reports, heartbeats) on one APScheduler 3.11
+  AsyncIOScheduler that ProxyStartupEvent.initialize_scheduled_background_jobs builds, and stops it on shutdown through
+  litellm/proxy/shutdown/scheduled_jobs.py. betterlite has no scheduler yet, so nothing that later tasks register can
+  run. Build it as a module of the binary crate, crates/betterlite/src/job_scheduler.rs (the skeleton declares it in
+  lib.rs), next to scheduled_job_stagger, whose `JobScheduler` trait this scheduler implements.
+
+  Types. `JobScheduler` is taken, so the struct is `ProxyScheduler`, built with `ProxyScheduler::new(defaults: JobDefaults,
+  clock: Arc<dyn Clock>)`. `JobDefaults { coalesce: bool, misfire_grace_seconds: u64, max_instances: u32 }` reads LiteLLM's
+  env vars through `JobDefaults::from_env(&BTreeMap<String, String>)`: APSCHEDULER_COALESCE (default "True", true only for
+  "true" or "1" in any case), APSCHEDULER_MISFIRE_GRACE_TIME (integer, default 3600) and APSCHEDULER_MAX_INSTANCES (integer,
+  default 1). A value that does not parse as an integer is `SchedulerError::InvalidEnv { name }`, which stops startup the way
+  LiteLLM's int() at import does. `Clock` is a one-method trait (`fn now(&self) -> DateTime<Utc>`) plus a tokio sleep so tests
+  drive time with `tokio::time::pause` and a fake clock.
+
+  Triggers. `IntervalTrigger { seconds: u64 }` and `CronTrigger`, both implementing scheduled_job_stagger's `Trigger` trait so
+  stagger can wrap them. An interval job with no explicit next run time first fires at add time plus the interval, as
+  APScheduler does; `next_run_time: NextRunTime::Explicit(Some(t))` fires first at t. `CronTrigger::from_crontab(text, zone)`
+  ports APScheduler's from_crontab: exactly five whitespace-separated fields (minute, hour, day, month, day_of_week), anything
+  else is `SchedulerError::Crontab` with the text "Wrong number of fields; got {n}, expected 5". Use the croner crate (check
+  `cargo deny --locked check`) for field parsing and next-occurrence search, and translate the day_of_week field first (see
+  pitfalls). `CronZone` is `Utc` or `Local`: the proxy scheduler is built with timezone=None, so a job without its own zone
+  runs on the host's local zone, while LiteLLM passes timezone="UTC" for its 00:15 and 01:15 jobs.
+
+  Jobs. `add_job(JobSpec)` where `JobSpec { id: String, trigger: Box<dyn Trigger>, run: JobFn, replace_existing: bool,
+  next_run_time: NextRunTime, misfire_grace_seconds: Option<u64>, max_instances: Option<u32> }` and `JobFn` is
+  `Arc<dyn Fn() -> BoxFuture<'static, ()> + Send + Sync>`. Adding an id that exists without replace_existing is
+  `SchedulerError::ConflictingId { id }`; with it the old job is replaced and its next run recomputed. Also `get_job(id) ->
+  Option<JobView>`, `remove_job(id)` (an unknown id is `SchedulerError::JobLookup`), `start()`, `pause()`, `resume()`,
+  `state() -> SchedulerState` (Stopped, Running, Paused), and `shutdown()`, which stops dispatch and cancels running job tasks
+  without waiting, like shutdown(wait=False). Each run is a tokio task tracked in a JoinSet so `in_flight()` returns the running
+  ones. When a run is due: skip it with a warning when it is later than its misfire grace ("Run time of job {id} was missed by
+  {delay}"); with coalesce, many missed runs become one; when max_instances runs are already going, skip with the warning
+  "Execution of job {id} skipped: maximum number of running instances reached ({n})". A job that panics or returns is logged
+  and the scheduler keeps going. The JobScheduler trait methods map to these: running() is true unless the state is Stopped (APScheduler counts Paused as running), jobs() returns
+  JobSnapshot values, modify_job swaps the trigger and recomputes next run, add_submission_listener is called with the id and
+  scheduled run times each time a run is submitted.
+
+  Shutdown helpers from shutdown/scheduled_jobs.py: `pause_scheduled_jobs(&mut ProxyScheduler)` pauses only a running
+  scheduler. `stop_in_flight_jobs(&mut ProxyScheduler, finish: Duration, cancel: Duration)` returns at once when the
+  scheduler is not running; otherwise it logs "Waiting up to {finish}s for {n} in-flight scheduled job(s) to finish" when
+  any run, waits up to finish for them, calls shutdown, and if some are still going logs "Cancelling {n} in-flight scheduled
+  job(s) for shutdown", aborts them and waits up to cancel, then warns "{n} scheduled job(s) did not finish within {cancel}s
+  of cancellation; giving up on them". The two durations come from SCHEDULED_JOB_SHUTDOWN_FINISH_TIMEOUT_SECONDS and
+  SCHEDULED_JOB_SHUTDOWN_CANCEL_TIMEOUT_SECONDS (floats, default 5 each), read in `ShutdownTimeouts::from_env`.
+
+  The crontab text reaches this code from config (general_settings.maximum_spend_logs_cleanup_cron), so add a cargo-fuzz
+  target `crontab_trigger` in crates/betterlite/fuzz that feeds arbitrary UTF-8 to CronTrigger::from_crontab and asks for one
+  next fire time, with a seed corpus (every-minute, step values, ranges, named months and weekdays, six fields, empty,
+  invalid UTF-8) and a test `replays_crontab_trigger_corpus` that runs every corpus file without a panic.
+
+  Oracle cases are helper cases on the pure trigger math: operation b8370 takes a crontab string or an interval plus a start
+  instant and returns the next three fire times (or the error text), computed in LiteLLM with apscheduler's CronTrigger and
+  IntervalTrigger at timezone UTC. The worker writes them under tools/oracle/cases/helpers/job-scheduler/.
+scope:
+  paths:
+    - crates/betterlite/Cargo.toml
+    - crates/betterlite/src/job_scheduler.rs
+    - crates/betterlite/src/job_scheduler/**
+    - crates/betterlite/fuzz/Cargo.toml
+    - crates/betterlite/fuzz/fuzz_targets/crontab_trigger.rs
+    - crates/betterlite/fuzz/corpus/crontab_trigger/**
+    - tools/oracle/cases/helpers/job-scheduler/**
+    - tools/oracle/helpers/b8370.py
+    - tools/oracle/helpers/b8370/**
+    - tools/oracle/src/helpers/server/b8370.rs
+    - tools/oracle/src/helpers/server/b8370/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10562-L10601
+    why: How the proxy builds its scheduler, the job_defaults and timezone=None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/shutdown/scheduled_jobs.py#L1-L79
+    why: pause_scheduled_jobs, AwaitableAsyncIOExecutor.in_flight_jobs and stop_in_flight_scheduler_jobs with their log lines.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1789-L1860
+    why: SCHEDULED_JOB_SHUTDOWN_* and APSCHEDULER_* env vars with their defaults.
+  - url: https://apscheduler.readthedocs.io/en/3.x/modules/triggers/cron.html
+    why: CronTrigger fields, from_crontab and the 0=mon weekday numbering.
+  - url: https://apscheduler.readthedocs.io/en/3.x/userguide.html#missed-job-executions-and-coalescing
+    why: misfire_grace_time, coalesce and max_instances behavior this scheduler copies.
+dod:
+  - text: JobDefaults and ShutdownTimeouts read the APSCHEDULER_* and SCHEDULED_JOB_SHUTDOWN_* env vars with LiteLLM's defaults and refuse a non-integer.
+    proof: [scheduler-tests]
+  - text: Interval and cron triggers give the same next fire times as APScheduler, including weekday 0 as Monday and the five-field rule.
+    proof: [scheduler-tests, oracle, helper-python]
+  - text: add_job refuses a duplicate id unless replace_existing, and remove_job, get_job, pause, resume, start and shutdown change state as APScheduler does.
+    proof: [scheduler-tests]
+  - text: Late runs past the misfire grace are skipped, coalesced runs fire once, and max_instances skips a run with the warning text.
+    proof: [scheduler-tests]
+  - text: ProxyScheduler implements scheduled_job_stagger's JobScheduler so apply_scheduled_job_stagger can shift its jobs.
+    proof: [scheduler-tests]
+  - text: pause_scheduled_jobs and stop_in_flight_jobs wait, cancel and log in LiteLLM's order.
+    proof: [scheduler-tests]
+  - text: The crontab_trigger fuzz target exists and its corpus replays without a panic.
+    proof: [scheduler-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: scheduler-tests
+      why: A trigger, job store, misfire rule or shutdown step is missing or differs from APScheduler
+      run: >-
+        cargo nextest run --locked -p betterlite --no-tests=fail
+        -E 'test(/^job_scheduler::/) - test(replays_crontab_trigger_corpus)'
+    - id: scheduler-corpus
+      why: The crontab fuzz target, its seed corpus or the replay test is missing
+      run: >-
+        test -f crates/betterlite/fuzz/fuzz_targets/crontab_trigger.rs &&
+        grep -q 'name = "crontab_trigger"' crates/betterlite/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite/fuzz/corpus/crontab_trigger)" &&
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(replays_crontab_trigger_corpus)'
+    - id: helper-python
+      why: The strict oracle adapter for the trigger cases fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8370)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8370 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8370/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/job-scheduler/interval-first-fire.yaml
+  - tools/oracle/cases/helpers/job-scheduler/cron-daily-utc.yaml
+  - tools/oracle/cases/helpers/job-scheduler/cron-weekday-zero.yaml
+  - tools/oracle/cases/helpers/job-scheduler/cron-step-and-range.yaml
+  - tools/oracle/cases/helpers/job-scheduler/cron-six-fields-rejected.yaml
+deviations:
+  - what: Crontab parse errors other than the field count carry croner's message, not APScheduler's ValueError text.
+    why: The caller (B8371) logs its own fixed "Invalid maximum_spend_logs_cleanup_cron value" line either way, so no user-facing text depends on the inner wording.
+  - what: Job runs are tokio tasks, not asyncio tasks on an executor, and job stores other than memory do not exist.
+    why: LiteLLM only ever uses MemoryJobStore and its AwaitableAsyncIOExecutor; the observable rules (grace, coalesce, instances, ids) are kept.
+out_of_scope:
+  - "Which jobs exist and their ids and intervals: B8372 registers them and B8371 owns the spend log cleanup job."
+  - "Staggering offsets: B4172 owns scheduled_job_stagger and calls this scheduler through its JobScheduler trait."
+  - "GracefulShutdownManager in shutdown/graceful_shutdown_manager.py: B4448 owns request draining; this task only stops jobs."
+  - "APScheduler's other executors, job stores, date triggers and event types: nothing in the proxy uses them at the pin."
+pitfalls:
+  - APScheduler 3.x from_crontab passes the fifth field straight to day_of_week, where 0 is Monday and 7 is out of range, so "0 3 * * 0" fires on Mondays in LiteLLM; croner reads 0 as Sunday, so map numbers 0 to 6 onto mon..sun names before handing the text to croner and reject 7.
+  - An interval job added without next_run_time first runs one interval after add time, but refresh_model_info passes next_run_time=now and the spend capture job passes now plus two minutes, so NextRunTime::Explicit must win over the trigger.
+  - The proxy scheduler is built with timezone=None, which APScheduler turns into the host's local zone, so a cron job without timezone="UTC" follows local time and DST.
+  - stop_in_flight_scheduler_jobs returns early when the scheduler is not running, so a paused scheduler (state Paused counts as running in APScheduler) still waits for its in-flight jobs; only Stopped skips.
+  - The cancel wait covers only jobs still going after the finish window, and the counts in the log lines are of those jobs, not of all jobs.
+  - Keep each module name, type and function name at 30 characters or fewer; an ast-grep rule rejects longer ones.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

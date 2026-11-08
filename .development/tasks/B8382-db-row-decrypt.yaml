@@ -1,0 +1,96 @@
+id: B8382
+title: Database model rows and stored secret decryption
+description: >-
+  Several tasks need the same ProxyConfig helpers from proxy_server.py to turn stored rows back into usable values:
+  B1216 and B2331 decrypt model rows, B2331 and the config overlay decrypt and encrypt environment variables, and
+  credential sync decrypts credential values. Build them in crates/betterlite-server/src/db_row_decrypt.rs (declared by
+  the skeleton) on B2303's per-value codec (decrypt_value_helper and encrypt_value_helper). Error enum
+  DbRowDecryptError.
+
+  `read_model_rows(db)` (_get_models_from_db) reads every model row through the writer (a degraded writer falls back to
+  the reader as the writer-pinned client does) and returns None on a read
+  error after logging it, so callers never mistake a failure for an empty table. `model_info_for(row, db_model)`
+  (get_model_info_with_id): a row with model_id stamps id, db_model true and blocked; created_at, updated_at,
+  created_by and updated_by are copied too (LiteLLM does it only for premium_user, which betterlite always is); a
+  missing id comes from model_id; a db_model false flag becomes the db_model argument; cost-map pricing fields echoed in
+  model_info (B1035's echoed_cost_map_pricing_fields) are dropped with the warning "Deployment {id} stores a copy of the
+  cost map in model_info ({fields}); ignoring it so the deployment follows the current cost map. Set the price on
+  litellm_params to override the cost map on purpose." logged once per id and field set. `resolve_db_param(key, value)`
+  decrypts a string (returning the original on failure) and resolves a result starting with "os.environ/" through the
+  secret lookup. `decrypt_model_rows(rows)` (decrypt_model_list_from_db) resolves each param, validates
+  LiteLLM_Params, skips invalid rows with "Invalid model added to proxy db. Invalid litellm params." and returns
+  deployments as JSON without nulls.
+
+  Environment variables: `encrypt_env(values, new_key)`, `decrypt_env(values)` (originals kept on failure),
+  `encrypt_env_for_db(values, new_key)` (decrypt first so ciphertext is not encrypted twice, then encrypt once) and
+  `decrypt_and_export_env(values, keep_original)` (_decrypt_and_set_db_env_variables): skip the MCP stdio flag key
+  (B3211's is_mcp_stdio_flag_key) with a warn-once "Ignoring {MCP_STDIO_ENABLED_ENV_VAR} stored in the database. Set it in
+  the proxy's environment instead", decrypt the others, export each non-null result to the process environment and
+  return them; a failing value logs "Error setting env variable: {key} - {error}" and the rest continue. Credentials:
+  `decrypt_credential(item)` decrypts each credential value, keeping the stored text when decryption gives nothing;
+  `credential_list(config)` reads config credential_list into CredentialItem values.
+
+  Tests cover each helper against B2303's codec with a test key. Helper cases (operation b8382 with an `operation:`
+  field) compare encrypt_env_for_db idempotence, the stdio flag skip, model info stamping and the echoed pricing drop,
+  written under tools/oracle/cases/helpers/db-row-decrypt/.
+scope:
+  paths:
+    - crates/betterlite-server/src/db_row_decrypt.rs
+    - crates/betterlite-server/src/db_row_decrypt/**
+    - tools/oracle/cases/helpers/db-row-decrypt/**
+    - tools/oracle/helpers/b8382.py
+    - tools/oracle/helpers/b8382/**
+    - tools/oracle/src/helpers/server/b8382.rs
+    - tools/oracle/src/helpers/server/b8382/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7241-L7277
+    why: get_model_info_with_id with the premium fields and the echoed pricing drop.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7364-L7441
+    why: Param resolution and decrypt_model_list_from_db.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7575-L7643
+    why: The four environment variable helpers and the MCP stdio flag warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8073-L8099
+    why: The writer-pinned model row read that returns None on failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9081-L9092
+    why: Credential decryption.
+dod:
+  - text: Model rows read through the writer, return None on failure and decrypt into deployments, skipping invalid rows.
+    proof: [row-decrypt-tests]
+  - text: model_info_for stamps ids and audit fields and drops echoed cost-map pricing with a once-only warning.
+    proof: [row-decrypt-tests, oracle, helper-python]
+  - text: Environment helpers never double-encrypt, skip the MCP stdio flag with one warning and keep going past a bad value.
+    proof: [row-decrypt-tests, oracle, helper-python]
+  - text: Credential values decrypt, keeping the stored text when decryption gives nothing.
+    proof: [row-decrypt-tests]
+checks:
+  optional: []
+  commands:
+    - id: row-decrypt-tests
+      why: A row read, model info stamp, param resolution or secret helper is missing or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^db_row_decrypt::/)'
+    - id: helper-python
+      why: The strict oracle adapter for the row decryption cases fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8382)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8382 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8382/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/db-row-decrypt/env-encrypt-idempotent.yaml
+  - tools/oracle/cases/helpers/db-row-decrypt/stdio-flag-skipped.yaml
+  - tools/oracle/cases/helpers/db-row-decrypt/model-info-stamped.yaml
+  - tools/oracle/cases/helpers/db-row-decrypt/echoed-pricing-dropped.yaml
+deviations:
+  - what: model_info always carries created_at, updated_at, created_by and updated_by.
+    why: LiteLLM copies them only for premium_user; betterlite has no paid tier (README), so it behaves as a premium proxy.
+out_of_scope:
+  - "The per-value codec and salt key: B2303. Applying rows to the router: B8381."
+pitfalls:
+  - encrypt_env_for_db decrypts with original values kept, so plaintext passes through and ciphertext from a UI round trip is not wrapped a second time.
+  - The stdio flag warning fires once per process, not once per call.
+  - decrypt_and_export_env drops values that decrypt to None from both the environment and the returned map.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

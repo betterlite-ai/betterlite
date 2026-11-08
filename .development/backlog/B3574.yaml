@@ -8,6 +8,7 @@ covers:
   - "litellm/llms/pass_through/guardrail_translation/handler.py"
   - "litellm/llms/pass_through/guardrail_translation/__init__.py"
   - "litellm/llms/pass_through/guardrail_translation/README.md"
+  - "litellm/llms/pass_through/__init__.py"
 parent: B101
 split_from: B101
 resolution: null

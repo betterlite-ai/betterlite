@@ -1,0 +1,14 @@
+id: B7845
+milestone: M12 python
+title: Python Interactions create, get, delete and cancel functions
+status: todo
+depends_on: [B3499, B3495, B3500, B6040, B158, B5657]
+file: tasks/B7845-python-interactions.yaml
+covers:
+  - "litellm/interactions/main.py"
+parent: B160
+split_from: B160
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

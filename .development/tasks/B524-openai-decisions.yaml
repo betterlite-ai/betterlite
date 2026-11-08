@@ -3,7 +3,7 @@ title: OpenAI Decisions intermediate representation
 description: >-
   Introduce typed DecisionRequest/DecisionReply and the decision intermediate representation needed by provider
   adapters. Keep choice, score, predicates, instructions, one-option detection and round-trip conversion as explicit
-  variants; export the IR for Foundry reuse. B099 supplies the public route.
+  variants; export the IR for Foundry reuse. B8276 supplies the public route.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/decisions/transformation.py:
@@ -29,18 +29,18 @@ description: >-
   on every choice or score question; this includes zero options. Predicates do not trigger the rule. decision_answer_alignment:
   Response-to-IR iterates questions: missing or mismatched answer types become refusal; extra answers are ignored.
   IR-to-response instead zip(strict=True) raises ValueError on either length mismatch; mismatched variants become
-  OpenAIRefusalAnswer. decision_probability_order: Rebuild choice probabilities in original option order using B099
+  OpenAIRefusalAnswer. decision_probability_order: Rebuild choice probabilities in original option order using B3510
   systemone_choice_key and score probabilities in level-index order; missing entries default 0.0 and duplicate incoming
   keys use the last probability. decision_usage_model: Preserve input/output/cached/cache-write/reasoning tokens;
   total_tokens is input+output. IR-to-response uses response.model or requested_model. Input strings become state;
   message sequences preserve order and dump exclude_none=True. decision_settings: Resolve api_base then litellm.api_base
   then OPENAI_BASE_URL then OPENAI_API_BASE then https://api.openai.com using truthiness. Key chain is api_key,
-  litellm.api_key, litellm.openai_key, OPENAI_API_KEY; absence remains None. B099 request_model is identity; parsing
+  litellm.api_key, litellm.openai_key, OPENAI_API_KEY; absence remains None. B3511 request_model is identity; parsing
   validates the OpenAI response adapter before conversion.
 
 
-  B099 owns DecisionsIR/OpenAI decision wire records, systemone_choice_key and the base request_model method; depend
-  on its backlog entry even before its file lands. B500/B129 supply config and secret resolution.
+  B3510 owns DecisionsIR/OpenAI decision wire records and systemone_choice_key, B3511 the base request_model method; depend
+  on both entries. B500/B8500 supply config and secret resolution.
 
 
   Implement crates/betterlite-openai/src/decisions.rs with adjacent tests under decisions/. Keep each Rust module
@@ -150,7 +150,7 @@ dod:
   - case-decision-answer-alignment
   - oracle
   - helper-python
-- text: 'decision_probability_order: Rebuild choice probabilities in original option order using B099 systemone_choice_key
+- text: 'decision_probability_order: Rebuild choice probabilities in original option order using B3510 systemone_choice_key
     and score probabilities in level-index order; missing entries default 0.0 and duplicate incoming keys use the
     last probability.'
   proof:
@@ -166,7 +166,7 @@ dod:
   - helper-python
 - text: 'decision_settings: Resolve api_base then litellm.api_base then OPENAI_BASE_URL then OPENAI_API_BASE then
     https://api.openai.com using truthiness. Key chain is api_key, litellm.api_key, litellm.openai_key, OPENAI_API_KEY;
-    absence remains None. B099 request_model is identity; parsing validates the OpenAI response adapter before conversion.'
+    absence remains None. B3511 request_model is identity; parsing validates the OpenAI response adapter before conversion.'
   proof:
   - case-decision-settings
   - oracle
@@ -218,7 +218,7 @@ checks:
       become OpenAIRefusalAnswer.'
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::decisions_cases::case_[0-9]+_decision_answer_alignment$/)'
   - id: case-decision-probability-order
-    why: Rebuild choice probabilities in original option order using B099 systemone_choice_key and score probabilities
+    why: Rebuild choice probabilities in original option order using B3510 systemone_choice_key and score probabilities
       in level-index order; missing entries default 0.0 and duplicate incoming keys use the last probability.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::decisions_cases::case_[0-9]+_decision_probability_order$/)'
   - id: case-decision-usage-model
@@ -229,7 +229,7 @@ checks:
   - id: case-decision-settings
     why: Resolve api_base then litellm.api_base then OPENAI_BASE_URL then OPENAI_API_BASE then https://api.openai.com
       using truthiness. Key chain is api_key, litellm.api_key, litellm.openai_key, OPENAI_API_KEY; absence remains
-      None. B099 request_model is identity; parsing validates the OpenAI response adapter before conversion.
+      None. B3511 request_model is identity; parsing validates the OpenAI response adapter before conversion.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::decisions_cases::case_[0-9]+_decision_settings$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-decisions/choice-question-roundtrip.yaml
@@ -249,7 +249,7 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 - 'litellm/llms/base_llm/decisions/transformation.py: every function other than decisions_text (including all systemone_*
-  helpers and BaseDecisionsConfig methods) belongs to B099; this provider uses only the shared text projection.'
+  helpers and BaseDecisionsConfig methods) belongs to B3511; this provider uses only the shared text projection.'
 - 'Function ownership inventory litellm/llms/base_llm/decisions/transformation.py: systemone_keys L63-L67; _ir_question
   L70-L97; systemone_request_to_ir L100-L104; _has_image L107-L110; _message_text L113-L116; _systemone_state L119-L130;
   _optional L133-L134; _level_criterion L137-L138; _systemone_question L141-L165; ir_to_systemone_request L168-L179;
@@ -261,7 +261,7 @@ out_of_scope:
   L334-L339; BaseDecisionsConfig.get_complete_url L341-L342; BaseDecisionsConfig.signs_with_aws L344-L345; BaseDecisionsConfig.sign_request
   L347-L356; BaseDecisionsConfig.transform_decisions_request L358-L364; BaseDecisionsConfig.unwrap_response L366-L367;
   BaseDecisionsConfig.parse_response L369-L370; BaseDecisionsConfig.transform_decisions_response L372-L386; BaseDecisionsConfig.get_error_class
-  L388-L394 belong to B099.'
+  L388-L394 belong to B3511.'
 pitfalls:
 - 'The oracle helper for this task is pre-registered as openai_decisions in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/decisions.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/openai_decisions.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - One-option detection uses length < 2 and therefore rejects an empty list too.

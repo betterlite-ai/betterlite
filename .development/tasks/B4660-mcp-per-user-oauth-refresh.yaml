@@ -1,0 +1,241 @@
+id: B4660
+title: MCP bound per-user OAuth refresh
+description: >-
+  Build the refresh and the store chain that serve a user's own OAuth token (the authorization_code mode) to an MCP server call. When the stored access token is near expiry, the gateway trades the stored refresh_token at the server's token endpoint, saves the rotated token, and checks the upstream identity binding before it serves or saves anything. In LiteLLM this is authz_code_refresher.py (176 lines) and per_user_oauth_store.py (265 lines). The only caller at the pin is MCPServerManager.__init__ (mcp_server_manager.py L1931), which builds LazyPerUserOAuthTokenStore with get_mcp_server_by_id and hands it to the credential resolver. build_per_user_oauth_token_store (the public one that drops the Redis flag) has no caller at the pin, so it is not built.
+
+
+  Place. Two modules in betterlite-server, next to B4656's types: crates/betterlite-server/src/mcp/outbound_credentials/authz_code_refresher.rs and per_user_oauth_store.rs, each with a tests.rs in a folder of the same name. Add betterlite-mcp (path dependency) to crates/betterlite-server/Cargo.toml if it is not there yet, and secrecy is already there. Do not add a dependency from betterlite-mcp or betterlite-db to betterlite-server. Read these on main before you write code, and use their names as they are, do not redefine them: B4656 (OAuthToken, TokenStoreUnavailable, OAuthTokenStore, InvalidatableOAuthTokenStore, TokenRefresher, TokenCacheBackend, RefreshCoordinator, InProcessRefreshCoordinator, RefreshingTokenStore, CachedOAuthTokenStore, V2PerUserTokenStore with its CredentialReader, OAuthTokenCacheCodec, DualCacheTokenCacheBackend with its AsyncCache); B4657 (the refresh coordinator factory that is LiteLLM's runtime_refresh_coordinator); B4654 (build_upstream_oauth2_token_request, whose result has headers and body, and its error when the client auth is misconfigured); B4713 (get_user_oauth_credential and store_user_oauth_credential in crates/betterlite-db/src/mcp_user_credentials.rs); B6590 (MCPServer in crates/betterlite-mcp/src/server_record.rs with server_id, effective_token_url, token_endpoint_auth_method, client_id, client_secret and oauth_identity_binding); B1600 (the stored cipher that encrypts and decrypts with the label "mcp_per_user_token"); B173 (the pooled client).
+
+
+  Binding port. B4715 declares OauthBindingPort in crates/betterlite-db/src/oauth_token_resolution.rs with the associated types Server, Ownership and Denied and two methods: `enforce(&self, server, token_response: &serde_json::Map<String, serde_json::Value>, user_id: Option<&str>, grant_type: &str, ownership: Option<&Ownership>) -> Result<Option<String>, Denied>` and `proof_matches(&self, server, user_id: &str, stored_proof: Option<&str>) -> bool`. B4659's IdentityBinder (betterlite-mcp) implements it with Server = MCPServer, Ownership = RefreshOwnership and Denied = BindingDenied. Use that trait for every binding call in this task, as a generic parameter bounded by `OauthBindingPort<Server = MCPServer, Ownership = RefreshOwnership, Denied = BindingDenied>`, and do not use B4659's BindingValidator or credential_binding_matches directly. LiteLLM's validator call is enforce, and its credential_binding_matches call is proof_matches. Tests use a recording fake port, not IdentityBinder.
+
+
+  authz_code_refresher.rs. AuthorizationCodeRefresher implements B4656's TokenRefresher. Its collaborators are injected through its constructor: a ServerLookup (trait with a sync `fn server(&self, server_id: &str) -> Option<Arc<MCPServer>>`, LiteLLM's get_mcp_server_by_id), a TokenEndpointPost (trait with `async fn post_form(&self, url: &str, form: &BTreeMap<String, String>, headers: &BTreeMap<String, String>) -> Option<serde_json::Map<String, serde_json::Value>>`, None for any transport, status or JSON failure), a CredentialPersist (trait with `async fn persist(&self, user_id, server_id, access_token: &str, refresh_token: Option<&str>, expires_in: Option<i64>, scopes: Option<&[String]>, identity_binding_proof: Option<&str>)` returning B4656's refresh error type on failure), the binding port, and a clock returning epoch seconds as f64 (default the system clock). Steps of refresh(user_id, server_id, token), in this order:
+
+  1. token.refresh_token is None gives None.
+
+  2. ServerLookup gives None gives None.
+
+  3. effective_token_url missing or empty gives None.
+
+  4. build_upstream_oauth2_token_request(server, auth_method = server.token_endpoint_auth_method, client_id, client_secret). Its misconfiguration error logs `tracing::warn` "MCP OAuth refresh misconfigured for server <server_id>: <error>" and gives None.
+
+  5. When the server has a binding whose mode is Enforce, call port.enforce with an EMPTY token response, user_id Some(user_id), grant_type "refresh_token" and ownership Some(Presented(refresh_token)). This check runs before any network call. A denial gives None.
+
+  6. Form = grant_type "refresh_token", refresh_token, then every key of the request body from step 4. A body key wins over the first two on a clash.
+
+  7. post_form(token_url, form, request headers). None gives None.
+
+  8. body["access_token"] must be a non-empty string, else None.
+
+  9. Call port.enforce again with the real body, same user, grant_type "refresh_token" and the same Presented ownership. This second call runs for every server, whatever its mode (the port returns Ok(None) when there is no binding or it is not Audit or Enforce). A denial gives None. Its Ok value is the binding proof (None for audit and unbound).
+
+  10. New refresh token = body["refresh_token"] when it is a non-empty string, else the old one. expires_in = parse_expires_in(body["expires_in"]). scopes = parse_scopes(body["scope"]) when that is Some, else token.scopes.
+
+  11. persist(user_id, server_id, access_token, new refresh token, expires_in, scopes (None when the scopes list is empty), proof). A persist failure is returned to the caller, never swallowed and never turned into a token.
+
+  12. Return the new OAuthToken: access_token, expires_at = clock() + expires_in when expires_in is Some (a zero or negative value is used as it is), else None, the new refresh token, scopes (may be empty) and the proof.
+
+
+  Only a denial with status 403 becomes None; BindingDenied always has status 403, so every denial from the port gives None. Any other error is not a denial and passes through.
+
+
+  parse_expires_in(value: &serde_json::Value) -> Option<i64> follows LiteLLM's _parse_expires_in on JSON values: a boolean gives None, a JSON integer is itself, a float such as 3600.0 gives None, a string goes through Python's int() rules (surrounding whitespace, an optional + or - sign, ASCII digits with single underscores between digits, so " +1_0 " is 10) and a failed parse gives None, anything else None. parse_scopes(value) -> Option<Vec<String>> gives the whitespace-split words of a non-empty string and None for an empty string or any other type. Put the body reading (access_token, refresh_token, expires_in, scope) in one decoder function `read_grant_body(body: &serde_json::Map<String, serde_json::Value>) -> Option<GrantBody>` where GrantBody has access_token, rotated_refresh (Option), expires_in and scopes, because it reads bytes an upstream server wrote and is fuzzed (see Fuzz).
+
+
+  per_user_oauth_store.rs. Three adapters and the lazy store. Each adapter takes what it needs through its constructor, with no globals.
+
+  PooledTokenPost implements TokenEndpointPost over B173's pooled client for httpxSpecialProvider.Oauth2Check: a POST with an urlencoded form, headers = {"Accept": "application/json"} plus the given headers (a given Accept replaces the default), a non-2xx status or an unreadable or non-object JSON body or any transport error logs `tracing::warn` "MCP OAuth refresh request failed: <error>" and gives None. A failed refresh is a miss, never a 500.
+
+  DbCredentialReader implements B4656's CredentialReader: it holds an Option of the database handle B4713's functions take. With None it fails with TokenStoreUnavailable("Database not connected"); otherwise it returns get_user_oauth_credential(user_id, server_id).
+
+  DbCredentialPersist implements CredentialPersist: with a None database handle it returns Ok without writing anything (this differs from the reader on purpose, and the refreshed token is still returned to the caller). Otherwise it calls store_user_oauth_credential with skip_byok_guard = true, the scopes list or None, and the proof.
+
+  read_bound_credential(server_lookup, port, reader, user_id, server_id) is the CredentialReader that V2PerUserTokenStore gets: it reads the credential, looks the server up, and when the credential exists and the server's binding mode is Enforce and port.proof_matches(server, user_id, the credential's identity_binding_proof) is false, it returns None as if no credential were stored. Audit mode and unbound servers do not check.
+
+  Chain. The store chain for one build is CachedOAuthTokenStore(RefreshingTokenStore(V2PerUserTokenStore(read_bound_credential), AuthorizationCodeRefresher, coordinator), default_ttl_seconds = 300.0, backend). The cache TTL for a token with no expiry is 300 seconds. expiry_skew_seconds and max_size stay at B4656's defaults (60 and 4096). When the Redis side is wired, the backend is DualCacheTokenCacheBackend over the shared cache with OAuthTokenCacheCodec(encrypt, decrypt) where decrypt uses the label "mcp_per_user_token" and returns None instead of failing, and the coordinator is B4657's Redis coordinator. When Redis is not wired, both are None and B4656's in-process defaults are used. A port trait `RedisChain` with `fn parts(&self) -> Option<RedisParts>` stands for LiteLLM's user_api_key_cache.redis_cache plus runtime_refresh_coordinator: Some when Redis is wired. The composition root (B137) implements it over the shared cache and Redis handle, so this task tests with a fake. The builder (trait StoreBuilder, `fn build(&self) -> BuiltStore` with the chain and a uses_redis flag that is true exactly when parts() was Some) is a struct that holds the server lookup, the port, the reader, the persist, the post and the RedisChain.
+
+  LazyPerUserOAuthTokenStore implements B4656's InvalidatableOAuthTokenStore. It exists because Redis may become available after startup. Rules, copied from LiteLLM:
+
+  - fetch(user_id, server_id): get the token by the chain below, then look the server up. When the token exists and the server's binding mode is Enforce and port.proof_matches(server, user_id, token.identity_binding_proof) is false, call self.invalidate(user_id, server_id) and return None. A server that is not found, an unbound one and an audit one return the token unchecked.
+
+  - Getting the token: when uses_redis is true and a chain exists, use that chain at once. Otherwise take the chain under the lock: while a chain exists and it is not a Redis chain and Redis is now available and local fetches in flight is above 0, wait. Then, if there is no chain, or the chain is not a Redis chain and Redis is now available, build a new one and keep its uses_redis flag. When the chain is not a Redis chain, add 1 to the local fetches. Run the fetch outside the lock. In a finally step, for a non-Redis chain, subtract 1 and wake every waiter when it reaches 0. The wait lets in-flight fetches on the old in-process chain finish before it is replaced, so one refresh token is never redeemed by two coordinators.
+
+  - invalidate(user_id, server_id) follows the same chain and counting rules. It builds the chain when none exists yet, so a shared Redis entry written by another worker is dropped too.
+
+  - Use tokio::sync::Mutex and tokio::sync::Notify (or the same pattern with a waiter re-check) for the lock and the wait, not a std Mutex held across an await. Collaborators are generic parameters with native async fn in traits, as B4659 does, not dyn.
+
+
+  Fuzz. read_grant_body and parse_expires_in read a body from an upstream token endpoint. The cargo-fuzz target refresh_grant_body in crates/betterlite-server/fuzz feeds arbitrary bytes to serde_json::from_slice and, when that gives an object, to read_grant_body. It must never panic. The test mcp::outbound_credentials::authz_code_refresher::tests::replays_the_refresh_grant_corpus replays crates/betterlite-server/fuzz/corpus/refresh_grant_body. Add corpus files: a normal grant, a body with a numeric string expires_in, a float expires_in, a boolean expires_in, an empty access_token, and a body that is a JSON array.
+
+
+  Oracle. No route reaches this code yet (B137 wires the credential resolver, the manager and the tool-call routes), so the HTTP cases come with the umbrella B137. This task has helper cases only. The helper operation b4660 takes a field function, refresh or lazy_fetch. For refresh the Python side builds AuthorizationCodeRefresher with a server lookup that returns an MCPServer made from the case, a token_endpoint fake that records (url, form, headers) and returns the listed body or None, a persist fake that records its arguments, a fixed clock, and an identity_validator fake that records every call (grant_type, token_response, the refresh token in refresh_ownership) and returns the listed proof, None or raises HTTPException(403). It returns the resulting token (or null), the post record, the persist record and the validator records. The Rust side drives the production AuthorizationCodeRefresher through fakes built from the same case. For lazy_fetch the Python side builds LazyPerUserOAuthTokenStore with a store_builder fake and a redis_available fake that follow the case's step list (fetch, invalidate, set_redis_available) and a credential_binding_matches replacement for the module attribute, and returns the log of builder calls, fetch results and invalidations. The Rust side runs the same steps through the production LazyPerUserOAuthTokenStore. Cases that need ordering between concurrent fetches stay out, since asyncio and tokio schedule differently; the case steps run one after another. Add a mcp-per-user-oauth-refresh-* seed to the helper_case corpus for each function.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/outbound_credentials/authz_code_refresher.rs
+    - crates/betterlite-server/src/mcp/outbound_credentials/authz_code_refresher/**
+    - crates/betterlite-server/src/mcp/outbound_credentials/per_user_oauth_store.rs
+    - crates/betterlite-server/src/mcp/outbound_credentials/per_user_oauth_store/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/refresh_grant_body.rs
+    - crates/betterlite-server/fuzz/corpus/refresh_grant_body/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-per-user-oauth-refresh-*
+    - tools/oracle/helpers/b4660.py
+    - tools/oracle/helpers/b4660/**
+    - tools/oracle/src/helpers/server/b4660.rs
+    - tools/oracle/src/helpers/server/b4660/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/authz_code_refresher.py#L1-L78
+    why: The persist and token endpoint callable shapes, parse_expires_in and parse_scopes, and the constructor with its injected clock and identity validator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/authz_code_refresher.py#L80-L176
+    why: The step order of refresh, the early enforce-only binding check with an empty token response, the second check with the real body, and what is persisted and returned.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/per_user_oauth_store.py#L50-L145
+    why: The DB read, the persist that skips when no database, the pooled POST that turns every failure into None, and the Redis-or-in-process choice of backend and coordinator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/per_user_oauth_store.py#L148-L185
+    why: read_bound_credential and the chain build, with the 300 second default TTL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/per_user_oauth_store.py#L188-L265
+    why: LazyPerUserOAuthTokenStore, its binding check after the fetch, and the local fetch counting that delays replacing the in-process chain.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1924-L1940
+    why: The only construction site, which passes get_mcp_server_by_id as the server lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/oauth_token_store.py#L243-L302
+    why: RefreshingTokenStore, which calls the refresher and decides what a None result means.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/runtime_refresh_coordinator.py#L26-L41
+    why: The Redis coordinator that the backend choice depends on.
+  - url: https://datatracker.ietf.org/doc/html/rfc6749#section-6
+    why: The refresh_token grant request and response, including the optional rotated refresh_token and scope.
+
+dod:
+  - text: "A refresh returns None, with no network call, for a token with no refresh_token, an unknown server, a server with no token URL, and a client auth misconfiguration that it logs."
+    proof: [refresher-tests, helper-oracle, helper-tests, helper-python]
+  - text: "In Enforce mode the first binding check runs before the POST with an empty token response and the presented refresh token as ownership, a denial gives None, and the second check with the real body runs for every server and a denial there gives None too."
+    proof: [refresher-tests, helper-oracle, helper-tests, helper-python]
+  - text: "The POST form is grant_type and refresh_token followed by the client auth body, and a missing or empty access_token in the answer, or no answer, gives None and persists nothing."
+    proof: [refresher-tests, helper-oracle, helper-tests, helper-python]
+  - text: "A rotated refresh_token replaces the old one, an omitted one is carried forward, omitted scope keeps the old scopes, empty scopes persist as None, and expires_at is the clock plus a parsed expires_in or None."
+    proof: [refresher-tests, helper-oracle, helper-tests, helper-python]
+  - text: "parse_expires_in and parse_scopes follow LiteLLM for booleans, integers, floats, numeric strings, junk and empty strings, and read_grant_body never panics on arbitrary bytes, including the added corpus."
+    proof: [refresher-tests, grant-corpus, helper-oracle, helper-tests, helper-python]
+  - text: "A persist failure is returned to the caller and a persist with no database handle writes nothing but still returns the token."
+    proof: [refresher-tests, adapter-tests]
+  - text: "PooledTokenPost sends the form with the Accept header (a given Accept wins) and turns a non-2xx status, a transport error and a non-object body into None."
+    proof: [adapter-tests]
+  - text: "DbCredentialReader fails with TokenStoreUnavailable when no database is connected, and DbCredentialPersist stores with skip_byok_guard true."
+    proof: [adapter-tests]
+  - text: "read_bound_credential hides a credential whose proof does not match only for an Enforce server and passes it through for audit, unbound and unknown servers."
+    proof: [store-tests]
+  - text: "LazyPerUserOAuthTokenStore.fetch invalidates the cache entry and returns None when an Enforce server's proof check fails, and returns the token unchecked for an unknown, unbound or audit server."
+    proof: [store-tests, helper-oracle, helper-tests, helper-python]
+  - text: "The lazy store builds the chain on first use, keeps a Redis chain, replaces an in-process chain once Redis is available only after in-flight local fetches finish, and builds a chain on invalidate when none exists."
+    proof: [store-tests, helper-oracle, helper-tests, helper-python]
+  - text: "The chain is Cached over Refreshing over V2PerUserTokenStore with a 300 second default TTL, and uses the Redis backend and coordinator only when RedisChain gives parts."
+    proof: [store-tests]
+  - text: "The oracle cases and the corpus seeds agree with LiteLLM on refresh and lazy_fetch."
+    proof: [helper-oracle, helper-tests, helper-python, helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: refresher-tests
+      why: the refresh step order, the two binding checks, the rotation rules or the expires_in parsing differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::authz_code_refresher::tests::/) - test(replays_the_refresh_grant_corpus)'
+    - id: adapter-tests
+      why: the pooled POST, the database reader or the persist adapter differ from LiteLLM on failure or on a missing database
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::per_user_oauth_store::tests::adapter_/)'
+    - id: store-tests
+      why: the bound credential read, the chain shape or the lazy store rules differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::per_user_oauth_store::tests::/) - test(/^mcp::outbound_credentials::per_user_oauth_store::tests::adapter_/)'
+    - id: grant-corpus
+      why: the refresh_grant_body fuzz target, its added corpus or its replay test is missing or fails
+      run: >-
+        test -f crates/betterlite-server/fuzz/fuzz_targets/refresh_grant_body.rs &&
+        grep -q refresh_grant_body crates/betterlite-server/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/refresh_grant_body)" &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_refresh_grant_corpus)'
+    - id: helper-tests
+      why: the helper adapter does not reach the production refresher and lazy store
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::server::b4660::/) - test(/replays_the_/)'
+    - id: helper-oracle
+      why: the helper cases are missing or differ from LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/mcp-per-user-oauth-refresh)" &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/mcp-per-user-oauth-refresh
+    - id: helper-python
+      why: the Python helper adapter is unchanged or fails the strict checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4660.py tools/oracle/helpers/b4660)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no newly added mcp-per-user-oauth-refresh seed reaches the shared parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-per-user-oauth-refresh-*')" &&
+        grep -lE 'b4660"?:' tools/oracle/fuzz/corpus/helper_case/mcp-per-user-oauth-refresh-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-success-rotated-token.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-success-token-kept.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-scope-kept-when-omitted.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-no-refresh-token.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-unknown-server.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-no-token-url.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-basic-auth-missing-secret.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-endpoint-failure.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-empty-access-token.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-expires-in-string.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-expires-in-float-and-bool.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-body-key-overrides-form.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-enforce-precheck-denied.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-enforce-second-check-denied.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-enforce-proof-persisted.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/refresh-audit-single-check-no-proof.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/lazy-builds-on-first-fetch.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/lazy-redis-replaces-local-chain.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/lazy-redis-chain-kept.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/lazy-invalidate-builds-chain.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/lazy-enforce-mismatch-invalidates.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/lazy-audit-skips-proof-check.yaml
+  - tools/oracle/cases/helpers/mcp-per-user-oauth-refresh/lazy-unknown-server-returns-token.yaml
+
+deviations:
+  - what: The server lookup, the database handle, the Redis cache and coordinator, the cipher and the clock are passed in through constructors. LiteLLM reads them from proxy_server globals on each call.
+    why: The repo rules forbid module-level state. The lazy rebuild when Redis appears is kept, so a Redis that connects after startup is still picked up.
+  - what: Token endpoint requests go through the B173 pooled client behind PooledTokenPost, so its timeouts, redirect rules and body size cap apply.
+    why: Every outbound request in betterlite goes through the pool.
+  - what: expires_in strings are parsed with ASCII digits only and values outside the i64 range read as absent. Python's int() also takes other Unicode decimal digits and any size.
+    why: An identity provider sends plain ASCII seconds, and the difference shows only for a deliberately odd string.
+  - what: A token endpoint body that is JSON but not an object gives None. LiteLLM calls .get on it and fails with an AttributeError.
+    why: A refresh must be a miss, never a server error; the declared type of the answer is a dict, so no oracle case sends a list.
+
+out_of_scope:
+  - "build_per_user_oauth_token_store: no caller at the pin. Only the private builder inside the lazy store is used."
+  - "The production RedisChain (shared cache, Redis handle and B4657's coordinator), the production CredentialReader and the manager that builds the lazy store with get_mcp_server_by_id: wired by the composition root B137."
+  - "OAuthToken, the cache stores, RefreshingTokenStore, V2PerUserTokenStore, OAuthTokenCacheCodec and DualCacheTokenCacheBackend: B4656 owns them. The runtime_refresh_coordinator itself is B4657's."
+  - "enforce_oauth_identity_binding, credential_binding_matches and IdentityBinder: B4659 owns them behind B4715's OauthBindingPort."
+  - "refresh_user_oauth_token and resolve_user_oauth_access_token in db.py, the older path that also refreshes: B4715."
+  - "build_upstream_oauth2_token_request: B4654. get_user_oauth_credential and store_user_oauth_credential: B4713."
+
+pitfalls:
+  - The pre-check with an empty token response runs only for an Enforce binding and comes after the client auth build, so a misconfigured client returns None before any binding check.
+  - The second binding check runs for every server, not only bound ones, and for Audit it returns no proof, so a refreshed audit token is persisted without identity_binding_proof.
+  - The refresh token in refresh_ownership is the stored one that the refresher was handed (Presented), never the envelope form, so the port compares it with the stored credential.
+  - DbCredentialPersist silently skips the write when no database is connected while DbCredentialReader raises, and the caller still gets the new token, so a no-database setup serves a token it never saved.
+  - A body key from build_upstream_oauth2_token_request (client_id, client_secret, resource) is spread after grant_type and refresh_token in the form, so on a clash the body wins.
+  - Scopes fall back to the old token's scopes only when the answer's scope is missing or an empty string, and an empty final list is persisted as None but returned as an empty list on the token.
+  - A JSON float expires_in such as 3600.0 is None while the string "3600" is 3600, so no expiry is recorded for a float.
+  - The proof check in fetch runs on every call, including cache hits from the chain, because the cached token carries its identity_binding_proof; a failing check invalidates the cached entry too.
+  - Replacing the in-process chain waits for local fetches in flight, and an invalidate counts as a local fetch while the chain is not a Redis chain, so skipping that count would let two chains redeem one rotating refresh token.
+  - uses_redis comes from the coordinator being present, and the same Redis check decides when to replace the chain, so the builder and the availability check must read the same RedisChain answer.
+  - The decrypt label for cached tokens is "mcp_per_user_token" and a failed decrypt is None with a debug log, so a salt key change reads as a cache miss.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

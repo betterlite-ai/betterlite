@@ -3,7 +3,7 @@ title: Routing Redis circuit and failure policy
 description: 'Implement RedisFailurePolicy with closed/open/half-open generations, separate timeout streaks,
   explicit-cause classification and throttled warnings. Preserve the pinned env defaults through B002
   config injection; no globals or logging secrets. B360 uses this service around client operations, while
-  general response-cache integration stays B126. Config reads REDIS_CIRCUIT_BREAKER_ENABLED=true, REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD=5,
+  general response-cache integration stays with B5630 and B4299. Config reads REDIS_CIRCUIT_BREAKER_ENABLED=true, REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD=5,
   REDIS_CIRCUIT_BREAKER_RECOVERY_TIMEOUT=60, REDIS_CIRCUIT_BREAKER_TIMEOUT_MIN_DURATION=5.0 and REDIS_TIMEOUT_LOG_INTERVAL=5.0.
   Enabled compares lowercased text to true; preserve timeout streak duration and half-open behavior. Configuration
   boundary keys introduced or consumed here: REDIS_CIRCUIT_BREAKER_ENABLED, REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
@@ -111,7 +111,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - B360 owns final integration and the remaining functions listed in its implementation boundary.
-- 'litellm/caching/redis_cache.py: B126 owns: _AsyncRedisCommands.ping (L78-L78), _AsyncRedisCommands.delete
+- 'litellm/caching/redis_cache.py: B4324 to B4329 and B5640 own these (B5640 out_of_scope maps each one): _AsyncRedisCommands.ping (L78-L78), _AsyncRedisCommands.delete
   (L80-L80), _AsyncRedisCommands.ttl (L82-L82), _AsyncRedisCommands.expire (L84-L84), _AsyncRedisCommands.rpush
   (L86-L86), _AsyncRedisCommands.lpop (L88-L88), _AsyncRedisCommands.pipeline (L90-L90), _AsyncRedisCommands.eval
   (L92-L92), _decoded_counts (L110-L113), _get_call_stack_info (L116-L155), _opaque_kwarg_key (L290-L291),

@@ -57,7 +57,8 @@ description: >-
 
   Return users,total,page,page_size,total_pages=ceil(total/page_size), with total_pages=0 for
   zero total, even when page is beyond the last. For each row dump, remove only the three
-  directory metadata fields via B791 and validate B720 user model plus B124 key_count default0.
+  directory metadata fields via B791 and validate B720 user model plus key_count default 0.
+  No other task declares LiteLLM_UserTableWithKeyCount, so this task builds it as UserTableWithKeyCount in betterlite-server's user_list::projection module: B720's user record plus key_count, default 0.
   B720 excludes password from serialization and normalizes null spend/models/teams; other
   user fields remain, including budget counters, memberships, reset flags and object permissions.
   Do not apply V1 user-info key filtering or master-return settings. Cases full_row_projection,
@@ -65,7 +66,7 @@ description: >-
   total_pages_empty_and_out_of_range compare every field and null/default behavior.
 
   All owned HTTPExceptions use the outer {detail:...} envelope, with no OpenAI type/param/code.
-  Unexpected repository/model failures reach B124's 500 internal_server_error envelope, absent
+  Unexpected repository/model failures reach B8591's 500 internal_server_error envelope, absent
   param/code, subject to B731's database-unavailable classification. Cases handler_error_envelope
   and invalid_row_error_envelope compare the route; it never calls handle_exception_on_proxy.
 
@@ -119,8 +120,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/user_list.rs
     - crates/betterlite-server/src/routes/user_list/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/user-list/**
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/user_list_query.rs
@@ -148,8 +147,11 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/user.py#L19-L69
     why: B720 user projection defaults and password exclusion.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3794-L3795
-    why: B124 key_count projection default.
+    why: key_count projection default, built here as UserTableWithKeyCount.
 dod:
+  - text: This task builds UserTableWithKeyCount in user_list::projection, and key_count_default_zero proves a row without a count reads key_count 0.
+    proof:
+      - behavior-tests
   - text: Every named description case covers its exact filter, scope, sort, count or projection branch.
     proof:
       - behavior-tests
@@ -202,7 +204,7 @@ deviations: []
 out_of_scope:
   - B1203 owns /user/filter/ui, scope_user_search_to_org and _user_search_where;
     B2334 owns query identity helpers and UserListResponse; B791 owns metadata redaction;
-    B720/B124 own user/key-count projections; B736 owns caller membership loading.
+    B720 owns the user projection; B736 owns caller membership loading.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
     _team_table (L128-L132), _verification_token_table (L135-L141), _organization_membership_table (L148-L154),

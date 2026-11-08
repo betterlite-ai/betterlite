@@ -133,7 +133,7 @@ out_of_scope:
   - >-
     Route factory and endpoint handler registration (B3615/B3616).
   - >-
-    Configuration read/update; B3617 owns the GET endpoint and B102 owns create/delete.
+    Configuration read/update; B3617 owns the GET endpoint and B8520 owns create, update and delete.
 pitfalls:
   - >-
     The distinction between _colliding_routes and _is_path_registered is critical:

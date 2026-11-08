@@ -1,0 +1,87 @@
+id: B8192
+title: MCP sampling message and tool conversion
+description: >-
+  Port the pure half of sampling_handler.py: everything that converts between MCP sampling types
+  and OpenAI chat shapes, with no budget, access or network work. Those parts are the model
+  preference resolver (_resolve_model_from_preferences, _has_priorities, _select_model_by_priority
+  with its normalised cost, speed and intelligence scoring), content and message conversion
+  (_convert_mcp_content_to_openai, _convert_single_content, _convert_mcp_messages_to_openai and
+  the tool use and tool result helpers), tool and tool choice conversion
+  (_convert_mcp_tools_to_openai, _convert_mcp_tool_choice_to_openai) and the response conversion
+  (_parse_tool_arguments, _convert_openai_response_to_mcp_result).
+
+  Use typed structs for the OpenAI side. Tool arguments parse into a JSON object or fail with the
+  Python's message. Read lines 67 to 730 of the file; the scoring formula and the stop reason
+  mapping are exact.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/sampling_convert.rs
+    - crates/betterlite-mcp/src/sampling_convert/**
+    - crates/betterlite-mcp/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-sampling-convert/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-sampling-convert-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/sampling_handler.py#L67-L283
+    why: Model preference resolution and priority scoring.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/sampling_handler.py#L284-L605
+    why: Content, message, tool and tool choice conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/sampling_handler.py#L606-L731
+    why: Response protocol shapes and conversion back to an MCP result.
+
+dod:
+  - text: >-
+      A model hint resolves to the same model as the Python, and the priority scorer picks the same
+      model for each weighting in the cases, including ties and a single candidate.
+    proof: [convert-tests, convert-oracle]
+  - text: >-
+      Text, image, audio, tool use and tool result content convert to the same OpenAI messages, in
+      the same order.
+    proof: [convert-tests, convert-oracle]
+  - text: >-
+      Tools and tool choice convert for auto, required, none and a named tool.
+    proof: [convert-tests]
+  - text: >-
+      A completion response converts to a sampling result with the Python's stop reason, text and
+      tool calls. Bad tool arguments fail with the Python's message.
+    proof: [convert-tests, convert-oracle]
+  - text: Every mutant in the conversion logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: convert-tests
+      why: A preference, content, tool or response conversion differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-mcp --no-tests=fail
+        -E 'test(/^sampling_convert::/)'
+    - id: convert-oracle
+      why: Converted messages or results differ from LiteLLM on the same input.
+      run: >-
+        cargo run --locked -p betterlite-oracle -- --self-check
+        tools/oracle/cases/helpers/mcp-sampling-convert
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - Model access, budget checks, guardrails and the completion call (B8193).
+
+pitfalls:
+  - >-
+    The scorer inverts cost and speed before it weights them. A reversed sign still passes
+    one-candidate cases, so add a case with three candidates.
+  - >-
+    The Python uses Protocol classes only to type a response. Rust takes the real completion
+    response struct from the core crate and needs no copy.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

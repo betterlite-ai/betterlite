@@ -1,0 +1,228 @@
+id: B4029
+title: Spend reports and per-user anomaly alerts
+description: >-
+  Build the three spend alert producers of LiteLLM's SlackAlerting class, plus the rules for the three background jobs that
+  call them. Code goes in crates/betterlite-server/src/alerting/, in three modules: spend_reports (weekly and monthly team
+  and tag reports), user_spend_alerts (per-user thresholds and anomalies) and spend_report_jobs (job rules). All outside
+  parts come in through small traits defined in these modules: `SpendAlertSender` (send a message with a level of Low,
+  Medium or High, an `AlertType` from B4020 and empty alerting metadata; the real one calls B4024's send_alert entry
+  point), `SpendAlertCache` (get a key, set a key to "SENT" with a TTL in seconds; the real one is the internal usage
+  cache, B4293), `SpendReportSource` (the team and tag totals for two dates; the real one calls B1725's
+  _get_spend_report_for_time_range), `UserSpendSource` (the per-user rows, see below), `SpendPodLock` (acquire a lock by job
+  id with a TTL and allow_reentrant false; the real one is B1690's PodLockManager) and a clock trait that gives the local
+  date and the UTC date. Tests use fakes. Settings come from B4020's `SlackAlertingArgs` and `AlertType`. A service struct
+  holds `alerting` (an Option of destination names such as "slack"), the enabled alert types and the args, all passed to
+  its constructor. It also takes `hours_in_a_day`, which is 24 unless the caller read the HOURS_IN_A_DAY env var.
+
+  Weekly report, `send_weekly_spend_report(time_range)`, default "7d". Return at once when `alerting` is None or
+  spend_reports is not in the alert types. Everything after that is inside a catch-all that logs and never raises; a
+  time range that does not parse logs "Invalid time range format". Parse days as the integer before the last character,
+  and fail when the last character is not "d" or "D". Today is the clock's local date and the start date is today minus
+  days. The sent marker key is `weekly_spend_report_sent_{start:%Y-%m-%d}_{today:%Y-%m-%d}`; when the cache holds
+  anything for it, return. Ask the source for start and end as "%Y-%m-%d" strings. Return when the answer is None or both
+  lists are empty. The message starts `*💸 Spend Report for `{start:%m-%d-%Y} - {today:%m-%d-%Y}` ({days} days)*` and a
+  newline. When the team list is not None add `\n*Team Spend Report:*\n` and one line per row, ``Team: `{team_alias}` |
+  Spend: `${spend}` `` plus a newline, where spend is round(total_spend, 4) printed like Python prints a float, and a team
+  alias of None prints as `None`. When the tag list is not None add `\n*Tag Spend Report:*\n` and lines
+  ``Tag: `{individual_request_tag}` | Spend: `${spend}` ``. Send it with level Low and alert type spend_reports, then set
+  the marker to "SENT" with ttl duration_in_seconds(time_range) from B199.
+
+  Monthly report, `send_monthly_spend_report()`. It has no alerting or alert type guard, so it runs even when spend_reports
+  is not listed, and the send itself then drops the message. Whole body inside a catch-all that logs and never raises. First
+  day of the month is today with day 1 and the last day comes from the calendar month length. The marker key is
+  `monthly_spend_report_sent_{first:%Y-%m-%d}_{last:%Y-%m-%d}`. The source gets the first and last day. The message header
+  is `*💸 Monthly Spend Report for `{first:%m-%d-%Y} - {last:%m-%d-%Y}` *` with a space before the closing star and a newline
+  after. The team and tag sections are the same as the weekly ones. The marker TTL is 30 * hours_in_a_day * 3600.
+
+  Per-user alerts, `send_user_spend_alerts(has_database)`. Return when `alerting` is None or does not contain "slack",
+  when neither user_spend_thresholds nor user_spend_anomalies is enabled, or when there is no database. The rest is inside
+  a catch-all that logs and never raises, so a source error, or a cache or sender error, ends the pass. Today is the
+  clock's UTC date. Fetch rows through `UserSpendSource` with today and spend_anomaly_baseline_days. Build the events with
+  `evaluate_user_spend` for every row, in row order. Read the cache key of every event; drop the events whose key holds a
+  value. Then, for user_spend_thresholds and after it user_spend_anomalies, skip a type with no events, else send the
+  messages joined with a blank line (`\n\n`) at level High with that alert type, and only after that send set each event's
+  key to "SENT" with the event's TTL. A sender error on the first type stops the pass, so the second type is not sent and
+  no key of the failed type is written.
+
+  `evaluate_user_spend(row, args, today, thresholds_enabled, anomalies_enabled)` is a pure function that returns events in
+  this order: daily threshold, monthly threshold, anomaly. A `UserSpendRow` has user_id, daily_spend, monthly_spend and
+  baseline_spend. An event has kind (daily_threshold, monthly_threshold or anomaly), alert type, message, cache key and
+  cache TTL. Daily threshold: none when daily_spend_per_user_threshold is None or daily_spend is below it, so equal alerts.
+  Message, one line each: `User Daily Spend Threshold Crossed:`, ``User: `{user_id}` ``, ``Spend Today: `${daily:.2f}` ``,
+  ``Daily Threshold: `${threshold:.2f}` ``. Key `user_spend_alert_daily_{user_id}_{today:%Y-%m-%d}`, TTL one day in seconds
+  (hours_in_a_day * 3600), alert type user_spend_thresholds. Monthly threshold: the same with
+  monthly_spend_per_user_threshold, header `User Monthly Spend Threshold Crossed:`, lines ``Spend This Month: `${monthly:.2f}` ``
+  and ``Monthly Threshold: `${threshold:.2f}` ``, key `user_spend_alert_monthly_{user_id}_{today:%Y-%m}` and TTL 32 days.
+  Anomaly: none when daily_spend is below spend_anomaly_min_spend. The daily average is baseline_spend divided by
+  spend_anomaly_baseline_days. None when baseline_spend is above zero and daily_spend is at most multiplier times the
+  average. So a user with no baseline alerts as soon as the daily spend reaches the minimum. Alert type
+  user_spend_anomalies, key `user_spend_alert_anomaly_{user_id}_{today:%Y-%m-%d}`, TTL one day. Message lines:
+  `User Spend Anomaly Detected:`, ``User: `{user_id}` ``, ``Spend Today: `${daily:.2f}` ``,
+  ``Daily Average (last {baseline_days} days): `${avg:.2f}` ``, and
+  ``Trigger: spend above `{multiplier}x` the daily average (minimum `${min:.2f}`)``, where the multiplier prints like a
+  Python float (3.0, 2.5). The threshold events come only when thresholds_enabled and the anomaly event only when
+  anomalies_enabled.
+
+  User spend query. `PgUserSpendSource` implements `UserSpendSource` with the SQL of USER_SPEND_QUERY (user_spend_alerts.py
+  lines 18-28) on LiteLLM_DailyUserSpend, using the postgres access from B700. The date column is a text column, so the
+  three parameters are "%Y-%m-%d" strings: today, the first day of today's month, and today minus max(baseline_days, 1)
+  days. Daily spend is the sum for date = today, monthly is the sum for date from month start, baseline is the sum for date
+  from the baseline start and before today. Rows with a null user_id and users with monthly spend not above zero are left
+  out. Sums are coalesced to 0 and cast to float. A row that does not decode is an error.
+
+  Job rules in spend_report_jobs, because the LiteLLM scheduler setup lives in proxy_server.py
+  `_initialize_slack_alerting_jobs` (lines 11229-11325) and nothing else plans it. `plan_spend_jobs(spend_report_frequency,
+  args)` returns the settings of three jobs and does not start a scheduler. The frequency is the general_settings key
+  spend_report_frequency, default "7d" and also "7d" when empty. Days are the integer before the last character; an unparsable
+  number, a last character other than "d" or "D", or days of zero or less is a typed error "spend_report_frequency must be a
+  positive number of days, e.g., '1d', '7d'". Weekly job: id weekly_spend_report_job, interval days, lock TTL
+  duration_in_seconds(frequency) minus 3600, first run in 10 plus a random 0 to 300 seconds. Monthly job: id
+  monthly_spend_report_job, cron on day 1, lock TTL 3600. User job: id user_spend_alerts_job, interval
+  user_spend_check_interval seconds, lock TTL max(interval - 60, 60), first run in 10 plus a random 0 to 60 seconds. Each job
+  runner, `run_weekly`, `run_monthly` and `run_user_spend`, acquires its lock with allow_reentrant false and skips the run only
+  when the lock answer is exactly false; "no cache" (None) runs the job. Random first-run offsets come through an injected
+  trait so tests are fixed. The APScheduler-like registration, the Prometheus fallback stats job and the app wiring are not
+  built here.
+
+  Oracle. `evaluate_user_spend` is pure, so it gets helper cases against LiteLLM's own function (the skeleton makes the
+  helper operation b4029; its adapter builds a UserSpendRow and a SlackAlertingArgs from the case and returns the events).
+  Messages of the two spend reports are covered by exact-string native tests, since LiteLLM builds them inline in async
+  methods that need the proxy.
+scope:
+  paths:
+    - crates/betterlite-server/src/alerting/spend_reports.rs
+    - crates/betterlite-server/src/alerting/spend_reports/**
+    - crates/betterlite-server/src/alerting/user_spend_alerts.rs
+    - crates/betterlite-server/src/alerting/user_spend_alerts/**
+    - crates/betterlite-server/src/alerting/spend_report_jobs.rs
+    - crates/betterlite-server/src/alerting/spend_report_jobs/**
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - tools/oracle/cases/helpers/user-spend-alerts/**
+    - "tools/oracle/fuzz/corpus/helper_case/user_spend_alerts-*"
+    - tools/oracle/helpers/b4029.py
+    - tools/oracle/helpers/b4029/**
+    - tools/oracle/src/helpers/server/b4029.rs
+    - tools/oracle/src/helpers/server/b4029/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1826-L1897
+    why: send_weekly_spend_report, with its alert type guard, local date window, marker key, message layout and marker TTL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1899-L1961
+    why: send_monthly_spend_report, which has no alert type guard and a header with a space before the closing star.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1963-L2023
+    why: send_user_spend_alerts, with the slack guard, cache dedupe, grouping by alert type and cache writes after each send.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/user_spend_alerts.py#L1-L139
+    why: The whole file, with the SQL, UserSpendRow, the three event builders and evaluate_user_spend.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11229-L11325
+    why: Job setup that calls the three methods, with the lock ids, lock TTLs, intervals and first-run delays.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L160-L167
+    why: The team and tag row shapes (team_alias can be None) that the report source returns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/slack_alerting.py#L95-L128
+    why: The per-user threshold, anomaly and check interval settings with their defaults and bounds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1774-L1776
+    why: The three job id constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L432
+    why: HOURS_IN_A_DAY, read from an env var with default 24, behind the one-day and monthly TTLs.
+dod:
+  - text: The weekly report does nothing without alerting or without spend_reports in the alert types, and sends nothing when the marker key is already set or both lists are empty.
+    proof: [spend-weekly-tests]
+  - text: The weekly report text has the header with local dates as mm-dd-yyyy and the day count, the team section, the tag section, spend rounded to 4 decimals and printed like Python, and a None team alias printed as None.
+    proof: [spend-weekly-tests]
+  - text: The weekly report is sent at level Low with alert type spend_reports, then the marker is set to SENT with the duration_in_seconds TTL of the time range; a bad time range or any error is logged and not raised.
+    proof: [spend-weekly-tests]
+  - text: The monthly report runs without an alert type guard, uses the month window and marker key, its header keeps the space before the closing star, and its marker TTL is 30 days.
+    proof: [spend-monthly-tests]
+  - text: Any error inside the monthly report is logged and not raised.
+    proof: [spend-monthly-tests]
+  - text: evaluate_user_spend builds daily and monthly threshold events that fire at equal spend, with the exact message, cache key and TTL, and only when thresholds are enabled.
+    proof: [user-spend-evaluate-tests, oracle, helper-python, helper-case-corpus]
+  - text: The anomaly event needs the minimum spend, uses the baseline average and multiplier, alerts at once for a user with no baseline, and only when anomalies are enabled.
+    proof: [user-spend-evaluate-tests, oracle, helper-python, helper-case-corpus]
+  - text: send_user_spend_alerts returns early without slack, without an enabled alert type or without a database, and drops events whose cache key is set.
+    proof: [user-spend-send-tests]
+  - text: User alerts are sent per alert type at level High with messages joined by a blank line, cache keys are written only after that type was sent, and a failed first send stops the pass; errors are logged and not raised.
+    proof: [user-spend-send-tests]
+  - text: PgUserSpendSource returns daily, monthly and baseline sums per user from text dates, leaves out null users and users with no monthly spend, and uses the baseline window before today.
+    proof: [user-spend-query-tests]
+  - text: plan_spend_jobs rejects a bad spend_report_frequency, and returns the three jobs with their ids, intervals, lock TTLs and first-run offsets.
+    proof: [spend-jobs-tests]
+  - text: Each job runner skips only when the lock answer is false, runs when the lock answer is true or None, and acquires with allow_reentrant false.
+    proof: [spend-jobs-tests]
+checks:
+  optional: []
+  commands:
+    - id: spend-weekly-tests
+      why: weekly spend report guard, text, marker or error tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^alerting::spend_reports::.*weekly/)'
+    - id: spend-monthly-tests
+      why: monthly spend report window, text, marker or error tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^alerting::spend_reports::.*monthly/)'
+    - id: user-spend-evaluate-tests
+      why: threshold and anomaly event tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^alerting::user_spend_alerts::.*evaluate/)'
+    - id: user-spend-send-tests
+      why: send_user_spend_alerts guard, dedupe, grouping or cache write tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^alerting::user_spend_alerts::.*send/)'
+    - id: user-spend-query-tests
+      why: the per-user spend query tests against Postgres fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^alerting::user_spend_alerts::.*query/)'
+    - id: spend-jobs-tests
+      why: job plan or lock handling tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^alerting::spend_report_jobs::/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4029)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4029 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4029/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added user spend cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/user_spend_alerts-*")" &&
+        grep -lE '^[[:space:]]+b4029:' tools/oracle/fuzz/corpus/helper_case/user_spend_alerts-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/user-spend-alerts/daily-threshold.yaml
+  - tools/oracle/cases/helpers/user-spend-alerts/monthly-threshold.yaml
+  - tools/oracle/cases/helpers/user-spend-alerts/anomaly-with-baseline.yaml
+  - tools/oracle/cases/helpers/user-spend-alerts/anomaly-no-baseline.yaml
+  - tools/oracle/cases/helpers/user-spend-alerts/below-limits.yaml
+  - tools/oracle/cases/helpers/user-spend-alerts/types-disabled.yaml
+deviations:
+  - what: Cache, sender, report source, user spend source, pod lock, clock and the random first-run offsets are injected traits, not the proxy logging object's internal_usage_cache, send_alert, proxy_server's prisma_client and the module level scheduler.
+    why: betterlite has no module state, and the real implementations are wired by the architect from B4293, B4024, B1725, B700 and B1690.
+  - what: send_user_spend_alerts takes a has_database flag, and the real query source is built only when a database is connected.
+    why: LiteLLM reads the global prisma_client from proxy_server, which betterlite does not have.
+  - what: Job rules are returned as plain job settings by plan_spend_jobs and the runners, with no scheduler started in this task.
+    why: LiteLLM registers them on APScheduler inside proxy_server.py, and betterlite's startup wiring owns scheduling.
+  - what: HOURS_IN_A_DAY is a constructor value that defaults to 24, not read here from the environment.
+    why: No backlog task owns that constant, so the caller reads the env var.
+out_of_scope:
+  - send_alert and the Slack, Teams, email and webhook delivery behind it belong to B4024 and B4021.
+  - AlertType, SlackAlertingArgs and their defaults belong to B4020.
+  - _get_spend_report_for_time_range and its SQL belong to B1725; this task only consumes its result through SpendReportSource.
+  - duration_in_seconds belongs to B199, PodLockManager to B1690 and the internal usage cache to B4293.
+  - The health endpoint test alert, which also starts both reports once (_health_endpoints.py L524-L525), belongs to the health route task.
+  - send_fallback_stats_from_prometheus and its scheduled job (proxy_server.py L11311-L11325) are not part of the spend entry and belong to the fallback reports task.
+  - Registering the scheduler and the startup call to _initialize_slack_alerting_jobs (proxy_server.py L10804) belong to the proxy startup wiring.
+pitfalls:
+  - The weekly report returns early without spend_reports in the alert types, but the monthly report has no such check, so a monthly report is still built and queried when the type is off.
+  - Weekly dates use the local date (datetime.now().date()) and the user spend pass uses the UTC date, so the two clocks must stay separate.
+  - The weekly marker TTL is duration_in_seconds(time_range) and the monthly one is a fixed 30 days, while the user monthly marker TTL is 32 days; do not share one constant.
+  - The monthly header is "Monthly Spend Report for `a - b` " with a space before the closing star, and the weekly header has "(N days)" after it.
+  - The tag and team sections are added whenever the list is not None, even when it is empty, so a report with teams and an empty tag list still prints the Tag Spend Report heading.
+  - A team with no alias comes back from the LEFT JOIN as None and is printed as `None`, not skipped and not an empty string.
+  - Spend is round(float, 4) and printed with Python's float text, so 1.0 stays "1.0", 0.00001 becomes "0.0" and 12.34567 becomes "12.3457"; use Rust's {:?} on the rounded f64 for values below 1e16.
+  - A threshold event fires at equal spend (the check is "below threshold returns none"), and the anomaly check skips only when baseline_spend is above zero and daily_spend is at most the multiplier times the average.
+  - The anomaly average divides by spend_anomaly_baseline_days, but the SQL window uses max(baseline_days, 1) days; the setting has ge=1, so both agree.
+  - The anomaly message prints the multiplier with Python float text (3.0x), but the money values with two decimals.
+  - The cache is read for all events first, then written per type after its send, so one type's failed send leaves its keys unset and the other type unsent.
+  - The user spend lock TTL is max(user_spend_check_interval - 60, 60) and the weekly one is the frequency in seconds minus 3600; a lock answer of None (no cache) must still run the job.
+  - The LiteLLM_DailyUserSpend.date column is a string, so the SQL compares text and the parameters must be bound as text, not as dates.
+  - "crates/betterlite-server/Cargo.toml and Cargo.lock are in scope because the worker adds betterlite-logging to the server dependencies."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

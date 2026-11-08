@@ -1,0 +1,13 @@
+id: B8378
+milestone: M8 platform
+title: Deployment checks before router build
+status: todo
+depends_on: [B016, B322, B377, B4116]
+file: tasks/B8378-deployment-checks.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

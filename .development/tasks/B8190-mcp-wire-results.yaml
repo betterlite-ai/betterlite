@@ -1,0 +1,88 @@
+id: B8190
+title: MCP wire compatibility, result conversion and errors
+description: >-
+  Port the small shared MCP types the gateway operations lean on. Read the five files in full;
+  they are short and each rule lives in the code.
+
+  contracts.py names the legacy and modern wire variants (WireCompat) and the request and result
+  shapes the gateway operations pass around. capabilities.py decides which protocol revisions the
+  gateway supports and builds the discovery answer from the revision a client asks for.
+  tool_outcome.py is the value a tool call returns before it is turned into a wire result.
+  result_conversion.py turns a tool outcome into a CallToolResult for legacy clients and into an
+  InputRequiredResult for modern ones. exceptions.py holds the gateway error types, their
+  messages and the mapping to a JSON-RPC error code.
+
+  Every error message, code and default is a literal in the Python. Copy the strings exactly and
+  give each one a named case.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/wire_compat.rs
+    - crates/betterlite-mcp/src/wire_compat/**
+    - crates/betterlite-mcp/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-wire-results/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-wire-results-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/contracts.py#L1-L94
+    why: Wire variants and the request and result shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/capabilities.py#L1-L145
+    why: Supported revisions and the discovery answer per requested revision.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_outcome.py#L1-L56
+    why: The tool outcome value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/result_conversion.py#L1-L120
+    why: Conversion to CallToolResult and InputRequiredResult.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/exceptions.py#L1-L138
+    why: Error types, messages and JSON-RPC codes.
+
+dod:
+  - text: >-
+      Each revision the gateway supports, and each one it rejects, has a named case for the
+      discovery answer from capabilities.py.
+    proof: [wire-tests, wire-oracle]
+  - text: >-
+      A tool outcome converts to a legacy CallToolResult and to a modern result exactly as
+      result_conversion.py does, including the input-required branch.
+    proof: [wire-tests, wire-oracle]
+  - text: >-
+      Every error type in exceptions.py keeps its message text and its JSON-RPC code.
+    proof: [wire-tests]
+  - text: Every mutant in the wire compatibility logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: wire-tests
+      why: A revision, conversion branch or error code differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-mcp --no-tests=fail
+        -E 'test(/^wire_compat::/)'
+    - id: wire-oracle
+      why: Discovery answers or converted results differ from LiteLLM on the same input.
+      run: >-
+        cargo run --locked -p betterlite-oracle -- --self-check
+        tools/oracle/cases/helpers/mcp-wire-results
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - The MCP request context fields and the client allowlist (B8191).
+  - "Where these types are used: listing, execution and dispatch (B8195 to B8199)."
+
+pitfalls:
+  - >-
+    Use the mcp crate's own CallToolResult type when one exists. Do not copy its fields into a
+    second struct.
+  - >-
+    Legacy and modern conversion share one outcome type. Do not fork the outcome per wire variant.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

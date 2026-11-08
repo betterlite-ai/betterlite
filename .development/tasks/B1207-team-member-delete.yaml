@@ -84,8 +84,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/team_member_delete.rs
     - crates/betterlite-server/src/routes/team_member_delete/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-member-delete/**
     - crates/betterlite-server/src/team_member_delete/fixtures.rs
     - crates/betterlite-server/src/team_member_delete/fixtures/**

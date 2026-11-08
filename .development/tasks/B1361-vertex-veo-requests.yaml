@@ -71,7 +71,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B1362 owns _parse_veo_operation, veo_video_count_from_parameters, _build_vertex_video_usage_from_request_data, all response methods, status/content/prefetch requests, unsupported-operation methods and get_error_class.
-  - B093 owns generic video HTTP execution and provider prefetch; B033 exposes this preparation policy without adding video routes.
+  - B3333 to B3337 own generic video HTTP execution and B3336 the edit prefetch; B033 exposes this preparation policy without adding video routes.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as vertex_veo_request in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/veo_request.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_veo_request.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - The URL builder does not use the project returned by header authentication to fill a missing configured project.

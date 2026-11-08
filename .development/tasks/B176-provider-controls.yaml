@@ -68,6 +68,9 @@ dod:
   proof:
   - oracle
   - helper-python
+- text: pick_cheapest_chat_models_from_llm_provider (llm_request_utils.py L136-L170) is built here as a pure function, and B4440 calls it through its CheapestChatModels trait.
+  proof:
+  - provider-controls-tests
 - text: Client metadata cannot override credentials or a configured destination, and CR/LF/NUL values cannot become
     HTTP headers.
   proof:
@@ -124,9 +127,9 @@ oracle_cases:
 - tools/oracle/cases/helpers/provider-controls/stream-chunk-size.yaml
 deviations: []
 out_of_scope:
-- Provider-specific signing and secret-manager lookups belong to provider tasks and B129.
+- Provider-specific signing and secret-manager lookups belong to provider tasks and B8500.
 - A request cannot supply arbitrary environment-variable references or outbound headers that bypass the typed policy.
-- dot_notation_indexing.py is B213 (shared with JWT auth); pick_cheapest_chat_models_from_llm_provider is B019;
+- dot_notation_indexing.py is B213 (shared with JWT auth); pick_cheapest_chat_models_from_llm_provider is this task (see the DoD);
   get_proxy_server_request_headers is B206; non-JSON Langfuse object conversion is B164.
 pitfalls:
 - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/provider_controls-<case>.yaml. The rest of that folder belongs to other tasks.'

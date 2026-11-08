@@ -1,0 +1,122 @@
+id: B3211
+title: Serve UI discovery with deployment URL and capability settings
+description: >-
+  Build the public discovery document the dashboard reads before it logs in: GET /.well-known/litellm-ui-config and GET /litellm/.well-known/litellm-ui-config (the second path is for a proxy mounted under /litellm). Both return the same JSON, need no key, and take no query or body. The handler is `get_ui_config` in ui_discovery_endpoints.py (L14-L46) and its response model is `UiDiscoveryEndpoints` (types/proxy/discovery_endpoints/ui_discovery_endpoints.py L6-L15).
+
+  Response fields, in this order, with LiteLLM's types and defaults: `server_root_path` (string), `proxy_base_url` (string or null), `auto_redirect_to_sso` (bool), `admin_ui_disabled` (bool), `sso_configured` (bool), `hide_default_credentials_hint` (bool, default false), `is_control_plane` (bool, default false), `mcp_stdio_enabled` (bool, default false), `workers` (list of `{worker_id, name, url}`, default empty). The values:
+
+  1. `server_root_path` is the scalar SERVER_ROOT_PATH, "" when unset. It is not the per-request prefix from SERVER_ROOT_PATHS, because LiteLLM calls `get_server_root_path()` and not `get_request_root_path()`. Read it from B4200's section `request_root_paths` (`Settings::server_root_path`).
+  2. `proxy_base_url` is PROXY_BASE_URL exactly as set: null when unset, "" when set but empty, no trimming. Read it from B7323's section `proxy_base_url` (`Settings::proxy_base_url`). Do not call B7323's `CustomUrls` or `get_custom_url`: the discovery document returns the raw variable, not a built URL.
+  3. `sso_configured` is the result of `has_user_setup_sso` (auth_utils.py L1431-L1451), which B881 builds. `hide_default_credentials_hint` is `should_hide_default_credentials_hint` (default_credentials_hint.py L5-L10), which B799 builds. Call both through the public functions those tasks define (read their names and arguments on main), and do not rebuild either rule.
+  4. `auto_redirect_to_sso` is `sso_configured AND auto_redirect_ui_login_to_sso`. The second part is true when env AUTO_REDIRECT_UI_LOGIN_TO_SSO is "true" or general_settings.auto_redirect_ui_login_to_sso is the boolean true. Default false.
+  5. `admin_ui_disabled` is env DISABLE_ADMIN_UI equal to "true". Default false.
+  6. `mcp_stdio_enabled` is `is_mcp_stdio_enabled()` from stdio_gate.py (L14-L15): env LITELLM_ENABLE_MCP_STDIO equal to "true" after trim and lowercase. Default false.
+  7. `is_control_plane` is true when the worker registry has at least one entry, and `workers` is the registry in that case, else an empty list. Take the entry type from B4470 (`WorkerRegistryEntry` in crates/betterlite-config/src/sections/component_contracts.rs).
+
+  Config section `ui_discovery` in betterlite-config (crates/betterlite-config/src/sections/ui_discovery.rs). `Settings { auto_redirect_ui_login_to_sso: bool, admin_ui_disabled: bool, mcp_stdio_enabled: bool }`, each false when nothing is set. Read the three env variables through the same `EnvironmentLookup` the section `request_root_paths` uses, and general_settings.auto_redirect_ui_login_to_sso as an optional bool. The env booleans use the config crate's shared env bool parser (docs/compatibility.md: true, false, 1, 0, yes, no, on, off in any case, spaces trimmed, empty means unset, anything else is a load error naming the variable); find it in the neighbor sections and do not add a second parser. When both the env variable and the key are present for auto_redirect_ui_login_to_sso, the result is true if either is true. Register the section the way `request_root_paths` is registered; the skeleton creates the stub and the sections.rs lines.
+
+  The same section module also holds two pure items from stdio_gate.py that nothing else owns: `pub const MCP_STDIO_ENABLED_ENV_VAR: &str = "LITELLM_ENABLE_MCP_STDIO"` and `pub fn is_mcp_stdio_flag_key(name: &str) -> bool` (true when the name uppercased equals that constant, L18-L19). The loaders for config `environment_variables` and for the stored environment variables call it to skip and warn about that key; they are not built here.
+
+  Module `ui_discovery` in betterlite-server (crates/betterlite-server/src/ui_discovery.rs). Public items:
+
+  1. `UiDiscoveryResponse`, a serde `Serialize` struct with the nine fields above in that order. `proxy_base_url` serializes as null for None. `workers` serializes each entry as `{worker_id, name, url}`.
+  2. `UiDiscoveryInputs { settings: ui_discovery::Settings, server_root_path: String, proxy_base_url: Option<String>, sso_configured: bool, hide_default_credentials_hint: bool, workers: Vec<WorkerRegistryEntry> }`, a plain struct the server wiring fills once at startup from the sections and from B881 and B799.
+  3. `UiDiscovery::new(inputs: UiDiscoveryInputs) -> UiDiscovery` and `UiDiscovery::response(&self) -> UiDiscoveryResponse`, which applies rules 4, 5, 6 and 7 above.
+  4. `routes(discovery: Arc<UiDiscovery>) -> axum::Router`, with `get` on both paths returning 200 and the JSON with content-type application/json. The router has no auth layer. B078 merges it into the app once; this task does not touch routes.rs, server.rs or state.rs.
+
+  The functions cannot fail, so the module has no error enum. Tests under `ui_discovery::tests` cover: defaults (all false, "" root, null base, empty workers), proxy_base_url "" kept, auto redirect needing sso_configured, each of the two sources of auto redirect, admin_ui_disabled, mcp_stdio_enabled, a non-empty registry giving is_control_plane true with the three worker fields, an empty registry giving false and an empty list, field order in the JSON text, and both paths returning identical bodies with no Authorization header. Config tests under `sections::ui_discovery::` cover each env variable set to true, false and unset, the general_settings key as true, false and absent, either-source-true for auto redirect, an invalid bool failing with the variable name, and `is_mcp_stdio_flag_key` for "LITELLM_ENABLE_MCP_STDIO", "litellm_enable_mcp_stdio" and an unrelated name.
+
+  The oracle cases are helper cases (no route reaches this code until B078 mounts it, and B078 adds the HTTP cases). The Python adapter sets the env, builds the document from LiteLLM's own `has_user_setup_sso`, `should_hide_default_credentials_hint`, `is_mcp_stdio_enabled`, `get_proxy_base_url`, `get_server_root_path` and `UiDiscoveryEndpoints`, and returns the model's JSON.
+scope:
+  paths:
+    - crates/betterlite-server/src/ui_discovery.rs
+    - crates/betterlite-server/src/ui_discovery/**
+    - crates/betterlite-config/src/sections/ui_discovery.rs
+    - crates/betterlite-config/src/sections/ui_discovery/**
+    - tools/oracle/cases/helpers/ui-discovery/**
+    - tools/oracle/helpers/b3211.py
+    - tools/oracle/helpers/b3211/**
+    - tools/oracle/src/helpers/server/b3211.rs
+    - tools/oracle/src/helpers/server/b3211/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/ui_discovery_endpoints.py#L12-L46
+    why: Both route decorators and the handler that builds every field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/discovery_endpoints/ui_discovery_endpoints.py#L6-L15
+    why: The response model, its field order and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/stdio_gate.py#L7-L19
+    why: The stdio env var name, is_mcp_stdio_enabled and is_mcp_stdio_flag_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/control_plane_endpoints.py#L1-L14
+    why: WorkerRegistryEntry, the shape of each item in workers. B4470 owns the type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7092-L7098
+    why: Where the worker registry is loaded and why it is empty without a license.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/README.md
+    why: The UI calls /litellm/.well-known/litellm-ui-config to learn the proxy base URL and root path.
+
+dod:
+  - text: GET /.well-known/litellm-ui-config and GET /litellm/.well-known/litellm-ui-config return the same JSON with the nine fields in LiteLLM's order, without an Authorization header.
+    proof: [discovery-tests, oracle]
+  - text: server_root_path is the scalar SERVER_ROOT_PATH and proxy_base_url is PROXY_BASE_URL untouched, null when unset and "" when set but empty.
+    proof: [discovery-tests, oracle]
+  - text: auto_redirect_to_sso is true only when sso_configured is true and either AUTO_REDIRECT_UI_LOGIN_TO_SSO or general_settings.auto_redirect_ui_login_to_sso is true.
+    proof: [discovery-tests, config-tests, oracle]
+  - text: admin_ui_disabled follows DISABLE_ADMIN_UI and mcp_stdio_enabled follows LITELLM_ENABLE_MCP_STDIO, both false by default.
+    proof: [config-tests, oracle]
+  - text: sso_configured and hide_default_credentials_hint are copied from the inputs the server fills from B881 and B799.
+    proof: [discovery-tests, oracle]
+  - text: A non-empty worker registry gives is_control_plane true and lists each worker; an empty one gives false and an empty list.
+    proof: [discovery-tests]
+  - text: is_mcp_stdio_flag_key matches LITELLM_ENABLE_MCP_STDIO in any case and nothing else.
+    proof: [config-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: discovery-tests
+      why: the response model, the field rules or the two routes are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^ui_discovery::/)'
+    - id: config-tests
+      why: the ui_discovery section does not load its env variables and key, or the flag key check is wrong
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::ui_discovery::/)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/ui-discovery/defaults.yaml
+  - tools/oracle/cases/helpers/ui-discovery/base-url-and-root-path.yaml
+  - tools/oracle/cases/helpers/ui-discovery/auto-redirect-needs-sso.yaml
+  - tools/oracle/cases/helpers/ui-discovery/auto-redirect-from-settings.yaml
+  - tools/oracle/cases/helpers/ui-discovery/admin-ui-and-stdio-flags.yaml
+  - tools/oracle/cases/helpers/ui-discovery/hide-credentials-hint.yaml
+
+deviations:
+  - what: sso_configured, hide_default_credentials_hint and the other env flags are read once at startup, not on every request.
+    why: betterlite reads the environment only in the config crate and keeps no per-request environment lookups. A user who changes the variable must restart the proxy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/ui_discovery_endpoints.py#L14-L46
+  - what: workers is empty today, because no loader for the worker_registry config key exists in betterlite.
+    why: LiteLLM raises at startup for worker_registry unless the proxy has a paid license, and the oracle runs without one, so there is nothing to compare. The response type and the control plane rule are built and tested natively.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7092-L7098
+
+out_of_scope:
+  - "get_server_root_path, get_request_root_path and PerRequestRootPathMiddleware (per_request_root_path_middleware.py, proxy/utils.py get_server_root_path): B4200, already built. This task reads its section."
+  - "get_proxy_base_url, get_custom_url and join_paths in proxy/utils.py: B7323. The discovery document returns the raw variable."
+  - "has_user_setup_sso: B881. should_hide_default_credentials_hint: B799."
+  - "is_mcp_stdio_blocked, warn_if_mcp_stdio_blocked and MCP_STDIO_DISABLED_MESSAGE in stdio_gate.py: B4716 builds them next to its StdioPolicy (B136 covers the file)."
+  - "WorkerRegistryEntry (control_plane_endpoints.py): B4470."
+  - "Every other function in proxy/utils.py: B124 and the tasks split from it."
+  - "The worker_registry config loader and its premium gate (proxy_server.py L7092-L7098): B8590, which refuses the key without a license as open-source LiteLLM does, so workers stays empty."
+  - "Mounting the router into the app and the HTTP oracle cases for the two paths: B078."
+  - "discovery_endpoints/README.md is documentation only and has no code."
+
+pitfalls:
+  - server_root_path comes from the scalar SERVER_ROOT_PATH even when SERVER_ROOT_PATHS matched a prefix for this request, so a request under /tenant-a still returns the scalar value.
+  - proxy_base_url set to an empty string returns "" and not null, because LiteLLM only passes None through when the variable is missing.
+  - auto_redirect_to_sso is false when no SSO is configured even if AUTO_REDIRECT_UI_LOGIN_TO_SSO is "true".
+  - general_settings.auto_redirect_ui_login_to_sso counts only as a real boolean true; a string there is a type error, not a truthy value.
+  - mcp_stdio_enabled trims and lowercases its value, while AUTO_REDIRECT_UI_LOGIN_TO_SSO and DISABLE_ADMIN_UI are compared as written in LiteLLM; the shared env bool parser accepts the same set for all three, which docs/compatibility.md allows.
+  - The two paths differ only by the /litellm prefix; register both on the one router and do not redirect one to the other.
+  - The router returns JSON for the document only; a wrong method on these paths is the app's shared 405 handling, which this task does not change.
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

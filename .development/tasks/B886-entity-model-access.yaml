@@ -88,8 +88,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/entity_model_access.rs
     - crates/betterlite-server/src/state/entity_model_access/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/entity-model-access/**
     - crates/betterlite-server/src/auth/entity_model_access.rs
     - crates/betterlite-server/src/auth/entity_model_access/**

@@ -1,0 +1,63 @@
+id: B8392
+title: Guardrail hook execution, metrics and the during-call hook
+description: >-
+  Port how ProxyLogging runs one guardrail: picking the unified hook or the guardrail's own hook, load balancing between guardrail deployments, recording latency metrics, and the sequential and parallel pre-call runners that pre_call_hook (B8393) calls. The during-call hook is here too, since it is only a fan-out of the same runner. Code goes in crates/betterlite-server/src/guardrails/hook_execution.rs and hook_execution/ (execute.rs, pre_call_runners.rs, sensitive_route.rs, metrics.rs, during_call.rs, tests.rs). Callbacks are B8390's `ProxyCallback` and `GuardrailCallback`; errors are B8390's `ProxyHookError`.
+
+  execute.rs. `execute_guardrail_hook(callback, hook_type, data, user_api_key_dict, call_type, response)` (L1802-L1857): the unified path is taken when the callback's own class defines apply_guardrail, use_native_lifecycle_hooks is not set, and not (hook_type during_call and use_native_during_call_hook). On the unified path set `data["guardrail_to_apply"]` and call B3680's `UnifiedGuardrailHooks` pre_call, moderation or post_call_success; otherwise call the callback's own hook. `should_use_load_balancing(name)` (L1785-L1800) is true when the router's guardrail list holds more than one entry with that guardrail_name; `execute_with_load_balancing` (L1859-L1901) asks the router for an available deployment and fails with "No callback found for guardrail: {name}" when it has none. The router side is a `GuardrailBalancer` trait. `process_pre_call_response(response, data, call_type)` (L1768-L1783): an error is raised, a map replaces the data, a string becomes `RejectedRequest` for completion and text_completion call types and HTTP 400 `{"error": text}` for any other.
+
+  pre_call_runners.rs. `process_guardrail_callback` (L1903-L1996): a pre_call event on an MCP call type (`MCP_GUARDRAIL_CALL_TYPES`) becomes pre_mcp_call; a gate answer that is not true skips with None; otherwise run (load balanced when the name qualifies), apply process_pre_call_response, call mark_pre_call_hook_ran, and always emit metrics with status success, intervened (SensitiveDataRoute) or error with the error's type name; an error also gets B3666's `enrich_http_exception_with_guardrail_context`. `run_sequential` (L1998-L2077) handles scan_raw_request: such a guardrail sees a fresh copy of the raw snapshot, any data it returns is dropped with the warning at L2058-L2066, and the live data is returned. `run_parallel` (L2583-L2646) awaits every guardrail, records each raising guardrail through B6370's `record_raising_guardrail`, raises the first error that does not change the request flow, and only then the first one that does.
+
+  sensitive_route.rs. `handle_sensitive_data_route(err, data, user_api_key_dict)` (L2648-L2697): with sticky_session_routing, ask the `sensitive_data_routing` proxy hook to store the session route, or warn that it is not registered; then set `model` to route_to_model and write `sensitive_data_routing_applied`, `_original_model`, `_guardrail` and `_detection_info` into metadata.
+
+  metrics.rs. `emit_guardrail_metrics` (L2700-L2716) forwards to B3878's guardrail observation when a Prometheus logger is configured, else does nothing. `run_guardrail_with_metrics(callback, future, hook_type, request_data)` (L2719-L2753) times the future and enriches and records a raising guardrail.
+
+  during_call.rs. `during_call_hook(data, user_api_key_dict, call_type)` (L2925-L3030): return the data at once when there is no guardrail and no moderation override. A non-guardrail with a moderation override runs only with a user_api_key_dict. A guardrail with no event_hook and a moderation_check of pre_call is skipped; otherwise the gate decides with during_call, or during_mcp_call for call_mcp_tool. For call_mcp_tool the auth object is passed as a map. All selected hooks run together and the first error is raised. The unified moderation path needs a user_api_key_dict and no use_native_during_call_hook.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/hook_execution.rs
+    - crates/betterlite-server/src/guardrails/hook_execution/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1768-L2077
+    why: process_pre_call_hook_response, load balancing, _execute_guardrail_hook, _process_guardrail_callback and _run_sequential_guardrail_callback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2583-L2753
+    why: Parallel pre-call guardrails, sensitive data rerouting and the metric wrappers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2925-L3030
+    why: during_call_hook and _run_during_call_guardrail.
+dod:
+  - text: execute_guardrail_hook picks the unified or own hook by LiteLLM's rule and load balancing applies only with more than one deployment.
+    proof: [execution-tests]
+  - text: process_guardrail_callback maps MCP events, skips on a non-true gate, marks the hook as run and emits metrics with the right status.
+    proof: [execution-tests]
+  - text: scan_raw_request guardrails see the snapshot and their edits are dropped with a warning; parallel guardrails raise a block before a reroute.
+    proof: [execution-tests]
+  - text: A sensitive data route rewrites the model and metadata and stores a sticky route only when asked.
+    proof: [execution-tests]
+  - text: during_call_hook selects guardrails and moderation overrides like LiteLLM and runs them together.
+    proof: [execution-tests]
+  - text: >-
+      execute_guardrail_hook calls B3664's GuardrailInvocation::begin before a callback's own hook that its LiteLLM class decorates with @log_guardrail_information, with the hook name for hook_type (PreCall, Moderation, PostCallSuccess), and finish_success with the hook's result or finish_failure with its error after it.
+    proof: [execution-tests]
+checks:
+  optional: []
+  commands:
+    - id: execution-tests
+      why: guardrail execution, a pre-call runner, rerouting, metrics or the during-call fan-out is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::hook_execution::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The pre_call_hook walk that calls these runners: B8393. Post-call guardrails: B8394."
+  - "should_run_guardrail: B3665. The unified hooks: B3680. record_raising_guardrail: B6370. The Prometheus observation: B3878."
+  - "HTTP oracle cases through the booted proxy: B8399, which wires these functions to the routes."
+pitfalls:
+  - The unified path writes guardrail_to_apply into the request data before the call, and the unified hook removes it; do not clear it here.
+  - A guardrail with no guardrail_name still reports metrics under its class name, or "unknown".
+  - SensitiveDataRoute counts as intervened, not error, in the metric status.
+  - In run_parallel a fast reroute must not hide a slower block, so blocking errors are raised first.
+  - during_call_hook skips a guardrail whose event_hook is unset and moderation_check is pre_call, without asking the gate.
+  - "LiteLLM records a guardrail invocation only around a hook that the guardrail class decorates with @log_guardrail_information (at the pin 17 async_pre_call_hook, 7 async_moderation_hook and 12 async_post_call_success_hook methods). An undecorated own hook records nothing, so never wrap every own hook. The apply_guardrail calls on the unified path are recorded by B3680, not here."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

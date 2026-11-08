@@ -1,0 +1,14 @@
+id: B8253
+milestone: M7 observability
+title: litellm_agent model name resolver
+status: todo
+depends_on: [B4050, B4124]
+file: tasks/B8253-litellm-agent-resolver.yaml
+covers:
+  - "litellm/integrations/litellm_agent/litellm_agent_model_resolver.py"
+parent: B118
+split_from: B118
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

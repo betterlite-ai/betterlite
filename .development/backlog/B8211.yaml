@@ -1,0 +1,14 @@
+id: B8211
+milestone: M6 guardrails
+title: PromptGuard guard API
+status: todo
+depends_on: [B173, B3662, B5471]
+file: tasks/B8211-promptguard-guard.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/promptguard/**"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

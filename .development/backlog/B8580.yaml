@@ -1,0 +1,13 @@
+id: B8580
+milestone: M3 providers
+title: Messages config selection for DeepSeek, Tencent, MiniMax and Eden AI
+status: todo
+depends_on: [B982, B1430, B1440, B6100]
+file: tasks/B8580-messages-host-binding.yaml
+covers: []
+parent: B043
+split_from: B043
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

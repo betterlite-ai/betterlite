@@ -1,0 +1,247 @@
+id: B4382
+title: Build isolated Redis semantic indexes and cache operations
+description: >-
+  Add the module `redis_semantic_cache` to betterlite-prompts, next to B4383's Qdrant cache. It is the Redis half of
+  litellm/caching/redis_semantic_cache.py: `RedisSemanticCache`, which stores model responses in a RediSearch vector
+  index and finds them again by prompt similarity. LiteLLM does this through the Python library redisvl
+  (`SemanticCache`, `CustomTextVectorizer`, `VectorRangeQuery`). No Rust crate does that job, so this task sends the same
+  RediSearch commands itself, through two ports defined in the module. Add `betterlite-redis` to
+  crates/betterlite-prompts/Cargo.toml (betterlite-redis depends only on env and redact, so there is no cycle).
+
+  Ports (traits defined in this module, injected at construction, so tests use fakes and no network):
+  `SemanticEmbedder` has `async fn embed(&self, prompt: &str, metadata: Option<&Map<String, Json>>) -> Result<Vec<f32>,
+  SemanticEmbedError>`. It stands for LiteLLM's `_get_async_embedding`; B4381 owns the real implementation (router or
+  direct call, truncation, timeout, ValueError wrapping), and the architect wires it. `SemanticRedisIndex` has the five
+  async index commands this module needs: `ft_info(index) -> Result<Option<Json>, _>` (None when the index does not exist),
+  `ft_create(index, schema)`, `ft_dropindex(index)` (without deleting documents), `ft_search(index, query) -> Vec<Hit>` and
+  `store_hash(key, fields, ttl: Option<i64>)` (HSET, then EXPIRE when a ttl is given). The production implementation,
+  `LiveSemanticIndex`, wraps `betterlite_redis::redis_live_client::LiveAsyncClient` and sends `FT.INFO`, `FT.CREATE`,
+  `FT.DROPINDEX`, `FT.SEARCH`, `HSET` and `EXPIRE` through its `query` method (B5220). `Json` is
+  `arguments::json::Json`, the type B4380 uses. Types, files, config keys and env vars below use LiteLLM's names.
+
+  Constructor `RedisSemanticCache::new(options: RedisSemanticOptions, env: RedisEnv, embedder: Arc<dyn
+  SemanticEmbedder>, connector: Arc<dyn SemanticIndexConnector>) -> Result<Self, RedisSemanticError>`. The options hold
+  host, port, password, redis_url, similarity_threshold (Option<f64>), embedding_model (default
+  `text-embedding-ada-002`), index_name, embedding_max_input_tokens and embedding_timeout; the last two and
+  embedding_model are kept as public fields because B4381 reads them. Order of work: index_name defaults to
+  `litellm_semantic_cache_index` (the const `DEFAULT_REDIS_INDEX_NAME`). A missing similarity_threshold fails with the
+  message `similarity_threshold must be provided, passed None`. distance_threshold is `1 - similarity_threshold` with no
+  range check. `RedisEnv` is a plain struct with the three optional strings `redis_host`, `redis_port` and `redis_password`, filled by the caller from the process environment. Without redis_url, host, port and password each fall back to the env vars `REDIS_HOST`, `REDIS_PORT` and
+  `REDIS_PASSWORD` (the `RedisEnv` fields) (an explicit non-empty value wins; an empty string counts as missing, like Python's `or`); the first
+  missing one fails with `Missing required Redis configuration: <VAR>. Provide <VAR> or redis_url.` The built URL is
+  `redis://:{password}@{host}:{port}`. The constructor opens nothing: the index is built lazily (see Index build).
+  `embedding_timeout` is resolved by B4310's `resolve_embedding_timeout`, passed in as an already resolved f64 in the
+  options (the caller owns that call). The `connector` turns the URL into a `SemanticRedisIndex` on first use
+  (`LiveSemanticIndex` over `RedisClient::Url`).
+
+  Index build (LiteLLM `llmcache` property, `_build_llmcache`, `_init_semantic_cache`, `_cache_key_filterable_field`).
+  The first operation that needs the index builds it once and shares it (`tokio::sync::OnceCell::get_or_try_init`, so a
+  failed build is retried by the next call, like Python's `_llmcache is None` check). The build first calls the embedder
+  with the text `dimension test` and an empty metadata to learn the vector size (RedisVL's CustomTextVectorizer does
+  this, and it is one extra embedding on the first request). The schema, in this order: `prompt` TEXT, `response` TEXT,
+  `inserted_at` NUMERIC, `updated_at` NUMERIC, `prompt_vector` VECTOR (FLAT, FLOAT32, DIM from the probe,
+  DISTANCE_METRIC COSINE), then the extra field `litellm_cache_key` TAG (`CACHE_KEY_FIELD_NAME`). The index is created
+  `ON HASH` with `PREFIX 1 <index name>`. Try the base index name with overwrite off: if `ft_info` says it exists and its
+  attributes (field names, types, vector DIM, algorithm, metric, datatype) or prefix differ from the expected schema, that
+  is a `SchemaMismatch` error; if it does not exist, `ft_create`. On `SchemaMismatch`, try `<name>_isolated` the same
+  way. On a second `SchemaMismatch`, `ft_dropindex` `<name>_isolated` and `ft_create` it again (overwrite on). Any other
+  error is returned as is. A failed build logs at error level `Redis semantic-cache index build failed: <error>` and
+  returns the error. Log the three info lines LiteLLM prints (`print_verbose`) at debug level: the isolated-index
+  switch, the stale recreate and the initial index name. Never log the URL: LiteLLM logs `redis_url` with the password.
+
+  Key and entry shape (RedisVL `store`). Entry id is the lowercase hex SHA-256 of the UTF-8 bytes of `prompt` followed by
+  `litellm_cache_key` and the cache key (RedisVL joins `str(k)+str(v)` of the sorted filters; this cache has the one filter, so there is no separator). The hash key is `<index name>:<entry id>`, where the index name is the
+  one actually in use (`_isolated` included). Hash fields: `entry_id`, `prompt`, `response`, `prompt_vector` (the f32
+  little-endian bytes), `inserted_at` and `updated_at` (the same Unix time as a float with fractional seconds, from an
+  injected clock) and `litellm_cache_key`. The same prompt and key therefore overwrite the same hash. A vector whose length
+  differs from the index DIM is an error before any write or search (`DimensionMismatch`, RedisVL's `validate_vector_dims`).
+
+  Writes: `async_set_cache(key, value: &Json, kwargs)` where kwargs carries messages, input, metadata and ttl as a typed
+  struct `SemanticCacheKwargs`. Get the prompt from B4380's `extract_semantic_prompt`; pass `messages` as None when the
+  list is empty, because LiteLLM tests `if messages:` and then falls through to Responses `input`. No prompt means log
+  and return Ok without touching Redis. The response is stored as JSON text of `value` (not Python `str(value)`; B4380's
+  decoder reads it back). Embed the prompt with the request metadata, then `store_hash` with the ttl from `get_ttl`.
+  Every failure in this path (prompt, embed, build, store) is logged at debug level `Error in async_set_cache: <error>` and
+  swallowed: the method returns Ok. `get_ttl(ttl: Option<i64>) -> Option<i64>` is LiteLLM's `_get_ttl` and returns the value as is. A ttl of 0 is stored as no expiry, because RedisVL does `ttl or self._ttl` and the cache-level ttl is
+  always None; a negative ttl is sent through to EXPIRE unchanged. `async_set_cache_pipeline(cache_list, kwargs)` runs
+  `async_set_cache` for every pair concurrently with the same kwargs (`futures::future::join_all`) and swallows errors.
+
+  Reads: `async_get_cache(key, kwargs, metadata: Option<&mut Map<String, Json>>) -> Result<Option<Json>, _>`; it never
+  returns Err for a cache problem. Every miss and every error writes `semantic-similarity` = 0.0 into the caller's
+  metadata map when one is given (Python's `kwargs.setdefault("metadata", {})` only creates a local map when the caller
+  passed none, so that case has nothing to write). Steps: no prompt gives a miss. Embed, then one `FT.SEARCH` with
+  these parts: query `@prompt_vector:[VECTOR_RANGE $distance_threshold $vector]=>{$YIELD_DISTANCE_AS: vector_distance}
+  (@litellm_cache_key:{<escaped key>})`, `PARAMS 4 vector <f32 bytes> distance_threshold <distance_threshold>`, `RETURN`
+  of `entry_id prompt response inserted_at updated_at metadata litellm_cache_key vector_distance`, `SORTBY
+  vector_distance ASC`, `LIMIT 0 1`, `DIALECT 2`. The tag value is escaped by putting a backslash before each of
+  ``,.<>{}[]\"':;!@#$%^&*()-+=~|/`` , a space and `?`. No hit is a miss. The first hit is checked with
+  `cache_hit_matches_key`: a hit whose `litellm_cache_key` is absent or differs from the key (as text, bytes decoded as
+  UTF-8) is a miss, which keeps indexes from before the isolation fix from leaking across scopes. On a real hit,
+  `similarity = 1 - vector_distance`, written to `semantic-similarity` in the caller's metadata, and the stored
+  `response` text goes to B4380's `decode_cached_response`. A decode error returns None as a miss but keeps the real
+  similarity already written, because LiteLLM's `_get_cache_logic` returns None after the similarity was set.
+  RedisVL refreshes the ttl of found keys only when the cache has a default ttl, which this cache never has, so no EXPIRE is
+  sent on a hit. Errors anywhere else log at debug `Error in async_get_cache: <error>`, set similarity 0.0 and return None.
+
+  `index_info(&self) -> Result<Json, RedisSemanticError>` (LiteLLM `_index_info`, called by the health readiness details
+  at _health_endpoints.py:1709-1723). It builds the index if needed and returns the `FT.INFO` reply as a `Json` object:
+  the reply's flat key/value array becomes object keys in order, nested arrays of pairs become objects and lists stay
+  lists, numbers stay numbers, bulk strings become strings. B4448's `ReadinessSources::cache_report` calls this and
+  turns an Err into its `index does not exist - error: <error text>` string, so `RedisSemanticError`'s Display text is
+  the Redis error text without a prefix. This is the method B4448 found without an owner; this task owns it under the
+  public Rust name `index_info`.
+
+  Sync variants. LiteLLM also has `set_cache`, `get_cache` and `_get_embedding`. betterlite's gateway is async, so this
+  task builds only the async path (see deviations).
+
+  Write independent native tests in `redis_semantic_cache::tests`, named with the prefixes the checks below filter on,
+  using fake ports and a fixed clock: `options_` (threshold missing, env fallbacks, URL, distance), `ttl_`, `filter_`
+  (tag escaping, entry id, key match), `index_` (create, mismatch to isolated, second mismatch to overwrite, other errors,
+  dimension probe, build retried after failure), `store_` (hash fields, key, ttl, no prompt, errors swallowed, pipeline),
+  `lookup_` (hit, miss, wrong key scope, missing key field, decode failure, metadata writes, embed failure, threshold
+  parameter) and `info_` (reply conversion and error text). Add helper cases for the pure parts only (see oracle_cases).
+
+scope:
+  paths:
+    - crates/betterlite-prompts/src/redis_semantic_cache.rs
+    - crates/betterlite-prompts/src/redis_semantic_cache/**
+    - crates/betterlite-prompts/Cargo.toml
+    - Cargo.lock
+    - tools/oracle/cases/helpers/redis-semantic-cache/**
+    - tools/oracle/helpers/b4382.py
+    - tools/oracle/helpers/b4382/**
+    - tools/oracle/src/helpers/prompts/b4382.rs
+    - tools/oracle/src/helpers/prompts/b4382/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L41-L135
+    why: Class constants, constructor, threshold and distance conversion, env fallbacks and the redis_url build.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L137-L226
+    why: Lazy index build, the cache key tag field, and the isolated-index fallback chain.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L228-L257
+    why: Cache filters, key filter expression, key match check and `_get_ttl`.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L552-L667
+    why: async_set_cache and async_get_cache, the paths this task builds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L659-L683
+    why: >-
+      `_index_info` and async_set_cache_pipeline.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1705-L1725
+    why: The only caller of `_index_info`; B4448 reads the index info for the readiness details.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L215-L232
+    why: How the cache is constructed from the Cache settings (threshold, model, index name).
+  - url: https://github.com/redis/redis-vl-python/blob/v0.28.0/redisvl/extensions/cache/llm/semantic.py
+    why: RedisVL SemanticCache constructor, schema compare, check and store, which this task replaces with direct commands.
+  - url: https://github.com/redis/redis-vl-python/blob/v0.28.0/redisvl/extensions/cache/llm/schema.py
+    why: The index schema, CacheEntry fields and the entry id hash.
+  - url: https://github.com/redis/redis-vl-python/blob/v0.28.0/redisvl/query/query.py#L1138-L1166
+    why: The VECTOR_RANGE query string, YIELD_DISTANCE_AS and how the filter is intersected.
+  - url: https://github.com/redis/redis-vl-python/blob/v0.28.0/redisvl/utils/token_escaper.py
+    why: The tag escape character set (TAG_ESCAPED_CHARS).
+
+dod:
+  - text: A missing similarity_threshold, missing Redis settings and the env fallbacks behave as in LiteLLM, and the URL and distance threshold are built the same way.
+    proof: [options-tests, oracle, helper-python]
+  - text: The index is built once and lazily, with the dimension probe, the exact schema, and the isolated-then-overwrite fallback only on a schema mismatch.
+    proof: [index-tests, oracle, helper-python]
+  - text: Tag escaping, entry ids, key matching and ttl handling match RedisVL and LiteLLM.
+    proof: [filter-tests, ttl-tests, oracle, helper-python]
+  - text: Writes store JSON text under the right key with the right fields and ttl, and every write failure is swallowed.
+    proof: [store-tests]
+  - text: Reads send the scoped range query, treat wrong-scope and missing-key-field hits as misses, set semantic-similarity on every path, and turn decode and other errors into misses.
+    proof: [lookup-tests, oracle, helper-python]
+  - text: index_info returns the FT.INFO reply as ordered JSON and passes the Redis error text through.
+    proof: [info-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: options-tests
+      why: constructor validation, env fallbacks, URL build or distance conversion is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-prompts --no-tests=fail
+        -E 'test(/^redis_semantic_cache::tests::options_/)'
+    - id: ttl-tests
+      why: ttl pass-through or zero-ttl handling is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-prompts --no-tests=fail
+        -E 'test(/^redis_semantic_cache::tests::ttl_/)'
+    - id: filter-tests
+      why: tag escaping, entry id hashing or the key match check is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-prompts --no-tests=fail
+        -E 'test(/^redis_semantic_cache::tests::filter_/)'
+    - id: index-tests
+      why: lazy index build, schema, probe or the isolation fallback chain is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-prompts --no-tests=fail
+        -E 'test(/^redis_semantic_cache::tests::index_/)'
+    - id: store-tests
+      why: hash layout, ttl on write, error swallowing or the pipeline is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-prompts --no-tests=fail
+        -E 'test(/^redis_semantic_cache::tests::store_/)'
+    - id: lookup-tests
+      why: the scoped search, hit validation, similarity metadata or error-to-miss policy is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-prompts --no-tests=fail
+        -E 'test(/^redis_semantic_cache::tests::lookup_/)'
+    - id: info-tests
+      why: index_info conversion or error passthrough is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-prompts --no-tests=fail
+        -E 'test(/^redis_semantic_cache::tests::info_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4382)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4382 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4382/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/helpers/redis-semantic-cache/constructor.yaml
+  - tools/oracle/cases/helpers/redis-semantic-cache/ttl.yaml
+  - tools/oracle/cases/helpers/redis-semantic-cache/key-scope.yaml
+  - tools/oracle/cases/helpers/redis-semantic-cache/index-fallback.yaml
+  - tools/oracle/cases/helpers/redis-semantic-cache/lookup.yaml
+  - tools/oracle/cases/helpers/redis-semantic-cache/store.yaml
+
+deviations:
+  - what: Only the async cache operations are built. LiteLLM's sync `set_cache`, `get_cache` and `_get_embedding` are not.
+    why: The gateway runs on async I/O and calls the async cache methods, so a blocking Redis path would only add a second copy of the logic.
+  - what: The vector index is managed with direct RediSearch commands instead of the redisvl library.
+    why: No Rust crate does this job. The index name, prefix, schema, entry id, hash fields and query follow redisvl 0.28 (LiteLLM allows >=0.4.1,<1.0).
+  - what: A schema mismatch is a typed `SchemaMismatch` error, not a ValueError whose text contains "schema does not match" or "index schema".
+    why: Message sniffing is fragile, and the only source of those messages is the schema compare this module owns.
+  - what: Responses are stored as JSON text, not Python `str(value)`.
+    why: B4380's decoder reads JSON only, and docs/compatibility.md excludes Python repr text.
+  - what: The Redis URL, which holds the password, is never logged.
+    why: LiteLLM prints it with print_verbose; betterlite does not log secrets.
+
+out_of_scope:
+  - Prompt extraction and cached-response decoding; B4380 owns `extract_semantic_prompt` and `decode_cached_response`, and this task calls them (the Redis `_get_prompt_from_kwargs`, `_collect_responses_input_text`, `_coerce_response_input_value` and `_get_cache_logic` bodies live there, with the miss-on-decode-error policy kept here).
+  - Embedding calls, Router lookup, truncation and timeouts (`_embedding_input`, `_get_embedding`, `_get_async_embedding`); B4381 owns them and B4310 owns their helpers. This task only calls the `SemanticEmbedder` port.
+  - Sync `set_cache` and `get_cache`; see deviations. No caller needs them in an async gateway.
+  - Valkey's overrides of the read and write methods (valkey_semantic_cache.py); B8296 owns them.
+  - Choosing the cache type from settings and constructing this cache (caching.py:215-232); B4299 and the cache facade own that, and B4299 raises a not-supported error until this task is wired.
+  - The health readiness details body and the route that call `index_info`; B4448 owns them.
+  - Opening Redis connections (`LiveAsyncClient`, `RedisClient::Url`); B5220 and B4323 own them.
+
+pitfalls:
+  - LiteLLM calls `get_str_from_messages` only when `messages` is truthy, so an empty list falls through to Responses `input`; pass None to B4380's function for an empty list instead of Some(&[]).
+  - The cache key lives only in the `litellm_cache_key` TAG field and in the entry id hash; a hit with that field missing must be a miss, not a hit, or old entries leak between scopes.
+  - A decode failure still keeps the similarity already written to metadata, because `_get_cache_logic` returns None after `semantic-similarity` was set; only the other error paths reset it to 0.0.
+  - RedisVL's `ttl or self._ttl` makes ttl 0 mean no expiry, so store `ttl` only when it is non-zero.
+  - Tag values need the full `TAG_ESCAPED_CHARS` set including `|`, space and `?`; an unescaped `|` in a cache key turns an equality match into a union.
+  - The `_isolated` index name is used for keys, search and info after a fallback, so keep the chosen name in the built index state, not in the options.
+  - The dimension probe embeds the literal text `dimension test` once per build, and a failed build must not cache the failure.
+  - The oracle project does not install redisvl, so the Python adapter must replace `_get_cache_key_filter_expression` and the `llmcache` property with stubs; the escaped tag text is checked by native tests against RedisVL's character list.
+  - >-
+    `async_set_cache_pipeline` passes the same kwargs to every pair and swallows all errors; never fail the batch.
+
+  - "crates/betterlite-prompts/Cargo.toml and Cargo.lock are in scope because the worker adds betterlite-redis to the prompts dependencies."
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

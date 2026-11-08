@@ -1,0 +1,14 @@
+id: B8213
+milestone: M6 guardrails
+title: Qualifire evaluation guardrail
+status: todo
+depends_on: [B173, B3662, B3801, B5471]
+file: tasks/B8213-qualifire-guard.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/qualifire/**"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

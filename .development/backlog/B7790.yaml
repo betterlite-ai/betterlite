@@ -1,0 +1,14 @@
+id: B7790
+milestone: M12 python
+title: Management client base, HTTP transport and the health, model-group and user clients
+status: todo
+depends_on: [B5369, B187, B4592]
+file: tasks/B7790-proxy-client-base.yaml
+covers:
+  - "litellm/proxy/client/{exceptions,http_client,health,model_groups,users}.py"
+parent: B169
+split_from: B169
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

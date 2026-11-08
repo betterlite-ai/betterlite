@@ -1,0 +1,247 @@
+id: B3252
+title: Local template lookup and competitor enrichment
+description: >-
+  Build three things from LiteLLM's policy_endpoints/endpoints.py: the lookup of the local template catalog, the competitor
+  enrichment logic for a template, and the two routes that use them, POST /policy/templates/enrich and POST /policy/templates/enrich/stream.
+  The code goes in two crates. Pure logic goes in betterlite-policy and the routes go in betterlite-server.
+
+
+  Local lookup, in crates/betterlite-policy/src/template_catalog.rs and template_catalog/. LiteLLM's `_load_policy_templates_from_local_backup`
+  (L610-L623) reads litellm/policy_templates_backup.json and returns `[]` when the file is missing. betterlite has no such file. Its
+  18 local records are one JSON object per file in crates/betterlite-policy/assets/templates/local/ (written by B3254, B3256, B3257,
+  B3258, B3261 to B3268). Embed them with `include_str!` from an explicit list of 18 entries, in the order the records have in LiteLLM's
+  backup file: advanced-au-pii-protection, baseline-pii-protection, nsfw-content-filter-australia, nsfw-content-filter-basic,
+  nsfw-content-filter-all-regions, gdpr-eu-pii-protection, eu-ai-act-article5, mcp-security-unregistered-server-block,
+  airline-passenger-data-protection-uae, aviation-operations-security, airline-off-topic-restriction, uae-regulatory-compliance,
+  competitor-mention-detection, topic-filtering, prompt-injection-protection, pdpa-singapore, mas-ai-risk-management, claims-agent-safety.
+  Do not scan the folder at run time and do not read the published/ folder (B3253 owns the published catalog). Expose
+  `local_templates() -> Result<Vec<serde_json::Value>, TemplateCatalogError>` (all 18 records, parsed, keys kept in file order, so enable
+  serde_json's `preserve_order` feature if the workspace does not already) and `find_local_template(id: &str) -> Result<Option<serde_json::Value>, TemplateCatalogError>`.
+  B3253 calls both. A fragment that does not parse is a `TemplateCatalogError`, not a panic. There is no module-level cache; the caller
+  keeps the result if it wants one. serde_json and thiserror are the only new dependencies of betterlite-policy.
+
+
+  Enrichment logic, in crates/betterlite-policy/src/competitor_enrich.rs and competitor_enrich/. Port these LiteLLM functions with the same
+  results (all in endpoints.py):
+  - `_clean_competitor_line` (L901-L904): `line.strip()` then strip the characters `.`, `-`, `)` and space from both ends, then strip again;
+    return none when the result is empty or one character long. Digits are not in the set, so "1. Acme" stays "1. Acme". Length counts
+    characters, not bytes.
+  - `_parse_variations_response` (L942-L960): the lookup is lowercase name to the competitor as given (when two competitors differ only in
+    case, the later one wins). For each line of the trimmed text that has a colon, split at the first colon, find the competitor by
+    the trimmed lowercase name (skip the line when unknown), and set its list to the comma-split, trimmed, non-empty values that differ from the
+    competitor ignoring case. A later line for the same competitor replaces the list but keeps the first position in the map.
+  - `_build_all_names_per_competitor` (L983-L987), `_build_name_blocked_words` (L1027-L1034), `_build_recommendation_blocked_words`
+    (L1037-L1050), `_build_comparison_blocked_words` (L1053-L1084) and `_build_competitor_guardrail_definitions` (L990-L1024). The
+    entries are JSON objects `{keyword, action: "BLOCK", description}` with the exact description texts. The recommendation prefixes are
+    try, use, switch to, consider, in that order. The two brand entries of the comparison list come last. The definitions function deep
+    copies the template's guardrailDefinitions and sets `litellm_params.blocked_words` only for the 11 guardrail_name values in
+    LiteLLM's map (competitor-output-blocker, competitor-input-blocker, competitor-name-blocker, competitor-name-input-blocker,
+    competitor-name-output-blocker, competitor-recommendation-filter, competitor-recommendation-input-filter,
+    competitor-recommendation-output-filter, competitor-comparison-filter, competitor-comparison-input-filter,
+    competitor-comparison-output-filter). Other definitions pass through unchanged.
+  - Prompt text for the refinement (`_build_refinement_prompt`, L756-L770) and for the variations request (the string built inside
+    `_generate_competitor_variations`, L907-L939), character for character. The discovery prompt is the template's own
+    `llm_enrichment.prompt` with `{{<parameter>}}` replaced by the brand name.
+  - The three constants from litellm/constants.py L2053-L2055: MAX_COMPETITOR_NAMES (env var MAX_COMPETITOR_NAMES, default 100),
+    COMPETITOR_LLM_TEMPERATURE (env var COMPETITOR_LLM_TEMPERATURE, default 0.3) and DEFAULT_COMPETITOR_DISCOVERY_MODEL (`gpt-4o-mini`, not an env var). Read the two env vars once at server start into a
+    `CompetitorSettings` struct with betterlite-env's `number`, and pass it in. A value that is not a number is a startup error that names the variable.
+
+
+  Model access. LiteLLM calls `proxy_server.llm_router.acompletion(model, messages, temperature, stream)`. Do not import a router. Define the
+  trait `CompetitorModelClient` in betterlite-server (async fn in trait, no `dyn`, like B3103's model client) with
+  `complete(&self, model, prompt, temperature) -> Result<String, ModelClientError>` (the first choice's message content, empty text when none) and
+  `stream_text(&self, model, prompt, temperature)` returning a stream of content deltas (each chunk's first choice's delta content, empty when
+  none). `ModelClientError` carries a message string. The "router is not initialized" case is an error whose text is exactly `LLM router not initialized`.
+  Production wiring to the router belongs to the task that builds the router handle; see notes. Tests use a fake client.
+
+
+  Routes, in crates/betterlite-server/src/policy_template_routes.rs and policy_template_routes/. Both are POST, tag "policy management", in
+  the standard authenticated route group (B855 and B756 own auth, B865 owns the management wrapper effects for the non-stream route).
+  Neither path is in a role list, so route access follows whatever the shared route checks do for an unlisted path (a non-admin key gets LiteLLM's 403); do not special-case it.
+  - `/policy/templates/enrich` (L714-L753). Decode the body (below), validate it (`_validate_enrichment_request`, L682-L711), pick the
+    model (`model` or the default), then: when `competitors` is a non-empty list use it as given, else build the prompt and call
+    `_discover_competitors_via_llm` (L963-L980: one non-streaming call, split the text into lines, keep the lines `clean_line` accepts, cap at
+    MAX_COMPETITOR_NAMES; any model error is logged with `LLM competitor discovery failed: %s` and gives an empty list). Then
+    `_generate_competitor_variations` (L907-L939: an empty list gives an empty map without a call; otherwise cap the names at
+    MAX_COMPETITOR_NAMES, join with newlines, one call, parse; any model error is logged with `LLM competitor variation generation failed: %s` and gives an empty map). Return
+    `{"guardrailDefinitions": [...], "competitors": [...], "competitor_variations": {...}}` where competitors is the list used (not capped)
+    and the definitions come from the builder with the template's `guardrailDefinitions` (empty list when the key is missing).
+  - Validation errors, all `{"detail": ...}` with the status shown: template id not found among the local records is 404 `Template '<id>' not found`; no
+    `llm_enrichment` key is 400 `Template does not support LLM enrichment`; a `competitors` list longer than MAX_COMPETITOR_NAMES is 400
+    `competitors list exceeds maximum of <n>`; a missing, null, empty or false `parameters[<llm_enrichment.parameter>]` is 400 `Parameter '<parameter>' is required`. This order. The template is found with `find_local_template`.
+  - `/policy/templates/enrich/stream` (L870-L898, generator L813-L867). Same validation, run before the response starts, so errors are plain JSON
+    responses. The response is `text/event-stream` with headers `Cache-Control: no-cache` and `X-Accel-Buffering: no`, its stream wrapped by B005's keep-alive
+    wrapper with `litellm_settings.sse_keepalive_ping_interval_seconds` (default null, no pings) and the ping text `: ping\n\n`
+    (sse_keepalive.py L12 and L45-L60). Each event is `data: <json>\n\n`. Modes, chosen in this order:
+    1. `instruction` set and `competitors` non-empty (refinement): emit one `{"type":"competitor","name":...}` per given name, then stream the
+       refinement prompt through `_stream_llm_competitor_names` (L773-L810) and emit each new name as it arrives.
+    2. `competitors` non-empty without instruction: emit one competitor event per given name and call no model.
+    3. otherwise (discovery): stream the discovery prompt with no existing names.
+    On a model error in 1 or 3, log `LLM competitor refinement failed: %s` or `LLM competitor streaming failed: %s` at error level, emit
+    `{"type":"error","message":<error text>}` and end the stream (no done event). Otherwise emit
+    `{"type":"status","message":"Generating alternate spellings for <n> competitors..."}`, run the variations call, emit
+    `{"type":"status","message":"Building guardrail definitions with <total> variations..."}` (total is the sum of the list lengths), then
+    `{"type":"done","competitors":[...],"competitor_variations":{...},"guardrailDefinitions":[...]}`. The stream-names function: lowercase set
+    of the existing names; read deltas, split off each complete line as the buffer fills, clean it, and yield it when it is not in the set and the count (starting at the
+    number of existing names) is below MAX_COMPETITOR_NAMES; add it to the set and bump the count. The leftover buffer is handled the same way
+    at the end, except that it does not add to the set. Errors from the model client, including `LLM router not initialized`, reach the caller.
+  - Request body `EnrichTemplateRequest` (L667-L679): `template_id` string, `parameters` object, `model` optional string, `competitors` optional
+    list of strings with at most MAX_COMPETITOR_NAMES entries, `instruction` optional string. Add the pure function
+    `decode_enrich_request(bytes: &[u8], max_competitors: usize) -> Result<EnrichTemplateRequest, EnrichRequestError>`. Invalid JSON, a missing
+    `template_id` or `parameters`, a wrong type, or a `competitors` list over the limit is the server's shared 422 validation response. Unknown keys are ignored.
+
+
+  Tests. Native tests, named so the checks can filter on them: `template_catalog::tests::` in betterlite-policy (`lookup_` for the 18 ids and their order, a
+  record found by id, an unknown id; `fragment_` for a bad fragment error), `competitor_enrich::tests::` (`clean_` , `parse_`, `names_` for the builder functions,
+  `definitions_` for the 11 names and pass-through), and `policy_template_routes::tests::` in betterlite-server (`validate_`, `enrich_`, `stream_` with the fake client, one test per mode and
+  per error event; a test that a deduplicated and capped stream stops at the limit; `decode_` for the body decoder). Add a cargo-fuzz target
+  `enrich_request` in crates/betterlite-server/fuzz that feeds `decode_enrich_request` and commit corpus files for it (empty input, truncated JSON, a competitors
+  value that is a string, a 101-entry list); a test named `replays_the_enrich_request_corpus` replays them.
+
+
+  Oracle. The helper operation for this task (the skeleton names it b3252 in the policy helper group) runs LiteLLM's own functions through
+  `function`: `clean_line`, `parse_variations`, `build_definitions` (a template id from the backup file, competitors, brand name, variations map), `refinement_prompt`, and
+  `local_template_ids` (ids of `_load_policy_templates_from_local_backup()` in order) plus `local_template` (one record by id). The Python adapter imports them from
+  litellm.proxy.management_endpoints.policy_endpoints.endpoints. HTTP cases go in tools/oracle/cases/policies/templates-enrich/. They use the master key `oracle-master`,
+  template `aviation-operations-security` (it has llm_enrichment parameter `brand_name`) and: 404 unknown template, 400 template without enrichment (`baseline-pii-protection`), 400 missing brand,
+  422 bad body, 401 without key; enrich with `competitors` given and no model in the config (the router is None in LiteLLM, so variations are empty);
+  enrich with `competitors` given and an `oracle-model` openai deployment with an `upstream` reply carrying
+  variation lines; enrich with discovery from an upstream reply; stream in the three modes and the no-router error event (the oracle reads each `data:` line as JSON).
+  Copy the config and `upstream` shape of tools/oracle/cases/chat/openai-basic.yaml and openai-stream.yaml.
+
+scope:
+  paths:
+    - crates/betterlite-policy/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-policy/src/template_catalog.rs
+    - crates/betterlite-policy/src/template_catalog/**
+    - crates/betterlite-policy/src/competitor_enrich.rs
+    - crates/betterlite-policy/src/competitor_enrich/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/policy_template_routes.rs
+    - crates/betterlite-server/src/policy_template_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/enrich_request.rs
+    - crates/betterlite-server/fuzz/corpus/enrich_request/**
+    - tools/oracle/cases/helpers/policy-templates/**
+    - tools/oracle/cases/policies/templates-enrich/**
+    - "tools/oracle/fuzz/corpus/helper_case/policy-templates-*"
+    - tools/oracle/helpers/b3252.py
+    - tools/oracle/helpers/b3252/**
+    - tools/oracle/src/helpers/policy/b3252.rs
+    - tools/oracle/src/helpers/policy/b3252/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L610-L623
+    why: _load_policy_templates_from_local_backup, the loader the local lookup replaces.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L667-L753
+    why: EnrichTemplateRequest, _validate_enrichment_request and the POST /policy/templates/enrich route from its decorator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L756-L898
+    why: Refinement prompt, the name streamer, the SSE event generator and the POST /policy/templates/enrich/stream route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L901-L1084
+    why: Line cleaning, variations prompt and parser, discovery call and the blocked-word and definition builders.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2053-L2055
+    why: MAX_COMPETITOR_NAMES, COMPETITOR_LLM_TEMPERATURE and DEFAULT_COMPETITOR_DISCOVERY_MODEL with their env vars and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/sse_keepalive.py#L45-L60
+    why: The keep-alive wrapper the stream route uses, which returns the stream unchanged when the interval is null.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L1577-L1846
+    why: aviation-operations-security, a template with llm_enrichment and the competitor guardrail names the builder fills.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L2012-L2133
+    why: competitor-mention-detection, the second template with llm_enrichment.
+
+dod:
+  - text: >-
+      local_templates returns the 18 local records parsed from the embedded fragments in LiteLLM's backup-file order, and find_local_template
+      returns one by id or none.
+    proof: [catalog-tests, oracle, helper-python]
+  - text: >-
+      clean_line, parse_variations and the prompt builders give LiteLLM's results, including the character set that is stripped, the
+      one-character drop, the case-insensitive match and the removal of a variation equal to the name.
+    proof: [enrich-logic-tests, oracle, helper-python]
+  - text: >-
+      The name, recommendation and comparison builders and the definitions builder produce LiteLLM's entries and descriptions, set blocked_words
+      only on the 11 named guardrails, and leave the template itself unchanged.
+    proof: [enrich-logic-tests, oracle, helper-python]
+  - text: >-
+      CompetitorSettings reads MAX_COMPETITOR_NAMES (default 100) and COMPETITOR_LLM_TEMPERATURE (default 0.3) and rejects a value that is not a number.
+    proof: [enrich-logic-tests]
+  - text: >-
+      POST /policy/templates/enrich returns the three keys, uses given competitors or discovers them, swallows model errors into empty lists and maps, and
+      answers 404, 400 and 422 with LiteLLM's detail texts in the stated order.
+    proof: [route-tests, oracle]
+  - text: >-
+      POST /policy/templates/enrich/stream sends the event types and texts of the three modes in order, dedupes and caps names, ends with an error event
+      without done on a model error, and sets the event-stream headers and the keep-alive wrapper.
+    proof: [route-tests, oracle]
+  - text: >-
+      The enrich body decoder rejects malformed bytes and wrong shapes with the shared 422 without panicking and has committed corpus inputs.
+    proof: [request-corpus]
+checks:
+  optional: []
+  commands:
+    - id: catalog-tests
+      why: the local template lookup is missing, out of order or fails on an unknown id
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^template_catalog::.*tests::/)'
+    - id: enrich-logic-tests
+      why: a line cleaner, parser, builder or settings reader of the enrichment logic is missing or wrong
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^competitor_enrich::.*tests::/)'
+    - id: route-tests
+      why: an enrich route, its validation, its stream events or its fake-client behavior is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^policy_template_routes::/) - test(replays_the_enrich_request_corpus)'
+    - id: request-corpus
+      why: the request decoder has no committed malformed-input regressions or no replay test
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/enrich_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_enrich_request_corpus)'
+    - id: helper-python
+      why: the Python oracle helper adapter for this task fails strict Python checks
+      run: test -f tools/oracle/helpers/b3252.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/policy-templates/local-template-ids.yaml
+  - tools/oracle/cases/helpers/policy-templates/local-template-competitor.yaml
+  - tools/oracle/cases/helpers/policy-templates/clean-line-numbering-kept.yaml
+  - tools/oracle/cases/helpers/policy-templates/clean-line-short-dropped.yaml
+  - tools/oracle/cases/helpers/policy-templates/parse-variations-case-insensitive.yaml
+  - tools/oracle/cases/helpers/policy-templates/parse-variations-skips-same-name.yaml
+  - tools/oracle/cases/helpers/policy-templates/build-definitions-aviation.yaml
+  - tools/oracle/cases/helpers/policy-templates/build-definitions-generic.yaml
+  - tools/oracle/cases/helpers/policy-templates/refinement-prompt.yaml
+  - tools/oracle/cases/policies/templates-enrich/unknown-template-404.yaml
+  - tools/oracle/cases/policies/templates-enrich/no-enrichment-400.yaml
+  - tools/oracle/cases/policies/templates-enrich/missing-brand-400.yaml
+  - tools/oracle/cases/policies/templates-enrich/bad-body-422.yaml
+  - tools/oracle/cases/policies/templates-enrich/no-auth-401.yaml
+  - tools/oracle/cases/policies/templates-enrich/given-competitors-no-router.yaml
+  - tools/oracle/cases/policies/templates-enrich/given-competitors-with-variations.yaml
+  - tools/oracle/cases/policies/templates-enrich/discovery-from-model.yaml
+  - tools/oracle/cases/policies/templates-enrich/stream-discovery.yaml
+  - tools/oracle/cases/policies/templates-enrich/stream-given-competitors.yaml
+  - tools/oracle/cases/policies/templates-enrich/stream-refinement.yaml
+  - tools/oracle/cases/policies/templates-enrich/stream-no-router-error.yaml
+
+deviations:
+  - what: The local records come from 18 embedded fragment files and not from a policy_templates_backup.json read at run time.
+    why: A binary has no source tree next to it; the fragments are the same records in the same order, and the helper cases compare ids and records with LiteLLM's file.
+out_of_scope:
+  - "get_policy_templates (GET /policy/templates, L626-L662), the GitHub fetch, POLICY_TEMPLATES_GITHUB_URL and LITELLM_LOCAL_POLICY_TEMPLATES are B3253's, with the published catalog."
+  - "suggest_policy_templates (POST /policy/templates/suggest, L1087-L1120) and AiPolicySuggester are B3253's."
+  - "test_policy_template and _test_guardrail_definitions (L1123-L1265) are B3249's."
+  - "The validate, list, info and match routes and apply_policies (L67-L605) are B3251's and B3250's."
+  - "B005 owns wrap_sse_stream_with_keepalive_pings, SSE_COMMENT_PING and the interval coercion (sse_keepalive.py). This task calls them."
+  - "The router handle behind CompetitorModelClient (llm_router.acompletion) is not built here; see notes."
+
+pitfalls:
+  - "`_clean_competitor_line` strips only `.`, `-`, `)` and space at the ends, so a leading digit stays and a line like `1. Acme` is kept whole."
+  - "`parse_variations` looks names up by lowercase, and two competitors that differ only in case collapse onto the later spelling, so the earlier one gets no variations."
+  - "`competitors` in the enrich response is the full list the caller gave, while the variations are asked for only the first MAX_COMPETITOR_NAMES of them."
+  - "An empty `competitors` list counts as not given (Python truthiness for a list), so it triggers discovery; a null list does too."
+  - "A discovery failure gives an empty list and the route still answers 200 with comparison entries for the brand only, since the two brand entries are added without any competitor."
+  - "The no-router case raises ValueError('LLM router not initialized'): the non-stream route hides it, the stream route turns it into an error event with that text."
+  - "Refinement streams only new names (the prompt tells the model not to repeat), so the done event's competitors are the given names followed by the new ones, in arrival order."
+  - "The last partial line of the streamed text is checked against the set and the cap like any line, but it is not added to the set, which no later line can notice since it is the last."
+  - "Pings are comment lines (`: ping`), so the oracle's SSE reader, which keeps only `data: ` lines, never sees them."
+  - "A `competitors` list over MAX_COMPETITOR_NAMES is stopped by body decoding with a 422 before the validator's own 400 check, as with pydantic's max_length, so the 400 text only matters for a direct call of the validator."
+  - "`MAX_COMPETITOR_NAMES` is read once from the environment; the route code must use the settings value and never a hardcoded 100."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

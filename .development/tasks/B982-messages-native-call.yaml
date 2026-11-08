@@ -17,6 +17,20 @@ description: >-
   resumes the base executor with the trusted skip flag.
 
 
+  Provider config selection is an injected seam as well. At L564-L580 the handler asks
+  ProviderConfigManager.get_provider_anthropic_messages_config(model, provider) for a known provider, then takes the
+  OpenAI-like pass-through config when the deployment passes Messages through, and only with neither bridges to
+  Responses or chat. Define the trait `MessagesConfigSelector` in this module with
+  `fn select(&self, provider: &str, model: &str) -> Option<C>`, where `C` is the Messages provider contract B961 adds
+  to the B010 provider contract. anthropic_messages_handler takes the selector through its constructor, asks it
+  first, and runs the native path with the config it returns. The provider arms (B1440's deepseek arm and JSON tail,
+  B8580's minimax, tencent and edenai arms, the anthropic, bedrock, vertex_ai, azure_ai and github_copilot arms of
+  their provider tasks) implement it; the wave 17 wiring part chains them in the source order of
+  _get_provider_anthropic_messages_config_cached. Test it as api::messages_native_call::tests::config_selection with
+  a fake selector: a returned config takes the native path, None falls through to the pass-through check and the
+  bridges.
+
+
   Implement crates/betterlite-core/src/api/messages_native_call.rs. Use MessagesNativeCallInput and MessagesNativeCallResult
   with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
   through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
@@ -113,6 +127,9 @@ dod:
   proof:
   - case-metadata-validation
   - oracle
+- text: anthropic_messages_handler asks the injected MessagesConfigSelector first and runs the native path with the config it returns; None falls through to the pass-through config and then the Responses or chat bridge, in the order of handler.py L564-L580.
+  proof:
+  - case-config-selection
 - text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
     fuzz corpus exercises the new keys.
   proof:
@@ -146,6 +163,9 @@ checks:
   - id: case-metadata-validation
     why: the metadata-validation behavior or its assertions are absent
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_call::tests::metadata_validation($|::)/)'
+  - id: case-config-selection
+    why: the injected provider config selection is absent or not asked first
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_call::tests::config_selection($|::)/)'
   - id: config-tests
     why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::messages_native_call::tests::loads_settings($|::)/)'

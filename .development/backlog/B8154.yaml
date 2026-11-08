@@ -1,0 +1,17 @@
+id: B8154
+milestone: M3 providers
+title: triton completion, generate, infer and embedding configs
+status: todo
+depends_on: [B2202, B668]
+file: tasks/B8154-triton-provider.yaml
+covers:
+  - "litellm/llms/triton/common_utils.py"
+  - "litellm/llms/triton/completion/handler.py"
+  - "litellm/llms/triton/completion/transformation.py"
+  - "litellm/llms/triton/embedding/transformation.py"
+parent: B040
+split_from: B040
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

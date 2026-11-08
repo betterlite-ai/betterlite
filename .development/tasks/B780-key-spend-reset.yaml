@@ -2,7 +2,7 @@ id: B780
 title: Reset key spend and budget windows
 description: >-
   Implement POST /key/{key:path}/reset_spend with the source's separate writes, not an encompassing
-  transaction. B124 ResetSpendRequest requires reset_to and rejects booleans before float coercion
+  transaction. B8411 ResetSpendRequest requires reset_to and rejects booleans before float coercion
   with 422. The helper accepts numbers, rejects nonnumbers with 400, negative values with 400,
   values greater than (current spend or 0.0) with 400, then values above the lower non-null key or
   related-budget maximum with 400. Equality is allowed. Validation happens before authorization:
@@ -18,7 +18,7 @@ description: >-
   otherwise it is already the stored hash. Query the key including its budget relation.
   The route's explicit HTTPExceptions escape unchanged: absent database 500, missing key 404,
   invalid reset 400, denied role 403 and a null update result 500 use the standard detail.error
-  envelope without OpenAI type/param/code. Its final except maps other failures through B124
+  envelope without OpenAI type/param/code. Its final except maps other failures through B2400
   handle_exception_on_proxy to 500 internal_server_error with openai_error_param/code 500.
   Cases reset_substring_hash, reset_database_absent, reset_key_absent,
   reset_null_update and reset_unexpected_error compare the exact envelope distinction.
@@ -118,8 +118,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/key_regenerate.rs
     - crates/betterlite-server/src/routes/key_regenerate/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-spend-reset/**
     - crates/betterlite-server/src/key_spend_reset/fixtures.rs
     - crates/betterlite-server/src/key_spend_reset/fixtures/**
@@ -191,7 +189,7 @@ deviations:
     why: README requires Decimal monetary values. Native reset_nonfinite_422 covers the difference.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6018-L6053
 out_of_scope:
-  - B770 owns _budget_limit_windows (L6090-L6104); B124 owns ResetSpendRequest and exception mapping;
+  - B770 owns _budget_limit_windows (L6090-L6104); B8411 owns ResetSpendRequest and B2400 (proxy/utils.py) exception mapping;
     B2314 owns hash_token, B734 cache-object eviction and the floor TTL, B878 publication, and
     B199 duration parsing. Spend aggregation is not implemented by this reset endpoint.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),

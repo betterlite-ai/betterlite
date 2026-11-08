@@ -2,7 +2,7 @@ id: B162
 milestone: M12 python
 title: Python Router class
 status: todo
-depends_on: [B158, B016]
+depends_on: [B158, B016, B165]
 file: null
 covers:
   - "litellm/router.py"

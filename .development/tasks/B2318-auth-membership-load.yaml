@@ -9,7 +9,7 @@ description: >-
 
   The cache result is three-way: cached None means miss, the exact string __no_team_membership__
   means known absence, and a successfully decoded LiteLLM_TeamMembership means present. Every
-  other payload goes through B125 CacheCodec.deserialize; a typed instance or valid mapping
+  other payload goes through B4291 CacheCodec.deserialize; a typed instance or valid mapping
   succeeds; invalid mappings warn and mean miss, while unsupported scalar types mean miss without
   a codec warning. Do not mistake
   an empty mapping, false, zero or an invalid membership for a cached negative result. The
@@ -130,7 +130,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B734 owns the shared inflight index and spend-reset wait/eviction sequence; this task owns load creation and completion.
-  - B733 owns cache key generation, backend byte decoding and management TTL settings; B125 owns CacheCodec warning behavior.
+  - B733 owns cache key generation, backend byte decoding and management TTL settings; B4291 owns CacheCodec warning behavior.
   - B2315 owns typed shared-result projection and the deadline-bound repository adapter.
   - B736 owns the user lookup and its last_db_access_time cadence state; the remaining auth_checks.py ownership is enumerated there.
 pitfalls:

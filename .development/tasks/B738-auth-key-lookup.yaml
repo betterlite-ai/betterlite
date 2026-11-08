@@ -99,8 +99,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/auth_key_lookup.rs
     - crates/betterlite-server/src/state/auth_key_lookup/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-key-lookup/**
     - crates/betterlite-server/src/auth/auth_key_lookup.rs
     - crates/betterlite-server/src/auth/auth_key_lookup/**

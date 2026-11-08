@@ -2,7 +2,7 @@ id: B1385
 title: Upload and import files into an existing Vertex RAG corpus
 description: >-
   Implement vertex_rag_ingest with provider-local RagIngestOptions and an injected native
-  file-upload operation; B097 will consume this contract when its API is planned. Own
+  file-upload operation; B3455 consumes this contract for Vertex RAG ingestion. Own
   ingestion.py's 221 nonblank noncomment lines and the 43 live constructor/chunking lines
   in transformation.py. Require vector_store.vector_store_id, gcs_bucket and vertex_project;
   project/location fall back to B1301 VERTEXAI_PROJECT/VERTEXAI_LOCATION, location then
@@ -93,7 +93,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - get_import_rag_files_url, get_retrieve_contexts_url, build_import_rag_files_request and get_auth_headers in transformation.py have no caller at the pin.
-  - B097 owns generic ingestion orchestration and routes; this task exports a provider contract and does not register them.
+  - B3460 owns generic ingestion orchestration and B3465 the routes; this task exports a provider contract and does not register them.
   - Native file upload preparation is B1376, and arbitrary file-URL acquisition is outside these byte-only store methods.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as vertex_rag_chunking in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/rag_chunking.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_rag_chunking.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

@@ -1,0 +1,147 @@
+id: B8252
+title: Generic API logger and compatible callback configs
+description: >-
+  Build LiteLLM's `GenericAPILogger` (`litellm/integrations/generic_api/generic_api_callback.py`) and the data file next
+  to it, `generic_api_compatible_callbacks.json`, in betterlite-logging as the module `generic_api_logger`. The logger
+  posts every success or failure payload to one HTTP endpoint, in batches. Named callbacks (`sample_callback`, `rubrik`,
+  `sumologic`, `qualifire_eval`, `ramp`) fill their endpoint, headers, event types and format from the json file.
+
+  Data file. Copy the json to `crates/betterlite-logging/src/generic_api_logger/compatible_callbacks.json` unchanged and
+  load it with `include_str!` into a typed map. Module `compat_callbacks` has `CallbackConfig` (optional `event_types`,
+  `endpoint`, `headers`, `log_format`, and `environment_variables` as a list of names) and
+  `CompatibleCallbacks::embedded()`, which parses the embedded text and returns an error if it is invalid (a test proves
+  it parses and holds the five names). `is_callback_compatible(name)` and `get_callback_config(name)` read that map.
+  `substitute_env_variables(value, env)` replaces each `{{environment_variables.NAME}}` with the value `env` gives for
+  NAME, or the empty string when unset. NAME matches only upper-case letters and underscores, so
+  `{{environment_variables.Foo1}}` stays as written. `env` is an injected lookup; never read the process environment.
+
+  Settings. Module `generic_settings` has `GenericApiArgs` (`endpoint`, `headers`, `event_types`, `callback_name`,
+  `log_format`, `max_retries`, `retry_delay`, `timeout`) and `GenericApiSettings::resolve(args, env, global_headers)`.
+  Resolve in this order. (1) With a `callback_name` that is in the json file: an unset `endpoint` takes the substituted
+  json endpoint; every json header whose exact key is not already in the given headers is added with its value
+  substituted; unset `event_types` and `log_format` take the json values. A `callback_name` that is not in the file logs
+  the warning "callback_name '<name>' not found in generic_api_compatible_callbacks.json" and goes on with the given
+  values. (2) `endpoint` is the given or json value, else env `GENERIC_LOGGER_ENDPOINT`; an empty string counts as unset.
+  When none exists, fail with "endpoint not set for GenericAPILogger, GENERIC_LOGGER_ENDPOINT not found in environment
+  variables". (3) Headers start as `Content-Type: application/json`, then take env `GENERIC_LOGGER_HEADERS` (comma
+  separated `key=value` items; split each item on its first `=`, trim both sides, skip items without `=`), then
+  `global_headers` (LiteLLM's `litellm.generic_logger_headers`, passed in from the settings), then the headers from step
+  (1). A later source replaces an earlier one by exact key, so `content-type` and `Content-Type` are two headers.
+  (4) `log_format` is `json_array` (default), `ndjson` or `single`; any other text fails with "Invalid log_format: <x>.
+  Must be one of: 'json_array', 'ndjson', 'single'". (5) `max_retries` is `max(0, value)`, `retry_delay` is
+  `max(0.0, value)` with an absent value as 0.0. `timeout` is kept as given. `event_types` stays `None` for "all events".
+
+  Delivery. Module `generic_logger` has `GenericApiLogger`. Its two event methods mirror `async_log_success_event` and
+  `async_log_failure_event`. Each returns at once when `event_types` is set and lacks `llm_api_success` or
+  `llm_api_failure`. Otherwise it appends one payload to the queue and, when the queue length reaches the batch size,
+  sends the batch. The payload is the event's `standard_logging_object`, which stays JSON `null` when the event has none.
+  With the global setting `generic_api_use_v1` true it is the v1 payload instead (below). An internal error is logged
+  and never reaches the caller. Use B256's batch size (512) and flush interval (5 seconds) values and its rule that the
+  caller owns the timer; the periodic flush is the composition root's.
+  `send_batch` does nothing for an empty queue. For `json_array` it posts one body, the JSON array of the queue. For
+  `ndjson` it posts the JSON text of each entry joined with a newline and no trailing newline. For `single` it posts one
+  request per entry, all at the same time, and logs each failure with its index without stopping the others. Serialize
+  with B192's `safe_dumps`. It always empties the queue at the end, success or not: a failed batch is dropped, unlike
+  B256's default, and a test pins that. Do not call B256's requeue path.
+  `post_with_retries` makes `max_retries + 1` attempts. After attempt n it sleeps `retry_delay * 2^n` seconds, where n
+  starts at 0, and skips the sleep when `retry_delay` is 0. A timeout, a transport error or a response with status 500
+  or above is retried; a 4xx response or any other error is not, and the last attempt re-raises. Each retry logs
+  "Generic API Logger - retrying request to <endpoint> after error: <error> (attempt <n>/<total>)" at warning level.
+  Posts use the Logging callback client of B173 with the resolved headers and `timeout`. The sleep comes in through an
+  injected clock so tests do not wait.
+
+  V1 payload. Module `v1_payload` has `v1_logging_payload(kwargs, response, start_time, end_time)`. It builds a map with
+  `id` (the response `id`, else a new UUID text), `call_type` (default `litellm.completion`), `cache_hit` (default
+  false), `startTime`, `endTime`, `model` (default empty), `user` (default empty), `modelParameters` (the
+  `optional_params`), `messages`, `response`, `usage` (the response `usage`; a missing `usage` fails), `metadata` (the
+  `litellm_params.metadata`, `{}` when null) and `cost` (`response_cost`, default 0.0). Then every value is replaced by
+  its string form. Follow docs/compatibility.md for what a Python `str()` of each JSON type becomes; do not invent a
+  repr. The v1 payload is old and rarely on, so keep this module small.
+scope:
+  paths:
+    - crates/betterlite-logging/src/generic_api_logger.rs
+    - crates/betterlite-logging/src/generic_api_logger/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_api/generic_api_callback.py#L33-L94
+    why: The json loader, is_callback_compatible, get_callback_config and substitute_env_variables.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_api/generic_api_callback.py#L96-L233
+    why: The constructor, the settings order and the header sources.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_api/generic_api_callback.py#L234-L345
+    why: Retry rules, the post loop and both event methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_api/generic_api_callback.py#L346-L453
+    why: The three batch formats, the unconditional queue clear and the v1 payload.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_api/generic_api_compatible_callbacks.json
+    why: The five named callback configs the data file carries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L799-L840
+    why: The post call raises on a non-2xx status, which the retry rule relies on.
+dod:
+  - text: >-
+      The embedded json parses into the five named configs, and substitute_env_variables replaces only upper-case NAME
+      patterns, with an unset variable becoming empty.
+    proof: [compat-tests]
+  - text: >-
+      Settings resolve endpoint, headers, event types and format from the given values first, then the named config,
+      then the environment; an unknown name warns; a missing endpoint and a bad format fail with the exact texts.
+    proof: [settings-tests]
+  - text: >-
+      Headers merge in the order default, GENERIC_LOGGER_HEADERS, global headers, given and config headers, by exact
+      key; retries and delay are clamped at zero.
+    proof: [settings-tests]
+  - text: >-
+      The event methods skip an event type that is not listed, queue the standard payload (or JSON null) or the v1
+      payload, and send at the batch size.
+    proof: [delivery-tests]
+  - text: >-
+      json_array, ndjson and single bodies match the rules above; the queue is empty after every send, including a failed
+      one; one failing single request does not stop the others.
+    proof: [delivery-tests]
+  - text: >-
+      Retries follow max_retries plus one attempts with the doubling delay, retry only timeouts, transport errors and
+      5xx, and re-raise on the last attempt.
+    proof: [retry-tests]
+  - text: The v1 payload has the thirteen keys, all as text, and a missing usage fails.
+    proof: [v1-payload-tests]
+checks:
+  optional: []
+  commands:
+    - id: compat-tests
+      why: fails while the embedded json or the placeholder substitution is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^generic_api_logger::compat_callbacks::/)'
+    - id: settings-tests
+      why: fails while the settings order, header merge or validation is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^generic_api_logger::generic_settings::/)'
+    - id: delivery-tests
+      why: fails while event filtering, the three formats or the queue clear are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^generic_api_logger::generic_logger::delivery/)'
+    - id: retry-tests
+      why: fails while the retry classification or the backoff is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^generic_api_logger::generic_logger::retry/)'
+    - id: v1-payload-tests
+      why: fails while the v1 payload keys or their text form are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^generic_api_logger::v1_payload::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The callback_settings route in logging_callback_manager.py that builds a GenericAPILogger from a config entry with `callback_type: generic_api` and caches it by name: B189 is merged without it, so the wave 17 callbacks wiring part builds that route and calls GenericApiSettings::resolve."
+  - "CustomBatchLogger's timer, worker and generic batch delivery: B256 and B191 own them; this task only uses their constants and the no-timer rule."
+  - "Rubrik's own logger and moderation in litellm/integrations/rubrik.py: B3975 to B3978 own them. The `rubrik` entry in the json file is only a config for this logger."
+pitfalls:
+  - >-
+    The queue is cleared in a `finally`. A failed post loses the batch on purpose. B256's primitive keeps failed events,
+    so do not route delivery through it.
+  - >-
+    Python appends None when the event has no `standard_logging_object`, which later serializes as `null`. Keep that; do
+    not skip the entry.
+  - >-
+    `endpoint or env` treats an empty endpoint as unset. `max_retries or 0` treats a missing value as 0.
+  - >-
+    The json headers are added only when the exact key is missing from the given headers, but they are applied before the
+    final merge, so they replace the env and global headers of the same key.
+  - >-
+    The header values and the endpoint can carry secrets (an API key in `Authorization`). The debug line in the
+    constructor prints them in Python; log the callback name, the format and the event types only.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

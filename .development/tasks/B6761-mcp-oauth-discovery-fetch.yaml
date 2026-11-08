@@ -1,0 +1,110 @@
+id: B6761
+title: MCP upstream OAuth metadata discovery fetch
+description: >-
+  Build the code that fetches and parses OAuth metadata for an MCP server: the protected resource document (RFC 9728), the authorization server document (RFC 8414 and OpenID configuration) and the 401 WWW-Authenticate hint. In LiteLLM these are the `_fetch_*`, `_descovery_metadata` and `_attempt_well_known_discovery` methods of MCPServerManager. This task does the network step and the parse only. It decides nothing about retries, caching or when to run (B6762) and applies no trust rules (B6760).
+
+
+  Code goes in the new betterlite-mcp module oauth_discovery: crates/betterlite-mcp/src/oauth_discovery.rs, oauth_discovery/** and tests beside each file. The record types are MCPOAuthMetadata (B6590, server_record). Network access goes through a trait port, MetadataFetcher, with one method get_json(url, headers) returning a FetchedDocument (status, headers, body bytes) or a FetchError. The architect wires the real implementation from betterlite-http (B171 async_safe_get and B173 pooled client) in the server. Tests use a fake MetadataFetcher that serves canned documents by url. A DiscoverySettings struct holds metadata_timeout, read from env LITELLM_MCP_METADATA_TIMEOUT with default 10.0 seconds, and the fetcher implementation applies it (the port takes a Duration argument).
+
+
+  Items to build.
+
+  1. `parse_www_authenticate` (`_parse_www_authenticate_header`): from a WWW-Authenticate value return the resource_metadata url if the header has a Bearer challenge with a resource_metadata="..." parameter, else None. Parameter names are case-insensitive, values may be quoted or bare. Never panics on bytes of any shape.
+
+  2. `is_same_authority_metadata_url` (`_is_same_authority_metadata_url`): true when the candidate url has the same scheme, host and port as the server url (default ports normalized). A resource_metadata url from a 401 is only followed when this is true, and a mismatch logs one warning with both redacted origins (redact_mcp_resource_url from B4654).
+
+  3. `fetch_oauth_discovery_url` (`_fetch_oauth_discovery_url`): GET one url through the port and return the parsed JSON object, or a DiscoveryStatus: NotFound (404, 405, 410), HttpError(status) for other non-2xx, Transport(text) for network errors, Invalid for a body that is not a JSON object. The error text goes through sanitized_error_text (`_sanitized_error_text`) which strips urls to redacted origins. `redacted_origin_list` (`_redacted_origin_list`) joins redacted origins of a url list with ", ".
+
+  4. `fetch_oauth_metadata_from_resource` (`_fetch_oauth_metadata_from_resource`): fetch the protected resource document and return a ResourceMetadata with authorization_servers (strings only), scopes_supported and the resource field. `attempt_well_known_discovery` (`_attempt_well_known_discovery`): build the candidate list for a server url in the order RFC 9728 gives (path-aware /.well-known/oauth-protected-resource/<path> first, then root), try each, stop at the first success, and return the resource metadata plus the attempts made for logging.
+
+  5. `fetch_authorization_server_metadata` (`_fetch_authorization_server_metadata`), `fetch_single_authorization_server_metadata` and `fetch_issuer_anchored_metadata` (`_fetch_issuer_anchored_oauth_metadata`): for an authorization server url try /.well-known/oauth-authorization-server then /.well-known/openid-configuration (path-aware forms first), and parse into MCPOAuthMetadata with authorization_url, token_url, registration_url, scopes (via extract_scopes from B6760), discovered_issuer and from_origin_fallback. The issuer anchored variant fetches only the configured issuer and requires the document's issuer to equal it with issuer_matches (B6760); a mismatch is a DiscoveryStatus::IssuerMismatch.
+
+  6. `build_azure_authorization_server_metadata` (`_build_azure_authorization_server_metadata`): for a login.microsoftonline.com tenant authorization server that serves no metadata, synthesize the authorize and token urls from the tenant path.
+
+  7. `discover_metadata` (`_descovery_metadata`) is the entry point and returns DiscoveryOutcome: Found(MCPOAuthMetadata), or a failure value carrying the DiscoveryStatus list for B6762 to classify as retryable or not. `discover_after_status_error` (`_discover_after_status_error`) handles a 401 from the server url by reading WWW-Authenticate and trying the hinted resource url. `discover_recording_attempts` (`_discover_metadata_recording_attempts`) is the same entry returning the attempts list, which B6762 uses to decide stale versus failed.
+
+  8. Decoder safety: parse_www_authenticate and the JSON metadata decoder (a serde function that reads the document bytes) take outside bytes. Add a cargo-fuzz target `oauth_metadata` under crates/betterlite-mcp/fuzz/fuzz_targets/oauth_metadata.rs that feeds both, add the entry to fuzz/Cargo.toml (create the file if B4683 did not), keep the corpus in fuzz/corpus/oauth_metadata/** with at least five seeds, and add a test replays_the_oauth_metadata_corpus that runs every corpus file through both decoders and asserts no panic. Follow the layout of B4683.
+
+  Tests: fake fetcher, synthetic hosts (idp.test, mcp.test), one test per status class and per candidate order.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/src/oauth_discovery.rs
+    - crates/betterlite-mcp/src/oauth_discovery/**
+    - crates/betterlite-mcp/fuzz/fuzz_targets/oauth_metadata.rs
+    - crates/betterlite-mcp/fuzz/Cargo.toml
+    - crates/betterlite-mcp/fuzz/corpus/oauth_metadata/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L418-L436
+    why: metadata payload types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L906-L912
+    why: redacted origin list and sanitized error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L4889-L5120
+    why: same authority check, single url fetch, entry points and the 401 path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5120-L5318
+    why: resource and authorization server fetch, issuer anchoring and the Azure fallback.
+  - url: https://www.rfc-editor.org/rfc/rfc9728
+    why: protected resource metadata and the WWW-Authenticate resource_metadata parameter.
+  - url: https://www.rfc-editor.org/rfc/rfc8414
+    why: authorization server metadata paths and issuer rule.
+
+dod:
+  - text: parse_www_authenticate returns the resource_metadata url for quoted and bare values and None otherwise, and never panics.
+    proof: [discovery-parse-tests]
+  - text: A resource_metadata url on another authority is not followed and logs a warning with redacted origins.
+    proof: [discovery-parse-tests]
+  - text: Each failure class (not found, http error, transport, invalid body) maps to its DiscoveryStatus and error text carries only redacted origins.
+    proof: [discovery-fetch-tests]
+  - text: Resource and authorization server documents are tried in the RFC order and parsed into MCPOAuthMetadata, with the issuer anchored variant failing on an issuer mismatch.
+    proof: [discovery-flow-tests]
+  - text: The Azure tenant fallback builds authorize and token urls from the tenant path.
+    proof: [discovery-flow-tests]
+  - text: The oauth_metadata fuzz target exists and its corpus replays without a panic.
+    proof: [discovery-fuzz-replay]
+
+checks:
+  optional: []
+  commands:
+    - id: discovery-parse-tests
+      why: header parsing or the same authority gate is missing or panics
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_discovery::tests::parse_/)'
+    - id: discovery-fetch-tests
+      why: a failure class is not mapped or the error text leaks a full url
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_discovery::tests::fetch_/)'
+    - id: discovery-flow-tests
+      why: candidate order, issuer anchoring or the Azure fallback is missing
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_discovery::tests::flow_/)'
+    - id: discovery-fuzz-replay
+      why: the fuzz target or its corpus is missing, or a seed makes a decoder panic
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/replays_the_oauth_metadata_corpus/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Network access is a MetadataFetcher trait and DiscoveryOutcome is a typed enum, not exceptions and httpx responses.
+    why: the crate stays free of an HTTP client dependency and tests run offline; the architect wires betterlite-http.
+
+out_of_scope:
+  - "Retry delays, backoff, slot state, tasks and the 503 on failure: B6762."
+  - "Trust rules for discovered endpoints (restrict_to_corroborated, carry forward, merge): B6760."
+  - "The MCPOAuthMetadata record itself: B6590."
+  - "canonicalize_url_identity and redact_mcp_resource_url: B4654."
+  - "hydrate_config_server_dcr_client and invalidate_oauth_metadata_cache in discoverable_endpoints: no owner found, see the architect notes."
+
+pitfalls:
+  - "Only follow a 401 resource_metadata url when it has the same scheme, host and port as the server url; any other host is an SSRF vector."
+  - "Treat 404, 405 and 410 as 'not here, try the next candidate', and every other non-2xx as an error that is recorded but does not stop the candidate loop."
+  - "The issuer anchored fetch must not fall back to the server url, so a failed fetch leaves the endpoints None."
+  - "Error text built from a transport error must pass through sanitized_error_text, since reqwest errors embed the full url with query."
+  - "Path-aware candidates come before the root candidate for a server url with a path, and the path has its trailing slash removed."
+  - "LITELLM_MCP_METADATA_TIMEOUT is read once into DiscoverySettings, an invalid or non-positive value falls back to 10.0."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
