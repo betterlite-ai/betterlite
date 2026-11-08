@@ -98,30 +98,25 @@ where
     Resolver: CredentialResolver + Sync,
     Transport: AwsBlockingTransport,
 {
-    pub fn blocking_post_action<Payload, Answer>(
+    pub fn blocking_post_action<Body, Reply>(
         &self,
-        request: &ActionRequest<'_, Payload>,
+        request: &ActionRequest<'_, Body>,
         optional_params: Option<&mut AwsOptionalParams>,
         timeout: Option<SecretTimeout>,
-    ) -> Result<
-        Answer,
-        AwsRequestError<
-            <Resolver as CredentialResolver>::Error,
-            <Transport as AwsTransport>::Error,
-        >,
-    >
+    ) -> Result<Reply, AwsRequestError<Resolver::Error, Transport::Error>>
     where
-        Answer: DeserializeOwned,
-        Payload: Serialize,
+        Body: Serialize,
+        Reply: DeserializeOwned,
     {
-        let prepared =
-            self.prepare_request(request, None, optional_params, (self.dependencies.clock)())?;
-        checked_reply(self.dependencies.transport.post_blocking(TransportRequest {
+        let now = (self.dependencies.clock)();
+        let prepared = self.prepare_request(request, None, optional_params, now)?;
+        let response = self.dependencies.transport.post_blocking(TransportRequest {
             url: &prepared.endpoint_url,
             headers: prepared.headers,
             body: prepared.body.expose_secret(),
             timeout: request_timeout(timeout),
             max_response_bytes: MAX_RESPONSE_BYTES,
-        }))
+        });
+        checked_reply(response)
     }
 }
