@@ -2144,12 +2144,17 @@ name = "betterlite-provider"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-lc-rs",
+ "base64 0.23.1",
  "betterlite-config",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-prompts",
+ "chrono",
  "futures-util",
  "http 1.5.0",
+ "pem",
  "rstest",
  "rust_decimal",
  "secrecy",
