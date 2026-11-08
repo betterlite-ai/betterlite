@@ -106,17 +106,21 @@ impl AdmissionControl {
         }
     }
 
+    #[must_use]
+    fn reserve_queue_slot(&self, max_queued: u64) -> bool {
+        self.queued
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |queued| {
+                (queued < max_queued).then_some(queued.saturating_add(1))
+            })
+            .is_ok()
+    }
+
     async fn admit(&self, limits: &Limits) -> Result<OwnedSemaphorePermit, Rejection> {
         if let Ok(permit) = Arc::clone(&self.semaphore).try_acquire_owned() {
             return Ok(permit);
         }
         let max_queued = u64::try_from(limits.max_queued_requests).unwrap_or(u64::MAX);
-        let reserved = self
-            .queued
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |queued| {
-                (queued < max_queued).then_some(queued.saturating_add(1))
-            });
-        if reserved.is_err() {
+        if !self.reserve_queue_slot(max_queued) {
             self.rejected_queue_full.fetch_add(1, Ordering::AcqRel);
             self.rejected_total.fetch_add(1, Ordering::AcqRel);
             return Err(Rejection::QueueFull);

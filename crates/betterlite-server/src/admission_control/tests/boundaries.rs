@@ -1,26 +1,29 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Barrier};
+use std::thread;
 use std::time::Duration;
 
 use axum::http::StatusCode;
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::admission_control::{Limits, Settings};
 use rstest::rstest;
-use tokio::sync::Barrier;
-use tokio::time::{sleep, timeout};
 
 use super::harness::{
-    Behavior, Requests, WAIT, application, await_queued, await_started, gates, harness,
+    Behavior, Requests, application, await_queued, await_started, gates, harness,
 };
 use crate::admission_control::{AdmissionControl, AdmissionStack, InFlightRequests};
 use crate::routing::admission_control::hot_routes_first;
+
+const RESERVATION_THREADS: usize = 8;
+const RESERVATION_ROUNDS: u32 = 200;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Boundary {
     QueueFullAtCapacity,
     QueueTimeoutAtTheLimit,
     CancelQueuedDecrements,
-    QueueBoundUnderConcurrency,
+    QueueReservationThreadContention,
     HugeLimitDisables,
     HotRoutesFirst,
     InstallWiresTheStack,
@@ -30,7 +33,7 @@ enum Boundary {
 #[case::queue_full_at_capacity(Boundary::QueueFullAtCapacity)]
 #[case::queue_timeout_at_the_limit(Boundary::QueueTimeoutAtTheLimit)]
 #[case::cancel_queued_decrements(Boundary::CancelQueuedDecrements)]
-#[case::queue_bound_under_concurrency(Boundary::QueueBoundUnderConcurrency)]
+#[case::queue_reservation_thread_contention(Boundary::QueueReservationThreadContention)]
 #[case::huge_limit_disables(Boundary::HugeLimitDisables)]
 #[case::hot_routes_first(Boundary::HotRoutesFirst)]
 #[case::install_wires_the_stack(Boundary::InstallWiresTheStack)]
@@ -40,7 +43,9 @@ async fn admission_control_boundaries(#[case] boundary: Boundary) {
         Boundary::QueueFullAtCapacity => queue_full_at_capacity().await,
         Boundary::QueueTimeoutAtTheLimit => queue_timeout_at_the_limit().await,
         Boundary::CancelQueuedDecrements => cancel_queued_decrements().await,
-        Boundary::QueueBoundUnderConcurrency => queue_bound_holds_under_concurrency().await,
+        Boundary::QueueReservationThreadContention => {
+            queue_reservation_holds_under_thread_contention();
+        }
         Boundary::HugeLimitDisables => huge_limit_disables().await,
         Boundary::HotRoutesFirst => hot_routes_first_audit(),
         Boundary::InstallWiresTheStack => install_wires_the_stack().await,
@@ -121,72 +126,37 @@ async fn cancel_queued_decrements() {
     assert_eq!(harness.stack.admission.stats().admitted, 0);
 }
 
-async fn queue_bound_holds_under_concurrency() {
-    let waiters = 64_u16;
-    let harness = harness(
-        "general_settings:\n  max_in_flight_requests_per_worker: 1\n  max_queued_requests_per_worker: 1\n  admission_queue_timeout_seconds: 2.0",
-        "",
-        gates(&[("/a", Behavior::Hold)]),
-    );
-    let mut requests = Requests::default();
-    requests.start(&harness.router, "/a");
-    await_started(&harness.gates, "/a").await;
-    let paths = waiter_paths(waiters);
-    let barrier = Arc::new(Barrier::new(usize::from(waiters)));
-    for path in &paths {
-        requests.start_at(&harness.router, path, Arc::clone(&barrier));
+fn queue_reservation_holds_under_thread_contention() {
+    let control = AdmissionControl::from_settings(&Settings {
+        limits: Some(Limits {
+            max_in_flight_requests: 1,
+            max_queued_requests: 1,
+            queue_timeout: Duration::from_secs(1),
+        }),
+    });
+    for round in 0..RESERVATION_ROUNDS {
+        control.queued.store(0, Ordering::Release);
+        let successes = reservation_round(&control);
+        assert_eq!(successes, 1, "round {round}");
     }
-    await_admission_settled(&harness.stack, u64::from(waiters)).await;
-    let snapshot = harness.stack.admission.stats();
-    assert_eq!(snapshot.queued, 1, "{snapshot:?}");
-    assert_eq!(
-        snapshot.rejected_queue_full,
-        u64::from(waiters).saturating_sub(1)
-    );
-    harness.gates.get("/a").unwrap().release.notify_one();
-    let (admitted, rejected) = complete_waiters(&mut requests, &paths).await;
-    assert_eq!((admitted, rejected), (1_u16, waiters.saturating_sub(1)));
-    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
-    let final_snapshot = harness.stack.admission.stats();
-    assert_eq!(
-        final_snapshot.rejected_queue_full,
-        u64::from(waiters).saturating_sub(1)
-    );
-    assert_eq!(final_snapshot.rejected_queue_timeout, 0);
-    assert_eq!(final_snapshot.queued, 0);
 }
 
-fn waiter_paths(waiters: u16) -> Vec<String> {
-    (0..waiters)
-        .map(|index| format!("/waiter-{index}"))
-        .collect()
-}
-
-async fn complete_waiters(requests: &mut Requests, paths: &[String]) -> (u16, u16) {
-    let mut admitted = 0_u16;
-    let mut rejected = 0_u16;
-    for path in paths {
-        match requests.complete(path).await.0 {
-            StatusCode::OK => admitted = admitted.saturating_add(1),
-            StatusCode::SERVICE_UNAVAILABLE => rejected = rejected.saturating_add(1),
-            other => panic!("unexpected status {other} for {path}"),
+fn reservation_round(control: &AdmissionControl) -> u64 {
+    let barrier = Barrier::new(RESERVATION_THREADS);
+    let successes = AtomicU64::new(0);
+    thread::scope(|scope| {
+        for _ in 0..RESERVATION_THREADS {
+            scope.spawn(|| attempt_reservation(control, &barrier, &successes));
         }
+    });
+    successes.load(Ordering::Acquire)
+}
+
+fn attempt_reservation(control: &AdmissionControl, barrier: &Barrier, successes: &AtomicU64) {
+    barrier.wait();
+    if control.reserve_queue_slot(1) {
+        successes.fetch_add(1, Ordering::AcqRel);
     }
-    (admitted, rejected)
-}
-
-async fn await_admission_settled(stack: &AdmissionStack, waiters: u64) {
-    timeout(WAIT, async {
-        loop {
-            let snapshot = stack.admission.stats();
-            if snapshot.queued.saturating_add(snapshot.rejected_queue_full) == waiters {
-                break;
-            }
-            sleep(Duration::from_millis(1)).await;
-        }
-    })
-    .await
-    .unwrap();
 }
 
 async fn huge_limit_disables() {
