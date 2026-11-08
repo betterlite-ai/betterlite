@@ -115,6 +115,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "cohere_chat_v2"
+path = "fuzz_targets/cohere_chat_v2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "cohere_line"
 path = "fuzz_targets/cohere_line.rs"
 test = false

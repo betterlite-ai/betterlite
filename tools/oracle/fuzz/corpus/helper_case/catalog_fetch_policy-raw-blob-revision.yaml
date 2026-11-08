@@ -1,0 +1,8 @@
+kind: helper
+name: catalog-fetch-policy-raw-blob-revision
+call:
+  catalog_fetch_policy:
+    operation: raw_blob_revision
+    body: '{"model": {}}'
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,34 @@
+#![cfg(test)]
+
+mod async_exhaustion;
+mod async_invalid_url;
+mod async_non_retryable;
+mod async_retries;
+mod async_single_attempt;
+mod async_success;
+mod async_transport;
+mod async_zero_attempts;
+mod classification_body;
+mod classification_broken_encoding;
+mod classification_encodings;
+mod classification_error;
+mod classification_invalid_json;
+mod classification_reloaded;
+mod classification_retry_after;
+mod classification_status;
+mod integrity_count;
+mod integrity_defaults;
+mod integrity_reserved;
+mod integrity_validation;
+mod retry_after;
+mod retry_after_duplicates;
+mod retry_step_exhaust;
+mod retry_step_reload;
+mod retry_step_retry;
+mod retry_step_unavailable;
+mod retry_wait;
+mod revision;
+mod support;
+mod sync_fetch_invalid_url;
+mod sync_fetch_transport;
+mod sync_ranges;

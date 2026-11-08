@@ -1,0 +1,18 @@
+kind: helper
+name: logging-metadata-error-information
+call:
+  logging_metadata:
+    function: error_information
+    exception:
+      class_name: AuthenticationError
+      llm_provider: openai
+      message: invalid api key
+      status_code: 401
+      headers: {x-request-id: req-1}
+    traceback: from-caller
+    error_str: kept text
+    metadata: {}
+    policy: {log_client_error_tracebacks: false, expected_client_error: false}
+    redact: true
+env: {}
+compare: {ignore: []}
