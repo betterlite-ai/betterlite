@@ -73,6 +73,7 @@ fn upstream_pointer(left: &ProviderRequest, right: &ProviderRequest) -> Option<S
         headers_present: vec![],
         upstream_headers: vec!["content-type".to_owned(), "x-test".to_owned()],
         ignore: vec![],
+        contracts: None,
     };
     compare(
         &response,

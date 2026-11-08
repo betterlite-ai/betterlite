@@ -198,6 +198,7 @@ pub mod guardrail_translation;
 pub mod headroom_compression;
 pub mod headroom_hiddenlayer_support;
 pub mod health_probe_policy;
+pub mod health_readiness;
 pub mod hiddenlayer_evaluation;
 pub mod host_identity_settings;
 pub mod hosted_chat_settings;
@@ -255,6 +256,7 @@ pub mod mcp_allow_all_scope;
 pub mod mcp_bearer_credentials;
 pub mod mcp_client_side_auth;
 pub mod mcp_env_values;
+pub mod mcp_registry;
 pub mod mcp_required_fields;
 pub mod mcp_sso_assertion_cache;
 pub mod mcp_tool_helpers;
@@ -531,7 +533,7 @@ sections! {
     foundry_credentials, foundry_image_edits, foundry_vector_stores, full_model_metadata,
     gdc_settings, gemini_cache_create, gemini_cache_prefix, generic_guardrail_api, grayswan,
     guardrail_identity, guardrail_judge, guardrail_message_skip, guardrail_modes, guardrail_params, guardrail_scan_cache, guardrail_translation,
-    headroom_compression, headroom_hiddenlayer_support, health_probe_policy,
+    headroom_compression, headroom_hiddenlayer_support, health_probe_policy, health_readiness,
     hiddenlayer_evaluation, host_identity_settings, hosted_chat_settings, huggingface_hub,
     huggingface_oidc, ibm_guardrails, image_edit_call, image_generation_call, image_url_download,
     image_variations, includes, io_token_reservations, jev_classifier, jina_infinity_rerank,
@@ -543,7 +545,7 @@ sections! {
     lemonade_model_metadata, llm_classifier, local_ttl_cache, logging_privacy, login_form,
     login_return, login_routes, login_throttle, management_rbac, mcp_access_requirements,
     mcp_allow_all_scope, mcp_bearer_credentials, mcp_client_side_auth, mcp_env_values,
-    mcp_required_fields, mcp_sso_assertion_cache, mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
+    mcp_registry, mcp_required_fields, mcp_sso_assertion_cache, mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
     messages_native_call, messages_native_stream, messages_response_call,
     messages_responses_output, messages_thinking, migration_drift, migration_ledger,
     migration_recovery, mistral_credentials, mistral_options, mistral_resources, mock_response,

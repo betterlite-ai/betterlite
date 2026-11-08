@@ -2,8 +2,8 @@ id: B3816
 milestone: M6 guardrails
 title: Configure MCP signing keys and verify incoming identity tokens
 status: todo
-depends_on: [B002, B173]
-file: null
+depends_on: [B002, B173, B3817]
+file: tasks/B3816-mcp-jwt-signer.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py"
 parent: B109

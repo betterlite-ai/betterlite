@@ -8,7 +8,7 @@ description: >-
   on their caller. Replace Python protocol/import-cache scaffolding with typed seams.
 
   B002 loads LITELLM_MAX_STREAMING_DURATION_SECONDS as an optional Python-compatible float,
-  default unset/null. Inject wall time through B198. Use B004 get_api_base, B206 header
+  default unset/null. Inject wall time through B198. Use B7320 get_api_base, B206 header
   processing, B247 logging state and B1114 provider config. B010 supplies BaseLLMException,
   B184 public exception records and B185/B186 the exception_type dispatcher. Keep
   background task references until completion and log failures through B012's safe sink.
