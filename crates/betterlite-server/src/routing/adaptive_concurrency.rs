@@ -22,12 +22,9 @@ impl IntegrationConcurrency {
         self.limiter.acquire(deadline).await
     }
 
-    pub fn record(&self, sample: PutSample) {
-        let recorded = self.limiter.snapshot().limit;
+    #[must_use]
+    pub fn record(&self, sample: PutSample) -> u64 {
         self.limiter.record(sample);
-        let limit = self.limiter.snapshot().limit;
-        if limit != recorded {
-            tracing::info!(limit, "the integration adaptive concurrency limit changed");
-        }
+        self.limiter.snapshot().limit
     }
 }

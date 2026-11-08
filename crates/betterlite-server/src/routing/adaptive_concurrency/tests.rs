@@ -47,15 +47,17 @@ async fn a_wait_past_the_callback_timeout_is_denied() {
 #[tokio::test]
 async fn recording_a_throttled_sample_halves_the_limit() {
     let (integration, limiter) = integration(8, 2, 8, 5);
-    integration.record(PutSample { throttled: true });
+    let limit = integration.record(PutSample { throttled: true });
+    assert_eq!(limit, 4);
     assert_eq!(limiter.snapshot().limit, 4);
 }
 
 #[tokio::test]
 async fn recording_a_clean_sample_grows_the_limit_at_the_streak() {
     let (integration, limiter) = integration(2, 1, 8, 5);
-    integration.record(PutSample { throttled: false });
-    assert_eq!(limiter.snapshot().limit, 2);
-    integration.record(PutSample { throttled: false });
+    let first = integration.record(PutSample { throttled: false });
+    assert_eq!(first, 2);
+    let grown = integration.record(PutSample { throttled: false });
+    assert_eq!(grown, 3);
     assert_eq!(limiter.snapshot().limit, 3);
 }

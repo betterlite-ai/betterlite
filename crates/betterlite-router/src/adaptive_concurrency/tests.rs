@@ -7,7 +7,7 @@ use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 use rstest::rstest;
-use tokio::time::Instant;
+use tokio::time::{Instant, advance};
 
 use super::error::{AcquireError, BoundsError};
 use super::{AdaptiveConcurrencyLimiter, MAX_WAITERS, PutSample};
@@ -158,13 +158,42 @@ async fn a_queued_waiter_deadline_expires() {
     drop(held);
 }
 
+#[tokio::test(start_paused = true)]
+async fn a_deadline_of_now_is_not_waited_for() {
+    let limiter = limiter(1, 1, 1);
+    let held = limiter.acquire(deadline_after(60_000)).await.unwrap();
+    let mut denied = Box::pin(limiter.acquire(Instant::now()));
+    assert!(matches!(
+        poll_once(denied.as_mut()),
+        Poll::Ready(Err(AcquireError::DeadlineExceeded))
+    ));
+    assert_eq!(limiter.snapshot().waiters, 0);
+    drop(held);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_passed_deadline_does_not_enqueue() {
+    let limiter = limiter(1, 1, 1);
+    let held = limiter.acquire(deadline_after(60_000)).await.unwrap();
+    let deadline = Instant::now();
+    advance(Duration::from_millis(1)).await;
+    let mut denied = Box::pin(limiter.acquire(deadline));
+    assert!(matches!(
+        poll_once(denied.as_mut()),
+        Poll::Ready(Err(AcquireError::DeadlineExceeded))
+    ));
+    assert_eq!(limiter.snapshot().waiters, 0);
+    drop(held);
+}
+
 #[tokio::test]
 async fn the_waiter_cap_returns_overloaded_before_the_1025th_waiter() {
+    assert_eq!(MAX_WAITERS, 1024);
     let limiter = limiter(1, 1, 1);
     let held = limiter.acquire(deadline_after(60_000)).await.unwrap();
     let mut queued: Vec<_> =
         iter::repeat_with(|| Box::pin(limiter.acquire(deadline_after(60_000))))
-            .take(MAX_WAITERS)
+            .take(1024)
             .collect();
     assert!(
         queued
@@ -177,7 +206,7 @@ async fn the_waiter_cap_returns_overloaded_before_the_1025th_waiter() {
         Poll::Ready(Err(AcquireError::Overloaded))
     ));
     let snapshot = limiter.snapshot();
-    assert_eq!(snapshot.waiters, MAX_WAITERS);
+    assert_eq!(snapshot.waiters, 1024);
     assert_eq!(snapshot.in_flight, 1);
     drop(held);
 }

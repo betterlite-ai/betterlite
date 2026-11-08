@@ -123,7 +123,7 @@ impl AdaptiveConcurrencyLimiter {
     pub fn record(&self, sample: PutSample) {
         let mut state = lock(&self.inner);
         if sample.throttled {
-            state.limit = state.floor.max(state.limit.checked_div(2).unwrap_or(0));
+            state.limit = state.floor.max(state.limit.div_euclid(2));
             state.clean_streak = 0;
             drop(state);
             return;
