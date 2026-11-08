@@ -168,6 +168,25 @@ fn an_initialize_with_declared_optional_members_and_unknown_keys_is_accepted() {
 }
 
 #[rstest]
+#[case::text(r#""t""#)]
+#[case::integer("1")]
+#[case::negative_integer("-1")]
+#[case::whole_float("1.0")]
+#[case::exponent_float("1e2")]
+#[case::above_i64("9223372036854775808")]
+#[case::below_i64("-9223372036854775809")]
+#[case::boolean("true")]
+fn an_initialize_with_a_string_or_whole_number_progress_token_is_accepted(#[case] token: &str) {
+    let raw = format!(
+        r#"{{"protocolVersion":"2025-11-25","capabilities":{{}},"clientInfo":{{"name":"c","version":"1"}},"_meta":{{"progressToken":{token}}}}}"#
+    );
+    let policy = policy(&HANDSHAKE_VERSIONS);
+    let params: Object = serde_json::from_str(&raw).unwrap();
+    let negotiated = policy.negotiate(VersionRequest::Initialize { params: &params });
+    assert_eq!(negotiated, Ok("2025-11-25"));
+}
+
+#[rstest]
 #[case::nov_2024("2024-11-05")]
 #[case::nov_2025("2025-11-25")]
 fn a_session_keeps_a_configured_revision(#[case] version: &str) {

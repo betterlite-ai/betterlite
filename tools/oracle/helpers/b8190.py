@@ -227,32 +227,6 @@ def _convert(input_value: ConvertInput) -> Json:
     return {"complete": _wire(converted)}
 
 
-def _capabilities(input_value: CapabilityInput) -> Json:
-    match input_value["function"]:
-        case "discovery":
-            return _discovery(input_value)
-        case "version_policy":
-            return asyncio.run(_apply_policy(input_value))
-        case "advertised_versions":
-            return _advertised_versions(input_value)
-
-
-def _conversion(input_value: ConversionInput) -> Json:
-    match input_value["function"]:
-        case "wire_compat_for":
-            return result_conversion.wire_compat_for(input_value["protocol_version"]).value
-        case "parse_http_body":
-            out = result_conversion.parse_http_body(input_value["body"])
-            if isinstance(out, JsonResult):
-                return {"kind": "json", "value": out.value, "original_text": out.original_text}
-            return {"kind": "text", "text": out.text}
-        case "to_call_tool_result" | "complete_call_tool_result":
-            return _convert(input_value)
-        case "to_gateway_tool":
-            tool = Tool.model_validate(input_value["tool"])
-            return _wire(result_conversion.to_gateway_tool(tool, input_value["name"]))
-
-
 def _errors(input_value: ErrorInput) -> Json:
     match input_value["function"]:
         case "url_credentials":
@@ -299,13 +273,31 @@ def _errors(input_value: ErrorInput) -> Json:
             }
 
 
-def run(input_value: Input) -> Json:
+def _conversion(input_value: ConversionInput | ErrorInput) -> Json:
     match input_value["function"]:
-        case "discovery" | "version_policy" | "advertised_versions":
-            return _capabilities(input_value)
-        case "wire_compat_for" | "parse_http_body" | "to_gateway_tool":
-            return _conversion(input_value)
+        case "wire_compat_for":
+            return result_conversion.wire_compat_for(input_value["protocol_version"]).value
+        case "parse_http_body":
+            out = result_conversion.parse_http_body(input_value["body"])
+            if isinstance(out, JsonResult):
+                return {"kind": "json", "value": out.value, "original_text": out.original_text}
+            return {"kind": "text", "text": out.text}
         case "to_call_tool_result" | "complete_call_tool_result":
-            return _conversion(input_value)
+            return _convert(input_value)
+        case "to_gateway_tool":
+            tool = Tool.model_validate(input_value["tool"])
+            return _wire(result_conversion.to_gateway_tool(tool, input_value["name"]))
         case _:
             return _errors(input_value)
+
+
+def run(input_value: Input) -> Json:
+    match input_value["function"]:
+        case "discovery":
+            return _discovery(input_value)
+        case "version_policy":
+            return asyncio.run(_apply_policy(input_value))
+        case "advertised_versions":
+            return _advertised_versions(input_value)
+        case _:
+            return _conversion(input_value)

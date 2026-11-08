@@ -46,7 +46,17 @@ pub(crate) fn run(input: &ConversionInput) -> HelperResult {
         ConversionInput::WireCompatFor { protocol_version } => {
             Ok(json!(wire_compat_for(protocol_version)))
         }
-        ConversionInput::ParseHttpBody { body } => run_parse_body(body),
+        ConversionInput::ParseHttpBody { body } => match parse_http_body(body) {
+            ToolOutcome::Text(parsed) => Ok(json!({ "kind": "text", "text": parsed.text })),
+            ToolOutcome::Json(parsed) => Ok(json!({
+                "kind": "json",
+                "value": parsed.value,
+                "original_text": parsed.original_text,
+            })),
+            ToolOutcome::Complete(_) | ToolOutcome::InputRequired(_) | ToolOutcome::Failure(_) => {
+                Err(failure("UnexpectedOutcome", String::new()))
+            }
+        },
         ConversionInput::ToCallToolResult(fields) => {
             Ok(match to_call_tool_result(fields.outcome(), fields.compat) {
                 ToolCallResult::Complete(result) => json!({ "complete": result }),
@@ -79,20 +89,6 @@ impl ConvertFields {
                 error_type: type_name,
                 message,
             }),
-        }
-    }
-}
-
-fn run_parse_body(body: &str) -> HelperResult {
-    match parse_http_body(body) {
-        ToolOutcome::Text(parsed) => Ok(json!({ "kind": "text", "text": parsed.text })),
-        ToolOutcome::Json(parsed) => Ok(json!({
-            "kind": "json",
-            "value": parsed.value,
-            "original_text": parsed.original_text,
-        })),
-        ToolOutcome::Complete(_) | ToolOutcome::InputRequired(_) | ToolOutcome::Failure(_) => {
-            Err(failure("UnexpectedOutcome", String::new()))
         }
     }
 }

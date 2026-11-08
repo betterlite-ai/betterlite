@@ -1,6 +1,7 @@
 use betterlite_db::mcp_stored_contracts::MCPTransport;
-use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Deserialize;
+use serde::de::{Error as _, value::Error as TokenError};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -11,9 +12,7 @@ use super::versions::{
 use crate::wire_compat::result_conversion::Icon;
 
 pub const UNSUPPORTED_PROTOCOL_VERSION: i32 = -32022;
-
 pub const INVALID_PARAMS: i32 = -32602;
-
 pub const ADVERTISED_VERSIONS_FIELD: &str = "general_settings.mcp_advertised_versions";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -56,7 +55,6 @@ impl VersionRejection {
     }
 }
 
-// the shape the SDK declares for initialize params; unknown keys are ignored as there
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeParams {
@@ -84,15 +82,29 @@ pub struct RequestMeta {
     pub progress_token: ProgressToken,
 }
 
-// an absent token is fine and a null one is not, so the absent case is a variant rather than an Option
+// an Option reads null as absent; pydantic's str | int also takes a bool and a whole number of any size
 #[derive(Default, Deserialize)]
-#[serde(untagged)]
-pub enum ProgressToken {
-    #[default]
-    #[serde(skip_deserializing)]
-    Absent,
-    Text(String),
-    Number(i64),
+#[serde(try_from = "Json")]
+pub struct ProgressToken;
+
+impl TryFrom<Json> for ProgressToken {
+    type Error = TokenError;
+    fn try_from(token: Json) -> Result<Self, Self::Error> {
+        match token {
+            Json::Text(_) | Json::Bool(_) => Ok(Self),
+            Json::Number(number)
+                if !number.to_string().contains(['.', 'e', 'E'])
+                    || number
+                        .as_f64()
+                        .is_some_and(|float| float.fract().abs() < f64::EPSILON) =>
+            {
+                Ok(Self)
+            }
+            Json::Null | Json::Number(_) | Json::List(_) | Json::Object(_) => Err(
+                TokenError::custom("progressToken must be a string or an integer"),
+            ),
+        }
+    }
 }
 
 #[derive(Deserialize)]
