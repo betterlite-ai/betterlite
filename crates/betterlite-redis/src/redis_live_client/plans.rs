@@ -136,12 +136,12 @@ impl ConnectionPlan for ClusterPlan {
             }
         }
         let configured = tls::configure_cluster(builder, &self.tls);
-        let server = if let (Some(source), None) = (&self.source, credentials) {
+        let authenticated = if let (Some(source), None) = (&self.source, credentials) {
             configured.set_credentials_provider(source.clone())
         } else {
             configured
         };
-        Ok(server.build()?)
+        Ok(authenticated.build()?)
     }
 }
 
@@ -182,8 +182,7 @@ pub(crate) fn plan_url(
     limit: usize,
 ) -> Result<StandalonePlan, LiveClientError> {
     tls::warn_unmapped(&record.passthrough, &[]);
-    let url: &str = record.url.expose_secret();
-    let mut connection = url.into_connection_info()?;
+    let mut connection = record.url.expose_secret().into_connection_info()?;
     if let Some(username) = &record.username {
         let redis = connection.redis_settings().clone().set_username(username);
         connection = connection.set_redis_settings(redis);

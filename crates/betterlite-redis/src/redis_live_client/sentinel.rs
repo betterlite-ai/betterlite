@@ -2,10 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use redis::aio::MultiplexedConnection;
 use redis::{AsyncConnectionConfig, Client, Cmd, ConnectionInfo, FromRedisValue, RedisError, cmd};
+use tokio::runtime::Handle;
 
 use super::connection_info::{self, Timeouts};
 use super::credentials::{self, RedisCredentials, SourceProvider};
-use super::open::run_blocking;
 use super::tls::{self, TlsSettings, TlsState};
 use super::{LiveClientError, LiveEndpoint, LiveTarget};
 use crate::redis_client_factories::sentinel::SentinelClient;
@@ -53,7 +53,7 @@ impl SentinelConnection {
     }
 
     pub(crate) async fn connection(&self) -> Result<MultiplexedConnection, LiveClientError> {
-        if let Some(connection) = self.take() {
+        if let Some(connection) = self.cached() {
             return Ok(connection);
         }
         let opened = self.open_master().await?;
@@ -70,7 +70,9 @@ impl SentinelConnection {
     async fn open_master(&self) -> Result<MultiplexedConnection, LiveClientError> {
         let record = Arc::clone(&self.record);
         let use_provider = self.credentials.is_some();
-        let client = run_blocking(move || driver_client(&record, use_provider)).await??;
+        let client = Handle::current()
+            .spawn_blocking(move || driver_client(&record, use_provider))
+            .await??;
         let mut config = AsyncConnectionConfig::new()
             .set_connection_timeout(Some(self.timeouts.connect))
             .set_response_timeout(Some(self.timeouts.response));
@@ -82,7 +84,7 @@ impl SentinelConnection {
             .await?)
     }
 
-    fn take(&self) -> Option<MultiplexedConnection> {
+    fn cached(&self) -> Option<MultiplexedConnection> {
         let slot = match self.slot.lock() {
             Ok(guard) => guard,
             Err(poisoned) => poisoned.into_inner(),

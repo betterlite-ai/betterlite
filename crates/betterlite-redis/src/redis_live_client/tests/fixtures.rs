@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt;
 use std::io;
 use std::net::{SocketAddr, TcpListener};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -7,9 +6,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use secrecy::SecretString;
-use tracing::field::{Field, Visit};
-use tracing::span::{Attributes, Id, Record};
-use tracing::{Event, Metadata, Subscriber};
+use tracing::subscriber::DefaultGuard;
+use tracing_subscriber::fmt::MakeWriter;
+use tracing_subscriber::util::SubscriberInitExt as _;
 
 use super::fake_server::FakeServer;
 use crate::redis_client_factories::RedisClient;
@@ -126,18 +125,7 @@ pub(crate) async fn cluster_pair() -> (FakeServer, FakeServer) {
 }
 
 pub(crate) fn redis_slot(key: &str) -> u16 {
-    let mut crc: u16 = 0;
-    for byte in key.as_bytes() {
-        crc ^= u16::from(*byte).wrapping_shl(8);
-        for _bit in 0_u32..8_u32 {
-            crc = if crc & 0x8000 != 0 {
-                crc.wrapping_shl(1) ^ 0x1021
-            } else {
-                crc.wrapping_shl(1)
-            };
-        }
-    }
-    crc & 0x3fff
+    crc16::State::<crc16::XMODEM>::calculate(key.as_bytes()) & 0x3fff
 }
 
 pub(crate) fn key_in_slot_range(low: u16, high: u16) -> &'static str {
@@ -238,88 +226,58 @@ pub(crate) fn endpoint_error(factory: &LiveClientFactory, client: &RedisClient) 
     }
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct CapturedEvent {
-    pub(crate) level: tracing::Level,
-    pub(crate) fields: Vec<(String, String)>,
-}
-
-impl CapturedEvent {
-    pub(crate) fn field(&self, name: &str) -> Option<&str> {
-        self.fields
-            .iter()
-            .find(|(field, _value)| field == name)
-            .map(|(_field, value)| value.as_str())
-    }
-
-    pub(crate) fn text(&self) -> String {
-        let fields: Vec<String> = self
-            .fields
-            .iter()
-            .map(|(field, value)| format!("{field}={value}"))
-            .collect();
-        fields.join(" ")
-    }
-}
-
 #[derive(Clone, Default)]
-pub(crate) struct Capture {
-    events: Arc<Mutex<Vec<CapturedEvent>>>,
-}
+pub(crate) struct Logs(Arc<Mutex<Vec<u8>>>);
 
-impl Capture {
-    pub(crate) fn warnings(&self) -> Vec<CapturedEvent> {
-        let events = self.events.lock().expect("the captured events");
-        events
-            .iter()
-            .filter(|event| event.level == tracing::Level::WARN)
-            .cloned()
+impl Logs {
+    pub(crate) fn capture() -> (Self, DefaultGuard) {
+        let logs = Self::default();
+        let guard = tracing_subscriber::fmt()
+            .with_writer(logs.clone())
+            .with_ansi(false)
+            .set_default();
+        (logs, guard)
+    }
+
+    pub(crate) fn lines(&self) -> Vec<String> {
+        let bytes = self.0.lock().expect("the log buffer").clone();
+        String::from_utf8(bytes)
+            .expect("UTF-8 log output")
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    pub(crate) fn warnings(&self) -> Vec<String> {
+        self.lines()
+            .into_iter()
+            .filter(|line| line.contains(" WARN "))
             .collect()
     }
 }
 
-struct FieldCollector {
-    fields: Vec<(String, String)>,
+impl io::Write for Logs {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut logged = self
+            .0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("log buffer poisoned"))?;
+        logged.extend_from_slice(buf);
+        drop(logged);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
-impl Visit for FieldCollector {
-    fn record_str(&mut self, field: &Field, value: &str) {
-        self.fields
-            .push((field.name().to_owned(), value.to_owned()));
+impl MakeWriter<'_> for Logs {
+    type Writer = Self;
+
+    fn make_writer(&self) -> Self {
+        self.clone()
     }
-
-    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
-        self.fields
-            .push((field.name().to_owned(), format!("{value:?}")));
-    }
-}
-
-impl Subscriber for Capture {
-    fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
-        true
-    }
-
-    fn new_span(&self, _span: &Attributes<'_>) -> Id {
-        Id::from_u64(1)
-    }
-
-    fn record(&self, _span: &Id, _values: &Record<'_>) {}
-
-    fn record_follows_from(&self, _span: &Id, _follows: &Id) {}
-
-    fn event(&self, event: &Event<'_>) {
-        let mut collector = FieldCollector { fields: Vec::new() };
-        event.record(&mut collector);
-        let mut events = self.events.lock().expect("the captured events");
-        events.push(CapturedEvent {
-            level: *event.metadata().level(),
-            fields: collector.fields,
-        });
-    }
-
-    fn enter(&self, _span: &Id) {}
-
-    fn exit(&self, _span: &Id) {}
 }
 
 pub(crate) fn assert_no_secret(error: &LiveClientError, secret: &str) {

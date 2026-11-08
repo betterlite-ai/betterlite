@@ -1,11 +1,10 @@
 use std::collections::BTreeMap;
 
 use secrecy::SecretString;
-use tracing::subscriber::with_default;
 
 use super::fake_server::{FakeServer, Reply};
 use super::fixtures::{
-    Capture, assert_no_secret, closed_address, direct_fields, endpoint_error, factory, open_error,
+    Logs, assert_no_secret, closed_address, direct_fields, endpoint_error, factory, open_error,
     sentinel_record, url_client,
 };
 use crate::redis_client_factories::RedisClient;
@@ -59,16 +58,13 @@ async fn tls_failures_do_not_expose_passthrough_values() {
 fn log_lines_do_not_expose_the_monitor_password() {
     let mut record = sentinel_record(&[closed_address()], "mymaster");
     record.monitor_password = Some(SecretString::from("topsecret".to_owned()));
-    let capture = Capture::default();
-    let error = with_default(capture.clone(), || {
-        endpoint_error(&factory(None), &RedisClient::Sentinel(record))
-    });
+    let (logs, _guard) = Logs::capture();
+    let error = endpoint_error(&factory(None), &RedisClient::Sentinel(record));
     assert!(matches!(error, LiveClientError::NoSentinelMaster { .. }));
-    let leaking: Vec<String> = capture
-        .warnings()
+    let leaking: Vec<String> = logs
+        .lines()
         .into_iter()
-        .map(|warning| warning.text())
-        .filter(|text| text.contains("topsecret"))
+        .filter(|line| line.contains("topsecret"))
         .collect();
     assert!(
         leaking.is_empty(),
@@ -83,14 +79,17 @@ fn log_lines_do_not_expose_a_passthrough_value() {
         "retry_on_error".to_owned(),
         PassthroughValue::Text("topsecret-value".to_owned()),
     )]);
-    let capture = Capture::default();
-    let _endpoint = with_default(capture.clone(), || {
-        factory(None)
-            .blocking_endpoint(&RedisClient::Direct(fields))
-            .expect("an endpoint")
-    });
-    let warnings = capture.warnings();
+    let (logs, _guard) = Logs::capture();
+    let _endpoint = factory(None)
+        .blocking_endpoint(&RedisClient::Direct(fields))
+        .expect("an endpoint");
+    let warnings = logs.warnings();
     assert_eq!(warnings.len(), 1, "{warnings:?}");
-    assert_eq!(warnings[0].field("key"), Some("retry_on_error"));
-    assert!(!warnings[0].text().contains("topsecret-value"));
+    assert!(warnings[0].contains("key=retry_on_error"), "{warnings:?}");
+    assert!(
+        logs.lines()
+            .iter()
+            .all(|line| !line.contains("topsecret-value")),
+        "a log line carries the passthrough value"
+    );
 }

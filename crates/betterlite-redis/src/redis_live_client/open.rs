@@ -10,16 +10,6 @@ use super::{LiveAsyncClient, LiveClientError, LiveClientFactory, LiveEndpoint};
 use crate::redis_client_factories::RedisClient;
 use crate::redis_client_factories::pool::PoolConfig;
 
-pub(crate) async fn run_blocking<T, F>(work: F) -> Result<T, LiveClientError>
-where
-    F: FnOnce() -> T + Send + 'static,
-    T: Send + 'static,
-{
-    let handle = Handle::current();
-    let joined = handle.spawn_blocking(work).await;
-    Ok(joined?)
-}
-
 impl LiveClientFactory {
     #[must_use]
     pub fn new(credentials: Option<Arc<dyn RedisCredentialSource>>) -> Self {
@@ -50,7 +40,9 @@ impl LiveClientFactory {
                 let source = credentials::required(injected, record.needs_source())?;
                 let limit = connection_info::concurrency_limit(record.max_connections, pool_limit)?;
                 let owned = record.clone();
-                let plan = run_blocking(move || plan_cluster(&owned, source, limit)).await??;
+                let plan = Handle::current()
+                    .spawn_blocking(move || plan_cluster(&owned, source, limit))
+                    .await??;
                 let connection = plan.client(None)?.get_async_connection().await?;
                 Ok(LiveAsyncClient::Cluster(connection))
             }
@@ -116,7 +108,9 @@ where
         + Send
         + 'static,
 {
-    let planned = run_blocking(move || plan(&record, source, limit)).await??;
+    let planned = Handle::current()
+        .spawn_blocking(move || plan(&record, source, limit))
+        .await??;
     let connection = planned.client(None)?;
     let manager = connection
         .get_connection_manager_with_config(planned.manager_config())

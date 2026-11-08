@@ -33,8 +33,8 @@ pub(crate) fn timeouts(
 fn seconds(field: &'static str, value: Option<f64>) -> Result<Option<Duration>, LiveClientError> {
     value.map_or_else(
         || Ok(None),
-        |text| {
-            Duration::try_from_secs_f64(text)
+        |timeout| {
+            Duration::try_from_secs_f64(timeout)
                 .map(Some)
                 .map_err(|_source| LiveClientError::InvalidSetting { field })
         },

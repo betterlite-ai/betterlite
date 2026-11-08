@@ -23,11 +23,14 @@ tracing.workspace = true
 url = "2.5.8"
 
 [dev-dependencies]
+crc16 = "0.4.0"
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 rstest = "=0.27.0"
 rustls = { workspace = true, features = ["std", "tls12"] }
+tempfile = "3.27.0"
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "time"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
+tracing-subscriber.workspace = true
 
 [lints]
 workspace = true

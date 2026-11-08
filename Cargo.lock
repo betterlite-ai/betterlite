@@ -2216,6 +2216,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-env",
  "betterlite-redact",
+ "crc16",
  "futures-util",
  "prometheus-client",
  "py_literal",
@@ -2228,10 +2229,12 @@ dependencies = [
  "serde_json",
  "serde_with",
  "socket2",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-rustls",
  "tracing",
+ "tracing-subscriber",
  "url",
 ]
 

@@ -1,11 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::env;
-use std::fs;
-use std::io;
+use std::io::{self, Write as _};
 use std::mem;
 use std::net::SocketAddr;
-use std::path::PathBuf;
-use std::process;
 use std::str;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -15,6 +11,7 @@ use rustls::crypto::aws_lc_rs;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::server::{WantsServerCert, WebPkiClientVerifier};
 use rustls::{ConfigBuilder, RootCertStore, ServerConfig};
+use tempfile::NamedTempFile;
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite,
     AsyncWriteExt as _, BufReader, split,
@@ -526,35 +523,12 @@ fn with_server_cert(
     )
 }
 
-static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
-
-pub(crate) struct TempPem {
-    path: PathBuf,
-    directory: PathBuf,
-}
-
-impl TempPem {
-    pub(crate) fn text(&self) -> String {
-        self.path
-            .to_str()
-            .expect("a UTF-8 temporary path")
-            .to_owned()
-    }
-}
-
-impl Drop for TempPem {
-    fn drop(&mut self) {
-        let removed: io::Result<()> = fs::remove_dir_all(&self.directory);
-        drop(removed);
-    }
-}
-
-pub(crate) fn temp_pem(contents: &str) -> TempPem {
-    let unique = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let directory =
-        env::temp_dir().join(format!("betterlite-redis-tls-{}-{unique}", process::id()));
-    fs::create_dir_all(&directory).expect("a temporary directory");
-    let path = directory.join("certificate.pem");
-    fs::write(&path, contents).expect("a temporary PEM file");
-    TempPem { path, directory }
+pub(crate) fn temp_pem(contents: &str) -> NamedTempFile {
+    let mut file = tempfile::Builder::new()
+        .suffix(".pem")
+        .tempfile()
+        .expect("a temporary PEM file");
+    file.write_all(contents.as_bytes())
+        .expect("a written PEM file");
+    file
 }
