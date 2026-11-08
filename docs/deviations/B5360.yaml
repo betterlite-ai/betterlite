@@ -1,0 +1,8 @@
+task: B5360
+deviations:
+  - what: A selector returns a config tag where LiteLLM returns a config object or class.
+    why: Provider crates sit above betterlite-context, so importing them here would make a cycle; B2230 keeps the same boundary for chat.
+    link: ""
+  - what: The Bedrock vector store selector returns a tag, where LiteLLM 1.105.1 raises ImportError.
+    why: litellm/integrations/vector_store_integrations/bedrock_vector_store.py does not exist at the pinned commit, so the import in the selector fails and no working setup can rely on that call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9462-L9472
