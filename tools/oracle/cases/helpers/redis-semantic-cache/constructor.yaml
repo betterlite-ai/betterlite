@@ -1,0 +1,21 @@
+kind: helper
+name: redis-semantic-cache-constructor
+call:
+  b4382:
+    operation: constructor
+    threshold: 0.8
+    host: null
+    port: null
+    password: null
+    redis_url: null
+    index_name: null
+    embedding_model: null
+    embedding_max_input_tokens: 512
+    embedding_timeout: 2.5
+    env: {redis_host: cache.internal, redis_port: "6380", redis_password: envpw}
+env:
+  REDIS_HOST: cache.internal
+  REDIS_PORT: "6380"
+  REDIS_PASSWORD: envpw
+compare:
+  ignore: []

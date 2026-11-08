@@ -462,6 +462,17 @@ async fn lookup_wrong_scope_and_a_missing_key_field_are_misses() {
             .expect("a cache read"),
         None
     );
+
+    let mut without_prompt = hit(0.25, Some("scope-1"), "{}");
+    without_prompt.prompt = None;
+    index.set_hits(vec![without_prompt]);
+    assert_eq!(
+        cache
+            .async_get_cache("scope-1", &kwargs_with_message("hi"), None)
+            .await
+            .expect("a cache read"),
+        None
+    );
 }
 
 #[tokio::test]

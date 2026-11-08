@@ -66,6 +66,10 @@ fn read_hit(
     let Some(distance) = candidate.vector_distance else {
         return Err(RedisSemanticError::MalformedSearchReply);
     };
+    // RedisVL's CacheHit requires the prompt and the response, so a row without them is skipped.
+    if candidate.prompt.is_none() {
+        return Err(RedisSemanticError::MalformedSearchReply);
+    }
     let Some(response) = candidate.response.as_deref() else {
         return Err(RedisSemanticError::MalformedSearchReply);
     };

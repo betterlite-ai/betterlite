@@ -1,0 +1,20 @@
+task: B4382
+deviations:
+  - what: Only the async cache operations are built. LiteLLM's sync set_cache, get_cache and _get_embedding are not.
+    why: The gateway runs on async I/O and calls the async cache methods, so a blocking Redis path would only add a second copy of the logic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L411-L520
+  - what: The vector index is managed with direct RediSearch commands instead of the redisvl library.
+    why: No Rust crate does this job. The index name, prefix, schema, entry id, hash fields and query follow redisvl 0.28, the version LiteLLM allows.
+    link: https://github.com/redis/redis-vl-python/blob/v0.28.0/redisvl/extensions/cache/llm/semantic.py
+  - what: A schema mismatch is a typed SchemaMismatch error, not a ValueError whose text contains "schema does not match" or "index schema".
+    why: Message sniffing is fragile, and the only source of those messages is the schema compare this module owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L173-L226
+  - what: Responses are stored as JSON text, not Python str(value).
+    why: B4380's decoder reads JSON only, and docs/compatibility.md excludes Python repr text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L552-L667
+  - what: The Redis URL, which holds the password, is never logged.
+    why: LiteLLM prints it with print_verbose; betterlite does not log secrets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L41-L135
+  - what: get_ttl returns None for a configured ttl of 0 instead of 0.
+    why: The module owns RedisVL's "ttl or self._ttl" step and this cache never sets a default ttl, so the effective Redis TTL is unchanged and 0 still means no expiry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L240-L257
