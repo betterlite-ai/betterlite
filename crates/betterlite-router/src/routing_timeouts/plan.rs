@@ -44,7 +44,7 @@ pub fn resolve_router_timeouts(
     sources: &RouterTimeoutSources,
     global: GlobalRequestTimeout,
 ) -> RouterTimeouts {
-    let request_timeout = sources.timeout.and(global.configured());
+    let request_timeout = sources.timeout.and_then(|_configured| global.configured());
     RouterTimeouts {
         timeout: sources.timeout.unwrap_or(global.seconds),
         stream_timeout: sources.stream_timeout,
@@ -116,7 +116,7 @@ impl TimeoutPlan {
             .ok_or(TimeoutError::NoTimeout)?;
         let deadline = now
             .checked_add(whole.duration("the routing deadline")?)
-            .ok_or(TimeoutError::OutOfRange {
+            .ok_or_else(|| TimeoutError::OutOfRange {
                 field: "the routing deadline".to_owned(),
                 seconds: whole.0,
             })?;
@@ -140,7 +140,7 @@ impl TimeoutPlan {
         };
         let expires = now
             .checked_add(attempt.duration("the attempt timeout")?)
-            .ok_or(TimeoutError::OutOfRange {
+            .ok_or_else(|| TimeoutError::OutOfRange {
                 field: "the attempt timeout".to_owned(),
                 seconds: attempt.0,
             })?;

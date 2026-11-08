@@ -7,6 +7,7 @@ use betterlite_config::sections::routing_timeouts::{
 };
 use betterlite_router::routing_timeouts::error::TimeoutError;
 use betterlite_router::routing_timeouts::plan::RequestTimeouts;
+use betterlite_router::routing_timeouts::seconds::Seconds;
 
 use super::{RoutingTimeoutError, plan, resolve};
 
@@ -32,40 +33,59 @@ fn at(base: Instant, seconds: u64) -> Instant {
 #[test]
 fn resolve_maps_every_level() {
     let deployment = ConfigDeployment {
-        timeout: Some(11.0),
-        stream_timeout: Some(12.0),
-        request_timeout: Some(13.0),
+        timeout: Some(11.0_f64),
+        stream_timeout: Some(12.0_f64),
+        request_timeout: Some(13.0_f64),
     };
     let router = ConfigRouter {
-        timeout: Some(7.0),
-        stream_timeout: Some(3.0),
-        default_timeout: Some(5.0),
-        default_stream_timeout: Some(4.0),
+        timeout: Some(7.0_f64),
+        stream_timeout: Some(3.0_f64),
+        default_timeout: Some(5.0_f64),
+        default_stream_timeout: Some(4.0_f64),
     };
-    let resolved = resolve(&section((300.0, true), router, vec![deployment])).unwrap();
-    assert_eq!(resolved.global.seconds.0, 300.0);
+    let resolved = resolve(&section((300.0_f64, true), router, vec![deployment])).unwrap();
+    assert_eq!(resolved.global.seconds, Seconds(300.0_f64));
     assert!(resolved.global.explicitly_set);
-    assert_eq!(resolved.router.timeout.0, 7.0);
-    assert_eq!(resolved.router.stream_timeout.unwrap().0, 3.0);
-    assert_eq!(resolved.router.request_timeout.unwrap().0, 300.0);
-    assert_eq!(resolved.router.default_timeout.unwrap().0, 5.0);
-    assert_eq!(resolved.router.default_stream_timeout.unwrap().0, 4.0);
-    assert_eq!(resolved.deployments[0].timeout.unwrap().0, 11.0);
-    assert_eq!(resolved.deployments[0].stream_timeout.unwrap().0, 12.0);
-    assert_eq!(resolved.deployments[0].request_timeout.unwrap().0, 13.0);
+    assert_eq!(resolved.router.timeout, Seconds(7.0_f64));
+    assert_eq!(resolved.router.stream_timeout, Some(Seconds(3.0_f64)));
+    assert_eq!(resolved.router.request_timeout, Some(Seconds(300.0_f64)));
+    assert_eq!(resolved.router.default_timeout, Some(Seconds(5.0_f64)));
+    assert_eq!(
+        resolved.router.default_stream_timeout,
+        Some(Seconds(4.0_f64))
+    );
+    assert_eq!(resolved.deployments[0].timeout, Some(Seconds(11.0_f64)));
+    assert_eq!(
+        resolved.deployments[0].stream_timeout,
+        Some(Seconds(12.0_f64))
+    );
+    assert_eq!(
+        resolved.deployments[0].request_timeout,
+        Some(Seconds(13.0_f64))
+    );
 }
 
 #[test]
 fn resolve_without_router_timeout_uses_the_global() {
-    let resolved = resolve(&section((300.0, true), ConfigRouter::default(), Vec::new())).unwrap();
-    assert_eq!(resolved.router.timeout.0, 300.0);
+    let resolved = resolve(&section(
+        (300.0_f64, true),
+        ConfigRouter::default(),
+        Vec::new(),
+    ))
+    .unwrap();
+    assert_eq!(resolved.router.timeout, Seconds(300.0_f64));
     assert_eq!(resolved.router.request_timeout, None);
     assert_eq!(resolved.router.default_timeout, None);
 }
 
 #[test]
 fn resolve_rejects_a_negative_global() {
-    let error = resolve(&section((-1.0, true), ConfigRouter::default(), Vec::new())).unwrap_err();
+    let error = resolve(&section(
+        (-1.0_f64, true),
+        ConfigRouter::default(),
+        Vec::new(),
+    ))
+    .unwrap_err();
     let RoutingTimeoutError::Timeout { source } = error else {
         panic!("expected the timeout error");
     };
@@ -80,12 +100,12 @@ fn resolve_rejects_a_negative_global() {
 #[test]
 fn resolve_rejects_a_negative_deployment_value() {
     let deployment = ConfigDeployment {
-        timeout: Some(-0.5),
+        timeout: Some(-0.5_f64),
         stream_timeout: None,
         request_timeout: None,
     };
     let error = resolve(&section(
-        (300.0, false),
+        (300.0_f64, false),
         ConfigRouter::default(),
         vec![deployment],
     ))
@@ -100,12 +120,12 @@ fn resolve_rejects_a_negative_deployment_value() {
 #[test]
 fn plan_keeps_the_request_deadline_apart_from_the_attempt() {
     let deployment = ConfigDeployment {
-        timeout: Some(4.0),
+        timeout: Some(4.0_f64),
         stream_timeout: None,
         request_timeout: None,
     };
     let settings = resolve(&section(
-        (6000.0, false),
+        (6000.0_f64, false),
         ConfigRouter::default(),
         vec![deployment],
     ))
@@ -113,20 +133,20 @@ fn plan_keeps_the_request_deadline_apart_from_the_attempt() {
     let base = Instant::now();
     let request = RequestTimeouts {
         stream: false,
-        timeout: Some(betterlite_router::routing_timeouts::seconds::Seconds(5.0)),
+        timeout: Some(Seconds(5.0_f64)),
         request_timeout: None,
         stream_timeout: None,
     };
     let plan = plan(&settings, &request, 0, base).unwrap();
     assert_eq!(plan.deadline, at(base, 5));
-    assert_eq!(plan.attempt.unwrap().0, 4.0);
+    assert_eq!(plan.attempt, Some(Seconds(4.0_f64)));
     assert_eq!(plan.attempt_deadline(base).unwrap(), at(base, 4));
 }
 
 #[test]
 fn plan_rejects_an_unknown_deployment() {
     let settings = resolve(&section(
-        (6000.0, false),
+        (6000.0_f64, false),
         ConfigRouter::default(),
         Vec::new(),
     ))
@@ -141,12 +161,12 @@ fn plan_rejects_an_unknown_deployment() {
 #[test]
 fn cancelled_plan_stops_the_attempt() {
     let deployment = ConfigDeployment {
-        timeout: Some(4.0),
+        timeout: Some(4.0_f64),
         stream_timeout: None,
         request_timeout: None,
     };
     let settings = resolve(&section(
-        (6000.0, false),
+        (6000.0_f64, false),
         ConfigRouter::default(),
         vec![deployment],
     ))

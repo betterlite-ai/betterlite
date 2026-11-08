@@ -28,15 +28,15 @@ fn model_list(params: &str) -> String {
 
 #[rstest]
 #[case::absent_defaults("router_settings: {}", &[], (6000.0_f64, false))]
-#[case::environment_request_timeout("router_settings: {}", &[("REQUEST_TIMEOUT", "12.5")], (12.5, true))]
-#[case::empty_environment_is_unset("router_settings: {}", &[("REQUEST_TIMEOUT", "")], (6000.0, false))]
-#[case::configured_6000_is_explicit("litellm_settings:\n  request_timeout: 6000", &[], (6000.0, true))]
+#[case::environment_request_timeout("router_settings: {}", &[("REQUEST_TIMEOUT", "12.5")], (12.5_f64, true))]
+#[case::empty_environment_is_unset("router_settings: {}", &[("REQUEST_TIMEOUT", "")], (6000.0_f64, false))]
+#[case::configured_6000_is_explicit("litellm_settings:\n  request_timeout: 6000", &[], (6000.0_f64, true))]
 #[case::configured_value_beats_environment(
     "litellm_settings:\n  request_timeout: 7",
     &[("REQUEST_TIMEOUT", "9")],
-    (7.0, true)
+    (7.0_f64, true)
 )]
-#[case::environment_reference("litellm_settings:\n  request_timeout: os.environ/GLOBAL_TIMEOUT", &[("GLOBAL_TIMEOUT", "30")], (30.0, true))]
+#[case::environment_reference("litellm_settings:\n  request_timeout: os.environ/GLOBAL_TIMEOUT", &[("GLOBAL_TIMEOUT", "30")], (30.0_f64, true))]
 fn global_timeout(
     #[case] source: &str,
     #[case] variables: &[(&str, &str)],
@@ -61,10 +61,10 @@ fn router_timeouts_resolve_keys_and_environment() {
     assert_eq!(
         resolved.router,
         RouterTimeouts {
-            timeout: Some(7.0),
-            stream_timeout: Some(3.0),
-            default_timeout: Some(5.0),
-            default_stream_timeout: Some(4.0),
+            timeout: Some(7.0_f64),
+            stream_timeout: Some(3.0_f64),
+            default_timeout: Some(5.0_f64),
+            default_stream_timeout: Some(4.0_f64),
         }
     );
 }
@@ -81,12 +81,12 @@ fn deployment_timeouts_stay_aligned_with_model_list() {
         resolved.deployments,
         vec![
             DeploymentTimeouts {
-                timeout: Some(11.0),
-                stream_timeout: Some(12.0),
-                request_timeout: Some(13.0),
+                timeout: Some(11.0_f64),
+                stream_timeout: Some(12.0_f64),
+                request_timeout: Some(13.0_f64),
             },
             DeploymentTimeouts {
-                timeout: Some(21.0),
+                timeout: Some(21.0_f64),
                 stream_timeout: None,
                 request_timeout: None,
             },
@@ -98,7 +98,7 @@ fn deployment_timeouts_stay_aligned_with_model_list() {
 fn deployment_environment_reference_resolves() {
     let source = model_list("      timeout: os.environ/DEPLOYMENT_TIMEOUT\n");
     let resolved = settings(&source, &[("DEPLOYMENT_TIMEOUT", "0.5")]).unwrap();
-    assert_eq!(resolved.deployments[0].timeout, Some(0.5));
+    assert_eq!(resolved.deployments[0].timeout, Some(0.5_f64));
 }
 
 #[test]

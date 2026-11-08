@@ -109,21 +109,13 @@ impl Section for Raw {
         )?;
         let environment_text = lookup.lookup("REQUEST_TIMEOUT").unwrap_or_default();
         let environment = betterlite_env::number::<f64>("REQUEST_TIMEOUT", &environment_text)?;
-        let global = match configured {
-            Some(seconds) => GlobalTimeout {
-                seconds,
-                explicitly_set: true,
-            },
-            None => environment.map_or(
-                GlobalTimeout {
-                    seconds: DEFAULT_TIMEOUT_SECONDS,
-                    explicitly_set: false,
-                },
-                |seconds| GlobalTimeout {
-                    seconds,
-                    explicitly_set: true,
-                },
-            ),
+        let (seconds, explicitly_set) = configured
+            .map(|seconds| (seconds, true))
+            .or_else(|| environment.map(|seconds| (seconds, true)))
+            .unwrap_or((DEFAULT_TIMEOUT_SECONDS, false));
+        let global = GlobalTimeout {
+            seconds,
+            explicitly_set,
         };
         Ok(Settings {
             global,

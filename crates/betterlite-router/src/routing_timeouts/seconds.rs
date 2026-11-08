@@ -17,7 +17,7 @@ impl Seconds {
                 seconds: value,
             });
         }
-        if value < 0.0 {
+        if value < 0.0_f64 {
             return Err(TimeoutError::Negative {
                 field: field.to_owned(),
                 seconds: value,

@@ -36,17 +36,17 @@ pub fn resolve(
     configured: Option<Seconds>,
     phases_supported: bool,
 ) -> TimeoutValue {
-    let fallback = configured.unwrap_or(COMPLETION_FALLBACK);
+    let fallback = TimeoutValue::Seconds(configured.unwrap_or(COMPLETION_FALLBACK));
     let resolved = model_timeout
-        .or(kwargs.timeout)
-        .or(kwargs.request_timeout)
+        .or_else(|| kwargs.timeout.map(TimeoutValue::Seconds))
+        .or_else(|| kwargs.request_timeout.map(TimeoutValue::Seconds))
         .unwrap_or(fallback);
-    match resolved {
-        TimeoutValue::Phases(phases) if !phases_supported => {
-            TimeoutValue::Seconds(phases.read.unwrap_or(COMPLETION_FALLBACK))
-        }
-        resolved => resolved,
+    if let TimeoutValue::Phases(phases) = resolved
+        && !phases_supported
+    {
+        return TimeoutValue::Seconds(phases.read.unwrap_or(COMPLETION_FALLBACK));
     }
+    resolved
 }
 
 impl TimeoutValue {

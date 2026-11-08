@@ -353,7 +353,7 @@ fn routing_timeouts_boundaries(#[case] name: &str) {
                 error,
                 TimeoutError::Negative {
                     field: "model_list.0.litellm_params.timeout".to_owned(),
-                    seconds: -1.0,
+                    seconds: -1.0_f64,
                 }
             );
             assert!(

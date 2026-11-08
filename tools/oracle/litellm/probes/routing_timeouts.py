@@ -141,7 +141,7 @@ def format_seconds(value: float | None) -> str | None:
 
 
 def set_global(global_timeout: GlobalInput) -> None:
-    litellm.request_timeout = parse_seconds(global_timeout.seconds, "request_timeout")
+    litellm.request_timeout = parse_seconds(global_timeout.seconds, "request_timeout")  # pyright: ignore[reportPrivateImportUsage]
     litellm.request_timeout_explicitly_set = global_timeout.explicitly_set
 
 
@@ -156,7 +156,7 @@ def timeout_input(value: SecondsTimeout | PhasesTimeout) -> float | httpx.Timeou
     )
 
 
-def timeout_output(value: float | int | httpx.Timeout) -> SecondsOutput | PhasesOutput:
+def timeout_output(value: float | httpx.Timeout) -> SecondsOutput | PhasesOutput:
     if isinstance(value, httpx.Timeout):
         return PhasesOutput(
             kind="phases",
@@ -168,80 +168,84 @@ def timeout_output(value: float | int | httpx.Timeout) -> SecondsOutput | Phases
     return SecondsOutput(kind="seconds", seconds=f"{value:.6f}")
 
 
-def completion_result(input: CompletionInput) -> CompletionResult:
-    set_global(input.global_timeout)
-    model_timeout = None if input.model_timeout is None else timeout_input(input.model_timeout)
+def no_phases(_provider: str) -> bool:
+    return False
+
+
+def completion_result(completion: CompletionInput) -> CompletionResult:
+    set_global(completion.global_timeout)
+    model_timeout = None if completion.model_timeout is None else timeout_input(completion.model_timeout)
     kwargs: dict[str, object] = {}
-    timeout = optional_seconds(input.timeout, "kwargs timeout")
+    timeout = optional_seconds(completion.timeout, "kwargs timeout")
     if timeout is not None:
         kwargs["timeout"] = timeout
-    request_timeout = optional_seconds(input.request_timeout, "kwargs request_timeout")
+    request_timeout = optional_seconds(completion.request_timeout, "kwargs request_timeout")
     if request_timeout is not None:
         kwargs["request_timeout"] = request_timeout
     configured = get_configured_request_timeout()
     return CompletionResult(
         resolved=timeout_output(
-            CompletionTimeout.resolve(
+            CompletionTimeout.resolve(  # pyright: ignore[reportUnknownMemberType]
                 model_timeout,
                 kwargs,
-                input.provider,
+                completion.provider,
                 global_timeout=configured,
-                supports_httpx_timeout=supports_httpx_timeout(input.provider),
+                supports_httpx_timeout=supports_httpx_timeout,
             )
         ),
         transport=timeout_output(
-            CompletionTimeout.resolve(
+            CompletionTimeout.resolve(  # pyright: ignore[reportUnknownMemberType]
                 model_timeout,
                 kwargs,
-                input.provider,
+                completion.provider,
                 global_timeout=configured,
-                supports_httpx_timeout=False,
+                supports_httpx_timeout=no_phases,
             )
         ),
     )
 
 
-def router_defaults(input: RouterInput) -> dict[str, float]:
+def router_defaults(router: RouterInput) -> dict[str, float]:
     defaults: dict[str, float] = {}
-    default_timeout = optional_seconds(input.default_timeout, "default timeout")
+    default_timeout = optional_seconds(router.default_timeout, "default timeout")
     if default_timeout is not None:
         defaults["timeout"] = default_timeout
-    default_stream_timeout = optional_seconds(input.default_stream_timeout, "default stream timeout")
+    default_stream_timeout = optional_seconds(router.default_stream_timeout, "default stream timeout")
     if default_stream_timeout is not None:
         defaults["stream_timeout"] = default_stream_timeout
     return defaults
 
 
-def router_kwargs(input: RouterInput) -> dict[str, object]:
-    kwargs: dict[str, object] = {"stream": input.kwargs.stream}
-    timeout = optional_seconds(input.kwargs.timeout, "kwargs timeout")
+def router_kwargs(router: RouterInput) -> dict[str, object]:
+    kwargs: dict[str, object] = {"stream": router.kwargs.stream}
+    timeout = optional_seconds(router.kwargs.timeout, "kwargs timeout")
     if timeout is not None:
         kwargs["timeout"] = timeout
-    request_timeout = optional_seconds(input.kwargs.request_timeout, "kwargs request_timeout")
+    request_timeout = optional_seconds(router.kwargs.request_timeout, "kwargs request_timeout")
     if request_timeout is not None:
         kwargs["request_timeout"] = request_timeout
-    stream_timeout = optional_seconds(input.kwargs.stream_timeout, "kwargs stream_timeout")
+    stream_timeout = optional_seconds(router.kwargs.stream_timeout, "kwargs stream_timeout")
     if stream_timeout is not None:
         kwargs["stream_timeout"] = stream_timeout
     return kwargs
 
 
-def deployment_params(input: RouterInput) -> dict[str, object]:
+def deployment_params(router: RouterInput) -> dict[str, object]:
     params: dict[str, object] = {}
-    timeout = optional_seconds(input.deployment.timeout, "litellm_params timeout")
+    timeout = optional_seconds(router.deployment.timeout, "litellm_params timeout")
     if timeout is not None:
         params["timeout"] = timeout
-    request_timeout = optional_seconds(input.deployment.request_timeout, "litellm_params request_timeout")
+    request_timeout = optional_seconds(router.deployment.request_timeout, "litellm_params request_timeout")
     if request_timeout is not None:
         params["request_timeout"] = request_timeout
-    stream_timeout = optional_seconds(input.deployment.stream_timeout, "litellm_params stream_timeout")
+    stream_timeout = optional_seconds(router.deployment.stream_timeout, "litellm_params stream_timeout")
     if stream_timeout is not None:
         params["stream_timeout"] = stream_timeout
     return params
 
 
-def build_router(input: RouterInput) -> Router:
-    set_global(input.global_timeout)
+def build_router(router: RouterInput) -> Router:
+    set_global(router.global_timeout)
     model_list: list[dict[str, object]] = [
         {
             "model_name": "probe",
@@ -250,30 +254,30 @@ def build_router(input: RouterInput) -> Router:
     ]
     return Router(
         model_list=model_list,
-        timeout=optional_seconds(input.timeout, "router timeout"),
-        stream_timeout=optional_seconds(input.stream_timeout, "router stream timeout"),
-        default_litellm_params=router_defaults(input),
+        timeout=optional_seconds(router.timeout, "router timeout"),
+        stream_timeout=optional_seconds(router.stream_timeout, "router stream timeout"),
+        default_litellm_params=router_defaults(router),
     )
 
 
-def expiry_status(input: RouterInput, attempt: float | int | None) -> tuple[int | None, str | None]:
-    if input.elapsed_millis is None or attempt is None:
+def expiry_status(router: RouterInput, attempt: float | None) -> tuple[int | None, str | None]:
+    if router.elapsed_millis is None or attempt is None:
         return None, None
-    if input.elapsed_millis >= float(attempt) * 1000:
+    if router.elapsed_millis >= attempt * 1000:
         status = Timeout("probe", model=_MODEL, llm_provider="openai").status_code
         return status, str(status)
     return None, None
 
 
-def router_result(input: RouterInput) -> RouterResult:
-    router = build_router(input)
-    kwargs = router_kwargs(input)
-    params = deployment_params(input)
-    attempt = router._get_timeout(kwargs, params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    stream = router._get_stream_timeout(kwargs, params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    non_stream = router._get_non_stream_timeout(kwargs, params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    whole = router._get_timeout(kwargs, {})  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    expired_status, expired_code = expiry_status(input, attempt)
+def router_result(settings: RouterInput) -> RouterResult:
+    router = build_router(settings)
+    kwargs = router_kwargs(settings)
+    params = deployment_params(settings)
+    attempt = router._get_timeout(kwargs, params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
+    stream = router._get_stream_timeout(kwargs, params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
+    non_stream = router._get_non_stream_timeout(kwargs, params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
+    whole = router._get_timeout(kwargs, {})  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
+    expired_status, expired_code = expiry_status(settings, attempt)
     return RouterResult(
         stream=None if stream is None else timeout_output(stream),
         non_stream=None if non_stream is None else timeout_output(non_stream),

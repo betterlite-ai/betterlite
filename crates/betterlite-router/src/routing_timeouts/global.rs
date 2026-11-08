@@ -9,7 +9,7 @@ pub struct GlobalRequestTimeout {
 
 impl GlobalRequestTimeout {
     #[must_use]
-    pub fn configured(self) -> Option<Seconds> {
+    pub const fn configured(self) -> Option<Seconds> {
         if self.explicitly_set {
             return Some(self.seconds);
         }

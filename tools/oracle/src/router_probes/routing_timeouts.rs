@@ -15,9 +15,14 @@ use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
 
+// the enum in mod.rs would otherwise carry every field of this payload inline in its largest variant
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Input(pub Box<Payload>);
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Input {
+pub struct Payload {
     #[serde(default)]
     pub configured: Option<ConfiguredInput>,
     #[serde(default)]
@@ -118,8 +123,12 @@ pub struct DeploymentInput {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Output(pub Box<Fields>);
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Output {
+pub struct Fields {
     pub configured: Option<String>,
     pub resolved: Option<TimeoutOutput>,
     pub transport: Option<TimeoutOutput>,
@@ -160,10 +169,10 @@ impl From<TimeoutValue> for TimeoutOutput {
         match value {
             TimeoutValue::Seconds(seconds) => Self::from(seconds),
             TimeoutValue::Phases(phases) => Self::Phases {
-                connect: phases.connect.map(TimeoutOutput::from),
-                read: phases.read.map(TimeoutOutput::from),
-                write: phases.write.map(TimeoutOutput::from),
-                pool: phases.pool.map(TimeoutOutput::from),
+                connect: phases.connect.map(|seconds| format!("{:.6}", seconds.0)),
+                read: phases.read.map(|seconds| format!("{:.6}", seconds.0)),
+                write: phases.write.map(|seconds| format!("{:.6}", seconds.0)),
+                pool: phases.pool.map(|seconds| format!("{:.6}", seconds.0)),
             },
         }
     }
@@ -173,18 +182,19 @@ pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
-    let mut output = Output::default();
-    fill_configured(input.configured.as_ref(), &mut output)?;
-    fill_completion(input.completion.as_ref(), &mut output)?;
-    fill_router(input.router.as_ref(), &mut output)?;
-    Ok(ProbeOutput::RoutingTimeouts(output))
+    let payload = &input.0;
+    let mut fields = Fields::default();
+    fill_configured(payload.configured.as_ref(), &mut fields)?;
+    fill_completion(payload.completion.as_ref(), &mut fields)?;
+    fill_router(payload.router.as_ref(), &mut fields)?;
+    Ok(ProbeOutput::RoutingTimeouts(Output(Box::new(fields))))
 }
 
 fn fill_configured(
-    input: Option<&ConfiguredInput>,
-    output: &mut Output,
+    configured: Option<&ConfiguredInput>,
+    output: &mut Fields,
 ) -> Result<(), OperationError> {
-    let Some(input) = input else {
+    let Some(input) = configured else {
         return Ok(());
     };
     let global = global_timeout(&input.seconds, input.explicitly_set)?;
@@ -195,10 +205,10 @@ fn fill_configured(
 }
 
 fn fill_completion(
-    input: Option<&CompletionInput>,
-    output: &mut Output,
+    completion: Option<&CompletionInput>,
+    output: &mut Fields,
 ) -> Result<(), OperationError> {
-    let Some(input) = input else {
+    let Some(input) = completion else {
         return Ok(());
     };
     let global = global_timeout(
@@ -206,8 +216,11 @@ fn fill_completion(
         input.global_timeout.explicitly_set,
     )?;
     let kwargs = TimeoutKwargs {
-        timeout: optional_seconds("kwargs timeout", &input.timeout)?,
-        request_timeout: optional_seconds("kwargs request_timeout", &input.request_timeout)?,
+        timeout: optional_seconds("kwargs timeout", input.timeout.as_deref())?,
+        request_timeout: optional_seconds(
+            "kwargs request_timeout",
+            input.request_timeout.as_deref(),
+        )?,
     };
     let model_timeout = input
         .model_timeout
@@ -230,34 +243,38 @@ fn fill_completion(
     Ok(())
 }
 
-fn fill_router(input: Option<&RouterInput>, output: &mut Output) -> Result<(), OperationError> {
-    let Some(input) = input else {
+fn fill_router(router: Option<&RouterInput>, output: &mut Fields) -> Result<(), OperationError> {
+    let Some(input) = router else {
         return Ok(());
     };
     let global = global_timeout(
         &input.global_timeout.seconds,
         input.global_timeout.explicitly_set,
     )?;
-    let router = resolve_router_timeouts(&router_sources(input)?, global);
+    let timeouts = resolve_router_timeouts(&router_sources(input)?, global);
     let request = request_timeouts(input)?;
     let deployment = deployment_timeouts(input)?;
-    output.stream = stream_timeout(&request, &deployment, &router).map(TimeoutOutput::from);
-    output.non_stream = non_stream_timeout(&request, &deployment, &router).map(TimeoutOutput::from);
-    output.attempt = attempt_timeout(&request, &deployment, &router).map(TimeoutOutput::from);
-    fill_plan(input, output, &router, &request, &deployment)
+    output.stream = stream_timeout(&request, &deployment, &timeouts).map(TimeoutOutput::from);
+    output.non_stream =
+        non_stream_timeout(&request, &deployment, &timeouts).map(TimeoutOutput::from);
+    output.attempt = attempt_timeout(&request, &deployment, &timeouts).map(TimeoutOutput::from);
+    fill_plan(input, output, &timeouts, &request, &deployment)
 }
 
 fn router_sources(input: &RouterInput) -> Result<RouterTimeoutSources, OperationError> {
     Ok(RouterTimeoutSources {
-        timeout: optional_seconds("router_settings.timeout", &input.timeout)?,
-        stream_timeout: optional_seconds("router_settings.stream_timeout", &input.stream_timeout)?,
+        timeout: optional_seconds("router_settings.timeout", input.timeout.as_deref())?,
+        stream_timeout: optional_seconds(
+            "router_settings.stream_timeout",
+            input.stream_timeout.as_deref(),
+        )?,
         default_timeout: optional_seconds(
             "router_settings.default_litellm_params.timeout",
-            &input.default_timeout,
+            input.default_timeout.as_deref(),
         )?,
         default_stream_timeout: optional_seconds(
             "router_settings.default_litellm_params.stream_timeout",
-            &input.default_stream_timeout,
+            input.default_stream_timeout.as_deref(),
         )?,
     })
 }
@@ -265,29 +282,38 @@ fn router_sources(input: &RouterInput) -> Result<RouterTimeoutSources, Operation
 fn request_timeouts(input: &RouterInput) -> Result<RequestTimeouts, OperationError> {
     Ok(RequestTimeouts {
         stream: input.kwargs.stream,
-        timeout: optional_seconds("kwargs timeout", &input.kwargs.timeout)?,
-        request_timeout: optional_seconds("kwargs request_timeout", &input.kwargs.request_timeout)?,
-        stream_timeout: optional_seconds("kwargs stream_timeout", &input.kwargs.stream_timeout)?,
+        timeout: optional_seconds("kwargs timeout", input.kwargs.timeout.as_deref())?,
+        request_timeout: optional_seconds(
+            "kwargs request_timeout",
+            input.kwargs.request_timeout.as_deref(),
+        )?,
+        stream_timeout: optional_seconds(
+            "kwargs stream_timeout",
+            input.kwargs.stream_timeout.as_deref(),
+        )?,
     })
 }
 
 fn deployment_timeouts(input: &RouterInput) -> Result<DeploymentTimeouts, OperationError> {
     Ok(DeploymentTimeouts {
-        timeout: optional_seconds("litellm_params.timeout", &input.deployment.timeout)?,
+        timeout: optional_seconds(
+            "litellm_params.timeout",
+            input.deployment.timeout.as_deref(),
+        )?,
         request_timeout: optional_seconds(
             "litellm_params.request_timeout",
-            &input.deployment.request_timeout,
+            input.deployment.request_timeout.as_deref(),
         )?,
         stream_timeout: optional_seconds(
             "litellm_params.stream_timeout",
-            &input.deployment.stream_timeout,
+            input.deployment.stream_timeout.as_deref(),
         )?,
     })
 }
 
 fn fill_plan(
     input: &RouterInput,
-    output: &mut Output,
+    output: &mut Fields,
     router: &RouterTimeouts,
     request: &RequestTimeouts,
     deployment: &DeploymentTimeouts,
@@ -318,7 +344,7 @@ fn fill_plan(
 
 fn fill_expiry(
     elapsed_millis: Option<u64>,
-    output: &mut Output,
+    output: &mut Fields,
     plan: &TimeoutPlan,
     now: Instant,
 ) -> Result<(), OperationError> {
@@ -357,19 +383,19 @@ fn timeout_value(input: &TimeoutInput) -> Result<TimeoutValue, OperationError> {
             write,
             pool,
         } => Ok(TimeoutValue::Phases(TimeoutPhases {
-            connect: optional_seconds("connect", connect)?,
-            read: optional_seconds("read", read)?,
-            write: optional_seconds("write", write)?,
-            pool: optional_seconds("pool", pool)?,
+            connect: optional_seconds("connect", connect.as_deref())?,
+            read: optional_seconds("read", read.as_deref())?,
+            write: optional_seconds("write", write.as_deref())?,
+            pool: optional_seconds("pool", pool.as_deref())?,
         })),
     }
 }
 
-fn optional_seconds(field: &str, text: &Option<String>) -> Result<Option<Seconds>, OperationError> {
-    let Some(text) = text.as_deref() else {
+fn optional_seconds(field: &str, text: Option<&str>) -> Result<Option<Seconds>, OperationError> {
+    let Some(value) = text else {
         return Ok(None);
     };
-    Ok(Some(seconds(field, text)?))
+    Ok(Some(seconds(field, value)?))
 }
 
 fn seconds(field: &str, text: &str) -> Result<Seconds, OperationError> {
