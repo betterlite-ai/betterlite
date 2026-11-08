@@ -1,0 +1,23 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-tools-bare-entry",
+  "call": {
+    "b3844": {
+      "function": "tools",
+      "value": {
+        "tools": [
+          {
+            "name": "bare",
+            "parameters": {
+              "type": "object"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

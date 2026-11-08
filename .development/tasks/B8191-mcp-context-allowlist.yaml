@@ -12,6 +12,8 @@ description: >-
   the decline. legacy_callbacks.py adapts the old callback style so servers that still use it
   keep working.
 
+  The plan registers helper operation b8191 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8191.rs, write tools/oracle/helpers/b8191.py, and leave both registries as they are.
+
 scope:
   paths:
     - crates/betterlite-mcp/src/request_context.rs
@@ -20,6 +22,10 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/mcp-request-context/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-request-context-*
+    - tools/oracle/helpers/b8191.py
+    - tools/oracle/helpers/b8191/**
+    - tools/oracle/src/helpers/mcp/b8191.rs
+    - tools/oracle/src/helpers/mcp/b8191/**
   lint_tables: false
 
 references:

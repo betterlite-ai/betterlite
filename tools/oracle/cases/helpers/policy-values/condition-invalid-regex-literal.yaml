@@ -1,0 +1,9 @@
+kind: helper
+name: condition-invalid-regex-literal
+call:
+  b3240:
+    function: evaluate_condition
+    condition: {model: "[unclosed"}
+    context: {model: "[unclosed"}
+env: {}
+compare: {ignore: []}

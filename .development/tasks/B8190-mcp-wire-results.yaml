@@ -15,6 +15,8 @@ description: >-
   Every error message, code and default is a literal in the Python. Copy the strings exactly and
   give each one a named case.
 
+  The plan registers helper operation b8190 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8190.rs, write tools/oracle/helpers/b8190.py, and leave both registries as they are.
+
 scope:
   paths:
     - crates/betterlite-mcp/src/wire_compat.rs
@@ -23,6 +25,10 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/mcp-wire-results/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-wire-results-*
+    - tools/oracle/helpers/b8190.py
+    - tools/oracle/helpers/b8190/**
+    - tools/oracle/src/helpers/mcp/b8190.rs
+    - tools/oracle/src/helpers/mcp/b8190/**
   lint_tables: false
 
 references:
