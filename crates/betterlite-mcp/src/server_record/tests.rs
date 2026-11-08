@@ -365,7 +365,7 @@ fn record_oauth2_flow_parses_and_serializes(#[case] text: &str, #[case] flow: OA
 #[case::camel_case(r#""authorizationCode""#)]
 fn record_oauth2_flow_rejects_other_text(#[case] text: &str) {
     let error = serde_json::from_str::<OAuth2Flow>(text).unwrap_err();
-    assert!(error.to_string().contains("Matching variant not found"));
+    assert!(error.to_string().contains("unknown variant"));
 }
 
 #[test]

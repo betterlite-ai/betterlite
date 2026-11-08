@@ -33,7 +33,7 @@ pub(super) struct RawMCPServer {
     pub(super) pinned_tools: Option<BTreeMap<String, PinnedMCPTool>>,
     pub(super) allowed_params: Option<BTreeMap<String, Vec<String>>>,
     pub(super) static_headers: Option<BTreeMap<String, String>>,
-    pub(super) env_vars: Option<Vec<JsonValue>>,
+    pub(super) env_vars: Option<Vec<BTreeMap<String, JsonValue>>>,
     pub(super) client_id: Option<String>,
     pub(super) client_secret: Option<SecretCredential>,
     pub(super) issuer: Option<String>,

@@ -89,7 +89,7 @@ pub struct MCPServer {
     pub pinned_tools: Option<BTreeMap<String, PinnedMCPTool>>,
     pub allowed_params: Option<BTreeMap<String, Vec<String>>>,
     pub static_headers: Option<BTreeMap<String, String>>,
-    pub env_vars: Option<Vec<JsonValue>>,
+    pub env_vars: Option<Vec<BTreeMap<String, JsonValue>>>,
     pub client_id: Option<String>,
     pub client_secret: Option<SecretCredential>,
     pub issuer: Option<String>,
