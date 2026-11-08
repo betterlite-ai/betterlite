@@ -111,14 +111,24 @@ fn options_explicit_and_empty_values_lose_to_a_non_empty_environment_value() {
     assert_eq!(cache.redis_url.expose_secret(), "redis://:pw@envhost:6379");
 }
 
-#[test]
-fn options_an_empty_environment_password_still_builds_the_url() {
+#[rstest]
+#[case::host("", "6379", "pw", "redis://:pw@:6379")]
+#[case::port("localhost", "", "pw", "redis://:pw@localhost:")]
+#[case::password("localhost", "6379", "", "redis://:@localhost:6379")]
+fn options_an_empty_environment_value_still_builds_the_url(
+    #[case] host: &str,
+    #[case] port: &str,
+    #[case] password: &str,
+    #[case] url: &str,
+) {
     let mut settings = options();
+    settings.host = None;
+    settings.port = None;
     settings.password = None;
     let env = RedisEnv {
-        redis_host: None,
-        redis_port: None,
-        redis_password: Some(SecretString::from("")),
+        redis_host: Some(host.to_owned()),
+        redis_port: Some(port.to_owned()),
+        redis_password: Some(SecretString::from(password)),
     };
     let cache = RedisSemanticCache::new(
         settings,
@@ -126,8 +136,8 @@ fn options_an_empty_environment_password_still_builds_the_url() {
         Arc::new(FakeEmbedder::new()),
         Arc::new(FakeConnector::new(Arc::new(FakeIndex::default()))),
     )
-    .expect("an empty password is set");
-    assert_eq!(cache.redis_url.expose_secret(), "redis://:@localhost:6379");
+    .expect("a set environment value is used as is");
+    assert_eq!(cache.redis_url.expose_secret(), url);
 }
 
 #[test]
@@ -309,6 +319,13 @@ fn vector_tail(algorithm: &str, datatype: &str, metric: &str) -> Vec<String> {
 #[case::datatype(InfoShape { vector_tail: vector_tail("FLAT", "FLOAT64", "COSINE"), ..matching_shape() }, false)]
 #[case::vector_name(InfoShape { vector_name: "other_vector".to_owned(), ..matching_shape() }, false)]
 #[case::field_type(InfoShape { response_kind: "NUMERIC".to_owned(), ..matching_shape() }, false)]
+#[case::older_layout_algorithm(InfoShape { vector_tail: words(&["HNSW", "6", "TYPE", "FLOAT32", "DIM", "3", "DISTANCE_METRIC", "COSINE"]), ..matching_shape() }, false)]
+#[case::older_layout_type_datatype(InfoShape { vector_tail: words(&["FLAT", "6", "TYPE", "FLOAT64", "DIM", "3", "DISTANCE_METRIC", "COSINE"]), ..matching_shape() }, false)]
+#[case::keyed_layout_type_datatype(InfoShape { vector_tail: words(&["ALGORITHM", "FLAT", "TYPE", "FLOAT64", "DIM", "3"]), ..matching_shape() }, false)]
+#[case::uppercase_algorithm_name(InfoShape { vector_tail: words(&["ALGORITHM", "HNSW", "TYPE", "FLOAT32", "DIM", "3"]), ..matching_shape() }, false)]
+#[case::uppercase_metric_name(InfoShape { vector_tail: words(&["DISTANCE_METRIC", "L2", "DIM", "3"]), ..matching_shape() }, false)]
+#[case::uppercase_names_with_type_datatype(InfoShape { vector_tail: words(&["ALGORITHM", "FLAT", "TYPE", "FLOAT32", "DIM", "3"]), ..matching_shape() }, true)]
+#[case::dimension_at_an_odd_offset(InfoShape { vector_tail: words(&["FLAT", "TYPE", "FLOAT32", "DIM", "3"]), ..matching_shape() }, true)]
 fn index_schema_compare_flags_every_difference(#[case] shape: InfoShape, #[case] expected: bool) {
     let schema = IndexSchema {
         name: "litellm_semantic_cache_index".to_owned(),

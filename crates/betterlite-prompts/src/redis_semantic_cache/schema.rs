@@ -84,7 +84,7 @@ fn attribute_signature(attribute: &Json) -> Option<String> {
         return None;
     }
     let pairs = vector_pairs(items);
-    let named = |names: [&str; 2], default: &str| {
+    let named = |names: &[&str], default: &str| {
         names
             .iter()
             .find_map(|key| pairs.get(*key))
@@ -95,9 +95,9 @@ fn attribute_signature(attribute: &Json) -> Option<String> {
         .find_map(|key| pairs.get(*key))
         .and_then(|value| value.parse::<usize>().ok())
         .or_else(|| scanned_dimension(items))?;
-    let algorithm = named(["algorithm", "algorithm"], "flat");
-    let datatype = named(["data_type", "datatype"], "float32");
-    let metric = named(["distance_metric", "distance_metric"], "cosine");
+    let algorithm = named(&["algorithm"], "flat");
+    let datatype = named(&["data_type", "datatype", "type"], "float32");
+    let metric = named(&["distance_metric"], "cosine");
     Some(format!("{name}:VECTOR:{dimension}:{algorithm}:{datatype}:{metric}").to_uppercase())
 }
 
