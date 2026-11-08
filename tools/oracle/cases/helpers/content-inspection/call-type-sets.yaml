@@ -1,0 +1,9 @@
+kind: helper
+name: content-inspection-call-type-sets
+call:
+  b5470:
+    function: call_types
+    call_type: aresponses
+env: {}
+compare:
+  ignore: []

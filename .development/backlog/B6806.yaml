@@ -1,0 +1,14 @@
+id: B6806
+milestone: M5 api families
+title: Reducto OCR providers
+status: todo
+depends_on: [B6800, B3300]
+file: tasks/B6806-reducto-ocr-providers.yaml
+covers:
+  - "litellm/ocr/**"
+parent: B092
+split_from: B092
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

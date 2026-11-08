@@ -1,5 +1,9 @@
 pub mod field;
+pub mod live;
+pub mod media_pricing;
+pub mod media_source;
 pub mod operations;
 pub mod policy;
+pub mod polling;
 pub mod records;
 pub mod start_request;

@@ -1,0 +1,30 @@
+kind: helper
+name: guardrail-numeric-stats-exclude-bools
+call:
+  spend_sanitize:
+    operation: sanitize_guardrail_information
+    store_bodies: false
+    information:
+      $py: list
+      id: 1
+      items:
+        - $py: mapping
+          id: 2
+          entries:
+            guardrail_name: pii
+            guardrail_response: {tokens_before: 10, tokens_saved: 2, compression_ratio: 0.5, text: secret, flag: true}
+            match_details: user said hi
+            classification: {x: y}
+            guardrail_request: {messages: []}
+            risk_score: 3
+        - not a mapping
+        - 7
+        - null
+        - $py: mapping
+          id: 3
+          entries:
+            guardrail_name: block
+            guardrail_response: {text: only}
+            guardrail_response_text: keep
+env: {}
+compare: {ignore: []}

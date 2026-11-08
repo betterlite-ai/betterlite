@@ -72,3 +72,17 @@ path = "fuzz_targets/parse_database_endpoint.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "spend_error_text"
+path = "fuzz_targets/spend_error_text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "private_json"
+path = "fuzz_targets/private_json.rs"
+test = false
+doc = false
+bench = false

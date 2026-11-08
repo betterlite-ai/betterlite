@@ -20,6 +20,8 @@ description: >-
   (MCP_CLIENT_TIMEOUT, env LITELLM_MCP_CLIENT_TIMEOUT). When MCP protocol timeouts are involved,
   report the effective timeout (the minimum of request.timeout and timeout_seconds) instead of the
   timeout_seconds argument.
+
+  The five auth types that carry a secret in the request are exported as `pub const STAGED_AUTH_VALUE_AUTH_TYPES: [&str; 5]` of module mcp_preview, with the values api_key, bearer_token, basic, authorization and token, in that order. B4729 reuses it by the path `betterlite_mcp::mcp_preview::STAGED_AUTH_VALUE_AUTH_TYPES`.
 scope:
   paths:
   - crates/betterlite-mcp/src/mcp_preview.rs
@@ -51,6 +53,9 @@ dod:
 - text: Static-preview server_id is blank when credentials come from the request (STAGED_AUTH_VALUE_AUTH_TYPES or auth_type None/MCPAuth.none) and non-blank for resolved servers.
   proof:
   - preview-client-tests
+- text: mcp_preview exports `pub const STAGED_AUTH_VALUE_AUTH_TYPES` with the five values api_key, bearer_token, basic, authorization and token.
+  proof:
+  - preview-client-tests
 - text: M2M OAuth (client_id and client_secret) drops incoming Authorization headers so client_credentials flow works.
   proof:
   - preview-client-tests
@@ -78,7 +83,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^mcp_preview::.*timeout.*defaults?/)'
   - id: preview-client-tests
     why: The preview client functions fail, do not exist, or do not handle auth_type None/MCPAuth.none blanking
-    run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^mcp_preview::/)')
+    run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^mcp_preview::/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
@@ -87,7 +92,7 @@ out_of_scope:
 - Actual tool execution and logging (B4728).
 - Request validation and payload normalization (B4716).
 - Credential inheritance from saved servers (B4717).
-- OpenAPI spec parsing and tool generation (B4683).
+- OpenAPI spec parsing and tool generation (B4683). The OpenAPI preview function preview_openapi_tools is owned by B4729.
 pitfalls:
 - Never catch KeyboardInterrupt, SystemExit or asyncio.CancelledError; the try/except at the end must let them propagate.
 - The default timeout_seconds parameter is 30.0 (MCP_TOOL_LISTING_TIMEOUT, overridable via LITELLM_MCP_TOOL_LISTING_TIMEOUT env var); when request.timeout is None, the fallback is 60.0 (MCP_CLIENT_TIMEOUT, overridable via LITELLM_MCP_CLIENT_TIMEOUT env var).

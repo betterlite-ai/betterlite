@@ -1,0 +1,257 @@
+id: B4672
+title: MCP admitted tool grants and dashboard authorization contexts
+description: >-
+  Build two things on top of the server access code B4671 supplies. The first is the tool axis of MCPRequestHandler: which tools of one MCP server a caller may use, for a virtual key, for a keyless admitted user (a gateway session or a dashboard session) and for a managed agent. The second is ui_session_utils.py: how a dashboard session token is turned into the user and team contexts that MCP routes resolve access through. In LiteLLM that is get_allowed_tools_for_server, resolve_admitted_subject_tools, _narrow_tools_to_toolset, tool_is_granted, is_tool_allowed_for_server and is_tool_allowed from user_api_key_auth_mcp.py, managed_agent_tools from managed_agent_access.py, and every function in ui_session_utils.py. The routes B4726 to B4728 and the tool call path call this code, so every public name below is spelled as written.
+
+
+  The code goes in four crates and none of them gains a dependency on a crate above it. UserAPIKeyAuth keeps its fields pub(crate) in betterlite-auth, so the few reads and copies this task needs go in a new betterlite-auth module, session_auth. The tool logic and the dashboard logic are pure over ports and go in betterlite-mcp, in the new modules tool_access and ui_session. The production implementations of the two read ports go in betterlite-server, in the new module mcp::tool_session_reads. No Cargo.toml changes: betterlite-mcp already depends on betterlite-auth and betterlite-config, and betterlite-server on betterlite-mcp.
+
+
+  Reuse, do not rebuild. From B4671: McpAccess<R, V, G, C, H> with its fields (settings, reads, registry, grants, ceilings, human) and its methods toolset_scope, admitted_source_grants, admitted_subject_sources, managed_agent_servers and delegated_resource_subject; SourceGrant; AccessError (its Identity variant wraps B4772's AgentIdentityFailure); AccessSettings.require_key_mcp_access_defined; RegistryReads::resolve_toolset_scope; and, in betterlite-auth, source_identity(auth) (user_id, team_id, requires_fresh_policy, mcp_toolset_id, has_managed_agent_policy) and managed_context(auth). From B4679: key_identity(auth).mcp_admitted_user_subject, the marker of a keyless admitted user. From B4670, as methods on Ceilings: apply_end_user_tool_ceiling, apply_user_tool_ceiling, apply_agent_caller_tool_ceiling, agent_tool_permissions_for_server, apply_agent_and_org_tool_ceilings and admin_view_unscoped. From B4668: the ObjectPermission row, UnloadableEntitlementError, union_tool_grants (a pure function) and the object permission reads. From B2314: UserAPIKeyAuth and user_api_key_has_admin_view.
+
+
+  session_auth, in crates/betterlite-auth/src/session_auth.rs with a tests.rs beside it. with_team_id(auth: &UserAPIKeyAuth, team_id: &str) -> UserAPIKeyAuth is clone_user_api_key_auth_with_team: a full copy of the auth with only team_id replaced. with_parent_span_of(auth: &UserAPIKeyAuth, session: &UserAPIKeyAuth) -> UserAPIKeyAuth copies the parent trace span handle (parent_otel_span) from the session onto a copy of auth. own_grant_view(auth: &UserAPIKeyAuth) -> OwnGrantView<'_> gives OwnGrantView { has_object_permission: bool, object_permission_id: Option<&str>, has_admin_view: bool }, where has_admin_view is B2314's user_api_key_has_admin_view (proxy_admin and proxy_admin_viewer only). No setters beyond these two.
+
+
+  ToolReads and ToolReadError, in betterlite-mcp tool_access. ToolReadError is an enum with Unloadable(UnloadableEntitlementError) and Failed(String). ToolReads is the port to everything this module reads that B4671's ports do not cover. key_object_permission(auth) -> Option<ObjectPermission> is sync and returns the permission already on the auth (B4668's _get_key_object_permission, no database read). The async methods return Result<_, ToolReadError>: team_object_permission(auth) -> Option<ObjectPermission> (B4668's team getter); toolset_tools_for_server(permission, server_id, fresh) -> Option<Vec<String>> (B4668, returns Unloadable when declared toolsets resolve to nothing); operator_open_server_ids(auth) -> Vec<String> (MCPServerManager.operator_open_server_ids, servers reachable through open channels rather than a grant; no owner at the pin, see notes). expand_tool_permissions(map) -> Map<server_id, Vec<tool>> is sync (the registry expansion that turns names and aliases into server ids). ToolAccess<R, V, G, C, H, T: ToolReads> holds access: McpAccess<R, V, G, C, H> and tools: T, built with a struct literal (generic, no trait object, no global). Tests use in-memory fakes of ToolReads and of B4671's and B4670's ports.
+
+
+  tool_access, in crates/betterlite-mcp/src/tool_access.rs and tool_access/**, with its own ToolAccessError enum. It has variants for ToolReadError, AccessError and B4670's CeilingsError, and a method is_unloadable(&self) -> bool that is true for an Unloadable read, an Unloadable ceiling error and the AccessError variant that carries B4668's Unloadable error. Tool lists are Option<Vec<String>>: None means unrestricted, Some(empty) denies every tool.
+
+
+  1. allowed_tools_for_server (get_allowed_tools_for_server), inputs: server_id, the optional auth and keyless_source (default false). It returns Result<Option<Vec<String>>, ToolAccessError>, and only step b can fail. a. No auth gives None. b. If the auth has a managed agent policy (source_identity.has_managed_agent_policy), return managed_agent_tools(server_id, auth); its error is returned and is not turned into a deny. c. Everything after that runs inside one guard. Any error is logged and the result is Some(empty) when deny_all is true and None when it is false. deny_all is true when the error is_unloadable (log the warning "Denying MCP tools, entitlement unreadable"), or keyless_source is true, or key_identity(auth).mcp_admitted_user_subject is true. Other errors log the warning "Failed to get allowed tools for server". d. A keyless admitted user returns admitted_subject_tools(server_id, auth, None), first thing, before any key or team read. e. Otherwise key_permission = tools.key_object_permission(auth) and team_permission = tools.team_object_permission(auth). Key direct tools are tools.expand_tool_permissions(key mcp_tool_permissions) at server_id. Key toolset tools are registry.resolve_toolset_scope(key mcp_toolsets, requires_fresh_policy) at server_id, called only when the key has toolsets. key_tools = union_tool_grants(direct, toolset). Team direct tools are the same expansion of the team's mcp_tool_permissions at server_id, team toolset tools are tools.toolset_tools_for_server(team_permission, server_id, requires_fresh_policy), and team_tools = union_tool_grants of the two. f. Combine: a non-empty team_tools with a non-empty key_tools gives their intersection; a non-empty team_tools alone gives team_tools; otherwise the result is key_tools exactly as it is (None, or Some(empty)). g. Run, in this order and each on the previous result: ceilings.apply_end_user_tool_ceiling, ceilings.apply_user_tool_ceiling (with keyless_source), ceilings.apply_agent_caller_tool_ceiling, ceilings.apply_agent_and_org_tool_ceilings (with keyless_source). Their errors go to the guard.
+
+
+  To avoid an async method that calls itself, put steps e to g in a second method, single_credential_tools(server_id, auth, keyless_source), that carries the same guard from step c. allowed_tools_for_server calls it after steps a, b and d, and admitted_subject_tools calls it for each source. A source never has a managed agent policy or the admitted marker (B4671's scoped_source_auth drops both), so skipping those two checks for a source changes nothing.
+
+
+  2. admitted_subject_tools (resolve_admitted_subject_tools), inputs: server_id, auth, allowed_team_ids: Option<&BTreeSet<String>> (None means every team). open = the server id is in tools.operator_open_server_ids(auth), or, only when it is not, ceilings.admin_view_unscoped(auth). allowed starts empty. For each (source, granted) of access.admitted_source_grants(auth, allowed_team_ids) in order: skip the pair when granted lacks server_id and not (open and the source has no team_id); tools = single_credential_tools(server_id, source, keyless_source = true); a None result returns narrow_to_toolset(None, server_id, auth) at once, without reading later sources; otherwise add the tools to allowed. After the loop return narrow_to_toolset(Some(sorted, de-duplicated allowed), server_id, auth). Errors from admitted_source_grants and from narrowing are returned.
+
+
+  3. narrow_to_toolset (_narrow_tools_to_toolset), inputs: tools, server_id, auth. scope = access.toolset_scope(auth); None returns the tools unchanged. Otherwise scoped = the scope's tools for server_id (empty when the server is missing); with tools None the result is Some(sorted scoped), else Some(sorted intersection of scoped and tools).
+
+
+  4. is_tool_allowed_for_server (is_tool_allowed_for_server): allowed_tools_for_server(server_id, auth, keyless_source = false), then tool_is_granted(tool_name, the result). tool_is_granted(bare_tool_name: &str, allowed_tool_names: Option<&[String]>) -> bool is a free function in tool_access::checks: true when allowed is None, else true only when the list holds the exact bare name. server_is_allowed(allowed_mcp_servers: &[String], server_name: &str) -> bool is LiteLLM's is_tool_allowed: false for an empty list, else whether the list holds the name. Both are pure and have helper oracle cases.
+
+
+  5. managed_agent_tools (managed_agent_tools in managed_agent_access.py), inputs: server_id, auth. If server_id is not in access.managed_agent_servers(auth) return Some(empty); an error from that call is returned as it is (B4671's identity failure, message "Agent MCP policy is unavailable"). Then, inside one guard where ANY error becomes AccessError::Identity with B4772's AgentIdentityFailure code "policy_unavailable" and message "Agent tool policy is unavailable": granted = ceilings.agent_tool_permissions_for_server(server_id, auth, None); own = ceilings.apply_agent_caller_tool_ceiling(granted, server_id, auth). With no managed context, or an autonomous one, return own with Some sorted (None stays None). A delegated context with no user_id returns Some(empty). Otherwise human = access.delegated_resource_subject(user_id) and human_tools = admitted_subject_tools(server_id, human, allowed_team_ids = {auth team_id} when the auth has one, else the empty set). own None returns human_tools as it is; human_tools None returns Some(sorted own); else Some(sorted intersection).
+
+
+  SessionReads and ui_session. SessionReads is the async port for the dashboard code, every method returning Result<_, SessionReadError> (an enum with Failed(String)) except the sync has_database() -> bool. user_teams(user_id, fresh) -> Option<Vec<String>> is B736's get_user_object with user_id_upsert false and check_db_only set to fresh (None for a missing user; the value is the user's teams list). key_object_permission_hydrated(auth) -> Option<ObjectPermission> and team_object_permission(auth) -> Option<ObjectPermission> are B4668's. UiSession<R, V, G, C, H, S: SessionReads> holds access: McpAccess<R, V, G, C, H> and reads: S. ContextServers is a trait with one async method, allowed_servers(&self, auth: &UserAPIKeyAuth) -> Result<Vec<String>, UiSessionError>; the caller (the server manager, or B4671's allowed_servers) implements it. ui_session is in crates/betterlite-mcp/src/ui_session.rs and ui_session/**, with its own UiSessionError. UI_SESSION_TOKEN_TEAM_ID is the constant "litellm-dashboard" (no env var, no config key). All reads use source_identity for user_id, team_id and requires_fresh_policy.
+
+
+  6. is_ui_session_credential: team_id equals UI_SESSION_TOKEN_TEAM_ID and user_id is set and not empty. is_keyless_mcp_subject: is_ui_session_credential, or key_identity(auth).mcp_admitted_user_subject is true. restricts_mcp (_restricts_mcp, pure): true when the permission is present and any of mcp_servers, mcp_toolsets, mcp_tool_permissions or mcp_access_groups is non-empty.
+
+
+  7. resolve_ui_session_team_ids: not a ui session credential gives an empty list. No database (reads.has_database false) logs at debug and gives an empty list. Read reads.user_teams; an error logs the warning "Failed to load teams for UI session token user." and gives an empty list, as do a missing user and a user with no teams. Otherwise the teams in first-seen order, without duplicates and without empty strings. The dashboard team id is NOT dropped here.
+
+
+  8. admitted_user_context: None unless the auth is a ui session credential. Otherwise access.human.reload_admitted_user(user_id, requires_fresh_policy of the session); an Err logs the warning "MCP dashboard session: admitted-subject reload failed for {user_id}: {error}" and gives None; a success is returned through with_parent_span_of(admitted, session).
+
+
+  9. acting_user_auth: a non-session credential is returned unchanged, and so is a session whose own_grant_view has_admin_view is true. Otherwise admitted_user_context, or the session itself when that is None. build_effective_auth_contexts: team_ids = resolve_ui_session_team_ids; contexts are with_team_id(auth, id) for each id, or just the auth when there are none; then admitted_user_context appended last when it is not None. can_access_mcp_server(auth, server_id, lister: &impl ContextServers) -> Result<bool, UiSessionError>: for each context in build_effective_auth_contexts, true as soon as lister.allowed_servers(context) holds server_id (an error is returned); false after the last.
+
+
+  10. toolset_grant_contexts: a context that is not keyless is its own single source. A keyless one: acting = admitted_user_context(auth), then access.admitted_subject_sources(acting, or the auth when acting is None, with no team filter). own_toolset_ids(context): no object_permission and no object_permission_id gives None (declares no MCP grant of its own). Otherwise reads.key_object_permission_hydrated(context); an error logs the warning "MCP toolset grants: object permission {id} unreadable, granting nothing through it" and gives Some(empty); a missing row gives Some(empty); a row that does not restrict_mcp gives None; else Some(its mcp_toolsets, or empty). inherited_toolset_ids(context): reads.team_object_permission; an error logs the warning "MCP toolset grants: team {team_id} unreadable, inheriting nothing from it" and gives empty; no row gives empty; else its mcp_toolsets. context_toolset_ids(context, inherits_team): a Some from own_toolset_ids wins; otherwise empty when inherits_team is false or the context has no team_id; else inherited_toolset_ids.
+
+
+  11. granted_toolset_ids(auth) -> BTreeSet<String>: require = access.settings.require_key_mcp_access_defined; inherits_team = is_keyless_mcp_subject(auth) or not require. The result is the union of context_toolset_ids over every context from toolset_grant_contexts, read one after another. No grant anywhere gives the empty set. Nothing in this function returns an error.
+
+
+  Production reads. LiveToolReads and LiveSessionReads, in crates/betterlite-server/src/mcp/tool_session_reads.rs with a tests.rs beside it, are the production ToolReads and SessionReads. Their fields (struct literal) are B4668's object permission reads, B736's user lookup and the server manager's registry port. Keep the mapping from those error values to ToolReadError (Unloadable stays Unloadable) and SessionReadError in plain functions, so their tests need no Postgres.
+
+
+  No route reaches this code yet (B4726 to B4728 and the tool call path wire it in, and B137 registers the MCP routes), so the helper operation b4672 covers the three pure functions tool_is_granted, server_is_allowed and restricts_mcp. The HTTP cases come with those routes. B4670's pending HTTP cases are not added here for the same reason.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/tool_access.rs
+    - crates/betterlite-mcp/src/tool_access/**
+    - crates/betterlite-mcp/src/ui_session.rs
+    - crates/betterlite-mcp/src/ui_session/**
+    - crates/betterlite-auth/src/session_auth.rs
+    - crates/betterlite-auth/src/session_auth/**
+    - crates/betterlite-server/src/mcp/tool_session_reads.rs
+    - crates/betterlite-server/src/mcp/tool_session_reads/**
+    - tools/oracle/cases/helpers/mcp-tool-grants/**
+    - "tools/oracle/fuzz/corpus/helper_case/mcp-tool-grants-*"
+    - tools/oracle/helpers/b4672.py
+    - tools/oracle/helpers/b4672/**
+    - tools/oracle/src/helpers/mcp/b4672.rs
+    - tools/oracle/src/helpers/mcp/b4672/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2263-L2387
+    why: get_allowed_tools_for_server, the managed check, the key and team combination and the guard with its deny_all rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2049-L2085
+    why: resolve_admitted_subject_tools, the open channel rule and the early return on an unrestricted source.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1973-L1985
+    why: _narrow_tools_to_toolset (the toolset scope itself is B4671's _toolset_scope just above it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2451-L2500
+    why: tool_is_granted, is_tool_allowed_for_server and is_tool_allowed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/managed_agent_access.py#L50-L74
+    why: managed_agent_tools, with its two different failure messages and the delegated human branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L24-L88
+    why: clone with team, is_ui_session_credential and resolve_ui_session_team_ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L91-L164
+    why: admitted_user_context, acting_user_auth, build_effective_auth_contexts and can_access_mcp_server.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L167-L296
+    why: _restricts_mcp, is_keyless_mcp_subject, the toolset grant contexts and granted_toolset_ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1725
+    why: UI_SESSION_TOKEN_TEAM_ID.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3414-L3470
+    why: operator_open_server_ids, the open channel question that the admitted tool path asks the registry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L1434-L1446
+    why: How tool listing calls get_allowed_tools_for_server and tool_is_granted (the first caller).
+
+dod:
+  - text: >-
+      allowed_tools_for_server returns None for no auth and returns managed_agent_tools for a managed agent with the error returned and not turned into a deny;
+      a keyless admitted user is answered by admitted_subject_tools before any key or team read.
+    proof: [allowed-tools-tests]
+  - text: >-
+      The key and team step reads the key permission as it sits on the auth and the team permission from the port, adds the key's toolset tools through the registry and the team's through toolset_tools_for_server,
+      and combines them: both non-empty gives the intersection, only a non-empty team gives the team list, otherwise the key list exactly as it is.
+    proof: [allowed-tools-tests]
+  - text: >-
+      The end user, user, agent caller, and agent and org tool ceilings run in that order on the combined list, with keyless_source passed to the user and the agent and org steps.
+    proof: [allowed-tools-tests]
+  - text: >-
+      Any error after the managed check gives Some(empty) when it is an Unloadable error, when keyless_source is true or when the auth is an admitted subject, and None for key auth otherwise.
+    proof: [allowed-tools-tests]
+  - text: >-
+      admitted_subject_tools reads the user's own source and each team source that grants the server, passes keyless_source true, unions their tools sorted and de-duplicated,
+      returns on the first unrestricted source, and lets only the user's own source in through an open channel or an unscoped admin view.
+    proof: [admitted-tools-tests]
+  - text: >-
+      narrow_to_toolset leaves the tools alone with no toolset scope, gives the sorted scoped tools when the tools are unrestricted, their sorted intersection otherwise,
+      and an empty list for a server the scope does not name; it is applied on both return paths of admitted_subject_tools.
+    proof: [admitted-tools-tests]
+  - text: >-
+      tool_is_granted is true for None and for an exact bare name in the list and false for an empty list or any other spelling; server_is_allowed is false for an empty list and true only for a listed name.
+      is_tool_allowed_for_server answers through allowed_tools_for_server and tool_is_granted.
+    proof: [checks-tests, helper-case-corpus, helper-python, helper-tests, oracle]
+  - text: >-
+      managed_agent_tools returns Some(empty) for a server outside the managed servers, the agent's own tools sorted for an autonomous agent, Some(empty) for a delegated agent with no user,
+      and the intersection with the human's tools (limited to the agent's team, or to no team when it has none) for a delegated agent; a failure inside the body is the policy_unavailable identity failure with the message "Agent tool policy is unavailable".
+    proof: [managed-tools-tests]
+  - text: >-
+      with_team_id changes only team_id, with_parent_span_of copies only the trace span handle, and own_grant_view reports the object permission presence, its id and the admin view flag.
+    proof: [session-auth-tests]
+  - text: >-
+      is_ui_session_credential needs the dashboard team id and a non-empty user_id; is_keyless_mcp_subject is true for a session credential or an admitted subject;
+      resolve_ui_session_team_ids returns the user's teams de-duplicated in order, keeps the dashboard team id, and returns an empty list for a non-session credential, no database, a read error, a missing user or no teams.
+    proof: [contexts-tests]
+  - text: >-
+      admitted_user_context returns None for a non-session credential and for a reload error, and otherwise the reloaded user with the session's trace span;
+      acting_user_auth keeps a non-session credential and an admin view session and otherwise returns the admitted user or the session itself.
+    proof: [contexts-tests]
+  - text: >-
+      build_effective_auth_contexts returns one copy per real team (or the auth itself) followed by the admitted context when there is one, and can_access_mcp_server is true at the first context whose server list holds the server and returns a list error.
+    proof: [contexts-tests]
+  - text: >-
+      toolset_grant_contexts returns a virtual key as its own single source and a keyless subject as the user's source plus one per live roster team;
+      restricts_mcp is true for any non-empty server, toolset, tool permission or access group field and false for an absent or empty permission.
+    proof: [toolsets-tests, helper-case-corpus, helper-python, helper-tests, oracle]
+  - text: >-
+      granted_toolset_ids gives a source that declares MCP grants of its own only its own toolsets, lets a source that declares none inherit its team's, gives nothing to a key's team under
+      require_key_mcp_access_defined, always inherits for a keyless subject, and drops an unreadable own grant or unreadable team without failing the other sources.
+    proof: [toolsets-tests]
+  - text: The production reads map B4668's and B736's results to ToolReads and SessionReads values, keeping Unloadable apart from Failed.
+    proof: [reads-tests]
+  - text: Helper cases for tool_is_granted, server_is_allowed and restricts_mcp are present, replay through the shared parser and agree with LiteLLM.
+    proof: [helper-case-corpus, helper-python, helper-tests, oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: allowed-tools-tests
+      why: the key and team tool combination, the ceiling order or the deny-on-fault guard is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^tool_access::allowed_tools::tests::/)'
+    - id: admitted-tools-tests
+      why: the admitted subject tool union, the open channel rule or the toolset narrowing is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^tool_access::admitted_subject::tests::/)'
+    - id: checks-tests
+      why: tool_is_granted, server_is_allowed or is_tool_allowed_for_server is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^tool_access::checks::tests::/)'
+    - id: managed-tools-tests
+      why: the managed agent tool list, the delegated human branch or the policy_unavailable conversion is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^tool_access::managed::tests::/)'
+    - id: session-auth-tests
+      why: the session auth copies or the own grant view are missing or touch the wrong fields
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^session_auth::tests::/)'
+    - id: contexts-tests
+      why: the dashboard session identity, its team ids or the effective auth contexts are missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^ui_session::contexts::tests::/)'
+    - id: toolsets-tests
+      why: the per-source toolset grant resolution or restricts_mcp is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^ui_session::toolsets::tests::/)'
+    - id: reads-tests
+      why: the production reads map a store result to the wrong port value
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::tool_session_reads::tests::/)'
+    - id: helper-tests
+      why: the helper adapter does not reach the production functions
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mcp::b4672::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: the Python helper adapter is missing or fails the strict checks
+      run: test -f tools/oracle/helpers/b4672.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no newly added mcp-tool-grants helper case reaches the shared parser
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-tool-grants-*')" && grep -rlq b4672 tools/oracle/fuzz/corpus/helper_case/mcp-tool-grants-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-tool-grants/tool-granted-none-allows-all.yaml
+  - tools/oracle/cases/helpers/mcp-tool-grants/tool-granted-empty-list-denies.yaml
+  - tools/oracle/cases/helpers/mcp-tool-grants/tool-granted-exact-bare-name.yaml
+  - tools/oracle/cases/helpers/mcp-tool-grants/server-allowed-name-in-list.yaml
+  - tools/oracle/cases/helpers/mcp-tool-grants/server-allowed-empty-list-denies.yaml
+  - tools/oracle/cases/helpers/mcp-tool-grants/restricts-mcp-any-field.yaml
+  - tools/oracle/cases/helpers/mcp-tool-grants/restricts-mcp-empty-fields.yaml
+
+deviations:
+  - what: Reads go through typed ports (ToolReads, SessionReads, ContextServers and B4671's and B4670's ports) instead of importing proxy_server globals (prisma_client, user_api_key_cache, global_mcp_server_manager).
+    why: betterlite has no module-level state; the observable results are the same.
+  - what: LiteLLM's optional callable parameters on the ui_session_utils functions (admitted_context, admitted_sources, effective_contexts, team_object_permission, own_object_permission, allowed_servers) become the ports above; there is no per-call override.
+    why: those parameters exist so tests can swap a function; the ports do the same job without closures.
+  - what: granted_toolset_ids reads its contexts one after another and returns a sorted set; LiteLLM runs them together with asyncio.gather and returns a frozenset.
+    why: no context read can fail and the result is a set, so only timing differs.
+  - what: Every Err from reload_admitted_user is treated as the HTTPException case in admitted_user_context (warn and return None); LiteLLM lets a non-HTTP exception escape.
+    why: the port returns one error type and B4673's reload raises HTTP errors for every failure a caller can see; see notes.
+  - what: Tool lists LiteLLM builds from a Python set on the key and team path come back de-duplicated in first-seen order; the admitted subject list stays sorted as in LiteLLM.
+    why: Python's set order is not stable, so no client can rely on it; tests compare as sets where order is not part of the contract.
+  - what: Only tool_is_granted, server_is_allowed and restricts_mcp have oracle cases; every other function is covered by Rust tests with fakes.
+    why: the rest read proxy_server globals, and a helper adapter cannot drive them; the HTTP cases come with the routes B4726 to B4728 and B137.
+
+out_of_scope:
+  - "get_mcp_server_access, get_allowed_mcp_servers, admitted_source_grants, admitted_subject_sources, _toolset_scope, billing_auth_for_tool_call, attributing_source_for_server, managed_agent_servers and _delegated_resource_subject: B4671. This task calls them."
+  - "apply_end_user_tool_ceiling, apply_user_tool_ceiling, apply_agent_caller_tool_ceiling, get_agent_tool_permissions_for_server, _apply_agent_and_org_tool_ceilings and admin_view_unscoped: B4670. This task calls them."
+  - "_get_key_object_permission, _get_team_object_permission, _key_object_permission_hydrated, _toolset_tool_permissions, _toolset_tools_for_server, _union_tool_grants and UnloadableEntitlementError: B4668. _as_list is a copy of a read-only list into a list and needs no function in Rust."
+  - "reload_admitted_user and _reload_admitted_principal: B4673, which implements DelegatedHuman. _is_mcp_admitted_user_subject: B4679 as key_identity."
+  - "managed_agent_policy and the identity failure conversion: B4772. agent_caller_auth and the managed ceilings: B4778."
+  - "MCPServerManager.operator_open_server_ids, expand_tool_permissions and resolve_toolset_tool_permissions bodies: the server manager task that covers mcp_server_manager.py. get_user_object: B736."
+  - "Callers of this code: the tool listing and call paths in operations.py (L1434, L1979), the REST routes in rest_endpoints.py, the management routes in mcp_management_endpoints.py, server.py, agent_permission_handler.py and vector_store_endpoints/utils.py. They call the public names above and are planned elsewhere."
+
+pitfalls:
+  - The key path in allowed_tools_for_server reads the key's permission straight from the auth (no database read), while granted_toolset_ids hydrates it by object_permission_id; do not hydrate in one and skip it in the other.
+  - The key's toolsets go through the registry resolver, which turns a read fault into an empty map, but the team's toolsets go through toolset_tools_for_server, which raises Unloadable; so an unreadable key toolset reads as no tool restriction and an unreadable team toolset denies.
+  - Python tests the team and key lists for truthiness, so a team list of Some(empty) falls through to the key list, and a non-empty team list with an empty key list is the team list alone; only two non-empty lists intersect, and that intersection can be empty.
+  - A fault returns Some(empty) for an Unloadable error, for keyless_source and for an admitted subject, but None (allow all) for an ordinary key, so the same error denies one caller shape and opens another.
+  - The managed agent check sits outside the guard, so its failure is a 503 identity error and not an empty list; managed_agent_tools has its own guard whose message is "Agent tool policy is unavailable", different from the "Agent MCP policy is unavailable" that the server check inside it can return.
+  - Each source is resolved with keyless_source = true; without it a fault inside one source would return None and win the union as allow-all.
+  - One unrestricted source (None) ends admitted_subject_tools at once and the later sources are not read, and the toolset narrowing still applies to that None result.
+  - An open channel server (operator_open_server_ids, or admin_view_unscoped) is reachable for the user's own source only (no team_id); it confers reachability, not a ceiling waiver, so that source's own tool permissions and the org tool ceiling still bind.
+  - A toolset scope that resolves to an empty map is not the same as no scope, narrowing then gives Some(empty) for every server, and only a missing mcp_toolset_id leaves the tools alone.
+  - server_is_allowed (LiteLLM's is_tool_allowed) compares a server name against a list of allowed servers and has nothing to do with tools; tool_is_granted compares the bare tool name exactly, with no prefix stripping.
+  - A delegated managed agent with no team_id passes an EMPTY team set to admitted_subject_tools, not None, so only the human's own grants count; None would mean every team the human is in.
+  - resolve_ui_session_team_ids keeps the dashboard team id "litellm-dashboard", while B4669's user_team_ids drops it; do not reuse the B4669 read here.
+  - is_ui_session_credential needs a non-empty user_id, and an admin view session keeps its own auth in acting_user_auth even when the user could be admitted.
+  - build_effective_auth_contexts puts the admitted context LAST and keeps the per-team copies even when the admitted context exists; a session with no resolved teams contributes the session auth itself.
+  - own_toolset_ids returns None (inherit the team) only when the source's permission row names nothing MCP-related; a row that exists but is empty on all four fields inherits, a named row that cannot be read grants nothing, and neither case fails the other sources.
+  - under require_key_mcp_access_defined a virtual key's context inherits nothing from its team, but a keyless subject always does, since its team sources are separate contexts.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

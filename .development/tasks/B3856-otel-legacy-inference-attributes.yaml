@@ -1,0 +1,196 @@
+id: B3856
+title: Legacy OTel inference and raw-request attributes
+description: >-
+  Build the part of LiteLLM's legacy OpenTelemetry logger that fills a span for one LLM call: `set_attributes`, which writes the metadata, request, usage, content and response attributes, and `set_raw_request_attributes`, which writes the provider's raw request and raw response onto the second "litellm_raw_gen_ai_request" span. Also build the callback-name branch at the top of `set_attributes` that hands the span to the Langtrace, Langfuse OTel and Weave writers instead.
+  The lifecycle (B3859) creates the spans, picks the tracer and calls these two functions, and the Weave and other vendor callbacks (B3863) reach them through the lifecycle, so this task owns them and calls none of them back.
+  Everything goes in the module `otel::legacy_attributes` of betterlite-logging: `crates/betterlite-logging/src/otel/legacy_attributes.rs` declares the submodules `error`, `context`, `dispatch`, `request`, `content`, `response` and `raw_request`, each in `legacy_attributes/<name>.rs` with its tests in `legacy_attributes/<name>/tests.rs`. Read the exact pub names and signatures of B3844 (`SafeSetAttribute`, `OtelModelValue`, `MetadataMap`), B3845 (`otel::transforms` and the tool writers), B3854 (`otel::legacy_policy`), B3846 (`otel::integrations::langtrace`), B3861 (`weave_attributes`), B3909 (the Langfuse OTel writer) and B188 (`logging_privacy::internal`) on main before you start, and call them as they are.
+
+  Inputs. Python reads dicts with `.get` and truthiness. Rust reads `OtelModelValue` only, so `kwargs` is `&MetadataMap`, the standard logging payload is the map under `kwargs["standard_logging_object"]`, and the response is `Option<&OtelModelValue>`. A missing key and a null value read the same unless a rule below says otherwise. A value is "truthy" by the rule of B3861's `is_truthy` (`otel::integrations::arize_attributes::truthy`); call it, do not write a second one. LiteLLM's `safe_dumps` is B192's depth-limited JSON writer, and every `safe_set_attribute` call is B3844's `SafeSetAttribute::safe_set_attribute`. Every function takes the span as `&mut S` with `S: opentelemetry::trace::Span`.
+  `context` holds `AttributeContext<'a> { callback_name: Option<&'a str>, config: &'a OpenTelemetryConfig, capture_mode: CaptureMode }`. The lifecycle builds it once per request: `config` is the logger's B3854 settings record, and `capture_mode` is `CapturePolicy::resolve(turn_off_message_logging, message_logging)` for that request. `capture_in_span` of the mode replaces LiteLLM's `self._capture_in_span()`, and `semconv_latest_experimental(config)` replaces `self._gen_ai_semconv_latest_experimental`. A struct keeps every function at five arguments or fewer, which clippy.toml requires.
+
+  Errors (`error`). `LegacyAttributesError` has one variant, `MissingStandardLoggingObject`, with the display text "standard_logging_object not found in kwargs". `set_attributes` returns `Result<(), LegacyAttributesError>`. LiteLLM catches every exception inside, logs it with `verbose_logger.exception` and bumps the callback-failure counter; here the caller (B3859) logs and counts the `Err`, so this task neither logs it nor swallows it. Nothing else here can fail: malformed shapes that make Python raise (a choice with a finish reason and no `message`) are outside the declared types and are read as absent.
+
+  Dispatch (`dispatch`). `set_attributes(span, ctx, kwargs, response)` first looks at `ctx.callback_name`. "langtrace" calls B3846's Langtrace writer and returns. "langfuse_otel" calls B3909's `set_langfuse_otel_attributes` and returns. "weave_otel" calls B3861's `set_weave_otel_attributes` and returns. Any other name, or none, runs the generic flow below. Pass each vendor writer what its signature asks for (B3861 and B3909 take the redaction answer as a bool; compute it with B188's `should_redact_message_logging` equivalent from `kwargs`). The Arize and Phoenix callbacks override `set_attributes` in their own classes (B3862) and never come through this branch.
+
+  Generic flow, part one (`request`). `payload` is `kwargs["standard_logging_object"]`; when it is missing or null return `Err(MissingStandardLoggingObject)` before any attribute is written. `optional_params` is `kwargs["optional_params"]` and `litellm_params` is `kwargs["litellm_params"]`, each an empty map when absent or null. Then, in this order:
+  1. For every key and value of `payload["metadata"]`, write `metadata.<key>`.
+  2. `hidden_params` is `payload["hidden_params"]`; when truthy write `hidden_params` as its `safe_dumps` text.
+  3. B3854's `set_inference_identity_attributes(span, payload, litellm_params, ctx.config.baggage_team_metadata_keys, ctx.config.baggage_metadata_keys)`.
+  4. `cost_breakdown` is `payload["cost_breakdown"]`; when truthy, write `gen_ai.cost.<key>` for each entry whose value is not null.
+  5. `gen_ai.request.model` from `kwargs["model"]` when truthy.
+  6. `llm.request.type` from `payload["call_type"]`, always written (a missing value becomes the empty string).
+  7. The provider is `litellm_params["custom_llm_provider"]`, or the text "Unknown" when the key is absent (a present null is written as the empty string). In semconv latest-experimental mode write it as `gen_ai.provider.name`, otherwise as `gen_ai.system`.
+  8. `gen_ai.request.max_tokens`, `gen_ai.request.temperature` and `gen_ai.request.top_p` from the same names in `optional_params`, each only when truthy, so a temperature of 0 is not written.
+  9. In semconv mode call B3854's `set_semconv_request_attributes(span, optional_params)` and `set_semconv_cache_token_attributes(span, payload)` and write nothing else here. Otherwise write `llm.is_streaming` as the text `True` or `False` of `optional_params["stream"]`, with `False` when the key is absent and `None` when it is null.
+  10. `llm.user` from `optional_params["user"]` when truthy.
+  11. `gen_ai.response.id` is `response["id"]` when the response is truthy and has a truthy id, else `payload["id"]`; write it when truthy.
+  12. `litellm.call_id` from `payload["litellm_call_id"]` when truthy.
+  13. `gen_ai.response.model` from `response["model"]` when the response is truthy and the value is truthy.
+  14. B3854's `set_service_tier_attributes(span, payload)`.
+  15. Usage. The response's `usage` counts only when the response is truthy and the call is not an unbilled non-inference call. That test is B188's `call_category(kwargs["call_type"])` and `is_unbilled(category, origin, background)`: `origin` is `Some(Origin::BackgroundResponseCostPoll)` when the key `internal_call_origin` of the merged metadata holds "background_response_cost_poll" (the merge is `litellm_params.metadata` without `user_api_key_auth` and `user_api_key_budget_reservation`, then `litellm_params.litellm_metadata` for keys the first lacks), and `background` is true only when `response["background"]` is the bool true. Note that the call type here is `kwargs["call_type"]`, not the payload's. When `usage` is truthy write `gen_ai.usage.total_tokens`, `gen_ai.usage.output_tokens` (from `completion_tokens`) and `gen_ai.usage.input_tokens` (from `prompt_tokens`), each always, so a missing count is the empty string.
+
+  Generic flow, part two (`content`). When `ctx.capture_mode` is not captured in the span, return `Ok(())` here: usage is written, content is not.
+  1. When `optional_params["tools"]` is truthy, call B3845's `set_tools_attributes`.
+  2. When `kwargs["messages"]` is truthy write `gen_ai.input.messages` as the `safe_dumps` text of B3845's message transform of it.
+  3. The system prompt is the first of `kwargs["system_instructions"]` (Vertex Gemini), `kwargs["instructions"]` (OpenAI Responses) and `kwargs["system"]` (Anthropic Messages) that is not null; an empty list or empty string is chosen if it comes first, and then nothing is written. When truthy: a string is written as it is to `gen_ai.system_instructions`, anything else as the `safe_dumps` text of the message transform.
+  4. `gen_ai.operation.name`, always written. In semconv mode it is B3854's `gen_ai_operation_name(kwargs["call_type"])`. Otherwise it is "chat" when `payload["call_type"]` is "completion", else `payload["call_type"]`, else "chat" when that is missing or empty.
+  5. `gen_ai.request.id` from `payload["request_id"]` when truthy.
+
+  Generic flow, part three (`response`). Only when the response is present (not the same as truthy: an empty object still enters). If `response["choices"]` is truthy: write `gen_ai.output.messages` as the `safe_dumps` text of B3845's choices transform. Collect the truthy `finish_reason` of each choice; when the list is not empty write `gen_ai.response.finish_reasons` as its `safe_dumps` text. Then for each choice with a truthy `finish_reason` whose `message.tool_calls` is truthy, write every key and value of B3845's `_tool_calls_kv_pair` of those calls. Otherwise, if `response["output"]` is truthy (Responses API): write `gen_ai.output.messages` from B3845's Responses transform only when it returns a non-empty list; then build one call `{"function": {"name": ..., "arguments": ...}}` for each output item (after B3845's `_to_dict`) whose `type` is "function_call", with name and arguments defaulting to the empty string, and write the `_tool_calls_kv_pair` of that list when it is not empty; then, when `response["status"]` is truthy, write `gen_ai.response.finish_reasons` as the `safe_dumps` text of the one-element list holding the status. The Responses branch runs only when `choices` is falsy.
+
+  Raw request (`raw_request`). `set_raw_request_attributes(span, kwargs)` writes provider-prefixed attributes for the second span. `provider` is `kwargs["litellm_params"]["custom_llm_provider"]`, or "Unknown" when the key is absent (a present null becomes the text "None" in the key, as the Python f-string does). `complete_input_dict` is `kwargs["additional_args"]["complete_input_dict"]`; when it is a non-empty object write `llm.<provider>.<param>` for each entry. Then `kwargs["original_response"]`: only a non-empty string counts. `parse_raw_response(text) -> Option<OtelModelValue>` parses it with `serde_json::from_str`. A parsed object writes `llm.<provider>.<param>` for each entry, after the request entries, so a response key with the same name replaces the request one. Text that does not parse writes `llm.<provider>.stringified_raw_response` with the original text and logs it at `debug` as "raw_response not json string". Text that parses to something other than an object (an array, a number) writes nothing and logs `tracing::error!` "OpenTelemetry logging error in set_raw_request_attributes", because Python raises on `.items()` and its outer handler logs the same. The function takes no `response` argument (LiteLLM's third argument is never read) and no `ctx`: the lifecycle decides whether to call it, using `capture_in_span` and the semconv mode (B3859). `parse_raw_response` is the decoder of provider text, so it gets a cargo-fuzz target `crates/betterlite-logging/fuzz/fuzz_targets/legacy_raw_response.rs` that feeds UTF-8 input to it, and a corpus folder `crates/betterlite-logging/fuzz/corpus/legacy_raw_response` with at least three seeds, replayed by the test `replays_the_legacy_raw_response_corpus` in the raw_request tests.
+
+  Attribute names LiteLLM takes from `SpanAttributes` (`proxy/_types.py` L4256-L4320): `gen_ai.system`, `gen_ai.request.model`, `gen_ai.request.max_tokens`, `gen_ai.request.temperature`, `gen_ai.request.top_p`, `gen_ai.response.model`, `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.total_tokens`, `gen_ai.operation.name`, `gen_ai.request.id`, `gen_ai.system_instructions`, `gen_ai.response.finish_reasons`, `llm.request.type`, `llm.user` and `llm.is_streaming`. Reuse B3840's constants where they exist; put the rest in a `keys` constants block in `legacy_attributes/request.rs` and do not repeat one that B3840 already has. The proof is the oracle cases, not the names.
+
+  The logger is not routed by any proxy route yet, so every behavior is proven by helper cases through the oracle, not by HTTP cases; the umbrella that wires the logger adds HTTP cases. The Python helper builds LiteLLM's `OpenTelemetry` class with an in-memory exporter, calls the method under test and returns the span's attributes as a JSON object; the Rust helper does the same with `InMemorySpanExporter`. The oracle adapter is operation `b3856`. Tagged inputs: `{"function": "set_attributes", "callback_name": ..., "capture_mode": "SPAN_AND_EVENT", "semconv": false, "baggage_metadata_keys": [...], "baggage_team_metadata_keys": [...], "kwargs": {...}, "response": {...}}` (the last four optional) and `{"function": "set_raw_request_attributes", "kwargs": {...}}`. Both sides answer `{"result": {"attributes": {...}}}`, or `{"result": {"error": "standard_logging_object not found in kwargs"}}` for the missing-object case. Every case gets a fuzz seed of the same content at `tools/oracle/fuzz/corpus/helper_case/legacy-otel-attributes-<case>.yaml`.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/legacy_attributes.rs
+    - crates/betterlite-logging/src/otel/legacy_attributes/**
+    - crates/betterlite-logging/fuzz/fuzz_targets/legacy_raw_response.rs
+    - crates/betterlite-logging/fuzz/corpus/legacy_raw_response/**
+    - tools/oracle/cases/helpers/legacy-otel-attributes/**
+    - tools/oracle/fuzz/corpus/helper_case/legacy-otel-attributes-*
+    - tools/oracle/helpers/b3856.py
+    - tools/oracle/helpers/b3856/**
+    - tools/oracle/src/helpers/logging/b3856.rs
+    - tools/oracle/src/helpers/logging/b3856/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2372-L2411
+    why: The callback-name branch (langtrace, langfuse_otel, weave_otel) and the start of the generic flow, including the missing standard_logging_object error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2411-L2563
+    why: Metadata, hidden params, cost breakdown, request, provider, streaming, user, response id and model, service tier and usage attributes, with the unbilled test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2565-L2640
+    why: The capture-mode return, tools, input messages, system instruction coalescing, operation name and request id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2640-L2734
+    why: Choices output, finish reasons, tool-call pairs and the Responses API output branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2889-L2944
+    why: set_raw_request_attributes, including the non-JSON fallback key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1349-L1489
+    why: How the lifecycle calls both functions (primary span, parent span, raw span), to see what the caller passes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L610-L637
+    why: Capture mode resolve and the span predicate that gates the content block.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry_utils/gen_ai_semconv.py#L132-L196
+    why: The semconv helpers that set_attributes calls in latest-experimental mode.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/internal_call_metadata.py#L57-L103
+    why: is_background_response and the unbilled non-inference test behind the usage attributes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5708-L5736
+    why: merge_litellm_metadata, which the unbilled test reads the call origin from.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py#L12-L93
+    why: safe_dumps, used for every JSON attribute value here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L40-L52
+    why: set_langfuse_otel_attributes, the target of the langfuse_otel branch.
+  - url: https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md
+    why: Meaning of the gen_ai.* inference attributes and the input and output message format.
+
+dod:
+  - text: A callback name of langtrace, langfuse_otel or weave_otel hands the span to that vendor's writer and writes none of the generic attributes; any other name runs the generic flow.
+    proof: [dispatch-tests, oracle, helper-python]
+  - text: A kwargs without standard_logging_object returns MissingStandardLoggingObject and writes no attribute.
+    proof: [dispatch-tests, oracle, helper-python]
+  - text: Metadata, hidden params, cost breakdown, identity and service-tier attributes are written in LiteLLM's order with its skip rules.
+    proof: [request-tests, oracle, helper-python]
+  - text: Request attributes write the model, call type, provider (Unknown when absent), and the max tokens, temperature and top_p only when truthy; streaming, user, response id with the payload id fallback, call id and response model follow the rules above.
+    proof: [request-tests, oracle, helper-python]
+  - text: In semconv latest-experimental mode the provider key is gen_ai.provider.name, the semconv request and cache-token attributes replace llm.is_streaming, and in the other mode gen_ai.system and llm.is_streaming are written.
+    proof: [request-tests, oracle, helper-python]
+  - text: Usage attributes are written for a truthy usage, are skipped for an unbilled non-inference call type, and still count for a background response or a cost-poll origin.
+    proof: [request-tests, oracle, helper-python]
+  - text: Nothing after usage is written when the capture mode does not capture in the span.
+    proof: [content-tests, oracle, helper-python]
+  - text: Tools, input messages, system instructions (first non-null of system_instructions, instructions, system), operation name from both call-type sources, and request id are written as described.
+    proof: [content-tests, oracle, helper-python]
+  - text: Choices write output messages, finish reasons and tool-call attributes; a falsy choices list falls to the Responses output branch with its function-call attributes and status finish reason.
+    proof: [response-tests, oracle, helper-python]
+  - text: Raw request attributes use the provider prefix, write request entries before response entries, and handle JSON text, non-JSON text and non-object JSON as described.
+    proof: [raw-request-tests, oracle, helper-python]
+  - text: parse_raw_response replays its fuzz corpus without panicking.
+    proof: [raw-request-tests]
+  - text: Newly added helper corpus cases replay through the shared helper-case parser independently of the native behavior tests.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: dispatch-tests
+      why: the callback-name branch or the missing standard_logging_object error is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_attributes::dispatch::/)'
+    - id: request-tests
+      why: the metadata, request, usage or service-tier attributes are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_attributes::request::/)'
+    - id: content-tests
+      why: the content gate, messages, system instructions or operation name are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_attributes::content::/)'
+    - id: response-tests
+      why: the choices, finish reasons, tool-call or Responses output attributes are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_attributes::response::/)'
+    - id: raw-request-tests
+      why: the raw request attributes or the raw response decoder are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_attributes::raw_request::/)'
+    - id: helper-python
+      why: the LiteLLM-side helper and the betterlite helper disagree on a case
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3856::/)'
+    - id: helper-case-corpus
+      why: newly added helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/legacy-otel-attributes/ "tools/oracle/fuzz/corpus/helper_case/legacy-otel-attributes-*")" &&
+        grep -rlE '^[[:space:]]+b3856:' tools/oracle/cases/helpers/legacy-otel-attributes &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/legacy-otel-attributes/dispatch-callback-names.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/missing-standard-logging-object.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/metadata-hidden-cost-breakdown.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/request-attributes-defaults.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/request-falsy-values-skipped.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/semconv-latest-experimental-request.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/response-id-payload-fallback.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/usage-and-unbilled-call-type.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/capture-mode-no-content.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/input-messages-and-system-instructions.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/operation-name-two-sources.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/choices-output-and-finish-reasons.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/choices-tool-calls.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/responses-api-output.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/raw-request-input-dict.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/raw-request-response-json.yaml
+  - tools/oracle/cases/helpers/legacy-otel-attributes/raw-request-response-text.yaml
+
+deviations:
+  - what: "`set_attributes` returns `Err(MissingStandardLoggingObject)` and leaves the logging and the callback-failure count to its caller."
+    why: LiteLLM swallows every exception inside the method. Rule errors-surface forbids a swallowed error; the span stays untouched in both versions, and the lifecycle (B3859) logs the same message.
+  - what: "The emit-once record, the capture mode and the settings record are passed in through `AttributeContext`, not read from `self`."
+    why: Rule no-module-state and constructor wiring; the lifecycle owns the logger state and builds the context once per request.
+
+out_of_scope:
+  - "set_tools_attributes, _tool_calls_kv_pair, the message, choice and Responses transforms and _to_dict (B3845); this task only calls them."
+  - "cast_as_primitive_value_type, _cast_as_primitive_value_type and safe_set_attribute (B3844)."
+  - "The semconv helpers _gen_ai_operation_name, _set_semconv_request_attributes, _set_semconv_cache_token_attributes and _gen_ai_semconv_latest_experimental, and _set_inference_identity_attributes, _set_service_tier_attributes, _team_metadata_json and the capture predicates (B3854); this task only calls them."
+  - "_start_primary_span, _maybe_log_raw_request, _handle_success, _handle_failure, the span kind CLIENT choice and the decision to create the raw span (B3859)."
+  - "The Langtrace, Langfuse OTel and Weave attribute writers themselves (B3846, B3909, B3861); this task only picks them by callback name."
+  - "Arize and Phoenix set_attributes overrides (B3862) and Arize's shared flow (B3861)."
+  - "is_unbilled_non_inference_call_from_params and should_redact_message_logging (B188); this task calls them."
+  - "safe_dumps (B192)."
+  - "handle_callback_failure on the custom logger base (the logging callback manager task); the lifecycle calls it on the error."
+
+pitfalls:
+  - 'The usage block tests `kwargs["call_type"]` for the unbilled check, while the non-semconv operation name reads `payload["call_type"]` and the semconv operation name reads `kwargs["call_type"]`; do not use one source for all three.'
+  - '`gen_ai.request.temperature` and `gen_ai.request.max_tokens` use a truthiness test, so 0 and 0.0 are not written, while `llm.request.type` and the three usage counts are always written, as the empty string when null.'
+  - '`llm.is_streaming` is the Python text `True`, `False` or `None`, not a bool attribute, and it is not written at all in semconv mode, where only `gen_ai.request.stream` (true) can appear.'
+  - 'The provider key is `gen_ai.system` in the legacy mode and `gen_ai.provider.name` in semconv mode, never both.'
+  - 'The system prompt picks the first kwarg that is not null, so `system_instructions: []` wins over a truthy `instructions` and then nothing is written.'
+  - 'The Responses branch builds its tool calls from `function_call` items only and always passes `name` and `arguments` as strings, so a null argument becomes the empty string and `_tool_calls_kv_pair` still skips it as falsy.'
+  - 'Tool-call attributes from `choices` are written only for choices with a truthy `finish_reason`; a streaming-style choice without one writes no tool attributes.'
+  - 'A raw response key with the same name as a raw request key replaces it, because the response entries are written second.'
+  - 'The unbilled check reads the origin from the merged metadata, where `litellm_params.metadata` wins over `litellm_metadata` and drops `user_api_key_auth` and `user_api_key_budget_reservation`; reading only `metadata` misses an origin set on the other map.'
+  - 'The callback-name branches return before any generic attribute, so a `weave_otel` span has no `litellm.call_id` or `metadata.*` keys from this flow.'
+  - "No Rust safe_dumps exists in crates, so use serde_json::to_string as B3861 does."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

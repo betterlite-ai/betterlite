@@ -1,0 +1,119 @@
+id: B5654
+title: Chat stream driver
+description: >-
+  A streaming `completion` hands the caller an iterator. This task builds the loop behind it: pull a provider chunk, shape
+  it, log it, stop cleanly, and map failures. It is the rest of `CustomStreamWrapper`, built as `ChatStream` in
+  betterlite-sdk's new `chat_stream` module on top of B5653's `chunk_creator` and B5652's `ChunkShaper`. `ChatStream` is the
+  chat stream value B5367's `CallOutcome` holds.
+
+
+  `ChatStreamConfig` carries what `__init__` (L208-L299) works out: model, provider, `send_stream_usage`,
+  `merge_reasoning_content_in_choices`, the hidden params (`model_id`, `api_base`, `additional_headers`), the maximum stream
+  duration, the repetition limit, and `CallMode::Blocking` or `CallMode::Async`. The provider `openai` differing from the
+  logging provider gives the model name `{logging_provider}/{model}`. Clocks, the logging object, the cache and the
+  deployment hook are constructor fields, as rules.yaml asks. The source of chunks is a trait `ChunkSource` with one async
+  method `next_chunk` and one async `close`, so tests use a plain list.
+
+
+  `ChatStream::next` ports `__anext__` (L1978-L2099) and, with `CallMode::Blocking`, `__next__` (L1768-L1960). The two differ
+  in small ways and each difference stays. `check_max_streaming_duration` (L301-L313) runs before the try block in the
+  blocking path and inside it in the async path, so only the async path maps the timeout through the error handling. The
+  message is "Stream exceeded max streaming duration of {N}s (elapsed {e:.1f}s)".
+
+
+  The steps per chunk follow L1978-L2099: stop when `sent_last_chunk`, read from the source, run `chunk_creator`, apply
+  post-call rules to `response_uptil_now`, move usage to hidden params, skip an empty chunk, add the extra usage chunk when
+  `send_stream_usage` asks for it. `finalize_completed_stream` (L2101-L2206) runs success logging and cache storage once.
+  `run_success_logging_and_cache_storage` (L1688-L1713), `cache_streaming_response` (L1674) and
+  `async_cache_streaming_response` (L1681) go through B4300's cache port and B252's stream logging. Hand B252 the chunks at
+  the same point LiteLLM does, since B252 owns the three `stream_chunk_builder` call sites.
+
+
+  Failure handling follows L2208-L2325. `log_stream_failure_and_raise` logs and returns the mapped error, and
+  `record_partial_usage_for_failure` (L2218-L2252) keeps the usage seen so far. A `httpx.ReadError` or `RemoteProtocolError`
+  after a finish reason ends the stream normally, and before one it fails. These appear here as `betterlite-http` read and
+  protocol errors. `handle_stream_fallback_error` (L2254-L2325) raises a non-429 4xx directly and otherwise gives
+  `MidStreamFallbackError` with the message, the model, the provider or `anthropic`, the original error, the content
+  generated so far and `is_pre_first_chunk`.
+
+
+  `add_mcp_list_tools_to_first_chunk` (L1596-L1635), `add_mcp_metadata_to_final_chunk` (L1637-L1672) and
+  `call_post_streaming_deployment_hook` (L1551-L1594) act on the chunk at the same points as LiteLLM, the last through B5367's
+  `DeploymentHook`. `ChatStream::close` ports `aclose` (L385-L409): it closes the source once and logs a close failure at
+  debug level without raising. `restore_consumer_correlation_context` (L321-L356) becomes a call to B5367's correlation
+  trait on each `next`.
+
+
+  Test names sit in `chat_stream::tests` and start with `next_`, `duration_`, `finalize_`, `failure_`, `fallback_`, `mcp_` and
+  `close_`.
+scope:
+  paths:
+  - crates/betterlite-sdk/Cargo.toml
+  - crates/betterlite-sdk/src/chat_stream.rs
+  - crates/betterlite-sdk/src/chat_stream/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L208-L409
+  why: Stream setup, the duration check, correlation and closing.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1536-L1713
+  why: Deployment hook, MCP chunk changes and logging with caching.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1768-L2325
+  why: Both iterators, finalizing and failure handling.
+dod:
+- text: The stream gives LiteLLM's chunks in order, skips empty ones and adds the usage chunk only when asked.
+  proof: [stream-next]
+- text: The maximum duration fails with LiteLLM's message, and the blocking and async paths keep their different mapping.
+  proof: [stream-duration]
+- text: A finished stream logs and stores in the cache exactly once.
+  proof: [stream-finalize]
+- text: A read or protocol error after a finish reason ends the stream, and before one it fails with partial usage recorded.
+  proof: [stream-failure]
+- text: A non-429 4xx is raised directly, and other failures give `MidStreamFallbackError` with the generated content and the first chunk flag.
+  proof: [stream-fallback]
+- text: MCP tool lists go on the first chunk and MCP metadata on the last, and the deployment hook sees the chunk at LiteLLM's point.
+  proof: [stream-mcp]
+- text: Closing closes the source once and swallows a close failure with a debug log.
+  proof: [stream-close]
+checks:
+  optional: []
+  commands:
+  - id: stream-next
+    why: Chunks arrive out of order, or the usage chunk appears unasked.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^chat_stream::tests::next_/)'
+  - id: stream-duration
+    why: A stalled stream never ends, or the timeout takes the wrong path.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^chat_stream::tests::duration_/)'
+  - id: stream-finalize
+    why: Spend is logged twice or never.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^chat_stream::tests::finalize_/)'
+  - id: stream-failure
+    why: A finished answer fails, or a cut answer passes as complete.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^chat_stream::tests::failure_/)'
+  - id: stream-fallback
+    why: The router can't tell a dead stream from a bad request.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^chat_stream::tests::fallback_/)'
+  - id: stream-mcp
+    why: MCP data or the hook lands on the wrong chunk.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^chat_stream::tests::mcp_/)'
+  - id: stream-close
+    why: A connection leaks, or close raises.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^chat_stream::tests::close_/)'
+oracle_cases: []
+deviations:
+- what: "`__del__` (L358-L383) and the `_next_sync_or_exhausted`, `is_async_iterable` and `print_verbose` helpers are not built, so a stream dropped without a close frees its connection through Rust's drop."
+  why: These are Python iteration habits covered by docs/compatibility.md, and a dropped Rust stream closes its source without a garbage collector.
+- what: "`set_logging_event_loop` (L1536-L1549) is not built, so there is no public way to pick the loop stream logging runs on."
+  why: Stream logging runs on the Rust runtime and no Python loop exists at this layer.
+out_of_scope:
+- Python iteration over this stream and the Python class named `CustomStreamWrapper` are B158.
+- Shaping is B5652 and decoding is B5653.
+- Assembling the full response for logging is B252 with B2227.
+pitfalls:
+- '`sent_last_chunk` is checked before reading, so a source that still has data after the last chunk is not read again.'
+- The extra usage chunk is built only after the source ends, so a usage value stored by `record_usage_only_chunk` has to survive until then.
+- The fallback provider is the literal `anthropic` when the provider is empty, so a missing provider isn't an error there.
+- The 4xx check excludes 429 alone, so 408 still raises directly.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

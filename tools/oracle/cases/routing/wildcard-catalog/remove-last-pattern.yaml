@@ -1,0 +1,22 @@
+kind: helper
+name: remove-last-pattern
+call:
+  b367:
+    steps:
+      - {action: add, pattern: "openai/*", model: "azure/*", model_id: "a"}
+      - {action: add, pattern: "openai/*", model: "bedrock/*", model_id: "b"}
+      - {action: add, pattern: "anthropic/*", model: "fixed", model_id: "c"}
+      - {action: add, pattern: "meta/*", model: "meta/*"}
+      - {action: route, request: "openai/gpt-4"}
+      - {action: remove, model_id: "a"}
+      - {action: route, request: "openai/gpt-4"}
+      - {action: remove, model_id: "b"}
+      - {action: route, request: "openai/gpt-4"}
+      - {action: route, request: "anthropic/claude"}
+      - {action: remove, model_id: "unknown"}
+      - {action: route, request: "anthropic/claude"}
+      - {action: route, request: "meta/llama"}
+      - {action: remove, model_id: "meta"}
+      - {action: route, request: "meta/llama"}
+env: {}
+compare: {ignore: []}

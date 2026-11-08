@@ -1,0 +1,177 @@
+id: B3733
+title: Model Armor transport and document scanning
+description: >-
+  Build the part of the Model Armor guardrail that talks to Google and reads documents out of chat messages. Three modules in betterlite-guardrails, all under crates/betterlite-guardrails/src/model_armor/: file_scanning, transport and request_files. B3732 owns the guardrail type, its config, ModelArmorAPIError and the verdict functions (should_block_content, append_armor_response, build_logging_response, build_block_error_detail, build_api_error_detail, raise_if_fail_closed); this task calls them and never rebuilds them. B3734 and B3735 call the functions built here.
+
+
+  file_scanning turns message content into byte payloads Model Armor can scan. Public types: ByteDataType (enum, serialized as the strings PDF, WORD_DOCUMENT, EXCEL_DOCUMENT, POWERPOINT_DOCUMENT, CSV, TXT), FileAttachment { file_bytes: Vec<u8>, byte_data_type }, FileScanPlan { attachments: Vec<FileAttachment>, unscannable_count: usize }, the constant MAX_FILE_SIZE_BYTES = 4 * 1024 * 1024, and `plan_file_scans(messages: &[Message]) -> FileScanPlan` where Message is B218's type in betterlite-prompts (message_content.rs). Only messages whose content is `Content::Parts` are looked at. A part with kind "file" must carry a `file` object with optional string fields file_data, format and filename. A part with kind "document" must carry a `source` object with optional string fields data and media_type. Deserialize each part into those typed structs with serde, ignoring unknown fields. A part of any other kind, or one whose fields have the wrong type or are missing the required `file` or `source` object, is skipped and not counted.
+
+
+  Classification per recognized part, in this order. (1) Reference check: a document part with empty or missing source.data, or a file part whose file_data is empty, missing, or after strip and lowercase starts with gs://, http:// or https://, counts as unscannable (unscannable_count + 1) and yields no attachment. (2) Resolve type and data. Document part: type comes from source.media_type, data is source.data. File part: if file_data starts with "data:" and contains ";base64,", split at the first ";base64,": the header minus the leading "data:" (None when empty) is the URI mime and the rest is the data; otherwise there is no URI mime and the data is the whole file_data string. The declared type is the first supported type among the part's `format` and the mime guessed from `filename` (in that order). The header type is the type of the URI mime. If there is no declared type, use the header type. If the header type exists and differs from the declared type, log a warning naming both and use the declared type. Otherwise use the declared type. (3) No type means a recognized inline part that Model Armor cannot scan, such as an image: skip it, not counted. (4) Decode the data as strict standard base64 (padding required, alphabet only, no whitespace; trailing bits that are not zero are accepted, as Python's b64decode(validate=True) does). A decode failure logs a warning and counts as unscannable. Success yields a FileAttachment.
+
+
+  Mime mapping: lowercase the mime, cut at the first ";", trim, then look it up in this table. application/pdf is PDF. WORD_DOCUMENT: application/msword, and the application/vnd.openxmlformats-officedocument.wordprocessingml.document and .template forms, application/vnd.ms-word.document.macroenabled.12 and application/vnd.ms-word.template.macroenabled.12. EXCEL_DOCUMENT: application/vnd.ms-excel, the application/vnd.openxmlformats-officedocument.spreadsheetml.sheet and .template forms, application/vnd.ms-excel.sheet.macroenabled.12 and application/vnd.ms-excel.template.macroenabled.12. POWERPOINT_DOCUMENT: application/vnd.ms-powerpoint, the application/vnd.openxmlformats-officedocument.presentationml.presentation, .template and .slideshow forms, and application/vnd.ms-powerpoint.presentation.macroenabled.12, .template.macroenabled.12 and .slideshow.macroenabled.12. text/csv is CSV and text/plain is TXT. Copy the table from file_scanning.py lines 33 to 57 and test one row per family. For filename guessing use the mime_guess crate already in betterlite-guardrails (the stand-in for Python's mimetypes.guess_type).
+
+
+  transport builds and sends the Model Armor call. A struct ModelArmorTransport holds the guardrail's template_id, project_id, location (already defaulted to us-central1 by B3732), api_endpoint, sanitize_error_detail, the request timeout (Option, from the guardrail's timeout setting; None uses the pooled client's default), the pooled client from B173 for the guardrail-callback purpose (LiteLLM's get_async_httpx_client with httpxSpecialProvider.GuardrailCallback; B3732 holds it as async_handler) and an injected token source. Define the trait `ArmorTokens` with one async method returning `(access_token, resolved_project_id)`; LiteLLM's constructor has the same seam as access_token_provider, and its default is the Vertex credential lookup (_ensure_access_token_async with custom_llm_provider "vertex_ai", B1303). betterlite-guardrails does not depend on betterlite-vertex, so the default implementation of this trait is wired outside this task (see notes). The resolved project id is kept in a std::sync::OnceLock<String> inside the transport and used only when the configured project_id is empty; a configured project id is never replaced.
+
+
+  Functions. `api_endpoint()` returns the configured api_endpoint when it is non-empty, else `https://modelarmor.{location}.rep.googleapis.com`. `sanitize_url(source)` returns `{endpoint}/v1/projects/{project}/locations/{location}/templates/{template}:sanitizeUserPrompt` for source user_prompt and `:sanitizeModelResponse` for model_response (an enum Source { UserPrompt, ModelResponse }). `text_body(content, source)` returns `{"userPromptData":{"text":content}}` or `{"modelResponseData":{"text":content}}`. `file_body(file_bytes, byte_data_type, source)` returns `{"userPromptData":{"byteItem":{"byteDataType":T,"byteData":B64}}}` or the modelResponseData form, with B64 the standard padded base64 of the bytes. `make_model_armor_request(content: Option<&str>, source, file: Option<(&[u8], ByteDataType)>)` gets the token pair, resolves the project, builds the URL, picks the file body when a file is given, else the text body when content is Some (an empty string counts as present), else returns TransportError::NoContent. It sends POST with headers Content-Type: application/json and Authorization: Bearer <token>, then reads the JSON body into the same armor response type B3732's decision functions take as input. Any non-2xx answer, and any 2xx answer other than 200, becomes B3732's ModelArmorAPIError whose detail is build_api_error_detail(status, response text); log it at error level with the status and that detail only. Connection errors, timeouts and JSON decode failures stay typed TransportError values (they are not ModelArmorAPIError). If template_id is missing return TransportError::MissingTemplate before any network call (see deviations).
+
+
+  Debug logging with tracing::debug. Before the request: for a file request log the URL, the byteDataType and the byte count, never byteData and never the token; for a text request log only the URL when sanitize_error_detail is true, else the URL and the body. After the response: log only the status when sanitize_error_detail is true, else the status and the body text.
+
+
+  request_files holds `scan_request_files(messages, request_data, ...)`, LiteLLM's _scan_request_files and _unscannable_block_error. It takes the message slice, the request data map (B206's get_or_create_metadata_bucket picks the bucket, so a caller's own metadata field never splits state), the transport, and the B3732 guardrail settings it reads: fail_on_error (default true), skip_unscannable_attachments (default false), guardrail_name. Steps: call plan_file_scans. When skip_unscannable_attachments is true and unscannable_count is above 0, log a warning with the count and treat the unscannable count as 0. If there are no attachments and the unscannable count is 0, return Ok at once, touching nothing. Otherwise append guardrail_name to the bucket's applied_guardrails list if it is not already there (create the list if absent; skip when the name is None). Then: when the unscannable count is above 0, log a warning; if fail_on_error, set bucket key _model_armor_status to "blocked" and return the blocked error with reason "{n} attachment(s) reference a document with no inline bytes (file_id or remote URL) that Model Armor cannot scan". Then for each attachment in order: if its length is above MAX_FILE_SIZE_BYTES, log a warning; with fail_on_error false go to the next attachment, else set status "blocked" and return the blocked error with reason "attachment of {len} bytes exceeds Model Armor's 4194304 byte scan limit". Send it through make_model_armor_request with source UserPrompt and the file. A ModelArmorAPIError goes through B3732's raise_if_fail_closed (return it when fail_on_error is true, else go to the next attachment). Any other TransportError logs at error level; return it when fail_on_error is true, else go to the next attachment. On success: blocked = should_block_content(response, allow_sanitization = false), so a de-identify match blocks a document even when mask_request_content is on. Set bucket key _model_armor_response to append_armor_response(existing value, build_logging_response(response)). Set _model_armor_status to "blocked" when blocked or when it already says "blocked", else "success". When blocked, return a ScanError::Blocked with status 400 and detail build_block_error_detail("Content blocked by Model Armor", response). The unscannable and oversize errors are also ScanError::Blocked with status 400 and detail `{"error": "Model Armor could not scan an attachment and blocked the request: {reason}"}`. ScanError has the variants Blocked { status, detail }, Api(ModelArmorAPIError) and Transport(TransportError); B3734 maps them to the HTTP answer.
+
+
+  Tests live in tests.rs files next to each module, and use a local axum server for the transport tests (axum is already a dev-dependency). The parser of outside bytes is `plan_file_scans` fed with a JSON message array; add the cargo-fuzz target model_armor_files in crates/betterlite-guardrails/fuzz that deserializes bytes into Vec<Message> and calls plan_file_scans, with seed corpus files, and a native test replays_the_model_armor_files_corpus that runs every seed through the same call.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/model_armor/file_scanning.rs
+    - crates/betterlite-guardrails/src/model_armor/file_scanning/**
+    - crates/betterlite-guardrails/src/model_armor/transport.rs
+    - crates/betterlite-guardrails/src/model_armor/transport/**
+    - crates/betterlite-guardrails/src/model_armor/request_files.rs
+    - crates/betterlite-guardrails/src/model_armor/request_files/**
+    - crates/betterlite-guardrails/fuzz/Cargo.toml
+    - crates/betterlite-guardrails/fuzz/fuzz_targets/model_armor_files.rs
+    - crates/betterlite-guardrails/fuzz/corpus/model_armor_files/**
+    - tools/oracle/cases/helpers/model-armor-files/**
+    - tools/oracle/helpers/b3733.py
+    - tools/oracle/helpers/b3733/**
+    - tools/oracle/src/helpers/guardrails/b3733.rs
+    - tools/oracle/src/helpers/guardrails/b3733/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/file_scanning.py#L27-L57
+    why: The 4 MiB limit, the remote URI schemes and the full MIME to byteDataType table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/file_scanning.py#L60-L156
+    why: Plan and attachment records, the typed file and document blocks, plan_file_scans and the classification order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/file_scanning.py#L159-L231
+    why: Data URI parsing, declared type versus header type, MIME normalization, filename guessing, strict base64 and the remote URI test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L189-L200
+    why: Endpoint default and the two request body shapes for text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L244-L379
+    why: Debug logging that never prints byteData, make_model_armor_request (token, project resolution, URLs, headers, error mapping) and sanitize_file_prompt.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L541-L645
+    why: _unscannable_block_error and _scan_request_files, including the skip, size and fail-open branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L799-L862
+    why: AsyncHTTPHandler.post raises on any non-2xx status and turns a timeout into litellm.Timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L323-L340
+    why: get_or_create_metadata_bucket, the one place scan state is stored.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L591-L599
+    why: add_guardrail_to_applied_guardrails_header, which appends the guardrail name to the bucket's applied_guardrails list.
+  - url: https://cloud.google.com/security-command-center/docs/reference/model-armor/rest/v1/projects.locations.templates/sanitizeUserPrompt
+    why: The sanitizeUserPrompt request shape, byteItem and byteDataType values.
+
+dod:
+  - text: plan_file_scans reads inline file parts (data URI or bare base64) and document parts into attachments with the right ByteDataType for every row family of the MIME table, and skips other part kinds, image types and wrongly typed parts without counting them.
+    proof: [plan-tests, oracle, helper-python]
+  - text: Reference parts (empty data, gs://, http://, https://) and supported parts whose base64 does not decode count as unscannable and produce no attachment.
+    proof: [plan-tests, oracle, helper-python]
+  - text: A declared format or filename type beats a conflicting data URI header type, and the header type is used only when nothing is declared.
+    proof: [plan-tests, oracle, helper-python]
+  - text: Base64 decoding is strict (padding required, no whitespace or foreign characters) and accepts non-zero trailing bits.
+    proof: [plan-tests]
+  - text: sanitize_url, api_endpoint and the text and file request bodies match LiteLLM for both sources, with the default endpoint https://modelarmor.us-central1.rep.googleapis.com.
+    proof: [transport-tests, oracle, helper-python]
+  - text: make_model_armor_request sends POST with the Bearer header and Content-Type, uses the injected token source, fills in the resolved project only when none is configured, and returns the decoded JSON on 200.
+    proof: [transport-tests]
+  - text: Any non-200 answer becomes ModelArmorAPIError with the detail B3732 builds, sanitized or full by sanitize_error_detail; timeouts and decode failures stay separate typed errors; neither content nor a file gives NoContent and a missing template gives MissingTemplate before any request.
+    proof: [transport-tests]
+  - text: Debug logs never contain byteData or the access token, and the text-body and response-body log lines appear only when sanitize_error_detail is false.
+    proof: [transport-log-tests]
+  - text: scan_request_files returns at once without touching the request data when there is nothing to scan, and records the guardrail name once in applied_guardrails otherwise.
+    proof: [request-files-tests]
+  - text: Unscannable references block with the exact 400 detail unless fail_on_error is false or skip_unscannable_attachments is true; oversize documents block or are skipped by the same rule.
+    proof: [request-files-tests]
+  - text: A matching document blocks with 400 even when a de-identify match could be masked, and the logged response and the status key are updated in the order LiteLLM does it, with blocked staying sticky.
+    proof: [request-files-tests]
+  - text: Model Armor API errors and other transport errors per attachment follow fail_on_error and never stop the remaining attachments from being scanned when it is false.
+    proof: [request-files-tests]
+  - text: The fuzz target model_armor_files exists with seed files added on this branch and the corpus replays without a panic.
+    proof: [files-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: plan-tests
+      why: document classification, MIME mapping, data URI precedence or strict base64 behavior is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+        -E 'test(/^model_armor::file_scanning::/) - test(replays_the_model_armor_files_corpus)'
+    - id: transport-tests
+      why: URL, body, header, project resolution or error mapping behavior of the Model Armor call is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+        -E 'test(/^model_armor::transport::tests::(url|body|request|error)_/)'
+    - id: transport-log-tests
+      why: the debug log lines print scanned bytes, the token or a body they should hide
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+        -E 'test(/^model_armor::transport::tests::log_/)'
+    - id: request-files-tests
+      why: the request file scan flow, its fail-open and fail-closed branches or its metadata writes are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail
+        -E 'test(/^model_armor::request_files::/)'
+    - id: files-corpus
+      why: the fuzz target or its fresh seed corpus is missing or does not replay
+      run: >-
+        test -f crates/betterlite-guardrails/fuzz/fuzz_targets/model_armor_files.rs &&
+        grep -q 'name = "model_armor_files"' crates/betterlite-guardrails/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-guardrails/fuzz/corpus/model_armor_files)" &&
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(replays_the_model_armor_files_corpus)'
+    - id: helper-python
+      why: the strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3733)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3733 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3733/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/helpers/model-armor-files/plan-pdf-document-block.yaml
+  - tools/oracle/cases/helpers/model-armor-files/plan-file-block-data-uri.yaml
+  - tools/oracle/cases/helpers/model-armor-files/plan-office-families.yaml
+  - tools/oracle/cases/helpers/model-armor-files/plan-declared-type-beats-header.yaml
+  - tools/oracle/cases/helpers/model-armor-files/plan-references-unscannable.yaml
+  - tools/oracle/cases/helpers/model-armor-files/plan-undecodable-base64.yaml
+  - tools/oracle/cases/helpers/model-armor-files/plan-image-and-text-ignored.yaml
+  - tools/oracle/cases/helpers/model-armor-files/sanitize-url-and-bodies.yaml
+
+deviations:
+  - what: A missing template_id returns a typed MissingTemplate error before any network call. LiteLLM formats the URL with the text "None" and lets Google answer 404.
+    why: Sending a request to a URL built from None can only fail and spends a token fetch. The error still goes through fail_on_error exactly like a Model Armor API error would.
+  - what: The mime of a filename comes from the mime_guess crate, not from Python's mimetypes module, which also reads the host's /etc/mime.types.
+    why: The Python answer depends on the machine, so no fixed table matches it. Both give application/pdf, text/csv and text/plain for .pdf, .csv and .txt, the extensions the oracle cases use.
+  - what: Pydantic's block validation is replaced by serde structs that accept the same declared field types (optional strings, required `file` or `source` object) and skip a part that does not fit.
+    why: Python's duck typing beyond the declared types is not copied (docs/compatibility.md).
+
+out_of_scope:
+  - "ModelArmorGuardrail construction, config, ModelArmorAPIError, build_api_error_detail, build_block_error_detail, build_logging_response, raise_if_fail_closed, should_block_content, append_armor_response and the other verdict functions belong to B3732."
+  - "The four lifecycle hooks, _process_response and apply_guardrail belong to B3734; they call scan_request_files and make_model_armor_request from here."
+  - "Buffered stream enforcement (_resolve_streaming_outcome, the stream surfaces and their error frames) belongs to B3735."
+  - "The pooled HTTP client and its size and header limits belong to B173; the injected Vertex credential lookup (_ensure_access_token_async) belongs to B1303 and is wired outside this task."
+  - "get_metadata_variable_name_from_kwargs and get_or_create_metadata_bucket belong to B206."
+  - "The skip_unscannable_attachments and fail_on_error config keys are parsed by the guardrail params tasks; this task only reads their parsed values."
+
+pitfalls:
+  - A file part with file_data "data:application/pdf,abc" has no ";base64," so the whole string is treated as raw base64 and fails to decode, which counts as unscannable, not as a skip.
+  - The declared type wins over the data URI header even when the header is a clean match for a different family, and only a differing pair logs the warning.
+  - An inline part whose type resolves to nothing (an image, application/octet-stream with no filename) is dropped silently and is not unscannable, while an inline supported part whose base64 is broken is unscannable.
+  - The size limit is checked on the decoded bytes, not on the base64 length, and the check happens before any request is sent.
+  - With fail_on_error false an oversize or failed attachment is skipped but the loop goes on to the next one, so a later bad file still blocks.
+  - The applied_guardrails name is recorded only after the early return, so a request with no documents leaves the metadata untouched.
+  - The status key stays "blocked" once set, even when a later attachment scans clean.
+  - Document scans pass allow_sanitization false on purpose; masking applies to text only, because Model Armor returns findings for a document and no sanitized file.
+  - AsyncHTTPHandler.post raises for every non-2xx answer, so the non-200 branch after it only ever sees 2xx answers such as 204.
+  - byteData is the full base64 of the document and must never reach a log line at any level; log the byte count instead.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,184 @@
+id: B6414
+title: Meta Muse Voice realtime transcription
+description: >-
+  Build the Meta realtime transcription config (llms/meta/realtime/transformation.py and types/llms/meta.py). It turns
+  OpenAI-style realtime transcription events into the Muse Voice websocket protocol and back. All of it is pure
+  transforms with injected time: nothing opens a socket, reads the environment or registers a route. The module goes in
+  betterlite-core (not in the openai leaf crate, unlike B1405), because it uses B1123's transcription protocol helpers
+  and B1004's realtime contracts, and both live in core. B039 does not wire it. The realtime route and backend loop are
+  owned by the realtime services (B1004 and its parts).
+
+  Module. In betterlite-core: meta_muse_realtime (a file plus a folder with tests.rs). Types: MuseMode (PUSH_TO_TALK,
+  ENDPOINTING), MuseSampleRate (16000, 24000), MuseSessionConfig, MuseHandshake, MuseProtocolError (a
+  RealtimeTranscriptionProtocolError from B1123), MuseEventTransformer and MetaRealtimeConfig. MetaRealtimeConfig takes a
+  monotonic clock and an async sleep as constructor arguments, so tests run without real waiting.
+
+  Constants. MUSE_MODEL "muse-voice-transcribe-1.0", DEFAULT_MUSE_REALTIME_URL "wss://api.meta.ai/v1/asr/realtime",
+  sample rates 16000 and 24000, the 25 supported language names (Arabic, Bengali, Dutch, English, French, German, Hebrew,
+  Hindi, Indonesian, Italian, Japanese, Kannada, Korean, Malay, Mandarin Chinese, Marathi, Polish, Portuguese, Spanish,
+  Tagalog, Tamil, Telugu, Thai, Turkish, Vietnamese), the language code table from the source (ar, bn, de, en, es, fil,
+  fr, he, hi, id, it, iw, ja, kn, ko, ms, mr, nl, pl, pt, ta, te, th, tl, tr, vi, zh), a 4 second audio backlog limit, an
+  80 ms packet size, the end message {"type":"endStream"} and the provider error text "Meta Muse realtime transcription
+  failed".
+
+  Session config. audio_encoding is PCM_16KHZ for 16000 and PCM_24KHZ otherwise. bytes_per_second is the rate times 2.
+  packet_bytes is bytes_per_second * 80 / 1000 (integer division). max_encoded_append_bytes is
+  4 * ((bytes_per_second * 4 + 2) / 3) (integer division). handshake(access_token) is the JSON object authorization
+  {accessToken}, audioEncoding, model, mode, partialMode "CUMULATIVE", emitAudioProgress true, and languageBias (a list)
+  only when the bias is not empty, in that key order. openai_session(session_id) is B1123's transcription_session with the
+  model, the sample rate, the first bias language or none, and server_vad true unless the mode is PUSH_TO_TALK. The default
+  config is the Muse model, ENDPOINTING, 24000 and no bias.
+
+  Helpers. normalize_model strips a leading "meta/" and then whitespace. normalize_language trims, rejects an empty value
+  ("language must be non-empty"), matches a supported name case-insensitively, otherwise takes the part before the first
+  "-" or "_" (underscores count as "-"), lowercases it and looks it up in the code table, and rejects a miss with
+  "unsupported Muse Voice language". normalize_access_token trims; an empty value is an error "Meta API key is required";
+  a first word that is not "bearer" (any case) gives "Bearer <stripped>"; "bearer" alone or followed by blanks is an error
+  "Meta API key must include a token after Bearer"; otherwise "Bearer <token>" with the token trimmed.
+  build_muse_realtime_url: no base gives the default URL. Otherwise the trimmed base is parsed, an https scheme becomes
+  wss, and anything that is not an absolute wss URL with a host, or that has user info or a fragment, is the error "Meta
+  api_base must be an absolute wss:// or https:// URL without credentials or a fragment". The result keeps scheme, host
+  and port and replaces the path with "/v1/asr/realtime", with no query.
+
+  Session update parsing (parse_session_update). Use B1123's parse_transcription_session_update. A session type other
+  than none, "transcription" or "realtime" is "Muse Voice supports transcription sessions only". Unsupported
+  transcription keys are logged as a warning with the text "Meta realtime: dropping unsupported transcription settings
+  <keys>". A normalized expected model other than MUSE_MODEL is "unsupported Meta realtime model", and an update model
+  that differs after normalization is "realtime session model cannot be changed". The mode is PUSH_TO_TALK when turn
+  detection is disabled, ENDPOINTING when the type is none or "server_vad", and otherwise the error "Muse Voice supports
+  server_vad turn detection or null". The sample rate is 24000 with no audio format; a "beta" layout needs encoding pcm16
+  ("Muse Voice requires pcm16 input audio") and gives 24000; the other layout needs pcm16 ("Muse Voice requires audio/pcm
+  input audio"), mono ("Muse Voice requires mono input audio") and a rate of 16000 or 24000 (default 24000, else "Muse
+  Voice supports PCM16 at 16000 Hz or 24000 Hz"). The language bias is the one normalized language, or empty.
+
+  Event transformer (MuseEventTransformer, turn limit 128). transform(frame): type "error" gives one error event with the
+  fixed provider text and never forwards provider text. "audioProgress" updates the unbilled seconds and gives no events:
+  audioProcessedMs must be a finite non-negative number and not a boolean, else "audioProgress event has invalid
+  audioProcessedMs"; a value not above the last one is ignored; otherwise the added seconds are the difference divided
+  by 1000. Turn events speechStart, transcript, speechEnd and speechComplete update one turn and then drain it; any other
+  type gives no events. A turn id must be a non-boolean string or integer that is non-empty after trimming, else "<event>
+  event has invalid turnId". Turns are kept in insertion order and the oldest is dropped when more than the limit exist.
+  speechStart marks the turn started and active unless it already stopped. transcript needs a string transcript ("transcript
+  event has invalid transcript"); an empty transcript with no turnId and no active turn gives no events. The turn is the
+  frame turnId, else the active turn, else a new id "item_<32 hex>" when the mode is PUSH_TO_TALK (made active), and in
+  other modes the error "transcript event is missing turnId outside an active turn". final true finishes the turn with the
+  transcript and releases the active turn; otherwise the latest partial is set when no final text exists. speechEnd marks
+  the turn stopped. speechComplete needs a string transcript ("speechComplete event has invalid transcript") and finishes
+  the turn. Draining a turn emits, in this order and each at most once: speech_started when the turn started or has any
+  text; a transcription delta with the new suffix when the latest partial extends the last emitted one and no final text
+  exists (a partial that does not start with the emitted text gives an empty suffix and nothing); speech_stopped when
+  stopped; and the completed event with the final text and the unbilled usage when final text exists and speech_stopped
+  was emitted. take_unbilled_usage returns B1123's duration usage for the unbilled seconds and resets them, or none when
+  there are none.
+
+  Config methods. validate_environment: the key is api_key, else env_api_key, and a missing key is "api_key is required
+  for Meta API calls"; it stores the normalized access token and returns the headers unchanged. get_complete_url rejects a
+  normalized model other than MUSE_MODEL with "Unsupported Meta realtime model: <model>" and returns the built URL.
+  is_setup_message is true when the object has an "authorization" key. transform_session_created_event gives the default
+  config's created event for the session id. transform_realtime_request parses the client JSON (B1123 json_object):
+  session.update and transcription_session.update configure the session (ignored with a debug log after the first one;
+  an error "Meta API key was not validated before the session was configured" without a stored token) and return the
+  handshake as compact JSON text; input_audio_buffer.append decodes base64 PCM16 with B1123's decode_pcm16_append and the
+  max_encoded_append_bytes limit, adds it to the pending bytes and returns every full packet as a binary frame, keeping
+  the remainder; commit flushes the remainder as a frame and also sends the end message when the mode is PUSH_TO_TALK;
+  input_audio_buffer.end flushes and sends the end message; clear drops the pending bytes and returns nothing; any other
+  type returns nothing and logs a debug line. The end message is sent once per session. Audio before configuration is the
+  error "session.update must configure the Muse session before audio is sent". pace_backend_send(message): with a pacing
+  origin and the sent duration, compute the effective origin (now minus the sent duration when there is no origin or now
+  is past origin plus sent duration), sleep for origin plus sent duration minus now when that is positive, store the
+  origin, then add the message length divided by bytes_per_second to the sent duration. unbilled_usage_on_session_close
+  returns take_unbilled_usage. transform_realtime_response decodes bytes as UTF-8, parses the JSON object, and a frame
+  without sessionId goes through the event transformer, while a frame with a non-string or blank sessionId is "provider
+  returned an invalid handshake response" and otherwise gives the session created event for the trimmed id. The result
+  carries the events plus the seven pass-through fields of the transform input unchanged.
+
+  Helper b6414 feeds a scripted sequence of client messages and provider frames (with a fake clock and sleep) and compares
+  the outputs of the pinned LiteLLM classes. Source size is about 470 nonblank, noncomment lines. Plan about 560
+  production lines, 480 test lines, 220 adapter lines and 60 fuzz and wiring lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/meta_muse_realtime.rs
+    - crates/betterlite-core/src/meta_muse_realtime/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/muse_frames.rs
+    - crates/betterlite-core/fuzz/corpus/muse_frames/**
+    - tools/oracle/cases/helpers/meta-muse/**
+    - "tools/oracle/fuzz/corpus/helper_case/meta_muse-*"
+    - tools/oracle/helpers/b6414.py
+    - tools/oracle/helpers/b6414/**
+    - tools/oracle/src/helpers/core_ops/b6414.rs
+    - tools/oracle/src/helpers/core_ops/b6414/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/meta/realtime/transformation.py#L1-L215
+    why: Constants, session config, language, token and URL normalization and session update parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/meta/realtime/transformation.py#L216-L410
+    why: Turn state, the event transformer and the audio progress usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/meta/realtime/transformation.py#L411-L583
+    why: The config class, client request handling, packetizing, pacing and provider frames.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/meta.py#L1-L21
+    why: Mode, encoding and sample rate types and the handshake shape.
+dod:
+  - text: Language, model, token and URL normalization, and session update parsing with its errors match LiteLLM.
+    proof: [muse-session-tests, helper-python, helper-case-corpus]
+  - text: Client messages become the handshake, audio packets and end message, and the pacing delays match LiteLLM.
+    proof: [muse-request-tests, helper-python, helper-case-corpus]
+  - text: Provider frames become the same OpenAI events, completion and usage, and no byte input makes the frame decoder fail.
+    proof: [muse-events-tests, muse-frames-corpus, helper-python, helper-case-corpus]
+  - text: The new helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: muse-session-tests
+      why: Muse normalization or session update parsing is missing or fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^meta_muse_realtime::session/)'
+    - id: muse-request-tests
+      why: Muse client request handling or pacing is missing or fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^meta_muse_realtime::request/)'
+    - id: muse-events-tests
+      why: The Muse event transformer or provider frame handling is missing or fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^meta_muse_realtime::events/) - test(replays_the_muse_frames_corpus)'
+    - id: muse-frames-corpus
+      why: The Muse frame fuzz target or its fresh replay corpus is missing
+      run: >-
+        test -f crates/betterlite-core/fuzz/fuzz_targets/muse_frames.rs &&
+        grep -q 'name = "muse_frames"' crates/betterlite-core/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/muse_frames)" &&
+        cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_muse_frames_corpus)'
+    - id: helper-python
+      why: The strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6414.py)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added Muse helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/meta_muse-*")" &&
+        grep -lE '^[[:space:]]+b6414:' tools/oracle/fuzz/corpus/helper_case/meta_muse-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/meta-muse/normalization-and-url.yaml
+  - tools/oracle/cases/helpers/meta-muse/session-update-parsing.yaml
+  - tools/oracle/cases/helpers/meta-muse/client-requests-and-packets.yaml
+  - tools/oracle/cases/helpers/meta-muse/pacing.yaml
+  - tools/oracle/cases/helpers/meta-muse/provider-turn-events.yaml
+  - tools/oracle/cases/helpers/meta-muse/audio-progress-usage.yaml
+deviations:
+  - what: A random turn id for push-to-talk comes from the platform random source and the cases do not pin its value.
+    why: LiteLLM uses uuid4, which no test can fix. The cases check only the "item_" prefix and the 32 hex characters.
+out_of_scope:
+  - B1123 owns the shared transcription protocol helpers and B1004 the realtime contracts. B1405 owns the xAI realtime module in the openai crate.
+  - The websocket loop, the backend connection and the realtime route belong to the realtime services under B1004, not to this task.
+  - B210 and B211 own the Meta identity defaults, and B2230 and B5360 own provider selection.
+pitfalls:
+  - Meta realtime lives in betterlite-core because B1123 does, and a provider leaf must not import core.
+  - The end message is sent once per session, even if commit and end both ask for it.
+  - A partial transcript that does not extend the emitted text produces no delta, and no later partial recovers the lost text.
+  - The pacing origin resets when the sender falls behind, so a late send does not cause a burst of zero delays that is never repaid.
+  - Provider error text is never forwarded to the client.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
