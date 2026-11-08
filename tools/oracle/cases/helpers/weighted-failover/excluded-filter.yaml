@@ -1,0 +1,14 @@
+kind: helper
+name: excluded-filter-drops-listed-ids
+call:
+  b8440:
+    function: drop_excluded
+    deployments:
+      - {model_info: {id: a}}
+      - {model_info: {id: b}}
+      - {deployment: without-model-info}
+      - {model_info: {}}
+      - {model_info: {id: c}}
+    excluded: [b]
+env: {}
+compare: {ignore: []}
