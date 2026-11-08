@@ -29,6 +29,9 @@ pub(super) async fn track_in_flight(
     request: Request<Body>,
     next: Next,
 ) -> Response {
+    if super::is_websocket_upgrade(&request) {
+        return next.run(request).await;
+    }
     requests.current.fetch_add(1, Ordering::AcqRel);
     let guard = InFlightGuard {
         requests: Arc::clone(&requests),

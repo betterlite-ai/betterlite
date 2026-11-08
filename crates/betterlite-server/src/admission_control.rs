@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::Request;
+use axum::http::{Request, header};
 use axum::middleware::{Next, from_fn_with_state};
 use axum::response::Response;
 use betterlite_config::sections::admission_control::{Limits, Settings};
@@ -19,6 +19,7 @@ use tokio::time::timeout;
 use self::body::GuardedBody;
 use self::in_flight::{InFlightRequests, track_in_flight};
 use self::response::overloaded;
+use crate::middleware::request_root_paths::RequestRootPath;
 
 // LiteLLM lets health probes and metric scrapes through so a saturated worker stays observable
 const EXEMPT_PATHS: [&str; 8] = [
@@ -182,32 +183,63 @@ impl Drop for AdmissionSlot {
 pub struct AdmissionStack {
     pub admission: Arc<AdmissionControl>,
     pub in_flight: Arc<InFlightRequests>,
+    pub scalar_root: String,
+}
+
+struct AdmissionGate {
+    control: Arc<AdmissionControl>,
+    scalar_root: String,
 }
 
 impl AdmissionStack {
     pub fn wrap(&self, application: Router) -> Router {
+        let gate = Arc::new(AdmissionGate {
+            control: Arc::clone(&self.admission),
+            scalar_root: self.scalar_root.clone(),
+        });
         // the root path layer must wrap this stack so an exemption check sees the route path
         application
             .layer(from_fn_with_state(
                 Arc::clone(&self.in_flight),
                 track_in_flight,
             ))
-            .layer(from_fn_with_state(
-                Arc::clone(&self.admission),
-                admit_request,
-            ))
+            .layer(from_fn_with_state(gate, admit_request))
+    }
+}
+
+fn is_websocket_upgrade(request: &Request<Body>) -> bool {
+    request
+        .headers()
+        .get(header::UPGRADE)
+        .is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"websocket"))
+}
+
+// LiteLLM strips the scope root_path itself, and a scalar SERVER_ROOT_PATH has no middleware to do it here
+fn scalar_route_path<'path>(request: &'path Request<Body>, scalar_root: &str) -> &'path str {
+    let path = request.uri().path();
+    if scalar_root.is_empty() || request.extensions().get::<RequestRootPath>().is_some() {
+        return path;
+    }
+    match path.strip_prefix(scalar_root) {
+        Some("") => "/",
+        Some(rest) if rest.starts_with('/') => rest,
+        _ => path,
     }
 }
 
 async fn admit_request(
-    State(control): State<Arc<AdmissionControl>>,
+    State(gate): State<Arc<AdmissionGate>>,
     request: Request<Body>,
     next: Next,
 ) -> Response {
+    if is_websocket_upgrade(&request) {
+        return next.run(request).await;
+    }
+    let control = &gate.control;
     let Some(limits) = control.limits else {
         return next.run(request).await;
     };
-    if EXEMPT_PATHS.contains(&request.uri().path()) {
+    if EXEMPT_PATHS.contains(&scalar_route_path(&request, &gate.scalar_root)) {
         return next.run(request).await;
     }
     let permit = match control.admit(&limits).await {
@@ -216,7 +248,7 @@ async fn admit_request(
     };
     control.admitted.fetch_add(1, Ordering::AcqRel);
     let slot = AdmissionSlot {
-        control: Arc::clone(&control),
+        control: Arc::clone(control),
         permit: Some(permit),
     };
     let response = next.run(request).await;
