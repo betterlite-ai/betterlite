@@ -7,39 +7,39 @@ probes:
       routing_value_store:
         settings:
           max_size_in_memory: 2
-          default_ttl_seconds: null
+          default_ttl_millis: null
           max_size_per_item: null
         steps:
-          - {kind: set, now: 0.0, key: "e1", value: {counter: 1}, ttl: 5.0}
-          - {kind: set, now: 0.0, key: "e2", value: {counter: 2}, ttl: 10.0}
-          - {kind: set, now: 6.0, key: "e3", value: {counter: 3}, ttl: 10.0}
-          - {kind: get, now: 6.0, key: "e1"}
-          - {kind: get, now: 6.0, key: "e2"}
-          - {kind: get, now: 6.0, key: "e3"}
-          - {kind: get, now: 10.0, key: "e2"}
-          - {kind: set, now: 11.0, key: "e4", value: {counter: 4}, ttl: 30.0}
-          - {kind: get, now: 11.0, key: "e2"}
-          - {kind: get, now: 11.0, key: "e3"}
-          - {kind: get, now: 11.0, key: "e4"}
-          - {kind: set, now: 12.0, key: "e5", value: {counter: 5}, ttl: 100.0}
-          - {kind: get, now: 12.0, key: "e3"}
-          - {kind: get, now: 12.0, key: "e4"}
-          - {kind: get, now: 12.0, key: "e5"}
-          - {kind: set, now: 12.0, key: "e4", value: {counter: 40}, ttl: 30.0}
-          - {kind: get, now: 41.5, key: "e4"}
-          - {kind: get, now: 42.0, key: "e4"}
-          - {kind: get, now: 42.5, key: "e4"}
+          - {kind: set, now_millis: 0, key: "e1", value: {counter: 1}, ttl_millis: 5000}
+          - {kind: set, now_millis: 0, key: "e2", value: {counter: 2}, ttl_millis: 10000}
+          - {kind: set, now_millis: 6000, key: "e3", value: {counter: 3}, ttl_millis: 10000}
+          - {kind: get, now_millis: 6000, key: "e1"}
+          - {kind: get, now_millis: 6000, key: "e2"}
+          - {kind: get, now_millis: 6000, key: "e3"}
+          - {kind: get, now_millis: 10000, key: "e2"}
+          - {kind: set, now_millis: 11000, key: "e4", value: {counter: 4}, ttl_millis: 30000}
+          - {kind: get, now_millis: 11000, key: "e2"}
+          - {kind: get, now_millis: 11000, key: "e3"}
+          - {kind: get, now_millis: 11000, key: "e4"}
+          - {kind: set, now_millis: 12000, key: "e5", value: {counter: 5}, ttl_millis: 100000}
+          - {kind: get, now_millis: 12000, key: "e3"}
+          - {kind: get, now_millis: 12000, key: "e4"}
+          - {kind: get, now_millis: 12000, key: "e5"}
+          - {kind: set, now_millis: 12000, key: "e4", value: {counter: 40}, ttl_millis: 30000}
+          - {kind: get, now_millis: 41500, key: "e4"}
+          - {kind: get, now_millis: 42000, key: "e4"}
+          - {kind: get, now_millis: 42500, key: "e4"}
   - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
     samples: []
     operation:
       routing_value_store:
         settings:
           max_size_in_memory: 0
-          default_ttl_seconds: null
+          default_ttl_millis: null
           max_size_per_item: null
         steps:
-          - {kind: set, now: 0.0, key: "disabled", value: {counter: 1}, ttl: 30.0}
-          - {kind: get, now: 0.0, key: "disabled"}
-          - {kind: batch_get, now: 0.0, keys: ["disabled"]}
+          - {kind: set, now_millis: 0, key: "disabled", value: {counter: 1}, ttl_millis: 30000}
+          - {kind: get, now_millis: 0, key: "disabled"}
+          - {kind: batch_get, now_millis: 0, keys: ["disabled"]}
 compare:
   ignore: []

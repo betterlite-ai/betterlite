@@ -7,7 +7,7 @@ probes:
       routing_value_store:
         settings:
           max_size_in_memory: null
-          default_ttl_seconds: null
+          default_ttl_millis: null
           max_size_per_item: null
         steps:
           - {kind: parse, payload: {kind: text, text: '{"pin": {"model_id": "dep-1"}}'}}
@@ -17,7 +17,7 @@ probes:
 compare:
   ignore: []
   expected_difference:
-    - pointer: /steps/3/result
+    - pointer: /output/routing_value_store/steps/3/result
       reference: {kind: valid, value: {kind: pin, model_id_bytes: 1048577}}
       rust: {kind: invalid, bytes: 1048600, limit: 1048576}
       why: the typed route value parser refuses stored bytes past 1 MiB before decoding, while LiteLLM's JSON decode has no byte bound

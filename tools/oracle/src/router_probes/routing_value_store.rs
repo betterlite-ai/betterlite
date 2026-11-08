@@ -2,6 +2,7 @@ mod parser;
 mod steps;
 
 use std::sync::{Arc, Mutex as StdMutex, PoisonError};
+use std::time::Duration;
 
 use betterlite_router::routing_value_store::{
     Clock, RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreError, StoreSettings,
@@ -26,56 +27,51 @@ pub struct Input {
 #[serde(deny_unknown_fields)]
 pub struct SettingsInput {
     pub max_size_in_memory: Option<i64>,
-    pub default_ttl_seconds: Option<Seconds>,
+    pub default_ttl_millis: Option<u64>,
     pub max_size_per_item: Option<i64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct Seconds(pub f64);
-
-impl Eq for Seconds {}
-
+// integer milliseconds, since a tagged float cannot be read back under serde_json's arbitrary_precision
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Step {
     Set {
-        now: Seconds,
+        now_millis: u64,
         key: String,
         value: RouteValue,
-        ttl: Option<Seconds>,
+        ttl_millis: Option<u64>,
     },
     SetPipeline {
-        now: Seconds,
+        now_millis: u64,
         entries: Vec<Entry>,
-        ttl: Option<Seconds>,
+        ttl_millis: Option<u64>,
     },
     SetAdd {
-        now: Seconds,
+        now_millis: u64,
         key: String,
         values: Vec<String>,
-        ttl: Option<Seconds>,
+        ttl_millis: Option<u64>,
     },
     Get {
-        now: Seconds,
+        now_millis: u64,
         key: String,
     },
     BatchGet {
-        now: Seconds,
+        now_millis: u64,
         keys: Vec<String>,
     },
     Increment {
-        now: Seconds,
+        now_millis: u64,
         key: String,
         by: RouteIncrement,
-        ttl: Option<Seconds>,
+        ttl_millis: Option<u64>,
     },
     CompareAndSet {
-        now: Seconds,
+        now_millis: u64,
         key: String,
         expected: Option<RouteValue>,
         value: RouteValue,
-        ttl: Option<Seconds>,
+        ttl_millis: Option<u64>,
     },
     Parse {
         payload: ParsePayload,
@@ -83,16 +79,41 @@ pub enum Step {
 }
 
 impl Step {
-    const fn clock(&self) -> Option<Seconds> {
+    const fn clock(&self) -> Option<u64> {
         match self {
-            Self::Set { now, .. }
-            | Self::SetPipeline { now, .. }
-            | Self::SetAdd { now, .. }
-            | Self::Get { now, .. }
-            | Self::BatchGet { now, .. }
-            | Self::Increment { now, .. }
-            | Self::CompareAndSet { now, .. } => Some(*now),
+            Self::Set { now_millis, .. }
+            | Self::SetPipeline { now_millis, .. }
+            | Self::SetAdd { now_millis, .. }
+            | Self::Get { now_millis, .. }
+            | Self::BatchGet { now_millis, .. }
+            | Self::Increment { now_millis, .. }
+            | Self::CompareAndSet { now_millis, .. } => Some(*now_millis),
             Self::Parse { .. } => None,
+        }
+    }
+
+    fn call<'store>(&self, store: &'store RoutingValueStore) -> Call<'store> {
+        let (key, ttl_millis) = match self {
+            Self::Set {
+                key, ttl_millis, ..
+            }
+            | Self::SetAdd {
+                key, ttl_millis, ..
+            }
+            | Self::Increment {
+                key, ttl_millis, ..
+            }
+            | Self::CompareAndSet {
+                key, ttl_millis, ..
+            } => (Some(key), *ttl_millis),
+            Self::SetPipeline { ttl_millis, .. } => (None, *ttl_millis),
+            Self::Get { key, .. } => (Some(key), None),
+            Self::BatchGet { .. } | Self::Parse { .. } => (None, None),
+        };
+        Call {
+            store,
+            key: key.and_then(|raw| RouteKey::parse(raw).ok()),
+            ttl: ttl_millis.map(|millis| Duration::from_millis(millis).as_secs_f64()),
         }
     }
 }
@@ -196,7 +217,10 @@ pub(crate) fn run(
     let store = RoutingValueStore::new(
         StoreSettings {
             max_size_in_memory: input.settings.max_size_in_memory,
-            default_ttl_seconds: input.settings.default_ttl_seconds.map(|seconds| seconds.0),
+            default_ttl_seconds: input
+                .settings
+                .default_ttl_millis
+                .map(|millis| Duration::from_millis(millis).as_secs_f64()),
             max_size_per_item: input.settings.max_size_per_item,
             loaded_max_size_per_item_kib: 1024,
         },
@@ -204,8 +228,9 @@ pub(crate) fn run(
     )?;
     let mut steps = Vec::with_capacity(input.steps.len());
     for step in &input.steps {
-        if let Some(at) = step.clock() {
-            *now.lock().unwrap_or_else(PoisonError::into_inner) = at.0;
+        if let Some(millis) = step.clock() {
+            *now.lock().unwrap_or_else(PoisonError::into_inner) =
+                Duration::from_millis(millis).as_secs_f64();
         }
         steps.push(execute_step(&store, step)?);
     }
@@ -214,47 +239,21 @@ pub(crate) fn run(
 
 fn execute_step(store: &RoutingValueStore, step: &Step) -> StepResult {
     match step {
-        Step::Set {
-            key, value, ttl, ..
-        } => steps::execute_set(&route_call(store, Some(key.as_str()), *ttl), value),
-        Step::SetPipeline { entries, ttl, .. } => {
-            steps::execute_set_pipeline(&route_call(store, None, *ttl), entries)
+        Step::Set { value, .. } => steps::execute_set(&step.call(store), value),
+        Step::SetPipeline { entries, .. } => {
+            steps::execute_set_pipeline(&step.call(store), entries)
         }
-        Step::SetAdd {
-            key, values, ttl, ..
-        } => steps::execute_set_add(&route_call(store, Some(key.as_str()), *ttl), values),
+        Step::SetAdd { values, .. } => steps::execute_set_add(&step.call(store), values),
         Step::Get { key, .. } => Ok(StepOutput::Get {
             value: steps::read_one(store, key)?,
         }),
         Step::BatchGet { keys, .. } => steps::execute_batch_get(store, keys),
-        Step::Increment { key, by, ttl, .. } => {
-            steps::execute_increment(&route_call(store, Some(key.as_str()), *ttl), by)
-        }
+        Step::Increment { by, .. } => steps::execute_increment(&step.call(store), by),
         Step::CompareAndSet {
-            key,
-            expected,
-            value,
-            ttl,
-            ..
-        } => steps::execute_compare_and_set(
-            &route_call(store, Some(key.as_str()), *ttl),
-            expected.as_ref(),
-            value,
-        ),
+            expected, value, ..
+        } => steps::execute_compare_and_set(&step.call(store), expected.as_ref(), value),
         Step::Parse { payload } => Ok(StepOutput::Parse {
             result: parser::parse_payload(payload)?,
         }),
-    }
-}
-
-fn route_call<'store>(
-    store: &'store RoutingValueStore,
-    key: Option<&str>,
-    ttl: Option<Seconds>,
-) -> Call<'store> {
-    Call {
-        store,
-        key: key.and_then(|raw| RouteKey::parse(raw).ok()),
-        ttl: ttl.map(|seconds| seconds.0),
     }
 }

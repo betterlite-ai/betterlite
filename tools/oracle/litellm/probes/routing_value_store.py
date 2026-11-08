@@ -48,7 +48,7 @@ RouteValue = CounterValue | SpendValue | PinValue | SchedulerValue | MembersValu
 
 class SettingsInput(Strict):
     max_size_in_memory: int | None
-    default_ttl_seconds: float | None
+    default_ttl_millis: int | None
     max_size_per_item: int | None
 
 
@@ -59,54 +59,54 @@ class Entry(Strict):
 
 class SetStep(Strict):
     kind: Literal["set"]
-    now: float
+    now_millis: int
     key: str
     value: RouteValue
-    ttl: float | None = None
+    ttl_millis: int | None = None
 
 
 class SetPipelineStep(Strict):
     kind: Literal["set_pipeline"]
-    now: float
+    now_millis: int
     entries: list[Entry]
-    ttl: float | None = None
+    ttl_millis: int | None = None
 
 
 class SetAddStep(Strict):
     kind: Literal["set_add"]
-    now: float
+    now_millis: int
     key: str
     values: list[str]
-    ttl: float | None = None
+    ttl_millis: int | None = None
 
 
 class GetStep(Strict):
     kind: Literal["get"]
-    now: float
+    now_millis: int
     key: str
 
 
 class BatchGetStep(Strict):
     kind: Literal["batch_get"]
-    now: float
+    now_millis: int
     keys: list[str]
 
 
 class IncrementStep(Strict):
     kind: Literal["increment"]
-    now: float
+    now_millis: int
     key: str
     by: CounterValue | SpendValue
-    ttl: float | None = None
+    ttl_millis: int | None = None
 
 
 class CompareAndSetStep(Strict):
     kind: Literal["compare_and_set"]
-    now: float
+    now_millis: int
     key: str
     expected: RouteValue | None = None
     value: RouteValue
-    ttl: float | None = None
+    ttl_millis: int | None = None
 
 
 class TextPayload(Strict):
@@ -331,49 +331,55 @@ def increment_amount(by: CounterValue | SpendValue) -> int | float:
     return float(by.spend)
 
 
+def seconds_from_millis(millis: int | None) -> float | None:
+    if millis is None:
+        return None
+    return millis / 1000
+
+
 def set_step(cache: MemoryCache, clock: Clock, step: SetStep) -> StepOutput:
-    clock.now = step.now
-    asyncio.run(cache.async_set_cache(step.key, stored_value(step.value), ttl=step.ttl))
+    clock.now = step.now_millis / 1000
+    asyncio.run(cache.async_set_cache(step.key, stored_value(step.value), ttl=seconds_from_millis(step.ttl_millis)))
     return SetOutput()
 
 
 def set_pipeline_step(cache: MemoryCache, clock: Clock, step: SetPipelineStep) -> StepOutput:
-    clock.now = step.now
+    clock.now = step.now_millis / 1000
     entries = [(entry.key, stored_value(entry.value)) for entry in step.entries]
-    asyncio.run(cache.async_set_cache_pipeline(entries, ttl=step.ttl))
+    asyncio.run(cache.async_set_cache_pipeline(entries, ttl=seconds_from_millis(step.ttl_millis)))
     return SetPipelineOutput()
 
 
 def set_add_step(cache: MemoryCache, clock: Clock, step: SetAddStep) -> StepOutput:
-    clock.now = step.now
-    values = asyncio.run(cache.async_set_cache_sadd(step.key, step.values, step.ttl))
+    clock.now = step.now_millis / 1000
+    values = asyncio.run(cache.async_set_cache_sadd(step.key, step.values, seconds_from_millis(step.ttl_millis)))
     return SetAddOutput(values=values)
 
 
 def get_step(cache: MemoryCache, clock: Clock, step: GetStep) -> StepOutput:
-    clock.now = step.now
+    clock.now = step.now_millis / 1000
     return GetOutput(value=output_value(read(cache, step.key)))
 
 
 def batch_get_step(cache: MemoryCache, clock: Clock, step: BatchGetStep) -> StepOutput:
-    clock.now = step.now
+    clock.now = step.now_millis / 1000
     return BatchGetOutput(values=[output_value(value) for value in cache.batch_get_cache(step.keys)])
 
 
 def increment_step(cache: MemoryCache, clock: Clock, step: IncrementStep) -> StepOutput:
-    clock.now = step.now
-    result = cache.increment_cache(step.key, increment_amount(step.by), ttl=step.ttl)
+    clock.now = step.now_millis / 1000
+    result = cache.increment_cache(step.key, increment_amount(step.by), ttl=seconds_from_millis(step.ttl_millis))
     return IncrementOutput(value=required_output(result))
 
 
 def compare_and_set_step(cache: MemoryCache, clock: Clock, step: CompareAndSetStep) -> StepOutput:
-    clock.now = step.now
+    clock.now = step.now_millis / 1000
     current = read(cache, step.key)
     expected = None if step.expected is None else stored_value(step.expected)
     if current != expected:
         return CompareAndSetOutput(swapped=False, current=output_value(current))
     candidate = stored_value(step.value)
-    cache.set_cache(step.key, candidate, ttl=step.ttl)
+    cache.set_cache(step.key, candidate, ttl=seconds_from_millis(step.ttl_millis))
     return CompareAndSetOutput(swapped=True, current=output_value(candidate))
 
 
@@ -459,12 +465,12 @@ def execute(cache: MemoryCache, clock: Clock, step: Step) -> StepOutput:
     return output
 
 
-def whole_seconds(value: float | None) -> int | None:
+def whole_seconds(value: int | None) -> int | None:
     if value is None:
         return None
-    if not value.is_integer():
-        raise ProbeError("invalid_request", "default_ttl_seconds must be whole seconds")
-    return int(value)
+    if value % 1000 != 0:
+        raise ProbeError("invalid_request", "default_ttl_millis must be whole seconds")
+    return value // 1000
 
 
 class RoutingValueStore(Operation):
@@ -478,7 +484,7 @@ class RoutingValueStore(Operation):
             "MemoryCache",
             InMemoryCache(
                 max_size_in_memory=self.settings.max_size_in_memory,
-                default_ttl=whole_seconds(self.settings.default_ttl_seconds),
+                default_ttl=whole_seconds(self.settings.default_ttl_millis),
                 max_size_per_item=self.settings.max_size_per_item,
                 clock=clock.seconds,
             ),
