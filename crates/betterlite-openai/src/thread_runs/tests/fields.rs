@@ -31,6 +31,8 @@ const STEP_DELTA_UNKNOWN: &str =
 const STEP_UNKNOWN: &str = r#"{"id":"step_2","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"weird","status":"completed","step_details":{"type":"weird"}}"#;
 const STEP_DELTA_UNKNOWN_CALL: &str = r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"weird"}]}}}"#;
 const STEP_UNKNOWN_CALL: &str = r#"{"id":"step_3","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"type":"weird"}]}}"#;
+const STEP_DELTA_UNKNOWN_CALL_EMPTY: &str = r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"weird","code_interpreter":{}}]}}}"#;
+const STEP_UNKNOWN_CALL_EMPTY: &str = r#"{"id":"step_4","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"type":"weird","code_interpreter":{}}]}}"#;
 
 // A field the SDK cannot use never clears a data line recorded before it.
 pub(super) async fn stream_unusable_fields_after_data_keep_the_event() {
@@ -171,7 +173,7 @@ pub(super) async fn stream_missing_variant_keys_match_the_sdk_dump() {
 }
 
 fn assert_unknown_variants(events: &[RunEvent]) {
-    assert!(events.len() > 17);
+    assert!(events.len() > 19);
     let message = parse(
         r#"{"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"completed","content":[{"type":"audio","image_file":null}],"assistant_id":null,"attachments":null,"completed_at":null,"incomplete_at":null,"incomplete_details":null,"metadata":null,"run_id":null}"#,
     );
@@ -192,6 +194,14 @@ fn assert_unknown_variants(events: &[RunEvent]) {
         r#"{"id":"step_3","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"id":null,"code_interpreter":null,"type":"weird"}]},"cancelled_at":null,"completed_at":null,"expired_at":null,"failed_at":null,"last_error":null,"metadata":null,"usage":null}"#,
     );
     assert_eq!(data_value(&events[17]), full_call);
+    let delta_call_empty = parse(
+        r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"weird","id":null,"code_interpreter":{"input":null,"outputs":null}}]}}}"#,
+    );
+    assert_eq!(data_value(&events[18]), delta_call_empty);
+    let full_call_empty = parse(
+        r#"{"id":"step_4","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"id":null,"code_interpreter":{"input":null,"outputs":null},"type":"weird"}]},"cancelled_at":null,"completed_at":null,"expired_at":null,"failed_at":null,"last_error":null,"metadata":null,"usage":null}"#,
+    );
+    assert_eq!(data_value(&events[19]), full_call_empty);
 }
 
 async fn missing_variant_events() -> Vec<RunEvent> {
@@ -214,6 +224,8 @@ async fn missing_variant_events() -> Vec<RunEvent> {
         ("thread.run.step.completed", STEP_UNKNOWN),
         ("thread.run.step.delta", STEP_DELTA_UNKNOWN_CALL),
         ("thread.run.step.completed", STEP_UNKNOWN_CALL),
+        ("thread.run.step.delta", STEP_DELTA_UNKNOWN_CALL_EMPTY),
+        ("thread.run.step.completed", STEP_UNKNOWN_CALL_EMPTY),
     ];
     let mut body = String::new();
     for (name, data) in frames {
@@ -221,7 +233,7 @@ async fn missing_variant_events() -> Vec<RunEvent> {
     }
     body.push_str("data: [DONE]\n\n");
     let events = stream_result(&body).await.unwrap();
-    assert_eq!(events.len(), 18);
+    assert_eq!(events.len(), 20);
     events
 }
 

@@ -151,10 +151,9 @@ fn fill_step(details: &mut Value, delta: bool) {
         add_keys(call, "id");
         match call.get("type").and_then(Value::as_str) {
             Some("function") => fill_call(call, "function", "name arguments output"),
-            Some("code_interpreter") => fill_call(call, "code_interpreter", "input outputs"),
             Some("file_search") if delta => add_keys(call, "file_search"),
             Some("file_search") => fill_call(call, "file_search", "ranking_options results"),
-            _ => add_keys(call, "code_interpreter"),
+            _ => fill_call(call, "code_interpreter", "input outputs"),
         }
     }
 }

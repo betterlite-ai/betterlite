@@ -432,6 +432,12 @@ call:
                 event: thread.run.step.completed
                 data: {"id":"step_3","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"type":"weird"}]}}
 
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"weird","code_interpreter":{}}]}}}
+
+                event: thread.run.step.completed
+                data: {"id":"step_4","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"type":"weird","code_interpreter":{}}]}}
+
                 data: [DONE]
 
 
