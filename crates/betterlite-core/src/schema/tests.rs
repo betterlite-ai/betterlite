@@ -252,6 +252,22 @@ struct Case {
     expected: None,
     failure: Failure::None,
 })]
+#[case::enum_values_are_not_references(Case {
+    operation: Operation::Validate,
+    schema: serde_json::json!({"type": "object", "enum": [{"$ref": "https://example.com/x"}]}),
+    response: "{\"$ref\": \"https://example.com/x\"}",
+    limits: None,
+    expected: None,
+    failure: Failure::None,
+})]
+#[case::default_values_are_not_references(Case {
+    operation: Operation::Validate,
+    schema: serde_json::json!({"type": "object", "default": {"$ref": "https://example.com/x"}}),
+    response: "{}",
+    limits: None,
+    expected: None,
+    failure: Failure::None,
+})]
 #[case::examples_values_are_not_references(Case {
     operation: Operation::Validate,
     schema: serde_json::json!({"type": "object", "examples": [{"$ref": "https://example.com/a"}]}),
