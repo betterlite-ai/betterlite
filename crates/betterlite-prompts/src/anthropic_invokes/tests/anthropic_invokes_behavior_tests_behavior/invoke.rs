@@ -1,4 +1,9 @@
-use crate::anthropic_invokes::invoke::{InvokeError, to_anthropic_tool_invokes};
+use std::iter::repeat_n;
+
+use crate::anthropic_invokes::invoke::{
+    InvokeError, MAX_SERVER_RESULT_BYTES, MAX_SERVER_RESULTS, MAX_TOOL_CALLS,
+    to_anthropic_tool_invokes,
+};
 use crate::arguments::json::{Json, Object};
 
 use super::{list, object};
@@ -17,6 +22,21 @@ fn invoke_with(
     tool_results: &str,
 ) -> Result<Vec<Object>, InvokeError> {
     to_anthropic_tool_invokes(&list(tools), &list(web_search), &list(tool_results))
+}
+
+fn repeated_calls(tool_id: &str, count: usize) -> Vec<Json> {
+    let call = object(&format!(
+        r#"{{"id":"{tool_id}","type":"function","function":{{"name":"x","arguments":"{{}}"}}}}"#
+    ));
+    repeat_n(Json::Object(call), count).collect()
+}
+
+fn server_results(tool_id: &str, data_len: usize, count: usize) -> Vec<Json> {
+    let payload = "x".repeat(data_len);
+    let result = object(&format!(
+        r#"{{"tool_use_id":"{tool_id}","data":"{payload}"}}"#
+    ));
+    repeat_n(Json::Object(result), count).collect()
 }
 
 fn cached_tool(cache_control: Option<&str>) -> String {
@@ -354,4 +374,70 @@ fn anthropic_invokes_behavior_tests_behavior_the_server_tool_result_is_preserved
             ),
         ]
     );
+}
+
+#[test]
+fn anthropic_invokes_behavior_tests_behavior_the_tool_call_limit_is_accepted() {
+    let calls = repeated_calls("call_1", MAX_TOOL_CALLS);
+    assert_eq!(
+        to_anthropic_tool_invokes(&calls, &[], &[]).unwrap().len(),
+        MAX_TOOL_CALLS
+    );
+}
+
+#[test]
+fn anthropic_invokes_behavior_tests_behavior_too_many_tool_calls_are_refused() {
+    let calls = repeated_calls("call_1", MAX_TOOL_CALLS.saturating_add(1));
+    assert!(matches!(
+        to_anthropic_tool_invokes(&calls, &[], &[]).unwrap_err(),
+        InvokeError::TooManyToolCalls { limit } if limit == MAX_TOOL_CALLS
+    ));
+}
+
+#[test]
+fn anthropic_invokes_behavior_tests_behavior_the_server_result_count_limit_is_accepted() {
+    let results = server_results("srvtoolu_x", 0, MAX_SERVER_RESULTS);
+    assert!(
+        to_anthropic_tool_invokes(&[], &results, &[])
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[rstest::rstest]
+#[case::web_search("web_search_results")]
+#[case::tool_results("tool_results")]
+fn anthropic_invokes_behavior_tests_behavior_too_many_server_results_are_refused(
+    #[case] field: &'static str,
+) {
+    let results = server_results("srvtoolu_x", 0, MAX_SERVER_RESULTS.saturating_add(1));
+    let error = if field == "web_search_results" {
+        to_anthropic_tool_invokes(&[], &results, &[])
+    } else {
+        to_anthropic_tool_invokes(&[], &[], &results)
+    }
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        InvokeError::TooManyServerResults { field: refused, limit }
+            if refused == field && limit == MAX_SERVER_RESULTS
+    ));
+}
+
+#[test]
+fn anthropic_invokes_behavior_tests_behavior_repeated_server_calls_over_the_byte_cap_are_refused() {
+    let calls = repeated_calls("srvtoolu_shared", MAX_TOOL_CALLS);
+    let results = server_results("srvtoolu_shared", 0x4000, 1);
+    assert!(matches!(
+        to_anthropic_tool_invokes(&calls, &results, &[]).unwrap_err(),
+        InvokeError::ServerResultsTooLarge { limit } if limit == MAX_SERVER_RESULT_BYTES
+    ));
+}
+
+#[test]
+fn anthropic_invokes_behavior_tests_behavior_repeated_server_calls_under_the_byte_cap_are_copied() {
+    let calls = repeated_calls("srvtoolu_shared", MAX_TOOL_CALLS);
+    let results = server_results("srvtoolu_shared", 0x1000, 1);
+    let blocks = to_anthropic_tool_invokes(&calls, &results, &[]).unwrap();
+    assert_eq!(blocks.len(), MAX_TOOL_CALLS.saturating_mul(2));
 }

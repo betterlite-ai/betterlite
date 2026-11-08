@@ -15,3 +15,12 @@ deviations:
       The payload is client input and a 4xx names the failure; the 500 LiteLLM returns hides which
       field was wrong.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L823
+  - what: >-
+      A tool call list over 1024 entries, a web_search_results or tool_results list over 1024
+      entries, or server results that would copy more than 8 MiB into the output are refused with a
+      typed error; LiteLLM converts whatever list it is given.
+    why: >-
+      The bounded-inputs rule forbids work and allocation proportional to untrusted input without a
+      cap. A repeated srvtoolu_ call with one matching result would otherwise clone that result once
+      per call, so the cap bounds the copied bytes as well as the three list lengths.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1744
