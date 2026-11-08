@@ -4,7 +4,6 @@ mod input;
 use std::sync::Arc;
 
 use secrecy::ExposeSecret as _;
-use serde::Deserialize;
 use serde_json::{Value, json, to_value};
 
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -16,10 +15,7 @@ use betterlite_prompts::redis_semantic_cache::{
 };
 
 use self::fakes::{ConstantEmbedder, HelperConnector, HelperIndex};
-use self::input::{
-    ConstructorEnv, ConstructorInput, HitInput, IndexFallbackInput, Input, KeyScopeInput,
-    LookupInput, StoreInput,
-};
+use self::input::{HitInput, Input, Operation};
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 pub(crate) struct Op;
@@ -36,16 +32,16 @@ impl Helper for Op {
 }
 
 async fn dispatch(input: &Input) -> HelperResult {
-    match input {
-        Input::Constructor(settings) => constructor(settings),
-        Input::KeyScope(scope) => Ok(key_scope(scope)),
-        Input::IndexFallback(fallback) => index_fallback(fallback).await,
-        Input::Lookup(lookup) => run_lookup(lookup).await,
-        Input::Store(store) => run_store(store).await,
+    match input.operation {
+        Operation::Constructor => constructor(input),
+        Operation::KeyScope => key_scope(input),
+        Operation::IndexFallback => index_fallback(input).await,
+        Operation::Lookup => run_lookup(input).await,
+        Operation::Store => run_store(input).await,
     }
 }
 
-fn constructor(input: &ConstructorInput) -> HelperResult {
+fn constructor(input: &Input) -> HelperResult {
     let options = RedisSemanticOptions {
         host: input.host.clone(),
         port: input.port.clone(),
@@ -55,12 +51,13 @@ fn constructor(input: &ConstructorInput) -> HelperResult {
         embedding_model: input.embedding_model.clone(),
         index_name: input.index_name.clone(),
         embedding_max_input_tokens: input.embedding_max_input_tokens,
-        embedding_timeout: input.embedding_timeout,
+        // B4310's resolve_embedding_timeout default, which the Python adapter applies too.
+        embedding_timeout: input.embedding_timeout.unwrap_or(5.0),
     };
     let env = RedisEnv {
-        redis_host: input.env.redis_host.clone(),
-        redis_port: input.env.redis_port.clone(),
-        redis_password: input.env.redis_password.clone(),
+        redis_host: input.redis_host.clone(),
+        redis_port: input.redis_port.clone(),
+        redis_password: input.redis_password.clone(),
     };
     let embedder = ConstantEmbedder { vector: Vec::new() };
     let backend: Arc<dyn SemanticRedisIndex> = Arc::new(HelperIndex::default());
@@ -81,27 +78,30 @@ fn constructor(input: &ConstructorInput) -> HelperResult {
     }))
 }
 
-fn key_scope(input: &KeyScopeInput) -> Value {
+fn key_scope(input: &Input) -> HelperResult {
+    let key = required(&input.key, "key")?;
     let candidate = Hit {
         prompt: None,
         response: None,
         litellm_cache_key: input.litellm_cache_key.clone(),
         vector_distance: None,
     };
-    json!({ "matches": RedisSemanticCache::cache_hit_matches_key(&candidate, &input.key) })
+    Ok(json!({ "matches": RedisSemanticCache::cache_hit_matches_key(&candidate, &key) }))
 }
 
-async fn index_fallback(input: &IndexFallbackInput) -> HelperResult {
+async fn index_fallback(input: &Input) -> HelperResult {
+    let index_name = required(&input.index_name, "index_name")?;
+    let dimension = required(&input.dimension, "dimension")?;
     let index = Arc::new(HelperIndex::scripted(
-        input.dimension,
+        dimension,
         input.mismatch_attempts.clone(),
     ));
     let embedder = ConstantEmbedder {
-        vector: vec![0.5; input.dimension],
+        vector: vec![0.5; dimension],
     };
     let concrete = Arc::clone(&index);
     let backend: Arc<dyn SemanticRedisIndex> = concrete;
-    let cache = helper_cache(Arc::new(embedder), backend, Some(input.index_name.clone()))?;
+    let cache = helper_cache(Arc::new(embedder), backend, Some(index_name))?;
     let messages = [user_message("fallback")];
     let kwargs = helper_kwargs(Some(&messages), None, None, None);
     cache.async_set_cache("scope-1", &Json::Null, &kwargs).await;
@@ -111,25 +111,25 @@ async fn index_fallback(input: &IndexFallbackInput) -> HelperResult {
     Ok(json!({ "chosen": built.name, "attempts": index.attempts() }))
 }
 
-async fn run_lookup(input: &LookupInput) -> HelperResult {
+async fn run_lookup(input: &Input) -> HelperResult {
+    let key = required(&input.key, "key")?;
+    let vector = required(&input.vector, "vector")?;
     let index = Arc::new(HelperIndex::with_hits(
         input.hits.iter().map(to_hit).collect(),
     ));
-    let embedder = ConstantEmbedder {
-        vector: input.vector.clone(),
-    };
+    let embedder = ConstantEmbedder { vector };
     let concrete = Arc::clone(&index);
     let backend: Arc<dyn SemanticRedisIndex> = concrete;
     let cache = helper_cache(Arc::new(embedder), backend, None)?;
     let mut metadata = input.metadata.as_ref().and_then(Json::as_object).cloned();
     let kwargs = helper_kwargs(
         input.messages.as_deref(),
-        input.responses_input.as_ref(),
+        input.input.as_ref(),
         input.metadata.as_ref(),
         None,
     );
     let value = cache
-        .async_get_cache(&input.key, &kwargs, metadata.as_mut())
+        .async_get_cache(&key, &kwargs, metadata.as_mut())
         .await
         .map_err(|error| helper_error("ValueError", error))?;
     let value = value
@@ -149,23 +149,22 @@ async fn run_lookup(input: &LookupInput) -> HelperResult {
     }))
 }
 
-async fn run_store(input: &StoreInput) -> HelperResult {
+async fn run_store(input: &Input) -> HelperResult {
+    let key = required(&input.key, "key")?;
+    let vector = required(&input.vector, "vector")?;
+    let value = required(&input.value, "value")?;
     let index = Arc::new(HelperIndex::default());
-    let embedder = ConstantEmbedder {
-        vector: input.vector.clone(),
-    };
+    let embedder = ConstantEmbedder { vector };
     let concrete = Arc::clone(&index);
     let backend: Arc<dyn SemanticRedisIndex> = concrete;
     let cache = helper_cache(Arc::new(embedder), backend, None)?;
     let kwargs = helper_kwargs(
         input.messages.as_deref(),
-        input.responses_input.as_ref(),
+        input.input.as_ref(),
         input.metadata.as_ref(),
         input.ttl,
     );
-    cache
-        .async_set_cache(&input.key, &input.value, &kwargs)
-        .await;
+    cache.async_set_cache(&key, &value, &kwargs).await;
     let store = index.stores().into_iter().next().map(|(_, fields, ttl)| {
         let vector: Vec<f64> = fields
             .prompt_vector
@@ -249,6 +248,12 @@ fn to_hit(input: &HitInput) -> Hit {
         litellm_cache_key: input.litellm_cache_key.clone(),
         vector_distance: input.vector_distance,
     }
+}
+
+fn required<T: Clone>(value: &Option<T>, name: &str) -> Result<T, Box<HelperError>> {
+    value
+        .clone()
+        .ok_or_else(|| helper_error("InvalidInput", format!("{name} is required")))
 }
 
 fn helper_error<M>(class: &str, message: M) -> Box<HelperError>

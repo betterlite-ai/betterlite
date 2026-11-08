@@ -16,7 +16,7 @@ use super::ports::{
     SemanticSearchQuery,
 };
 use super::query::parse_search_reply;
-use crate::arguments::json::{Json, Object};
+use crate::arguments::json::Json;
 
 const MISSING_INDEX_FRAGMENTS: [&str; 4] = [
     "unknown index name",
@@ -183,47 +183,26 @@ fn is_missing_index_error(error: &redis::RedisError) -> bool {
         .any(|fragment| message.contains(fragment))
 }
 
-fn map_to_object(pairs: &[(Value, Value)]) -> Result<Object, RedisSemanticError> {
-    let mut object = Object::new();
-    for (key, item) in pairs {
-        let Json::Text(name) = value_to_json(key)? else {
-            return Err(RedisSemanticError::UnexpectedReply { kind: "map key" });
-        };
-        object.insert(name, value_to_json(item)?);
-    }
-    Ok(object)
-}
-
 fn value_to_json(value: &Value) -> Result<Json, RedisSemanticError> {
     match value {
         Value::Nil => Ok(Json::Null),
         Value::Int(number) => Ok(Json::Number(serde_json::Number::from(*number))),
         Value::BulkString(bytes) => Ok(Json::Text(String::from_utf8(bytes.clone())?)),
         Value::SimpleString(text) => Ok(Json::Text(text.clone())),
-        Value::Okay => Ok(Json::Text("OK".to_owned())),
-        Value::Array(items) => {
-            let converted = items
-                .iter()
-                .map(value_to_json)
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Json::List(converted))
-        }
-        Value::Map(pairs) => Ok(Json::Object(map_to_object(pairs)?)),
-        Value::Double(number) => serde_json::Number::from_f64(*number)
-            .map(Json::Number)
-            .ok_or(RedisSemanticError::UnexpectedReply {
-                kind: "non-finite double",
-            }),
-        Value::Boolean(flag) => Ok(Json::Bool(*flag)),
-        Value::Attribute { .. }
+        Value::Array(items) => Ok(Json::List(
+            items.iter().map(value_to_json).collect::<Result<_, _>>()?,
+        )),
+        Value::Okay
+        | Value::Map(_)
+        | Value::Attribute { .. }
         | Value::Set(_)
+        | Value::Double(_)
+        | Value::Boolean(_)
         | Value::VerbatimString { .. }
         | Value::BigNumber(_)
         | Value::Push { .. }
-        | Value::ServerError(_) => Err(RedisSemanticError::UnexpectedReply {
-            kind: "unsupported value",
-        }),
-        // redis::Value is non_exhaustive, so a variant added later lands here.
+        | Value::ServerError(_) => Err(RedisSemanticError::UnexpectedReply { kind: "value" }),
+        // redis::Value is non_exhaustive; a variant added later lands here.
         _ => Err(RedisSemanticError::UnexpectedReply {
             kind: "unknown value",
         }),

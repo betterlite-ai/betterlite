@@ -12,7 +12,9 @@ call:
     embedding_model: null
     embedding_max_input_tokens: 512
     embedding_timeout: 2.5
-    env: {redis_host: cache.internal, redis_port: "6380", redis_password: envpw}
+    redis_host: cache.internal
+    redis_port: "6380"
+    redis_password: envpw
 env:
   REDIS_HOST: cache.internal
   REDIS_PORT: "6380"
