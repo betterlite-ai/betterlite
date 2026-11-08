@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_logging::rubrik_delivery::clock::{Clock as _, SystemClock};
 use betterlite_logging::rubrik_delivery::config::{
     DEFAULT_BATCH_SIZE, DEFAULT_GUARDRAIL_NAME, MAX_QUEUE_SIZE, RubrikEventHook, StreamFlags,
 };
@@ -17,6 +18,12 @@ use super::support::{
     environment, init, last_drop_warning_time, last_flush_time, logger, logger_with_environment,
     logging_timeout, moderation_timeout, number,
 };
+
+#[test]
+fn system_clock_returns_a_nonzero_unix_time() {
+    let now = SystemClock.now_unix();
+    assert!(now > Duration::ZERO);
+}
 
 #[test]
 fn defaults_fill_every_field() {
