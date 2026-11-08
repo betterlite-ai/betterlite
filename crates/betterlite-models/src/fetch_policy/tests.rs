@@ -15,6 +15,7 @@ mod classification_reloaded;
 mod classification_retry_after;
 mod classification_status;
 mod integrity_count;
+mod integrity_defaults;
 mod integrity_reserved;
 mod integrity_validation;
 mod retry_after;
