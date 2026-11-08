@@ -1,0 +1,20 @@
+task: B3241
+deviations:
+  - what: resolve_guardrails_for_context returns the guardrail names sorted ascending.
+    why: LiteLLM builds the union from a Python set, whose iteration order changes between processes; nobody can depend on it, and a fixed order keeps responses and tests stable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolver.py#L176-L190
+  - what: A policy config entry, guardrails block, condition, pipeline or attachment that carries a key betterlite does not model is rejected with an error naming the key. LiteLLM reads only the keys it knows and ignores the rest.
+    why: Rule no-silent-drops; a misspelled guardrails key must not load as a policy that applies nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L210-L247
+  - what: An attachment without a policy name is rejected; LiteLLM defaults the policy to the empty string and keeps an attachment that matches nothing.
+    why: The declared PolicyAttachment type requires policy, and rule no-silent-drops refuses an attachment that can never apply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/attachment_registry.py#L105-L124
+  - what: Loading policies or attachments is atomic. A policy or attachment that fails to parse leaves the registry exactly as it was; LiteLLM clears the registry first and keeps whatever parsed before the failure.
+    why: No caller is left resolving requests against a half-loaded registry, and the process startup path treats the error as fatal anyway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L191-L207
+  - what: There are no get_policy_registry or get_attachment_registry singletons. The registries are values passed to the matcher and resolver functions.
+    why: Rule inject-dependencies forbids module-level state; the registry handle comes from the caller and tests build their own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L1071-L1081
+  - what: PolicyRegistry.get_policy_by_id_for_request is not a function. The in-memory version cache is the public policies_by_id map, which callers read directly; load_policies clears it, and B3243's DB sync fills it.
+    why: Rule no-one-line-functions rejects a getter whose body is only a map lookup, and no code in this task reads the cache on a request path yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L590-L604

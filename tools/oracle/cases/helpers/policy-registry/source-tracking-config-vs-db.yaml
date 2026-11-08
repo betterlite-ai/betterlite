@@ -1,0 +1,18 @@
+kind: helper
+name: source-tracking-config-vs-db
+call:
+  b3241:
+    policy_memory_matching_registry:
+      action: scenario
+      policies:
+        baseline:
+          guardrails:
+            add: [pii-blocker]
+      add:
+        - name: custom
+          policy:
+            guardrails:
+              add: [toxicity-filter]
+          source: db
+env: {}
+compare: {ignore: []}

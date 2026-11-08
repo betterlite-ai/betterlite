@@ -8,7 +8,7 @@ use betterlite_http::proxy::{ProxiedClient, StreamResponse, UpstreamResponse};
 use http::header::{ACCEPT, AUTHORIZATION};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use rand::rngs::StdRng;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 use serde_json::{Map, Value};
 use thiserror::Error;
 use uuid::Uuid;
@@ -22,6 +22,7 @@ use crate::chat::{
 use crate::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
 };
+use transport_failure::http_failure;
 
 // LiteLLM's DEFAULT_CHAT_COMPLETION_PARAM_VALUES: these go through the OpenAI parameter policy, the rest are forwarded
 const KNOWN_PARAMS: &str = "functions function_call temperature top_p n stream stream_options stop max_tokens max_completion_tokens modalities prediction audio presence_penalty frequency_penalty logit_bias user model custom_llm_provider response_format seed tools tool_choice max_retries logprobs top_logprobs extra_headers api_version parallel_tool_calls drop_params allowed_openai_params additional_drop_params messages reasoning_effort verbosity thinking web_search_options include_server_side_tool_invocations service_tier safety_identifier prompt_cache_key prompt_cache_retention store metadata context_management";
@@ -105,12 +106,14 @@ impl ChatExecutor {
         }
         let outbound = self.outbound(deployment, request, "application/json")?;
         let started = Instant::now();
-        let client = self
-            .client
-            .deployments
-            .get(&deployment.model_id)
-            .unwrap_or(&self.client);
-        let upstream = client.send_buffered(outbound).await.map_err(http_failure)?;
+        let client = self.client_for(deployment);
+        let upstream = client
+            .send_following(outbound)
+            .await
+            .map_err(http_failure)?
+            .buffered(client.limits.body_bytes)
+            .await
+            .map_err(http_failure)?;
         let upstream_time = started.elapsed();
         if upstream.status >= 400 {
             return Err(ChatError::Provider {
@@ -158,12 +161,11 @@ impl ChatExecutor {
         request: &ChatRequest,
     ) -> Result<StreamResponse, ChatError> {
         let outbound = self.outbound(deployment, request, "text/event-stream")?;
-        let client = self
-            .client
-            .deployments
-            .get(&deployment.model_id)
-            .unwrap_or(&self.client);
-        let response = client.send(outbound).await.map_err(http_failure)?;
+        let client = self.client_for(deployment);
+        let response = client
+            .send_following(outbound)
+            .await
+            .map_err(http_failure)?;
         if !response.response.status().is_success() {
             let upstream = response
                 .buffered(client.limits.body_bytes)
@@ -176,18 +178,28 @@ impl ChatExecutor {
         Ok(response)
     }
 
+    fn client_for(&self, deployment: &ChatDeployment) -> &ProxiedClient {
+        self.client
+            .deployments
+            .get(&deployment.model_id)
+            .unwrap_or(&self.client)
+    }
+
     fn outbound(
         &self,
         deployment: &ChatDeployment,
         request: &ChatRequest,
         accept: &'static str,
     ) -> Result<OutboundRequest, ChatError> {
-        let (model, api_key) = servable(deployment)?;
+        let model = servable(deployment)?;
         let body = serde_json::to_vec(&self.body(request, model)?)
             .map_err(|source| ChatError::Encode { source })?;
         let mut headers = HeaderMap::new();
-        let bearer = format!("Bearer {}", api_key.expose_secret());
-        headers.insert(AUTHORIZATION, header_value(&bearer, "authorization")?);
+        let authorization = deployment.credential().ok_or(ChatError::MissingApiKey)?;
+        headers.insert(
+            AUTHORIZATION,
+            header_value(authorization.expose_secret(), "authorization")?,
+        );
         headers.insert(ACCEPT, HeaderValue::from_static(accept));
         if let Some(organization) = &deployment.organization {
             headers.insert(
@@ -246,20 +258,13 @@ impl ChatExecutor {
     }
 }
 
-fn servable(deployment: &ChatDeployment) -> Result<(&str, &SecretString), ChatError> {
-    let model = match &deployment.provider {
-        Provider::OpenAi { model } => model,
-        Provider::Unsupported { model } => {
-            return Err(ChatError::UnsupportedProvider {
-                model: model.clone(),
-            });
-        }
-    };
-    let api_key = deployment
-        .api_key
-        .as_ref()
-        .ok_or(ChatError::MissingApiKey)?;
-    Ok((model, api_key))
+fn servable(deployment: &ChatDeployment) -> Result<&str, ChatError> {
+    match &deployment.provider {
+        Provider::OpenAi { model } => Ok(model),
+        Provider::Unsupported { model } => Err(ChatError::UnsupportedProvider {
+            model: model.clone(),
+        }),
+    }
 }
 
 fn header_value(text: &str, name: &str) -> Result<HeaderValue, ChatError> {
@@ -271,25 +276,5 @@ fn header_value(text: &str, name: &str) -> Result<HeaderValue, ChatError> {
     })
 }
 
-fn http_failure(source: TransportError) -> ChatError {
-    match source {
-        TransportError::ConnectTimeout(_) | TransportError::Deadline(_) => ChatError::Timeout,
-        TransportError::BodyTooLarge { .. } | TransportError::HeadersTooLarge { .. } => {
-            ChatError::TooLarge
-        }
-        TransportError::Rejected(_)
-        | TransportError::Build(_)
-        | TransportError::Connect(_)
-        | TransportError::Request(_)
-        | TransportError::Body(_)
-        | TransportError::InvalidHeader { .. }
-        | TransportError::MultipartContentType { .. }
-        | TransportError::MultipartBoundaryHeader { .. }
-        | TransportError::MultipartBoundary { .. }
-        | TransportError::Mock(_)
-        | TransportError::Closed
-        | TransportError::DrainTimeout { .. } => ChatError::Http { source },
-    }
-}
-
 mod tests;
+mod transport_failure;

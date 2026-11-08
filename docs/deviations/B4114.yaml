@@ -1,0 +1,27 @@
+task: B4114
+deviations:
+  - what: >-
+      The search tool list, hook kwargs and authenticated caller are typed records (SearchToolConfig, SearchHookKwargs,
+      HookMetadata, HookParams, SearchCaller) instead of loose dicts and the Python key object, and an absent router
+      search_tools list is Option::None rather than a missing attribute.
+    why: >-
+      Rust has no attribute probing or duck typing, and the declared shapes are the ones LiteLLM's own TypedDict views
+      use. A hook kwargs value of a different type than its typed field is an error that names the field, per
+      docs/compatibility.md.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1732-L1799
+  - what: >-
+      The parent OpenTelemetry span is an opaque ParentOtelSpan newtype. At wiring time the tracing crate's span handle
+      converts into it through From<tracing::Span>; when the value comes from hook kwargs as JSON it keeps that opaque
+      JSON instead.
+    why: >-
+      The Python span is an arbitrary object this module only passes along inside the correlation and the spend
+      metadata; Rust needs a named handle that downstream logging can attach to a span.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L203-L241
+  - what: >-
+      Authorization and spend metadata reach B749's can_key_call_search_tool and can_team_call_search_tool, B737's
+      get_team_object, and B1106's get_sanitized_user_information_from_key and get_logged_api_key through two ports,
+      SearchToolGrants and SearchMetadataSource, that the server wires instead of direct calls.
+    why: >-
+      betterlite-auth and betterlite-core sit above this crate's allowed dependencies, so a direct call would risk a
+      dependency cycle. The checks and their order are the same as LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5351-L5403
