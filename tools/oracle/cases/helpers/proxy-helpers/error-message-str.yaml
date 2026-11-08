@@ -1,0 +1,24 @@
+kind: helper
+name: error-message-str
+call:
+  b8400:
+    calls:
+      - do: error_message
+        status: 400
+        detail: something went wrong
+      - do: error_message
+        status: 422
+        detail:
+          error: bad input
+          code: invalid_request
+      - do: error_message
+        status: 400
+        message: labelled
+      - do: error_message
+        status: 400
+        message:
+          error: labelled
+      - do: plain_error_message
+        text: boom
+env: {}
+compare: {ignore: []}

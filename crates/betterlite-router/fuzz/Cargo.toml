@@ -14,6 +14,13 @@ betterlite-router = { path = ".." }
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
+name = "route_value"
+path = "fuzz_targets/route_value.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "routing_header_value"
 path = "fuzz_targets/routing_header_value.rs"
 test = false

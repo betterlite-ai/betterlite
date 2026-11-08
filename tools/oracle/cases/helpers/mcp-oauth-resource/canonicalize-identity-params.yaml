@@ -1,0 +1,5 @@
+kind: helper
+name: "canonicalize-identity-params"
+call: {"b4654":{"function":"canonicalize","url":"https://h/a;b"}}
+env: {}
+compare: {"ignore":[]}
