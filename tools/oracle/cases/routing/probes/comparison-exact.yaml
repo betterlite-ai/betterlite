@@ -1,0 +1,27 @@
+kind: probe
+name: comparison-exact
+probes:
+  - clock:
+      unix_millis: 1700000000123
+      monotonic_millis: 42000
+    samples:
+      - 0
+    operation:
+      single_candidate:
+        deployments:
+          - id: exact-only
+            weight: 3
+  - clock:
+      unix_millis: 1700000000124
+      monotonic_millis: 43000
+    samples:
+      - 0
+    operation:
+      single_candidate:
+        deployments:
+          - id: exact-first
+            weight: 2
+          - id: exact-second
+            weight: 1
+compare:
+  ignore: []
