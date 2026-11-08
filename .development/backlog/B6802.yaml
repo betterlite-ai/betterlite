@@ -1,0 +1,14 @@
+id: B6802
+milestone: M5 api families
+title: Vertex AI OCR providers for Mistral and DeepSeek
+status: todo
+depends_on: [B6800, B6801]
+file: tasks/B6802-vertex-ocr-providers.yaml
+covers:
+  - "litellm/ocr/**"
+parent: B092
+split_from: B092
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

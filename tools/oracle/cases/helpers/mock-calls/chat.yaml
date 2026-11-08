@@ -1,0 +1,12 @@
+kind: helper
+name: mock-calls-chat
+call:
+  mock_calls:
+    model: gpt-4o
+    mode: chat
+    clock: 1700000000
+    uuid: "12345678-1234-4234-8234-123456789012"
+    operator_mock_response: This is a mock request
+env: {}
+compare:
+  ignore: []
