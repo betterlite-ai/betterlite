@@ -157,7 +157,7 @@ fn outcome(scenario: &Scenario) -> String {
 #[case::the_first_claim_wins(Scenario::ClaimTwice, "true/false")]
 #[case::completion_start_time_is_stored_twice(
     Scenario::CompletionStartTime,
-    r#""2026-01-01T00:00:05+00:00"/"2026-01-01T00:00:05+00:00""#
+    r#""2026-01-01T00:00:05Z"/"2026-01-01T00:00:05+00:00""#
 )]
 #[case::timing_metrics_are_replaced_not_merged(Scenario::TimingReplaced, r#"{"second":3.0}"#)]
 #[case::a_request_without_async_flags_is_sync(Scenario::Sync(AsyncFlag::None), "true")]
