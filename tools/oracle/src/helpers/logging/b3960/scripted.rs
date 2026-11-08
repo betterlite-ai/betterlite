@@ -16,12 +16,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 #[derive(Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Reply {
-    pub(crate) status: u16,
-    pub(crate) body: String,
-    #[serde(default)]
-    pub(crate) raise: Option<String>,
+#[serde(untagged)]
+pub(crate) enum Reply {
+    Answer { status: u16, body: String },
+    Failure { raise: String },
 }
 
 #[derive(Clone)]
@@ -78,13 +76,10 @@ impl Transport for ScriptedTransport {
                 reason: "no scripted reply".to_owned(),
             });
         };
-        if let Some(reason) = answer.raise {
-            return Err(ScriptedError { reason });
+        match answer {
+            Reply::Answer { status, body } => Ok(ArgillaResponse { status, body }),
+            Reply::Failure { raise } => Err(ScriptedError { reason: raise }),
         }
-        Ok(ArgillaResponse {
-            status: answer.status,
-            body: answer.body,
-        })
     }
 }
 
