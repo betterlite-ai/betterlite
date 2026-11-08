@@ -28,7 +28,8 @@ where
 {
     for_each_entry(span, response, "choices", write_choice_entry);
     for_each_entry(span, response, "data", |target, fields, index| {
-        write_media_value(target, index, image_url(fields), keys::IMAGE_URL);
+        let url = data_url(fields, "data:image/png;base64,");
+        write_media_value(target, index, url, keys::IMAGE_URL);
     });
     for_each_entry(span, response, "audio", write_audio_entry);
     for_each_entry(span, response, "data", write_embedding_entry);
@@ -80,50 +81,6 @@ fn choice_output_value(message: Option<&MetadataMap>) -> OtelModelValue {
         }
     }
     content.cloned().unwrap_or(OtelModelValue::Null(()))
-}
-
-pub(super) fn image_url(part: &MetadataMap) -> Option<String> {
-    inline_image_url(part)
-        .filter(|url| !url.is_empty())
-        .or_else(|| source_data_url(part))
-        .or_else(|| part_url(part))
-}
-
-fn part_url(part: &MetadataMap) -> Option<String> {
-    part.get("url")
-        .and_then(OtelModelValue::as_str)
-        .filter(|url| !url.is_empty())
-        .map(str::to_owned)
-}
-
-fn inline_image_url(part: &MetadataMap) -> Option<String> {
-    match part.get("image_url") {
-        Some(OtelModelValue::String(text)) => Some(text.clone()),
-        Some(OtelModelValue::Object(image)) => image
-            .get("url")
-            .and_then(OtelModelValue::as_str)
-            .map(str::to_owned),
-        Some(
-            OtelModelValue::Null(())
-            | OtelModelValue::Bool(_)
-            | OtelModelValue::Number(_)
-            | OtelModelValue::Array(_),
-        )
-        | None => None,
-    }
-}
-
-fn source_data_url(part: &MetadataMap) -> Option<String> {
-    let source = part.get("source").and_then(OtelModelValue::as_object)?;
-    let data = source
-        .get("data")
-        .and_then(OtelModelValue::as_str)
-        .filter(|data| !data.is_empty())?;
-    let media_type = source
-        .get("media_type")
-        .and_then(OtelModelValue::as_str)
-        .unwrap_or("image/jpeg");
-    Some(format!("data:{media_type};base64,{data}"))
 }
 
 fn write_audio_entry<S>(span: &mut S, fields: &MetadataMap, index: usize)

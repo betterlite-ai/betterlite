@@ -125,7 +125,7 @@ fn emit_image_part<S>(span: &mut S, part_prefix: &str, part: &MetadataMap)
 where
     S: Span,
 {
-    if let Some(url) = output::image_url(part) {
+    if let Some(url) = image_url(part) {
         span.safe_set_attribute(
             &format!("{part_prefix}.{MESSAGE_CONTENT_TYPE}"),
             &OtelModelValue::String("image".to_owned()),
@@ -135,6 +135,50 @@ where
             &OtelModelValue::String(url),
         );
     }
+}
+
+fn image_url(part: &MetadataMap) -> Option<String> {
+    inline_image_url(part)
+        .filter(|url| !url.is_empty())
+        .or_else(|| source_data_url(part))
+        .or_else(|| part_url(part))
+}
+
+fn part_url(part: &MetadataMap) -> Option<String> {
+    part.get("url")
+        .and_then(OtelModelValue::as_str)
+        .filter(|url| !url.is_empty())
+        .map(str::to_owned)
+}
+
+fn inline_image_url(part: &MetadataMap) -> Option<String> {
+    match part.get("image_url") {
+        Some(OtelModelValue::String(text)) => Some(text.clone()),
+        Some(OtelModelValue::Object(image)) => image
+            .get("url")
+            .and_then(OtelModelValue::as_str)
+            .map(str::to_owned),
+        Some(
+            OtelModelValue::Null(())
+            | OtelModelValue::Bool(_)
+            | OtelModelValue::Number(_)
+            | OtelModelValue::Array(_),
+        )
+        | None => None,
+    }
+}
+
+fn source_data_url(part: &MetadataMap) -> Option<String> {
+    let source = part.get("source").and_then(OtelModelValue::as_object)?;
+    let data = source
+        .get("data")
+        .and_then(OtelModelValue::as_str)
+        .filter(|data| !data.is_empty())?;
+    let media_type = source
+        .get("media_type")
+        .and_then(OtelModelValue::as_str)
+        .unwrap_or("image/jpeg");
+    Some(format!("data:{media_type};base64,{data}"))
 }
 
 pub fn set_response_attributes<S>(span: &mut S, response: &OtelModelValue)
