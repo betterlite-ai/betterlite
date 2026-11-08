@@ -85,7 +85,7 @@ impl RedisSemanticCache {
             distance_threshold: 1.0_f64.sub(similarity_threshold),
             index_name,
             clock: Arc::new(SystemClock),
-            redis_url: SecretString::from(redis_url),
+            redis_url,
             embedder,
             connector,
             index: OnceCell::new(),

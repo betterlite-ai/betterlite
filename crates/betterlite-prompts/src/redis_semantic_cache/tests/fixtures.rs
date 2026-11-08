@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use betterlite_redis::redis_live_client::LiveClientError;
+use secrecy::SecretString;
 use serde_json::Number;
 
 use crate::arguments::json::{Json, Object};
@@ -23,7 +24,7 @@ pub(crate) fn options() -> RedisSemanticOptions {
     RedisSemanticOptions {
         host: Some("localhost".to_owned()),
         port: Some("6379".to_owned()),
-        password: Some("pw".to_owned()),
+        password: Some(SecretString::from("pw")),
         redis_url: None,
         similarity_threshold: Some(0.25),
         embedding_model: None,

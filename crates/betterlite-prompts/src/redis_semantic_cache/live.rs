@@ -154,7 +154,10 @@ pub(crate) fn search_command(index: &str, query: &SemanticSearchQuery) -> redis:
     command.arg(index).arg(query.query_string());
     command.arg(&["PARAMS", "4", "vector"]).arg(vector);
     command.arg(&["distance_threshold", threshold.as_str()]);
-    command.arg(&["RETURN", "7"]).arg(&RETURN_FIELDS);
+    command
+        .arg("RETURN")
+        .arg(RETURN_FIELDS.len())
+        .arg(&RETURN_FIELDS);
     command.arg(&["SORTBY", "vector_distance", "ASC"]);
     command.arg(&["LIMIT", "0", "1", "DIALECT", "2"]);
     command

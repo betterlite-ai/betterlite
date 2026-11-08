@@ -1,3 +1,4 @@
+use secrecy::SecretString;
 use serde::Deserialize;
 
 use betterlite_prompts::arguments::json::Json;
@@ -21,15 +22,15 @@ pub(crate) struct Input {
     pub(crate) threshold: Option<f64>,
     pub(crate) host: Option<String>,
     pub(crate) port: Option<String>,
-    pub(crate) password: Option<String>,
-    pub(crate) redis_url: Option<String>,
+    pub(crate) password: Option<SecretString>,
+    pub(crate) redis_url: Option<SecretString>,
     pub(crate) index_name: Option<String>,
     pub(crate) embedding_model: Option<String>,
     pub(crate) embedding_max_input_tokens: Option<i64>,
     pub(crate) embedding_timeout: Option<f64>,
     pub(crate) redis_host: Option<String>,
     pub(crate) redis_port: Option<String>,
-    pub(crate) redis_password: Option<String>,
+    pub(crate) redis_password: Option<SecretString>,
     pub(crate) key: Option<String>,
     pub(crate) litellm_cache_key: Option<String>,
     pub(crate) dimension: Option<usize>,

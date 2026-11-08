@@ -3,7 +3,7 @@ mod input;
 
 use std::sync::Arc;
 
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json, to_value};
 
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -227,7 +227,7 @@ fn helper_cache(
     let options = RedisSemanticOptions {
         host: Some("localhost".to_owned()),
         port: Some("6379".to_owned()),
-        password: Some("pw".to_owned()),
+        password: Some(SecretString::from("pw")),
         redis_url: None,
         similarity_threshold: Some(0.25_f64),
         embedding_model: None,

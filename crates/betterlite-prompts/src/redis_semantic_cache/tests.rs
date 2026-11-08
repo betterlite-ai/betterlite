@@ -5,7 +5,7 @@ mod fixtures;
 use std::sync::Arc;
 
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 
 use self::fixtures::{
@@ -46,7 +46,7 @@ fn options_env_values_fill_the_missing_host_port_and_password() {
     let env = RedisEnv {
         redis_host: Some("redis.internal".to_owned()),
         redis_port: Some("6380".to_owned()),
-        redis_password: Some("envpw".to_owned()),
+        redis_password: Some(SecretString::from("envpw")),
     };
     let cache = RedisSemanticCache::new(
         settings,
@@ -74,7 +74,7 @@ fn options_missing_configuration_names_the_variable(
     let mut settings = options();
     settings.host = host.map(str::to_owned);
     settings.port = port.map(str::to_owned);
-    settings.password = password.map(str::to_owned);
+    settings.password = password.map(SecretString::from);
     let result = RedisSemanticCache::new(
         settings,
         empty_env(),
@@ -114,7 +114,7 @@ fn options_explicit_and_empty_values_lose_to_a_non_empty_environment_value() {
 #[test]
 fn options_redis_url_wins_over_host_port_and_password() {
     let mut settings = options();
-    settings.redis_url = Some("redis://:urlpw@elsewhere:6390".to_owned());
+    settings.redis_url = Some(SecretString::from("redis://:urlpw@elsewhere:6390"));
     settings.host = Some("ignored".to_owned());
     let cache = RedisSemanticCache::new(
         settings,
@@ -671,7 +671,7 @@ fn lookup_search_command_carries_the_range_query_and_params() {
         b"distance_threshold".to_vec(),
         b"0.25".to_vec(),
         b"RETURN".to_vec(),
-        b"7".to_vec(),
+        b"8".to_vec(),
         b"entry_id".to_vec(),
         b"prompt".to_vec(),
         b"response".to_vec(),
