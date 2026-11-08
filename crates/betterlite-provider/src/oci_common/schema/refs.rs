@@ -15,16 +15,18 @@ struct Walk<'defs> {
 }
 
 pub fn resolve_oci_schema_refs(schema: &Json) -> Result<Json, OciError> {
-    let defs = schema
-        .as_object()
-        .and_then(|object| object.get("$defs"))
-        .and_then(Json::as_object);
+    // the table is dropped from the result anyway, so only definitions a reference reaches are walked and charged
+    let mut root = schema.clone();
+    let defs = match &mut root {
+        Json::Object(object) => object.shift_remove("$defs"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+    };
     let mut walk = Walk {
-        defs,
+        defs: defs.as_ref().and_then(Json::as_object),
         resolving: BTreeSet::new(),
         spent: 0,
     };
-    let mut resolved = resolve_refs(schema, &mut walk, 0)?;
+    let mut resolved = resolve_refs(&root, &mut walk, 0)?;
     if let Json::Object(fields) = &mut resolved {
         fields.shift_remove("$defs");
     }
