@@ -1,9 +1,10 @@
 use betterlite_models::catalog::ModelCatalog;
 
-use super::base_url::{host_for, validate_vertex_location};
+use super::base_url::validate_vertex_location;
 use super::embedding::{EmbeddingUrlInput, get_embedding_url};
 use super::error::VertexUrlError;
-use super::model_name::{get_model_for_vertex_ai_url, is_decimal};
+use super::model_name::get_model_for_vertex_ai_url;
+use super::path::{VertexCollection, VertexPath, model_path, resource_path};
 use super::{ApiVersion, UrlMode, VertexUrl};
 
 pub struct VertexUrlInput<'model> {
@@ -31,7 +32,13 @@ pub fn get_vertex_url(
                 api_version: input.api_version,
             },
         ),
-        UrlMode::ImageGeneration => image_generation_url(model, input),
+        UrlMode::ImageGeneration => {
+            let path = path_of(model, input)?;
+            Ok(VertexUrl {
+                url: model_path(&path, input.api_version, "v1", "predict"),
+                endpoint: "predict",
+            })
+        }
         UrlMode::CountTokens => count_tokens_url(model, input),
         UrlMode::BatchEmbedding => Err(VertexUrlError::UnsupportedMode {
             mode: "batch_embedding",
@@ -39,61 +46,36 @@ pub fn get_vertex_url(
     }
 }
 
-fn chat_url(model: &str, input: &VertexUrlInput<'_>) -> Result<VertexUrl, VertexUrlError> {
+fn path_of<'model>(
+    model: &'model str,
+    input: &VertexUrlInput<'model>,
+) -> Result<VertexPath<'model>, VertexUrlError> {
     let location = validate_vertex_location(input.location)?;
     let project = input.project.ok_or(VertexUrlError::ProjectRequired)?;
+    Ok(VertexPath {
+        model,
+        project,
+        location,
+    })
+}
+
+fn chat_url(model: &str, input: &VertexUrlInput<'_>) -> Result<VertexUrl, VertexUrlError> {
+    let path = path_of(model, input)?;
     let (endpoint, suffix) = match input.stream {
         Some(true) => ("streamGenerateContent", "?alt=sse"),
         Some(false) | None => ("generateContent", ""),
     };
-    let base_url = host_for(location);
     let version = input.api_version.as_str();
-    let mut url = if is_decimal(model) {
-        format!(
-            "{base_url}/{version}/projects/{project}/locations/{location}/endpoints/{model}:{endpoint}"
-        )
-    } else {
-        format!(
-            "{base_url}/{version}/projects/{project}/locations/{location}/publishers/google/models/{model}:{endpoint}"
-        )
-    };
+    let mut url = model_path(&path, input.api_version, version, endpoint);
     url.push_str(suffix);
     Ok(VertexUrl { url, endpoint })
 }
 
-fn image_generation_url(
-    model: &str,
-    input: &VertexUrlInput<'_>,
-) -> Result<VertexUrl, VertexUrlError> {
-    let location = validate_vertex_location(input.location)?;
-    let project = input.project.ok_or(VertexUrlError::ProjectRequired)?;
-    let base_url = host_for(location);
-    let version = input.api_version.as_str();
-    let url = if is_decimal(model) {
-        format!(
-            "{base_url}/{version}/projects/{project}/locations/{location}/endpoints/{model}:predict"
-        )
-    } else {
-        format!(
-            "{base_url}/v1/projects/{project}/locations/{location}/publishers/google/models/{model}:predict"
-        )
-    };
-    Ok(VertexUrl {
-        url,
-        endpoint: "predict",
-    })
-}
-
 fn count_tokens_url(model: &str, input: &VertexUrlInput<'_>) -> Result<VertexUrl, VertexUrlError> {
-    let location = validate_vertex_location(input.location)?;
-    let project = input.project.ok_or(VertexUrlError::ProjectRequired)?;
-    let base_url = host_for(location);
+    let path = path_of(model, input)?;
     let version = input.api_version.as_str();
-    let url = format!(
-        "{base_url}/{version}/projects/{project}/locations/{location}/publishers/google/models/{model}:countTokens"
-    );
     Ok(VertexUrl {
-        url,
+        url: resource_path(&path, version, "countTokens", VertexCollection::Publishers),
         endpoint: "countTokens",
     })
 }

@@ -14,7 +14,9 @@ use crate::model_urls::model_name::{
     is_gemini_3_or_newer,
 };
 use crate::model_urls::vertex::{VertexUrlInput, get_vertex_url};
-use crate::model_urls::{ApiVersion, UrlMode, VertexUrl};
+use crate::model_urls::{ApiVersion, UrlMode};
+
+const PROJECT: &str = "proj";
 
 #[derive(Debug, Clone, Copy)]
 enum Scenario {
@@ -54,110 +56,42 @@ fn catalog() -> Arc<ModelCatalog> {
     BundledCatalog::default().get()
 }
 
-fn chat_url(
-    catalog: &ModelCatalog,
-    model: &str,
-    stream: Option<bool>,
-    location: &str,
-    api_version: ApiVersion,
-) -> Result<VertexUrl, VertexUrlError> {
-    get_vertex_url(
-        catalog,
-        &VertexUrlInput {
-            mode: UrlMode::Chat,
-            model,
-            stream,
-            project: Some("proj"),
-            location: Some(location),
-            api_version,
-        },
-    )
-}
-
-fn image_url(
-    catalog: &ModelCatalog,
-    model: &str,
-    location: &str,
-    api_version: ApiVersion,
-) -> Result<VertexUrl, VertexUrlError> {
-    get_vertex_url(
-        catalog,
-        &VertexUrlInput {
-            mode: UrlMode::ImageGeneration,
-            model,
-            stream: None,
-            project: Some("proj"),
-            location: Some(location),
-            api_version,
-        },
-    )
-}
-
-fn count_url(
-    catalog: &ModelCatalog,
-    model: &str,
-    location: &str,
-    api_version: ApiVersion,
-) -> Result<VertexUrl, VertexUrlError> {
-    get_vertex_url(
-        catalog,
-        &VertexUrlInput {
-            mode: UrlMode::CountTokens,
-            model,
-            stream: None,
-            project: Some("proj"),
-            location: Some(location),
-            api_version,
-        },
-    )
-}
-
-fn vertex_embedding_url(
-    catalog: &ModelCatalog,
-    model: &str,
-    location: &str,
-    api_version: ApiVersion,
-) -> Result<VertexUrl, VertexUrlError> {
-    get_vertex_url(
-        catalog,
-        &VertexUrlInput {
-            mode: UrlMode::Embedding,
-            model,
-            stream: None,
-            project: Some("proj"),
-            location: Some(location),
-            api_version,
-        },
-    )
-}
-
-fn embedding_url(
-    catalog: &ModelCatalog,
-    model: &str,
-    location: &str,
-    api_version: ApiVersion,
-) -> Result<VertexUrl, VertexUrlError> {
-    get_embedding_url(
-        catalog,
-        &EmbeddingUrlInput {
-            model,
-            project: Some("proj"),
-            location: Some(location),
-            api_version,
-        },
-    )
-}
-
-fn gemini_url(
-    model: &str,
+fn vertex_input<'text>(
     mode: UrlMode,
+    model: &'text str,
     stream: Option<bool>,
-) -> Result<VertexUrl, VertexUrlError> {
-    get_gemini_url(&GeminiUrlInput {
+    location: &'text str,
+    version: ApiVersion,
+) -> VertexUrlInput<'text> {
+    VertexUrlInput {
         mode,
         model,
         stream,
-    })
+        project: Some(PROJECT),
+        location: Some(location),
+        api_version: version,
+    }
+}
+
+fn embedding_input<'text>(
+    model: &'text str,
+    location: &'text str,
+    version: ApiVersion,
+) -> EmbeddingUrlInput<'text> {
+    EmbeddingUrlInput {
+        model,
+        project: Some(PROJECT),
+        location: Some(location),
+        api_version: version,
+    }
+}
+
+fn gemini_input(mode: UrlMode, model: &str, stream: Option<bool>) -> GeminiUrlInput<'_> {
+    GeminiUrlInput {
+        mode,
+        model,
+        stream,
+    }
 }
 
 fn regional_and_global() {
@@ -174,7 +108,17 @@ fn regional_and_global() {
         "https://europe-west1-aiplatform.googleapis.com"
     );
     let catalog = catalog();
-    let global = chat_url(&catalog, "gemini-2.5-flash", None, "global", ApiVersion::V1).unwrap();
+    let global = get_vertex_url(
+        &catalog,
+        &vertex_input(
+            UrlMode::Chat,
+            "gemini-2.5-flash",
+            None,
+            "global",
+            ApiVersion::V1,
+        ),
+    )
+    .unwrap();
     assert_eq!(
         global.url,
         "https://aiplatform.googleapis.com/v1/projects/proj/locations/global/publishers/google/models/gemini-2.5-flash:generateContent"
@@ -185,12 +129,15 @@ fn regional_and_global() {
 
 fn streaming_chat() {
     let catalog = catalog();
-    let regional = chat_url(
+    let regional = get_vertex_url(
         &catalog,
-        "gemini-2.5-flash",
-        Some(true),
-        "us-central1",
-        ApiVersion::V1Beta1,
+        &vertex_input(
+            UrlMode::Chat,
+            "gemini-2.5-flash",
+            Some(true),
+            "us-central1",
+            ApiVersion::V1Beta1,
+        ),
     )
     .unwrap();
     assert_eq!(
@@ -198,12 +145,15 @@ fn streaming_chat() {
         "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
     );
     assert_eq!(regional.endpoint, "streamGenerateContent");
-    let not_streaming = chat_url(
+    let not_streaming = get_vertex_url(
         &catalog,
-        "gemini-2.5-flash",
-        Some(false),
-        "us-central1",
-        ApiVersion::V1Beta1,
+        &vertex_input(
+            UrlMode::Chat,
+            "gemini-2.5-flash",
+            Some(false),
+            "us-central1",
+            ApiVersion::V1Beta1,
+        ),
     )
     .unwrap();
     assert_eq!(not_streaming.endpoint, "generateContent");
@@ -219,19 +169,52 @@ fn geography_host() {
         get_vertex_base_url(Some("eu")).unwrap(),
         "https://aiplatform.eu.rep.googleapis.com"
     );
+    geography_vertex_urls();
+    geography_embedding_url();
+}
+
+fn geography_vertex_urls() {
     let catalog = catalog();
-    let count = count_url(&catalog, "gemini-2.5-flash", "eu", ApiVersion::V1Beta1).unwrap();
+    let count = get_vertex_url(
+        &catalog,
+        &vertex_input(
+            UrlMode::CountTokens,
+            "gemini-2.5-flash",
+            None,
+            "eu",
+            ApiVersion::V1Beta1,
+        ),
+    )
+    .unwrap();
     assert_eq!(
         count.url,
         "https://aiplatform.eu.rep.googleapis.com/v1beta1/projects/proj/locations/eu/publishers/google/models/gemini-2.5-flash:countTokens"
     );
     assert_eq!(count.endpoint, "countTokens");
-    let image = image_url(&catalog, "imagen-3.0-generate-001", "us", ApiVersion::V1).unwrap();
+    let image = get_vertex_url(
+        &catalog,
+        &vertex_input(
+            UrlMode::ImageGeneration,
+            "imagen-3.0-generate-001",
+            None,
+            "us",
+            ApiVersion::V1,
+        ),
+    )
+    .unwrap();
     assert_eq!(
         image.url,
         "https://aiplatform.us.rep.googleapis.com/v1/projects/proj/locations/us/publishers/google/models/imagen-3.0-generate-001:predict"
     );
-    let embedding = embedding_url(&catalog, "text-embedding-005", "us", ApiVersion::V1).unwrap();
+}
+
+fn geography_embedding_url() {
+    let catalog = catalog();
+    let embedding = get_embedding_url(
+        &catalog,
+        &embedding_input("text-embedding-005", "us", ApiVersion::V1),
+    )
+    .unwrap();
     assert_eq!(
         embedding.url,
         "https://aiplatform.us.rep.googleapis.com/v1/projects/proj/locations/us/publishers/google/models/text-embedding-005:predict"
@@ -239,34 +222,53 @@ fn geography_host() {
 }
 
 fn numeric_embedding() {
+    numeric_endpoint_embedding();
+    publisher_embedding_version();
+}
+
+fn numeric_endpoint_embedding() {
     let catalog = catalog();
-    let bge = embedding_url(&catalog, "bge/123456", "us-central1", ApiVersion::V1Beta1).unwrap();
+    let bge = get_embedding_url(
+        &catalog,
+        &embedding_input("bge/123456", "us-central1", ApiVersion::V1Beta1),
+    )
+    .unwrap();
     assert_eq!(
         bge.url,
         "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/proj/locations/us-central1/endpoints/123456:predict"
     );
     assert_eq!(bge.endpoint, "predict");
-    let digits = embedding_url(
+    let digits = get_embedding_url(
         &catalog,
-        "4965075652664360960",
-        "global",
-        ApiVersion::V1Beta1,
+        &embedding_input("4965075652664360960", "global", ApiVersion::V1Beta1),
     )
     .unwrap();
     assert_eq!(
         digits.url,
         "https://aiplatform.googleapis.com/v1beta1/projects/proj/locations/global/endpoints/4965075652664360960:predict"
     );
-    let spec = vertex_embedding_url(&catalog, "gemini/123456", "global", ApiVersion::V1).unwrap();
+    let spec = get_vertex_url(
+        &catalog,
+        &vertex_input(
+            UrlMode::Embedding,
+            "gemini/123456",
+            None,
+            "global",
+            ApiVersion::V1,
+        ),
+    )
+    .unwrap();
     assert_eq!(
         spec.url,
         "https://aiplatform.googleapis.com/v1/projects/proj/locations/global/endpoints/123456:predict"
     );
-    let publisher = embedding_url(
+}
+
+fn publisher_embedding_version() {
+    let catalog = catalog();
+    let publisher = get_embedding_url(
         &catalog,
-        "text-embedding-005",
-        "us-central1",
-        ApiVersion::V1Beta1,
+        &embedding_input("text-embedding-005", "us-central1", ApiVersion::V1Beta1),
     )
     .unwrap();
     assert_eq!(
@@ -277,11 +279,9 @@ fn numeric_embedding() {
 
 fn embed_content_catalog() {
     let catalog = catalog();
-    let plain = embedding_url(
+    let plain = get_embedding_url(
         &catalog,
-        "gemini-embedding-2",
-        "us-central1",
-        ApiVersion::V1,
+        &embedding_input("gemini-embedding-2", "us-central1", ApiVersion::V1),
     )
     .unwrap();
     assert_eq!(
@@ -289,17 +289,18 @@ fn embed_content_catalog() {
         "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-embedding-2:embedContent"
     );
     assert_eq!(plain.endpoint, "embedContent");
-    let preview =
-        embedding_url(&catalog, "gemini-embedding-2-preview", "us", ApiVersion::V1).unwrap();
+    let preview = get_embedding_url(
+        &catalog,
+        &embedding_input("gemini-embedding-2-preview", "us", ApiVersion::V1),
+    )
+    .unwrap();
     assert_eq!(
         preview.url,
         "https://aiplatform.us.rep.googleapis.com/v1/projects/proj/locations/us/publishers/google/models/gemini-embedding-2-preview:embedContent"
     );
-    let predict = embedding_url(
+    let predict = get_embedding_url(
         &catalog,
-        "text-embedding-005",
-        "us-central1",
-        ApiVersion::V1,
+        &embedding_input("text-embedding-005", "us-central1", ApiVersion::V1),
     )
     .unwrap();
     assert_eq!(predict.endpoint, "predict");
@@ -308,22 +309,28 @@ fn embed_content_catalog() {
 
 fn prefixed_embed_content() {
     let catalog = catalog();
-    let prefixed = embedding_url(
+    let prefixed = get_embedding_url(
         &catalog,
-        "vertex_ai/gemini-embedding-2",
-        "europe-west1",
-        ApiVersion::V1Beta1,
+        &embedding_input(
+            "vertex_ai/gemini-embedding-2",
+            "europe-west1",
+            ApiVersion::V1Beta1,
+        ),
     )
     .unwrap();
     assert_eq!(
         prefixed.url,
         "https://europe-west1-aiplatform.googleapis.com/v1/projects/proj/locations/europe-west1/publishers/google/models/vertex_ai/gemini-embedding-2:embedContent"
     );
-    let spec = vertex_embedding_url(
+    let spec = get_vertex_url(
         &catalog,
-        "gemini/gemini-embedding-2",
-        "us-central1",
-        ApiVersion::V1,
+        &vertex_input(
+            UrlMode::Embedding,
+            "gemini/gemini-embedding-2",
+            None,
+            "us-central1",
+            ApiVersion::V1,
+        ),
     )
     .unwrap();
     assert_eq!(
@@ -349,29 +356,39 @@ fn gemini_version_aliases() {
 }
 
 fn gemini_version_urls() {
-    let old = gemini_url("gemini-2.5-flash", UrlMode::Chat, None).unwrap();
+    let old = get_gemini_url(&gemini_input(UrlMode::Chat, "gemini-2.5-flash", None)).unwrap();
     assert_eq!(
         old.url,
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     );
     assert_eq!(old.endpoint, "generateContent");
-    let new = gemini_url("gemini-3-pro-preview", UrlMode::Chat, Some(true)).unwrap();
+    let new = get_gemini_url(&gemini_input(
+        UrlMode::Chat,
+        "gemini-3-pro-preview",
+        Some(true),
+    ))
+    .unwrap();
     assert_eq!(
         new.url,
         "https://generativelanguage.googleapis.com/v1alpha/models/gemini-3-pro-preview:streamGenerateContent?alt=sse"
     );
     assert_eq!(new.endpoint, "streamGenerateContent");
-    let latest = gemini_url("gemini-flash-latest", UrlMode::Chat, None).unwrap();
+    let latest = get_gemini_url(&gemini_input(UrlMode::Chat, "gemini-flash-latest", None)).unwrap();
     assert_eq!(
         latest.url,
         "https://generativelanguage.googleapis.com/v1alpha/models/gemini-flash-latest:generateContent"
     );
-    let pinned = gemini_url("gemini-flash", UrlMode::Chat, None).unwrap();
+    let pinned = get_gemini_url(&gemini_input(UrlMode::Chat, "gemini-flash", None)).unwrap();
     assert_eq!(
         pinned.url,
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash:generateContent"
     );
-    let embedding = gemini_url("gemini-3-pro-preview", UrlMode::Embedding, None).unwrap();
+    let embedding = get_gemini_url(&gemini_input(
+        UrlMode::Embedding,
+        "gemini-3-pro-preview",
+        None,
+    ))
+    .unwrap();
     assert_eq!(
         embedding.url,
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:embedContent"
@@ -416,24 +433,30 @@ fn fine_tuned_model_names() {
 
 fn fine_tuned_urls() {
     let catalog = catalog();
-    let spec = chat_url(
+    let spec = get_vertex_url(
         &catalog,
-        "vertex_ai/gemini/987654",
-        None,
-        "us",
-        ApiVersion::V1,
+        &vertex_input(
+            UrlMode::Chat,
+            "vertex_ai/gemini/987654",
+            None,
+            "us",
+            ApiVersion::V1,
+        ),
     )
     .unwrap();
     assert_eq!(
         spec.url,
         "https://aiplatform.us.rep.googleapis.com/v1/projects/proj/locations/us/endpoints/987654:generateContent"
     );
-    let digits = chat_url(
+    let digits = get_vertex_url(
         &catalog,
-        "4965075652664360960",
-        Some(true),
-        "us-central1",
-        ApiVersion::V1Beta1,
+        &vertex_input(
+            UrlMode::Chat,
+            "4965075652664360960",
+            Some(true),
+            "us-central1",
+            ApiVersion::V1Beta1,
+        ),
     )
     .unwrap();
     assert_eq!(
@@ -510,14 +533,13 @@ fn native_batch_embedding() {
     let catalog = catalog();
     let batch = get_vertex_url(
         &catalog,
-        &VertexUrlInput {
-            mode: UrlMode::BatchEmbedding,
-            model: "gemini-embedding-2",
-            stream: None,
-            project: Some("proj"),
-            location: Some("us-central1"),
-            api_version: ApiVersion::V1,
-        },
+        &vertex_input(
+            UrlMode::BatchEmbedding,
+            "gemini-embedding-2",
+            None,
+            "us-central1",
+            ApiVersion::V1,
+        ),
     );
     assert!(matches!(
         batch,
@@ -528,14 +550,13 @@ fn native_batch_embedding() {
     // the rejected mode never validates the location first
     let unvalidated = get_vertex_url(
         &catalog,
-        &VertexUrlInput {
-            mode: UrlMode::BatchEmbedding,
-            model: "gemini-embedding-2",
-            stream: None,
-            project: Some("proj"),
-            location: Some("bad location/"),
-            api_version: ApiVersion::V1,
-        },
+        &vertex_input(
+            UrlMode::BatchEmbedding,
+            "gemini-embedding-2",
+            None,
+            "bad location/",
+            ApiVersion::V1,
+        ),
     );
     assert!(matches!(
         unvalidated,
@@ -545,10 +566,19 @@ fn native_batch_embedding() {
 
 fn gemini_unsupported_modes() {
     assert!(matches!(
-        gemini_url("gemini-2.5-flash", UrlMode::ImageGeneration, None),
+        get_gemini_url(&gemini_input(
+            UrlMode::ImageGeneration,
+            "gemini-2.5-flash",
+            None
+        )),
         Err(VertexUrlError::GeminiImageGeneration)
     ));
-    let batch_gemini = gemini_url("gemini-2.5-flash", UrlMode::BatchEmbedding, None).unwrap();
+    let batch_gemini = get_gemini_url(&gemini_input(
+        UrlMode::BatchEmbedding,
+        "gemini-2.5-flash",
+        None,
+    ))
+    .unwrap();
     assert_eq!(
         batch_gemini.url,
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:batchEmbedContents"
@@ -599,11 +629,9 @@ fn missing_project_is_an_error() {
 #[test]
 fn catalog_lookup_is_case_sensitive() {
     let catalog = catalog();
-    let other_case = embedding_url(
+    let other_case = get_embedding_url(
         &catalog,
-        "Gemini-Embedding-2",
-        "us-central1",
-        ApiVersion::V1,
+        &embedding_input("Gemini-Embedding-2", "us-central1", ApiVersion::V1),
     )
     .unwrap();
     assert_eq!(other_case.endpoint, "predict");

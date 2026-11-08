@@ -68,59 +68,40 @@ def base_url_of(item: Json) -> Json:
         return {"error": True}
 
 
-def vertex_url(params: Params) -> Json:
-    urls: list[Json] = []
+def urls(params: Params) -> Json:
+    results: list[Json] = []
     for item in list_of(params["cases"], "cases"):
         fields = object_of(item, "case")
         try:
-            pair = _get_vertex_url(
-                cast(Mode, string_of(fields, "mode")),
-                string_of(fields, "model"),
-                optional_bool(fields, "stream"),
-                optional_string(fields, "project"),
-                optional_string(fields, "location"),
-                cast(Version, string_of(fields, "api_version")),
-            )
+            results.append(url_of(build_url(fields)))
         except ValueError:
-            urls.append({"error": True})
-            continue
-        urls.append(url_of(pair))
-    return {"urls": urls}
+            results.append({"error": True})
+    return {"urls": results}
 
 
-def embedding_url(params: Params) -> Json:
-    urls: list[Json] = []
-    for item in list_of(params["cases"], "cases"):
-        fields = object_of(item, "case")
-        try:
-            pair = _get_embedding_url(
-                string_of(fields, "model"),
-                optional_string(fields, "project"),
-                optional_string(fields, "location"),
-                cast(Version, string_of(fields, "api_version")),
-            )
-        except ValueError:
-            urls.append({"error": True})
-            continue
-        urls.append(url_of(pair))
-    return {"urls": urls}
-
-
-def gemini_url(params: Params) -> Json:
-    urls: list[Json] = []
-    for item in list_of(params["cases"], "cases"):
-        fields = object_of(item, "case")
-        try:
-            pair = _get_gemini_url(
-                cast(Mode, string_of(fields, "mode")),
-                string_of(fields, "model"),
-                optional_bool(fields, "stream"),
-            )
-        except ValueError:
-            urls.append({"error": True})
-            continue
-        urls.append(url_of(pair))
-    return {"urls": urls}
+def build_url(fields: Params) -> tuple[str, str]:
+    kind = string_of(fields, "kind")
+    if kind == "vertex":
+        return _get_vertex_url(
+            cast(Mode, string_of(fields, "mode")),
+            string_of(fields, "model"),
+            optional_bool(fields, "stream"),
+            optional_string(fields, "project"),
+            optional_string(fields, "location"),
+            cast(Version, string_of(fields, "api_version")),
+        )
+    if kind == "embedding":
+        return _get_embedding_url(
+            string_of(fields, "model"),
+            optional_string(fields, "project"),
+            optional_string(fields, "location"),
+            cast(Version, string_of(fields, "api_version")),
+        )
+    return _get_gemini_url(
+        cast(Mode, string_of(fields, "mode")),
+        string_of(fields, "model"),
+        optional_bool(fields, "stream"),
+    )
 
 
 def model_predicates(params: Params) -> Json:
@@ -174,9 +155,7 @@ def image_generation_rejected() -> bool:
 
 HANDLERS: dict[str, Handler] = {
     "base_url": base_url,
-    "vertex_url": vertex_url,
-    "embedding_url": embedding_url,
-    "gemini_url": gemini_url,
+    "urls": urls,
     "model_predicates": model_predicates,
     "unsupported_modes": unsupported_modes,
 }

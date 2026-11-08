@@ -1,8 +1,9 @@
 use betterlite_models::catalog::ModelCatalog;
 
-use super::base_url::{host_for, validate_vertex_location};
+use super::base_url::validate_vertex_location;
 use super::error::VertexUrlError;
-use super::model_name::{get_vertex_base_model_name, is_decimal};
+use super::model_name::get_vertex_base_model_name;
+use super::path::{VertexPath, model_path};
 use super::{ApiVersion, VertexUrl};
 
 pub struct EmbeddingUrlInput<'model> {
@@ -24,18 +25,15 @@ pub fn get_embedding_url(
     } else {
         "predict"
     };
-    let base_url = host_for(location);
-    let version = input.api_version.as_str();
-    let url = if is_decimal(model) {
-        format!(
-            "{base_url}/{version}/projects/{project}/locations/{location}/endpoints/{model}:{endpoint}"
-        )
-    } else {
-        format!(
-            "{base_url}/v1/projects/{project}/locations/{location}/publishers/google/models/{model}:{endpoint}"
-        )
+    let path = VertexPath {
+        model,
+        project,
+        location,
     };
-    Ok(VertexUrl { url, endpoint })
+    Ok(VertexUrl {
+        url: model_path(&path, input.api_version, "v1", endpoint),
+        endpoint,
+    })
 }
 
 // get_model_info with custom_llm_provider reads vertex_ai/<model> before <model>

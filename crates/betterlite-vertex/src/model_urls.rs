@@ -6,6 +6,7 @@ pub mod model_name;
 pub mod route;
 pub mod vertex;
 
+mod path;
 mod tests;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
