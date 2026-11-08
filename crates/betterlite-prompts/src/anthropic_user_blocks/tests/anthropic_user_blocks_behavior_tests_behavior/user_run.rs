@@ -265,7 +265,7 @@ async fn anthropic_user_blocks_behavior_tests_behavior_a_tool_result_file_reache
     assert_eq!(
         run.blocks,
         vec![object(
-            r#"{"file_block":{"type":"file","file":{"file_data":"data:application/pdf;base64,QQ=="}}}"#
+            r#"{"type":"tool_result","tool_use_id":"call","content":[{"file_block":{"type":"file","file":{"file_data":"data:application/pdf;base64,QQ=="}}}]}"#
         )]
     );
 }
