@@ -488,12 +488,12 @@ async fn run(scenario: Scenario) {
 }))]
 #[case::a_mistyped_data_prefix_stays_text(Scenario::Convert(ConvertCase {
     call: Call {
-        message: r#"{"role":"tool","tool_call_id":"c","name":"n","content":"dat:image/png;base64,QUJD"}"#,
+        message: r#"{"role":"tool","tool_call_id":"c","name":"n","content":"data?image/png;base64,QUJD"}"#,
         last: None,
         forward: false,
         urls: &[],
     },
-    expected: r#"{"function_response":{"name":"n","response":{"content":"dat:image/png;base64,QUJD"}}}"#,
+    expected: r#"{"function_response":{"name":"n","response":{"content":"data?image/png;base64,QUJD"}}}"#,
 }))]
 #[case::an_uppercase_mime_is_not_promoted(Scenario::Convert(ConvertCase {
     call: Call {
