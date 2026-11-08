@@ -1,0 +1,9 @@
+kind: helper
+name: exporter-options-callback-failure-first-counter
+call:
+  b3931:
+    operation: callback_failure
+    callback_name: datadog
+    counters: [first, middle, last]
+env: {}
+compare: {ignore: []}

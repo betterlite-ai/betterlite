@@ -1,0 +1,18 @@
+kind: helper
+name: vault-secret-operations-write-with-custom-mount
+env: {}
+compare: {ignore: []}
+call:
+  b4417:
+    env:
+      HCP_VAULT_TOKEN: token
+    routes:
+      - route: "POST http://127.0.0.1:8200/v1/kv/data/VIRTUAL_KEY"
+        replies:
+          - {status: 200, body: '{"request_id":"req-1","data":{"version":1}}'}
+    steps:
+      - op: write
+        name: VIRTUAL_KEY
+        value: sk-virtual
+        params:
+          mount: kv

@@ -1,0 +1,16 @@
+kind: helper
+name: logging-metadata-trace-session
+call:
+  logging_metadata:
+    function: trace_session
+    litellm_params:
+      litellm_session_id: session-dynamic
+      litellm_trace_id: trace-dynamic
+      metadata: {session_id: session-meta, trace_id: trace-meta}
+    correlation: true
+    fallback_trace_id: trace-fallback
+    fallback_session_id: session-fallback
+    call_id: call-1
+    cached_trace_id: trace-cached
+env: {}
+compare: {ignore: []}

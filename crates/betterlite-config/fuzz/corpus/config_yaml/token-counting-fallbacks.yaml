@@ -1,0 +1,5 @@
+litellm_settings:
+  disable_token_counter: null
+environment_variables:
+  TOKEN_COUNTER_MAX_EXACT_CHARS: "0"
+  TIKTOKEN_ENCODE_CHUNK_SIZE_CHARS: "many"
