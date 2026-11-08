@@ -986,9 +986,11 @@ name = "betterlite"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "betterlite-env",
  "betterlite-server",
  "chrono",
  "clap",
+ "croner",
  "nix",
  "rand 0.10.3",
  "regex",
@@ -1512,6 +1514,8 @@ version = "0.1.0"
 name = "betterlite-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite",
+ "chrono",
  "libfuzzer-sys",
 ]
 
@@ -1937,6 +1941,7 @@ dependencies = [
  "aws-types",
  "axum",
  "base64 0.23.1",
+ "betterlite",
  "betterlite-a2a",
  "betterlite-anthropic",
  "betterlite-auth",
@@ -3377,6 +3382,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ba106e844045ddc02c20768ac4b0b7cb45f2cc2ecbd833ac9f5dacb183c2055"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "croner"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c344b0690c1ad1c7176fe18eb173e0c927008fdaaa256e40dfd43ddd149c0843"
+dependencies = [
+ "chrono",
 ]
 
 [[package]]
