@@ -113,16 +113,6 @@ struct OpenStream {
     handler: Option<Arc<dyn RunEventHandler>>,
     read_timeout: Duration,
 }
-// The caller's timeout covers each read, so a live stream can run past it as long as chunks keep coming.
-async fn pull(stream: &mut OpenStream) -> Result<Option<Vec<Vec<u8>>>, ThreadRunsError> {
-    let next = timeout(stream.read_timeout, stream.chunks.next()).await;
-    match next {
-        Err(_elapsed) => Err(ThreadRunsError::Timeout),
-        Ok(None) => Ok(None),
-        Ok(Some(Err(error))) => Err(error),
-        Ok(Some(Ok(chunk))) => Ok(Some(stream.frames.push(&chunk)?)),
-    }
-}
 async fn next_event(
     state: Option<OpenStream>,
 ) -> Option<(Result<RunEvent, ThreadRunsError>, Option<OpenStream>)> {
@@ -145,12 +135,19 @@ async fn next_event(
                 }
             }
         }
-        match pull(&mut stream).await {
-            Ok(Some(frames)) => stream.pending.extend(frames),
+        // The caller's timeout covers each read, so a live stream can run past it while chunks keep coming.
+        let next = timeout(stream.read_timeout, stream.chunks.next()).await;
+        let frames = match next {
+            Err(_elapsed) => Err(ThreadRunsError::Timeout),
             Ok(None) => {
                 end(&stream, None);
                 return None;
             }
+            Ok(Some(Err(error))) => Err(error),
+            Ok(Some(Ok(chunk))) => stream.frames.push(&chunk),
+        };
+        match frames {
+            Ok(batch) => stream.pending.extend(batch),
             Err(error) => {
                 end(&stream, Some(&error));
                 return Some((Err(error), None));

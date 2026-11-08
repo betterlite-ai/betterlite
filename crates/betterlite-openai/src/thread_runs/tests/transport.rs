@@ -59,6 +59,14 @@ async fn serve_stream_script(listener: TcpListener) {
         )
         .await
         .unwrap();
+    let (mut truncated, _) = listener.accept().await.unwrap();
+    truncated
+        .write_all(
+            b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: 64\r\nconnection: close\r\n\r\nevent: x\n",
+        )
+        .await
+        .unwrap();
+    truncated.shutdown().await.unwrap();
     sleep(Duration::from_secs(30)).await;
 }
 
@@ -99,6 +107,18 @@ async fn stalled_body(api: &RunsApi<ProxiedClient>, base: &str) {
     assert!(matches!(error, ThreadRunsError::Timeout), "{error}");
 }
 
+// A body cut short before its content length is a transport failure, not the read timeout.
+async fn truncated_body(api: &RunsApi<ProxiedClient>, base: &str) {
+    let mut call = proxied_call(base);
+    call.options.timeout = Some(Duration::from_secs(5));
+    let outcome = api.run_thread(call, &request()).await.unwrap();
+    let RunInvocation::Streaming(stream) = outcome else {
+        panic!("expected a stream manager");
+    };
+    let error = stream.consume().await.err().unwrap();
+    assert!(matches!(error, ThreadRunsError::Transport(_)), "{error}");
+}
+
 // The production transport raises a status error for a 404 and the caller timeout for each stalled stage.
 #[tokio::test]
 async fn proxied_stream_transport() {
@@ -114,5 +134,6 @@ async fn proxied_stream_transport() {
     stalled_headers(&api, &base).await;
     stalled_error_body(&api, &base).await;
     stalled_body(&api, &base).await;
+    truncated_body(&api, &base).await;
     tasks.abort_all();
 }
