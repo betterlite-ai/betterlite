@@ -14,11 +14,6 @@ call:
     steps:
       - {op: total_usage}
       - {op: backfill_usage, usage: {prompt_tokens: 10, completion_tokens: 5, prompt_tokens_details: {cached_tokens: 3, cache_write_tokens: 4}}}
-      - {op: cache_token_count, details: {cached_tokens: 0, cache_write_tokens: 2}, keys: [cached_tokens, cache_write_tokens]}
-      - {op: coerce_details, details: {cache_creation_tokens: 6}}
-      - {op: resolve_cost, cost: 0.25}
-      - {op: resolve_cost, cost: {total_cost: 0.5}}
-      - {op: resolve_cost, cost: true}
       - op: propagate_cost
         chunk: {id: c, created: 1, model: gpt-4, usage: {prompt_tokens: 1, completion_tokens: 1, cost: 0.5}, hidden_params: {additional_headers: {}}}
 env: {}

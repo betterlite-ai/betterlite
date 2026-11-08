@@ -2,10 +2,10 @@ use std::mem;
 
 use crate::stream_chunk_shaping::ChunkShaper;
 use crate::stream_chunk_shaping::error::StreamShapeError;
+use crate::stream_chunk_shaping::extras::has_special_delta_content;
 use crate::stream_chunk_shaping::records::{
     ChunkResponseObject, JsonValue, StreamChunk, StreamDelta, item_count,
 };
-use crate::stream_chunk_shaping::specials::has_special_delta_content;
 use crate::stream_chunk_shaping::tokens::{
     check_special_tokens, mapped_finish_reason, raise_on_model_repetition,
 };
@@ -31,7 +31,7 @@ pub fn is_chunk_non_empty(
     completion_obj
         .content
         .as_deref()
-        .is_some_and(|content| !content.is_empty())
+        .is_some_and(|text| !text.is_empty())
         || completion_obj
             .tool_calls
             .as_ref()
@@ -85,29 +85,27 @@ pub fn combine_thinking_in_choices(shaper: &mut ChunkShaper, model_response: &mu
         .delta
         .reasoning_content
         .take()
-        .filter(|thought| !thought.is_empty());
+        .filter(|text| !text.is_empty());
     if let Some(thought) = reasoning {
-        if shaper.thinking.sent_first_block {
-            choice.delta.content = Some(thought);
+        let opened = shaper.thinking.sent_first_block;
+        let existing = choice.delta.content.take().unwrap_or_default();
+        let content = if opened {
+            thought
         } else {
-            let mut content = choice.delta.content.take().unwrap_or_default();
-            content.push_str("<think>");
-            content.push_str(&thought);
-            choice.delta.content = Some(content);
-            shaper.thinking.sent_first_block = true;
-        }
+            format!("{existing}<think>{thought}")
+        };
+        shaper.thinking.sent_first_block = true;
+        choice.delta.content = Some(content);
         return;
     }
     if !shaper.thinking.sent_first_block || shaper.thinking.sent_last_block {
         return;
     }
-    let visible = choice.delta.content.take().filter(|text| !text.is_empty());
-    if let Some(text) = visible {
-        let mut content = String::from("</think>");
-        content.push_str(&text);
-        choice.delta.content = Some(content);
-        shaper.thinking.sent_last_block = true;
-    }
+    let Some(visible) = choice.delta.content.take().filter(|text| !text.is_empty()) else {
+        return;
+    };
+    choice.delta.content = Some(format!("</think>{visible}"));
+    shaper.thinking.sent_last_block = true;
 }
 
 pub fn return_processed_chunk_logic(
@@ -119,15 +117,12 @@ pub fn return_processed_chunk_logic(
 ) -> Result<Option<StreamChunk>, StreamShapeError> {
     if is_chunk_non_empty(shaper, completion_obj, &model_response, response_obj) {
         raise_on_model_repetition(shaper, repeated_chunk_limit)?;
-        let finish_reason = model_response
+        let reason = model_response
             .choices
             .first()
             .and_then(|choice| choice.finish_reason.clone());
-        let (hold, processed) = check_special_tokens(
-            shaper,
-            completion_obj.content.as_deref().unwrap_or_default(),
-            finish_reason.as_deref(),
-        );
+        let text = completion_obj.content.as_deref().unwrap_or_default();
+        let (hold, processed) = check_special_tokens(shaper, text, reason.as_deref());
         if hold {
             return Ok(None);
         }
@@ -180,7 +175,7 @@ fn fill_processed_choice(
     let Some(choice) = model_response.choices.first_mut() else {
         return false;
     };
-    choice.delta = completion_obj.clone();
+    choice.delta.clone_from(completion_obj);
     if let Some(index) = requested_index {
         choice.index = index;
     }
@@ -223,7 +218,7 @@ fn finish_chunk(
     mut model_response: StreamChunk,
     response_obj: &ChunkResponseObject,
 ) -> Option<StreamChunk> {
-    let finish_reason = shaper.received_finish_reason.clone().unwrap_or_default();
+    let reason = shaper.received_finish_reason.clone().unwrap_or_default();
     if shaper.progress.sent_last_chunk {
         // Bedrock sends the guardrail trace in a chunk after the finish reason, and the caller must see it.
         if shaper.provider.as_deref() == Some("bedrock")
@@ -231,10 +226,7 @@ fn finish_chunk(
         {
             return Some(model_response);
         }
-        if model_response.usage.is_some() {
-            return Some(model_response);
-        }
-        return None;
+        return model_response.usage.is_some().then_some(model_response);
     }
     if !shaper.holding_chunk.is_empty() {
         let held = mem::take(&mut shaper.holding_chunk);
@@ -249,12 +241,14 @@ fn finish_chunk(
     if let Some(original_chunk) = &response_obj.original_chunk {
         model_response.extra.extend(original_chunk.extra.clone());
     }
-    let choice = model_response.choices.first_mut()?;
+    let Some(choice) = model_response.choices.first_mut() else {
+        return Some(model_response);
+    };
     if !is_delta_empty(&choice.delta) {
         return Some(model_response);
     }
     choice.delta = StreamDelta::default();
-    choice.finish_reason = Some(mapped_finish_reason(&finish_reason).to_owned());
+    choice.finish_reason = Some(mapped_finish_reason(&reason).to_owned());
     shaper.progress.sent_last_chunk = true;
     Some(model_response)
 }

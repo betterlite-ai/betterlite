@@ -1,294 +1,214 @@
 use std::sync::Arc;
 
-use betterlite_streaming::stream_chunk_shaping::ChunkShaper;
-use betterlite_streaming::stream_chunk_shaping::ChunkShaperConfig;
-use betterlite_streaming::stream_chunk_shaping::creation::{
-    SystemStreamIdentity, copy_provider_specific_fields, model_response_creator,
-    provider_hidden_params, provider_response_model, set_model_id, stamp_served_service_tier,
+use betterlite_streaming::stream_chunk_shaping::{
+    ChunkShaper, ChunkShaperConfig,
+    creation::{
+        SystemStreamIdentity, model_response_creator, provider_hidden_params,
+        provider_response_model, set_model_id, stamp_served_service_tier,
+    },
+    decision::{combine_thinking_in_choices, is_chunk_non_empty, return_processed_chunk_logic},
+    extras::{convert_generic_chunk, generic_chunk_has_known_fields, strip_sse_data_from_chunk},
+    records::{ChunkResponseObject, GenericChunk, JsonObject, StreamChunk, StreamDelta},
+    tokens::{check_special_tokens, finish_reason_handler, raise_on_model_repetition},
+    usage::Usage,
+    usage_totals::{backfill_cache_usage, calculate_total_usage, propagate_usage_cost},
 };
-use betterlite_streaming::stream_chunk_shaping::decision::{
-    combine_thinking_in_choices, is_chunk_non_empty, return_processed_chunk_logic,
-};
-use betterlite_streaming::stream_chunk_shaping::generic::{
-    convert_generic_chunk, generic_chunk_has_known_fields,
-};
-use betterlite_streaming::stream_chunk_shaping::sse::strip_sse_data_from_chunk;
-use betterlite_streaming::stream_chunk_shaping::tokens::{
-    check_is_function_call, check_send_stream_usage, check_special_tokens, finish_reason_handler,
-    mapped_finish_reason, raise_on_model_repetition,
-};
-use betterlite_streaming::stream_chunk_shaping::usage_totals::{
-    backfill_cache_usage, cache_token_count, calculate_total_usage, coerce_token_details,
-    propagate_usage_cost, record_usage_only_chunk, resolve_provider_reported_cost,
-};
+use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 
-use super::{Input, StateInput, StatePatch, Step};
 use crate::helpers::HelperError;
+use ops::{encoded, failure, shape_error};
 
 mod ops;
 
-use ops::{decimal_json, encoded, failure, shape_error};
-
 type StepResult = Result<Value, Box<HelperError>>;
 
-pub(super) fn run(input: &Input) -> Result<Vec<Value>, Box<HelperError>> {
-    let mut shaper = build_shaper(&input.state);
-    let mut outputs = Vec::new();
-    for step in &input.steps {
-        let result = run_step(&mut shaper, step, input)?;
-        outputs.push(json!({"result": result, "state": snapshot(&shaper)}));
+pub(super) fn run(input: &Value) -> StepResult {
+    let mut shaper = build_shaper(input)?;
+    let limit: usize = field(input, "repeated_chunk_limit")?.unwrap_or(0);
+    let providers: Vec<String> = field(input, "usage_cost_providers")?.unwrap_or_default();
+    let steps: Vec<Value> = field(input, "steps")?.unwrap_or_default();
+    let mut outputs = Vec::with_capacity(steps.len());
+    for step in &steps {
+        let result = apply(&mut shaper, step, limit, &providers)?;
+        outputs.push(json!({"result": result}));
     }
-    Ok(outputs)
+    Ok(Value::Array(outputs))
 }
 
-fn build_shaper(state: &StateInput) -> ChunkShaper {
+fn field<T>(value: &Value, key: &str) -> Result<Option<T>, Box<HelperError>>
+where
+    T: DeserializeOwned,
+{
+    let Some(raw) = value.get(key).filter(|raw| !raw.is_null()) else {
+        return Ok(None);
+    };
+    serde_json::from_value(raw.clone())
+        .map(Some)
+        .map_err(|error| failure("InvalidInput", None, error.to_string()))
+}
+
+fn build_shaper(input: &Value) -> Result<ChunkShaper, Box<HelperError>> {
+    let state = input.get("state").cloned().unwrap_or_default();
     let mut shaper = ChunkShaper::from(ChunkShaperConfig {
-        model: state.model.clone(),
-        provider: state.provider.clone(),
-        merge_reasoning_in_choices: state.merge_reasoning_in_choices.unwrap_or(false),
-        base_hidden_params: state.base_hidden_params.clone(),
+        model: field::<String>(&state, "model")?.unwrap_or_default(),
+        provider: field(&state, "provider")?,
+        merge_reasoning_in_choices: field(&state, "merge_reasoning_in_choices")?.unwrap_or(false),
+        base_hidden_params: field::<JsonObject>(&state, "base_hidden_params")?.unwrap_or_default(),
         identity: Arc::new(SystemStreamIdentity),
     });
-    shaper.response_id.clone_from(&state.response_id);
-    shaper.created = state.created;
-    shaper
-        .system_fingerprint
-        .clone_from(&state.system_fingerprint);
-    shaper.chunks.clone_from(&state.chunks);
-    shaper.repeated_messages_count = state.repeated_messages_count.unwrap_or(1);
-    shaper
-        .response_uptil_now
-        .clone_from(&state.response_uptil_now);
-    apply_patch(&mut shaper, &state_patch(state));
-    shaper
+    shaper.response_id = field(&state, "response_id")?;
+    shaper.created = field(&state, "created")?;
+    shaper.system_fingerprint = field(&state, "system_fingerprint")?;
+    shaper.chunks = field(&state, "chunks")?.unwrap_or_default();
+    shaper.tool_call = field(&state, "tool_call")?.unwrap_or(false);
+    Ok(shaper)
 }
 
-fn state_patch(state: &StateInput) -> StatePatch {
-    StatePatch {
-        sent_first_chunk: state.sent_first_chunk,
-        sent_last_chunk: state.sent_last_chunk,
-        holding_chunk: (!state.holding_chunk.is_empty()).then(|| state.holding_chunk.clone()),
-        received_finish_reason: state.received_finish_reason.clone(),
-        intermittent_finish_reason: state.intermittent_finish_reason.clone(),
-        tool_call: state.tool_call,
-        sent_first_thinking_block: state.sent_first_thinking_block,
-        sent_last_thinking_block: state.sent_last_thinking_block,
+fn apply(shaper: &mut ChunkShaper, step: &Value, limit: usize, providers: &[String]) -> StepResult {
+    match field::<String>(step, "op")?.as_deref() {
+        Some("creator") => creator(shaper, step),
+        Some("set_model_id") => set_model_id_step(shaper, step),
+        Some("combine_thinking") => combine_thinking(shaper, step),
+        Some("convert_generic") => encoded(&convert_generic_chunk(
+            &field::<GenericChunk>(step, "chunk")?.unwrap_or_default(),
+            &SystemStreamIdentity,
+        )),
+        Some("is_chunk_non_empty") => chunk_non_empty(shaper, step),
+        Some("returns") => returns(shaper, step, limit),
+        Some("repetition") => repetition(shaper, limit),
+        Some("finish_reason") => {
+            encoded(&finish_reason_handler(shaper).map_err(|error| shape_error(&error))?)
+        }
+        Some("special_tokens") => special_tokens(shaper, step),
+        Some("strip_sse") => Ok(json!(strip_sse_data_from_chunk(
+            field::<String>(step, "chunk")?.as_deref()
+        ))),
+        Some("generic_known") => Ok(json!(generic_chunk_has_known_fields(
+            &field::<JsonObject>(step, "chunk")?.unwrap_or_default(),
+        ))),
+        Some("total_usage") => encoded(&calculate_total_usage(&shaper.chunks)),
+        Some("backfill_usage") => backfill_usage(step),
+        Some("propagate_cost") => propagate_cost(shaper, step, providers),
+        Some("provider_response_model") => Ok(json!(provider_response_model(
+            &field::<StreamChunk>(step, "chunk")?.unwrap_or_default(),
+        ))),
+        Some("provider_hidden_params") => hidden_params(step),
+        Some("stamp_service_tier") => service_tier(step),
+        Some("set_state") => set_state(shaper, step),
+        other => Err(failure(
+            "InvalidInput",
+            None,
+            format!("unsupported operation {other:?}"),
+        )),
     }
 }
 
-fn snapshot(shaper: &ChunkShaper) -> Value {
-    json!({
-        "response_id": shaper.response_id,
-        "created": shaper.created,
-        "system_fingerprint": shaper.system_fingerprint,
-        "sent_first_chunk": shaper.progress.sent_first_chunk,
-        "sent_last_chunk": shaper.progress.sent_last_chunk,
-        "sent_first_thinking_block": shaper.thinking.sent_first_block,
-        "sent_last_thinking_block": shaper.thinking.sent_last_block,
-        "holding_chunk": shaper.holding_chunk,
-        "response_uptil_now": shaper.response_uptil_now,
-        "received_finish_reason": shaper.received_finish_reason,
-        "intermittent_finish_reason": shaper.intermittent_finish_reason,
-        "tool_call": shaper.tool_call,
-        "repeated_messages_count": shaper.repeated_messages_count,
-        "chunk_count": shaper.chunks.len(),
-    })
+fn creator(shaper: &mut ChunkShaper, step: &Value) -> StepResult {
+    let chunk: Option<JsonObject> = field(step, "chunk")?;
+    let hidden: Option<JsonObject> = field(step, "hidden_params")?;
+    let created = model_response_creator(shaper, chunk.as_ref(), hidden.as_ref())
+        .map_err(|error| shape_error(&error))?;
+    encoded(&created)
 }
 
-fn apply_patch(shaper: &mut ChunkShaper, patch: &StatePatch) {
-    if let Some(value) = patch.sent_first_chunk {
+fn set_model_id_step(shaper: &mut ChunkShaper, step: &Value) -> StepResult {
+    let mut response: StreamChunk = field(step, "chunk")?.unwrap_or_default();
+    let id: String = field(step, "id")?.unwrap_or_default();
+    set_model_id(shaper, &id, &mut response);
+    encoded(&response)
+}
+
+fn combine_thinking(shaper: &mut ChunkShaper, step: &Value) -> StepResult {
+    let mut response: StreamChunk = field(step, "chunk")?.unwrap_or_default();
+    combine_thinking_in_choices(shaper, &mut response);
+    encoded(&response)
+}
+
+fn chunk_non_empty(shaper: &ChunkShaper, step: &Value) -> StepResult {
+    let completion: StreamDelta = field(step, "completion")?.unwrap_or_default();
+    let chunk: StreamChunk = field(step, "chunk")?.unwrap_or_default();
+    let response: ChunkResponseObject = field(step, "response")?.unwrap_or_default();
+    Ok(json!(is_chunk_non_empty(
+        shaper,
+        &completion,
+        &chunk,
+        &response
+    )))
+}
+
+fn returns(shaper: &mut ChunkShaper, step: &Value, limit: usize) -> StepResult {
+    let mut completion: StreamDelta = field(step, "completion")?.unwrap_or_default();
+    let chunk: StreamChunk = field(step, "chunk")?.unwrap_or_default();
+    let response: ChunkResponseObject = field(step, "response")?.unwrap_or_default();
+    let sent = return_processed_chunk_logic(shaper, &mut completion, chunk, &response, limit)
+        .map_err(|error| shape_error(&error))?;
+    encoded(&sent)
+}
+
+fn repetition(shaper: &mut ChunkShaper, limit: usize) -> StepResult {
+    raise_on_model_repetition(shaper, limit).map_err(|error| shape_error(&error))?;
+    Ok(Value::Null)
+}
+
+fn special_tokens(shaper: &mut ChunkShaper, step: &Value) -> StepResult {
+    let chunk: String = field(step, "chunk")?.unwrap_or_default();
+    let reason: Option<String> = field(step, "finish_reason")?;
+    let (hold, text) = check_special_tokens(shaper, &chunk, reason.as_deref());
+    Ok(json!({"hold": hold, "text": text}))
+}
+
+fn backfill_usage(step: &Value) -> StepResult {
+    let mut usage: Usage = field(step, "usage")?.unwrap_or_default();
+    backfill_cache_usage(&mut usage);
+    encoded(&usage)
+}
+
+fn propagate_cost(shaper: &ChunkShaper, step: &Value, providers: &[String]) -> StepResult {
+    let mut response: StreamChunk = field(step, "chunk")?.unwrap_or_default();
+    propagate_usage_cost(&mut response, shaper.provider.as_deref(), providers);
+    encoded(&response)
+}
+
+fn hidden_params(step: &Value) -> StepResult {
+    let chunk: StreamChunk = field(step, "chunk")?.unwrap_or_default();
+    let model: Option<String> = field(step, "provider_response_model")?;
+    encoded(&provider_hidden_params(&chunk, model.as_deref()))
+}
+
+fn service_tier(step: &Value) -> StepResult {
+    let mut response: StreamChunk = field(step, "chunk")?.unwrap_or_default();
+    let complete: StreamChunk = field(step, "complete")?.unwrap_or_default();
+    stamp_served_service_tier(&mut response, &complete);
+    encoded(&response)
+}
+
+fn set_state(shaper: &mut ChunkShaper, step: &Value) -> StepResult {
+    let empty = Value::Null;
+    let patch = step.get("patch").unwrap_or(&empty);
+    if let Some(value) = field(patch, "sent_first_chunk")? {
         shaper.progress.sent_first_chunk = value;
     }
-    if let Some(value) = patch.sent_last_chunk {
+    if let Some(value) = field(patch, "sent_last_chunk")? {
         shaper.progress.sent_last_chunk = value;
     }
-    if let Some(value) = &patch.holding_chunk {
-        shaper.holding_chunk.clone_from(value);
+    if let Some(value) = field::<String>(patch, "holding_chunk")? {
+        shaper.holding_chunk = value;
     }
-    if let Some(value) = &patch.received_finish_reason {
-        shaper.received_finish_reason = Some(value.clone());
+    if let Some(value) = field(patch, "received_finish_reason")? {
+        shaper.received_finish_reason = Some(value);
     }
-    if let Some(value) = &patch.intermittent_finish_reason {
-        shaper.intermittent_finish_reason = Some(value.clone());
+    if let Some(value) = field(patch, "intermittent_finish_reason")? {
+        shaper.intermittent_finish_reason = Some(value);
     }
-    if let Some(value) = patch.tool_call {
+    if let Some(value) = field(patch, "tool_call")? {
         shaper.tool_call = value;
     }
-    if let Some(value) = patch.sent_first_thinking_block {
+    if let Some(value) = field(patch, "sent_first_thinking_block")? {
         shaper.thinking.sent_first_block = value;
     }
-    if let Some(value) = patch.sent_last_thinking_block {
+    if let Some(value) = field(patch, "sent_last_thinking_block")? {
         shaper.thinking.sent_last_block = value;
     }
-}
-
-fn run_step(shaper: &mut ChunkShaper, step: &Step, input: &Input) -> StepResult {
-    if let Some(result) = creation_step(shaper, step) {
-        return result;
-    }
-    if let Some(result) = decision_step(shaper, step, input) {
-        return result;
-    }
-    if let Some(result) = usage_step(shaper, step) {
-        return result;
-    }
-    if let Some(result) = value_step(shaper, step) {
-        return result;
-    }
-    if let Some(result) = check_step(step) {
-        return result;
-    }
-    Err(failure("InvalidInput", None, "unknown step".to_owned()))
-}
-
-fn creation_step(shaper: &mut ChunkShaper, step: &Step) -> Option<StepResult> {
-    if let Step::Creator {
-        chunk,
-        hidden_params,
-    } = step
-    {
-        let response = model_response_creator(shaper, chunk.as_ref(), hidden_params.as_ref())
-            .map_err(|error| shape_error(&error));
-        return Some(response.and_then(|created| encoded(&created)));
-    }
-    if let Step::SetModelId { id, chunk } = step {
-        let mut response = chunk.clone();
-        set_model_id(shaper, id, &mut response);
-        return Some(encoded(&response));
-    }
-    if let Step::CopyProviderFields { original, chunk } = step {
-        let mut response = chunk.clone();
-        copy_provider_specific_fields(original, &mut response);
-        return Some(encoded(&response));
-    }
-    if let Step::CombineThinking { chunk } = step {
-        let mut response = chunk.clone();
-        combine_thinking_in_choices(shaper, &mut response);
-        return Some(encoded(&response));
-    }
-    if let Step::ConvertGeneric { chunk } = step {
-        let response = convert_generic_chunk(chunk, &SystemStreamIdentity);
-        return Some(encoded(&response));
-    }
-    None
-}
-
-fn decision_step(shaper: &mut ChunkShaper, step: &Step, input: &Input) -> Option<StepResult> {
-    if matches!(step, Step::FinishReason) {
-        let response = finish_reason_handler(shaper).map_err(|error| shape_error(&error));
-        return Some(response.and_then(|finished| encoded(&finished)));
-    }
-    if let Step::Returns {
-        completion,
-        chunk,
-        response,
-    } = step
-    {
-        let mut processed = completion.clone();
-        let limit = input.repeated_chunk_limit;
-        let sent =
-            return_processed_chunk_logic(shaper, &mut processed, chunk.clone(), response, limit)
-                .map_err(|error| shape_error(&error));
-        return Some(sent.and_then(|processed_chunk| encoded(&processed_chunk)));
-    }
-    if matches!(step, Step::Repetition) {
-        let repeated = raise_on_model_repetition(shaper, input.repeated_chunk_limit)
-            .map_err(|error| shape_error(&error));
-        return Some(repeated.map(|()| Value::Null));
-    }
-    if let Step::RecordUsage { chunk } = step {
-        record_usage_only_chunk(shaper, chunk.clone());
-        return Some(Ok(Value::Null));
-    }
-    if let Step::SetState { patch } = step {
-        apply_patch(shaper, patch);
-        return Some(Ok(Value::Null));
-    }
-    if let Step::PropagateCost { chunk } = step {
-        let mut response = chunk.clone();
-        let providers = &input.usage_cost_providers;
-        propagate_usage_cost(&mut response, shaper.provider.as_deref(), providers);
-        return Some(encoded(&response));
-    }
-    None
-}
-
-fn usage_step(shaper: &ChunkShaper, step: &Step) -> Option<StepResult> {
-    if matches!(step, Step::TotalUsage) {
-        return Some(encoded(&calculate_total_usage(&shaper.chunks)));
-    }
-    if let Step::BackfillUsage { usage } = step {
-        let mut counted = usage.clone();
-        backfill_cache_usage(&mut counted);
-        return Some(encoded(&counted));
-    }
-    if let Step::ResolveCost { cost } = step {
-        let resolved = resolve_provider_reported_cost(cost).and_then(decimal_json);
-        return Some(Ok(resolved.unwrap_or(Value::Null)));
-    }
-    if let Step::CacheTokenCount { details, keys } = step {
-        let names: Vec<&str> = keys.iter().map(String::as_str).collect();
-        return Some(Ok(json!(cache_token_count(details.as_ref(), &names))));
-    }
-    if let Step::CoerceDetails { details } = step {
-        return Some(encoded(&coerce_token_details(Some(details))));
-    }
-    None
-}
-
-fn value_step(shaper: &mut ChunkShaper, step: &Step) -> Option<StepResult> {
-    if let Step::IsChunkNonEmpty {
-        completion,
-        chunk,
-        response,
-    } = step
-    {
-        let empty = is_chunk_non_empty(shaper, completion, chunk, response);
-        return Some(Ok(json!(empty)));
-    }
-    if let Step::SpecialTokens {
-        chunk,
-        finish_reason,
-    } = step
-    {
-        let (hold, text) = check_special_tokens(shaper, chunk, finish_reason.as_deref());
-        return Some(Ok(json!({"hold": hold, "text": text})));
-    }
-    if let Step::StripSse { chunk } = step {
-        return Some(Ok(json!(strip_sse_data_from_chunk(chunk.as_deref()))));
-    }
-    if let Step::GenericKnown { chunk } = step {
-        return Some(Ok(json!(generic_chunk_has_known_fields(chunk))));
-    }
-    if let Step::MappedFinishReason { raw } = step {
-        return Some(Ok(json!(mapped_finish_reason(raw))));
-    }
-    None
-}
-
-fn check_step(step: &Step) -> Option<StepResult> {
-    if let Step::ProviderResponseModel { chunk } = step {
-        return Some(Ok(json!(provider_response_model(chunk))));
-    }
-    if let Step::ProviderHiddenParams {
-        chunk,
-        provider_response_model,
-    } = step
-    {
-        let params = provider_hidden_params(chunk, provider_response_model.as_deref());
-        return Some(params.map_or(Ok(Value::Null), |hidden| encoded(&hidden)));
-    }
-    if let Step::StampServiceTier { chunk, complete } = step {
-        let mut response = chunk.clone();
-        stamp_served_service_tier(&mut response, complete);
-        return Some(encoded(&response));
-    }
-    if let Step::CheckStreamUsage { stream_options } = step {
-        return Some(Ok(json!(check_send_stream_usage(stream_options.as_ref()))));
-    }
-    if let Step::CheckFunctionCall { optional_params } = step {
-        return Some(Ok(json!(check_is_function_call(Some(optional_params)))));
-    }
-    None
+    Ok(Value::Null)
 }

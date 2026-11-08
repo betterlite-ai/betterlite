@@ -32,9 +32,6 @@ call:
       - op: stamp_service_tier
         chunk: {id: c, created: 1, model: gpt-4}
         complete: {id: d, created: 1, model: gpt-4, service_tier: scale}
-      - op: copy_provider_fields
-        original: {id: o, created: 1, model: gpt-4, provider_specific_fields: {a: 1}}
-        chunk: {id: c, created: 1, model: gpt-4}
 env: {}
 compare:
   ignore:

@@ -27,16 +27,13 @@ impl StreamIdentity for SystemStreamIdentity {
     }
 
     fn instant(&self) -> StreamInstant {
-        SystemTime::now().duration_since(UNIX_EPOCH).map_or(
-            StreamInstant {
-                seconds: 0,
-                timestamp: 0.0,
-            },
-            |elapsed| StreamInstant {
-                seconds: i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX),
-                timestamp: elapsed.as_secs_f64(),
-            },
-        )
+        let elapsed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
+        StreamInstant {
+            seconds: i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX),
+            timestamp: elapsed.as_secs_f64(),
+        }
     }
 }
 
@@ -53,7 +50,7 @@ pub fn model_response_creator(
         .system_fingerprint
         .clone()
         .or(arguments.system_fingerprint);
-    let merged = merged_hidden_params(shaper, hidden_params, instant.timestamp);
+    let hidden = merged_hidden_params(shaper, hidden_params, instant.timestamp);
     let mut choices = arguments.choices.unwrap_or_default();
     if choices.is_empty() {
         choices.push(StreamChoice::default());
@@ -67,7 +64,7 @@ pub fn model_response_creator(
         choices,
         usage: arguments.usage,
         provider_specific_fields: arguments.provider_specific_fields,
-        hidden_params: merged,
+        hidden_params: hidden,
         extra: arguments.extra,
     })
 }
@@ -78,10 +75,10 @@ pub fn set_model_id(shaper: &mut ChunkShaper, id: &str, model_response: &mut Str
         shaper.response_id = Some(id.to_owned());
     }
     if usable {
-        model_response.hidden_params.insert(
-            "received_model_id".to_owned(),
-            JsonValue::String(id.to_owned()),
-        );
+        let received = JsonValue::String(id.to_owned());
+        model_response
+            .hidden_params
+            .insert("received_model_id".to_owned(), received);
     }
     if let Some(response_id) = &shaper.response_id {
         model_response.id.clone_from(response_id);
@@ -95,13 +92,12 @@ fn chunk_arguments(chunk: Option<&JsonObject>) -> Result<ChunkArguments, StreamS
     let mut filtered = object.clone();
     filtered.remove("model");
     filtered.remove("stream");
-    let value = to_value(JsonValue::Object(filtered))?;
-    Ok(from_value(value)?)
+    Ok(from_value(to_value(JsonValue::Object(filtered))?)?)
 }
 
 fn adopted_id(shaper: &mut ChunkShaper, chunk_id: Option<String>) -> String {
     let response_id = match (&shaper.response_id, chunk_id) {
-        (Some(response_id), _) => response_id.clone(),
+        (Some(current), _) => current.clone(),
         (None, Some(provided)) => provided,
         (None, None) => format!("chatcmpl-{}", shaper.identity.new_id()),
     };
@@ -112,8 +108,8 @@ fn adopted_id(shaper: &mut ChunkShaper, chunk_id: Option<String>) -> String {
 }
 
 fn adopted_created(shaper: &mut ChunkShaper, chunk_created: Option<i64>, now: i64) -> i64 {
-    if let Some(created) = shaper.created {
-        return created;
+    if let Some(current) = shaper.created {
+        return current;
     }
     let created = chunk_created.unwrap_or(now);
     shaper.created = Some(created);
@@ -158,12 +154,12 @@ pub fn stamp_served_service_tier(
     response: &mut StreamChunk,
     complete_streaming_response: &StreamChunk,
 ) {
-    let served_tier = complete_streaming_response
+    let shipped = complete_streaming_response
         .extra
         .get("service_tier")
         .and_then(JsonValue::as_str)
         .filter(|tier| !tier.is_empty());
-    if let Some(tier) = served_tier {
+    if let Some(tier) = shipped {
         response.extra.insert(
             "service_tier".to_owned(),
             JsonValue::String(tier.to_owned()),
@@ -181,17 +177,16 @@ pub const fn provider_response_model(chunk: &StreamChunk) -> Option<&str> {
 
 #[must_use]
 pub fn parsed_provider_hidden_params(hidden: &JsonObject) -> Option<ParsedChunkHiddenParams> {
-    match hidden.get("provider_specific_fields") {
-        None | Some(JsonValue::Null) => Some(ParsedChunkHiddenParams {
-            provider_specific_fields: None,
-        }),
-        Some(JsonValue::Object(fields)) => Some(ParsedChunkHiddenParams {
-            provider_specific_fields: Some(fields.clone()),
-        }),
+    let fields = match hidden.get("provider_specific_fields") {
+        None | Some(JsonValue::Null) => None,
+        Some(JsonValue::Object(fields)) => Some(fields.clone()),
         Some(
             JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) | JsonValue::Array(_),
-        ) => None,
-    }
+        ) => return None,
+    };
+    Some(ParsedChunkHiddenParams {
+        provider_specific_fields: fields,
+    })
 }
 
 #[must_use]
@@ -199,7 +194,7 @@ pub fn provider_hidden_params(
     chunk: &StreamChunk,
     provider_response_model: Option<&str>,
 ) -> Option<JsonObject> {
-    let provider_fields = parsed_provider_hidden_params(&chunk.hidden_params)
+    let shipped = parsed_provider_hidden_params(&chunk.hidden_params)
         .and_then(|parsed| parsed.provider_specific_fields)
         .filter(|fields| !fields.is_empty());
     let mut params = JsonObject::new();
@@ -209,14 +204,15 @@ pub fn provider_hidden_params(
             JsonValue::String(model.to_owned()),
         );
     }
-    if let Some(fields) = provider_fields {
+    if let Some(fields) = shipped {
         params.insert(
             "provider_specific_fields".to_owned(),
             JsonValue::Object(fields),
         );
     }
     if params.is_empty() {
-        return None;
+        None
+    } else {
+        Some(params)
     }
-    Some(params)
 }

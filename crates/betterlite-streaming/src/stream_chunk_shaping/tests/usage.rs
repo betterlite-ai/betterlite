@@ -60,10 +60,8 @@ fn usage_total_carries_cache_creation_details_from_an_earlier_chunk() {
         .expect("the last details survive");
     assert_eq!(counted.cached_tokens, Some(4));
     assert_eq!(
-        counted
-            .cache_creation_token_details
-            .and_then(|inner| inner.ephemeral_5m_input_tokens),
-        Some(7)
+        counted.cache_creation_token_details,
+        Some(parse::<JsonValue>(r#"{"ephemeral_5m_input_tokens": 7}"#))
     );
 }
 

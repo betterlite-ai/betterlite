@@ -40,9 +40,8 @@ pub fn check_special_tokens(
     for token in SPECIAL_TOKENS {
         let short = current.chars().count() < token.chars().count();
         if short && token.contains(&current) {
-            hold = true;
             shaper.holding_chunk.clone_from(&current);
-            continue;
+            hold = true;
         }
         if !short && current.contains(token) {
             shaper.holding_chunk = current.replace(token, "");
@@ -59,9 +58,6 @@ pub fn raise_on_model_repetition(
     shaper: &mut ChunkShaper,
     limit: usize,
 ) -> Result<(), StreamShapeError> {
-    if shaper.chunks.len() < 2 {
-        return Ok(());
-    }
     let mut recent = shaper.chunks.iter().rev();
     let (Some(last), Some(previous)) = (recent.next(), recent.next()) else {
         return Ok(());
@@ -69,32 +65,33 @@ pub fn raise_on_model_repetition(
     if last.choices.is_empty() || previous.choices.is_empty() {
         return Ok(());
     }
-    let last_content = last
+    let Some(repeated) = last
         .choices
         .first()
-        .and_then(|choice| choice.delta.content.as_deref());
-    let Some(latest) = last_content else {
+        .and_then(|choice| choice.delta.content.as_deref())
+    else {
         shaper.repeated_messages_count = 1;
         return Ok(());
     };
-    if latest.chars().count() <= 2 {
+    if repeated.chars().count() <= 2 {
         shaper.repeated_messages_count = 1;
         return Ok(());
     }
-    let previous_content = previous
+    let earlier = previous
         .choices
         .first()
         .and_then(|choice| choice.delta.content.as_deref());
-    if previous_content == Some(latest) {
-        shaper.repeated_messages_count = shaper.repeated_messages_count.saturating_add(1);
+    let same = earlier == Some(repeated);
+    shaper.repeated_messages_count = if same {
+        shaper.repeated_messages_count.saturating_add(1)
     } else {
-        shaper.repeated_messages_count = 1;
-    }
+        1
+    };
     if shaper.repeated_messages_count < limit {
         return Ok(());
     }
     Err(StreamShapeError::Repetition {
-        last_content: latest.to_owned(),
+        last_content: repeated.to_owned(),
         model: String::new(),
         provider: String::new(),
     })
@@ -102,7 +99,7 @@ pub fn raise_on_model_repetition(
 
 pub fn finish_reason_handler(shaper: &mut ChunkShaper) -> Result<StreamChunk, StreamShapeError> {
     let mut model_response = model_response_creator(shaper, None, None)?;
-    let finish_reason = shaper
+    let reason = shaper
         .received_finish_reason
         .clone()
         .or_else(|| shaper.intermittent_finish_reason.clone())
@@ -110,70 +107,35 @@ pub fn finish_reason_handler(shaper: &mut ChunkShaper) -> Result<StreamChunk, St
     let Some(choice) = model_response.choices.first_mut() else {
         return Ok(model_response);
     };
-    choice.finish_reason = Some(match (finish_reason.as_str(), shaper.tool_call) {
+    choice.finish_reason = Some(match (reason.as_str(), shaper.tool_call) {
         ("stop", true) => "tool_calls".to_owned(),
-        _ => finish_reason,
+        _ => reason,
     });
     Ok(model_response)
 }
 
-const LENGTH_REASONS: [&str; 4] = ["max_tokens", "MAX_TOKENS", "compaction", "length"];
-const TOOL_CALL_REASONS: [&str; 2] = ["tool_use", "tool_calls"];
-const CONTENT_FILTER_REASONS: [&str; 19] = [
-    "refusal",
-    "ERROR_TOXIC",
-    "SAFETY",
-    "RECITATION",
-    "LANGUAGE",
-    "OTHER",
-    "BLOCKLIST",
-    "PROHIBITED_CONTENT",
-    "SPII",
-    "IMAGE_SAFETY",
-    "IMAGE_PROHIBITED_CONTENT",
-    "NO_IMAGE",
-    "IMAGE_RECITATION",
-    "IMAGE_OTHER",
-    "ESCALATION",
-    "sensitive",
-    "guardrail_intervened",
-    "content_filter",
-    "content_filtered",
-];
-const STOP_REASONS: [&str; 16] = [
-    "stop_sequence",
-    "end_turn",
-    "COMPLETE",
-    "ERROR",
-    "eos_token",
-    "eos",
-    "STOP",
-    "FINISH_REASON_UNSPECIFIED",
-    "MALFORMED_FUNCTION_CALL",
-    "TOO_MANY_TOOL_CALLS",
-    "MALFORMED_RESPONSE",
-    "UNEXPECTED_TOOL_CALL",
-    "MISSING_THOUGHT_SIGNATURE",
-    "network_error",
-    "stop",
-    "error",
-];
+// One space-delimited table per mapped reason, matched as a whole token.
+const LENGTH_REASONS: &str = " max_tokens MAX_TOKENS compaction length ";
+const TOOL_CALL_REASONS: &str = " tool_use tool_calls ";
+const CONTENT_FILTER_REASONS: &str = " refusal ERROR_TOXIC SAFETY RECITATION LANGUAGE OTHER BLOCKLIST PROHIBITED_CONTENT SPII IMAGE_SAFETY IMAGE_PROHIBITED_CONTENT NO_IMAGE IMAGE_RECITATION IMAGE_OTHER ESCALATION sensitive guardrail_intervened content_filter content_filtered ";
+const STOP_REASONS: &str = " stop_sequence end_turn COMPLETE ERROR eos_token eos STOP FINISH_REASON_UNSPECIFIED MALFORMED_FUNCTION_CALL TOO_MANY_TOOL_CALLS MALFORMED_RESPONSE UNEXPECTED_TOOL_CALL MISSING_THOUGHT_SIGNATURE network_error stop error ";
 
 #[must_use]
 pub fn mapped_finish_reason(raw: &str) -> &'static str {
-    if LENGTH_REASONS.contains(&raw) {
+    let token = format!(" {raw} ");
+    if LENGTH_REASONS.contains(token.as_str()) {
         return "length";
     }
-    if TOOL_CALL_REASONS.contains(&raw) {
+    if TOOL_CALL_REASONS.contains(token.as_str()) {
         return "tool_calls";
     }
-    if CONTENT_FILTER_REASONS.contains(&raw) {
+    if CONTENT_FILTER_REASONS.contains(token.as_str()) {
         return "content_filter";
     }
     if raw == "function_call" {
         return "function_call";
     }
-    if !STOP_REASONS.contains(&raw) {
+    if !STOP_REASONS.contains(token.as_str()) {
         tracing::warn!("Unmapped finish_reason '{raw}', defaulting to 'stop'");
     }
     "stop"
@@ -181,19 +143,15 @@ pub fn mapped_finish_reason(raw: &str) -> &'static str {
 
 #[must_use]
 pub const fn check_send_stream_usage(stream_options: Option<&StreamOptions>) -> bool {
-    let Some(options) = stream_options else {
-        return false;
-    };
-    options.include_usage
+    match stream_options {
+        Some(options) => options.include_usage,
+        None => false,
+    }
 }
 
 #[must_use]
 pub fn check_is_function_call(optional_params: Option<&JsonObject>) -> bool {
-    let Some(params) = optional_params else {
-        return false;
-    };
-    let Some(functions) = params.get("functions") else {
-        return false;
-    };
-    matches!(functions, JsonValue::Array(items) if !items.is_empty())
+    optional_params
+        .and_then(|params| params.get("functions"))
+        .is_some_and(|functions| matches!(functions, JsonValue::Array(items) if !items.is_empty()))
 }

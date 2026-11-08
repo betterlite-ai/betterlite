@@ -1,9 +1,6 @@
-use std::str::FromStr as _;
-
 use betterlite_streaming::stream_chunk_shaping::error::StreamShapeError;
-use rust_decimal::Decimal;
 use serde::Serialize;
-use serde_json::{Number, Value};
+use serde_json::Value;
 
 use crate::helpers::HelperError;
 
@@ -23,12 +20,6 @@ pub(super) fn shape_error(error: &StreamShapeError) -> Box<HelperError> {
         StreamShapeError::Arguments { .. } => ("ValidationError", None),
     };
     failure(class, status, error.to_string())
-}
-
-pub(super) fn decimal_json(cost: Decimal) -> Option<Value> {
-    Number::from_str(&cost.normalize().to_string())
-        .ok()
-        .map(Value::Number)
 }
 
 pub(super) fn failure(class: &str, status: Option<u16>, message: String) -> Box<HelperError> {

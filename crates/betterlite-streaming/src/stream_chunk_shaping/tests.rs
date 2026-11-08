@@ -22,16 +22,15 @@ use crate::stream_chunk_shaping::decision::{
     combine_thinking_in_choices, is_chunk_non_empty, is_delta_empty, return_processed_chunk_logic,
 };
 use crate::stream_chunk_shaping::error::StreamShapeError;
-use crate::stream_chunk_shaping::generic::{convert_generic_chunk, generic_chunk_has_known_fields};
+use crate::stream_chunk_shaping::extras::{
+    SpecialDeltaAttribute, apply_special_delta_attributes, convert_generic_chunk,
+    copy_delta_attribute, generic_chunk_has_known_fields, has_any_special_attributes,
+    has_special_delta_attribute, has_special_delta_content, strip_sse_data_from_chunk,
+};
 use crate::stream_chunk_shaping::records::{
     ChunkResponseObject, GenericChunk, JsonObject, JsonValue, StreamChoice, StreamChunk,
     StreamDelta, StreamOptions,
 };
-use crate::stream_chunk_shaping::specials::{
-    SpecialDeltaAttribute, apply_special_delta_attributes, copy_delta_attribute,
-    has_any_special_attributes, has_special_delta_attribute, has_special_delta_content,
-};
-use crate::stream_chunk_shaping::sse::strip_sse_data_from_chunk;
 use crate::stream_chunk_shaping::tokens::{
     check_is_function_call, check_send_stream_usage, check_special_tokens, finish_reason_handler,
     mapped_finish_reason, raise_on_model_repetition,

@@ -6,10 +6,8 @@ use records::{JsonObject, StreamChunk};
 pub mod creation;
 pub mod decision;
 pub mod error;
-pub mod generic;
+pub mod extras;
 pub mod records;
-pub mod specials;
-pub mod sse;
 mod tests;
 pub mod tokens;
 pub mod usage;
@@ -47,7 +45,6 @@ pub struct ChunkShaper {
     pub identity: Arc<dyn StreamIdentity>,
 }
 
-// The wrapper's constructor arguments; the identity source replaces Python's uuid4 and time.time.
 pub struct ChunkShaperConfig {
     pub model: String,
     pub provider: Option<String>,
