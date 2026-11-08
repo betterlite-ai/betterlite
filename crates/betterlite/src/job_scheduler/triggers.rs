@@ -142,16 +142,15 @@ fn local_search(cron: &Cron, start: DateTime<Utc>) -> Option<DateTime<Utc>> {
 fn resolve_local(naive: NaiveDateTime, floor: DateTime<Utc>) -> Option<DateTime<Utc>> {
     match Local.from_local_datetime(&naive) {
         LocalResult::Single(value) => Some(value.with_timezone(&Utc)),
+        // Drop the spurious side chrono reports for the wall time that ends a repeated hour.
         LocalResult::Ambiguous(one, two) => {
-            let early_instant = one.with_timezone(&Utc).min(two.with_timezone(&Utc));
-            let late_instant = one.with_timezone(&Utc).max(two.with_timezone(&Utc));
-            if early_instant >= floor {
-                Some(early_instant)
-            } else if late_instant >= floor {
-                Some(late_instant)
-            } else {
-                None
-            }
+            let first = one.with_timezone(&Utc);
+            let second = two.with_timezone(&Utc);
+            [first, second]
+                .into_iter()
+                .filter(|instant| instant.with_timezone(&Local).naive_local() == naive)
+                .filter(|instant| *instant >= floor)
+                .min()
         }
         LocalResult::None => None,
     }

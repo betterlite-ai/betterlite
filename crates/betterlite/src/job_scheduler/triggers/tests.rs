@@ -291,6 +291,16 @@ fn cron_local_zone_fires_on_apscheduler_instants() {
             instant("2026-03-09T04:15:00Z"),
         ]
     );
+    // 02:00 is the wall time that ends the repeated hour, and it must fire once, at the EST instant.
+    let end_of_repeat = CronTrigger::from_crontab("0 2 * * *", CronZone::Local).unwrap();
+    let end_fires = first_fires(&end_of_repeat, instant("2026-11-01T02:30:00Z"), 2);
+    assert_eq!(
+        end_fires,
+        [
+            instant("2026-11-01T07:00:00Z"),
+            instant("2026-11-02T07:00:00Z"),
+        ]
+    );
     println!("{LOCAL_ZONE_MARKER}");
 }
 
