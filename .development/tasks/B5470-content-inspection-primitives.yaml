@@ -1,0 +1,123 @@
+id: B5470
+title: Guardrail content inspection primitives
+description: >-
+  Add the module `content_inspection` to betterlite-guardrails. It pulls the text out of a request body so a guardrail can send that text to its provider, and it writes redacted text back into the body. Provider hooks such as Lakera, Cato, Aim, Repello, Lasso and IBM call these functions, so this part has no dependency beyond `GuardrailValue` from `betterlite_config::sections::guardrail_identity::item`. A request body is `BTreeMap<String, GuardrailValue>` in every signature here. Nothing in this module does I/O, reads config or can fail, so it has no error enum.
+
+  Public constants, each a plain array of `&str`: `TEXT_CONTENT_CALL_TYPES` holds `completion`, `acompletion`, `aresponses`. `NON_CONVERSATIONAL_CALL_TYPES` holds `embedding`, `aembedding`. `TEXT_PART_TYPES` holds `text`, `input_text`, `output_text`, `summary_text`, `reasoning_text`. LiteLLM's `is_text_content_call_type` and `is_non_conversational_call_type` are single membership tests and the no-one-line-functions rule rejects that body, so they are not built: a caller writes `TEXT_CONTENT_CALL_TYPES.contains(&call_type)`.
+
+  Three private steps do the reading, under names you choose. The first takes the text of one part: an object whose `text` is a non-empty string gives that string, whatever its `type` says, and anything else gives nothing. The second walks a `content` value: a non-empty string gives itself, a list gives each non-empty bare string and each part's text in order, and every other shape gives nothing. The third lifts `input` into chat-style messages. A string becomes one `user` message. A value that is not a list becomes no messages. In a list, a string item becomes a `user` message, and an object item takes the first branch that matches, in this order: it has part text (role is the item's `role` or `user`, content is a list holding the item), its `type` is `reasoning` (when the `content` key exists a message with role `role` or `assistant`, and then when `summary` is a list a second message with the same role and the summary as content), it has a `content` key (role `role` or `user`), its `type` is `function_call_output` or `custom_tool_call_output` and it has an `output` key (role `role` or `tool`, content is the output). Other items are dropped. A body always yields the entries of a `messages` list first and then the lifted `input`, and both are read even when both exist.
+
+  Public functions. `iter_message_text(data: &BTreeMap<String, GuardrailValue>) -> Vec<String>` returns every text fragment from those messages, skipping entries that are not objects. `build_inspection_messages(data) -> Vec<InspectionMessage>` returns one `InspectionMessage { role: String, content: String }` (derives Serialize) per message that has text, joining its fragments with one newline and dropping messages with no text. Its role is the message's non-empty `role` text, otherwise `user`. `is_string_batch_input(data) -> bool` is false whenever the `messages` key exists, even with a null value, and true for a non-empty `input` list holding only strings. `has_non_string_content(data) -> bool` is true when a message object in a `messages` list has non-null content that is not a string, or when `input` is non-null and not a string.
+
+  `apply_redacted_messages_back(data: &mut BTreeMap<String, GuardrailValue>, redacted_messages: &[GuardrailValue]) -> bool` writes a provider's answer back. For a string batch it finds the indices of the non-empty strings in `input`. It returns false with `data` unchanged when the count of redacted messages differs from that count, or when any redacted entry is not an object or has a missing or null `content`. Otherwise the entry at each position replaces the string at the matching index, as its content fragments joined with a newline, and it returns true. Empty strings in the batch stay where they are. Outside a batch, a `messages` key that exists is replaced by the redacted list, a string `input` becomes the newline join of the fragments of every object in the redacted list, and a list `input` is left as it was. That path always returns true.
+
+  The task's oracle helper takes `function` and the arguments of that function: `data`, and `redacted_messages` for the write-back, whose answer holds both the returned bool and the rewritten `data`. A `call_type` argument with function `call_types` answers the two membership tests. Copy each helper case into `tools/oracle/fuzz/corpus/helper_case/` with the prefix `content_inspection-`.
+
+  Native tests live in `content_inspection::tests` and use the name prefixes in the check filters below.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/content_inspection.rs
+    - crates/betterlite-guardrails/src/content_inspection/**
+    - tools/oracle/cases/helpers/content-inspection/**
+    - "tools/oracle/fuzz/corpus/helper_case/content_inspection-*"
+    - tools/oracle/helpers/b5470.py
+    - tools/oracle/helpers/b5470/**
+    - tools/oracle/src/helpers/guardrails/b5470.rs
+    - tools/oracle/src/helpers/guardrails/b5470/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/_content_utils.py#L27-L60
+    why: The call type sets, the text part types and the two output item types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/_content_utils.py#L63-L146
+    why: Part text, the content walk, the input lifting order and iter_message_text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/_content_utils.py#L215-L266
+    why: The string batch test and the write-back with its false result on a short answer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/_content_utils.py#L269-L309
+    why: has_non_string_content and build_inspection_messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cato_networks/cato_networks.py#L340-L395
+    why: A caller that blocks on a false write-back and uses the batch test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L125-L135
+    why: A caller writing a provider's redacted messages back into the body.
+dod:
+  - text: The three public constants hold exactly the names in the description, and `responses` and `anthropic_messages` are in neither call type list.
+    proof: [call-type-tests, oracle, helper-python]
+  - text: iter_message_text returns fragments from `messages` first and `input` second, in order, from strings, bare strings in a list and any object with non-empty `text`, and skips image parts and non-object messages.
+    proof: [text-tests, oracle, helper-python]
+  - text: Each `input` item branch gives the right role and content, including `reasoning` items that yield two messages and output items that default to role `tool`.
+    proof: [input-item-tests, oracle, helper-python]
+  - text: An object item with both part text and a `content` key takes the part text branch, and a `reasoning` item with neither `content` nor a list `summary` yields nothing.
+    proof: [input-item-tests]
+  - text: build_inspection_messages joins fragments with a newline, drops messages with no text and falls back to role `user` for a missing, null or empty role.
+    proof: [inspection-tests, oracle, helper-python]
+  - text: is_string_batch_input is false when `messages` exists with a null value, false for an empty list and for a list with one non-string, and true for a list of strings that includes an empty one.
+    proof: [batch-tests, oracle, helper-python]
+  - text: A batch write-back replaces only the non-empty positions and returns true, and a count mismatch or an entry without content returns false with `data` equal to the input.
+    proof: [write-back-tests, oracle, helper-python]
+  - text: Outside a batch the write-back replaces `messages`, joins all fragments into a string `input`, updates both when both exist, and leaves a list `input` unchanged while still returning true.
+    proof: [write-back-tests, oracle, helper-python]
+  - text: has_non_string_content is true for list content and for any list `input`, and false for string or null content with string or null `input`.
+    proof: [non-string-tests, oracle, helper-python]
+  - text: Newly added helper corpus cases replay through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: call-type-tests
+      why: the call type or text part constants are missing or hold other names
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_inspection::tests::call_type_/)'
+    - id: text-tests
+      why: fragment order, part text or the content walk is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_inspection::tests::text_/)'
+    - id: input-item-tests
+      why: an input item takes the wrong branch, role or content
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_inspection::tests::input_item_/)'
+    - id: inspection-tests
+      why: synthesized messages join, drop or name roles wrongly
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_inspection::tests::inspection_/)'
+    - id: batch-tests
+      why: the string batch test accepts or rejects the wrong shape
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_inspection::tests::batch_/)'
+    - id: write-back-tests
+      why: redacted text lands in the wrong field or a partial batch rewrite goes through
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_inspection::tests::write_back_/)'
+    - id: non-string-tests
+      why: multimodal content is not reported to hooks that mask by string offset
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_inspection::tests::non_string_/)'
+    - id: helper-python
+      why: the strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5470)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5470 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5470/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added content inspection cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/content_inspection-*")" &&
+        grep -lE '^[[:space:]]+b5470:' tools/oracle/fuzz/corpus/helper_case/content_inspection-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/content-inspection/chat-text.yaml
+  - tools/oracle/cases/helpers/content-inspection/responses-input.yaml
+  - tools/oracle/cases/helpers/content-inspection/reasoning-items.yaml
+  - tools/oracle/cases/helpers/content-inspection/tool-output-items.yaml
+  - tools/oracle/cases/helpers/content-inspection/string-batch.yaml
+  - tools/oracle/cases/helpers/content-inspection/redacted-write-back.yaml
+  - tools/oracle/cases/helpers/content-inspection/non-string-content.yaml
+  - tools/oracle/cases/helpers/content-inspection/call-type-sets.yaml
+deviations: []
+out_of_scope:
+  - walk_user_text has no caller at the pin, so it is not built and has no cases.
+  - The local copies in ibm_hooks/data.rs (iter_message_text) and lasso_masking/lifecycle.rs (has_non_string_content) stay as they are. Moving those modules onto this one isn't part of this task.
+  - The responses transform used for message lookup by call type; B3664 owns get_guardrails_messages_for_call_type.
+pitfalls:
+  - TEXT_CONTENT_CALL_TYPES leaves out `responses` and `anthropic_messages` on purpose, so don't widen it to match the route list.
+  - 'Part text ignores `type`, so an object like `{"type": "image_url", "text": "x"}` still gives `x`, and TEXT_PART_TYPES plays no part in the walk.'
+  - A string in an `input` list becomes a message even when empty, and it only disappears when the content walk skips it, so the write-back has to count non-empty strings and not messages.
+  - The batch check on redacted entries runs over all of them before any write, because a partial rewrite would send the remaining originals to the model unredacted.
+  - A `messages` key with a null value turns off the batch path and also gets replaced by the redacted list on write-back.
+  - In `has_non_string_content` a message with null `content` is fine, a tool call message has that shape, and only non-null non-string content counts.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

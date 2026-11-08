@@ -2,8 +2,8 @@ id: B5077
 milestone: M4 keys, spend and management
 title: Postgres fixture TLS connections
 status: todo
-depends_on: [B860]
-file: null
+depends_on: [B860, B5104]
+file: tasks/B5077-postgres-fixture-tls.yaml
 covers: []
 parent: null
 split_from: B860

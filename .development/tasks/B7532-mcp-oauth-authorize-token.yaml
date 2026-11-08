@@ -1,0 +1,106 @@
+id: B7532
+title: MCP OAuth authorize and token exchange flows
+description: >-
+  Build `authorize_with_server` and `exchange_token_with_server` of discoverable_endpoints.py, with the helpers only they call. These are the functions B4719's browser routes and B7321's root routes reach through the OauthFlows port. Both return plain values (a redirect or JSON with status and headers, or a FlowError), never a framework response.
+
+
+  Code goes in betterlite-server, new module mcp::auth_flows: crates/betterlite-server/src/mcp/auth_flows.rs (the AuthFlows struct, ports and error enum) and the submodules authorize, subject, token_request, refresh_grant, code_grant, exchange and store, each with a tests.rs beside it. Types FlowError, FlowReply, AuthorizeArgs, TokenArgs and RequestParts are B4719's (mcp::oauth_routes::ports). Shared pieces come from B7531 (require_s256, bridge_relays_registration, server_with_endpoints, register_needed_endpoint, token_needed_endpoint, endpoint_not_configured_detail, EphemeralDcrClient) and B7530 (encode_state, the bridge code opener, set_state_cookie, validate_token_response, append_query_params). Import them, never copy.
+
+
+  Ports (traits in auth_flows.rs, native async fn, generics). Their real implementations are owned elsewhere and wired by the composition root.
+  - UserAccess: `async fn session_user_id(&self, request: &RequestParts) -> Option<String>` (the BYOK session cookie reader, LiteLLM `_user_id_from_session_cookie`, B4678), `async fn authorize_credential_user(&self, request: &RequestParts, server_id: &str) -> Option<String>` and `async fn uses_gateway_credential(&self, request: &RequestParts) -> bool` and `async fn extract_user_id(&self, request: &RequestParts) -> Option<String>` (B4658 and B4666: authorize_oauth_credential_request, oauth_authorization_uses_gateway_credential, _extract_user_id_from_request), `async fn can_store_credential(&self, request, admitted_user_id: Option<&str>, server_id) -> bool` (can_store_oauth_credential, with a reload of the admitted user when a sealed code gave the user), and `async fn user_can_reach(&self, user_id: &str, server_id: &str) -> Result<bool, FlowError>` (L878-L892: a reload failure with status below 500 is false, 500 and above is passed on; then server_id must be in the user's allowed servers).
+  - BridgeMint: `async fn prepare_mint(&self, request, server, identity: Option<&BridgeIdentity>) -> Result<MintReady, OauthError>`, `async fn prepare_refresh(&self, server, refresh_token: Option<&str>) -> Result<RefreshReady, OauthError>` and `fn finish_mint(&self, ready: &MintReady, server, token_response: &serde_json::Value, now: DateTime<Utc>) -> Result<BridgeTokenBody, OauthError>` are B4666's prepare_bridge_mint, prepare_bridge_refresh and finish_bridge_mint (read B4666 for the exact Rust names and types). RefreshReady exposes the unwrapped upstream refresh token (SecretString) and the upstream scope. An OauthError becomes the reply of bridge_mint_error_response: its status and error body (with B4654's TOKEN_NO_CACHE_HEADERS, which B4674's OauthError already carries).
+  - IdentityBinding: B4659's enforce_oauth_identity_binding (server, token_response, litellm_user_id, grant_type, refresh_ownership, expected_nonce) returning Result<Option<String>, BindingDenied>. BindingDenied becomes 403 with the object detail B4659 defines.
+  - UpstreamForm: `async fn post_form(&self, url: &str, headers: &[(String, String)], form: &[(String, String)]) -> Result<UpstreamReply, TransportFailure>` (the Oauth2Check client; header Accept application/json is added by this task). UpstreamReply is B7531's.
+  - FaultRenderer (B7531 declares it; this task adds the methods `token_rejection(&self, reply: &UpstreamReply, source: CredentialSource, log_context: &str) -> TokenFaultOutcome` with TokenFaultOutcome { invalid_grant: bool, reply: FlowReply }, and `protocol_fault(&self, note: &str) -> FlowReply`). They are `classify_upstream_token_rejection`, `render_token_fault` and UpstreamProtocolFault from LiteLLM's faults package, which B7970 owns. This task declares `CredentialSource { GatewayStored, CallerSupplied }` next to the methods, since B7970 merges after it; B7970 keeps its own copy in betterlite-mcp and its adapter maps the two one to one. Its wire text is gateway_stored or caller_supplied.
+  - UserTokenStore: `async fn store(&self, server, user_id: &str, token_response: &serde_json::Value, identity_binding_proof: Option<&str>) -> Result<(), StoreFailure>` (db.store_user_oauth_credential through B4713) and `async fn warm_cache(&self, server, user_id, access_token, expires_in, proof)` (invalidate_user_oauth_token_cache plus mcp_per_user_token_cache.set, B4715 and B4662).
+  - Random: `fn url_safe_token(&self, bytes: usize) -> String` and a Clock.
+
+
+  Build, in this order.
+
+  A. authorize (L832-L1040). `redirect_to_upstream_authorize` (L832-L860): the relay arm. scope is the given scope or the server scopes joined by a space; the resource comes from B4654's resolve_upstream_resource. Parameters in this order: client_id, redirect_uri, state, response_type (or "code"), code_challenge, code_challenge_method, scope when present, resource when present. They are merged over the existing query pairs of the effective authorization url (new keys win) and the reply is a 307 redirect (Starlette RedirectResponse default) to the rebuilt url. `bridge_access_denied_redirect(redirect_uri, state, server)` (L863-L875): 302 to redirect_uri with error=access_denied, error_description "the signed-in user has no access to MCP server '<alias or server_name or server_id>' on this gateway; grant it through a team or user object permission, or mark the server allow_all_keys", and state only when non-empty, appended with append_query_params. `redirect_to_login(request)` (L431-L450): redirect to "<request base url>/sso/key/generate?return_to=<urlencoded relative request url>" (the relative url keeps path and query; B4674 owns relative_request_url). `resolve_authorization_user(request, server, redirect_uri, state, enforce_binding)` (L895-L918) returns Subject::User(id) or Subject::Redirect(reply): use_gateway_credential is enforce_binding and uses_gateway_credential; when it is true, the user is authorize_credential_user and a None gives the access_denied redirect; the user is that id or session_user_id; none gives the login redirect; a user who cannot reach the server gives the access_denied redirect.
+
+  `authorize_with_server(args)` (L921-L1040), steps in order: ensure_oauth2 (B4719); server_with_endpoints with register_needed_endpoint; a missing effective authorization url is 400 with endpoint_not_configured_detail("authorization url", "set Authorization URL and Token URL manually", "set Issuer to discover them from the identity provider (RFC 8414)"); enforce_binding is the server's identity binding mode "enforce"; when enforce_binding, require_s256; when the server is a DCR bridge, require_s256 again, and when bridge_relays_registration and no ephemeral client, return the relay redirect; validate_trusted_redirect_uri (B4655) on redirect_uri; base_url is redirect_uri without its query; request_base_url from B4654; litellm_user_id is resolved only when enforce_binding or (dcr bridge and oauth_delegate), a Redirect subject is returned as the reply; oauth_nonce is url_safe_token(32) only when enforce_binding. State: encode_state with base_url, original_state, nonce, code_challenge, method, client_redirect_uri = redirect_uri, litellm_user_id, mcp_server_id (the server id only when a user id or an ephemeral client exists), and the three dcr_* values from the ephemeral client. relay_state is url_safe_token(32). Upstream params: client_id (server client_id if non-empty else the given), redirect_uri "<request_base_url>/callback", state relay_state, response_type (or "code"), nonce when set, scope (given, else server scopes joined by a space), then when enforce_binding and "openid" is not among the scope words, scope becomes "openid <scope>" trimmed, code_challenge and code_challenge_method when given, resource when present. The upstream url is the effective authorization url with its query pairs merged under the new params (new keys win). The reply is a 307 redirect with the state cookie from B7530's set_state_cookie(request base url, relay_state, encoded_state).
+
+  B. token exchange (L1043-L1354). `credential_source(server)` is gateway_stored when the server has a client_id else caller_supplied. `exchange_token_with_server(args)` steps in order: ensure_oauth2; a grant_type other than authorization_code or refresh_token is 400 "Unsupported grant_type" (string detail); server_with_endpoints with token_needed_endpoint; no effective token url is 400 with endpoint_not_configured_detail("token url", "set Token URL manually", "set Issuer to discover it from the identity provider (RFC 8414)"). The client identity comes from one source: the server client_id when non-empty (then its secret and its auth method), else the caller's id and secret and the caller's auth method or the server's. `build_upstream_oauth2_token_request` (B4654) gives the body and headers; its config error is 400 with the error text. request_user_id is extract_user_id only when the server needs a user oauth token or has an identity binding. is_bridge is oauth_delegate and dcr_bridge.
+  Refresh grant: for a bridge, prepare_refresh and a failure returns the OauthError reply; the upstream refresh token is the unwrapped one for a bridge, else the given one; empty is 400 "refresh_token is required for refresh_token grant". Form: grant_type refresh_token, refresh_token, then the request body entries; scope is the given scope or the bridge's upstream scope. Ownership proof is proven for a bridge and presented(token) otherwise; for binding mode enforce, call enforce_oauth_identity_binding with an empty token response before the upstream call.
+  Authorization code grant: an empty code is 400 "code is required for authorization_code grant". open_bridge_code (B7530): when it opens, its mcp_server_id must equal the server id (else 400 "Authorization code was issued for a different MCP server") and the code becomes its upstream_code. For binding mode enforce: no bridge identity or no nonce is 403 {"error": "oauth_identity_binding_failed"}; a request_user_id different from the sealed user is 403 {"error": "oauth_principal_mismatch"}; no code_verifier is 403 {"error": "oauth_identity_binding_failed"}. When bridge_relays_registration and no redirect_uri, 400 "redirect_uri is required for the authorization_code grant on this server; send the same redirect_uri used on the authorization request". The upstream redirect_uri is the given one for a relay and "<request base url>/callback" otherwise. Form: grant_type authorization_code, code, redirect_uri, the body entries and code_verifier when present. For a bridge, prepare_mint runs now (before the single-use code is spent) and a failure returns its reply.
+  Upstream call: post_form with Accept application/json plus the request headers. A non-2xx reply goes to token_rejection with the credential source; when it is a bridge refresh and the outcome says invalid_grant, log at info and return the OauthError for the invalid refresh case instead (B4666's InvalidRefresh); else the outcome reply. The 2xx body is parsed as JSON. When the server has token_validation rules (a JSON object), run validate_token_response before any storage (403 object detail). When the body is an object, call enforce_oauth_identity_binding with resolved_user_id (the bridge identity's user, else request_user_id), the grant, the ownership and the nonce of the bridge identity, and keep the proof. Storing: only when the server needs a user oauth token and a user id exists: can_store is can_store_credential (with the sealed user as the admitted user) when a bridge identity exists, else authorize_credential_user equal to user_id; when allowed, store_user_token; a refused store logs a warn and every error is logged at warn and never raised. Without a user id, log the warn text of LiteLLM (L1297-L1304). Bridge reply: when a mint is ready, add the refresh request scope to a body without scope (refresh grant only), and finish_mint; an Ok body is the JSON reply with TOKEN_NO_CACHE_HEADERS, an Err is the OauthError reply. Otherwise the access_token must be a non-empty string, else protocol_fault("the upstream token response has no usable access_token"). The reply JSON has access_token, token_type (body value or "Bearer"), expires_in when not null, refresh_token and scope when non-empty, and TOKEN_NO_CACHE_HEADERS.
+  `store_user_token` (`_store_per_user_token_server_side`, L618-L694): returns when there is no access_token; expires_in is the integer value or None for a missing or unparsable value; refresh_token empty gives None; scopes are the scope text split on whitespace when it is a non-empty string; store through UserTokenStore, and a failure logs a warn and stops (no cache warm); on success invalidate and warm the cache with the TTL B4715's per-user ttl rule gives.
+
+  Tests use synthetic servers (test-oauth-1, https://mcp.example.test/sse) and fakes for every port. No HTTP oracle cases: B7321 wires the flows and owns them.
+
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/auth_flows.rs
+    - crates/betterlite-server/src/mcp/auth_flows/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L431-L450
+    why: The login redirect for an unauthenticated browser.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L618-L694
+    why: Server-side storage of the per-user token and the cache warm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L832-L1040
+    why: The relay redirect, access denied redirect, user resolution and authorize_with_server.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1043-L1354
+    why: _token_credential_source and exchange_token_with_server.
+  - url: https://www.rfc-editor.org/rfc/rfc6749#section-5.1
+    why: Token responses must not be cached.
+
+dod:
+  - text: authorize_with_server returns the relay redirect only for a DCR bridge relay arm without an ephemeral client, and otherwise builds the callback redirect with the upstream params, merged query and state cookie.
+    proof: [auth-tests]
+  - text: authorize enforces S256 for identity binding enforce and for DCR bridges, adds openid to the scope for enforce, and seals the nonce, user id and ephemeral client into the state.
+    proof: [auth-tests]
+  - text: resolve_authorization_user gives the login redirect, the access_denied redirect or the user id in LiteLLM's cases.
+    proof: [auth-tests]
+  - text: exchange_token_with_server picks the client id, secret and auth method from one source, rejects unsupported grants, empty codes and missing refresh tokens with LiteLLM's texts.
+    proof: [token-tests]
+  - text: The authorization_code path opens the bridge code, checks its server, applies the identity binding checks, uses the relay or callback redirect_uri and prepares the bridge mint before the upstream call.
+    proof: [token-tests]
+  - text: The refresh path unwraps a bridge refresh envelope, maps an upstream invalid_grant to the invalid refresh reply, and sends scope only when given or known.
+    proof: [token-tests]
+  - text: After the upstream reply, token validation rules, identity binding, per-user storage (never fatal), the bridge finish and the plain result with no-cache headers behave as in LiteLLM.
+    proof: [token-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: auth-tests
+      why: the authorize flow, its redirects or the user resolution have no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::auth_flows::(authorize|subject)::/)'
+    - id: token-tests
+      why: the token exchange, refresh grant, code grant or user token storage have no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::auth_flows::(token_request|refresh_grant|code_grant|exchange|store)::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: A reply from the upstream token endpoint whose 2xx body is not JSON answers through protocol_fault, not a 500.
+    why: LiteLLM's response.json() raises; a typed upstream protocol fault is the honest answer and cannot happen with a working IdP.
+
+out_of_scope:
+  - "State, sealed codes, state cookie, validate_token_response, append_query_params: B7530. require_s256, endpoint gates, ephemeral client, register and persisted clients: B7531."
+  - "ensure_oauth2: B4719. The routes and the OauthFlows implementation: B4719 (routes) and B7321 (implementation)."
+  - "bridge_token_flow.py functions (prepare, finish, error mapping, credential checks): B4658 and B4666. enforce_oauth_identity_binding: B4659."
+  - "The faults package and normalize of upstream rejections: B7970, which implements the FaultRenderer port; this task only uses the port."
+  - "The /callback route that receives the upstream code: B7971."
+
+pitfalls:
+  - The bridge mint is prepared before the upstream call because the code is single use; a failure after the call cannot be retried.
+  - A server client_id wins over the caller's, and then the caller's secret must not be paired with it (the register dummy secret would break a public client).
+  - The mcp_server_id in the state is set only when a user id or an ephemeral client exists, otherwise it is null.
+  - The nonce is sent upstream as the "nonce" parameter and sealed in state; both come from the same value.
+  - The relay arm keeps the client's redirect_uri and sets no state cookie, while every other arm sends "<base>/callback" and a cookie.
+  - Per-user storage errors, including a refused write, never fail the token reply; the token still reaches the client.
+  - The refresh body sends the upstream refresh token, never the bridge envelope the client presented.
+  - expires_in is included when it is not null even if it is 0, while refresh_token and scope need a non-empty value.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

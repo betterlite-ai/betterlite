@@ -1,0 +1,121 @@
+id: B3620
+title: Pass-through Bedrock model extraction and token counting
+description: >-
+  Build the Bedrock LLM half of LiteLLM's /bedrock pass-through as the module bedrock_llm_route in crates/betterlite-server.
+  B3621 registers GET/POST/PUT/DELETE /bedrock/{endpoint:path} and calls this module for every endpoint that is not an agent-runtime one, so this task adds no HTTP route and no HTTP oracle case.
+  Every name below is at most 30 characters.
+
+  Agent-runtime predicates. `AGENT_RUNTIME_ROUTES` is the list "agents/", "knowledgebases/", "flows/", "retrieveAndGenerate/", "rerank/", "generateQuery/", "optimize-prompt/" (BEDROCK_AGENT_RUNTIME_PASS_THROUGH_ROUTES in constants.py). `is_agent_runtime_route(endpoint)` replaces _is_bedrock_agent_runtime_route and is true when any of them appears anywhere in the endpoint as a case-sensitive substring.
+  `agent_runtime_disabled(general_settings)` replaces _is_bedrock_agent_runtime_passthrough_disabled and takes the general_settings map instead of reading proxy globals. It reads `disable_bedrock_agent_runtime_passthrough`. A JSON string counts as true only when it is "true" after trimming and lowercasing (LiteLLM's str_to_bool); any other string is false. A JSON bool is taken as it is. A missing key, a number, null, an array or an object give false.
+  B3621 calls both predicates before it calls bedrock_llm_proxy_route.
+
+  Model extraction is not built here. B2324 already owns is_bedrock_count_tokens_endpoint and _extract_model_from_bedrock_endpoint (betterlite-auth::resource_hints, the action list, the application-inference-profile branch and the ValueError messages). Call them from betterlite-server; do not copy them. The action list is B2324's too. This task owns only the streaming list `STREAMING_ACTIONS` ("invoke-with-response-stream", "converse-stream"), which LiteLLM uses for one debug log line.
+
+  Token counting. `handle_bedrock_count_tokens(endpoint, request, response, auth, body, router, backend)` replaces handle_bedrock_count_tokens and returns the JSON the backend returns. Steps in order:
+  1. `model` must be a non-empty JSON string in the body. Otherwise answer HTTP 400 with detail `{"error": "Model is required in request body"}`.
+  2. Start the params map with one entry, `user_api_key_dict`, holding the authenticated key. Start `resolved_model` as the requested model.
+  3. With a router, call B844's get_model_list(model_name=model). For a non-empty list take only the first deployment and its `litellm_params` (missing means empty). If that map has `model`, it becomes resolved_model. Copy every entry of the map into the params, except an entry named `user_api_key_dict`, which is never overwritten. Without a router, or with an empty list, resolved_model stays the requested model and the params hold only the key.
+  4. Call the backend with the body, the params and resolved_model.
+  The backend is the trait `CountTokensBackend`, declared here with one async method `handle_count_tokens_request(request_data, litellm_params, resolved_model)`. Its error is `CountTokensFailure`: `Bedrock { status, message, response_headers: Option<map> }` or `Other(String)`. The architect wires B641's handler to it; tests use a recording fake.
+  Errors: a Bedrock failure becomes HTTP `status` with detail `{"error": message}`. Its headers are B184's provider header projection (the llm_provider- prefix and the four bare x-ratelimit headers) of the upstream response headers when that map is present and not empty, otherwise no extra headers. An HTTP error raised in steps 1 to 3 passes through unchanged. Any other failure is HTTP 500 with detail `{"error": "CountTokens processing error: <message>"}`. Log each of the last two at error level as "BedrockError in handle_bedrock_count_tokens: %s" and "Error in handle_bedrock_count_tokens: %s". Also emit debug lines "Count tokens litellm_params: %s" and "Resolved model: %s", with the params passed through betterlite-redact first (the params hold credentials).
+
+  Router-model path. `handle_bedrock_router_model` replaces handle_bedrock_passthrough_router_model. It builds the processing record in this key order: model, method (the request method), endpoint, data (the body), custom_llm_provider "bedrock". It logs debug "Bedrock router passthrough: model='%s', endpoint='%s', streaming=%s", where streaming is true when the endpoint contains any STREAMING_ACTIONS entry as a substring. The flag changes nothing else. It then calls the passthrough processor with a fresh empty response object and returns its result.
+  The processor is the trait `PassthroughProcessor` and its call type `PassthroughCall`, declared by B7324 in `passthrough_processor`; import both and do not declare another. The method is `process_passthrough(call)`; the call holds the record, the request, the response object, the key, the router and the model. B7324's implementation runs the common passthrough processing with route type `allm_passthrough_route` and maps any failure through the exception handler before it returns the error. This module only forwards the result or the error. The architect wires the real processor; tests use a fake.
+
+  Entry point. `bedrock_llm_proxy_route(endpoint, request, response, auth, router, deps)` replaces bedrock_llm_proxy_route and runs, in order:
+  1. Read the body with B1100's body read. An invalid body gives B1100's own 400.
+  2. If is_bedrock_count_tokens_endpoint(endpoint) (B2324), return handle_bedrock_count_tokens. This runs before any model extraction.
+  3. Extract the model with B2324's function. A ValueError becomes HTTP 400 with detail `{"error": <the error text>}`.
+  4. Ask B3618's uses_router_model with the body `{"model": <extracted>}`. When it is true and a router exists, return handle_bedrock_router_model.
+  5. Otherwise it is a direct Bedrock model. Log debug "Bedrock passthrough: Using direct Bedrock model '%s' for endpoint '%s'". Build the same record but with no `model` key (key order: method, endpoint, data, custom_llm_provider "bedrock"), pass the extracted model as the call's separate model argument and the caller's response object, and call the processor the same way.
+scope:
+  paths:
+    - crates/betterlite-server/src/bedrock_llm_route.rs
+    - crates/betterlite-server/src/bedrock_llm_route/**
+    - tools/oracle/cases/server/bedrock-llm-route/**
+    - tools/oracle/helpers/b3620.py
+    - tools/oracle/helpers/b3620/**
+    - tools/oracle/src/helpers/server/b3620.rs
+    - tools/oracle/src/helpers/server/b3620/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L872-L886
+    why: The action sets and is_bedrock_count_tokens_endpoint; only BEDROCK_STREAMING_ACTIONS is built here, the rest is B2324.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L889-L966
+    why: _extract_model_from_bedrock_endpoint, which B2324 owns and this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L969-L1054
+    why: handle_bedrock_passthrough_router_model, the record key order and the streaming debug flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1057-L1132
+    why: handle_bedrock_count_tokens, the first-deployment params copy and the three error shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1135-L1251
+    why: bedrock_llm_proxy_route, the dispatch order and the direct-model branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1854-L1870
+    why: The two agent-runtime predicates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1608-L1617
+    why: BEDROCK_AGENT_RUNTIME_PASS_THROUGH_ROUTES.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L115-L135
+    why: str_to_bool, which the disabled setting uses for string values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/get_headers.py#L5-L48
+    why: The header projection used for a Bedrock count failure (B184 owns it).
+dod:
+  - text: is_agent_runtime_route is true for each of the seven route fragments anywhere in the endpoint and false for a plain model endpoint, and agent_runtime_disabled is true only for the bool true and a string that is "true" after trimming and lowercasing.
+    proof: [agent-runtime-tests, oracle]
+  - text: handle_bedrock_count_tokens answers 400 "Model is required in request body" for a missing, empty or non-string model, and builds the backend call from the first router deployment with user_api_key_dict kept.
+    proof: [count-tokens-tests]
+  - text: A Bedrock failure becomes its own status with detail error and projected headers only when response headers are not empty, a passed-through HTTP error stays unchanged, and any other failure is 500 "CountTokens processing error".
+    proof: [count-failure-tests]
+  - text: handle_bedrock_router_model builds the record in the key order model, method, endpoint, data, custom_llm_provider and returns the processor's result or error as it is.
+    proof: [router-model-tests]
+  - text: bedrock_llm_proxy_route reads the body first, sends count endpoints to the counter before model extraction, turns an extraction error into 400 with the error text, routes a known router model to the router path, and sends any other model through the direct record without a model key.
+    proof: [dispatch-tests]
+checks:
+  optional: []
+  commands:
+    - id: agent-runtime-tests
+      why: the agent-runtime fragment list or the disabled-setting parsing is wrong or missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bedrock_llm_route::tests::agent_runtime(::|$)/)'
+    - id: count-tokens-tests
+      why: the model check or the first-deployment params copy is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bedrock_llm_route::tests::count_tokens(::|$)/)'
+    - id: count-failure-tests
+      why: a count failure maps to the wrong status, detail or headers
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bedrock_llm_route::tests::count_failure(::|$)/)'
+    - id: router-model-tests
+      why: the router-model record has the wrong keys or order, or its result is changed
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bedrock_llm_route::tests::router_model(::|$)/)'
+    - id: dispatch-tests
+      why: the entry point runs its steps in the wrong order or picks the wrong path
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bedrock_llm_route::tests::dispatch(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/server/bedrock-llm-route/agent-runtime-fragments.yaml
+  - tools/oracle/cases/server/bedrock-llm-route/agent-runtime-model-endpoint-false.yaml
+  - tools/oracle/cases/server/bedrock-llm-route/disabled-string-true-trimmed.yaml
+  - tools/oracle/cases/server/bedrock-llm-route/disabled-string-yes-false.yaml
+  - tools/oracle/cases/server/bedrock-llm-route/disabled-number-one-false.yaml
+deviations:
+  - what: agent_runtime_disabled takes the general_settings map as an argument, and handle_bedrock_count_tokens takes the router as an argument.
+    why: LiteLLM imports proxy_server globals inside the functions; betterlite wires dependencies through constructors. What a client sees is the same.
+  - what: The count backend is a trait (CountTokensBackend), and the passthrough processor is B7324's trait (PassthroughProcessor).
+    why: B641 lives in a provider leaf crate and the common processing has no owned Rust name yet. The architect wires both; see notes.
+  - what: The debug lines for litellm_params go through the redaction policy.
+    why: LiteLLM logs the whole params map, which can hold AWS keys and the bearer token.
+out_of_scope:
+  - "is_bedrock_count_tokens_endpoint, the action list and _extract_model_from_bedrock_endpoint: B2324 owns them; this task calls them."
+  - "The /bedrock/{endpoint:path} route itself, the agent-runtime branch (signing, base URL, header filter, disabled 400) and the Comprehend Medical routes: B3621."
+  - "B3621 (not planned yet) is the caller of the agent-runtime predicates, AGENT_RUNTIME_ROUTES, handle_bedrock_router_model and bedrock_llm_proxy_route; this task owns them and adds no route."
+  - "BedrockCountTokensHandler.handle_count_tokens_request and BedrockError: B641 and B682. This task only calls the handler through CountTokensBackend."
+  - "ProxyBaseLLMRequestProcessing.base_passthrough_process_llm_request: B7324 builds it, with the PassthroughProcessor trait and the exception mapping behind it. This task calls it through PassthroughProcessor."
+  - "uses_router_model: B3618. get_model_list: B844. Body read: B1100."
+pitfalls:
+  - "Only the first deployment of the model group feeds the count params; later deployments are ignored."
+  - "A deployment param named user_api_key_dict must not replace the authenticated key entry."
+  - "The count endpoint check runs before model extraction, so /model/x/count_tokens never reaches the extractor."
+  - "The router-model record has a model key and the direct-model record does not; in the direct case the model goes as the separate model argument only."
+  - "A Bedrock failure with no response headers, or an empty header map, adds no headers; do not send an empty projection."
+  - "The disabled flag treats the JSON number 1 and the string \"yes\" as false; only the bool true and the string \"true\" count."
+  - "The fragment match is a substring test over the whole endpoint, so a model id that contains \"flows/\" or \"agents/\" is also an agent-runtime route."
+  - "The extraction ValueError text is returned to the client as it is in detail.error, so use B2324's exact messages."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

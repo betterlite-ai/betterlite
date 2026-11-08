@@ -1,0 +1,14 @@
+id: B5471
+milestone: M6 guardrails
+title: Guardrail base settings and shared behaviors
+status: todo
+depends_on: [B3660, B3662, B3770]
+file: tasks/B5471-guardrail-base-behaviors.yaml
+covers:
+  - "litellm/integrations/custom_guardrail.py"
+parent: B104
+split_from: B3664
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

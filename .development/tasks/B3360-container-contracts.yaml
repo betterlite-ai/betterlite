@@ -1,0 +1,185 @@
+id: B3360
+title: Container contracts and endpoint catalog
+description: >-
+  Build the container record types, the provider contract and the container-file endpoint catalog in betterlite-openai
+  as module api::container_contracts, in files records.rs, config.rs, error.rs, catalog.rs and endpoints.json under
+  crates/betterlite-openai/src/api/container_contracts/. They live in betterlite-openai so the OpenAI and Azure
+  container providers, the HTTP executors and the core selector can all import them without a cycle. Nothing here does
+  HTTP, picks a provider or reads config.
+
+
+  Records (records.rs, serde, field names equal LiteLLM's wire names). ExpiresAfter has anchor (only the string
+  "last_active_at" is accepted) and minutes (i64). ContainerObject has id, object (only "container"), created_at (i64),
+  status, expires_after (Option), last_active_at (Option<i64>), name (Option<String>) and hidden_params, a
+  serde_json::Map that is never read from or written to JSON (LiteLLM's private _hidden_params, default empty).
+  DeleteContainerResult has id, object (only "container.deleted") and deleted (bool). ContainerListResponse has object
+  (only "list"), data (Vec<ContainerObject>), first_id and last_id (Option<String>) and has_more (bool, required).
+  ContainerFileObject has id, object ("container.file" or "container_file"), container_id, bytes (Option<i64>),
+  created_at, path, source and hidden_params. ContainerFileListResponse mirrors ContainerListResponse over
+  ContainerFileObject. DeleteContainerFileResponse has id, object ("container.file.deleted" or "container_file.deleted")
+  and deleted. Unknown JSON keys are ignored on decode, as pydantic does. A missing required field or a wrong literal is
+  a decode error. Encoding is LiteLLM's model_dump: every field is written, absent options as null, hidden_params left out,
+  in declaration order. Each record also gets field(name), the Rust form of get() and __getitem__: it returns the encoded
+  value of a declared field, or None for any other name. Keep the objects as plain structs with an enum for each object
+  literal, so a wrong literal cannot be built.
+
+
+  Optional request params (records.rs). ContainerCreateOptionalParams has expires_after (Option<Map<String, Value>>),
+  file_ids (Option<Vec<String>>), extra_headers and extra_body (Option<BTreeMap<String, String>>).
+  ContainerCreateRequestParams is those four plus name (Option<String>). ContainerListOptionalParams has after
+  (Option<String>), limit (Option<i64>), order (Option<String>), extra_headers and extra_query
+  (Option<BTreeMap<String, String>>). All three skip None fields when encoded, because the Python types are
+  TypedDict(total=False). Callers that filter params (B3361) build these structs; this task only declares them.
+
+
+  Provider contract (config.rs). Trait BaseContainerConfig is object safe and has these methods in LiteLLM's order:
+  get_supported_openai_params, map_openai_params(params, drop_params), validate_environment(headers, api_key),
+  get_complete_url(api_base, litellm_params), transform_container_create_request, transform_container_create_response,
+  transform_container_list_request, transform_container_list_response, transform_container_retrieve_request,
+  transform_container_retrieve_response, transform_container_delete_request, transform_container_delete_response,
+  transform_container_file_list_request, transform_container_file_list_response, transform_container_file_content_request,
+  transform_container_file_content_response and get_error_class. Parameter names and order are LiteLLM's. Headers and
+  request bodies are BTreeMap<String, String> and serde_json::Map<String, Value>; litellm_params is a serde_json::Map<String, Value>
+  because the typed GenericLiteLLMParams belongs to the router types. Response transforms take the raw body as &[u8] and
+  return Result<_, ContainerError>; the logging_obj argument is dropped because no container provider reads it. The
+  request transforms that return a tuple in LiteLLM return (String, Map) for URL and params. Required methods have no
+  body. Three have LiteLLM's base body as a default: validate_environment returns an empty map, get_complete_url returns
+  api_base unchanged or ContainerError::ApiBaseRequired (message "api_base is required") when it is None, and
+  get_error_class returns a BaseLlmException carrying status_code, message and headers.
+
+
+  Errors (error.rs). BaseLlmException is a struct with status_code (u16), message and headers (BTreeMap<String, String>);
+  its Display is the message. ContainerError has ApiBaseRequired, Decode(String) for a body that fails the record shapes,
+  and Upstream(BaseLlmException). Use thiserror.
+
+
+  Catalog (catalog.rs plus endpoints.json). Copy the pinned litellm/containers/endpoints.json byte for byte into
+  endpoints.json and include it with include_str!. ContainerEndpoint has name, async_name, path, method, path_params,
+  query_params, response_type, is_multipart (default false) and returns_binary (default false). container_endpoints()
+  parses the embedded text once and returns the five entries in file order: list_container_files, upload_container_file,
+  retrieve_container_file, delete_container_file, retrieve_container_file_content. The embedded text is trusted source data, so a parse
+  failure is a build-time bug that a test catches, not a runtime error path. Lookup by name or async_name, URL building and
+  the response model selection are B3363's, not here.
+
+
+  Budget from the owned LiteLLM lines (about 335 non-blank lines): about 240 production lines, 250 test lines, 100 oracle
+  adapter lines and 20 module wiring lines.
+scope:
+  paths:
+    - crates/betterlite-openai/src/api/container_contracts.rs
+    - crates/betterlite-openai/src/api/container_contracts/**
+    - tools/oracle/cases/helpers/container-contracts/**
+    - "tools/oracle/fuzz/corpus/helper_case/container_contracts-*"
+    - tools/oracle/helpers/b3360.py
+    - tools/oracle/helpers/b3360/**
+    - tools/oracle/src/helpers/openai/b3360.rs
+    - tools/oracle/src/helpers/openai/b3360/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/containers/main.py#L9-L94
+    why: ExpiresAfter, ContainerObject (with the private _hidden_params and the get, in and index helpers), DeleteContainerResult and ContainerListResponse.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/containers/main.py#L96-L131
+    why: The three TypedDict(total=False) request param types for create and list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/containers/main.py#L133-L207
+    why: ContainerFileObject with its two object literals, ContainerFileListResponse and DeleteContainerFileResponse.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/containers/transformation.py#L249-L305
+    why: BaseContainerConfig abstract params, validate_environment and get_complete_url bodies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/containers/transformation.py#L307-L475
+    why: The create, list, retrieve, delete, file list and file content transforms, and get_error_class.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoints.json#L1-L51
+    why: The five container-file endpoints that B3363 and B3368 read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L36-L98
+    why: How the catalog entries are typed and read, so the Rust ContainerEndpoint carries the same fields.
+dod:
+  - text: Each record decodes the LiteLLM wire JSON, ignores unknown keys, and rejects a wrong object literal, a missing required field and a wrong anchor.
+    proof: [record-tests, oracle, helper-python]
+  - text: Encoding writes every declared field with absent options as null, leaves hidden_params out, and field(name) returns None for undeclared names.
+    proof: [record-tests, oracle, helper-python]
+  - text: The file records accept both the dotted and the underscore object literal, and ContainerFileObject.bytes may be null.
+    proof: [record-tests, oracle, helper-python]
+  - text: The three request param structs drop None fields when encoded and keep the declared key names.
+    proof: [params-tests]
+  - text: container_endpoints() returns the five endpoints of the pinned endpoints.json in file order with every field, and the defaults for is_multipart and returns_binary are false.
+    proof: [catalog-tests, oracle, helper-python]
+  - text: BaseContainerConfig is object safe, has the 17 methods, and the validate_environment, get_complete_url and get_error_class defaults behave as LiteLLM's base class.
+    proof: [config-default-tests, oracle, helper-python]
+  - text: Newly added helper cases replay through the shared helper corpus.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: record-tests
+      why: record decoding, literal checks, encoding or field access is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail
+        -E 'test(/^api::container_contracts::(.*::)?record_/)'
+    - id: params-tests
+      why: the optional request param structs or their None skipping is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail
+        -E 'test(/^api::container_contracts::(.*::)?params_/)'
+    - id: catalog-tests
+      why: the embedded endpoint catalog or its defaults is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail
+        -E 'test(/^api::container_contracts::(.*::)?catalog_/)'
+    - id: config-default-tests
+      why: the provider trait or its three default bodies is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail
+        -E 'test(/^api::container_contracts::(.*::)?config_default_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3360)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3360 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3360/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added container contract cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/container_contracts-*")" &&
+        grep -lE '^[[:space:]]+b3360:' tools/oracle/fuzz/corpus/helper_case/container_contracts-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/container-contracts/container-object-round-trip.yaml
+  - tools/oracle/cases/helpers/container-contracts/container-object-wrong-literal.yaml
+  - tools/oracle/cases/helpers/container-contracts/expires-after-wrong-anchor.yaml
+  - tools/oracle/cases/helpers/container-contracts/list-response-missing-has-more.yaml
+  - tools/oracle/cases/helpers/container-contracts/delete-result-literal.yaml
+  - tools/oracle/cases/helpers/container-contracts/file-object-both-literals.yaml
+  - tools/oracle/cases/helpers/container-contracts/file-object-null-bytes.yaml
+  - tools/oracle/cases/helpers/container-contracts/delete-file-both-literals.yaml
+  - tools/oracle/cases/helpers/container-contracts/field-access-unknown.yaml
+  - tools/oracle/cases/helpers/container-contracts/endpoint-catalog.yaml
+  - tools/oracle/cases/helpers/container-contracts/config-default-api-base.yaml
+  - tools/oracle/cases/helpers/container-contracts/config-default-error-class.yaml
+deviations:
+  - what: Response transforms take the raw body bytes and return a typed Result, and drop the logging_obj argument.
+    why: Python passes an httpx.Response and a Logging object, but no container provider reads logging_obj and the HTTP layer is B3363's.
+  - what: litellm_params is a JSON object map, not the GenericLiteLLMParams model.
+    why: That model belongs to the router types; the container providers only read keys from it.
+  - what: A body that fails a record shape returns ContainerError::Decode, not a pydantic ValidationError.
+    why: Rust has no pydantic. The accept and reject outcome is the same, which the oracle cases compare.
+  - what: BaseLlmException is a small struct local to this module.
+    why: The Rust error shape of B2202's BaseLLMException is not importable from here yet; the fields (status_code, message, headers) are the same.
+out_of_scope:
+  - "litellm/llms/base_llm/containers/transformation.py: BaseContainerConfig.get_config (L253-L270) has no caller at the pin, so it is not built."
+  - "litellm/containers/endpoints.json lookup by name, URL building and response model selection: B3363 owns container_handler.py."
+  - "OpenAIContainerConfig and AzureContainerConfig implementations: B522 and B547."
+  - "ContainerRequestUtils param filtering and provider selection: B3361."
+  - "litellm/containers/endpoint_factory.py and main.py, which read the catalog to build SDK functions: B3368, B3366, B3367."
+  - "The isinstance(ContainerObject) check in litellm_logging.py L2615 that marks container results billable: the logging task that owns that file."
+pitfalls:
+  - ContainerObject.object is only "container" but ContainerFileObject.object also allows "container_file", and DeleteContainerFileResponse.object also allows "container_file.deleted"; do not make one shared literal enum.
+  - model_dump writes null for absent expires_after, last_active_at, name, first_id and last_id, so a record encodes every key; only the three TypedDict param structs skip None.
+  - hidden_params must stay out of both decode and encode, since LiteLLM keeps it as a private attribute and B522 writes additional_headers into it after decoding.
+  - ContainerListResponse.has_more has no default, so a list body without it is rejected, while first_id and last_id may be missing.
+  - ExpiresAfter.anchor is a one-value literal; an OpenAI body with another anchor fails the whole container decode.
+  - endpoints.json has a trailing space after two of its commas (the async_name lines of list_container_files and upload_container_file) and uneven key spacing; copy it byte for byte so the file is the pinned one, and parse it with serde_json.
+  - retrieve_container_file_content has response_type "raw" and returns_binary true, and upload_container_file has is_multipart true; the other three have neither flag, so the defaults must be false.
+  - get_complete_url returns api_base unchanged, with no /containers suffix; the suffix is added by the OpenAI override in B522.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

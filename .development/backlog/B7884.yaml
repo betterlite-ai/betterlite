@@ -1,0 +1,14 @@
+id: B7884
+milestone: M12 python
+title: Python skills create, list, get and delete
+status: todo
+depends_on: [B6040, B158, B167, B3391, B3392, B3393]
+file: tasks/B7884-python-skills.yaml
+covers:
+  - "litellm/skills/**"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

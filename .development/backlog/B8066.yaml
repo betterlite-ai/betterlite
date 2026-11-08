@@ -1,0 +1,14 @@
+id: B8066
+milestone: M12 python
+title: Python Cache class, cache switches and the local backend classes
+status: todo
+depends_on: [B8065, B5368, B4290, B4291, B4292, B4293, B4294, B4295, B4299]
+file: tasks/B8066-python-cache-setup.yaml
+covers:
+  - "litellm/caching/{__init__,caching}.py"
+parent: B166
+split_from: B166
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,95 @@
+kind: probe
+name: strategy-override
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: override
+        strategy: usage-based-routing-v2
+        routing_strategy: least-busy
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: override
+        strategy: usage-based-routing-v2
+        routing_strategy: simple-shuffle
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: override
+        strategy: usage-based-routing-v2
+        routing_strategy: usage-based-routing-v2
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: override
+        strategy: least-busy
+        routing_strategy: least-busy
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: override
+        strategy: simple-shuffle
+        routing_strategy: least-busy
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: override
+        strategy: usage-based-routing-v2
+        routing_strategy: lar1
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: override
+        strategy: usage-based-routing-v2
+        routing_strategy: provider-budget-routing
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: override
+        strategy: usage-based-routing-v2
+        routing_strategy: not-a-strategy
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: override
+        strategy: usage-based-routing-v2
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: validate
+        value: simple-shuffle
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: validate
+        value: lar1
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: validate
+        value: provider-budget-routing
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: validate
+        value: priority
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: validate
+        value: ""

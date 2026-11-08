@@ -1,0 +1,181 @@
+id: B7320
+title: Provider api_base lookup
+description: >-
+  Add the module `api_base_lookup` to betterlite-models: a pure function that answers "which URL does this model call",
+  the port of `get_api_base` in litellm_core_utils/llm_response_utils/get_api_base.py (113 lines, one public function and
+  two private helpers). Alerts (B4026 outage, B4027 slow and hanging requests), response hidden params (B2413 and the
+  streaming wrapper) and exception context all call it, so it must be callable without a router, a logging object or any
+  network access.
+
+  Public API, all in `crates/betterlite-models/src/api_base_lookup.rs` (the worker may split private code into
+  `api_base_lookup/`): `pub fn get_api_base(model: &str, params: &ApiBaseParams, context: &ApiBaseContext<'_>) ->
+  Result<Option<String>, ApiBaseError>`. `ApiBaseParams` is a plain struct with `Option<String>` fields api_base,
+  base_url, custom_llm_provider, api_key, vertex_location, vertex_project, plus `stream: bool`. It stands for the
+  `LiteLLM_Params` object or kwargs dict LiteLLM receives, so callers build it from their own typed params (betterlite-models
+  cannot import the router types). `base_url` is the extra key LiteLLM reads from `model_extra`. Set `stream` to true only
+  where LiteLLM's getattr would find it (see pitfalls). `ApiBaseContext<'a>` holds `model_alias_map: &'a BTreeMap<String,
+  String>` (LiteLLM's `litellm.model_alias_map`, empty by default), `hooks: &'a dyn ApiBaseHooks`, and whatever B174's
+  resolver needs by reference (read `crates/betterlite-models/src/resolution.rs` once B174 has landed and pass its input
+  type through, do not copy its fields). `ApiBaseError` is this module's own thiserror enum with one variant for an invalid
+  vertex location, carrying the message.
+
+  `ApiBaseHooks` is a trait defined here for the two things betterlite-models cannot reach: `fn login_free_api_base(&self,
+  provider: LoginFreeProvider) -> Option<String>` where `LoginFreeProvider` is a closed enum `GithubCopilot | Chatgpt`, and
+  `fn vertex_claude_url(&self, location: &str, project: &str, model: &str, stream: bool) -> Result<String, ApiBaseError>`.
+  The architect wires real implementations later (copilot and chatgpt config in betterlite-openai, B1304's create_vertex_url
+  with partner claude in betterlite-vertex). Tests use fakes. Do not add a dependency on betterlite-openai or
+  betterlite-vertex: both depend on betterlite-models.
+
+  Behavior, in LiteLLM's order. (1) `params.api_base` set (even an empty string) is returned unchanged. (2) `params.base_url`
+  returned when it is a non-empty string. (3) If `model` is a key of `model_alias_map`, replace it with the mapped value;
+  the replaced model is used for every later step. (4) Call B209's `declared_authenticating_provider(model,
+  custom_llm_provider)`. When it names github_copilot or chatgpt, return `hooks.login_free_api_base(..)` and stop, so the
+  device login never starts. (5) Call B174's get_llm_provider with the model, custom_llm_provider, api_base and api_key.
+  A failure is logged at debug level and treated as no provider and no dynamic base; it is never returned. On success the
+  returned model replaces `model` and the returned provider is kept. (6) A dynamic api base from step 5 is returned. (7)
+  When both vertex_location and vertex_project are set: if the model contains "claude", return `hooks.vertex_claude_url(..)`
+  and pass its error up; otherwise return the string `{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/
+  {location}/publishers/google/models/{model}:streamGenerateContent` when stream is true and `:generateContent` when it is
+  false. That string has no `https://` prefix and is not validated; copy it as is. (8) Otherwise the provider default:
+  provider "gemini" gives `https://generativelanguage.googleapis.com/v1beta/models/{model}:{action}` with action
+  streamGenerateContent or generateContent by stream; provider "openai" gives `https://api.openai.com`; anything else
+  gives None.
+
+  LiteLLM wraps only the `LiteLLM_Params` construction in a try that returns None. Typed input cannot fail that way, so
+  there is no such branch (listed under deviations). Name the native tests so their module path starts with
+  `api_base_lookup::tests::` and holds one of the words precedence, alias, declared, resolution, vertex or default, which
+  the check filters match. Add the helper operation cases below. Budget: 140 implementation, 230 tests, 90 adapters and 40
+  wiring, about 500 lines.
+scope:
+  paths:
+    - crates/betterlite-models/src/api_base_lookup.rs
+    - crates/betterlite-models/src/api_base_lookup/**
+    - tools/oracle/cases/helpers/provider-api-base/**
+    - "tools/oracle/fuzz/corpus/helper_case/provider_api_base-*"
+    - tools/oracle/helpers/b7320.py
+    - tools/oracle/helpers/b7320/**
+    - tools/oracle/src/helpers/models/b7320.rs
+    - tools/oracle/src/helpers/models/b7320/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/get_api_base.py#L13-L28
+    why: The login-free base for github_copilot and chatgpt, and the gemini and openai default URLs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/get_api_base.py#L30-L113
+    why: get_api_base itself, including the only try/except, the alias map step and the vertex branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L134-L143
+    why: declared_authenticating_provider, which decides the early return before any resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L293-L321
+    why: create_vertex_url, the claude partner URL the vertex_claude_url hook must return.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L422-L459
+    why: validate_vertex_location and get_vertex_base_url, the source of the invalid-location error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L255-L258
+    why: A caller that passes the litellm_params dict, so stream is always false.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L218
+    why: A caller that passes a dict and one more at L963 that passes a LiteLLM_Params object (B4026, B4027).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L522-L528
+    why: LiteLLM_Params allows extra keys, which is where base_url and a stray stream come from.
+
+dod:
+  - text: An api_base in params wins over everything, an empty string included, and base_url is used only when non-empty and api_base is None.
+    proof: [lookup-precedence-tests, oracle, helper-python]
+  - text: A model found in model_alias_map is replaced before the declared-provider check and before resolution, and the replaced model reaches the gemini and vertex URLs.
+    proof: [lookup-alias-tests, oracle, helper-python]
+  - text: github_copilot or chatgpt, by custom_llm_provider or by model prefix, returns the hook's login-free base and never calls the resolver.
+    proof: [lookup-declared-tests]
+  - text: A resolver failure is swallowed and the lookup goes on with no provider, while a dynamic api base from the resolver is returned as is.
+    proof: [lookup-resolution-tests, oracle, helper-python]
+  - text: With vertex_location and vertex_project set, a non-claude model gives the unprefixed generateContent or streamGenerateContent string by stream, and a claude model returns the hook's URL or its error.
+    proof: [lookup-vertex-tests, oracle, helper-python]
+  - text: Provider gemini and openai give their fixed defaults, any other provider gives None.
+    proof: [lookup-default-tests, oracle, helper-python]
+  - text: The Rust function get_api_base and the types ApiBaseParams, ApiBaseContext, ApiBaseHooks and ApiBaseError are exported from the module for B4026, B4027 and B2413 to call.
+    proof: [lookup-precedence-tests]
+  - text: The helper operation b7320 and its Python adapter exist, and the new helper corpus replays.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: lookup-precedence-tests
+      why: api_base and base_url precedence, or the exported API, is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-models --no-tests=fail
+        -E 'test(/^api_base_lookup::tests::.*precedence/)'
+    - id: lookup-alias-tests
+      why: the model_alias_map step is missing or runs after resolution
+      run: >-
+        cargo nextest run --locked -p betterlite-models --no-tests=fail
+        -E 'test(/^api_base_lookup::tests::.*alias/)'
+    - id: lookup-declared-tests
+      why: the github_copilot and chatgpt early return is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-models --no-tests=fail
+        -E 'test(/^api_base_lookup::tests::.*declared/)'
+    - id: lookup-resolution-tests
+      why: resolver failure handling or the dynamic api base return is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-models --no-tests=fail
+        -E 'test(/^api_base_lookup::tests::.*resolution/)'
+    - id: lookup-vertex-tests
+      why: the vertex URL branches or the invalid location error are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-models --no-tests=fail
+        -E 'test(/^api_base_lookup::tests::.*vertex/)'
+    - id: lookup-default-tests
+      why: the gemini and openai defaults or the None fallback are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-models --no-tests=fail
+        -E 'test(/^api_base_lookup::tests::.*default/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b7320)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b7320 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b7320/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added api_base cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/provider_api_base-*")" &&
+        grep -lE '^[[:space:]]+b7320:' tools/oracle/fuzz/corpus/helper_case/provider_api_base-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/provider-api-base/explicit-and-alias-base.yaml
+  - tools/oracle/cases/helpers/provider-api-base/model-alias-map.yaml
+  - tools/oracle/cases/helpers/provider-api-base/resolver-base-and-failure.yaml
+  - tools/oracle/cases/helpers/provider-api-base/vertex-gemini-urls.yaml
+  - tools/oracle/cases/helpers/provider-api-base/provider-defaults.yaml
+
+deviations:
+  - what: The function takes typed params and cannot hit LiteLLM's "LiteLLM_Params(**optional_params) failed, return None" branch.
+    why: A pydantic validation failure on a wrongly typed value has no typed-input equivalent; callers build ApiBaseParams from fields that are already typed.
+  - what: An invalid vertex_location for a claude model comes back as Err(ApiBaseError), where LiteLLM lets a ValueError escape.
+    why: Rust has no exceptions; callers (B4026 catches everything, others decide) get the same fact as a value.
+  - what: github_copilot and chatgpt bases and the claude vertex URL come through the ApiBaseHooks trait, not from module state and imports.
+    why: betterlite-models sits below betterlite-openai and betterlite-vertex, and betterlite has no module-level state.
+
+out_of_scope:
+  - "get_llm_provider and the model and key resolution it does belong to B174; declared_authenticating_provider belongs to B209. This task only calls them."
+  - "The github_copilot api_base_without_login (GITHUB_COPILOT_API_BASE, api-key.json endpoint) belongs to B1513/B1514 and the chatgpt one (CHATGPT_API_BASE) to B1510; they implement the hook, the architect wires it."
+  - "create_vertex_url and get_vertex_base_url belong to B1304 and B1305; the architect wires them to vertex_claude_url."
+  - "Building ApiBaseParams from LiteLLM_Params, a kwargs dict or a deployment is each caller's job (B4026, B4027, B2413 and the response metadata code in B004)."
+  - "Loading litellm.model_alias_map from litellm_settings into the map passed in ApiBaseContext; no task in this entry owns that key."
+  - "Calls at exception_mapping_utils.py L2404 and response_metadata.py L126 are wired by the tasks that own those files."
+
+pitfalls:
+  - "`stream` comes from `getattr(optional_params, \"stream\", False)` on the original argument, so a plain dict always gives false and only a LiteLLM_Params object with an extra `stream` key can give true; streaming_handler.py L255 and the alert callers pass dicts."
+  - "The vertex non-claude string has no `https://` scheme and does not validate the location, while the claude URL goes through create_vertex_url and fails on an invalid location."
+  - "The vertex branch runs after the resolver step, so `model` is the resolver's stripped model (no `vertex_ai/` prefix) when resolution worked and the alias-mapped model when it failed."
+  - "A resolver failure leaves the provider None, so gemini and openai defaults are skipped for an unknown model prefix and the answer is None."
+  - "The provider default for gemini uses the model name after resolution, so `gemini/gemini-pro` gives `.../models/gemini-pro:generateContent`."
+  - "base_url is read only when it is a non-empty string; an empty api_base still wins because the check is `is not None`."
+  - "declared_authenticating_provider ignores the resolver, so github_copilot never reaches get_llm_provider here; that is why it must run before step 5 and before the vertex branch."
+  - "model_alias_map is checked only when it is non-empty and the model is an exact key; there is no prefix or pattern matching."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

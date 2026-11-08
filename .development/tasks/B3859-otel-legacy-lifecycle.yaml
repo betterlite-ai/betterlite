@@ -186,12 +186,14 @@ pitfalls:
   - "Guardrail dedup is per-entry with key (handler_class_id, 'guardrail', name, start_time, mode); one real guardrail invocation appears in multiple payloads (_handle_success, _handle_failure, async_post_call_failure_hook), so dedupe ensures exactly one span per real invocation."
   - "start_time_float and end_time_float are float seconds (Unix timestamps); datetime.now() is the fallback only if the field is None/missing, not for invalid values; partial parse failures do not raise, they just use now()."
   - "The primary span is not created when a parent span exists AND USE_OTEL_LITELLM_REQUEST_SPAN is false; in that case attributes are set on the parent span instead (shallow hierarchy)."
-  - "Raw-request spans are skipped entirely in semconv mode; do not create them but redirect their data to the primary span attributes instead (B3856 owns that redirection)."
+  - "Raw-request spans are skipped entirely in semconv mode, and semconv attributes go on the primary span through B3856's set_attributes."
   - "Proxy span closure on success is guarded to (name == LITELLM_PROXY_REQUEST_SPAN_NAME AND is_recording); externally provided spans passed through kwargs must never be closed by LiteLLM."
   - "Proxy span closure on failure happens in _handle_failure itself (unconditionally when parent_otel_span.name == LITELLM_PROXY_REQUEST_SPAN_NAME, with no is_recording guard) and again in async_post_call_failure_hook after the 'Failed Proxy Server Request' child is appended; both call .end() on the same span object, so replicate this double-close."
   - "Guardrail span parenting uses _resolve_guardrail_context which returns context set from span (if created) > parent_span (if exists) > fallback_ctx; this ensures guardrails are never orphaned (Issue #5)."
   - "The langfuse_otel callback checks hasattr(self, 'callback_name') and self.callback_name == 'langfuse_otel' to trigger env-var credential loading; this special case must be preserved."
   - "Construct_dynamic_otel_headers and construct_dynamic_otel_config return None in the base class; every override (Arize, Langfuse, etc.) is responsible for its own routing logic and must also return None if no override applies."
+  - "Log the Err of set_attributes (MissingStandardLoggingObject) and call the callback-failure counter (handle_callback_failure)."
+  - "Call DynamicTracerCache::tracer_for_config, tracer_for_headers and legacy_exporters::headers::headers_dictionary; do not rebuild them."
 
 review_level: standard
 

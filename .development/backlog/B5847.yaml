@@ -1,0 +1,14 @@
+id: B5847
+milestone: M3 providers
+title: Replicate provider
+status: todo
+depends_on: [B004, B173, B177, B196, B218]
+file: tasks/B5847-replicate-provider.yaml
+covers:
+  - "litellm/llms/replicate/**"
+parent: B042
+split_from: B042
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,109 @@
+id: B5659
+title: Native completion calls in the Python crate
+description: >-
+  The Python `completion` has to reach B5656's Rust call. This task adds that bridge to crates/betterlite-python: the native
+  session, the blocking and async calls, the stream handle and the error type. It holds no completion logic. It moves JSON
+  text across the language boundary and runs futures.
+
+
+  How native functions join the crate. B5369 owns `src/lib.rs`, and no later task may scope it, so a task never edits a
+  shared list. Each family of native functions owns its own files: `src/<family>.rs`, `src/<family>/**` and
+  `python/betterlite/_native_<family>.pyi`. `src/<family>.rs` has one entry point, `pub(crate) fn register(module:
+  &Bound<'_, PyModule>) -> PyResult<()>`, that adds every function and class of the family. `lib.rs` holds one `mod
+  <family>;` line and one `<family>::register(module)?;` line per family, and `_native.pyi` holds one
+  `from betterlite._native_<family> import *` line. B5369 writes those lines, each with a stub `register` that returns `Ok(())`, for every family planned before it merges. The architect adds the lines for a family planned later. A family task fills the stub. There is no
+  auto-discovery: the list in `lib.rs` stays explicit and is never touched by a family task. This task is the `completion`
+  family, and B166 and the other Python entries follow the same shape with their own family name. If the `completion` lines
+  are missing from `lib.rs` when you start, stop and report a blocker, since you can't add them.
+
+
+  `NativeSession` is a `#[pyclass]` built once from a JSON settings text. It owns B5656's `CompletionTarget`,
+  `AsyncCompletionTarget` and `CompletionProbe` with the HTTP client, the clock and the sleeper as its fields, so the crate has
+  no static, and it passes `NoFoundryRules` and `NoMcpLoop` to them. Its methods take one JSON text holding the arguments and
+  the settings snapshot. `completion(request)` runs the
+  call on `pyo3_async_runtimes::tokio::get_runtime()` with `block_on` inside `py.detach`, so other Python threads keep running.
+  `acompletion(request)` returns an awaitable through `pyo3_async_runtimes::tokio::future_into_py`. Both give JSON text for a
+  finished response or a `NativeChatStream`. `count_tokens(request)`, `check_valid_key(request)` and `valid_model(request)`
+  call B5656's `count_tokens` and B5364's two functions over `CompletionProbe`.
+
+
+  `NativeChatStream` is a `#[pyclass]` over B5654's `ChatStream`, kept behind a `tokio::sync::Mutex` since an awaitable needs
+  to own its handle. `next_chunk()` blocks with the GIL released and `anext_chunk()` returns an awaitable. Each gives chunk
+  JSON text, or None at the end of the stream. `close()` and `aclose()` call `ChatStream::close`.
+
+
+  `NativeError` comes from `pyo3::create_exception!`, with `Exception` as its base. Its one argument is JSON text with the
+  keys `type`, `message`, `status_code`, `llm_provider`, `model`, `body`, `headers`, `num_retries` and `max_retries`. `type`
+  is the LiteLLM class name, and B158 maps it. Conversions between JSON text and SDK types sit in
+  `src/completion/convert.rs` and need no interpreter, so `cargo nextest` covers them. Test names there start with `request_`
+  and `error_`. `python/betterlite/_native_completion.pyi` types everything above.
+
+
+  Add `pyo3-async-runtimes` 0.30.0 with the `tokio-runtime` feature, and `betterlite-sdk`, to this crate's Cargo.toml.
+scope:
+  paths:
+  - crates/betterlite-python/Cargo.toml
+  - crates/betterlite-python/src/completion*
+  - crates/betterlite-python/src/completion/**
+  - crates/betterlite-python/python/betterlite/_native_completion.pyi
+  - crates/betterlite-python/tests/test_native_completion.py
+  lint_tables: false
+references:
+- url: https://github.com/PyO3/pyo3-async-runtimes
+  why: The `future_into_py` bridge and the runtime it owns.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L420-L740
+  why: The async call this bridge has to carry.
+dod:
+- text: A JSON request turns into SDK arguments and a settings snapshot, and a malformed text gives an error with no panic.
+  proof: [native-request]
+- text: Every SDK error turns into `NativeError` JSON with the class name and its fields.
+  proof: [native-error]
+- text: A blocking call returns against a local HTTP server, and another Python thread makes progress while it runs.
+  proof: [native-blocking]
+- text: An async call runs on the running event loop and can run alongside a second call.
+  proof: [native-async]
+- text: A stream gives chunks on both paths, None at the end and closes once.
+  proof: [native-stream]
+- text: "`check_valid_key`, `valid_model` and `count_tokens` reach the Rust functions."
+  proof: [native-checks]
+- text: The stubs pass strict basedpyright, and the Python test file passes ruff.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: native-request
+    why: Arguments change on the way in.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^completion::convert::tests::request_/)'
+  - id: native-error
+    why: A status code or provider gets lost on the way out.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^completion::convert::tests::error_/)'
+  - id: native-blocking
+    why: A blocking call holds the GIL and stops the caller's other threads.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_completion.py -k blocking
+  - id: native-async
+    why: The awaitable blocks the event loop.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_completion.py -k async_call
+  - id: native-stream
+    why: A stream hangs at its end or leaks its connection.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_completion.py -k stream
+  - id: native-checks
+    why: A helper call isn't wired.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_completion.py -k checks
+  - id: python-lint
+    why: Stubs that drift from the native names break every typed caller.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The public Python functions, the settings snapshot, the error class table and the `CustomStreamWrapper` face are B158.
+- The native calls of other families, such as extension classes, are B166 and the other Python entries.
+- Writing the `completion` lines in `src/lib.rs` and `_native.pyi` belongs to the architect, as the description says.
+pitfalls:
+- '`crates/betterlite-python/Cargo.toml` keeps `unsafe_code = "forbid"`, so report a blocker if a PyO3 macro fails under it and do not relax the lint.'
+- '`extension-module` is not a default feature, so `cargo nextest` links the interpreter and the tests in `convert.rs` must not need a running module.'
+- A `tokio::sync::Mutex` guard held across `next` makes `close` wait for a stalled read, so close through a cancel signal or take the source out first.
+- A panic inside `future_into_py` turns into a Python exception with no `NativeError` payload, so return errors and never unwrap.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,15 @@
+id: B5650
+milestone: M12 python
+title: Completion request options and per-request custom pricing
+status: todo
+depends_on: [B176, B206, B5365]
+file: tasks/B5650-completion-options.yaml
+covers:
+  - "litellm/main.py"
+  - "litellm/types/utils.py"
+parent: B158
+split_from: B158
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

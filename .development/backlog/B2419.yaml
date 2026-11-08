@@ -2,7 +2,7 @@ id: B2419
 milestone: M5 API families
 title: Responses deployment-hook and agentic policy
 status: todo
-depends_on: [B002, B010, B171, B189, B248, B247, B902, B157]
+depends_on: [B002, B010, B171, B4119, B189, B248, B247, B902, B5367]
 file: tasks/B2419-responses-hook-policy.yaml
 covers:
   - "litellm/llms/custom_httpx/llm_http_handler.py"

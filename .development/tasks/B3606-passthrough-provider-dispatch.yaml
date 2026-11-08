@@ -1,0 +1,208 @@
+id: B3606
+title: Pass-through provider response logging dispatch
+description: >-
+  Build the step that picks the provider logging handler for a finished pass-through response and runs it, in the new module
+  provider_dispatch in betterlite-server (crates/betterlite-server/src/pass_through_logging/provider_dispatch.rs and its folder).
+  It is LiteLLM's PassThroughEndpointLogging.normalize_llm_passthrough_logging_payload plus the five route predicates that need a
+  provider handler's own helper. B3607 (success completion) calls it for every response that no early return handled. It never writes a
+  spend row itself: the handler it picks does the pricing, and B3607 dispatches the result. The module sits in betterlite-server because
+  the provider handlers live in different crates (core, vertex, streaming, transcribe, server) and only the server crate can depend on
+  all of them. It uses B3605's PassThroughEndpointLogging route tables and predicates, response-object enum, typed kwargs map and
+  UpstreamBodyText, all from betterlite-logging.
+
+  Route predicates, as free functions over the route string, all pure. `is_vertex_route(url_route)` is true when the route contains
+  ":" plus any vertex method from B3605's table (substring test, so ":generateContent" matches), or contains any vertex resource
+  (batchPredictionJobs, no colon), or B3638's is_vertex_interactions_route says so. `is_gemini_route(url_route, custom_llm_provider)` is
+  false unless the provider is exactly "gemini"; then it is true when B3638's is_interactions_route says so or the route contains any
+  gemini route string from B3605. `is_openai_route(url_route)` is false for an empty route, otherwise B3635's openai-compatible URL
+  test (the helper that keeps Azure Speech, Vision and Language hosts out). `is_supported_openai_endpoint(url_route)` is true when B3635's
+  chat completions, embeddings, image generation, image editing or responses predicate is true. `is_tinyfish_route(url_route,
+  custom_llm_provider)` is true for provider "tinyfish" or when B3648's is_tinyfish_agent_url is true.
+
+  Branch selection. `select_provider_branch(url_route: &str, custom_llm_provider: Option<&str>) -> Option<ProviderBranch>` returns the
+  first match in LiteLLM's elif order, and None when nothing matches. `ProviderBranch` has these variants in this order: Gemini
+  (is_gemini_route), Vertex (is_vertex_route), Anthropic (B3605's is_anthropic_route), Cohere (is_cohere_route), OpenAi (is_openai_route
+  and is_supported_openai_endpoint), Cursor (is_cursor_route), ComprehendMedical, Tinyfish, AzureSpeech, Transcribe, Typesafe (provider
+  "typesafe", or is_openrouter_decisions_route), VertexAiLive (is_vertex_ai_live_route), DeepgramListen (B3653's is_deepgram_listen_route
+  on the route), FalAi (B3653's is_fal_ai_route). The OpenAi test needs both conditions, so an OpenAI-looking URL for an unsupported
+  endpoint falls through to the later branches. The route and provider are the only inputs; the response body never changes the choice.
+
+  Handler call. Define `ProviderLogInput` with the logging object handle, the upstream response view (status code, response headers and B3605's UpstreamBodyText), the upstream request method, request URL (`url::Url`) and request headers (`http::HeaderMap`) as the proxy sent them (B3646's Transcribe handler reads x-amz-target from the request headers and the operation from the URL, so these are not the response headers), `call_log: &mut CallLog` (B247's per-call log; B3642's Vertex handler writes to it, so ProviderLogInput<'a> borrows it), `response_body: Option<PassThroughResponseBody>` (enum Object(serde_json::Map)
+  or List(Vec<serde_json::Map>); LiteLLM's `dict | list[dict] | None`), request_body (serde_json::Map), url_route, result (&str),
+  start_time, end_time, cache_hit, custom_llm_provider and the kwargs map. Define `ProviderLogOutcome { result: Option<response-object
+  enum from B3605>, kwargs }`, the trait `ProviderLogHandler { fn handle(&self, input: ProviderLogInput<'_>) -> Result<ProviderLogOutcome,
+  ProviderLogError> }` and the struct `ProviderLogHandlers` with one `Arc<dyn ProviderLogHandler>` per ProviderBranch variant.
+  `ProviderLogHandlers::production(...)` builds the real adapters. Each adapter is a short function that reshapes ProviderLogInput into
+  the arguments of one leaf handler and calls it. The leaves are the merged tasks this one depends on: Gemini B3640, Vertex B3642,
+  Anthropic B3634, Cohere B3650, OpenAI B3637, Cursor, Typesafe and ComprehendMedical B3651, Tinyfish B3649, AzureSpeech B3652,
+  Transcribe B3646, VertexAiLive B3643, DeepgramListen and FalAi B3653. Read each leaf's public handler function in the merged code and
+  call it; do not copy its logic. Tests inject fakes through the trait, so the real adapters need no test beyond one per branch that
+  checks the reshaped arguments with the leaf stubbed at its input.
+
+  `ProviderLogDispatcher::new(handlers: ProviderLogHandlers)` has `normalize_llm_passthrough_logging_payload(&self, input:
+  ProviderLogInput<'_>) -> Result<NormalizedPassthroughPayload, ProviderLogError>`. `NormalizedPassthroughPayload { standard_logging_response_object:
+  Option<response-object enum>, kwargs }`. With no branch selected it returns None and the input kwargs unchanged. With a branch it
+  calls that handler once, and takes both the result and the kwargs from the outcome, so a handler's kwargs replace the input kwargs
+  even when its result is None. A handler error goes back to the caller unchanged (LiteLLM has no try around the call here; B3607's caller
+  decides what to do with it). No other branch's handler is called.
+
+  Input shaping per branch, which the adapters must keep exactly. Anthropic, Cohere, OpenAi, Cursor and Typesafe get the
+  response body as an object, or an empty object when it is absent or a list. Gemini gets the raw response body bytes and the response headers from
+  the upstream response view, not a parsed object: the adapter builds `GeminiPassthroughLogger::new(cost)`, then calls the sync
+  `gemini_passthrough_handler(&self, input: GeminiPassthroughInput<'_>) -> Result<HandlerOutcome, GeminiPassthroughError>` (fields logging_obj, url_route,
+  response_headers: &http::HeaderMap, response_body: &[u8], request_body, start_time, end_time, kwargs) and maps the HandlerOutcome into a
+  ProviderLogOutcome. The module path is betterlite_server::pass_through_logging::gemini_passthrough_logging, in the same crate as this task. It gets no result string and no cache_hit. Tinyfish gets the object or None. AzureSpeech gets the body as
+  it is (object, list or None). Vertex, ComprehendMedical and Transcribe get no response body. Typesafe also gets custom_llm_provider, or ""
+  when it is None. VertexAiLive gets only the websocket messages (the list body, or an empty list for anything else), the logging object,
+  url_route, the times and the request body; no response, result or cache_hit. DeepgramListen gets only the object members of the list body
+  (empty for anything else), the logging object, the upstream request URL as text, and the kwargs as one map. FalAi gets the object body or
+  an empty object, request_body, the logging object, url_route and the kwargs as one map; it gets no times or result. Every other
+  handler (not Gemini) also gets the result string, both times, cache_hit and request_body, and the kwargs spread as extra arguments.
+
+  Tests live under pass_through_logging::provider_dispatch::tests and are named by group (see checks). The module has no HTTP route yet
+  (B3607 and B102 wire it), so it gets helper cases for the pure parts and native tests for the dispatch.
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_logging/provider_dispatch.rs
+    - crates/betterlite-server/src/pass_through_logging/provider_dispatch/**
+    - tools/oracle/cases/server/pass-through-logging/provider-dispatch/**
+    - "tools/oracle/fuzz/corpus/helper_case/provider_dispatch-*"
+    - tools/oracle/helpers/b3606.py
+    - tools/oracle/helpers/b3606/**
+    - tools/oracle/src/helpers/server/b3606.rs
+    - tools/oracle/src/helpers/server/b3606/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L151-L410
+    why: normalize_llm_passthrough_logging_payload, the whole elif chain with the argument each handler gets and the kwargs it hands back.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L519-L524
+    why: is_vertex_route, with the colon-prefixed method test and the resource test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L550-L551
+    why: is_tinyfish_route, provider name or agent host.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L595-L642
+    why: is_openai_route, is_gemini_route and _is_supported_openai_endpoint.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/gemini_passthrough_logging_handler.py#L34-L45
+    why: Gemini handler signature. The Python handler takes the body as a dict; the Rust adapter passes raw body bytes and headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L124-L133
+    why: Vertex handler signature, which takes no response body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L54-L65
+    why: Anthropic handler signature.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cohere_passthrough_logging_handler.py#L68-L79
+    why: Cohere handler signature, called on a module-level instance.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L327-L338
+    why: OpenAI handler signature.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cursor_passthrough_logging_handler.py#L67-L78
+    why: Cursor handler signature.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/comprehend_medical_passthrough_logging_handler.py#L45-L55
+    why: Comprehend Medical handler signature, which takes no response body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L107-L110
+    why: is_tinyfish_agent_url, the host comparison behind is_tinyfish_route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L143-L154
+    why: Tinyfish handler signature, response body as an object or None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/azure_speech_passthrough_logging_handler.py#L122-L133
+    why: Azure Speech handler signature, which takes the raw body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L685-L696
+    why: Transcribe handler signature, which takes no response body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/typesafe_passthrough_logging_handler.py#L59-L70
+    why: Typesafe handler signature, with the extra custom_llm_provider argument.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_ai_live_passthrough_logging_handler.py#L363-L371
+    why: Vertex Live handler signature, with websocket messages and no response, result or cache_hit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/deepgram_listen_passthrough_logging_handler.py#L55-L65
+    why: is_deepgram_listen_route and the Deepgram handler signature (kwargs as one map).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/fal_ai_passthrough_logging_handler.py#L26-L37
+    why: is_fal_ai_route and the Fal handler signature (no times, no result).
+dod:
+  - text: is_vertex_route is true for a route with ":" plus a tracked vertex method, a batchPredictionJobs resource or a Vertex interactions path, and false otherwise.
+    proof: [predicate-tests, dispatch-oracle]
+  - text: is_gemini_route is false for any provider but "gemini", and for "gemini" is true for an interactions route or a route with a tracked gemini method.
+    proof: [predicate-tests, dispatch-oracle]
+  - text: is_openai_route and is_supported_openai_endpoint follow B3635's classifiers, an empty route is not OpenAI, and a non-OpenAI Azure host is not OpenAI.
+    proof: [predicate-tests, dispatch-oracle]
+  - text: is_tinyfish_route is true for provider "tinyfish" or a TinyFish agent URL, and false otherwise.
+    proof: [predicate-tests]
+  - text: select_provider_branch returns the first match in LiteLLM's order for each of the fourteen branches and None for an unmatched route.
+    proof: [select-order-tests, dispatch-oracle, helper-python]
+  - text: A route that two branches both match picks the earlier one, and an OpenAI URL for an unsupported endpoint falls through to the later branches.
+    proof: [select-order-tests, dispatch-oracle]
+  - text: With no branch selected the payload has no response object and the input kwargs; with a branch exactly that handler runs once.
+    proof: [normalize-tests]
+  - text: A handler's kwargs replace the input kwargs even when its result is None, and a handler error is returned to the caller.
+    proof: [normalize-tests]
+  - text: Each branch's adapter passes the leaf handler the arguments listed in the description, including the empty-object and None defaults for the response body. ProviderLogInput carries the logging object handle, the response status, headers and body text, the request method, URL and headers, call_log as &mut CallLog, response_body, request_body, url_route, result, start_time, end_time, cache_hit, custom_llm_provider and kwargs.
+    proof: [adapter-shape-tests, dispatch-oracle]
+  - text: Newly added helper cases replay through the shared helper-case parser and the strict Python adapter lints clean.
+    proof: [helper-case-corpus, helper-python]
+checks:
+  optional: []
+  commands:
+    - id: predicate-tests
+      why: a route predicate for Vertex, Gemini, OpenAI or TinyFish is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::provider_dispatch::tests::predicate_/)'
+    - id: select-order-tests
+      why: branch selection is missing, in the wrong order or lets an unsupported OpenAI route stop the chain
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::provider_dispatch::tests::select_/)'
+    - id: normalize-tests
+      why: the normalize step calls the wrong handler, drops a handler's kwargs or swallows its error
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::provider_dispatch::tests::normalize_/)'
+    - id: adapter-shape-tests
+      why: an adapter passes a leaf handler the wrong response body, extra argument or missing argument
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::provider_dispatch::tests::adapter_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3606)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3606 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3606/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/provider_dispatch-*")" &&
+        grep -lE '^[[:space:]]+b3606:' tools/oracle/fuzz/corpus/helper_case/provider_dispatch-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: dispatch-oracle
+      why: newly added helper cases are absent or betterlite and LiteLLM disagree on them
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/server/pass-through-logging/provider-dispatch)" &&
+        grep -rlE '^[[:space:]]+b3606:' tools/oracle/cases/server/pass-through-logging/provider-dispatch &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/server/pass-through-logging/provider-dispatch
+oracle_cases:
+  - tools/oracle/cases/server/pass-through-logging/provider-dispatch/branch-vertex-methods.yaml
+  - tools/oracle/cases/server/pass-through-logging/provider-dispatch/branch-vertex-interactions.yaml
+  - tools/oracle/cases/server/pass-through-logging/provider-dispatch/branch-gemini-needs-provider.yaml
+  - tools/oracle/cases/server/pass-through-logging/provider-dispatch/branch-order-gemini-before-vertex.yaml
+  - tools/oracle/cases/server/pass-through-logging/provider-dispatch/branch-openai-unsupported-falls-through.yaml
+  - tools/oracle/cases/server/pass-through-logging/provider-dispatch/branch-azure-host-not-openai.yaml
+  - tools/oracle/cases/server/pass-through-logging/provider-dispatch/branch-tinyfish-by-host.yaml
+  - tools/oracle/cases/server/pass-through-logging/provider-dispatch/branch-none-for-unknown-route.yaml
+  - tools/oracle/cases/server/pass-through-logging/provider-dispatch/branch-typesafe-and-openrouter-decisions.yaml
+  - tools/oracle/cases/server/pass-through-logging/provider-dispatch/shape-body-defaults.yaml
+  - tools/oracle/cases/server/pass-through-logging/provider-dispatch/shape-websocket-list-body.yaml
+deviations:
+  - what: The handlers are reached through a ProviderLogHandlers struct of trait objects, and a handler failure is an Err returned from normalize_llm_passthrough_logging_payload.
+    why: Rust has no exceptions and tests need fakes; the error reaches B3607 at the same point where LiteLLM's exception would.
+  - what: The module lives in betterlite-server as free functions and a ProviderLogDispatcher struct, not as methods on PassThroughEndpointLogging in betterlite-logging.
+    why: The leaf handlers sit in crates that depend on betterlite-logging, so the logging crate cannot call them without a cycle.
+  - what: Handlers return typed outcomes, so LiteLLM's `["result"]` and `["kwargs"]` dict reads become fields.
+    why: The declared TypedDict return type is the contract; a handler that omits a key is a type error in Rust.
+out_of_scope:
+  - "pass_through_async_success_handler (success_handler.py:412-517), its early returns for TinyFish, AssemblyAI, Langfuse and Transcribe job starts, the StandardPassThroughResponseObject fallback and _set_cost_per_request wiring belong to B3607."
+  - "PassThroughEndpointLogging's constructor, route tables, _handle_logging, _safe_response_text and the predicates that need no provider handler (anthropic, cohere, assemblyai, comprehend medical, azure speech, transcribe, typesafe, openrouter decisions, langfuse, vertex live, cursor) belong to B3605; this task calls them."
+  - "The provider handlers themselves, their cost math and their logging payloads belong to the leaf tasks named in the description."
+  - "The AssemblyAI handler is not part of the elif chain (pass_through_async_success_handler calls it before this step); B3607 owns that call and B3647 the handler."
+  - "The streaming counterpart (_route_streaming_logging_to_handler) belongs to B3608."
+pitfalls:
+  - "The chain order is part of the behavior: Gemini is tested before Vertex, so a Vertex-style route sent with custom_llm_provider 'gemini' goes to the Gemini handler, while the same route with another provider goes to Vertex."
+  - "The OpenAI branch needs is_openai_route and is_supported_openai_endpoint together; an OpenAI host with an unsupported path (a files route, say) is not logged by the OpenAI handler and falls through to the later branches, ending with no response object."
+  - "is_vertex_route tests ':' plus the method name as a substring of the whole route, but the batchPredictionJobs resource is tested without the colon."
+  - "Transcribe sits before Typesafe and after AzureSpeech, and AzureSpeech and Transcribe are picked by custom_llm_provider alone, so a route that looks like Anthropic ('/messages') with provider 'azure_speech' still goes to Anthropic first."
+  - "The Deepgram and Fal handlers take the kwargs as one map argument, while every other handler gets them spread, so a kwargs key named 'result' or 'cache_hit' cannot collide with a Deepgram or Fal argument."
+  - "Deepgram keeps only the object members of a list body and reads the upstream URL from the httpx response's request, not from url_route."
+  - "Vertex Live is built fresh per call in LiteLLM, so the adapter must keep no state between calls."
+  - "A list response body is not an object: Anthropic, Cohere, OpenAI, Cursor and Typesafe see an empty object, and only AzureSpeech sees the list."
+  - "Typesafe gets custom_llm_provider as '' when it is None, so the leaf never sees a missing provider."
+  - "Tinyfish gets None for a list or missing body, not an empty object, because the leaf treats None as 'no run to price'."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,258 @@
+id: B3640
+title: Gemini passthrough logging and Vertex stream collection
+description: >-
+  Build the Gemini pass-through logging handler and the Vertex collected-chunks handler in betterlite-server, in two new modules:
+  gemini_passthrough_logging (crates/betterlite-server/src/pass_through_logging/gemini_passthrough_logging.rs and its folder) and vertex_stream_collection
+  (crates/betterlite-server/src/pass_through_logging/vertex_stream_collection.rs and its folder). They are the Gemini and Vertex leaves of LiteLLM's
+  pass-through response logging. B3606 calls the Gemini non-streaming handler. B3608 calls both stream handlers through its
+  CollectedChunksHandler trait once a stream has ended. Neither module reads the network. Both reuse code that other tasks own and add
+  only the glue and the order of calls below.
+
+  Types you use and do not define. From B3608 (betterlite-logging, module passthrough_stream_logging): the trait CollectedChunksHandler
+  { fn handle(&self, call: &CollectedChunksCall) -> Result<HandlerOutcome, HandlerError> }, CollectedChunksCall (logging object handle,
+  url_route, request_body, endpoint_type, start_time, end_time, lines: Vec<String>, model: Option<String>), HandlerOutcome (an optional result
+  and a kwargs map) and HandlerError. From B3605: the response-object enum and the typed kwargs map that HandlerOutcome holds. From
+  B3638 (betterlite-vertex, vertex_relay_metadata): extract_model_from_url (the "/models/([^:]+)" rule, "unknown" when absent),
+  is_interactions_route, interactions_passthrough_handler, get_custom_llm_provider_from_url and the Vertex logging payload factory
+  (_create_vertex_response_logging_payload_for_generate_content). From B1304: get_vertex_location_from_url. From B1326:
+  decode_generate_content and the envelope assembly it splits out. From B1315: GeminiStreamDecoder::push. From B1364: the Veo
+  create-response method (transform_video_create_response). From B582: the Anthropic stream-event parser (ModelResponseIterator.chunk_parser)
+  with its per-stream state. From B2227: stream_chunk_builder. From B068: the completion cost service and its completion_cost call. Read
+  the merged code for the exact Rust names and signatures of these and call them. Do not copy their logic. If a function you need is not
+  there yet, report it in notes and stop.
+
+  Constructors. `GeminiPassthroughLogger::new(cost: Arc<...>)` and `VertexStreamCollector::new(cost: Arc<...>)` each take B068's cost
+  service handle (the type B068 exposes for completion_cost) and keep it. No module-level state. Both structs implement
+  CollectedChunksHandler. B102 builds them once and puts them in B3608's ProviderChunkHandlers (gemini and vertex slots).
+
+  The fixed names B3606 calls. In gemini_passthrough_logging:
+  `pub struct GeminiPassthroughInput<'a> { pub logging_obj: &'a <the logging object handle type of CollectedChunksCall>, pub url_route: &'a str,
+  pub response_headers: &'a http::HeaderMap, pub response_body: &'a [u8], pub request_body: &'a serde_json::Map<String, serde_json::Value>,
+  pub start_time: <the type of CollectedChunksCall.start_time>, pub end_time: <same>, pub kwargs: <B3605 typed kwargs map> }` and
+  `impl GeminiPassthroughLogger { pub fn gemini_passthrough_handler(&self, input: GeminiPassthroughInput<'_>) -> Result<HandlerOutcome,
+  GeminiPassthroughError> }`. The full path is betterlite_server::pass_through_logging::gemini_passthrough_logging::GeminiPassthroughLogger. The method is
+  synchronous. response_body is the whole buffered upstream body (LiteLLM reads httpx_response.json() from it), and the dict response_body
+  and the result and cache_hit arguments of LiteLLM's signature are not used by the Gemini handler, so they are not in the struct.
+  GeminiPassthroughError is this module's own enum (thiserror) and must convert into HandlerError so the stream seam can return it.
+
+  gemini_passthrough_handler, in order. (1) If B3638's is_interactions_route(url_route) is true, return B3638's
+  interactions_passthrough_handler with custom_llm_provider "gemini" and vertex_location None, passing the logging object, request body,
+  kwargs and times. (2) Else if the route contains "predictLongRunning" (case sensitive): model = extract_model_from_url(url_route); build
+  the video object with B1364's create-response method (response bytes, model, logging object, custom_llm_provider "gemini", request_data =
+  request body); set logging_obj.model = model, model_call_details["model"] = model, model_call_details["custom_llm_provider"] = "gemini"
+  and logging_obj.custom_llm_provider = "gemini"; response_cost = completion_cost(video object, model, custom_llm_provider "gemini",
+  call_type "create_video"); store response_cost in the video object's hidden params; set kwargs response_cost, model and
+  custom_llm_provider ("gemini"); set model_call_details["response_cost"]; return the video object and the kwargs. (3) Else if the route
+  contains "generateContent" (case sensitive, so "streamGenerateContent" does not match): model = extract_model_from_url(url_route); decode
+  the body with B1326 (decode_generate_content, then the envelope assembly) into a chat response for that model with the single dummy
+  message {"role": "user", "content": "no-message-pass-through-endpoint"}, empty optional and provider params and an empty api key;
+  then run the Gemini payload factory (below) and return the chat response and the kwargs it gives back. (4) Else return no result and the
+  input kwargs unchanged. A decode or cost error is returned as Err, as LiteLLM lets the exception rise.
+
+  The Gemini payload factory, a private function in the same module and used by the handler and the stream seam:
+  `create_gemini_response_logging_payload(response, model, kwargs, start_time, end_time, logging_obj, custom_llm_provider)`. It computes
+  response_cost = completion_cost(response, model, custom_llm_provider "gemini", always the literal "gemini" here and not the argument).
+  It sets kwargs response_cost, model and custom_llm_provider (the argument). It sets response.id = logging_obj.litellm_call_id,
+  logging_obj.model = response.model when non-empty else model, model_call_details["model"] = logging_obj.model,
+  model_call_details["custom_llm_provider"] = custom_llm_provider and model_call_details["response_cost"] = response_cost. It returns the
+  kwargs. This one writes model_call_details["response_cost"]; Vertex's factory (B3638) does not, and you keep that difference.
+
+  Gemini collected chunks. `impl CollectedChunksHandler for GeminiPassthroughLogger`, handle(call): kwargs start empty. model = call.model
+  when it is non-empty, else extract_model_from_url(url_route). Build the complete response from call.lines (below). When that gives none,
+  log at the tracing error level "Unable to build complete streaming response for Gemini passthrough endpoint, not logging..." and return
+  no result with empty kwargs. Otherwise run the Gemini payload factory with custom_llm_provider "gemini" and return the response with
+  those kwargs. endpoint_type and the logger argument of LiteLLM's signature are not used.
+
+  Building the complete response from lines (Gemini). If the route contains "generateContent" or "streamGenerateContent" (two separate
+  case sensitive tests; the second is needed because "streamGenerateContent" does not contain "generateContent"), create one fresh B1315
+  decoder and push every line in order, one push per line, keeping what each push gives back as one optional chunk, and never call finish.
+  Any other route gives no response. LiteLLM keeps a None in the parsed list, tests the list for emptiness before dropping the Nones, and
+  then calls stream_chunk_builder on the non-None chunks. B2227's stream_chunk_builder returns none for an empty list, so one rule covers
+  both: drop the Nones and call stream_chunk_builder, and an empty result is none. The decoder starts in valid-JSON mode and switches to
+  accumulated mode on the first line that is not a complete JSON value (a bare "[" or "[{" from a non-SSE JSON array stream does this).
+  A trailing partial value that never closes is lost because finish is not called; that matches LiteLLM and is covered by a test.
+  A push error is returned as Err.
+
+  Vertex collected chunks. `impl CollectedChunksHandler for VertexStreamCollector`, handle(call): kwargs start empty.
+  vertex_location = get_vertex_location_from_url(url_route); when found, store it in the logging object's optional_params["vertex_location"].
+  model = call.model when non-empty, else B3638's extract_model_from_url(url_route). Build the complete response (below). When none, log
+  at the error level "Unable to build complete streaming response for Vertex passthrough endpoint, not logging..." and return no result
+  with empty kwargs. Otherwise call B3638's Vertex payload factory with the response, model, the empty kwargs, the times, the logging
+  object, custom_llm_provider = get_custom_llm_provider_from_url(url_route) ("gemini" when the host ends with
+  generativelanguage.googleapis.com, else "vertex_ai") and vertex_location, and return the response with the factory's kwargs.
+
+  Building the complete response from lines (Vertex). Route contains "generateContent" or "streamGenerateContent": the same decoder
+  path as Gemini (a fresh B1315 decoder, one push per line, no finish). Else the route contains "rawPredict" or "streamRawPredict" (again
+  two separate tests): create one fresh B582 stream-event state, and for each line strip a leading "data: " or else "data:" prefix, parse the
+  rest as JSON, skip the line when it is not valid JSON or not an object, and give the object to B582's chunk parser; keep each result that
+  is not none. A line holding only the prefix and nothing else is skipped. Any other route gives no response. Then the same
+  stream_chunk_builder call. The prefix strip is two lines of code; write it inline in the loop. B005 owns the general version, but the
+  Vertex path only needs this, and a parse of the stripped text is the whole check.
+
+  Tests live in the two modules' tests folders under pass_through_logging::gemini_passthrough_logging::tests and pass_through_logging::vertex_stream_collection::tests, named by
+  group (see checks). betterlite-server's Cargo.toml gains betterlite-vertex and betterlite-streaming if they are missing. Fakes stand in for the cost service and the logging object; the real B1326, B1315, B582 and B2227 functions run in the
+  tests. Neither module has an HTTP route at this point, so the HTTP oracle cases come from the B3606, B3608 and B102 wiring. This task
+  gets helper cases for the response building. The oracle helper b3640 calls the pinned Python static methods with a stub logging object
+  (a real litellm Logging object with a fixed litellm_call_id) and returns the response's model, choices content, finish reason, usage and
+  the kwargs. It never copies the algorithm. Run it with LITELLM_RUST=false and the local model cost map.
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_logging/gemini_passthrough_logging.rs
+    - crates/betterlite-server/src/pass_through_logging/gemini_passthrough_logging/**
+    - crates/betterlite-server/src/pass_through_logging/vertex_stream_collection.rs
+    - crates/betterlite-server/src/pass_through_logging/vertex_stream_collection/**
+    - tools/oracle/cases/vertex/passthrough-logging/**
+    - "tools/oracle/fuzz/corpus/helper_case/passthrough_logging-*"
+    - tools/oracle/helpers/b3640.py
+    - tools/oracle/helpers/b3640/**
+    - tools/oracle/src/helpers/vertex/b3640.rs
+    - tools/oracle/src/helpers/vertex/b3640/**
+    - tools/oracle/src/helpers/server/b3640.rs
+    - tools/oracle/src/helpers/server/b3640/**
+    - crates/betterlite-server/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/gemini_passthrough_logging_handler.py#L33-L130
+    why: gemini_passthrough_handler with its three branches (interactions, predictLongRunning, generateContent) and the empty fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/gemini_passthrough_logging_handler.py#L131-L181
+    why: _handle_logging_gemini_collected_chunks, the model fallback, the error log text and the empty-kwargs return.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/gemini_passthrough_logging_handler.py#L183-L213
+    why: _build_complete_streaming_response, the route tests, the parse per line and the stream_chunk_builder call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/gemini_passthrough_logging_handler.py#L223-L256
+    why: _create_gemini_response_logging_payload_for_generate_content, the fixed "gemini" cost provider and the model_call_details writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L561-L615
+    why: _handle_logging_vertex_collected_chunks, the vertex_location store, the model fallback and the provider from the URL host.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L617-L661
+    why: Vertex _build_complete_streaming_response, with the generateContent path and the rawPredict path through the Anthropic chunk parser.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L3279-L3350
+    why: The per-line decoder that both stream paths drive, with the valid_json to accumulated_json switch and no final drain.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L98-L109
+    why: _string_to_dict_parser, the prefix strip and the silent skip of invalid JSON used on the rawPredict path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L170-L186
+    why: The call site of gemini_passthrough_handler in the non-streaming success path (B3606 calls the Rust handler).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L412-L444
+    why: The call sites of the Vertex and Gemini collected-chunks handlers (B3608 calls the Rust handlers).
+dod:
+  - text: >-
+      gemini_passthrough_handler sends an interactions route to B3638's interactions handler with provider "gemini" and no location,
+      and never runs the other branches for it.
+    proof: [gemini-route-tests]
+  - text: >-
+      A predictLongRunning route builds the video object through B1364, sets the logging object's model and provider to "gemini", prices it
+      with call_type "create_video", and writes response_cost to the video object, the kwargs and model_call_details.
+    proof: [gemini-route-tests, gemini-payload-tests]
+  - text: >-
+      A generateContent route decodes the body through B1326 with the dummy message, prices it and returns the response with kwargs
+      response_cost, model and custom_llm_provider; "streamGenerateContent" alone does not select this branch.
+    proof: [gemini-route-tests, gemini-oracle]
+  - text: A route that matches no branch returns no result and the input kwargs unchanged; a decode or cost error is returned as Err.
+    proof: [gemini-route-tests]
+  - text: >-
+      The Gemini payload factory prices with the literal provider "gemini", sets response.id from litellm_call_id, picks the response model
+      over the argument, and writes model, custom_llm_provider and response_cost to model_call_details.
+    proof: [gemini-payload-tests, gemini-oracle]
+  - text: >-
+      Gemini collected chunks use the given model, else the URL model, build one response from the lines with a fresh decoder that is never
+      finished, and return the payload factory's kwargs.
+    proof: [gemini-chunks-tests, gemini-oracle]
+  - text: >-
+      Gemini collected chunks with no usable response (non-generate route, no lines, only empty chunks) log the exact error text and return
+      no result with empty kwargs.
+    proof: [gemini-chunks-tests, gemini-oracle]
+  - text: >-
+      A line stream that switches to accumulated mode (a JSON array split over lines) still builds the response, and a trailing partial
+      value is dropped.
+    proof: [gemini-chunks-tests, gemini-oracle]
+  - text: >-
+      Vertex collected chunks store the location from the URL in optional_params["vertex_location"], use the given model else the URL
+      model, and price through B3638's factory with provider "gemini" for a generativelanguage.googleapis.com host and "vertex_ai" otherwise.
+    proof: [vertex-chunks-tests, vertex-oracle]
+  - text: >-
+      The Vertex generateContent and streamGenerateContent routes build the response with the decoder path; rawPredict and streamRawPredict
+      build it with the Anthropic chunk parser after stripping "data: " or "data:" and skipping non-object or invalid lines.
+    proof: [vertex-build-tests, vertex-oracle]
+  - text: >-
+      A Vertex route that is neither a generate nor a rawPredict route, and a Vertex stream with no usable chunks, log the exact error text
+      and return no result with empty kwargs.
+    proof: [vertex-build-tests, vertex-chunks-tests, vertex-oracle]
+  - text: The strict Python oracle adapter lints clean and its cases replay.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: gemini-route-tests
+      why: a Gemini branch is missing, taken in the wrong order or runs for a route it should not
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::gemini_passthrough_logging::tests::route_/)'
+    - id: gemini-payload-tests
+      why: the Gemini payload factory prices with the wrong provider, misses an id, model or model_call_details write
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::gemini_passthrough_logging::tests::payload_/)'
+    - id: gemini-chunks-tests
+      why: Gemini collected chunks pick the wrong model, finish the decoder, lose the accumulated mode or return kwargs on a missing response
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::gemini_passthrough_logging::tests::chunks_/)'
+    - id: vertex-build-tests
+      why: the Vertex route tests, the rawPredict prefix strip or the skip rules are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_stream_collection::tests::build_/)'
+    - id: vertex-chunks-tests
+      why: Vertex collected chunks miss the location store, pick the wrong model or provider, or lose the error path
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_stream_collection::tests::chunks_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3640)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3640 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3640/pyrightconfig.json
+    - id: helper-case-corpus
+      why: new helper seeds are absent or do not replay through the shared helper-case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/passthrough_logging-*')" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: gemini-oracle
+      why: newly added Gemini helper cases are absent or betterlite and LiteLLM disagree on them
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/vertex/passthrough-logging)" &&
+        grep -rlE '^[[:space:]]+b3640:' tools/oracle/cases/vertex/passthrough-logging &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/vertex/passthrough-logging
+    - id: vertex-oracle
+      why: newly added Vertex helper cases are absent, do not use the b3640 operation or disagree with LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/vertex/passthrough-logging)" &&
+        grep -rlE 'operation": "vertex_' tools/oracle/cases/vertex/passthrough-logging &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/vertex/passthrough-logging
+oracle_cases:
+  - tools/oracle/cases/vertex/passthrough-logging/gemini-chunks-sse-lines.yaml
+  - tools/oracle/cases/vertex/passthrough-logging/gemini-chunks-json-array-lines.yaml
+  - tools/oracle/cases/vertex/passthrough-logging/gemini-chunks-no-lines.yaml
+  - tools/oracle/cases/vertex/passthrough-logging/gemini-chunks-model-from-url.yaml
+  - tools/oracle/cases/vertex/passthrough-logging/gemini-handler-generate-content.yaml
+  - tools/oracle/cases/vertex/passthrough-logging/gemini-handler-unmatched-route.yaml
+  - tools/oracle/cases/vertex/passthrough-logging/vertex-chunks-generate-route.yaml
+  - tools/oracle/cases/vertex/passthrough-logging/vertex-chunks-raw-predict.yaml
+  - tools/oracle/cases/vertex/passthrough-logging/vertex-chunks-unknown-route.yaml
+  - tools/oracle/cases/vertex/passthrough-logging/vertex-chunks-gemini-host.yaml
+deviations:
+  - what: A cost, decode or push failure is returned as Err and reaches B3608's router, which logs it and drops the dispatch. B3638 turns a Vertex costing failure into a warning with zero cost, so on the Vertex path that rule wins inside B3638's factory.
+    why: Rust has no exceptions; for Gemini this keeps LiteLLM's rule that a failure rises and nothing is dispatched. The Vertex difference comes from B3638's own deviation, not from this task.
+  - what: The Gemini handler takes the buffered response bytes and the response headers, where LiteLLM takes the httpx response object.
+    why: Rust has no httpx response; the handler only reads the JSON body, and B1326 needs the headers for its error projection.
+out_of_scope:
+  - "B3638 owns VertexPassthroughLoggingHandler.is_interactions_route, is_vertex_interactions_route, interactions_passthrough_handler, extract_model_from_url, _get_custom_llm_provider_from_url and _create_vertex_response_logging_payload_for_generate_content. This task calls them."
+  - "B3642 owns vertex_passthrough_handler and its predict, audio predict and embedding branches. B3639 owns _handle_predict_response and _handle_embed_content_response. B3641 owns batch_prediction_jobs_handler and extract_model_name_from_vertex_path."
+  - "GeminiPassthroughLoggingHandler.extract_model_from_url has the same body as B3638's extract_model_from_url, so this task calls B3638's and builds no copy."
+  - "B3608 owns the line conversion, the model argument source, the dispatch to these two handlers and the trait they implement. B3606 owns the route choice that reaches gemini_passthrough_handler and the adapter that calls it."
+  - "B1315 owns the Gemini fragment decoder, B1326 the response decoder, B1364 the Veo create response, B582 the Anthropic chunk parser, B2227 stream_chunk_builder and B068 completion_cost."
+pitfalls:
+  - "The route tests are case sensitive: \"streamGenerateContent\" does not contain \"generateContent\" and \"streamRawPredict\" does not contain \"rawPredict\", so each pair needs both tests."
+  - "Check for the interactions route first, then predictLongRunning, then generateContent; a path that ends in /interactions must never reach the generateContent decode."
+  - "The Gemini payload factory prices with the literal provider \"gemini\" and writes the custom_llm_provider argument to kwargs; the Vertex factory prices with the argument. Do not merge them."
+  - "Only the Gemini factory writes model_call_details[\"response_cost\"]; the Vertex factory leaves it out."
+  - "The decoder is pushed once per line and finish is never called, so a value still open at the end of the stream is lost and not an error."
+  - "A line that is not a complete JSON value flips the decoder into accumulated mode for the rest of the stream; the first lines of a pretty printed JSON array do this."
+  - "A line that decodes to a non-object value is skipped in accumulated mode and does not stop the stream."
+  - "The rawPredict path strips \"data: \" first and \"data:\" second, parses silently (invalid JSON gives no chunk) and gives only objects to the chunk parser; a fresh B582 state is made per call so tool indexes restart at 0."
+  - "On the Vertex path the location is stored in the logging object's optional_params before the model and response work, so it is set even when no response can be built."
+  - "A model passed in by B3608 wins over the URL model only when it is non-empty; an empty string falls through to the URL, and a URL without /models/ gives \"unknown\", which is still used as the model."
+  - "A missing response returns empty kwargs, not the kwargs built so far, and the Vertex and Gemini error log texts differ only in the provider name."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,8 @@
+task: B367
+deviations:
+  - what: PatternCatalog::get_pattern takes the provider its caller resolved and never runs inferred_provider itself, so a lookup with no resolved provider does not try the provider-qualified request.
+    why: Provider inference is betterlite-models resolution, owned by B174 and not built on this branch, while B367 owns only litellm/router_utils/pattern_match_deployments.py; B302 passes custom_llm_provider or B174's inferred_provider as the resolved provider. Python's fallback in that case asks for the string "None/<model>", which comes from str(None) and is not ported (docs/compatibility.md).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pattern_match_deployments.py#L210-L222
+  - what: A model_name pattern whose compiled form exceeds the regex crate's 10 MiB default size limit (about 327,674 literal bytes or 9,781 stars with regex 1.13.1) is rejected by add_pattern with PatternCatalogError::Compile, while LiteLLM registers the pattern and keeps it until a request reaches it.
+    why: The matcher is compiled once at registration under the regex crate's default cap so a config cannot allocate an unbounded automaton. A pattern that large is not a model name any working setup can use, and the error names the pattern and carries the regex source, so a reload reports it instead of silently accepting a pattern that can never match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pattern_match_deployments.py#L63-L76

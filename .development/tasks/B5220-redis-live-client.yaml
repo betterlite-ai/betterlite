@@ -1,0 +1,349 @@
+id: B5220
+title: Open live Redis, Sentinel and Cluster connections
+description: >-
+  No betterlite code talks to a Redis server yet. B4323 stopped at config
+  records: `redis_client_factories::RedisClient` (variants `Direct`, `Url`,
+  `Sentinel`, `Cluster`) and `redis_client_factories::pool::PoolConfig`. The
+  trait `cache_primitives::protocol::AsyncRedisCommands` has no implementer.
+  This task adds the module `redis_live_client` to betterlite-redis. It turns
+  those records into live connections with the `redis` crate (redis-rs) and
+  implements the trait. B4325 caches what this module opens, and B4326 to B4331
+  and B4144 send their commands through it.
+
+  Dependencies. Add `redis` to `[workspace.dependencies]` and to
+  `crates/betterlite-redis/Cargo.toml` with `default-features = false` and the
+  features `tokio-rustls-comp`, `tls-rustls-insecure`, `cluster-async`,
+  `connection-manager` and `token-based-authentication`. Take the newest release
+  at least 7 days old; this text was written against 1.7.0. The `sentinel`
+  feature stays off (see Sentinel below). The crate's normal dependencies also
+  gain `tokio` with `rt` and `time`, `tracing`, `socket2` and `futures-util`, all
+  from the versions already in Cargo.lock. Dev dependencies gain `rcgen`,
+  `tokio-rustls`, `rustls`, and `tokio` with `net`, `io-util` and `time`.
+
+  Public API, all in `redis_live_client`:
+  `LiveClientFactory::new(credentials: Option<Arc<dyn RedisCredentialSource>>)`;
+  `async fn open_async(&self, client: &RedisClient, pool: Option<&PoolConfig>) ->
+  Result<LiveAsyncClient, LiveClientError>`;
+  `fn blocking_endpoint(&self, client: &RedisClient) -> Result<LiveEndpoint,
+  LiveClientError>`. `LiveAsyncClient` is a public `Clone` enum with the variants
+  `Standalone(redis::aio::ConnectionManager)`,
+  `Cluster(redis::cluster_async::ClusterConnection)` and
+  `Sentinel(SentinelConnection)`, so callers can test the kind with `matches!`.
+  `LiveAsyncClient::query<T: redis::FromRedisValue>(&self, command: &redis::Cmd)
+  -> Result<T, LiveClientError>` is the one place that sends a command, because
+  the trait covers only a few of the commands later tasks need.
+  `LiveEndpoint { target: LiveTarget, connect_timeout: Duration, response_timeout:
+  Duration }` has public fields, and `LiveTarget` is `Standalone(redis::Client)`
+  or `Cluster(redis::cluster::ClusterClient)`. `blocking_endpoint` is for sync
+  call sites and for pubsub in B4325: it blocks on file reads, the credential
+  fetch and the Sentinel lookup, and it puts a freshly fetched credential into the
+  connection info. `open_async` runs the same file reads and lookup through an
+  awaited `tokio::task::spawn_blocking`, never directly on the async thread.
+
+  Connection info. For `Direct` and the Sentinel `connection_kwargs`, build
+  `redis::ConnectionInfo` from `ConnectionFields`: host `localhost` when absent,
+  port 6379 when absent, db 0 when absent, plus username and password. For `Url`,
+  parse the secret URL with `redis::IntoConnectionInfo`, then apply the record's
+  `username`. Convert ports with `u16::try_from` and limits with
+  `usize::try_from`, and return `LiveClientError::InvalidSetting { field }` on
+  failure. `socket_keepalive: Some(true)` becomes
+  `redis::io::tcp::TcpSettings::set_keepalive(socket2::TcpKeepalive::new())`.
+
+  Timeouts. Always set both timeouts by hand, since redis-rs defaults to a 500 ms
+  response timeout and a 1 s connection timeout (client.rs L180-L182). The
+  response timeout is `socket_timeout`. The connection timeout is
+  `socket_connect_timeout`, then `socket_timeout`. Either one absent falls to 5
+  seconds. Convert with `Duration::try_from_secs_f64` and return
+  `InvalidSetting` on a negative or NaN value, because `Duration::from_secs_f64`
+  panics on those.
+
+  Standalone. `Direct` and `Url` open
+  `redis::Client::get_connection_manager_with_config` with
+  `ConnectionManagerConfig`, setting the two timeouts, a concurrency limit and the
+  credentials provider. The concurrency limit is `PoolConfig.max_connections`, then
+  the record's `max_connections`, then 1024.
+
+  Cluster. Build `redis::cluster::ClusterClientBuilder` from
+  `ClusterClient.startup_nodes` with username, password, TLS, `connection_timeout`,
+  `response_timeout`, `tcp_settings`, `connection_concurrency_limit` and
+  `set_credentials_provider`, and call `read_from_replicas()` when the passthrough
+  key is true. Open it with `get_async_connection`. The driver splits MGET per
+  slot, follows MOVED and ASK and keeps one connection per node. Ignore
+  `ClusterClient.isolation`: the state
+  machine from B4322 was built for redis-py's node objects and the driver does
+  this recovery itself.
+
+  Sentinel. redis-rs's Sentinel client has no timeout on its sync lookup, so the
+  file `redis_live_client/sentinel.rs` does the lookup itself, once, for both
+  paths. `resolve_master` walks `SentinelClient.sentinel_nodes` in order, connects
+  with `Client::get_connection_with_timeout`, sets read and write timeouts, sends
+  `SENTINEL GET-MASTER-ADDR-BY-NAME <service_name>`, and takes the first non-nil
+  answer. A monitor that fails or answers nil logs a warning with its host and
+  port, and the walk moves on. No answer gives
+  `LiveClientError::NoSentinelMaster { service_name }`. Monitors get the username
+  and TLS from `connection_kwargs` and `monitor_password` as their password, and
+  never the credential source: a data node's token must not reach a monitor.
+  `SentinelConnection` holds the record and an
+  `Arc<std::sync::Mutex<Option<redis::aio::MultiplexedConnection>>>`. Clone the
+  connection out and release the lock before any `.await`. When the slot is empty,
+  resolve the master and open a multiplexed connection with
+  `get_multiplexed_async_connection_with_config`. When a command fails with
+  `is_connection_dropped()` or a READONLY server error, clear the slot and return
+  the error, so the next command resolves the master again. `blocking_endpoint`
+  returns a `Sentinel` record as `LiveTarget::Standalone` for the resolved master.
+
+  Credentials. Add `RedisCredentials { username: Option<String>, password:
+  SecretString }` and `trait RedisCredentialSource: Send + Sync + 'static { fn
+  fetch(&self) -> Result<RedisCredentials, RedisCredentialError>; fn
+  refresh_after(&self) -> Duration; }`. The trait is sync because the B4320
+  providers are sync. An adapter implements `redis::StreamingCredentialsProvider`
+  with `futures_util::stream::unfold`: the first item comes at once, each later
+  item comes after `tokio::time::sleep(refresh_after)`, and every fetch runs in an
+  awaited `spawn_blocking`. `redis::BasicAuth::new` needs a username, so a source
+  without one sends `default`, since `AUTH "" <token>` is invalid. Any record with
+  `credential_provider: true` or `credential_provider_settings: Some(_)` needs a
+  source; without one, open fails with
+  `LiveClientError::CredentialSourceMissing`.
+
+  TLS. `ssl: Some(true)` or a `rediss` URL turns TLS on. Read these passthrough
+  keys, and for `Url` the same names in the URL query: `ssl_ca_certs` (read the
+  file into `TlsCertificates.root_cert`), `ssl_certfile` with `ssl_keyfile` (read
+  both into `TlsCertificates.client_tls`), `ssl_cert_reqs` equal to `none`
+  (`ConnectionAddr::TcpTls { insecure: true, .. }`), and `ssl_check_hostname` equal
+  to false (`set_danger_accept_invalid_hostnames`). Use `Client::build_with_tls`
+  when certificates are present. A file that can't be read gives
+  `LiveClientError::TlsFile { key }`. Any other passthrough key logs one warning
+  with the key's name, never its value, and has no effect.
+
+  Commands. Implement `AsyncRedisCommands` for `LiveAsyncClient` with `type Error =
+  LiveClientError`, `type Reply = redis::Value` and `type Pipeline = LivePipeline`.
+  `RedisScalar::Text`, `Bytes` and `Float` become command arguments as they are.
+  `LivePipeline` has the public field `commands: redis::Pipeline`, so callers use
+  the crate's own builder. `pipeline(true)` calls `.atomic()`. `async fn
+  execute(self) -> Result<Vec<redis::Value>, LiveClientError>` matches redis-py's
+  `pipe.execute()`. `async fn execute_settled(self) ->
+  Result<Vec<Result<redis::Value, LiveClientError>>, LiveClientError>` matches
+  `pipe.execute(raise_on_error=False)` from redis_batch.py and uses
+  `Pipeline::ignore_errors`. On a `Cluster` client with `transaction` false, run
+  every command on its own with `futures_util::future::join_all` over the commands
+  from `Pipeline::cmd_iter`, keep reply order, and let `execute` return the first
+  error after all commands finish. redis-rs refuses a cross-slot cluster pipeline
+  while redis-py splits it per node. A cluster pipeline with `transaction` true
+  goes through `query_async` unchanged, because its one caller uses a single key.
+
+  Errors. `LiveClientError` is a `thiserror` enum owned by this module. Its
+  variants are `Redis(#[from] redis::RedisError)`, `InvalidSetting { field:
+  &'static str }`, `CredentialSourceMissing`, `Credential(RedisCredentialError)`,
+  `TlsFile { key: &'static str }`, `NoSentinelMaster { service_name: String }` and
+  `Join(#[from] tokio::task::JoinError)`. Call `expose_secret` only at the call
+  that hands the value to redis-rs.
+
+  Tests. CI has no Redis service and the worker sandbox has no Docker, so every
+  test talks to an in-process fake on a `tokio::net::TcpListener`. Declare
+  `#[cfg(test)] pub(crate) mod tests;` and put the fake in
+  `redis_live_client/tests/fake_server.rs` as `pub(crate)`, because B4325 reuses it
+  at `crate::redis_live_client::tests::fake_server`. It replies from a script keyed
+  by command name, records every command and every accepted connection, and has
+  built-in answers for `CLIENT SETINFO`, `AUTH`, `SELECT`, `PING`, `CLUSTER SLOTS`
+  and `SENTINEL GET-MASTER-ADDR-BY-NAME`. It can run as two listeners for Cluster
+  and can wrap its listener in `tokio_rustls::TlsAcceptor` with an `rcgen`
+  certificate. Each test group below is a file under `redis_live_client/tests/`, so
+  test paths read `redis_live_client::tests::<group>::<name>`.
+
+scope:
+  paths:
+    - crates/betterlite-redis/src/redis_live_client.rs
+    - crates/betterlite-redis/src/redis_live_client/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L679-L705
+    why: Cluster construction from startup nodes and the kwargs passed to it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L708-L772
+    why: Sentinel connection kwargs, monitor auth without the data node's token, and master_for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L775-L806
+    why: How a credential provider replaces username, password and redis_connect_func.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L809-L932
+    why: The four client branches, async cluster defaults and BlockingConnectionPool limits.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L423-L478
+    why: Azure AUTH with an optional username and the retry with the token alone.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L360-L369
+    why: Non-transactional pipeline with raise_on_error=False, the shape of execute_settled.
+  - url: https://docs.rs/redis/1.7.0/redis/
+    why: Client, ConnectionManagerConfig, ClusterClientBuilder, aio::PubSub and auth API of the chosen driver.
+
+dod:
+  - text: >-
+      `open_async` connects a `Direct` and a `Url` record to the host, port, db,
+      username and password they carry, with defaults `localhost`, 6379 and db 0.
+      A server that never answers fails at the configured response timeout. No
+      `socket_timeout` gives 5 seconds, not redis-rs's 500 ms. A negative or NaN
+      timeout and a port above 65535 return `InvalidSetting` without a panic. A
+      dropped connection reconnects on the next command, and `max_connections`
+      reaches the concurrency limit.
+    proof: [standalone-tests]
+  - text: >-
+      `open_async` connects a `Cluster` record through two fake nodes, routes keys
+      to the node owning their slot, returns MGET values in input order across
+      slots, and keeps response and connection timeouts. `read_from_replicas`
+      passthrough reaches the builder.
+    proof: [cluster-tests]
+  - text: >-
+      `resolve_master` skips a dead monitor and a nil answer, and returns
+      `NoSentinelMaster` when no monitor knows the service. A monitor sees
+      `monitor_password` and never the injected credential. After a dropped
+      connection or a READONLY reply, the next command asks the monitors again and
+      lands on the new master. A monitor that never answers is bounded by the
+      timeouts.
+    proof: [sentinel-tests]
+  - text: >-
+      A real TLS handshake succeeds against the fake with `ssl_ca_certs`, fails
+      against an untrusted certificate, and succeeds with `ssl_cert_reqs` none.
+      `ssl_check_hostname` false accepts a certificate for another name. The same
+      keys work in a `rediss` URL query. A client certificate reaches the server. A
+      missing file gives `TlsFile`. An unmapped passthrough key logs its name once.
+    proof: [tls-tests]
+  - text: >-
+      An injected source's token is the AUTH sent at connect, for Standalone,
+      Cluster and Sentinel data nodes. A new token is sent on the open connection
+      after `refresh_after`. A source with no username sends `default`. A server
+      answering the wrong-number-of-arguments error gets `AUTH <token>` alone. A
+      record that needs a source and has none fails with `CredentialSourceMissing`.
+    proof: [credentials-tests]
+  - text: >-
+      Every `AsyncRedisCommands` method sends the expected command and maps the
+      reply: PING to a bool, DEL, TTL and RPUSH to integers, EXPIRE to a bool, LPOP
+      with and without a count, EVAL with numkeys. `RedisScalar` text, bytes and
+      float arguments arrive unchanged.
+    proof: [commands-tests]
+  - text: >-
+      `pipeline(true)` sends MULTI and EXEC. `pipeline(false)` sends no MULTI.
+      `execute` returns the first error. `execute_settled` keeps one result per
+      command with failures in place. On Cluster with `transaction` false, commands
+      across slots all run and replies keep command order.
+    proof: [pipeline-tests]
+  - text: >-
+      `blocking_endpoint` returns usable clients with the same timeouts as
+      `open_async`, fetches the credential at call time so two calls can carry two
+      tokens, and returns the resolved master as `LiveTarget::Standalone` for a
+      `Sentinel` record.
+    proof: [endpoint-tests]
+  - text: >-
+      No `LiveClientError` display or debug text and no log line holds a URL with
+      its password, a password, a token or a passthrough value. This holds for
+      failures at parse, connect, AUTH and TLS.
+    proof: [secrets-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: standalone-tests
+      why: Standalone connect, defaults, timeout conversion or reconnect is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_live_client::tests::standalone::/)'
+    - id: cluster-tests
+      why: Cluster connect, slot routing or cross-slot MGET is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_live_client::tests::cluster::/)'
+    - id: sentinel-tests
+      why: Monitor walk, monitor auth or failover after a lost master is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_live_client::tests::sentinel::/)'
+    - id: tls-tests
+      why: A real handshake or a mapped TLS key is missing, or the rustls provider panics
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_live_client::tests::tls::/)'
+    - id: credentials-tests
+      why: Token AUTH, refresh, the default username or the missing source error is absent
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_live_client::tests::credentials::/)'
+    - id: commands-tests
+      why: An AsyncRedisCommands method sends the wrong command or maps the reply wrongly
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_live_client::tests::commands::/)'
+    - id: pipeline-tests
+      why: Transaction wrapping, settled results or the Cluster per-command path is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_live_client::tests::pipeline::/)'
+    - id: endpoint-tests
+      why: The blocking endpoint for sync and pubsub callers is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_live_client::tests::endpoint::/)'
+    - id: secrets-tests
+      why: A secret reaches an error text or a log line
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_live_client::tests::secrets::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      One multiplexed connection replaces redis-py's BlockingConnectionPool, and
+      Cluster keeps one per node. `max_connections` caps commands in flight rather
+      than sockets, `CLIENT LIST` shows one connection, and a command waiting for a
+      slot ends in a response timeout rather than "No connection available" after
+      `REDIS_CONNECTION_POOL_TIMEOUT`. With no limit configured, 1024 commands may be
+      in flight.
+    why: redis-rs pipelines commands over a shared connection and has no blocking pool.
+  - what: A connection with no `socket_timeout` times out after 5 seconds. redis-py waits forever.
+    why: The bounded-inputs rule requires a timeout on every outbound call.
+  - what: >-
+      `health_check_interval` has no effect, including the value LiteLLM defaults
+      for Cluster.
+    why: redis-rs has no periodic check. Response timeouts and TCP keepalive find a dead connection.
+  - what: >-
+      Passthrough keys other than `ssl_ca_certs`, `ssl_certfile`, `ssl_keyfile`,
+      `ssl_cert_reqs`, `ssl_check_hostname` and `read_from_replicas` log a warning
+      with the key's name and have no effect.
+    why: The others are redis-py constructor options with no redis-rs equivalent.
+  - what: >-
+      Cluster node failures follow redis-rs's recovery, so the `IsolationConfig`
+      values from B4323 have no effect. A dead node still fails only the commands
+      routed to it.
+    why: The driver owns its node connections and slot refresh, and exposes no per-node state to drive.
+  - what: >-
+      A record with `credential_provider_settings` fails at open with a typed error
+      until a `RedisCredentialSource` is injected.
+    why: No production token fetcher exists yet, and connecting without AUTH would hide the problem.
+  - what: >-
+      The GCP connect function's fallback to the static password after a
+      wrong-number-of-arguments reply is not built.
+    why: GCP sends one-argument AUTH, and Redis doesn't answer that form with this error.
+
+out_of_scope:
+  - Client reuse, cache keys, sync connections and pubsub clients; B4325 owns them on top of this module.
+  - Redis config records and client selection (`get_redis_client`, `get_redis_async_client`, `get_redis_connection_pool`, `init_redis_cluster`, `_init_redis_sentinel`, `_init_async_redis_sentinel`, `_get_redis_sentinel_connection_kwargs`, `_sentinel_auth_kwargs`, `_credential_provider_auth_kwargs`, `_credential_provider_from_connect_func`); B4323 built their record side, and this task only opens the records.
+  - Settings resolution, env lookups and URL handling in `litellm/_redis.py`; B4321 owns them.
+  - Cloud token providers and connect functions in `litellm/_redis.py`; B4320 owns their logic, and this task only consumes a credential through `RedisCredentialSource`.
+  - Circuit breaking and failure logging around commands; B393 owns them.
+
+pitfalls:
+  - >-
+    rustls panics at `ClientConfig::builder()` when both crypto providers are
+    enabled and none is installed, and `ring` is already in Cargo.lock. Keep the
+    workspace's aws-lc-rs setting, run `cargo tree -p betterlite-redis -e features
+    -i ring`, and treat the `tls` group as the proof that the handshake runs.
+  - >-
+    `ConnectionManager` reconnects to the same address, so it can't follow a
+    Sentinel failover. That is why `Sentinel` has its own variant.
+  - Never hold the `SentinelConnection` mutex across `.await`, and never use `tokio::sync::Mutex` to get around that.
+  - A hand-built fake must answer the `CLIENT SETINFO` commands redis-rs pipelines at connect, or every test hangs until the timeout.
+  - >-
+    `redis::parse_redis_value` reads a full frame, so the fake needs no RESP parser
+    of its own. Replies are plain RESP2 text.
+  - Keep each file under 300 lines. `redis_live_client.rs` holds the types and `query`; `connection_info`, `tls`, `credentials`, `open`, `sentinel`, `commands` and `pipeline` are separate files.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

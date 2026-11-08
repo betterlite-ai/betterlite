@@ -1,0 +1,179 @@
+id: B3371
+title: Container file content and upload request processing
+description: >-
+  Build the two request processors of litellm/proxy/container_endpoints/handler_factory.py that the container file routes share:
+  _process_binary_request (the file content download) and _process_multipart_upload_request (the file upload). Put them in
+  betterlite-server as module api::container_file_requests (crates/betterlite-server/src/api/container_file_requests.rs, tests in
+  container_file_requests/tests.rs). The module registers no route and builds no axum handler. B3372 owns route registration, the
+  JSON request processor and the handler wrappers, and calls the two public functions below for GET .../files/{file_id}/content and
+  POST .../files. Because B3372 registers every path and alias, the HTTP oracle cases for both routes belong to B3372. This task
+  has Rust tests only.
+
+  Shape. ContainerFileRequests is built with three injected collaborators and holds no module state. (1) A ContainerAccess trait
+  with two async methods, check_access(container_id, caller, provider) returning the original container id and the resolved
+  provider, and forwarding_params(container_id, original_container_id, provider) returning ForwardingParams (container_id,
+  custom_llm_provider, model_id as Option<String>). The production implementation is a thin adapter over B3362's
+  assert_user_can_access_container and get_container_forwarding_params, written in this module. (2) A RequestProcessing trait
+  with process(data, route_type, caller) and handle_exception(error, caller, data). The production implementation is B004's common
+  request processing and its exception handling (LiteLLM's ProxyBaseLLMRequestProcessing.base_process_llm_request and
+  _handle_llm_api_exception). B3372 supplies it at wiring time, so this task only declares the trait and tests against a fake.
+  (3) A ProviderHints value taken from B2400's accessors, already read from the request: the custom-llm-provider header and the
+  custom_llm_provider query value, both Option<String>. The functions never read the JSON body, so B2400's body accessor is not used.
+
+  Provider pick (both functions). The provider is the first truthy value of the custom-llm-provider header, then the
+  custom_llm_provider query value, then the literal "openai". An empty string is not truthy, so it falls through to the next
+  source.
+  The pick is a public function, `pub fn pick_provider(hints: &ProviderHints) -> String`, so B3372 calls the same pick for its JSON routes.
+
+  process_file_content_request(request parts, container_id, file_id, caller). Steps, in LiteLLM's order (L164-L268).
+  (1) Pick the provider. (2) Call check_access with the path container_id and the provider; it returns the original id and the
+  resolved provider, or rejects with 403 "Forbidden". (3) Call forwarding_params with the path container_id, the original id and
+  the resolved provider. (4) Build the data map with file_id first, then container_id (the original id), custom_llm_provider (the
+  resolved one) and model_id when forwarding_params gave one. file_id is the whole path segment and is never decoded. (5) Inside
+  the guarded section, call process with the data, route type "aretrieve_container_file_content" and no model. (6) Guess the
+  content type from the lowercase file_id with content_type_for_file_id. (7) The result must be bytes. Anything else is a
+  TypeError-style failure with the text "aretrieve_container_file_content expected bytes, got <type>". Rust has no Python type
+  names, so name the variant instead (for example "json object") and keep the sentence shape. (8) Return ContainerFileDownload:
+  the bytes, the content type and the headers the common processing put on its response object (LiteLLM copies
+  dict(fastapi_response.headers)). Steps 5 to 8 are one guarded section: any failure goes to handle_exception and the mapped error
+  is what the caller sees.
+
+  content_type_for_file_id(file_id) is a public pure function. On the lowercased id the first match wins, in this order:
+  contains ".png" or ends with "png" gives image/png; contains ".jpg" or ".jpeg" gives image/jpeg; ".gif" gives image/gif;
+  ".csv" gives text/csv; ".json" gives application/json; ".txt" gives text/plain; ".pdf" gives application/pdf; anything else gives
+  application/octet-stream. The test is substring based, so "report.png.txt" is image/png and "csvdata" is octet-stream.
+  Starlette appends "; charset=utf-8" to every text/* media type when it builds the response, so the HTTP content-type header for
+  .csv and .txt is "text/csv; charset=utf-8" and "text/plain; charset=utf-8". ContainerFileDownload carries the bare media type and
+  the route layer formats the header; record the charset rule in the type's doc comment so B3372 applies it.
+
+  process_file_upload_request(request parts, container_id, route_type, caller, form). Steps (L271-L357). (1) Read the form with
+  B1101's get_form_data and then convert_upload_files_to_file_data; both run before any guarded section, so a malformed form fails
+  with B1101's error and not through handle_exception. (2) If the converted data has no "file" key, fail with HTTP 400 and detail
+  "Missing required 'file' field" (a plain detail body, not an OpenAI error object, and not through handle_exception). (3) If
+  data["file"] is a non-empty list, replace it with its first element, a (filename, bytes, content_type) tuple. An uploaded single
+  file arrives as a one-element list, so this gives the tuple. A plain text field named "file" stays a string. (4) Pick the provider.
+  (5) check_access and forwarding_params as above. (6) data.update(forwarding params): container_id, custom_llm_provider and
+  model_id from the checks overwrite any form field of the same name, while every other form field stays in data as B1101 returned
+  it. (7) Inside the guarded section call process with the data, the given route_type and no model, and return the result
+  unchanged. Any failure goes to handle_exception. route_type is an argument because B3372 passes the catalog's async_name for the
+  upload entry ("aupload_container_file"). file_id is not part of the data. No query parameter is forwarded.
+
+  Errors. ContainerFileRequestError is this module's enum: AccessDenied (carries B3362's 403 Forbidden), Form (wraps B1101's
+  error), MissingFileField (400), NotBytes (text above) and Processing (the mapped error from handle_exception). Access checks,
+  forwarding_params and form reading run before the guarded section, so their errors are returned as they are and never reach
+  handle_exception. This matches LiteLLM, where they are raised before the try block.
+
+  Tests (tests.rs) use a fake ContainerAccess, a fake RequestProcessing that records the data map, route type and model it was
+  given, and an in-memory B1101 form value. Name the tests provider_*, access_*, binary_*, content_type_*, upload_* and error_* so
+  each check below filters on its prefix. The task parses no bytes of its own (B1101 owns the form decoder), so there is no fuzz
+  target. Budget from about 115 owned LiteLLM lines: about 230 production lines and 350 test lines.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/api/container_file_requests.rs
+    - crates/betterlite-server/src/api/container_file_requests/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/handler_factory.py#L164-L268
+    why: _process_binary_request, from the provider pick and ownership check to the content type guess and the bytes check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/handler_factory.py#L271-L357
+    why: _process_multipart_upload_request, from the form read and the missing file check to the forwarding update and the processing call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/handler_factory.py#L56-L104
+    why: The two wrappers that call these functions; the binary one is chosen only when returns_binary is set and the path params are exactly container_id and file_id. B3372 owns them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L78-L101
+    why: get_container_forwarding_params, the source of container_id, custom_llm_provider and model_id in the data map (B3362).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L317-L334
+    why: assert_user_can_access_container, whose 403 "Forbidden" is raised before the try block (B3362).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L453-L512
+    why: get_form_data and convert_upload_files_to_file_data, which shape the upload data (B1101).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L64-L81
+    why: The header and query provider accessors; each returns its own value, including an empty string (B2400).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L586-L598
+    why: Container route types skip model routing and call the router method of the same name, so data has no model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoints.json#L40-L49
+    why: The content entry (returns_binary true, path params container_id and file_id) that selects the binary processor.
+
+dod:
+  - text: >-
+      The provider is the custom-llm-provider header when it is not empty, else the custom_llm_provider query value when it is not empty, else "openai", in both functions. An empty header falls through to the query.
+    proof: [provider-tests]
+  - text: >-
+      `pub fn pick_provider(hints: &ProviderHints) -> String` is public and both request functions use it, so B3372 reuses the same pick.
+    proof: [provider-tests]
+  - text: >-
+      The ownership check runs first with the path container_id and the picked provider, its original id and resolved provider replace the path values for the rest of the call, and a denial returns before the common processing is called, in both functions.
+    proof: [access-tests]
+  - text: >-
+      The content request builds the data map with file_id first, then the original container_id, the resolved custom_llm_provider and model_id only when forwarding gave one, and calls the processing with route type aretrieve_container_file_content and no model.
+    proof: [binary-tests]
+  - text: >-
+      The content request returns the bytes, the guessed content type and the headers the processing set. A result that is not bytes fails with the "expected bytes, got" text through the exception handling.
+    proof: [binary-tests]
+  - text: >-
+      content_type_for_file_id follows the fixed first-match order: png (also by suffix), jpg or jpeg, gif, csv, json, txt, pdf, else application/octet-stream, on the lowercased id.
+    proof: [content-type-tests]
+  - text: >-
+      The upload request fails with 400 and detail "Missing required 'file' field" when the form has no file key, and does so before any ownership check or processing.
+    proof: [upload-tests]
+  - text: >-
+      The upload request replaces a non-empty file list with its first element, keeps every other form field, lets the forwarding values overwrite form fields named container_id, custom_llm_provider and model_id, passes the given route type with no model, and returns the processing result unchanged.
+    proof: [upload-tests]
+  - text: >-
+      Failures inside the guarded section go through handle_exception once. Ownership, forwarding, form and missing-file failures are returned as they are and never reach handle_exception.
+    proof: [error-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: provider-tests
+      why: The provider pick tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_file_requests::(.*::)?provider_/)'
+    - id: access-tests
+      why: The ownership check order or forwarding tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_file_requests::(.*::)?access_/)'
+    - id: binary-tests
+      why: The content request tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_file_requests::(.*::)?binary_/)'
+    - id: content-type-tests
+      why: The content type guess tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_file_requests::(.*::)?content_type_/)'
+    - id: upload-tests
+      why: The upload request tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_file_requests::(.*::)?upload_/)'
+    - id: error-tests
+      why: The error placement tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_file_requests::(.*::)?error_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The two request processors take their collaborators (ownership checks, common processing, request provider hints) through constructor-injected traits, and return a ContainerFileDownload value instead of a framework Response.
+    why: betterlite-server wires the real services at startup and the axum layer builds the response, so these functions stay testable without a server. The client sees the same bytes, content type and headers.
+  - what: A second file part sent under the plain form key "file" is dropped by the form reader, as in LiteLLM, which keeps the last repeated plain key.
+    why: B1101 owns the reader and mirrors LiteLLM here; the upload processor only takes the first element of whatever list reaches it.
+
+out_of_scope:
+  - "_load_endpoints_config, get_all_route_types, _create_handler_for_path_params, _declared_query_params, _process_request and register_container_file_endpoints in handler_factory.py: B3372 owns them, with route registration under /v1/containers... and /containers..., the JSON request processor and the HTTP oracle cases for the content and upload routes."
+  - "_get_container_provider_config in handler_factory.py has no caller at the pin (grep for it finds only its definition): B3372 lists it as out of scope with that reason."
+  - "assert_user_can_access_container and get_container_forwarding_params: B3362 owns them; this task adapts them behind ContainerAccess."
+  - "ProxyBaseLLMRequestProcessing.base_process_llm_request and _handle_llm_api_exception: B004 owns them."
+  - "get_form_data and convert_upload_files_to_file_data: B1101 owns them. The provider accessors: B2400."
+  - "The generated container file operations that the route type finally reaches (acontainer_file_call): B3368 owns them."
+
+pitfalls:
+  - The ownership check and the forwarding lookup run before the try block, so a 403 "Forbidden" comes back as a plain detail error and is never shaped by the common exception handling.
+  - >-
+    The missing file check answers 400 with detail "Missing required 'file' field" as an HTTP error body ({"detail": ...}), not as an OpenAI error object.
+  - data["file"] is a one-element list when one file was uploaded, so the first-element step turns it into the (filename, bytes, content_type) tuple; a text field named file is left as a string.
+  - The forwarding update overwrites container_id, custom_llm_provider and model_id from the form, so a client cannot choose the provider or model by form field, but any other form field (for example purpose) reaches the call.
+  - The content type test is substring based and ordered, so report.png.txt is image/png and a bare id ending in png (no dot) is image/png too.
+  - The content response copies the headers the common processing set and sets its own media type, so x-litellm-* headers reach the client on this route, unlike the video content route.
+  - The binary processor checks for bytes after the processing returns, inside the guarded section, so a JSON object from the router becomes a mapped 500, not a raw response.
+  - The upload processor receives no file_id and forwards no query parameter, and the binary one forwards neither a query nor a body.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

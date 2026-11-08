@@ -1,0 +1,14 @@
+kind: helper
+name: inline-media-base64-string-component
+call:
+  inline_media:
+    call: get_base64_str
+    values:
+      - "data:image/png;base64,YWJj"
+      - "YWJj"
+      - "prefix,"
+      - "a,b,c"
+      - ""
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,264 @@
+id: B3931
+title: Native exporter options, truncation and health payloads
+description: >-
+  Build the shared helpers that every native exporter calls on LiteLLM's CustomLogger base class: the two logger options, the payload
+  truncation, the privacy redaction, the base64 strip, the metadata field choice, the callback failure count and the health payload.
+  Put them in betterlite-logging under a new module exporter_options (files: options.rs, truncation.rs, redaction.rs, base64_strip.rs,
+  metadata_field.rs, failure_counter.rs, health.rs, tests.rs, one concern per file). All text and field names below come from
+  litellm/integrations/custom_logger.py unless another file is named.
+
+  Options. CustomLoggerOptions has turn_off_message_logging (bool, default false) and message_logging (bool, default true; deprecated
+  in LiteLLM, kept because redact_messages.py and the Datadog LLM exporter still read it). Other exporters' init params extend this
+  record (StandardCustomLoggerInitParams in litellm/types/integrations/custom_logger.py), so it must deserialize from a map that
+  also holds unrelated keys and ignore them, as pydantic does. A null turn_off_message_logging reads as false.
+
+  Truncation. truncate_standard_logging_payload_content(payload) takes the typed StandardLoggingPayload from B254 and returns a
+  new payload. The input is never changed, because every callback of a request shares one payload object. For each of error_str,
+  messages and response in that order: take the field's text; when it is longer than 10,000 characters (counted in Unicode
+  characters, not bytes) replace the field with a string holding the first 10,000 characters followed by exactly
+  "...truncated by litellm, this logger does not support large content". A field that is absent, null, empty or not longer than
+  10,000 characters stays as it was, with its original type (a short messages list stays a list). The text of a string field is the
+  string itself. The text of a list or object field is its compact JSON text (see deviations).
+
+  Metadata field. select_metadata_field(request_kwargs) returns None when no kwargs map is given, MetadataField::LitellmMetadata
+  ("litellm_metadata") when that key is present in the map (even with a null value), and MetadataField::Metadata ("metadata")
+  otherwise. The router's lowest-latency strategy calls it.
+
+  Redaction. redact_standard_logging_payload(details, policy, stamp) ports redact_standard_logging_payload_from_model_call_details.
+  details is a small struct holding the optional standard_logging_object (Json map) and the optional
+  litellm_params.proxy_server_request (Json map). policy holds turn_off_message_logging, excluded_fields (litellm_settings
+  standard_logging_payload_excluded_fields, default none) and callback_redacts_itself (the redacts_messages_itself answer, false
+  in the base class). stamp holds the id and created values for the generated placeholder response, because LiteLLM builds a
+  fresh ModelResponse (id "chatcmpl-" plus a uuid4, created = current Unix seconds) and a pure function must not read the clock.
+  The result is an enum: Unchanged, or Redacted with the new standard_logging_object and proxy_server_request. Rules, in order:
+  (1) turn_off_message_logging false and no excluded fields: Unchanged. (2) no standard_logging_object: Unchanged.
+  (3) Copy the object without every key in excluded_fields, and when turn_off_message_logging is true also without the keys
+  classifier_input and originating_request_masked. (4) When turn_off_message_logging is true and callback_redacts_itself is false:
+  if "messages" is not excluded and its value is not null, set it to a one-item list holding the dump of Message(content="redacted-by-litellm")
+  (content, role "assistant", tool_calls null, function_call null; the oracle case shows the exact keys). If "response" is not
+  excluded and its value is not null: when it is an object with an "output" key (a Responses API response), deep copy it and
+  replace "text" with "redacted-by-litellm" in every object inside every list "content" of every object in a list "output", and
+  leave the rest; otherwise replace it with the dump of ModelResponse(choices=[Choices(message=Message(content="redacted-by-litellm"))])
+  built from stamp. (5) When turn_off_message_logging is true and the proxy_server_request is an object, return it without
+  classifier_input and originating_request_masked, whether or not the callback redacts itself and even when nothing else was
+  redacted.
+
+  Base64 strip. strip_base64_from_messages(payload, max_depth) ports _strip_base64_from_messages, its sync twin and the helpers
+  _redact_base64, _should_keep_content and _process_messages as one function, since the async version awaits nothing. SQS and
+  the legacy S3 logger call it. When messages is not a non-empty list the payload is returned as it is. Otherwise messages becomes
+  a new list: entries that are not objects are dropped; for an object whose content is a list, keep an item when it is not an object,
+  or it has no "file" key and its "type" is not a string different from "text"; then redact each kept item. A content that is not a
+  list is redacted as a whole. Every other key of the message is redacted too. Redaction walks strings, lists and objects; in a
+  string it replaces every match of
+  data:(?:application|image|audio|video)/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+ with "[BASE64_REDACTED]". Depth starts at 0 for
+  each value; at depth greater than max_depth the value becomes the string "[MAX_DEPTH_REACHED]" and a warning is logged. The
+  response field is not touched, although the docstring says it is.
+
+  max_depth comes from the env var DEFAULT_MAX_RECURSE_DEPTH_SENSITIVE_DATA_MASKER (default 10, read as an integer). Own the
+  config section crates/betterlite-config/src/sections/payload_exclusions.rs. It parses litellm_settings.standard_logging_payload_excluded_fields
+  (list of strings, default empty) and reads that env var through the loader's EnvironmentLookup. A value that is not an integer
+  is a config error that names the variable (LiteLLM fails on import). Settings reach other crates as config.sections.payload_exclusions
+  with fields excluded_fields and max_redaction_depth.
+
+  Failure count. handle_callback_failure(callback_name, counters) takes the registered callbacks in LiteLLM's order (callbacks, then
+  success_callback, failure_callback, async success, async failure) as a slice of &dyn CallbackFailureCounter. The trait has one
+  method, increment_callback_logging_failure(&self, callback_name: &str). The first element is incremented and the rest are not.
+  An empty slice logs at debug level and does nothing. It never returns an error and never panics. Callers build the slice from the
+  B189 registry; the Prometheus implementation of the trait belongs to the Prometheus task.
+
+  Health payload. IntegrationHealthStatus has status (HealthState::Healthy or Unhealthy, serialized "healthy" and "unhealthy")
+  and error_message (Option<String>, serialized as null when absent), with the two constructors healthy() and unhealthy(message).
+  It matches IntegrationHealthCheckStatus in litellm/types/integrations/base_health_check.py. Datadog, New Relic and the other
+  exporters build their async_health_check results with it.
+
+  Test names. Behavior tests live under exporter_options::tests with the prefixes options_, truncate_, metadata_field_, redact_,
+  base64_, failure_counter_ and health_, as rstest cases with one named case per DoD line below. The config section has its own
+  tests.rs, anchored on sections::payload_exclusions::.
+scope:
+  paths:
+    - crates/betterlite-logging/src/exporter_options.rs
+    - crates/betterlite-logging/src/exporter_options/**
+    - crates/betterlite-config/src/sections/payload_exclusions.rs
+    - crates/betterlite-config/src/sections/payload_exclusions/**
+    - "crates/betterlite-config/fuzz/corpus/config_yaml/payload-exclusions-*"
+    - tools/oracle/cases/helpers/exporter-options/**
+    - "tools/oracle/fuzz/corpus/helper_case/exporter_options-*"
+    - tools/oracle/helpers/b3931.py
+    - tools/oracle/helpers/b3931/**
+    - tools/oracle/src/helpers/logging/b3931.rs
+    - tools/oracle/src/helpers/logging/b3931/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L65-L100
+    why: Class attributes and __init__ with turn_off_message_logging and the deprecated message_logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/custom_logger.py#L57-L62
+    why: StandardCustomLoggerInitParams, the base of every exporter's init params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L838-L892
+    why: Truncation of error_str, messages and response (10,000 characters and the suffix) and _select_metadata_field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L894-L974
+    why: redacts_messages_itself and the privacy redaction with excluded fields, the placeholder messages and response, and the proxy_server_request cleanup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L984-L1010
+    why: handle_callback_failure, the first-counter-wins loop and the swallowed errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L1012-L1133
+    why: Base64 stripping (sync and async twins), the regex, the depth limit and message filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/base_health_check.py#L1-L9
+    why: IntegrationHealthCheckStatus, the health payload shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L344-L354
+    why: The order of the callback lists that handle_callback_failure walks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1390-L1500
+    why: Message(content=...) defaults and which unset fields are deleted before model_dump.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2068-L2270
+    why: ModelResponse construction (id, created, object, usage rules) and its exclude_unset model_dump.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/classifier_logging.py#L12-L67
+    why: The two classifier audit field names that redaction drops.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/sqs.py#L200-L230
+    why: A caller of the base64 strip.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L560-L570
+    why: A caller of the truncation.
+dod:
+  - text: CustomLoggerOptions defaults to turn_off_message_logging false and message_logging true, reads both from a map that also holds unrelated keys, and treats a null turn_off_message_logging as false.
+    proof: [options-tests, oracle, helper-python]
+  - text: A string field longer than 10,000 characters in error_str, messages or response is cut to its first 10,000 characters plus the exact suffix, a field of exactly 10,000 characters is kept, and the input payload is not changed.
+    proof: [truncate-tests, oracle, helper-python]
+  - text: Truncation counts Unicode characters, leaves absent, null and empty fields and short list or object fields with their original type, and cuts a long list or object field to a string.
+    proof: [truncate-tests]
+  - text: select_metadata_field returns None for no kwargs, litellm_metadata when that key exists (even null), and metadata otherwise.
+    proof: [metadata-field-tests, oracle, helper-python]
+  - text: Redaction returns Unchanged when turn_off_message_logging is false and no fields are excluded, and when there is no standard_logging_object.
+    proof: [redact-tests, oracle, helper-python]
+  - text: Excluded fields are removed from the copied standard_logging_object, and with turn_off_message_logging the classifier_input and originating_request_masked keys are removed as well.
+    proof: [redact-tests, oracle, helper-python]
+  - text: With turn_off_message_logging, messages become the one-item placeholder list and a chat response becomes the placeholder ModelResponse dump built from the stamp; null and excluded fields are left alone.
+    proof: [redact-tests, oracle, helper-python]
+  - text: With turn_off_message_logging, a Responses API response keeps its structure and only the "text" of the content items inside output items becomes redacted-by-litellm.
+    proof: [redact-tests, oracle, helper-python]
+  - text: A callback that redacts messages itself keeps its messages and response, but its proxy_server_request still loses the two classifier audit keys.
+    proof: [redact-tests, oracle, helper-python]
+  - text: Base64 data URIs in message content and other message keys become [BASE64_REDACTED], file items and non-text typed items are dropped, non-object messages are dropped, and untyped or text items are kept.
+    proof: [base64-tests, oracle, helper-python]
+  - text: A value deeper than max_depth becomes [MAX_DEPTH_REACHED], and a payload whose messages is missing, empty or not a list comes back unchanged.
+    proof: [base64-tests, oracle, helper-python]
+  - text: handle_callback_failure increments only the first counter in list order, does nothing for an empty list, and never fails.
+    proof: [failure-counter-tests, oracle, helper-python]
+  - text: IntegrationHealthStatus serializes to {"status":"healthy","error_message":null} and {"status":"unhealthy","error_message":"<text>"}.
+    proof: [health-tests, oracle, helper-python]
+  - text: litellm_settings.standard_logging_payload_excluded_fields loads as a list of strings (default empty), DEFAULT_MAX_RECURSE_DEPTH_SENSITIVE_DATA_MASKER defaults to 10, and a non-integer value or a non-list key is a config error that names it.
+    proof: [config-tests]
+  - text: The config YAML fuzz corpus holds new seeds for the excluded-fields key and replays without a panic.
+    proof: [config-yaml-corpus]
+  - text: Every oracle case has a newly committed seed that the shared helper-case parser replays.
+    proof: [helper-case-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: options-tests
+      why: the logger option tests are missing or fail
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^exporter_options::tests::options_/)'
+    - id: truncate-tests
+      why: the truncation tests are missing or fail
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^exporter_options::tests::truncate_/)'
+    - id: metadata-field-tests
+      why: the metadata field tests are missing or fail
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^exporter_options::tests::metadata_field_/)'
+    - id: redact-tests
+      why: the redaction tests are missing or fail
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^exporter_options::tests::redact_/)'
+    - id: base64-tests
+      why: the base64 strip tests are missing or fail
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^exporter_options::tests::base64_/)'
+    - id: failure-counter-tests
+      why: the callback failure count tests are missing or fail
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^exporter_options::tests::failure_counter_/)'
+    - id: health-tests
+      why: the health payload tests are missing or fail
+      run: >-
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail
+        -E 'test(/^exporter_options::tests::health_/)'
+    - id: config-tests
+      why: the payload_exclusions section tests are missing or fail
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::payload_exclusions::/)'
+    - id: config-yaml-corpus
+      why: no new seed for the excluded-fields key, or corpus replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/payload-exclusions-*")"
+        && grep -rlq 'standard_logging_payload_excluded_fields' crates/betterlite-config/fuzz/corpus/config_yaml
+        && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: helper-python
+      why: the oracle adapter fails strict Python checks or does not exist
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3931.py)"
+        && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3931.py
+        && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json tools/oracle/helpers/b3931.py
+    - id: helper-case-corpus
+      why: new helper seeds are missing or fail replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/exporter_options-*")"
+        && grep -lE '^[[:space:]]+b3931:' tools/oracle/fuzz/corpus/helper_case/exporter_options-*
+        && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/exporter-options/init-options.yaml
+  - tools/oracle/cases/helpers/exporter-options/truncate-limits.yaml
+  - tools/oracle/cases/helpers/exporter-options/metadata-field.yaml
+  - tools/oracle/cases/helpers/exporter-options/redact-unchanged.yaml
+  - tools/oracle/cases/helpers/exporter-options/redact-excluded-fields.yaml
+  - tools/oracle/cases/helpers/exporter-options/redact-chat-placeholders.yaml
+  - tools/oracle/cases/helpers/exporter-options/redact-responses-output.yaml
+  - tools/oracle/cases/helpers/exporter-options/redact-self-redacting-callback.yaml
+  - tools/oracle/cases/helpers/exporter-options/base64-strip-messages.yaml
+  - tools/oracle/cases/helpers/exporter-options/base64-depth-limit.yaml
+  - tools/oracle/cases/helpers/exporter-options/callback-failure-first-counter.yaml
+  - tools/oracle/cases/helpers/exporter-options/health-status.yaml
+deviations:
+  - what: For a list or object field (messages as a list, a dict response), the length test and the cut use the field's compact JSON text, not Python's str() text. A short field is unchanged either way.
+    why: docs/compatibility.md leaves out repr text. The two texts differ in quote style and spacing, so the cut point of a very long list differs; oracle cases use string fields only.
+  - what: strip_base64_from_messages returns a new payload and leaves the caller's payload and its message objects as they were, and one function serves LiteLLM's async and sync variants.
+    why: docs/compatibility.md excludes changes made in place to the caller's dict, and the async variant awaits nothing.
+  - what: The placeholder ModelResponse takes its id and created values from the caller instead of generating them inside the function.
+    why: A pure function is testable, and the oracle cases ignore those two values because LiteLLM generates them fresh.
+  - what: A null turn_off_message_logging in an exporter's init params reads as false.
+    why: LiteLLM's field is bool or None, and None behaves like false in every branch of the redaction except for a harmless extra copy.
+out_of_scope:
+  - "The hook methods of CustomLogger (custom_logger.py L141-L835: pre and post call hooks, log_* events, agentic loop hooks, deployment hooks) are the extension surface. B189 owns the native phases and B6030 the Python class."
+  - "AgenticLoopPlan, AgenticLoopRequestPatch, AgenticLoopSafetyError and the interception key helpers in litellm/types/integrations/custom_logger.py L1-L55 and L65-L88 are owned by B4119 (the plan and patch) and B189 (the rest) according to B2419 and B3544."
+  - "get_callback_env_vars (custom_logger.py L102-L139) has no caller at the pin."
+  - "get_proxy_server_request_from_cold_storage_with_object_key (L976-L982) only returns None in the base class. Exporters that override it own their versions."
+  - "All of litellm_logging.py belongs to B247 to B253. Its _handle_callback_failure (L3579-L3599) is B250, and the call to the redaction hook at L3483 is made by B250 and B251 using the function built here."
+  - "redact_streaming_responses_for_custom_logger and the other functions of redact_messages.py are B080, B188 and B190. The classifier audit module is B021, so this task holds its own two-name constant for the audit keys."
+  - "The Prometheus implementation of increment_callback_logging_failure and its metric litellm_callback_logging_failures_metric are B3881."
+  - "The exporter-specific health checks (Datadog dummy payload, SQS, GCS and the rest) call IntegrationHealthStatus but belong to the exporter tasks. The AdditionalLoggingUtils interface is B191."
+  - "Reading turn_off_message_logging from litellm_settings is the logging_privacy config section (B188)."
+pitfalls:
+  - "Truncation measures and cuts in Unicode characters. Slicing a Rust String by byte index at 10,000 can split a character and panic, so cut with chars()."
+  - "The suffix is joined to the cut text with no space: the first 10,000 characters, then \"...truncated by litellm, this logger does not support large content\"."
+  - "error_str, messages and response are the only truncated fields. A field that is falsy in Python (null, empty string, empty list, empty object, 0) counts as empty text and stays as it is."
+  - "select_metadata_field tests for the key litellm_metadata, not for a non-null value. A request with litellm_metadata: null still selects litellm_metadata."
+  - "The early return needs turn_off_message_logging to be exactly false and the excluded list to be empty. Setting only excluded fields still builds the copy."
+  - "Classifier audit keys (classifier_input, originating_request_masked) are dropped from the standard_logging_object only when turn_off_message_logging is true, never for excluded_fields alone."
+  - "The proxy_server_request cleanup in rule 5 happens even when the callback redacts messages itself, and it is skipped when standard_logging_object is missing (rule 2 returns first)."
+  - "In a Responses API response only the \"text\" key of content items changes. The refusal text and the reasoning summary text that B190's payload redaction handles are left alone here."
+  - "Do not reuse the private base64 redaction in crates/betterlite-logging/src/s3_v2/redact.rs. It works on S3's own payload struct. Write the shared version on the Json type from betterlite_models::decisions and leave the s3_v2 files alone."
+  - "The base64 pattern is compiled once and matches across whitespace, so a data URI that spans a newline is replaced as a whole. The depth check is depth > max_depth, so depth equal to max_depth is still walked."
+  - "max_depth can be configured to a negative number, because Python's int() accepts it. Then even depth 0 is over the limit and every value becomes [MAX_DEPTH_REACHED]. Do not clamp it."
+  - "handle_callback_failure stops after the first counter, and the order is callbacks, success_callback, failure_callback, _async_success_callback, _async_failure_callback. A later counter must not be incremented."
+  - "The Message placeholder dump is not the same as the ModelResponse placeholder. The messages list holds Message dumps; the response holds the full ModelResponse dump with choices, id, created and object chat.completion. ModelResponse.model_dump uses exclude_unset, so read the oracle output for the exact keys."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

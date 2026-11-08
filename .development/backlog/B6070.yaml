@@ -1,0 +1,17 @@
+id: B6070
+milestone: M3 providers
+title: Fireworks AI shared auth, embedding params, pricing tiers and rerank
+status: todo
+depends_on: [B2202, B1013, B1672, B2219, B171]
+file: tasks/B6070-fireworks-common-rerank-cost.yaml
+covers:
+  - "litellm/llms/fireworks_ai/common_utils.py"
+  - "litellm/llms/fireworks_ai/cost_calculator.py"
+  - "litellm/llms/fireworks_ai/embed/**"
+  - "litellm/llms/fireworks_ai/rerank/**"
+parent: B5832
+split_from: B5832
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

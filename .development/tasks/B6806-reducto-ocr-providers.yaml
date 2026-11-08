@@ -1,0 +1,77 @@
+id: B6806
+title: Reducto OCR providers
+description: >-
+  Add module `reducto_ocr` to betterlite-ocr with two `OcrProviderConfig` implementations,
+  `ReductoParseV3Config` and `ReductoParseLegacyConfig`, ported from litellm-rust reducto/ocr/transformation.rs.
+  Both call POST {api_base}/parse (api_base default https://platform.reducto.ai) and send
+  Authorization Bearer with the request key or REDUCTO_API_KEY. A supplied authorization header wins.
+  A missing key is MissingReductoApiKey. Both override `prepare_request`: first run the guardrail
+  hook on the source document (guardrail_document from B6800, so guardrails see the document and
+  not the uploaded id), then turn the document into a Reducto file id, then send the parse call.
+  A source that starts with reducto:// is used as the id (blank after the prefix fails with
+  RequestField path "document file id"). A data URI is decoded and uploaded as multipart field
+  "file" (file name "document", the data URI's MIME type) with POST {api_base}/upload, and the answer's
+  file_id (trimmed, non-empty) is the id, else ResponseField path file_id. The upload keeps the auth
+  headers but drops content-type and content-length. Any other source fails with ReductoSource.
+  V3 supports the options formatting, retrieval and settings and sends {input: id, ...those options}.
+  Legacy supports enhance and sends {document_url: id} plus options {enhance} only when enhance is not
+  null. Legacy is chosen by B6808 for the model name parse-legacy, any other model is V3.
+  The response may hold chunks at the top level or under result (result can be null). Build pages
+  from chunk blocks by their page number as build_pages_from_reducto does, join chunk content, keep
+  block lists on the page, and set usage pages_processed from usage.num_pages and credits from
+  usage.credits. A bad block page number fails with ResponseField.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-ocr/Cargo.toml
+    - crates/betterlite-ocr/src/reducto_ocr.rs
+    - crates/betterlite-ocr/src/reducto_ocr/**
+    - tools/oracle/cases/ocr/reducto/**
+    - tools/oracle/helpers/b6806.py
+    - tools/oracle/helpers/b6806/**
+    - tools/oracle/src/helpers/ocr/b6806.rs
+    - tools/oracle/src/helpers/ocr/b6806/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/reducto/ocr/transformation.rs#L1-L759
+    why: Both configs, the upload step, file id rules and chunk to page conversion.
+
+dod:
+  - text: A data URI document is uploaded once to the upload path with the multipart file field, and the parse body carries the returned file id.
+    proof: [reducto-tests, oracle]
+  - text: A reducto:// id skips the upload, a blank id fails with RequestField path "document file id", and any other source fails with ReductoSource before a request.
+    proof: [reducto-tests]
+  - text: V3 and Legacy bodies are exactly as described, with Legacy options present only for a non-null enhance.
+    proof: [reducto-tests, oracle]
+  - text: The guardrail hook sees the source document, not the file id, and the upload carries no content-type override.
+    proof: [reducto-tests]
+  - text: Pages built from chunks in top-level and result forms (also result null) match LiteLLM, and usage carries pages and credits.
+    proof: [reducto-tests, oracle]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: reducto-tests
+      why: Reducto upload, body, guardrail order or chunk conversion is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^reducto_ocr::tests::/)'
+
+oracle_cases:
+  - tools/oracle/cases/ocr/reducto/upload-and-parse.yaml
+  - tools/oracle/cases/ocr/reducto/legacy-enhance.yaml
+
+deviations: []
+
+out_of_scope:
+  - Rejecting reducto:// ids in the proxy JSON body is B3300. Choosing V3 or Legacy by model name is B6808.
+
+pitfalls:
+  - The proxy rejects reducto:// ids from untrusted bodies, but the SDK path accepts them. Do not add that check here.
+  - An upload failure must surface the provider's status and body, not a generic error.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

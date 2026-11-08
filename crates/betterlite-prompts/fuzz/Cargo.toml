@@ -96,8 +96,22 @@ doc = false
 bench = false
 
 [[bin]]
+name = "media_data"
+path = "fuzz_targets/media_data.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "response_tool_calls"
 path = "fuzz_targets/response_tool_calls.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gemini_tool_invokes"
+path = "fuzz_targets/gemini_tool_invokes.rs"
 test = false
 doc = false
 bench = false

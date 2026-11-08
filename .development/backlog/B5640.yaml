@@ -1,0 +1,13 @@
+id: B5640
+milestone: M8 platform
+title: Build the RedisCache facade over the Redis operation modules
+status: todo
+depends_on: [B4323, B4324, B4325, B4326, B4327, B4328, B4329, B5220]
+file: tasks/B5640-redis-cache-facade.yaml
+covers: []
+parent: B126
+split_from: B5630
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

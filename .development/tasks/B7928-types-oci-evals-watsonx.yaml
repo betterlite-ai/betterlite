@@ -1,0 +1,57 @@
+id: B7928
+title: Python types for OCI, OpenAI evals and watsonx (types/llms/oci, openai_evals, watsonx)
+description: >-
+  This task ports `oci.py` (437 lines), `openai_evals.py` (416 lines) and `watsonx.py` (73 lines) into
+  `crates/betterlite-python/python/betterlite/types/llms/oci.py`, `crates/betterlite-python/python/betterlite/types/llms/openai_evals/` and `crates/betterlite-python/python/betterlite/types/llms/watsonx.py`. It is Python only.
+
+
+  `oci.py` is almost all pydantic: the `OCIVendors` Enum, the message, content part, tool call and tool definition models,
+  the serving mode and chat or completion payloads, and the response, usage and token detail models. Some derive from
+  each other (`OCITextContentPart` and `OCIImageContentPart` derive from `OCIContentPart`). `openai_evals.py` mixes TypedDicts for the
+  data source and grader configs and the create, update and list requests with pydantic models for `Eval`, the list, delete and cancel
+  responses. `watsonx.py` has three TypedDicts and the Enums `WatsonXAIEndpoint` and `WatsonXModelPattern`, both
+  `str, Enum`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/llms/oci.py
+  - crates/betterlite-python/python/betterlite/types/llms/openai_evals/**
+  - crates/betterlite-python/python/betterlite/types/llms/watsonx.py
+  - crates/betterlite-python/tests/test_types_oci_evals_watsonx.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/oci.py#L1-L437
+  why: OCI chat and completion models.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai_evals.py#L1-L416
+  why: Evals configs, requests and responses.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/watsonx.py#L1-L73
+  why: watsonx params, credentials and endpoint Enums.
+out_of_scope:
+- >-
+  OCI request signing and the Rust provider belong to the OCI provider task.
+pitfalls:
+- >-
+  `OCITextContentPart` and `OCIImageContentPart` inherit from `OCIContentPart`; keep the inheritance, since a test builds both and checks `isinstance` against the base.
+- >-
+  `WatsonXAIEndpoint` has members whose values are URL paths. Compare every value; a typo in one path passes a name-only check.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_oci_evals_watsonx.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

@@ -9,6 +9,7 @@ description: >-
   (user_id, team_id, end_user_id from metadata.litellm_metadata), and compilation caching via a write lock.
   Include the live response-rejection program for checking response text against rejection phrases.
   The policy endpoint (not a dependency: it is a caller) instantiates this guardrail with the program.
+  The Rust names are `pub const RESPONSE_REJECTION_GUARDRAIL_CODE: &str` (LiteLLM's program text, copied as is), `CustomCodeGuardrail`, and the private methods `compile_custom_code` and `call_compiled` for LiteLLM's `_compile_custom_code` and `_call_compiled`.
 scope:
   paths:
   - crates/betterlite-guardrails/src/custom_code.rs
@@ -42,13 +43,13 @@ dod:
     proof: [custom-code-error-types]
   - text: CustomCodeGuardrailConfigModel loads custom_code string and optional timeout (default 30 seconds, must be positive).
     proof: [custom-code-config-tests]
-  - text: CustomCodeGuardrail.__init__ validates timeout, initializes a compile lock and calls _compile_custom_code.
+  - text: CustomCodeGuardrail.__init__ validates timeout, initializes a compile lock and calls compile_custom_code.
     proof: [custom-code-init-tests]
   - text: _compile_custom_code compiles the user code once using compile_sandboxed and build_sandbox_globals, caches the bytecode, and raises CustomCodeCompilationError on syntax/runtime errors.
     proof: [custom-code-compilation-tests]
   - text: >-
       apply_guardrail prepares safe request_data (extracting model, user_id, team_id, end_user_id and metadata),
-      calls _call_compiled, and processes the result to allow/block/flag/modify.
+      calls call_compiled, and processes the result to allow/block/flag/modify.
       Example: block("reason") raises HTTPException with status 400.
     proof: [custom-code-apply-tests]
   - text: >-
@@ -77,7 +78,7 @@ dod:
   - text: initialize_guardrail instantiates CustomCodeGuardrail with litellm_params.custom_code and registers it via add_litellm_callback.
     proof: [custom-code-init-guardrail-tests]
   - text: >-
-      RESPONSE_REJECTION_CODE is a Python-like string constant that checks response input_type,
+      `pub const RESPONSE_REJECTION_GUARDRAIL_CODE: &str` is LiteLLM's program text, a string constant that checks response input_type,
       lowercases response texts, and returns block() when a response text contains a rejection phrase
       (case-insensitive substring match). Default phrases include "i can't help with that" and similar.
     proof: [response-rejection-program-tests]
@@ -101,7 +102,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_apply::/)' && grep -q "fn apply_guardrail" crates/betterlite-guardrails/src/custom_code.rs
     - id: custom-code-dispatch-tests
       why: _call_compiled must dispatch sync/async and manage deadlines
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_dispatch::/)' && grep -q "fn _call_compiled" crates/betterlite-guardrails/src/custom_code.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_dispatch::/)' && grep -q "fn call_compiled" crates/betterlite-guardrails/src/custom_code.rs
     - id: custom-code-metadata-tests
       why: metadata preparation must extract safe fields only
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_metadata::/)' && grep -q "_prepare_safe_request_data" crates/betterlite-guardrails/src/custom_code.rs
@@ -127,8 +128,8 @@ checks:
       why: initialize_guardrail must instantiate and register via callback manager
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_init_guardrail::/)' && grep -q "fn initialize_guardrail" crates/betterlite-guardrails/src/custom_code.rs
     - id: response-rejection-program-tests
-      why: RESPONSE_REJECTION_CODE must be a complete program constant with rejection phrase matching
-      run: grep -q "RESPONSE_REJECTION_CODE" crates/betterlite-guardrails/src/custom_code.rs && grep -q "rejection.*phrase" crates/betterlite-guardrails/src/custom_code.rs
+      why: RESPONSE_REJECTION_GUARDRAIL_CODE must be a complete program constant with rejection phrase matching
+      run: grep -q "pub const RESPONSE_REJECTION_GUARDRAIL_CODE" crates/betterlite-guardrails/src/custom_code.rs && grep -q "rejection.*phrase" crates/betterlite-guardrails/src/custom_code.rs
 oracle_cases: []
 deviations:
   - what: Execution timeout defaults to 30 seconds when not set; LiteLLM has the same default.

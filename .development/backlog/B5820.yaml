@@ -1,0 +1,15 @@
+id: B5820
+milestone: M6 guardrails
+title: Text completion and embeddings guardrail translation
+status: todo
+depends_on: [B3661, B5471]
+file: tasks/B5820-completion-embeddings-translation.yaml
+covers:
+  - "litellm/llms/openai/completion/guardrail_translation/handler.py"
+  - "litellm/llms/openai/embeddings/guardrail_translation/handler.py"
+parent: B3677
+split_from: B3677
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,23 @@
+kind: helper
+name: onyx-response-allowed
+call:
+  b3783:
+    settings: {api_key: oracle-key, api_base: "http://onyx.test"}
+    inputs: {texts: ["the answer"]}
+    request_data:
+      model: gpt-4o
+      litellm_call_id: call-1
+      response:
+        id: chatcmpl-1
+        object: chat.completion
+        created: 1700000000
+        model: gpt-4o
+        choices:
+          - index: 0
+            message: {role: assistant, content: "the answer"}
+            finish_reason: stop
+    input_type: response
+    litellm_call_id: call-1
+    answer: {status: 200, headers: {}, body: {allowed: true}}
+env: {}
+compare: {ignore: []}

@@ -2,8 +2,8 @@ id: B153
 milestone: M11 distribution
 title: Homebrew formula
 status: todo
-depends_on: []
-file: null
+depends_on: [B134]
+file: tasks/B153-homebrew-formula.yaml
 covers:
   - "packaging/**"
 parent: null

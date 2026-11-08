@@ -1,0 +1,175 @@
+id: B4781
+title: Admit managed agents and expose identity administration
+description: >-
+  Build two modules. `managed_admission` in crates/betterlite-auth admits a request made by a managed agent key and prepares the invocation of a managed agent (LiteLLM's admit_managed_actor and prepare_agent_invocation in managed_authorization.py). `identity_admin` in crates/betterlite-server holds the identity administration of the agents API in endpoints.py: the two routes GET `/v1/agents/identity/providers` and GET `/v1/agents/{agent_id}/identity`, the trusted issuer list, the managed identity request check and the admin-only permission check. The pure predicates, the store, the registry and the grant resolver already belong to other tasks and this task calls them in LiteLLM's order. Read the existing files in crates/betterlite-auth/src (agent_policy.rs, agent_identity.rs, agent_store.rs, agent_registry.rs, agent_access.rs, resolved_key) and crates/betterlite-core/src/agents.rs for exact type and method names, and use them. Do not write any of them again.
+
+  Part 1, module managed_admission in betterlite-auth (files admit.rs, invoke.rs, ports.rs, error.rs). It must not import betterlite-core, betterlite-server or betterlite-mcp. Native async fn, no statics, no trait objects; tests use in-memory fakes. `AdmissionError { status: u16, detail: String }` is the module's error enum (put it in error.rs, with `From<AgentIdentityFailure>` built on B4772's conversion: code policy_unavailable gives 503, any other code 403, detail is the failure message, and a plain string detail) and `From<AgentAccessError>` (status() and the message). Ports in ports.rs: `AdmissionStore` has `agent(&self, agent_id: &str) -> Result<Option<AgentResponse>, AgentIdentityFailure>` and `retired_agent(&self, agent_id: &str) -> Result<bool, AgentIdentityFailure>`; the production implementation forwards to B4773's AgentIdentityStore methods of the same names. `ReadThrough` has `attempt(&self, agent_id_or_name: &str) -> bool` (LiteLLM's agent_registry_read_through.attempt: reload one agent from the database into the registry, true when the registry may have changed). Nothing owns that reload yet (see the notes), so this task only defines the port and the server wires a no-op that returns false until it exists. The store argument of both functions is `Option<&S>`: None means the proxy has no database.
+
+  1. `admit_managed_actor(auth: &mut UserApiKeyAuth, store: Option<&S>, registry: &AgentRegistry, access: &AgentAccessResolver<..>) -> Result<(), AdmissionError>` in admit.rs. The steps run in this order and the first failure stops it.
+  a. Read the private one-shot flag `managed_delegation_verified` (B2314's `_managed_delegation_verified`) into a local and set it to false at once, even when the function returns on the next line. A token cannot reuse it.
+  b. If auth.agent_id is None, return Ok. Below, agent_id is the Some value.
+  c. If store is None: registered = registry.get_agent_by_id(agent_id). When auth.managed_agent_context is Some, or registered exists and (its identity_managed is true or its identity is Some), fail with code policy_unavailable and message "Managed agent policy requires a database" (503). Otherwise return Ok.
+  d. agent = store.agent(agent_id). A returned failure goes out through the conversion.
+  e. If agent is None: retired = store.retired_agent(agent_id), a failure goes out. When auth.managed_agent_context is Some or retired is true, fail with 403 "Agent no longer exists". Otherwise return Ok (an unknown agent id with no context is not this task's problem).
+  f. If agent.identity_managed is false, return Ok.
+  g. If auth.jwt_claims is present and non-empty and auth.managed_agent_context is None, fail 403 "A managed agent requires a matching verified identity".
+  h. failure = actor_admission_failure(agent, auth.managed_agent_context) from B4772. A Some goes out as 403 (or 503 for policy_unavailable).
+  i. Set auth.managed_agent_policy and auth.billing_agent_policy to the agent and auth.requires_fresh_policy to true, through the trusted assignment B2314 gives these server-only fields (read crates/betterlite-auth/src/resolved_key; if the fields have no setter outside the crate, add the assignment as a method in this module's files, since the fields are pub(crate)). Do this before step j, as LiteLLM does.
+  j. Only when auth.managed_agent_context is Some, its mode is delegated and the local flag from step a is false: grants = access.verified_human_agent_grants(context.user_id, auth.team_id) from B4780. When the agent id is not in grants, fail 403 "The delegated user is not permitted to invoke this agent". An AgentAccessError goes out with its status().
+
+  2. `prepare_agent_invocation(auth: &mut UserApiKeyAuth, target_name: &str, store: Option<&S>, billable: bool, registry, read_through, access) -> Result<(), AdmissionError>` in invoke.rs. `target_name` is the id or the name from B4772's invocation_target.
+  a. registered = registry.get_agent_by_id(target_name), else registry.get_agent_by_name(target_name). If both miss, call read_through.attempt(target_name) and, when it returns true, repeat the two lookups once. Still missing: return Ok (not a registered agent, nothing to prepare).
+  b. registered_managed = registered.identity_managed or registered.identity is Some.
+  c. If store is None and registered_managed: fail policy_unavailable "Managed agent policy requires a database" (503).
+  d. target = store.agent(registered.agent_id) when a store exists, else None. A returned failure goes out.
+  e. If target is None and registered_managed: fail 403 "Invoked agent no longer exists".
+  f. effective = target when Some, else registered.
+  g. If effective.identity_managed is false and auth.managed_agent_policy is None, return Ok. A plain key calling a plain agent changes nothing on auth and sets no price.
+  h. If access.is_agent_allowed(effective.agent_id, Some(auth)) is false, fail 403 "The caller is not permitted to invoke this agent". An AgentAccessError goes out with its status().
+  i. Set auth.invoked_agent_id to effective.agent_id and auth.invoked_agent_policy to effective. When auth.agent_id is None and effective.identity_managed is true, also set auth.billing_agent_policy to effective.
+  j. Price. raw = effective.litellm_params["cost_per_query"] when billable is true (absent key or absent litellm_params gives 0.0), and 0.0 when billable is false. It is valid when it is a finite number greater than or equal to 0, or a string that parses as one (LiteLLM validates with pydantic lax mode: the string "0.5" is 0.5, "nan" and "inf" are invalid). Anything else (negative, null, a list or object, a non-numeric string, a JSON bool) is invalid: fail policy_unavailable "Agent invocation price is invalid" (503) and leave auth.agent_invocation_cost as it was. A valid price is set on auth.agent_invocation_cost in the type B2314 gives that field (read it; do not change the type).
+  The steps that call a LiteLLM function from this file: admit_managed_actor is called once per request when auth.agent_id is set, and prepare_agent_invocation once per request when invocation_target returns a name. The sequence around them in user_api_key_auth.py (route check, inference request, centralized checks) is another task's; see the notes.
+
+  Part 2, module identity_admin in betterlite-server, under agent_endpoints (files identity_admin.rs and identity_admin/**: issuers.rs, validate.rs, routes.rs, permission.rs, error.rs). `IdentityAdminError` is its error enum. Every error answers in the envelope B003 uses for LiteLLM's HTTPException: status plus `{"detail": <detail>}`. Both routes carry the tag "[beta] A2A Agents" and are authenticated by B052 before anything else runs. This task registers nothing else; export `agent_identity_routes` returning the axum routes for the two paths (B074 composes it). axum prefers the static `/v1/agents/identity/providers` over `/v1/agents/{agent_id}` by itself. The modules `permission` and `validate` are declared pub(crate) in identity_admin.rs so B4785's agent_writes can call them, and `validate` exports IdentityRequest, IdentityField, IdentitySettings (re-exported from issuers.rs with pub(crate) use) and validate_managed_identity_request.
+
+  3. `check_agent_management_permission(auth: &UserApiKeyAuth) -> Result<(), IdentityAdminError>` in permission.rs (LiteLLM's _check_agent_management_permission). When user_role is not exactly proxy_admin (a proxy_admin_viewer fails too), answer 403 with the object detail `{"error": "Only proxy admins can create, update, or delete agents. Your role=<role>"}` where <role> is the role's string value such as internal_user (LitellmUserRoles.__str__ returns the value). Make it a pub function: B4785 and B4786 call it. The `permission` module is `pub(crate)` and the function is `pub`, so B4786 reaches it as `crate::agent_endpoints::identity_admin::permission::check_agent_management_permission`.
+
+  4. `trusted_agent_issuers(settings: &IdentitySettings) -> Vec<String>` in issuers.rs. `IdentitySettings` is a plain struct filled by the server from config and env: `enable_jwt_auth: bool` (general_settings.enable_jwt_auth, default false), `issuers: Vec<IssuerEntry>` (litellm_jwtauth.issuers, default empty; B869's record with `issuer`, `audience` (absent, a string or a list of strings) and `disable_audience_validation` default false), `jwt_issuer: Option<String>` (env JWT_ISSUER), `jwt_audience: Option<String>` (env JWT_AUDIENCE), `microsoft_tenant: Option<String>` (env MICROSOFT_TENANT) and `microsoft_client_id: Option<String>` (env MICROSOFT_CLIENT_ID). Read the values once into it, never inside the functions. Rules: when enable_jwt_auth is false return an empty list. Otherwise take the configured entries in order, keep an entry only when its audience is non-empty (an empty string and an empty list are empty) and its disable_audience_validation is false, and list its issuer. Then, when jwt_issuer and jwt_audience are both non-empty and no configured entry at all (kept or dropped) has that issuer, append jwt_issuer once. Duplicates among the configured issuers stay.
+
+  5. `validate_managed_identity_request(request: &IdentityRequest, existing: Option<&AgentResponse>, settings: &IdentitySettings) -> Result<(), IdentityAdminError>` in validate.rs (LiteLLM's _validate_managed_identity_request). `IdentityRequest` carries `identity: IdentityField` (Absent, Null or Value(JSON object): the request key can be missing, null or set, and the three differ) and `execution_mode: Option<ExecutionMode>` (None when the key is missing). B4785 builds it from POST, PUT and PATCH bodies. Steps: raw = the identity value when the key is present (Null means none), else the existing agent's stored identity binding when there is an existing agent, else none. No raw (none): return Ok at once, nothing else is checked. A stored binding is used as is; a JSON value goes through B4770's EntraIdentityConfig validation (unknown keys refused, provider microsoft_entra, tenant_id, client_id and service_principal_id normalized as UUIDs) and a failure answers 400 "Invalid Entra identity configuration" (a plain string detail). The identity's issuer (a binding's stored issuer, or `https://login.microsoftonline.com/<tenant_id>/v2.0` of the normalized config) must be in trusted_agent_issuers(settings), else 400 "Configure trusted JWT issuer and audience validation for this Entra tenant first". Then mode = the request's execution_mode when present, else the existing agent's execution_mode, else autonomous. When mode is not autonomous (delegated or both), settings.microsoft_tenant must equal the identity's tenant_id and settings.microsoft_client_id must be non-empty, else 400 "Delegated agents require Microsoft SSO for the same trusted tenant".
+
+  6. GET `/v1/agents/identity/providers` (routes.rs, `get_agent_identity_providers`): check_agent_management_permission, then 200 with the JSON array of trusted_agent_issuers(settings), for example `[]` when JWT auth is off.
+
+  7. GET `/v1/agents/{agent_id}/identity` (routes.rs, `get_agent_identity_status`): check_agent_management_permission first. Then agent = the identity store's agent(agent_id) through a port `IdentityStatusReads` (`agent(&self, agent_id: &str) -> Result<Option<AgentResponse>, AgentIdentityFailure>`; the production implementation forwards to B4773's AgentIdentityStore). A failure answers through the same conversion as part 1 (503 for policy_unavailable, else 403) with the message as a plain string. None answers 404 "Agent not found". Otherwise 200 with ManagedAgentIdentityStatus from B4770: identity (the binding), identity_managed, enabled, execution_mode and last_authenticated_at (the binding's value when a binding exists, else null). LiteLLM always builds the store, even without a database; with no database the read fails inside agent() and the answer is 503 "Agent policy could not be loaded".
+
+scope:
+  paths:
+    - crates/betterlite-auth/src/managed_admission.rs
+    - crates/betterlite-auth/src/managed_admission/**
+    - crates/betterlite-server/src/agent_endpoints/identity_admin.rs
+    - crates/betterlite-server/src/agent_endpoints/identity_admin/**
+    - tools/oracle/cases/agents/identity-admin/**
+    - tools/oracle/helpers/b4781.py
+    - tools/oracle/helpers/b4781/**
+    - tools/oracle/src/helpers/auth/b4781.rs
+    - tools/oracle/src/helpers/auth/b4781/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L142-L189
+    why: admit_managed_actor, from the one-shot delegation flag to the delegated user grant check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L192-L206
+    why: actor_admission_failure, called in step h (B4772 builds it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L209-L209
+    why: The price validator, a float that is at least 0 and not nan or inf.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L221-L256
+    why: prepare_agent_invocation, all steps and the three failure messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L196-L213
+    why: The registry lookup by id, then name, then one read-through attempt that prepare_agent_invocation uses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3270-L3312
+    why: The only call site of both functions and of the route and inference checks around them (not built here).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/managed_identity.py#L68-L69
+    why: raise_identity_failure, the status rule behind AdmissionError (B4772 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L216-L228
+    why: _check_agent_management_permission and its object detail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L519-L551
+    why: _trusted_agent_issuers and _validate_managed_identity_request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L554-L581
+    why: Both identity routes, their decorators and the status response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/agent_identity.py#L10-L30
+    why: EntraIdentityConfig, whose validation and issuer property the request check relies on.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L66-L77
+    why: AgentIdentityStore.agent returns policy_unavailable "Agent policy could not be loaded" on any read error, which is the no-database answer of the status route.
+dod:
+  - text: admit_managed_actor clears the one-shot delegation flag first, returns Ok without an agent id, and with no store returns Ok for a plain agent and 503 "Managed agent policy requires a database" when a context exists or the registered agent is managed.
+    proof: [admit-tests]
+  - text: With a store, a missing agent answers 403 "Agent no longer exists" when a context exists or the agent was retired, and Ok otherwise; a store failure goes out as 503 or 403 by its code; a non-managed agent returns Ok without touching auth.
+    proof: [admit-tests]
+  - text: A managed agent with jwt claims and no context answers 403 "A managed agent requires a matching verified identity", and an admission failure from actor_admission_failure answers 403 with its message.
+    proof: [admit-tests]
+  - text: A successful admission sets managed_agent_policy, billing_agent_policy and requires_fresh_policy, and a delegated context that was not verified by the flag must hold the agent in the human's grants or answers 403 "The delegated user is not permitted to invoke this agent".
+    proof: [admit-tests]
+  - text: prepare_agent_invocation returns Ok for an unknown target, answers 503 without a store for a managed agent, 403 "Invoked agent no longer exists" when the store lost it, and returns without changes for a plain agent called by a plain key.
+    proof: [invoke-tests]
+  - text: prepare_agent_invocation answers 403 "The caller is not permitted to invoke this agent" when is_agent_allowed is false, and otherwise sets invoked_agent_id and invoked_agent_policy, and billing_agent_policy only when the key has no agent id and the target is managed.
+    proof: [invoke-tests]
+  - text: The invocation price is 0 when billable is false, the litellm_params cost_per_query when valid, and an invalid price answers 503 "Agent invocation price is invalid" without changing agent_invocation_cost.
+    proof: [invoke-tests]
+  - text: When the registry misses, prepare_agent_invocation tries the read-through port once and looks again only when it returned true.
+    proof: [invoke-tests]
+  - text: check_agent_management_permission passes only for proxy_admin and answers 403 with the object detail "Only proxy admins can create, update, or delete agents. Your role=<role>" for every other role, a proxy_admin_viewer included.
+    proof: [permission-tests, oracle]
+  - text: trusted_agent_issuers is empty without enable_jwt_auth, keeps only configured issuers with a non-empty audience and audience validation on, appends JWT_ISSUER once when JWT_AUDIENCE is set and no configured entry has that issuer, and keeps duplicates.
+    proof: [issuers-tests, oracle]
+  - text: validate_managed_identity_request passes when there is no identity, answers 400 for an invalid Entra config, for an untrusted issuer, and for delegated or both mode without the matching MICROSOFT_TENANT and a MICROSOFT_CLIENT_ID, and takes the identity and mode from the existing agent when the request omits them.
+    proof: [validate-tests]
+  - text: The identity_admin modules permission and validate are pub(crate), and validate exports IdentityRequest, IdentityField, IdentitySettings and validate_managed_identity_request for B4785.
+    proof: [validate-tests]
+  - text: GET /v1/agents/identity/providers answers the issuer list for an admin, 403 for a non-admin and 401 without a key, and GET /v1/agents/{agent_id}/identity answers 403 for a non-admin, 503 or 403 by failure code, 404 "Agent not found", and the status body for a found agent.
+    proof: [route-tests, oracle]
+  - text: The oracle helper cases for admission and invocation give LiteLLM's answers on the same fake store and registry.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: admit-tests
+      why: admit_managed_actor is missing or differs in the flag reset, the no-database branch, the retired branch, the policy assignment or the delegated grant check
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^managed_admission::admit::/)'
+    - id: invoke-tests
+      why: prepare_agent_invocation is missing or differs in its lookup, its managed checks, its auth assignments or its price rule
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^managed_admission::invoke::/)'
+    - id: permission-tests
+      why: the admin-only check is missing or lets another role pass or changes the detail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::identity_admin::permission::/)'
+    - id: issuers-tests
+      why: the trusted issuer list differs in the JWT switch, the audience filter or the global issuer rule
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::identity_admin::issuers::/)'
+    - id: validate-tests
+      why: the managed identity request check is missing or differs in its order or its four 400 answers
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::identity_admin::validate::/)'
+    - id: route-tests
+      why: the two identity routes are missing or differ in their order of checks, status codes or bodies
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::identity_admin::routes::/)'
+oracle_cases:
+  - tools/oracle/cases/agents/identity-admin/providers-jwt-off-empty.yaml
+  - tools/oracle/cases/agents/identity-admin/providers-jwt-on-issuers.yaml
+  - tools/oracle/cases/agents/identity-admin/providers-no-key-401.yaml
+  - tools/oracle/cases/agents/identity-admin/status-no-database-503.yaml
+  - tools/oracle/cases/agents/identity-admin/admit-no-store-plain-ok.yaml
+  - tools/oracle/cases/agents/identity-admin/admit-no-store-context-503.yaml
+  - tools/oracle/cases/agents/identity-admin/admit-missing-agent-with-context.yaml
+  - tools/oracle/cases/agents/identity-admin/admit-delegated-grant-missing.yaml
+  - tools/oracle/cases/agents/identity-admin/invoke-plain-agent-noop.yaml
+  - tools/oracle/cases/agents/identity-admin/invoke-price-invalid-503.yaml
+deviations:
+  - what: admit_managed_actor and prepare_agent_invocation take the registry, the grant resolver and the read-through as arguments, and return AdmissionError { status, detail } instead of raising HTTPException.
+    why: betterlite has no global registry and no exceptions; the caller turns the error into the same status and string detail.
+  - what: A JSON bool in cost_per_query is an invalid price (503), and a numeric string is accepted.
+    why: Pydantic's lax float mode decides bool handling beyond the declared type, and the worker writes no case for it. The numeric string is kept so a price an admin saved as text still works.
+  - what: validate_managed_identity_request takes an IdentityRequest with an explicit Absent, Null or Value identity, not LiteLLM's TypedDict key test.
+    why: A typed record cannot test for a missing key. The three states give LiteLLM's results.
+out_of_scope:
+  - "managed_agent_route_allowed, managed_inference_request, managed_agent_policy, actor_admission_failure, invocation_target and the route sets in managed_authorization.py L14-L139 and L192-L218 belong to B4772. This task calls actor_admission_failure only."
+  - "The call sequence in user_api_key_auth.py L3270-L3312 (admit, the route 403 'Agent identities can only access inference and agent discovery routes', the inference request, the invocation target, the centralized checks) is not built here; see the notes."
+  - "AgentIdentityStore and its methods belong to B4773. AgentRegistry belongs to B4776. is_agent_allowed and verified_human_agent_grants belong to B4780."
+  - "POST, PUT, PATCH and DELETE on /v1/agents belong to B4785, which calls validate_managed_identity_request, check_agent_management_permission and reject_legacy_identity (B4772). The kill switch and make_public routes belong to B4786, the list and by-id routes to B4784."
+  - "The registry reload behind ReadThrough (registry_read_through._resync_agents) has no owner at this task's dependencies; this task defines the port only."
+  - "Filling IdentitySettings from config and env (B002 and B869 hold the keys) is server wiring and is not built here."
+pitfalls:
+  - The delegation flag is cleared in the first statement of admit_managed_actor, before the agent id check, so a key without an agent id also loses it.
+  - Step c (no store) and step e (agent row missing) look alike but differ; only step c raises 503, step e raises 403 "Agent no longer exists" and only when a context exists or the agent was retired.
+  - The policy fields are assigned before the delegated grant check, so a request that fails step j has still been marked on auth; the caller discards auth on error.
+  - The grant check in step j is skipped when the flag was true, which is how a JWT or SSO path that already verified the human avoids a second database read.
+  - is_agent_allowed is not asked for a plain agent called by a plain key (step g returns first), so such a request never reaches the store grant checks.
+  - billing_agent_policy is set in prepare_agent_invocation only when auth.agent_id is None; a managed agent key keeps the policy that admit_managed_actor put there.
+  - The price is read from the effective agent, which is the store row when a store exists and the registry copy otherwise, and the registry copy can be older.
+  - cost_per_query is validated even when it is 0 or the agent is cheap; an invalid value fails the request with 503 rather than falling back to 0.
+  - trusted_agent_issuers drops an entry for an empty audience string or an empty list, but the global JWT_ISSUER check still counts the dropped entry as present, so JWT_ISSUER equal to a dropped entry's issuer is not appended.
+  - The delegated-mode rule in validate_managed_identity_request is `mode != autonomous`, so mode both also needs MICROSOFT_TENANT and MICROSOFT_CLIENT_ID.
+  - A request with identity null returns Ok even when the existing agent has a bound identity; unbinding is not checked here.
+  - EntraIdentityConfig validation lowercases and hyphenates UUIDs, so the issuer is built from the normalized tenant_id, not from the text the client sent.
+  - The status route does not call check_feature_access_for_user, unlike the list route; only the proxy_admin check guards it.
+  - The role text in the 403 detail is the role's value (internal_user), not an enum name.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

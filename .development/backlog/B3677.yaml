@@ -2,11 +2,9 @@ id: B3677
 milestone: M6 guardrails
 title: Guardrail translation for text, media and embedding endpoints
 status: todo
-depends_on: [B3661, B3664]
-file: null
+depends_on: [B5820, B5471]
+file: tasks/B3677-media-guardrail-translation.yaml
 covers:
-  - "litellm/llms/openai/completion/guardrail_translation/handler.py"
-  - "litellm/llms/openai/embeddings/guardrail_translation/handler.py"
   - "litellm/llms/openai/image_generation/guardrail_translation/handler.py"
   - "litellm/llms/openai/speech/guardrail_translation/handler.py"
   - "litellm/llms/openai/transcriptions/guardrail_translation/handler.py"
