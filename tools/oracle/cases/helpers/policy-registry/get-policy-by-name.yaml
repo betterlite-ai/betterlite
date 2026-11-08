@@ -1,0 +1,13 @@
+kind: helper
+name: get-policy-by-name
+call:
+  b3241:
+    policy_memory_matching_registry:
+      action: get_policy
+      policies:
+        baseline:
+          guardrails:
+            add: [pii-blocker]
+      policy_names: [baseline, missing]
+env: {}
+compare: {ignore: []}

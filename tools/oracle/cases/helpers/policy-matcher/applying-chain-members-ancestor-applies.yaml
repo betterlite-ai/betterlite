@@ -1,0 +1,21 @@
+kind: helper
+name: applying-chain-members-ancestor-applies
+call:
+  b3241:
+    policy_memory_matching_matcher:
+      action: applying_chain_members
+      policies:
+        parent:
+          guardrails:
+            add: [g-parent]
+        child:
+          inherit: parent
+          guardrails:
+            add: [g-child]
+          condition:
+            model: gpt-5.5
+      context:
+        model: gpt-4o
+      policy_name: child
+env: {}
+compare: {ignore: []}

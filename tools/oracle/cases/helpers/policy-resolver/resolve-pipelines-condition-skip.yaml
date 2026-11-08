@@ -1,0 +1,32 @@
+kind: helper
+name: resolve-pipelines-condition-skip
+call:
+  b3241:
+    policy_memory_matching_resolver:
+      action: resolve_pipelines
+      policies:
+        claude-pipeline:
+          guardrails:
+            add: [pii]
+          condition:
+            model: claude.*
+          pipeline:
+            mode: post_call
+            steps:
+              - guardrail: pii
+        flat-pipeline:
+          guardrails:
+            add: [audit]
+          pipeline:
+            mode: post_call
+            steps:
+              - guardrail: audit
+      attachments:
+        - policy: claude-pipeline
+          scope: "*"
+        - policy: flat-pipeline
+          scope: "*"
+      context:
+        model: gpt-4
+env: {}
+compare: {ignore: []}

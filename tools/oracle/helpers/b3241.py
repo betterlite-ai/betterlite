@@ -39,6 +39,12 @@ def list_value(value: Json, name: str) -> list[Json]:
     return value
 
 
+def optional_list(value: Json, name: str) -> list[Json]:
+    if value is None:
+        return []
+    return list_value(value, name)
+
+
 def string_list(value: Json, name: str) -> list[str]:
     return [string_value(item, name) for item in list_value(value, name)]
 
@@ -64,6 +70,8 @@ def attachments_value(value: Json) -> list[PolicyAttachment]:
 
 
 def attachment_dicts(value: Json) -> list[dict[str, Json]]:
+    if value is None:
+        return []
     return [object_value(item, "attachment") for item in list_value(value, "attachments")]
 
 
@@ -167,7 +175,7 @@ def registry_scenario(input_value: dict[str, Json]) -> Json:
     policies_value = input_value.get("policies")
     if policies_value is not None:
         registry.load_policies(policy_configs(policies_value))
-    for entry in list_value(input_value.get("add"), "add"):
+    for entry in optional_list(input_value.get("add"), "add"):
         item = object_value(entry, "add")
         registry.add_policy(
             string_value(item.get("name"), "name"),
@@ -176,7 +184,7 @@ def registry_scenario(input_value: dict[str, Json]) -> Json:
         )
     removed = [
         registry.remove_policy(name)
-        for name in string_list(input_value.get("remove"), "remove")
+        for name in string_list(input_value.get("remove", []), "remove")
     ]
     return registry_snapshot(registry, removed)
 
