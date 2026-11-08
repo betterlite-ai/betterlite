@@ -7,8 +7,8 @@ use chrono::{DateTime, Utc};
 use secrecy::SecretString;
 use thiserror::Error;
 
-use crate::braintrust_logging::logger::BraintrustLogger;
-use crate::braintrust_logging::payload::{ResponseObject, SuccessEvent};
+use crate::braintrust_logging::logger::{BraintrustError, BraintrustLogger};
+use crate::braintrust_logging::payload::{CallbackPath, ResponseObject, SuccessEvent};
 use crate::braintrust_logging::settings::Settings;
 use crate::http_analytics_loggers::delivery::{Delivery, PostRequest, PostResponse};
 
@@ -170,6 +170,25 @@ pub(crate) fn logger(
     let replay = Replay::new(answers);
     let logger = BraintrustLogger::new(settings(default_tags), replay.clone());
     (logger, replay)
+}
+
+pub(crate) async fn log_named_projects<D>(
+    logger: &BraintrustLogger<D>,
+    names: &[String],
+) -> Result<(), BraintrustError<D::Error>>
+where
+    D: Delivery,
+{
+    for name in names {
+        let mut scenario = Scenario::empty();
+        scenario.response_kind = ResponseKind::Model;
+        scenario.response_body = model_completion();
+        scenario.metadata = json(&format!(r#"{{"project_name":"{name}"}}"#));
+        logger
+            .log_success_event(&scenario.event(), CallbackPath::Sync)
+            .await?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

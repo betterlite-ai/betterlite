@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::error::Error as StdError;
 use std::string::FromUtf8Error;
 use std::sync::Mutex;
@@ -19,6 +19,7 @@ use super::payload::{metadata_text, object};
 use super::settings::Settings;
 
 const DEFAULT_PROJECT_NAME: &str = "litellm";
+const MAX_PROJECT_NAMES: usize = 1024;
 
 #[derive(Debug, Error)]
 pub enum BraintrustError<E>
@@ -63,6 +64,7 @@ struct ProjectRequest<'name> {
 #[derive(Default)]
 struct Projects {
     names: BTreeMap<String, String>,
+    order: VecDeque<String>,
     default_id: Option<String>,
 }
 
@@ -185,6 +187,11 @@ impl<D: Delivery> BraintrustLogger<D> {
         };
         let id = self.request_project(self.endpoint(route)?, name).await?;
         self.with_projects(|projects| {
+            if projects.names.len() >= MAX_PROJECT_NAMES {
+                let oldest = projects.order.pop_front().unwrap_or_default();
+                projects.names.remove(&oldest);
+            }
+            projects.order.push_back(name.to_owned());
             projects.names.insert(name.to_owned(), id.clone());
         })?;
         Ok(id)

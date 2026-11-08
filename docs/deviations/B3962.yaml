@@ -6,3 +6,6 @@ deviations:
   - what: "A project id of '.' or '..' from litellm_params.metadata is rejected with a typed error instead of being used in the insert URL."
     why: "The url crate drops a dot segment, which would move the insert to another path; Braintrust project ids are UUIDs, so no working setup passes one."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/braintrust_logging.py#L243
+  - what: "The project id cache keeps at most 1024 names and drops the oldest inserted name when a new one arrives."
+    why: "LiteLLM's _project_id_cache (L51, filled at L85) has no cap, so request metadata could grow it without limit; an evicted name is resolved again with one extra project POST."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/braintrust_logging.py#L51

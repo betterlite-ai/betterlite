@@ -1,7 +1,8 @@
 use rstest::rstest;
 
 use super::support::{
-    BASE, KEY, ResponseKind, Scenario, answer, failing, json, logger, model_completion,
+    BASE, KEY, ResponseKind, Scenario, answer, failing, json, log_named_projects, logger,
+    model_completion,
 };
 use crate::braintrust_logging::logger::BraintrustError;
 use crate::braintrust_logging::payload::CallbackPath;
@@ -139,4 +140,28 @@ async fn dot_segment_project_ids_are_rejected(#[case] project_id: &str) {
         .unwrap_err();
     assert!(matches!(failure, BraintrustError::PathSegment));
     assert!(replay.requests().is_empty());
+}
+
+#[tokio::test]
+async fn project_cache_keeps_1024_names_and_evicts_the_oldest() {
+    let answers = (0..1025_u32)
+        .flat_map(|index| [answer(&format!(r#"{{"id":"p{index}"}}"#)), answer("{}")])
+        .chain([answer(r#"{"id":"p0"}"#), answer("{}"), answer("{}")])
+        .collect::<Vec<_>>();
+    let (logger, replay) = logger(answers, &[]);
+    let names = (0..1025_u32)
+        .map(|index| format!("p{index}"))
+        .collect::<Vec<_>>();
+    log_named_projects(&logger, &names).await.unwrap();
+    assert_eq!(replay.requests().len(), 2050);
+    log_named_projects(&logger, &names[..1]).await.unwrap();
+    let requests = replay.requests();
+    assert_eq!(requests.len(), 2052);
+    assert_eq!(requests[2050].url, format!("{BASE}/project"));
+    assert_eq!(requests[2050].body, json(r#"{"name":"p0"}"#));
+    assert_eq!(requests[2051].url, format!("{BASE}/project_logs/p0/insert"));
+    log_named_projects(&logger, &names[1..2]).await.unwrap();
+    let latest = replay.requests();
+    assert_eq!(latest.len(), 2053);
+    assert_eq!(latest[2052].url, format!("{BASE}/project_logs/p1/insert"));
 }
