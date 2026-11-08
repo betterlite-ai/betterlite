@@ -1,0 +1,20 @@
+kind: helper
+name: vault-secret-operations-read-cache-shared-by-data-key
+env: {}
+compare: {ignore: []}
+call:
+  b4417:
+    env:
+      HCP_VAULT_TOKEN: token
+    routes:
+      - route: "GET http://127.0.0.1:8200/v1/secret/data/APP_KEY"
+        replies:
+          - {status: 200, body: '{"data":{"data":{"key":"sk-from-vault","password":"pw-from-vault"},"metadata":{"version":1}}}'}
+    steps:
+      - {op: read, name: APP_KEY}
+      - op: read
+        name: APP_KEY
+        params:
+          secret_manager_settings:
+            data: password
+      - {op: read, name: APP_KEY}

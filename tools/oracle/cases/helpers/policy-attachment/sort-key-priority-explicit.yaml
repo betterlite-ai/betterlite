@@ -1,0 +1,18 @@
+kind: helper
+name: sort-key-priority-explicit
+call:
+  b3241:
+    policy_memory_matching_attachment:
+      action: sort_key
+      attachments:
+        - policy: late
+          teams: [team-a]
+          priority: 5
+        - policy: first
+          models: [gpt-4]
+          priority: 0
+        - policy: negative
+          scope: "*"
+          priority: -1
+env: {}
+compare: {ignore: []}

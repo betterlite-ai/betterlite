@@ -1,0 +1,12 @@
+kind: helper
+name: runtime-agent-agentcore-endpoints
+call:
+  bedrock_aws_endpoints:
+    default_endpoint:
+      cases:
+        - {endpoint_type: runtime, region: us-east-1}
+        - {endpoint_type: agent, region: us-east-1}
+        - {endpoint_type: agentcore, region: eu-west-1}
+        - {endpoint_type: null, region: us-east-1}
+env: {}
+compare: {ignore: []}

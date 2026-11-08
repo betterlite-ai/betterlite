@@ -1,0 +1,33 @@
+kind: helper
+name: token_count-messages-seed
+call:
+  token_count:
+    function: token_counter
+    model: gpt-3.5-turbo
+    messages:
+      - role: system
+        content: be brief
+      - role: assistant
+        tool_calls:
+          - id: call_1
+            type: function
+            function:
+              name: get_weather
+              arguments: '{"city": "Paris"}'
+    tools:
+      - type: function
+        function:
+          name: get_weather
+          description: Get weather
+          parameters:
+            type: object
+            properties:
+              city:
+                type: string
+            required: [city]
+    tool_choice:
+      type: function
+      function:
+        name: get_weather
+env: {}
+compare: {ignore: []}
