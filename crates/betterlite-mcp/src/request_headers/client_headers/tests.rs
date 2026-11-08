@@ -36,7 +36,10 @@ fn litellm_api_key_prefers_the_explicit_header() {
         ("Authorization", "Bearer token"),
     ]);
     let key = get_litellm_api_key(&headers);
-    assert_eq!(key.value, Some("k1"));
+    assert_eq!(
+        key.value.as_ref().map(ExposeSecret::expose_secret),
+        Some("k1")
+    );
     assert!(key.explicit_header_present);
 }
 
@@ -44,7 +47,10 @@ fn litellm_api_key_prefers_the_explicit_header() {
 fn litellm_api_key_falls_back_to_authorization() {
     let headers = raw_headers(&[("Authorization", "Bearer token")]);
     let key = get_litellm_api_key(&headers);
-    assert_eq!(key.value, Some("Bearer token"));
+    assert_eq!(
+        key.value.as_ref().map(ExposeSecret::expose_secret),
+        Some("Bearer token")
+    );
     assert!(!key.explicit_header_present);
 }
 
@@ -52,7 +58,10 @@ fn litellm_api_key_falls_back_to_authorization() {
 fn litellm_api_key_reports_an_empty_explicit_header() {
     let headers = raw_headers(&[("x-litellm-api-key", ""), ("Authorization", "Bearer z")]);
     let key = get_litellm_api_key(&headers);
-    assert_eq!(key.value, Some("Bearer z"));
+    assert_eq!(
+        key.value.as_ref().map(ExposeSecret::expose_secret),
+        Some("Bearer z")
+    );
     assert!(key.explicit_header_present);
 }
 
@@ -60,7 +69,7 @@ fn litellm_api_key_reports_an_empty_explicit_header() {
 fn litellm_api_key_is_absent_without_either_header() {
     let headers = raw_headers(&[]);
     let key = get_litellm_api_key(&headers);
-    assert_eq!(key.value, None);
+    assert_eq!(key.value.as_ref().map(ExposeSecret::expose_secret), None);
     assert!(!key.explicit_header_present);
 }
 

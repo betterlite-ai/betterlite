@@ -14,19 +14,19 @@ pub const MCP_SERVERS_HEADER: &str = "x-mcp-servers";
 pub const MCP_ACCESS_GROUPS_HEADER: &str = "x-mcp-access-groups";
 const SERVER_AUTH_PREFIX: &str = "x-mcp-";
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct LitellmApiKey<'origin> {
-    pub value: Option<&'origin str>,
+pub struct LitellmApiKey {
+    pub value: Option<SecretString>,
     pub explicit_header_present: bool,
 }
 
 #[must_use]
-pub fn get_litellm_api_key(headers: &RawHeaders) -> LitellmApiKey<'_> {
+pub fn get_litellm_api_key(headers: &RawHeaders) -> LitellmApiKey {
     let explicit = headers.lookup(LITELLM_API_KEY_HEADER);
     let fallback = headers
         .lookup(AUTHORIZATION_HEADER)
         .filter(|value| !value.is_empty());
-    let value = explicit.filter(|value| !value.is_empty()).or(fallback);
+    let raw = explicit.filter(|value| !value.is_empty()).or(fallback);
+    let value = raw.map(|value| SecretString::from(value.to_owned()));
     LitellmApiKey {
         value,
         explicit_header_present: explicit.is_some(),
