@@ -1,0 +1,5 @@
+kind: helper
+name: "server-auth-headers"
+call: {"b4654":{"function":"server_auth","raw":[["X-Mcp-GitHub-Authorization","Bearer t"],["x-mcp-zapier-x-api-key","api"],["x-mcp-my-server-authorization","B"],["x-mcp-servers","ignored"],["x-mcp-access-groups","ignored"],["x-mcp-x","ignored"]]}}
+env: {}
+compare: {"ignore":[]}

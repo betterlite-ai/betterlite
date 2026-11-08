@@ -1,0 +1,5 @@
+kind: helper
+name: "upstream-resource-explicit"
+call: {"b4654":{"function":"resolve_resource","upstream_resource":"  https://Exact/Resource  ","url":"https://h","server_id":"srv"}}
+env: {}
+compare: {"ignore":[]}

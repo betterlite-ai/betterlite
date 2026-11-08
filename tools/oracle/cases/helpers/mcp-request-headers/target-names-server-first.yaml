@@ -1,0 +1,5 @@
+kind: helper
+name: "target-names-server-first"
+call: {"b4654":{"function":"target_names","paths":["/foo/mcp","/foo/mcp/bar","/foo/mcp?x=1"]}}
+env: {}
+compare: {"ignore":[]}

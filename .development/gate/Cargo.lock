@@ -119,6 +119,7 @@ dependencies = [
  "serde-saphyr",
  "serde_json",
  "strum",
+ "syn 2.0.119",
  "tempfile",
  "thiserror",
  "toml 0.9.12+spec-1.1.0",
