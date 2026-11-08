@@ -47,7 +47,7 @@ fn llm_call() -> LLMCallSpanData {
 }
 
 #[test]
-fn mapper_protocol_dispatches_on_the_span_kind() {
+fn mapper_protocol() {
     let call = llm_call();
     let environment = BTreeMap::new();
     let genai = GenAIMapper {
