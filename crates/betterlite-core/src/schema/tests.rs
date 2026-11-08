@@ -244,6 +244,22 @@ struct Case {
     expected: None,
     failure: Failure::None,
 })]
+#[case::const_values_are_not_references(Case {
+    operation: Operation::Validate,
+    schema: serde_json::json!({"type": "object", "properties": {"doc": {"const": {"$ref": "https://example.com/x"}}}}),
+    response: "{\"doc\": {\"$ref\": \"https://example.com/x\"}}",
+    limits: None,
+    expected: None,
+    failure: Failure::None,
+})]
+#[case::examples_values_are_not_references(Case {
+    operation: Operation::Validate,
+    schema: serde_json::json!({"type": "object", "examples": [{"$ref": "https://example.com/a"}]}),
+    response: "{}",
+    limits: None,
+    expected: None,
+    failure: Failure::None,
+})]
 #[case::schema_too_large_fails(Case {
     operation: Operation::Validate,
     schema: serde_json::json!({"type": "object"}),
@@ -353,6 +369,15 @@ fn a_validation_failure_classifies_as_json_schema_validation() {
     let schema = serde_json::json!({"type": "object"});
     let error = validate_schema(&schema, "[]", &SchemaLimits::default()).unwrap_err();
     let class = error.classify(&schema, "[]");
+    assert!(matches!(class, ErrorClass::JsonSchemaValidation(_)));
+    assert_eq!(class.metadata().status_code, 500);
+}
+
+#[test]
+fn an_invalid_json_response_classifies_as_json_schema_validation() {
+    let schema = serde_json::json!({"type": "object"});
+    let error = validate_schema(&schema, "not json", &SchemaLimits::default()).unwrap_err();
+    let class = error.classify(&schema, "not json");
     assert!(matches!(class, ErrorClass::JsonSchemaValidation(_)));
     assert_eq!(class.metadata().status_code, 500);
 }

@@ -12,16 +12,35 @@ pub(super) enum SchemaCheck {
     Validation,
 }
 
+struct Pending<'schema> {
+    value: &'schema SchemaJson,
+    key: Option<&'schema str>,
+    depth: usize,
+    // a value under const, enum, default or examples is an instance, never a schema
+    data: bool,
+}
+
 // the schema is measured before anything reads it, so a huge document never reaches normalization or the validator
 pub(super) fn check_schema(
     schema: &SchemaJson,
     limits: &SchemaLimits,
     check: SchemaCheck,
 ) -> Result<(), SchemaError> {
-    let mut pending: Vec<(&SchemaJson, Option<&str>, usize)> = vec![(schema, None, 0_usize)];
+    let mut pending = vec![Pending {
+        value: schema,
+        key: None,
+        depth: 0_usize,
+        data: false,
+    }];
     let mut nodes = 0_usize;
     let mut bytes = 0_usize;
-    while let Some((value, key, depth)) = pending.pop() {
+    while let Some(entry) = pending.pop() {
+        let Pending {
+            value,
+            key,
+            depth,
+            data,
+        } = entry;
         nodes = nodes.saturating_add(1);
         if nodes > limits.max_nodes {
             return Err(SchemaError::TooManyNodes {
@@ -32,28 +51,49 @@ pub(super) fn check_schema(
         if let Some(name) = key {
             add_bytes(&mut bytes, name.len().saturating_add(QUOTES), limits)?;
         }
-        if check == SchemaCheck::Validation {
+        if check == SchemaCheck::Validation && !data {
             check_reference(value, key, depth, limits)?;
         }
-        let next = depth.saturating_add(1);
-        match value {
-            SchemaJson::Object(object) => {
-                for (child_key, child) in object {
-                    pending.push((child, Some(child_key.as_str()), next));
-                }
-            }
-            SchemaJson::Array(items) => {
-                for child in items {
-                    pending.push((child, None, next));
-                }
-            }
-            SchemaJson::Null
-            | SchemaJson::Bool(_)
-            | SchemaJson::Number(_)
-            | SchemaJson::String(_) => {}
-        }
+        push_children(&mut pending, value, depth, data);
     }
     Ok(())
+}
+
+fn push_children<'schema>(
+    pending: &mut Vec<Pending<'schema>>,
+    value: &'schema SchemaJson,
+    depth: usize,
+    data: bool,
+) {
+    let next = depth.saturating_add(1);
+    match value {
+        SchemaJson::Object(object) => {
+            for (child_key, child) in object {
+                let child_data = data
+                    || matches!(
+                        child_key.as_str(),
+                        "const" | "enum" | "default" | "examples"
+                    );
+                pending.push(Pending {
+                    value: child,
+                    key: Some(child_key.as_str()),
+                    depth: next,
+                    data: child_data,
+                });
+            }
+        }
+        SchemaJson::Array(items) => {
+            for child in items {
+                pending.push(Pending {
+                    value: child,
+                    key: None,
+                    depth: next,
+                    data,
+                });
+            }
+        }
+        SchemaJson::Null | SchemaJson::Bool(_) | SchemaJson::Number(_) | SchemaJson::String(_) => {}
+    }
 }
 
 fn check_reference(

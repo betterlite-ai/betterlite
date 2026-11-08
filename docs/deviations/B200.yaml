@@ -2,8 +2,9 @@ task: B200
 deviations:
   - what: >-
       A schema reference outside the document fails with a typed ExternalReference error before the validator is
-      built: any $ref, $dynamicRef or $recursiveRef that is not "" or a # fragment, including the document's own
-      absolute $id URI and a relative reference resolved against it.
+      built: any $ref, $dynamicRef or $recursiveRef in schema position that is not "" or a # fragment, including the
+      document's own absolute $id URI and a relative reference resolved against it. Values of const, enum, default
+      and examples are instances rather than schemas, so a $ref inside them is left alone as jsonschema does.
     why: >-
       jsonschema's default resolver fetches http, https and file URLs, so a schema a request controls could make
       the gateway read local files or call internal hosts. Betterlite resolves no reference outside the document,
