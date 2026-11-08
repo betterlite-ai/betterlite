@@ -437,9 +437,13 @@ fn maps_proto_task_states(#[case] name: &str, #[case] expected: Option<&str>) {
 #[test]
 fn upgrades_a_03_card_to_the_10_shape() {
     let card = object(
-        r#"{"name":"agent","description":"d","version":"1.2.3","url":"https://agent","preferredTransport":"JSONRPC","protocolVersion":"0.3","capabilities":{"streaming":true,"extensions":[{"uri":"urn:x"}]},"defaultInputModes":["text"],"defaultOutputModes":["text"],"skills":[{"id":"chat","name":"Chat","description":"chat","tags":["chat"],"security":[{"k":[]}]}],"security":[{"k":[]}],"securitySchemes":{"LiteLLMKey":{"type":"http","scheme":"bearer"}},"provider":{"organization":"o","url":"https://p"},"signatures":[{"protected":"p","signature":"s"}]}"#,
+        r#"{"name":"agent","description":"d","version":"1.2.3","url":"https://agent","preferredTransport":"JSONRPC","protocolVersion":"0.3","capabilities":{"streaming":true,"extensions":[{"uri":"urn:x"}]},"defaultInputModes":["text"],"defaultOutputModes":["text"],"skills":[{"id":"chat","name":"Chat","description":"chat","tags":["chat"],"security":[{"k":[]}]}],"security":[{"k":[]}],"securitySchemes":{"LiteLLMKey":{"type":"http","scheme":"bearer"}},"provider":{"organization":"o","url":"https://p"},"signatures":[{"protected":"p","signature":"s"}],"xUpstreamHint":{"kept":true}}"#,
     );
     let converted = normalize_agent_card(card, ProtocolVersion::V1_0);
+    assert_eq!(
+        field(&converted, "xUpstreamHint"),
+        &value(r#"{"kept":true}"#)
+    );
     assert_eq!(field(&converted, "name"), &text_value("agent"));
     assert_eq!(
         field(&converted, "supportedInterfaces"),
@@ -469,9 +473,10 @@ fn upgrades_a_03_card_to_the_10_shape() {
 #[test]
 fn downgrades_a_10_card_and_strips_additional_interfaces() {
     let card = object(
-        r#"{"name":"agent","description":"d","version":"1.2.3","supportedInterfaces":[{"url":"https://agent","protocolBinding":"JSONRPC","protocolVersion":"0.3"},{"url":"https://other","protocolBinding":"GRPC","protocolVersion":"1.0"}],"additionalInterfaces":[{"url":"https://backend","transport":"JSONRPC"}],"capabilities":{"streaming":true,"extendedAgentCard":true},"securityRequirements":[{"k":[]}],"skills":[{"id":"chat","name":"Chat","description":"chat","tags":["chat"],"securityRequirements":[{"k":[]}]}]}"#,
+        r#"{"name":"agent","description":"d","version":"1.2.3","supportedInterfaces":[{"url":"https://agent","protocolBinding":"JSONRPC","protocolVersion":"0.3"},{"url":"https://other","protocolBinding":"GRPC","protocolVersion":"1.0"}],"additionalInterfaces":[{"url":"https://backend","transport":"JSONRPC"}],"capabilities":{"streaming":true,"extendedAgentCard":true},"securityRequirements":[{"k":[]}],"skills":[{"id":"chat","name":"Chat","description":"chat","tags":["chat"],"securityRequirements":[{"k":[]}]}],"xUpstreamHint":{"secret":"s"}}"#,
     );
     let converted = normalize_agent_card(card, ProtocolVersion::V0_3);
+    assert!(!converted.contains_key("xUpstreamHint"));
     assert_eq!(field(&converted, "url"), &text_value("https://agent"));
     assert_eq!(
         field(&converted, "preferredTransport"),
