@@ -4,9 +4,7 @@ use crate::provider_chunk_decode::chunk::{
     DecodeState, DecodedChunk, ProviderChunk, as_array, as_object, object,
 };
 use crate::provider_chunk_decode::error::ProviderChunkError;
-use crate::stream_chunk_shaping::records::{
-    JsonObject, JsonValue, StreamChoice, StreamChunk, StreamDelta,
-};
+use crate::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamChoice, StreamChunk};
 use crate::stream_chunk_shaping::tokens::mapped_finish_reason;
 
 // A vertex ai chunk arrives as the proto object's JSON, candidates and all.

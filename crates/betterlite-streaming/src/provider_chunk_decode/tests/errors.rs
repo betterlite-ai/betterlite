@@ -126,12 +126,6 @@ fn errors_vertex_function_call_is_built() {
         function.get("arguments").and_then(JsonValue::as_str),
         Some(r#"{"where":"x"}"#)
     );
-    assert!(
-        decoded
-            .original
-            .as_ref()
-            .is_some_and(|original| !original.choices.is_empty())
-    );
     let original = decoded.original.as_ref().expect("the call chunk is built");
     assert_eq!(original.id, "chatcmpl-00000000-0000-0000-0000-000000000000");
     let choice = original
