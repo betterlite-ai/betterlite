@@ -237,23 +237,8 @@ def _stamp_service_tier(_wrapper: CustomStreamWrapper, step: Step) -> Json:
 
 
 def _set_state(wrapper: CustomStreamWrapper, step: Step) -> Json:
-    patch = _d(step.get("patch", {}))
-    if patch.get("sent_first_chunk") is not None:
-        wrapper.sent_first_chunk = patch["sent_first_chunk"] is True
-    if patch.get("sent_last_chunk") is not None:
-        wrapper.sent_last_chunk = patch["sent_last_chunk"] is True
-    if patch.get("sent_first_thinking_block") is not None:
-        wrapper.sent_first_thinking_block = patch["sent_first_thinking_block"] is True
-    if patch.get("sent_last_thinking_block") is not None:
-        wrapper.sent_last_thinking_block = patch["sent_last_thinking_block"] is True
-    if patch.get("holding_chunk") is not None:
-        wrapper.holding_chunk = _s(patch["holding_chunk"])
-    if patch.get("received_finish_reason") is not None:
-        wrapper.received_finish_reason = _optional(patch, "received_finish_reason")
-    if patch.get("intermittent_finish_reason") is not None:
-        wrapper.intermittent_finish_reason = _optional(patch, "intermittent_finish_reason")
-    if patch.get("tool_call") is not None:
-        wrapper.tool_call = patch["tool_call"] is True
+    for key, value in _d(step.get("patch", {})).items():
+        setattr(wrapper, key, value)
     return None
 
 
