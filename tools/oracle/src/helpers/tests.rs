@@ -296,3 +296,14 @@ fn answer_cache_stores_a_miss_in_the_write_layer_only() {
     assert!(!own_written);
     assert_eq!(output.value, super::invoke(&call).value);
 }
+
+#[test]
+fn a_null_success_value_is_sent_as_no_value_like_python_does() {
+    let call: super::HelperCall = serde_saphyr::from_str(
+        "database_url_policy: {function: unsupported_db_scheme, database_url: \"postgresql://u:p@host/db\"}",
+    )
+    .unwrap();
+    let output = super::invoke(&call);
+    assert!(output.ok);
+    assert_eq!(output.value, None);
+}
