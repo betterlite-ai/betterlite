@@ -1,5 +1,5 @@
 use reqwest::header::{
-    AUTHORIZATION, CONTENT_LENGTH, COOKIE, HOST, HeaderMap, HeaderName, PROXY_AUTHORIZATION,
+    AUTHORIZATION, CONTENT_LENGTH, COOKIE, HeaderMap, HeaderName, PROXY_AUTHORIZATION,
     TRANSFER_ENCODING, WWW_AUTHENTICATE,
 };
 use reqwest::{Method, Request, Response, Url};
@@ -10,7 +10,7 @@ use crate::proxy::transport_error::TransportError;
 use crate::url_policy::origin::Origin;
 use crate::user_url::error::UserUrlError;
 use crate::user_url::httpx_url::HttpxUrl;
-use crate::user_url::redirect::{location, redirect_url};
+use crate::user_url::redirect::{location, redirect_headers, redirect_url};
 
 pub(crate) const MAX_REDIRECTS: usize = 10;
 const REDIRECT_BODY_BYTES: usize = 16 * 1024;
@@ -100,21 +100,23 @@ fn next_request(
     target_url: Url,
 ) -> Request {
     let changed = *method != *request.method();
+    // httpx drops the caller's Cookie on every hop and Host and Authorization on an origin change
+    let headers = redirect_headers(request.headers(), current, target);
     let mut next = if changed {
-        let mut fresh = Request::new(method.clone(), request.url().clone());
-        *fresh.headers_mut() = request.headers().clone();
+        let mut fresh = Request::new(method.clone(), target_url);
         *fresh.timeout_mut() = request.timeout().copied();
         fresh
     } else {
-        request
+        let mut reused = request;
+        *reused.url_mut() = target_url;
+        reused
     };
-    *next.url_mut() = target_url;
+    *next.headers_mut() = headers;
     if changed && *method == Method::GET {
         next.headers_mut().remove(CONTENT_LENGTH);
         next.headers_mut().remove(TRANSFER_ENCODING);
     }
     if !same_origin(current, target) {
-        next.headers_mut().remove(HOST);
         strip_credentials(next.headers_mut());
     }
     next

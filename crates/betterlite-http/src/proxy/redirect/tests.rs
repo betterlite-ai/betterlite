@@ -300,14 +300,14 @@ enum Case {
 const GONE: &str = "POST /start|auth=Bearer key|cookie=sid=1|length=7|body={\"a\":1}";
 
 #[rstest]
-#[case::a_301_turns_a_post_into_a_get(Case::Post301, &format!("{GONE} GET /next|auth=Bearer key|cookie=sid=1|length=-|body="))]
-#[case::a_302_turns_a_post_into_a_get(Case::Post302, &format!("{GONE} GET /next|auth=Bearer key|cookie=sid=1|length=-|body="))]
-#[case::a_303_turns_a_post_into_a_get(Case::Post303, &format!("{GONE} GET /next|auth=Bearer key|cookie=sid=1|length=-|body="))]
-#[case::a_307_replays_the_post_body(Case::Post307, &format!("{GONE} POST /next|auth=Bearer key|cookie=sid=1|length=7|body={{\"a\":1}}"))]
-#[case::a_308_replays_the_post_body(Case::Post308, &format!("{GONE} POST /next|auth=Bearer key|cookie=sid=1|length=7|body={{\"a\":1}}"))]
+#[case::a_301_turns_a_post_into_a_get(Case::Post301, &format!("{GONE} GET /next|auth=Bearer key|cookie=-|length=-|body="))]
+#[case::a_302_turns_a_post_into_a_get(Case::Post302, &format!("{GONE} GET /next|auth=Bearer key|cookie=-|length=-|body="))]
+#[case::a_303_turns_a_post_into_a_get(Case::Post303, &format!("{GONE} GET /next|auth=Bearer key|cookie=-|length=-|body="))]
+#[case::a_307_replays_the_post_body(Case::Post307, &format!("{GONE} POST /next|auth=Bearer key|cookie=-|length=7|body={{\"a\":1}}"))]
+#[case::a_308_replays_the_post_body(Case::Post308, &format!("{GONE} POST /next|auth=Bearer key|cookie=-|length=7|body={{\"a\":1}}"))]
 #[case::relative_location_joins_against_the_request(
     Case::Relative,
-    "GET /a/next?x=1 HTTP/1.1|auth=Bearer key|cookie=sid=1|length=-|body="
+    "GET /a/next?x=1 HTTP/1.1|auth=Bearer key|cookie=-|length=-|body="
 )]
 #[case::the_hop_bound_stops_the_chain(
     Case::HopBound,
@@ -319,7 +319,7 @@ const GONE: &str = "POST /start|auth=Bearer key|cookie=sid=1|length=7|body={\"a\
 )]
 #[case::same_origin_keeps_credentials(
     Case::SameOrigin,
-    "GET /next|auth=Bearer key|cookie=sid=1|length=-|body="
+    "GET /next|auth=Bearer key|cookie=-|length=-|body="
 )]
 #[case::a_redirect_body_never_reaches_the_stream(Case::StreamedAnswer, "data: 1")]
 #[case::a_307_cannot_replay_a_streaming_body(
