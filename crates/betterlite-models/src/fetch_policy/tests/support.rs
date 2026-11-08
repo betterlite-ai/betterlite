@@ -110,7 +110,7 @@ impl ScriptedClient {
     fn next_reply(&self) -> Result<FetchResponse, FetchClientError> {
         let index = self.calls.fetch_add(1, Ordering::SeqCst);
         self.replies.get(index).cloned().unwrap_or_else(|| {
-            Err(FetchClientError::Transport {
+            Err(FetchClientError::InvalidUrl {
                 detail: "unscripted request".to_owned(),
             })
         })

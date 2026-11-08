@@ -6,7 +6,8 @@ use rust_decimal::Decimal;
 
 use crate::fetch_policy::client::{CatalogClient, CatalogRequest};
 use crate::fetch_policy::outcome::{
-    AttemptOutcome, FetchResult, Retryable, Unavailable, attempt_fetch, attempt_fetch_sync,
+    AttemptOutcome, FetchResult, Retryable, Unavailable, attempt_fetch_sync, classify_fetch_error,
+    classify_fetch_response,
 };
 use crate::fetch_policy::response::FetchResponse;
 
@@ -89,7 +90,10 @@ where
     J: JitterSource,
 {
     for attempt in 1..=max_attempts {
-        let outcome = attempt_fetch(client, request).await;
+        let outcome = match client.get_async(request).await {
+            Ok(response) => classify_fetch_response(response, &request.url),
+            Err(error) => classify_fetch_error(error, &request.url),
+        };
         match next_retry_step(outcome, attempt, max_attempts, jitter) {
             NextStep::Done(result) => return result,
             NextStep::Retry(seconds) => sleeper.sleep(seconds).await,
@@ -113,12 +117,14 @@ where
     J: JitterSource,
 {
     let max_attempts = attempts.end.saturating_sub(1);
-    for attempt in attempts {
+    let mut attempt = attempts.start;
+    while attempt < attempts.end {
         let outcome = attempt_fetch_sync(client, request);
         match next_retry_step(outcome, attempt, max_attempts, jitter) {
             NextStep::Done(result) => return result,
             NextStep::Retry(seconds) => sleep(seconds),
         }
+        attempt = attempt.saturating_add(1);
     }
     FetchResult::Unavailable(Unavailable {
         reason: "model cost map fetch failed".to_owned(),

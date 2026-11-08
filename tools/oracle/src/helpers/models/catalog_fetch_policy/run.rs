@@ -55,17 +55,32 @@ fn model_keys(input: &Input) -> IndexMap<String, Json> {
         .collect()
 }
 
-pub(super) fn validate(input: &Input) -> HelperResult {
+fn validated_models(
+    input: &Input,
+) -> Result<(IndexMap<String, Json>, IntegrityPolicy), Box<HelperError>> {
     let models = model_keys(input);
     let policy = integrity_policy(input)?;
-    let valid = validate_model_cost_map(&models, input.backup_model_count, policy).is_ok();
-    let count_ok = check_model_count_not_reduced(&models, input.backup_model_count, policy).is_ok();
-    Ok(json!({
+    Ok((models, policy))
+}
+
+pub(super) fn validate(input: &Input) -> HelperResult {
+    let (models, policy) = validated_models(input)?;
+    Ok(validation_value(&models, input, policy))
+}
+
+fn validation_value(
+    models: &IndexMap<String, Json>,
+    input: &Input,
+    policy: IntegrityPolicy,
+) -> Value {
+    let valid = validate_model_cost_map(models, input.backup_model_count, policy).is_ok();
+    let count = count_model_entries(models);
+    json!({
         "valid": valid,
         "is_valid_dict": !models.is_empty(),
-        "count_not_reduced": count_ok,
-        "count": count_model_entries(&models),
-    }))
+        "count_not_reduced": check_model_count_not_reduced(models, input.backup_model_count, policy).is_ok(),
+        "count": count,
+    })
 }
 
 fn sorted_models(models: &IndexMap<String, Json>) -> Vec<String> {
@@ -119,15 +134,18 @@ pub(super) fn retry_wait(input: &Input) -> HelperResult {
     Ok(json!({"wait_seconds": wait.normalize().to_string()}))
 }
 
-pub(super) fn next_retry_wait(input: &Input) -> HelperResult {
-    let retryable = retryable(input)?;
+fn retry_step(input: &Input) -> Result<NextStep, Box<HelperError>> {
     let mut jitter = ScriptedJitter::new(&input.jitter)?;
-    let step = next_retry_step(
-        AttemptOutcome::Retryable(retryable),
+    let outcome = AttemptOutcome::Retryable(retryable(input)?);
+    Ok(next_retry_step(
+        outcome,
         input.attempt,
         input.max_attempts,
         &mut jitter,
-    );
+    ))
+}
+
+fn step_output(step: &NextStep) -> Result<Value, Box<HelperError>> {
     match step {
         NextStep::Retry(seconds) => Ok(json!({
             "kind": "retry",
@@ -138,6 +156,12 @@ pub(super) fn next_retry_wait(input: &Input) -> HelperResult {
             Err(invalid("a retryable outcome never reloads".to_owned()))
         }
     }
+}
+
+pub(super) fn next_retry_wait(input: &Input) -> HelperResult {
+    let step = retry_step(input)?;
+    let output = step_output(&step)?;
+    Ok(json!(output))
 }
 
 fn scripted_replies(replies: &[ReplyInput]) -> Vec<Result<FetchResponse, FetchClientError>> {

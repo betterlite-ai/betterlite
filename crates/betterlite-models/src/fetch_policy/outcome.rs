@@ -83,22 +83,12 @@ pub fn classify_fetch_error(error: FetchClientError, url: &str) -> AttemptOutcom
     }
 }
 
-pub async fn attempt_fetch<C>(client: &C, request: &CatalogRequest) -> AttemptOutcome
-where
-    C: CatalogClient,
-{
-    match client.get_async(request).await {
-        Ok(response) => classify_fetch_response(response, &request.url),
-        Err(error) => classify_fetch_error(error, &request.url),
-    }
-}
-
 pub fn attempt_fetch_sync<C>(client: &C, request: &CatalogRequest) -> AttemptOutcome
 where
     C: CatalogClient,
 {
-    match client.get(request) {
-        Ok(response) => classify_fetch_response(response, &request.url),
-        Err(error) => classify_fetch_error(error, &request.url),
-    }
+    client.get(request).map_or_else(
+        |error| classify_fetch_error(error, &request.url),
+        |response| classify_fetch_response(response, &request.url),
+    )
 }
