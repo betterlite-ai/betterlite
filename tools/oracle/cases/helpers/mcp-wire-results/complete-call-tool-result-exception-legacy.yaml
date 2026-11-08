@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8190_complete_call_tool_result_exception_legacy","call":{"b8190":{"function":"complete_call_tool_result","outcome":{"kind":"exception","type_name":"ValueError","message":"bad"},"compat":"legacy"}},"env":{},"compare":{"ignore":[]}}

@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8190_error_upstream_auth_401_empty_origin","call":{"b8190":{"function":"upstream_auth","server_name":"srv","status_code":401,"base_url":"","request_path":"/srv/mcp"}},"env":{},"compare":{"ignore":[]}}

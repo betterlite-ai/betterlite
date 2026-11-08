@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8190_to_call_tool_result_json_string_modern","call":{"b8190":{"function":"to_call_tool_result","outcome":{"kind":"json","value":"hi","original_text":"\"hi\""},"compat":"modern"}},"env":{},"compare":{"ignore":[]}}

@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8190_error_upstream_auth_other_status_is_unauthorized","call":{"b8190":{"function":"upstream_auth","server_name":"srv","status_code":407,"base_url":"https://gw.example"}},"env":{},"compare":{"ignore":[]}}

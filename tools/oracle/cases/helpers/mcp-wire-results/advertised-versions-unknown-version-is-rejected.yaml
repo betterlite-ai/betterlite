@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8190_advertised_versions_unknown_version_is_rejected","call":{"b8190":{"function":"advertised_versions","configured":["2025-11-25","2099-01-01"]}},"env":{},"compare":{"ignore":[]}}
