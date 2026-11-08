@@ -1,35 +1,10 @@
 use std::time::Instant;
 
-use rstest::rstest;
-
 use super::{at, global_timeout, no_deployment, request_settings, router_settings, seconds};
 use crate::routing_timeouts::completion::{TimeoutKwargs, TimeoutValue, resolve};
 use crate::routing_timeouts::error::TimeoutError;
 use crate::routing_timeouts::plan::{RouterTimeoutSources, TimeoutPlan, resolve_router_timeouts};
 use crate::routing_timeouts::seconds::Seconds;
-
-type BoundaryCheck = fn();
-
-#[rstest]
-#[case::negative_seconds_is_an_error(negative_seconds_is_an_error)]
-#[case::nan_seconds_is_an_error(nan_seconds_is_an_error)]
-#[case::infinite_seconds_is_an_error(infinite_seconds_is_an_error)]
-#[case::huge_seconds_is_an_error(huge_seconds_is_an_error)]
-#[case::zero_seconds_is_kept(zero_seconds_is_kept)]
-#[case::zero_attempt_expires_immediately(zero_attempt_expires_immediately)]
-#[case::attempt_equal_to_deadline(attempt_equal_to_deadline)]
-#[case::deadline_reached_at_now(deadline_reached_at_now)]
-#[case::cancelled_blocks_attempt(cancelled_blocks_attempt)]
-#[case::cancelled_blocks_remaining(cancelled_blocks_remaining)]
-#[case::cancelled_expired_is_cancelled(cancelled_expired_is_cancelled)]
-#[case::expired_before_the_deadline_is_attempt(expired_before_the_deadline_is_attempt)]
-#[case::expired_at_the_deadline_is_deadline(expired_at_the_deadline_is_deadline)]
-#[case::global_default_flags(global_default_flags)]
-#[case::router_constructor_fields(router_constructor_fields)]
-#[case::router_without_timeout_uses_global(router_without_timeout_uses_global)]
-fn routing_timeouts_boundaries(#[case] check: BoundaryCheck) {
-    check();
-}
 
 #[test]
 fn negative_seconds_is_an_error() {
