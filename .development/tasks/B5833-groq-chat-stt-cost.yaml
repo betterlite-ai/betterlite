@@ -1,0 +1,223 @@
+id: B5833
+title: Groq chat options, browser-search billing, transcription options and search cost
+description: >-
+  Build the Groq provider's pure transforms in betterlite-openai as three modules: groq_chat
+  (litellm/llms/groq/chat/transformation.py), groq_stt (litellm/llms/groq/stt/transformation.py) and groq_cost
+  (litellm/llms/groq/cost_calculator.py). No network call and no config section: the API key and base URL are plain
+  arguments the caller has already read. GroqChatConfig sits on the OpenAI-like chat config, so this task calls the shared
+  pieces and adds only what Groq overrides: B668 for the base supported list and option mapping and OpenAiError, B503 for
+  the message transform, B504 for reply conversion and the stream chunk parser, B1425 for the OpenAI-like option mapper
+  (it swaps max_completion_tokens for max_tokens) and reply conversion, and B2202 base_helpers::append_tools for
+  _add_tools_to_optional_params. Reach them through the same injected calls B6080 and B6120 use, so this module never
+  imports their internals. An empty string counts as unset in every "a or b" chain below, as in LiteLLM.
+
+
+  groq_chat, credentials. get_openai_compatible_provider_info(api_base, api_key) returns (api_base or GROQ_API_BASE or
+  "https://api.groq.com/openai/v1", api_key or GROQ_API_KEY). GROQ_API_BASE and GROQ_API_KEY arrive as plain optional
+  arguments. The key can stay None. The longer chain in main.py (litellm.api_base, litellm.groq_key) is B8310's.
+
+
+  groq_chat, supported options. get_supported_openai_params(model) starts from B668's base list and removes
+  "max_retries". It removes "web_search_options" unless the model is a compound model or the web search capability lookup
+  says yes for the pair (model, "groq"). A compound model is one whose name, after removing one leading "groq/", is
+  "compound" or "compound-mini". Last, "reasoning_effort" is appended when the reasoning lookup says yes. The base list
+  never holds reasoning_effort, so it appears at most once, at the end. A failed reasoning lookup is logged at debug and
+  counts as no. The web search lookup has no guard, so its error propagates. The lookups come in through a small trait the
+  caller implements (B2221 owns supports_web_search, supports_reasoning and supports_response_schema); do not read the
+  catalog from inside this module.
+
+
+  groq_chat, messages. transform_messages(messages, model) rebuilds every assistant message as a new object holding only
+  its top-level members that are not null (so an assistant tool-call message loses a null "content" key, and nested nulls
+  stay), leaves every other role untouched, then hands the list to the shared message transform (B503). It is the hook
+  B503's transform_request calls, so the Groq tweak runs on each chat request.
+
+
+  groq_chat, options. map_openai_params(non_default_params, optional_params, model, drop_params) keeps LiteLLM's order.
+  (1) Read response_format from non_default_params. When it is not null, write fake_stream = true into optional_params,
+  whether or not the call streams. (2) When response_format is an object, take its schema from "response_schema" if that key
+  is present, else from "json_schema" then "schema". When a schema was found and the (model, "groq") response-schema lookup
+  says no: if non_default_params has a "tools" key (even null) fail with a 400 BadRequestError for model and provider
+  groq, text "Groq model '{model}' does not support native structured outputs. LiteLLM uses a tool-calling workaround for
+  structured outputs on this model, which is incompatible with user-provided tools. Either use a model that supports
+  native structured outputs (e.g., gpt-oss-120b, llama-4, kimi-k2), or remove the tools parameter. See:
+  https://console.groq.com/docs/structured-outputs#supported-models"; otherwise set optional_params.tools to exactly one
+  tool {type: function, function: {name: json_tool_call, parameters: schema}} (replacing any tools there), tool_choice to
+  {type: function, function: {name: json_tool_call}} and json_mode to true, and remove response_format from
+  non_default_params. A model with native schema support keeps response_format and it reaches the base mapping. (3) Remove
+  web_search_options from non_default_params and remember its value. (4) Run the OpenAI-like mapper with the Groq
+  signature's default left alone: LiteLLM's call passes only four arguments, so the OpenAI-like default (replace
+  max_completion_tokens with max_tokens) applies and max_completion_tokens never reaches Groq. (5) When web_search_options was
+  not present or null, return. When it is non-empty, log at info "Groq web search enabled; ignoring unsupported
+  web_search_options fields: {sorted keys}". When the model is a compound model, return. Otherwise add the tool
+  {type: browser_search} through append_tools unless a tool in optional_params.tools already has type browser_search. An
+  empty object still adds the tool, only the log line is skipped. should_fake_stream(optional_params) is true when
+  response_format is not null. The Python class also has a no-op get_config and a constructor that sets class attributes;
+  those serve only the Python SDK and are not built.
+
+
+  groq_chat, reply. transform_response runs the OpenAI-like reply conversion (B1425, then B504), then sets service_tier to
+  "auto" when the reply's value is null or not one of "auto", "default", "flex", else keeps it. After that it counts browser
+  actions. For every choice in order, read message.executed_tools from the raw reply JSON (the same body B1425 converted).
+  Each entry is an object with optional string name and string type; the action is name when truthy, else type. An entry
+  that is not an object, or a name or type that is neither a string nor null, makes the whole list invalid: log at info
+  "Groq executed_tools entries did not match the expected shape; not billed: {error}" and count nothing. Only a reply with
+  usage is touched. searches = count of "browser.search" plus count of "browser_search"; opens = count of "browser.open". When
+  both are zero leave usage alone. Otherwise replace usage.server_tool_use with web_search_requests = searches and
+  browser_open_requests = opens, even when searches is 0 and a server_tool_use was already there. The current typed chat
+  reply has no server_tool_use field, so the function returns the two counts next to the converted reply and the caller
+  attaches them; do not edit the reply type, that file is B004's.
+
+
+  groq_chat, stream. chunk_parser takes one parsed chunk. A chunk whose "error" is truthy fails with OpenAiError whose
+  status is error.code, message error.message and body the error object. Then every choice's delta.reasoning is renamed to
+  delta.reasoning_content, and the chunk goes to B504's stream chunk parser. A missing or non-integer error.code uses status
+  500, the base parser's choice, because Rust statuses are integers. get_model_response_iterator only selects this parser
+  for B010's iterator lifecycle, so B010 and B8310 wire it and no iterator is built here.
+
+
+  groq_stt. GroqSTTConfig.get_supported_openai_params_stt returns prompt, response_format, temperature, language in that
+  order. get_supported_openai_response_formats_stt returns json, verbose_json, text. map_openai_params_stt copies every
+  non-default param into optional_params in input order. A response_format outside the three formats is dropped when either
+  the global drop_params flag (litellm.drop_params) or the call's drop_params is true; otherwise it fails with
+  UnsupportedParamsError, status 400, "Groq doesn't support response_format={value}. To drop unsupported openai params from the
+  call, set `litellm.drop_params = True`". Both flags come in as plain bools.
+
+
+  groq_cost. web_search_cost(server_tool_use, search_context_cost_per_query) returns an exact Decimal (B204). The caller
+  (B1687's dispatch, which replaces llms/__init__.py) passes the resolved model_info's search_context_cost_per_query as an
+  Option of SearchContextPricing from betterlite-models, and the two counts; there is no billing instant because Groq has no
+  off-peak pricing. The rate is search_context_size_medium, or 0 when the pricing is absent or has no medium value. Cost =
+  web_search_requests * rate + browser_open_requests * 0.001, where each count is 0 when null and the whole answer is 0
+  when server_tool_use is absent. 0.001 is GROQ_BROWSER_VISIT_WEBSITE_COST_PER_CALL (litellm/constants.py L471). This task
+  only returns the value; B1686 and B1687 own dispatch and recording.
+
+
+  The pinned source holds about 400 nonblank, non-comment lines once handler.py is dropped. Plan 330 transform lines, 330
+  test lines and 100 helper adapter lines, under 1500. Helper b5833 (named by the skeleton) runs the pinned GroqChatConfig,
+  GroqChatCompletionStreamingHandler, GroqSTTConfig and cost_per_web_search_request on fixture input, so a case can compare
+  mapped options, supported lists, converted usage, chunks and costs. The capability trait gets fixed answers per case, and
+  the Python side patches litellm.supports_web_search, supports_reasoning and supports_response_schema to the same answers.
+scope:
+  paths:
+    - crates/betterlite-openai/src/groq_chat.rs
+    - crates/betterlite-openai/src/groq_chat/**
+    - crates/betterlite-openai/src/groq_stt.rs
+    - crates/betterlite-openai/src/groq_stt/**
+    - crates/betterlite-openai/src/groq_cost.rs
+    - crates/betterlite-openai/src/groq_cost/**
+    - tools/oracle/cases/helpers/groq-chat/**
+    - tools/oracle/helpers/b5833.py
+    - tools/oracle/helpers/b5833/**
+    - tools/oracle/src/helpers/openai/b5833.rs
+    - tools/oracle/src/helpers/openai/b5833/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/groq/chat/transformation.py#L32-L123
+    why: Compound model names, the supported list with the two lookups and the executed tool identity shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/groq/chat/transformation.py#L124-L176
+    why: Assistant null stripping, key and base fallback and the fake-stream rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/groq/chat/transformation.py#L178-L277
+    why: The json_tool_call workaround, the tools conflict error, web_search_options handling and the max_completion_tokens swap.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/groq/chat/transformation.py#L279-L348
+    why: Service tier mapping and browser action counting from executed_tools.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/groq/chat/transformation.py#L351-L365
+    why: Stream error chunks and the reasoning rename.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/groq/stt/transformation.py#L65-L98
+    why: Transcription option list, response formats and the drop-or-fail rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/groq/cost_calculator.py#L1-L27
+    why: Search and browser-open billing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/transformation.py#L145-L169
+    why: The parent mapper whose default swaps max_completion_tokens for max_tokens.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2111-L2170
+    why: Read-only context for what _complete_groq does around these transforms (B8310 owns it).
+  - url: https://console.groq.com/docs/structured-outputs
+    why: Which models take native json_schema and the no-tools restriction.
+dod:
+  - text: The Groq key and base, the supported option list with its two independent capability lookups, and the compound-model rule match GroqChatConfig.
+    proof: [groq-chat-tests, helper-python, groq-cases]
+  - text: Response formats become the json_tool_call workaround, pass through natively, or fail with the tools conflict error exactly as LiteLLM does, and fake_stream follows response_format.
+    proof: [groq-chat-tests, helper-python, groq-cases]
+  - text: web_search_options adds one browser_search tool for a non-compound model without duplicating it, and max_completion_tokens becomes max_tokens.
+    proof: [groq-chat-tests, helper-python, groq-cases]
+  - text: Assistant messages lose their null members before the shared message transform.
+    proof: [groq-chat-tests, groq-cases]
+  - text: Replies get a mapped service tier and browser search and open counts from executed_tools, and a malformed list bills nothing.
+    proof: [groq-chat-tests, helper-python, groq-cases]
+  - text: Stream error chunks fail with the chunk's own code and message, and delta.reasoning becomes reasoning_content.
+    proof: [groq-chat-tests, groq-cases]
+  - text: Transcription options, response formats and the unsupported-format error match GroqSTTConfig.
+    proof: [groq-stt-tests, helper-python, groq-cases]
+  - text: Search and browser-open charges are exact decimals and zero without server tool use.
+    proof: [groq-cost-tests, helper-python, groq-cases]
+  - text: The new oracle cases exist and call this task's helper.
+    proof: [groq-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: groq-chat-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^groq_chat::/)'
+      why: A plain OpenAI chat passthrough has no tool workaround for response_format, no browser_search tool and no executed_tools counts.
+    - id: groq-stt-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^groq_stt::/)'
+      why: Without these the four-option list, the three formats and the drop-or-fail rule are unchecked.
+    - id: groq-cost-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^groq_cost::/)'
+      why: A generic token calculator never charges the 0.001 browser open or the medium search rate.
+    - id: helper-python
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5833)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5833 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5833/pyrightconfig.json
+      why: The Python adapter must call the pinned Groq classes and cost function directly.
+    - id: groq-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/groq-chat)" && /usr/bin/grep -rlE '^  b5833:' tools/oracle/cases/helpers/groq-chat
+      why: Without cases that call the b5833 helper nothing compares these transforms with LiteLLM.
+oracle_cases:
+  - tools/oracle/cases/helpers/groq-chat/credentials-and-base.yaml
+  - tools/oracle/cases/helpers/groq-chat/supported-params-capabilities.yaml
+  - tools/oracle/cases/helpers/groq-chat/supported-params-compound-model.yaml
+  - tools/oracle/cases/helpers/groq-chat/supported-params-reasoning-lookup-failure.yaml
+  - tools/oracle/cases/helpers/groq-chat/assistant-null-members.yaml
+  - tools/oracle/cases/helpers/groq-chat/response-format-tool-workaround.yaml
+  - tools/oracle/cases/helpers/groq-chat/response-format-native-schema.yaml
+  - tools/oracle/cases/helpers/groq-chat/response-format-with-tools-error.yaml
+  - tools/oracle/cases/helpers/groq-chat/web-search-options-tool.yaml
+  - tools/oracle/cases/helpers/groq-chat/max-completion-tokens-swap.yaml
+  - tools/oracle/cases/helpers/groq-chat/service-tier-mapping.yaml
+  - tools/oracle/cases/helpers/groq-chat/executed-tools-counts.yaml
+  - tools/oracle/cases/helpers/groq-chat/executed-tools-bad-shape.yaml
+  - tools/oracle/cases/helpers/groq-chat/stream-chunk-error-and-reasoning.yaml
+  - tools/oracle/cases/helpers/groq-chat/stt-options.yaml
+  - tools/oracle/cases/helpers/groq-chat/stt-unsupported-format.yaml
+  - tools/oracle/cases/helpers/groq-chat/web-search-cost.yaml
+deviations:
+  - what: Costs are exact Decimal values, so web_search_cost can differ from LiteLLM's binary float in the last digits.
+    why: B204 forbids binary floating point in prices. Oracle cases compare the two as decimal numbers rounded to 12 places.
+  - what: A stream error chunk whose code is missing or not an integer gets status 500. LiteLLM passes the raw value on.
+    why: Statuses are integers in betterlite and 500 is what the base chunk parser uses for the same input.
+  - what: The Groq STT drop_params global is an explicit bool argument, not read from a process global.
+    why: Provider modules take settings from the caller, so tests need no process state.
+out_of_scope:
+  - B8310 owns _complete_groq in litellm/main.py (L2111-L2170) including litellm.api_base, litellm.groq_key and the GroqChatConfig.get_config merge, registering these modules in dispatch and the HTTP oracle cases.
+  - B668, B503, B504 and B1425 own every inherited method (base supported list, base option mapping, content transform, reply conversion, base chunk parser, OpenAI-like reply cleanup). B2202 owns _add_tools_to_optional_params.
+  - B2221 owns supports_web_search, supports_reasoning and supports_response_schema. Their catalog reads are not repeated here.
+  - B010 owns iterator framing, DONE handling and close semantics. get_model_response_iterator is only a parser choice that B010 and B8310 wire.
+  - B1428 owns the OpenAI-like request execution and the fake-stream replay that reads optional_params.fake_stream.
+  - litellm/llms/groq/chat/handler.py (GroqChatCompletion) is out of scope, no caller at the pin. main.py L303 builds groq_chat_completions and nothing calls it; Groq requests run through base_llm_http_handler with GroqChatConfig, and the null-stripping in its completion() is already covered by transform_messages above.
+  - B5362 owns get_optional_params_transcription (utils.py L3571) that calls the STT config. B1686 and B1687 own the cost dispatch in litellm/llms/__init__.py (L74-L78) that calls groq_cost.
+  - GroqChatConfig.__init__, get_config and the matching GroqSTTConfig members only hold Python SDK class-level defaults and have no yaml surface.
+pitfalls:
+  - The Groq signature of map_openai_params defaults replace_max_completion_tokens_with_max_tokens to False with the comment that Groq supports max_completion_tokens, but the call to super passes only four arguments, so the OpenAI-like default of true wins and max_tokens is what goes out.
+  - response_format is removed from non_default_params only when the tool workaround is used, and the removal mutates the caller's map. A native-schema model, a plain json_object format and a non-object value all leave it in place.
+  - 'fake_stream is set from response_format before the schema is looked at, so a json_object response_format also forces fake streaming even though no tool is added.'
+  - The workaround overwrites optional_params.tools with a single entry. It does not append.
+  - web_search_options is popped before the base mapper runs, so it is never copied even on a model that lists it, and it is dropped silently when the value is null.
+  - A non-compound model gets the browser_search tool even when web_search_options is an empty object, and a compound model never gets it.
+  - The supported-list web search lookup is unguarded while the reasoning lookup is guarded, so only a reasoning failure is swallowed.
+  - A bad executed_tools shape anywhere in any choice voids the whole count, not just that choice, and the reply is still returned.
+  - web_search_requests is set to the search count even when it is 0 and only browser.open ran, and "browser.search" and "browser_search" both count as searches.
+  - Service tier is replaced by "auto" for any value outside auto, default and flex, and for null, so a reply that had none now reports "auto".
+  - The Groq stream error check runs before the base parser, so an error chunk with a non-integer code is not clamped to the 400 to 599 range the base parser applies.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

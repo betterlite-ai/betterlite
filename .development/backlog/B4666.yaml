@@ -2,8 +2,8 @@ id: B4666
 milestone: M9 agents and mcp
 title: MCP upstream grant bridging and credential-write authorization
 status: todo
-depends_on: [B4651, B4653, B4658, B4672, B760, B762, B766, B883, B1221]
-file: null
+depends_on: [B4651, B4653, B4654, B4658, B4672, B4674, B760]
+file: tasks/B4666-mcp-upstream-grant-bridging.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/bridge_token_flow.py"
 parent: B137

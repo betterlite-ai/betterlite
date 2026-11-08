@@ -1,0 +1,15 @@
+kind: helper
+name: gemini-tool-invokes-infer-protocol-value
+call:
+  gemini_tool_invokes:
+    operation: infer_protocol_value
+    values:
+      - null
+      - 7
+      - 1.5
+      - alpha
+      - key: value
+      - [1, 2]
+env: {}
+compare:
+  ignore: []

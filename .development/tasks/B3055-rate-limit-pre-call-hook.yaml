@@ -1,0 +1,160 @@
+id: B3055
+title: Rate-limit pre-call hook, request capacity and the 429 and 503 HTTP cases
+description: >-
+  Add the module `pre_call_hook` to betterlite-rate-limit and a server gate that calls it, so a real route
+  reaches the limiter. The shared limiter and the batch selector come from B5660. This task uses them.
+
+  Four pieces.
+
+  One, `build_request_rate_limit_descriptors(user_api_key_dict, data, call_type)`, the port of
+  `_build_request_rate_limit_descriptors` (L3865 to L3910). It reads `rpm_limit_type` and `tpm_limit_type`
+  from the key metadata (a value that is not text counts as absent) and the model from `data` (not text
+  counts as absent). When a model is named and dynamic rate limiting is on for the two limit types, it asks B3040
+  whether the model has recent failures. It then calls the descriptor builders in this order: B3040
+  `_create_rate_limit_descriptors`, the project model descriptor of B3038, the project ITPM and OTPM
+  descriptors of B3038, and last the organization descriptor of B3038 and the tag descriptors of B3039. Keep
+  that order, because the descriptor list order decides which scope is named in the 429 body.
+
+  Two, `RateLimitPreCallHook::async_pre_call_hook(user_api_key_dict, data, call_type, endpoint_type, stash)`,
+  the port of L3968 to L4191, and it implements the `CallTypeRateLimiter` trait of B5660 for the main limiter.
+  Steps, in order. Log "Inside Rate Limit Pre-Call Hook" at debug. If `select_call_type_limiter` of B5660
+  gives `Batch`, hand the call to the batch limiter of B1047 and return its result. Otherwise build the
+  descriptors. Store the set of tag values whose descriptor has a tokens limit in the stash. With no
+  descriptors, return. Else run the first pass: collect the `max_parallel_requests` counter keys, make a
+  slot id only when there are keys, drop the project ITPM and OTPM descriptors from the first pass when
+  token reservation is off, and call `should_rate_limit` of B3036 with `skip_tpm_check` equal to the
+  reservation flag. On OVER_LIMIT, raise through B3030. Otherwise save the response and the slot in the stash.
+  Then the token reservation: if some non-project descriptor has a tokens limit and reservation is on, take
+  the smallest such limit, apply the implicit output cap and estimate the tokens with B3041 (at least 1), log
+  the debug line when the estimate is above the smallest limit, and reserve with B3042. On OVER_LIMIT, release
+  the stashed slot first, then raise through B3030. On success, record the reserved tokens, model and scopes in the
+  stash and append the token statuses to the stored response. Last, call the project input and output token
+  reservation of B3043 with the scopes and amount from the step before. Read L3968 to L4191 for every
+  condition. The comments in that code explain why each guard exists.
+
+  Three, `request_capacity(user_api_key_dict, model, request_data)`, the port of `request_capacity` and
+  `_release_request_capacity_when_admitted` (L3912 to L3966). It returns a guard for one non-generation
+  provider request. It builds the descriptors with call type none and the model set in the data, makes a fresh
+  slot id, spawns the admission as its own task with `skip_tpm_check` true, and awaits it without letting a
+  cancelled caller stop it. OVER_LIMIT raises through B3030. When the guard is dropped, a detached task waits for
+  the admission and, when it ended OK, releases the slots through B3034. A caller that is cancelled must still
+  see the release happen. Use a drop guard plus a spawned release task. No nested closures.
+
+  Four, the server gate and the HTTP cases. In betterlite-server add `hooks/rate_limit_pre_call.rs`. It makes
+  one `RequestStashSlot` per proxy request, stores it with the request, and runs the main limiter's
+  `async_pre_call_hook` after auth and before the provider call on the routes that already run the other
+  pre-call hooks. The architect names the exact wiring spot in the skeleton. A limiter error becomes the HTTP
+  answer of B3030: 429 with LiteLLM's body, and 503 with `{"detail":{"error":...}}` when fail-closed
+  enforcement is on and the cache cannot be read. The gate also has a public accessor `main_limiter(&self) -> &RateLimitPreCallHook`, the replacement for `get_proxy_hook("parallel_request_limiter")` that B3124 needs for `request_capacity`. betterlite has only this limiter, so the accessor always answers. Add the HTTP oracle cases listed below. Each one has a
+  config, one request and a mock upstream, and compares status, body and headers with LiteLLM.
+
+  Native tests live under `pre_call_hook::tests` and are grouped as `descriptors_`, `hook_` and
+  `capacity_`. They cover: the descriptor order, a non-text limit type counted as absent, dynamic limiting
+  asking B3040 only with a named model, a batch call type going to the batch limiter, no descriptors leaving
+  the stash empty, a first-pass 429, the slot saved only on success, the project descriptors dropped from the
+  first pass when reservation is off, the token reservation 429 releasing the slot before raising, the stash
+  filled on success, the capacity guard releasing after a normal exit, after an error and after the caller is
+  cancelled, and an OVER_LIMIT admission never releasing a slot.
+
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/pre_call_hook.rs
+    - crates/betterlite-rate-limit/src/pre_call_hook/**
+    - crates/betterlite-server/src/hooks/rate_limit_pre_call.rs
+    - crates/betterlite-server/src/hooks/rate_limit_pre_call/**
+    - tools/oracle/cases/limiter/**
+    - tools/oracle/helpers/b3055.py
+    - tools/oracle/helpers/b3055/**
+    - tools/oracle/src/helpers/rate_limit/b3055.rs
+    - tools/oracle/src/helpers/rate_limit/b3055/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3865-L3910
+    why: The descriptor list for one request and its order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3912-L3966
+    why: request_capacity and the release that waits for the admission.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3968-L4191
+    why: The pre-call hook, the first pass, the token reservation and the stash writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L751-L837
+    why: The batch limiter hand-off at the top of the hook.
+
+dod:
+  - text: The server gate has a public accessor main_limiter that returns the main limiter whose request_capacity B3124 calls.
+    proof: [server-gate-tests]
+  - text: The descriptor list is built in the LiteLLM order and a non-text rpm_limit_type, tpm_limit_type or model counts as absent.
+    proof: [descriptor-tests]
+  - text: A batch call type is handed to the batch limiter and its result is returned unchanged.
+    proof: [hook-tests]
+  - text: A request with no descriptors passes and writes nothing to the stash.
+    proof: [hook-tests]
+  - text: An OVER_LIMIT first pass raises the 429 of B3030 and saves nothing to the stash, and a passing first pass saves the response and the slot.
+    proof: [hook-tests, limiter-flow-oracle]
+  - text: With reservation off the project ITPM and OTPM descriptors are left out of the first pass, and with it on they are included and skip_tpm_check is true.
+    proof: [hook-tests]
+  - text: A token reservation over the limit releases the stashed slot before raising, and a successful one fills reserved_tokens, reserved_model and reserved_scopes and adds the token statuses to the stored response.
+    proof: [hook-tests]
+  - text: request_capacity charges one request, raises on OVER_LIMIT, and releases the slots after a normal exit, an error and a cancelled caller.
+    proof: [capacity-tests]
+  - text: One RequestStashSlot is made per proxy request and the same slot reaches the pre-call hook and the callbacks.
+    proof: [hook-tests, limiter-flow-oracle]
+  - text: A request over a rate limit gets LiteLLM's 429 status, body and headers through a real route.
+    proof: [limiter-flow-oracle]
+  - text: With fail-closed enforcement on and an unreachable cache the route answers 503 with a body of the form {"detail":{"error":...}}.
+    proof: [limiter-flow-oracle]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: descriptor-tests
+      why: the descriptor order or absent-value tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^pre_call_hook::tests::descriptors_/)'
+    - id: hook-tests
+      why: the pre-call hook flow, stash or reservation tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^pre_call_hook::tests::hook_/)'
+    - id: capacity-tests
+      why: the request_capacity release tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^pre_call_hook::tests::capacity_/)'
+    - id: server-gate-tests
+      why: the server gate or per-request stash tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^hooks::rate_limit_pre_call::tests::/)'
+    - id: limiter-flow-oracle
+      why: the 429 and 503 HTTP cases are missing or differ from LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/limiter)" &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/limiter
+
+oracle_cases:
+  - tools/oracle/cases/limiter/rpm-limit-429.yaml
+  - tools/oracle/cases/limiter/within-limit-headers.yaml
+  - tools/oracle/cases/limiter/fail-closed-503.yaml
+  - tools/oracle/cases/limiter/fail-open-passes.yaml
+
+deviations:
+  - what: The per-request stash is a RequestStashSlot passed down from the server gate, not a ContextVar that child tasks inherit.
+    why: The workspace rules forbid ContextVars for per-run data. B3031 defines the slot and the rule for who owns it.
+  - what: request_capacity is a drop guard plus a detached release task and not an async context manager.
+    why: Rust has no async drop. The detached task keeps the release safe when the caller is cancelled.
+
+out_of_scope:
+  - "The constructor, CallTypeRateLimiter trait, batch limiter selection and the production ModelGroupResolver: B5660."
+  - "The batch limiter's own pre-call hook: B1047."
+  - "Descriptor builders: B3038, B3039 and B3040. Token estimates and the output cap: B3041. Reservation and project admission: B3042 and B3043. This task only calls them."
+  - "should_rate_limit, the gauges and the settlement refunds: B3036, B3035 and B3034."
+  - "Post-call success, failure and reconciliation callbacks and the quota headers: B3045 and B3046."
+  - "Rate-limit error bodies and the 503 mapping: B3030. This task only checks them over HTTP."
+
+pitfalls:
+  - The slot id is made only when some descriptor has max_parallel_requests, and the slot is saved to the stash only after the first pass passes. Saving it on OVER_LIMIT would leave a slot nobody releases.
+  - A token reservation that is over its limit must release the stashed slot before it raises, because the 429 stops the request and no callback runs.
+  - The first pass uses skip_tpm_check equal to the reservation flag. Without it, every in-flight request would add 1 to the tokens counter and cause false 429s under bursts.
+  - The project ITPM and OTPM descriptors are charged by the B3043 step unconditionally, so they leave the first pass when reservation is off. Counting them twice would double-charge each request.
+  - The release in request_capacity must run to the end even when the caller is cancelled, and a cancellation must still reach the caller after the release.
+  - A 429 or 503 from an HTTP case needs a config that really trips it. Run the case against LiteLLM first and copy the real status and body, and do not guess them.
+  - The server gate must not make a second RequestStashSlot for a retry or fallback inside one proxy request.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1800
+  max_new_expects: 0

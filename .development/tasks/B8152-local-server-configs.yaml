@@ -1,0 +1,90 @@
+id: B8152
+title: docker_model_runner, llamafile, lm_studio, oobabooga, xinference and lemonade cost
+description: >-
+  Build the small self-hosted provider configs in betterlite-openai as crates/betterlite-openai/src/local_servers.rs and its folder, one file per provider. All are pure transforms; the HTTP calls and the main.py dispatch stay with B8157.
+
+  docker_model_runner: DockerModelRunnerChatConfig with the _transform_messages overloads, _get_openai_compatible_provider_info, get_complete_url, get_supported_openai_params and map_openai_params.
+
+  llamafile: LlamafileChatConfig with _resolve_api_key, _resolve_api_base and _get_openai_compatible_provider_info.
+
+  lm_studio: LMStudioChatConfig (_get_openai_compatible_provider_info, map_openai_params) and LmStudioEmbeddingConfig (get_config, get_supported_openai_params, map_openai_params). B1440 supplies the lm_studio and llamafile branch of the shared embedding dispatch and calls these.
+
+  oobabooga: OobaboogaError, OobaboogaConfig (get_error_class, transform_response, validate_environment) and the request and reply parts of oobabooga.py completion and embedding. The reply is decoded with a typed struct.
+
+  xinference: XInferenceImageGenerationConfig with get_supported_openai_params and map_openai_params, over the image contracts of B997.
+
+  lemonade: cost_per_token from cost_calculator.py, returning LiteLLM's prompt and completion cost pair for a lemonade model. B1686 owns the cost dispatch that calls it; this task builds the function only.
+
+  Where the source and this text differ, the source at the pinned commit wins.
+scope:
+  paths:
+    - crates/betterlite-openai/src/local_servers.rs
+    - crates/betterlite-openai/src/local_servers/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/local-server-configs/**
+    - tools/oracle/helpers/b8152.py
+    - tools/oracle/helpers/b8152/**
+    - tools/oracle/src/helpers/provider/b8152.rs
+    - tools/oracle/src/helpers/provider/b8152/**
+    - tools/oracle/src/helpers/openai/b8152.rs
+    - tools/oracle/src/helpers/openai/b8152/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/docker_model_runner/chat/transformation.py#L1-L136
+    why: Docker Model Runner chat config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/llamafile/chat/transformation.py#L1-L43
+    why: Llamafile key and base resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lm_studio/chat/transformation.py#L1-L49
+    why: LM Studio chat config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lm_studio/embed/transformation.py#L1-L48
+    why: LM Studio embedding params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oobabooga/chat/oobabooga.py#L1-L160
+    why: Oobabooga request and reply handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oobabooga/chat/transformation.py#L1-L98
+    why: Oobabooga config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oobabooga/common_utils.py#L1-L13
+    why: OobaboogaError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xinference/image_generation/transformation.py#L1-L38
+    why: Xinference image params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lemonade/cost_calculator.py#L1-L36
+    why: Lemonade cost_per_token.
+dod:
+  - text: Each provider's supported params, map_openai_params and provider info (api base, api key, defaults) match LiteLLM.
+    proof: [local-server-configs-tests, local-server-configs-cases]
+  - text: Docker Model Runner builds the same URL and messages.
+    proof: [local-server-configs-tests, local-server-configs-cases]
+  - text: Oobabooga requests and replies, and its error class, match.
+    proof: [local-server-configs-tests, local-server-configs-cases]
+  - text: Xinference image params and the lemonade cost pair match.
+    proof: [local-server-configs-tests, local-server-configs-cases]
+  - text: New helper cases for these functions exist.
+    proof: [local-server-configs-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: local-server-configs-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^local_servers::/)'
+      why: Without this provider code there are no such tests, so the check fails on the base branch.
+    - id: local-server-configs-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/local-server-configs)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/helpers/local-server-configs/docker-model-runner.yaml
+  - tools/oracle/cases/helpers/local-server-configs/llamafile.yaml
+  - tools/oracle/cases/helpers/local-server-configs/lm-studio-chat.yaml
+  - tools/oracle/cases/helpers/local-server-configs/lm-studio-embed.yaml
+  - tools/oracle/cases/helpers/local-server-configs/oobabooga-reply.yaml
+  - tools/oracle/cases/helpers/local-server-configs/xinference-image.yaml
+  - tools/oracle/cases/helpers/local-server-configs/lemonade-cost.yaml
+deviations:
+  []
+out_of_scope:
+  - "B8157 owns the main.py _complete_* dispatch functions."
+  - "B1440 owns the shared openai_like embedding dispatch. B2224 owns lemonade get_model_info; B1686 owns the cost dispatch that must call lemonade cost_per_token, which it does not mention yet."
+  - "B2230 selects the chat configs for these providers."
+pitfalls:
+  - "The oracle helper for this task is pre-registered as b8152 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task's to edit."
+  - "Several providers share the OpenAI base chat config of B668; override only what the source overrides."
+  - "The oobabooga reply shape is not OpenAI-shaped; copy transform_response step by step, including its error texts."
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

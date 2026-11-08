@@ -1,0 +1,178 @@
+id: B3544
+title: Compression retrieval rerun gate and follow-up plan
+description: >-
+  Build the part of the compression interception callback that answers the model's
+  litellm_content_retrieve tool calls on the server. B3543 already owns the settings,
+  the per-call original-content cache, call ID resolution, cache pruning and the tool
+  helpers (has_retrieval_tool, merge_tools). This task adds the three things that run after
+  the provider has answered: a gate that decides if a rerun is needed, a builder that
+  turns the model's retrieval calls into a follow-up request, and the small helpers
+  they use. Put the code in a new module, crates/betterlite-core/src/api/compression_retrieval_loop.rs
+  (and its folder), and call B3543's types and functions from it. Do not edit B3543's files.
+  Every input is a typed JSON value (arguments::json::Json) or a typed struct. The
+  tool name is the constant litellm_content_retrieve that B3543 defines.
+
+  Gate (async_should_run_agentic_loop). Return (false, empty) when the callback is
+  disabled, when the request's tools do not pass B3543's has_retrieval_tool, or when
+  extraction finds no retrieval call in the response. Otherwise return (true, a map
+  with tool_calls, thinking_blocks and tool_type="compression_retrieval", in that
+  key order).
+
+  Extraction (_extract_retrieval_tool_calls). The response is a JSON object. Read its
+  content array; if content is missing or not an array, return two empty lists. For
+  each block that is an object: a block of type "thinking" or "redacted_thinking" is
+  copied whole into thinking_blocks (every key kept); a block of type "tool_use" whose
+  name is litellm_content_retrieve adds {id, type:"tool_use", name, input} to tool_calls,
+  with id taken from the block (null when absent) and input defaulting to an empty
+  object. Order inside each list follows the content order.
+
+  Retrieval content (_resolve_retrieval_content). Read tool_call.input; when it is an
+  object take its "key" string. A missing, null, empty or non-object input gives
+  "No retrieval key provided.". A key found in the cache returns the cached string. A
+  key not in the cache returns "[compressed content key 'KEY' not found]" with the key
+  inserted.
+
+  Follow-up kwargs (_prepare_followup_kwargs). Copy the kwargs map without any key
+  that starts with "_compression_interception" and without "litellm_logging_obj".
+
+  Plan builder (async_build_agentic_loop_plan). Steps in order: prune the cache with B3543's
+  prune function; read tool_calls and thinking_blocks from the gate's map (missing means
+  empty lists); resolve the call ID with B3543's function (logging object first, then
+  kwargs); fetch that call's cache (empty when the ID is absent or unknown); resolve the
+  content of every tool call. Build an assistant message {role:"assistant", content:
+  thinking_blocks followed by one {type:"tool_use", id, name, input} per call}, where
+  name defaults to litellm_content_retrieve and input to an empty object. Build a user
+  message {role:"user", content: one {type:"tool_result", tool_use_id, content} per call,
+  in call order}. The follow-up messages are the original messages followed by those two.
+  max_tokens is the optional-params max_tokens when it is present and nonzero, otherwise
+  the kwargs max_tokens, otherwise none. The optional params of the patch are the request's
+  optional params without max_tokens. The patch model is the "model" inside the logging
+  object's model_call_details["agentic_loop_params"] when that exists, otherwise the
+  model argument. The patch kwargs come from the follow-up kwargs helper. The patch sets
+  no tools. The plan is run_agentic_loop=true, the patch, and metadata {tool_type:
+  "compression_retrieval", call_id: the resolved ID or ""}. response_override, terminate
+  and stop_reason stay at their defaults.
+
+  The Anthropic Messages driver in llm_http_handler.py calls the gate and the builder; that
+  driver belongs to the Anthropic Messages task, so here just expose both as functions
+  on the callback type from B3543 with typed inputs and outputs. AgenticLoopPlan and
+  AgenticLoopRequestPatch come from B4119 (betterlite_context::agentic_loop_plan).
+
+scope:
+  paths:
+  - crates/betterlite-core/src/api/compression_retrieval_loop.rs
+  - crates/betterlite-core/src/api/compression_retrieval_loop/**
+  - tools/oracle/cases/helpers/compression-retrieval-loop/**
+  - tools/oracle/fuzz/corpus/helper_case/compression_retrieval_loop-*
+  - tools/oracle/helpers/b3544.py
+  - tools/oracle/helpers/b3544/**
+  - tools/oracle/src/helpers/core_ops/b3544.rs
+  - tools/oracle/src/helpers/core_ops/b3544/**
+  lint_tables: false
+
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L211-L234
+  why: The gate, with its enabled, has_retrieval_tool and empty-extraction exits and the returned map.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L236-L307
+  why: The plan builder, from pruning to the metadata dict, including the max_tokens and model choices.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L336-L345
+  why: Key lookup and the two fallback strings.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L347-L404
+  why: Extraction of retrieval tool_use blocks and thinking blocks, dict branch and SDK object branch.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L406-L410
+  why: Follow-up kwargs filter.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/custom_logger.py#L65-L88
+  why: AgenticLoopRequestPatch and AgenticLoopPlan fields and defaults.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5749-L5760
+  why: Caller of the gate for Anthropic Messages (exceptions from the hook are logged and skipped there).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5815-L5826
+  why: Caller of the plan builder, passes the gate's map as tools.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L506-L511
+  why: Where agentic_loop_params (model, custom_llm_provider) is stored on the logging object.
+
+dod:
+- text: The gate returns (false, empty) when disabled, when the request tools hold no litellm_content_retrieve tool, or when the response holds no retrieval call.
+  proof: [gate-tests, oracle, helper-python]
+- text: When all three conditions pass the gate returns (true, {tool_calls, thinking_blocks, tool_type:"compression_retrieval"}) with the keys in that order.
+  proof: [gate-tests, oracle, helper-python]
+- text: Extraction keeps thinking and redacted_thinking blocks whole, keeps only retrieval tool_use blocks as {id,type,name,input}, defaults input to an empty object, and returns two empty lists when content is missing or not an array.
+  proof: [extract-tests, oracle, helper-python]
+- text: Retrieval content returns the cached string for a known key, the not-found text for an unknown key, and the no-key text for a missing, null, empty or non-object input.
+  proof: [resolve-tests, oracle, helper-python]
+- text: Follow-up kwargs drop every key that starts with "_compression_interception" and the key litellm_logging_obj, and keep all others.
+  proof: [followup-tests, oracle, helper-python]
+- text: The plan appends the assistant tool_use message (thinking blocks first) and the user tool_result message to the original messages, in call order.
+  proof: [plan-tests, oracle, helper-python]
+- text: The plan picks max_tokens from optional params when nonzero, else from kwargs, removes it from the patch optional params, takes the model from agentic_loop_params when present, and writes metadata call_id as "" when no ID resolves.
+  proof: [plan-tests, oracle, helper-python]
+- text: The plan prunes expired cache entries first, so an entry older than 900 seconds yields the not-found text.
+  proof: [plan-tests]
+- text: Newly added helper corpus cases replay through the shared helper-case parser.
+  proof: [helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+  - id: gate-tests
+    why: the gate exits or its returned map are missing or wrong
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::compression_retrieval_loop::tests::gate_/)'
+  - id: extract-tests
+    why: retrieval call or thinking block extraction is missing or wrong
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::compression_retrieval_loop::tests::extract_/)'
+  - id: resolve-tests
+    why: key lookup or its two fallback texts are missing or wrong
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::compression_retrieval_loop::tests::resolve_/)'
+  - id: followup-tests
+    why: the follow-up kwargs filter is missing or wrong
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::compression_retrieval_loop::tests::followup_/)'
+  - id: plan-tests
+    why: message building, max_tokens or model selection, metadata or cache pruning is missing or wrong
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::compression_retrieval_loop::tests::plan_/)'
+  - id: helper-python
+    why: strict oracle adapter lint or type checks fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3544)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3544 &&
+      uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3544/pyrightconfig.json
+  - id: helper-case-corpus
+    why: newly added retrieval-loop helper cases are absent or do not replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/compression_retrieval_loop-*")" &&
+      grep -lE '^[[:space:]]+b3544:' tools/oracle/fuzz/corpus/helper_case/compression_retrieval_loop-* &&
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+- tools/oracle/cases/helpers/compression-retrieval-loop/gate.yaml
+- tools/oracle/cases/helpers/compression-retrieval-loop/extract-tool-calls.yaml
+- tools/oracle/cases/helpers/compression-retrieval-loop/resolve-content.yaml
+- tools/oracle/cases/helpers/compression-retrieval-loop/followup-kwargs.yaml
+- tools/oracle/cases/helpers/compression-retrieval-loop/plan-messages.yaml
+- tools/oracle/cases/helpers/compression-retrieval-loop/plan-request-patch.yaml
+
+deviations:
+- what: Extraction reads only the JSON-object form of response content blocks. LiteLLM also has a branch for SDK objects that rebuilds thinking blocks with only type, thinking and signature (or type and data).
+  why: A betterlite response is always JSON, so the object branch has no input to run on.
+- what: A retrieval key that is not a string is treated as a missing key and returns "No retrieval key provided.". LiteLLM runs str() on it and looks the text up.
+  why: str() of a non-string value is a Python repr, and the tool schema B3542 builds only allows string keys.
+
+out_of_scope:
+- B3543 owns the settings, the pre-call hook, the original-content cache and its pruning, call ID resolution (_resolve_call_id), _get_cache, has_retrieval_tool and merge_tools. This task calls them.
+- B3542 owns compress(), the retrieval tool definition and the cache contents. B4119 owns AgenticLoopPlan and AgenticLoopRequestPatch (betterlite_context::agentic_loop_plan) and B189 owns the CustomLogger base.
+- The Anthropic Messages driver that calls the gate and the builder, applies the patch, enforces the loop cap and wraps results (llm_http_handler.py), belongs to the Anthropic Messages task.
+- The chat-completions agentic loop (chat_completion_agentic_loop.py) has no compression caller, since this callback only handles Anthropic Messages.
+
+pitfalls:
+- The gate checks has_retrieval_tool on the request's tools, not on the response, so a response that calls litellm_content_retrieve without that tool in the request does not rerun.
+- Thinking blocks are copied whole from content but tool_use blocks are rebuilt with only id, type, name and input, so extra keys on a tool_use block (cache_control, caller) are dropped.
+- The assistant message puts thinking_blocks before the tool_use blocks, and the tool_result content is the plain string, not a block list.
+- max_tokens uses "or" semantics, so an optional-params value of 0 or null falls through to kwargs, and max_tokens is always removed from the patch's optional_params.
+- The patch carries no tools field, so the rerun reuses the original request's tools; do not add compressed_tools here.
+- The model comes from model_call_details["agentic_loop_params"]["model"] (the original, un-prefixed name), and only when a logging object was passed.
+- Pruning runs before the cache is read, so an entry exactly 900 seconds old is still used and one older is a miss that returns the not-found text.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

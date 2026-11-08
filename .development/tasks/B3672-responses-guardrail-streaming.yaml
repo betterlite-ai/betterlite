@@ -1,0 +1,282 @@
+id: B3672
+title: Responses guardrail streaming and tool event repair
+description: >-
+  Build the streaming half of LiteLLM's `OpenAIResponsesHandler`: scanning a buffered Responses event stream with a guardrail,
+  and, when the caller asks for it, writing the guardrail's rewrite back into the buffered events so a client that reads deltas
+  sees the same text and tool calls as the final `response.completed` envelope. Everything is a plain function in
+  crates/betterlite-server/src/guardrails/responses_translation/, in the shape B3671 and B3673 use. The async one is generic over
+  `G: GuardrailContract` (B5471's `guardrail_base`). The dispatcher (B3680) calls it and nothing here knows about routes.
+  A stream is `&mut [serde_json::Value]`, one JSON object per event, in arrival order. LiteLLM mixes pydantic events and dicts.
+  In Rust both are one JSON object, so only the dict behavior is built. Read fields with B3663's `stream_item_field`,
+  `stream_item_items` and `stream_item_fingerprint`. `serde_json::Value` is allowed at these boundaries only, with one
+  `#[expect]` per module and its reason.
+
+  Three modules, each with its own `error.rs` where it can fail (thiserror, `#[source]` on wrapped errors).
+
+  Module `stream_scan` (stream_scan.rs). It holds the event type constants and the readers. Constants: the terminal envelope
+  types `response.completed`, `response.failed` and `response.incomplete`; the tool call item types `function_call` and
+  `custom_tool_call`; the payload event types, delta ones `response.function_call_arguments.delta` and
+  `response.custom_tool_call_input.delta`, done ones `response.function_call_arguments.done` (field `arguments`) and
+  `response.custom_tool_call_input.done` (field `input`); the output item events `response.output_item.added` and
+  `response.output_item.done`; and the output text events `response.output_text.delta` and `response.output_text.done`.
+  `streaming_has_ended(events) -> bool` is true when the list is not empty and the last event's `type` is a terminal type.
+  `streaming_string_so_far(events) -> String` keeps the events whose `text` or `delta` is a string and gives each a part key,
+  the triple of its `item_id`, `output_index` and `content_index` values (a missing one is null). Parts go in order of first
+  appearance. Per part, the `text` strings of its events win and the last one is used; with none, the `delta` strings of the
+  part are joined. The part texts are joined with nothing between them. It never reads `type`, so reasoning deltas and
+  function call argument deltas count as text.
+  `has_streamed_tool_call_events(events)` is true when any event has a payload event type, or an output item event type whose
+  `item.type` is a tool call item type. `completed_response_scan_key(response: Option<&Value>) -> StreamingScanKey` (B3661's
+  type) reads `response.output` with `stream_item_items`. `texts` are the non-empty string `text` of every part in the `content`
+  of each item that is not a tool call item. `tool_calls` are `stream_item_fingerprint` of each tool call item. `stream_ended`
+  is true and `tool_calls_in_flight` false. `streaming_scan_key(events) -> Option<StreamingScanKey>` returns None for an empty
+  list or a last event that is not a JSON object, and None when the last event is `response.output_item.done`. When the last
+  event is a terminal type it returns `completed_response_scan_key(last.response)`. Otherwise `texts` is one entry, the string
+  so far (even empty), `tool_calls` is empty, `stream_ended` false and `tool_calls_in_flight` is
+  `has_streamed_tool_call_events(events)`.
+
+  Module `stream_sync` (stream_sync.rs). It edits buffered events in place. `StreamSyncError::Undeliverable { guardrail_name,
+  reason }` has Display `Guardrail '<name>' rewrote the streamed response but the rewrite cannot be written back to the stream:
+  <reason>` (LiteLLM's `UndeliverableStreamRewrite`; B3246 owns the policy-side exception and the dispatcher turns this one into
+  it). `sync_stream_events_with_rewrites(events: &mut [Value], rewrites: &BTreeMap<(usize, usize), String>)` is keyed by
+  (output_index, content_index). For each event that is an object: a `response.output_item.done` event with an integer
+  `output_index` goes to `sync_output_item_done_event` and nothing else is done for it. Any other event needs an integer
+  `output_index` and `content_index`, else it is skipped. For position (o, c): a `response.output_text.delta` whose position is in
+  `rewrites` gets its `delta` set to the full rewritten text if it is the first such event for that position, and to "" for every
+  later one (the counter is per position and spans item_ids); a `response.output_text.done` sets `text`; a
+  `response.content_part.done` sets `part.text` when `part` is an object. `sync_output_item_done_event(item, output_index,
+  rewrites)` sets `text` of `item.content[c]` for each rewrite whose output index equals `output_index` and whose content index
+  is inside `item.content` (an array; any other `content` does nothing).
+  `spread_text_rewrite_over_stream_events(events, rewritten_text, guardrail_name) -> Result<(), StreamSyncError>` is for a stream
+  with no envelope. `scanned` are the events with a string `text` or `delta`. `positions` are their distinct
+  (output_index, content_index) pairs in order of first appearance. If any pair has a non-integer member, or any scanned event's
+  `type` is not `response.output_text.delta` or `.done`, return `Undeliverable` with the reason `the scanned text events are
+  not all output_text deltas with an integer output_index and content_index, so the text rewrite has nowhere to land`, before
+  writing anything. Otherwise call the sync with the first position mapped to the whole rewritten text and every later position
+  to "".
+  `tool_call_ids_by_item_id(events) -> BTreeMap<String, String>` reads the `item` of each output item event; when the item type
+  is a tool call item type and both its `id` and `call_id` are strings, it maps id to call_id (a later event overwrites).
+  `tool_call_event_call_id(event, map) -> Option<String>`: for a payload event type, the map entry of its string `item_id`; for
+  an output item event, the item's `call_id` when it is a string and the item type is a tool call item type; None for any other
+  event.
+  `deliver_ended_stream_tool_call_rewrites(earlier: &mut [Value], output: &mut [Value], pre: &[ToolCallShape], post:
+  &[ToolCallShape], guardrail_name: &str) -> Result<(), StreamSyncError>` does nothing when `post == pre`. Otherwise: the tool
+  call items are the entries of `output` that pass B3670's `is_tool_call_output_item`; `call_ids` are their non-empty string
+  `call_id` values. Per earlier event compute `tool_call_event_call_id`. `rewrites` map each call_id to B3670's
+  `tool_call_rewrite(before, after)` for each (call_id, pre, post) triple (stopping at the shortest) whose shapes differ.
+  `unresolved_argument_event` is true when some earlier event has a payload event type and no call id. Ask B3670's
+  `undeliverable_tool_call_rewrite_reason` with the call ids, the tool call item count, `post.len()`, that flag, the set of
+  rewritten call ids and the set of all event call ids; on Some, return `Undeliverable` with its Display text. Otherwise write
+  with B3671's `write_tool_call_item`: each tool call item whose call_id is rewritten gets the rewrite's name and its arguments;
+  then each earlier event whose call id is rewritten: a delta payload event gets `delta` set to the new arguments for the first
+  event of that call_id and "" after (one counter per call_id, shared by both delta types), a done payload event gets its field
+  (`arguments` or `input`) set to the new arguments, `response.output_item.added` gets only the name, and
+  `response.output_item.done` gets the name and the arguments.
+
+  Module `stream_output` (stream_output.rs). `process_output_streaming_response(events: &mut [Value], guardrail: &G,
+  guardrail_name: Option<&str>, logging_obj: Option<&mut GuardrailLogTarget>, user_api_key_dict: Option<&BTreeMap<String,
+  GuardrailValue>>, request_data: Option<&mut BTreeMap<String, GuardrailValue>>, deliver_ended_stream_rewrites: bool) ->
+  Result<(), StreamOutputError>`. The error enum wraps the `GuardrailFailure` (box it if `clippy::result_large_err` fires),
+  B3671's `OutputRewriteError` and `StreamSyncError`, each with `#[source]`, and the serde failure from turning the envelope
+  into a `GuardrailValue`. A guardrail failure goes straight to the caller. An empty list or a last event that is not an object
+  returns. Use `split_last_mut` so the last event and the earlier ones can be borrowed at once. `guardrail_name` stands for
+  LiteLLM's `guardrail.guardrail_name`; the sync and delivery code uses "unknown" when it is None.
+
+  Case 1, the last event type is terminal. The envelope is `last.response` when it is an object. Anything else counts as an empty
+  envelope with no output. Call B3671's `extract_output` over its `output` array. If it gives texts or tool calls: take the
+  request data (an absent one starts as an empty map) through B5820's `response_context::add_response_context` with the envelope
+  as a `GuardrailValue` and `user_api_key_dict`; build `GuardrailApiInputs` with `texts`, `tool_calls` only when not empty, and
+  `model` when the envelope's `model` is a non-empty string; take `pre` from B3670's `tool_call_shapes`; call the guardrail with
+  `GuardrailInputType::Response`; take `post` from B3670's `post_guardrail_tool_call_shapes(answer.tool_calls, pre,
+  guardrail_name)` (its warning is logged whether or not rewrites are delivered); write the answer's `texts` (none means an
+  empty list) with B3671's `apply_guardrail_responses_to_output`. When `deliver_ended_stream_rewrites` is true: build the
+  rewrites map from every returned text number i below the scanned count whose text differs from scanned text i, keyed by
+  the mapping i; when it is not empty call `sync_stream_events_with_rewrites` on the earlier events; then call
+  `deliver_ended_stream_tool_call_rewrites` with the earlier events, the envelope's `output`, `pre`, `post`. Then return. When
+  `deliver_ended_stream_rewrites` is false the earlier events and the tool calls of the envelope stay as the model sent them.
+  When extraction gives nothing, fall through to the fallback below.
+
+  Case 2, the last event type is `response.output_item.done`. Take `item`, and when its type is `function_call` or
+  `custom_tool_call` build one chat tool call with B917's `tool_call_dict_from_output_item(item, output_index)` (`output_index`
+  is the event's integer, else 0). With a tool call, call the guardrail with `GuardrailApiInputs { tool_calls }` only (no
+  texts, no model), the request data or an empty map, `GuardrailInputType::Response` and the log target, and drop the answer.
+  Without `deliver_ended_stream_rewrites`, return. With it, fall through to the fallback.
+
+  Fallback. `streaming_string_so_far(events)` empty means return. Otherwise call the guardrail with `texts` of that one string,
+  `model` when the last event's `response` is an object whose `model` is a non-empty string, the request data or an empty map,
+  and `GuardrailInputType::Response`. When `deliver_ended_stream_rewrites` is true and the answer has texts that are not exactly
+  the one string sent, call `spread_text_rewrite_over_stream_events` over all events, including the last, with the first
+  returned text.
+
+  Tests live in `tests.rs` of each module. The fake guardrail from B3671's tests (records inputs, input type and a copy of the
+  request data, returns scripted `texts` and `tool_calls`) is defined again in `stream_output/tests.rs`. Test names start with
+  `string_so_far_`, `ended_` and `scan_key_` in stream_scan; `sync_`, `spread_`, `ids_` and `deliver_` in stream_sync;
+  `terminal_`, `item_done_` and `fallback_` in stream_output. The functions are not reachable from a route yet, so the HTTP cases
+  come with the dispatcher umbrella (B3680); this task gets helper cases for the pure functions only.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/responses_translation/stream_scan.rs
+    - crates/betterlite-server/src/guardrails/responses_translation/stream_scan/**
+    - crates/betterlite-server/src/guardrails/responses_translation/stream_sync.rs
+    - crates/betterlite-server/src/guardrails/responses_translation/stream_sync/**
+    - crates/betterlite-server/src/guardrails/responses_translation/stream_output.rs
+    - crates/betterlite-server/src/guardrails/responses_translation/stream_output/**
+    - tools/oracle/cases/helpers/responses-guardrail-stream/**
+    - tools/oracle/helpers/b3672.py
+    - tools/oracle/helpers/b3672/**
+    - tools/oracle/src/helpers/server/b3672.rs
+    - tools/oracle/src/helpers/server/b3672/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L214-L248
+    why: The event type constants and the tool call payload field maps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L879-L1057
+    why: process_output_streaming_response, its three cases and their order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1059-L1103
+    why: Spreading one text rewrite over a stream with no envelope, and when it is undeliverable.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1104-L1159
+    why: The in-place field write, the event sync by position and the output_item.done content sync.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1161-L1247
+    why: Ended-stream tool call delivery keyed by call_id, the undeliverable check and the event writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1264-L1294
+    why: How a stream event finds its call_id, through item_id for argument events and call_id for item events.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1305-L1357
+    why: The ended-stream check and both scan keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1382-L1414
+    why: get_streaming_string_so_far, with done text winning over deltas per part.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1499-L1535
+    why: The stateless output_item.done translation that Case 2 reduces to one tool call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L52-L62
+    why: The wording of the undeliverable rewrite message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L1120-L1145
+    why: The caller of the ended-stream check and the scan key.
+dod:
+  - text: >-
+      streaming_string_so_far joins parts in first-seen order, uses the last done `text` of a part and the joined deltas
+      only when the part has no done text, and counts any event with a string `text` or `delta` whatever its type.
+    proof: [scan-string-tests, oracle]
+  - text: >-
+      streaming_has_ended is true only for a last event of type response.completed, response.failed or
+      response.incomplete, and false for an empty list.
+    proof: [scan-ended-tests]
+  - text: >-
+      streaming_scan_key returns None for an empty list, a non-object last event and a last response.output_item.done; a
+      terminal last event gives the envelope's non-empty message texts, one fingerprint per tool call item and
+      stream_ended true; any other last event gives the string so far with tool_calls_in_flight set by earlier tool call
+      events.
+    proof: [scan-key-tests, oracle]
+  - text: >-
+      sync_stream_events_with_rewrites puts the whole rewrite on the first delta of a position and "" on the others, sets
+      the text of output_text.done, content_part.done and the output_item.done content entry, and skips events without
+      integer indexes.
+    proof: [sync-tests, oracle]
+  - text: >-
+      spread_text_rewrite_over_stream_events puts the rewrite on the first scanned position and blanks the rest, and
+      returns the undeliverable error before any write when a scanned event is not an output_text event or lacks an integer
+      index.
+    proof: [spread-tests, oracle]
+  - text: >-
+      tool_call_ids_by_item_id and tool_call_event_call_id resolve a call_id through output item events and argument events
+      and give None for events that carry neither.
+    proof: [ids-tests]
+  - text: >-
+      deliver_ended_stream_tool_call_rewrites writes a rewritten name and arguments into the envelope items, the added and
+      done item events and the argument events (first delta gets the arguments, later ones ""), and returns the undeliverable
+      error with B3670's reason when call ids are missing, repeated, miscounted, unresolved or absent from the events.
+    proof: [deliver-tests, oracle]
+  - text: >-
+      A terminal last event scans the envelope's texts and tool calls with the response model, writes the returned texts
+      into the envelope, syncs the earlier events only when deliver_ended_stream_rewrites is true, and a guardrail
+      failure is returned unchanged.
+    proof: [terminal-tests]
+  - text: >-
+      A last response.output_item.done holding a function_call or custom_tool_call scans that one tool call with no texts
+      and no model, drops the answer, and then runs the text fallback only when deliver_ended_stream_rewrites is true.
+    proof: [item-done-tests]
+  - text: >-
+      The text fallback scans the string so far once, spreads a changed first text only when deliver_ended_stream_rewrites
+      is true, and calls no guardrail for an empty string.
+    proof: [fallback-tests]
+checks:
+  optional: []
+  commands:
+    - id: scan-string-tests
+      why: the string-so-far tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::stream_scan::tests::string_so_far_/)'
+    - id: scan-ended-tests
+      why: the ended-stream tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::stream_scan::tests::ended_/)'
+    - id: scan-key-tests
+      why: the scan key tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::stream_scan::tests::scan_key_/)'
+    - id: sync-tests
+      why: the position sync tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::stream_sync::tests::sync_/)'
+    - id: spread-tests
+      why: the text spread tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::stream_sync::tests::spread_/)'
+    - id: ids-tests
+      why: the call_id lookup tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::stream_sync::tests::ids_/)'
+    - id: deliver-tests
+      why: the ended-stream tool call delivery tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::stream_sync::tests::deliver_/)'
+    - id: terminal-tests
+      why: the terminal envelope flow tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::stream_output::tests::terminal_/)'
+    - id: item-done-tests
+      why: the output_item.done flow tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::stream_output::tests::item_done_/)'
+    - id: fallback-tests
+      why: the text fallback flow tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::stream_output::tests::fallback_/)'
+    - id: helper-cases-added
+      why: the helper cases for this task were not added on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-guardrail-stream)"
+oracle_cases:
+  - tools/oracle/cases/helpers/responses-guardrail-stream/string-so-far-done-text-wins.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-stream/string-so-far-counts-argument-deltas.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-stream/scan-key-tool-call-in-flight.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-stream/scan-key-completed-envelope.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-stream/scan-key-output-item-done-is-none.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-stream/sync-first-delta-carries-rewrite.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-stream/spread-over-two-positions.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-stream/spread-reasoning-delta-undeliverable.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-stream/deliver-function-call-rewrite.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-stream/deliver-custom-tool-call-rewrite.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-stream/deliver-missing-event-undeliverable.yaml
+deviations:
+  - what: An undeliverable rewrite is the typed `StreamSyncError::Undeliverable { guardrail_name, reason }` with LiteLLM's message text, not the `UndeliverableStreamRewrite` exception of the policy pipeline.
+    why: That exception belongs to B3246 in betterlite-core, which cannot be imported from here without a cycle risk. The dispatcher converts one into the other and the text is the same.
+  - what: Events are JSON objects and the `hasattr(event, "get")` shim for pydantic events is not built. An event that is not an object is skipped.
+    why: Rust has one JSON event type. Python's pydantic and dict branches give the same result for the same fields.
+  - what: The `response` entry put into the request data is a copy of the envelope taken before the rewrite. LiteLLM stores the envelope itself, so later readers see the rewritten one.
+    why: A Rust map cannot hold a second mutable reference to the event. Nothing after the guardrail call reads that entry. B3671 has the same deviation.
+  - what: Case 2 reads the `function_call` or `custom_tool_call` item directly and builds the tool call with `tool_call_dict_from_output_item`, instead of running the chat stream translator on the event.
+    why: For this event type the stateless translator returns a tool call only for those two item types, built by that function, and nothing else is read from its result. The `model` LiteLLM checks on the translated chunk is never set there, so the inputs carry none.
+  - what: The `stream_transform_sink` parameter of `process_output_streaming_response` is dropped, and the guardrail's name is a plain `Option<&str>` argument.
+    why: The Responses handler never reads the sink. The `GuardrailContract` trait has no name accessor, so the caller passes the configured name.
+out_of_scope:
+  - "B3671 owns extract_output, apply_guardrail_responses_to_output and write_tool_call_item (LiteLLM's _write_tool_call_item and the one-line _write_event_field are inlined there). This task calls them and does not copy them."
+  - "B3670 owns ToolCallShape, tool_call_shapes, post_guardrail_tool_call_shapes, tool_call_rewrite, undeliverable_tool_call_rewrite_reason, is_tool_call_item and is_tool_call_output_item. B3663 owns stream_item_field, stream_item_items and stream_item_fingerprint."
+  - "B3673 owns the Responses block events, build_stream_error_items, _next_stream_sequence_number, the open item state and ResponseOutputEnvelope and ResponsesStreamChunk. This task reads events as plain JSON and does not use those two views."
+  - "B3246 owns UndeliverableStreamRewrite and the pipeline code that discards an undeliverable rewrite and releases the original events."
+  - "The class attributes delivers_ended_stream_rewrites (true) and assembles_streamed_response (true) belong to the dispatcher (B3680) and its registry entry for this handler."
+  - "B888 owns extract_request_tool_names, which is request-side only. Nothing in this task reads tool names from a request, so it does not call it."
+  - "_has_text_content has no caller at the pin and is not built (B3671 lists it too)."
+pitfalls:
+  - "streaming_string_so_far keys parts by (item_id, output_index, content_index) and reads any event with a string `text` or `delta`, so `response.function_call_arguments.delta` and reasoning summary deltas end up in the scanned string. A later spread then fails as undeliverable because those events are not output_text events."
+  - "In streaming_string_so_far a part with a done `text` ignores its own deltas, and two events with the same key and different done texts keep the last one, so do not append them."
+  - "Case 1 runs `post_guardrail_tool_call_shapes` before the text write-back even when deliver_ended_stream_rewrites is false, so its warning is logged for every terminal scan and the envelope's tool calls stay untouched in that mode."
+  - "The rewrite map in Case 1 only holds texts that differ from what was scanned, and a returned list longer than the scanned one fails inside apply_guardrail_responses_to_output before any sync runs."
+  - "The sync counter for blanking deltas is per (output_index, content_index), so two items at different positions each keep one full delta, and the first delta event seen in stream order is the one that carries the text."
+  - "Argument and input events carry `item_id`, not `call_id`, and a bridged stream numbers tool calls from 1 while the envelope lists them after the message, so match by call_id and never by output_index."
+  - "deliver_ended_stream_tool_call_rewrites passes no payload for response.output_item.added events, so an added event only gets the new name and keeps its arguments, while the done event gets both."
+  - "A rewrite whose call_id appears in no earlier event is undeliverable, but a call that was not rewritten may be missing from the events without any error."
+  - "Case 2 drops what the guardrail returns, so a tool call rewritten while the last event is output_item.done is never delivered, and the request data has no `response` key there."
+  - "tool_calls_in_flight in the scan key is true once any tool call event has been seen, even if the call finished, because only a terminal event switches to the envelope key."
+  - "The terminal types include response.failed and response.incomplete, whose envelopes hold partial output, so those streams are scanned and rewritten like completed ones."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 3

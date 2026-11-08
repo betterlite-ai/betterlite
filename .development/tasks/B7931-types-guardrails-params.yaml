@@ -1,0 +1,54 @@
+id: B7931
+title: Python types for guardrails.py part two, content filter, LitellmParams and endpoint classes (L836-L1378)
+description: >-
+  This task ports L836-L1378 of `litellm/types/guardrails.py` into `crates/betterlite-python/python/betterlite/types/guardrails/params.py` and `crates/betterlite-python/python/betterlite/types/guardrails/endpoints.py`.
+  It is Python only.
+
+
+  Contents: `ContentFilterAction`, `BlockedWord`, `ContentFilterPattern`, `ContentFilterConfigModel`, then `BaseLitellmParams`
+  (L907-L1187, a 280 line pydantic model that derives from `ContentFilterConfigModel` and lists the optional fields of every
+  guardrail vendor), `Mode`, `LitellmParams` (L1192), the `Guardrail` and `guardrailConfig` TypedDicts, `GuardrailEventHooks`,
+  `DynamicGuardrailParams`, `GUARDRAIL_DEFINITION_LOCATION`, and the endpoint classes `GuardrailInfoResponse`, `ListGuardrailsResponse`,
+  `GuardrailUIAddGuardrailSettings`, `PresidioPerRequestConfig`, `ApplyGuardrailRequest`, `ApplyGuardrailResponse`
+  and `PatchGuardrailRequest`. It uses the config models from B7930 and, because `LitellmParams` mixes in the per-vendor classes of the hook files, the hook parts B7932 to B7936.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/guardrails/params.py
+  - crates/betterlite-python/python/betterlite/types/guardrails/endpoints.py
+  - crates/betterlite-python/tests/test_types_guardrails_params.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L836-L1190
+  why: Content filter models and BaseLitellmParams.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1187-L1378
+  why: Mode, LitellmParams, Guardrail and endpoint classes.
+out_of_scope:
+- >-
+  L1-L835 belongs to B7930.
+pitfalls:
+- >-
+  `LitellmParams` carries a `pyright: ignore[reportIncompatibleVariableOverride]` in LiteLLM because the `on_flagged` Literal differs across the base classes. The port must fix this by giving every base the same Literal, not by a suppression.
+- >-
+  `Mode` is a pydantic model (L1187) while `GuardrailEventHooks` is a `str, Enum`; a field typed `Mode | str` accepts both, so test both.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_guardrails_params.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

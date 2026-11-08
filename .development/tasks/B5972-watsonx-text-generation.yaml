@@ -1,0 +1,137 @@
+id: B5972
+title: Watsonx text generation requests, replies, streams and prompt templates
+description: >-
+  Build the watsonx_text provider (watsonx.ai /ml/v1/text/generation) in two places. The prompt half goes in
+  betterlite-prompts as crates/betterlite-prompts/src/watsonx.rs and its folder, next to the other per-provider prompt
+  modules. The request half goes in betterlite-provider as crates/betterlite-provider/src/watsonx_text.rs and its folder
+  (add betterlite-prompts to that crate's Cargo.toml). It uses B5970 for errors, credentials and URLs. This is
+  IBMWatsonXAIConfig, WatsonxTextCompletionResponseIterator and the prompt functions of common_utils.py and
+  chat/transformation.py.
+
+  Prompt half. WatsonxModelPattern constants: granite-chat, ibm-mistral, ibm-mistralai, openai/gpt-oss,
+  meta-llama/llama-3-instruct. apply_prompt_template(model, messages) checks substrings of the model in this order and
+  returns the first branch that matches, never falling to a later one: granite-chat gives B214's ibm_granite_pt,
+  ibm-mistral gives B214's mistral_instruct_pt, openai/gpt-oss takes the text after "watsonx/" (else after
+  "watsonx_text/", else the whole model) and returns B215's hf_chat_template result only when it is non-empty, and any
+  Err from that call gives None (the async variant also logs at debug "Failed to apply HuggingFace template for model
+  <name>: <error>"); meta-llama/llama-3-instruct gives B177's custom_prompt with the three Llama 3 role wrappers
+  (<|start_header_id|>role<|end_header_id|>\n before, <|eot_id|> after), initial value <|begin_of_text|> and final value
+  <|start_header_id|>assistant<|end_header_id|>\n. No match gives None. The sync and async variants share one body; only
+  the template call differs. convert_watsonx_messages_to_prompt(model, messages, provider) returns mistral_instruct_pt
+  when provider equals ibm-mistralai, otherwise apply_prompt_template, and when that is None or empty it calls
+  B177's prompt_factory with custom_llm_provider watsonx. Expose apply_prompt_template as the adapter that B177's
+  prompt_factory calls for its watsonx branch.
+
+  Request half. Supported params: temperature, max_tokens, top_p, frequency_penalty, stop, seed, stream.
+  map_openai_params copies max_tokens to max_new_tokens, frequency_penalty to repetition_penalty, seed to random_seed,
+  stop to stop_sequences, and temperature, top_p, stream under their own names. decoding_method, top_k,
+  truncate_input_tokens, length_penalty, time_limit and return_options go to a nested extra_body map, and min_tokens goes
+  there as min_new_tokens. Every other key, including moderations, is dropped. extra_body is written only when it is not
+  empty. is_watsonx_text_param is true for decoding_method, max_new_tokens, min_new_tokens, length_penalty,
+  stop_sequences, top_k, repetition_penalty, truncate_input_tokens, include_stop_sequences, return_options, random_seed,
+  moderations and min_tokens. map_special_auth_params copies project, region_name and token to watsonx_project,
+  watsonx_region_name and watsonx_token. get_eu_regions returns eu-de, eu-gb and get_us_regions returns us-south.
+
+  transform_request: provider is the model text before the first slash; the prompt comes from convert (the
+  custom prompt dictionary is always empty at both call sites). The body is built by popping extra_body and overlaying it
+  on the options, running B5970's get_api_params (which removes the project, space and region keys), then
+  {input: prompt, moderations: popped moderations or {}, parameters: the remaining options, then the prepare_payload
+  fields}. Leftover keys such as stream and watsonx_token stay inside parameters. get_complete_url uses /ml/v1/text/generation
+  or generation_stream, and the deployments form for deployment/<id> models, then the version suffix like chat.
+  transform_response needs a results key (else WatsonxError 500 "Error: Invalid response from Watsonx.ai API: <body>"),
+  reads results[0] generated_text, input_token_count, generated_token_count and stop_reason (through B024's
+  map_finish_reason), sets created from created_at or now, and usage as the two counts and their sum.
+  decode_text_generation_reply(bytes) is the typed decoder; a missing results[0] field is an error, not a default.
+  The stream iterator maps one parsed chunk: a non-empty results list gives text generated_text (default ""),
+  finish_reason stop_reason, is_finished true unless stop_reason is exactly "not_finished" (a missing stop_reason counts
+  as finished), and usage with both counts defaulting to 0; an empty or absent results list gives empty text, not
+  finished, finish_reason "stop", no usage. The line framing comes from B1427's line stream and B2214's iterator.
+scope:
+  paths:
+    - crates/betterlite-prompts/src/watsonx.rs
+    - crates/betterlite-prompts/src/watsonx/**
+    - crates/betterlite-provider/src/watsonx_text.rs
+    - crates/betterlite-provider/src/watsonx_text/**
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/watsonx_text_reply.rs
+    - crates/betterlite-provider/fuzz/corpus/watsonx_text_reply/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/watsonx-text/**
+    - tools/oracle/helpers/b5972.py
+    - tools/oracle/helpers/b5972/**
+    - tools/oracle/src/helpers/prompts/b5972.rs
+    - tools/oracle/src/helpers/prompts/b5972/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/completion/transformation.py#L114-L206
+    why: Text param check, supported list, extra_body split and special auth names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/completion/transformation.py#L225-L349
+    why: Payload layout, both transform_request variants, transform_response and URLs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/completion/transformation.py#L351-L394
+    why: Stream iterator and its chunk parser.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/chat/transformation.py#L105-L224
+    why: Prompt template selection and the async and sync variants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/common_utils.py#L123-L220
+    why: Provider-based prompt conversion and the prompt_factory fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5320-L5324
+    why: The watsonx branch of prompt_factory that calls apply_prompt_template.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4937-L4956
+    why: Call sites of both map_openai_params methods and the text-param ValueError for the chat provider.
+dod:
+  - text: Prompt template selection follows the substring order, swallows hf_chat_template errors and falls back to prompt_factory.
+    proof: [watsonx-prompt-tests, oracle]
+  - text: Parameter mapping splits top-level and extra_body fields and drops unmapped keys.
+    proof: [watsonx-text-tests, oracle]
+  - text: The request body has input, moderations, parameters and id fields in the source layout, and URLs match for plain, deployment and stream calls.
+    proof: [watsonx-text-tests, oracle]
+  - text: Replies and stream chunks give the same text, finish reason, usage and created time as the source, and a reply without results fails with 500.
+    proof: [watsonx-text-tests, oracle]
+  - text: The reply decoder rejects malformed bodies without panicking and its corpus replays.
+    proof: [watsonx-text-corpus]
+  - text: New helper cases for these functions exist.
+    proof: [watsonx-text-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: watsonx-prompt-tests
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^watsonx::/)'
+      why: A generic prompt factory has no watsonx substring order and no Llama 3 wrapper.
+    - id: watsonx-text-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^watsonx_text::/) - test(replays_the_watsonx_text_reply_corpus)'
+      why: The payload layout, leftover parameters and chunk finish rules are only visible in these tests.
+    - id: watsonx-text-corpus
+      run: test -f crates/betterlite-provider/fuzz/fuzz_targets/watsonx_text_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/watsonx_text_reply)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_watsonx_text_reply_corpus)'
+      why: Reply and stream chunk bytes come from outside and need a fuzz target with a replayed corpus.
+    - id: watsonx-text-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/watsonx-text)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/helpers/watsonx-text/template-order-and-gpt-oss.yaml
+  - tools/oracle/cases/helpers/watsonx-text/llama3-instruct-wrapper.yaml
+  - tools/oracle/cases/helpers/watsonx-text/ibm-mistralai-provider.yaml
+  - tools/oracle/cases/helpers/watsonx-text/param-mapping-extra-body.yaml
+  - tools/oracle/cases/helpers/watsonx-text/request-payload-layout.yaml
+  - tools/oracle/cases/helpers/watsonx-text/deployment-stream-url.yaml
+  - tools/oracle/cases/helpers/watsonx-text/reply-without-results.yaml
+  - tools/oracle/cases/helpers/watsonx-text/stream-chunks.yaml
+deviations:
+  - what: A created_at without a UTC offset is read as UTC.
+    why: Python's datetime.fromisoformat gives a naive value and timestamp() then uses the server's local time zone, which a Rust service cannot copy without reading the machine zone. watsonx.ai sends a Z suffix, so real replies are unaffected.
+out_of_scope:
+  - B5970 owns get_api_params, prepare_payload, get_base_url, add_api_version_to_url, validate_environment and WatsonxError.
+  - "B5971 owns the chat config. The ValueError for text params under the watsonx provider is in get_optional_params in utils.py (B668 owns utils.py) and calls is_watsonx_text_param from here."
+  - "Custom prompt dictionaries: both call sites of convert_watsonx_messages_to_prompt pass an empty dict, so the custom_prompt branch for model in custom_prompt_dict has no caller at the pin."
+  - "IBMWatsonXAIConfig.__init__ (class-level defaults) and get_config have no caller at the pin."
+  - "ibm_granite_pt and mistral_instruct_pt belong to B214, hf_chat_template to B215, custom_prompt and prompt_factory to B177, map_finish_reason to B024."
+  - "The logging_obj.post_call call in transform_response belongs to the caller that runs the request."
+  - B8331 owns the main.py registration of the watsonx_text provider and its HTTP oracle cases.
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as b5972 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task''s to edit.'
+  - moderations is a text param and is read in the request body, but map_openai_params never maps it, so it only arrives as an explicit option.
+  - The mapped token (watsonx_token) is not removed by get_api_params, so it stays inside the parameters object of the body.
+  - stop_reason "not_finished" passes through as the finish_reason string of a non-final chunk.
+  - 'The gpt-oss branch returns None when the template result is empty and does not try the Llama 3 branch.'
+  - The model argument to transform_request keeps its provider prefix, so provider is the text before the first slash (for example ibm-mistralai for ibm-mistralai/mixtral).
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

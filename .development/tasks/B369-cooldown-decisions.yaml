@@ -121,6 +121,7 @@ out_of_scope:
 - 'litellm/router_utils/cooldown_handlers.py: B308 owns: _set_cooldown_deployments (L427-L489), _async_get_cooldown_deployments
   (L492-L515), _async_get_cooldown_deployments_with_debug_info (L518-L531), _get_cooldown_deployments
   (L534-L558).'
+- "_should_cooldown_deployment takes the alternatives answer as a `has_alternatives: bool` input. Its caller B308 computes it from B323's `routing_group_has_alternatives` and B8351's `CatalogQueries::team_model_has_alternatives`, so this module does not read the catalog."
 pitfalls:
 - Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
   a hard request error.

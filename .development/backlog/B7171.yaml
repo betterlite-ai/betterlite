@@ -1,0 +1,14 @@
+id: B7171
+milestone: M5 api families
+title: RAG OCR, URL fetch, credential and embedding ports
+status: todo
+depends_on: [B3451, B3459, B5082, B1100, B1058]
+file: tasks/B7171-rag-step-ports.yaml
+covers:
+  - "litellm/rag/ingestion/base_ingestion.py"
+parent: B097
+split_from: B3460
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

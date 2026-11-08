@@ -1,0 +1,150 @@
+id: B6120
+title: Perplexity chat citations and billed cost
+description: >-
+  Build perplexity_chat and perplexity_cost in betterlite-openai. They cover litellm/llms/perplexity/chat/transformation.py
+  and litellm/llms/perplexity/cost_calculator.py. Credentials come in as plain arguments, no config section. The OpenAI
+  chat base (B668 options and error policy, B504 reply conversion) does the rest; this task only adds what
+  PerplexityChatConfig overrides.
+
+  perplexity_chat. Resolve the base as explicit api_base, then PERPLEXITY_API_BASE, then https://api.perplexity.ai. Resolve
+  the key as explicit api_key, then PERPLEXITYAI_API_KEY, then PERPLEXITY_API_KEY. Environment values arrive through the
+  injected secret lookup the other provider modules use. The supported option list is fixed: frequency_penalty, max_tokens,
+  max_completion_tokens, presence_penalty, response_format, stream, temperature, top_p, max_retries, extra_headers. After
+  those, reasoning_effort is appended when the model is declared to support reasoning, then web_search_options when it is
+  declared to support web search. The two lookups are independent. A lookup that fails is logged at debug and treated as
+  false, and the other lookup still runs. Take the two answers through a small trait the caller implements (B2221 supplies
+  reasoning); do not call the catalog from inside this module. Tools, tool_choice, function_call and functions are never
+  supported.
+
+  After the base converts the reply (B504), run one best-effort step on the parsed provider JSON. If any part of it fails,
+  including reading the JSON, log at debug and return the converted reply unchanged. The step has two halves that run in
+  order inside the same guard. First, usage. If the reply has no usage, create a zero usage. citation_tokens is the sum of
+  character counts of every truthy entry in citations, divided by 4 with integer division, never below 1 when the sum is
+  above 0, and 0 when citations is empty or all entries are empty. Count characters (Unicode scalar values), not bytes. The
+  search count is the first non-null of usage.num_search_queries, root num_search_queries, usage.search_queries, root
+  search_queries; the first key that is present and null falls through to the next, a present 0 stops the search. Only when
+  citation_tokens > 0 or the count > 0 does prompt_tokens_details get created if absent. Then citation_tokens > 0 is stored
+  on the usage as citation_tokens, and a count > 0 is stored as prompt_tokens_details.web_search_requests.
+
+  Second, annotations. Work on choices[0] only; return without doing anything when there are no choices, no message or empty
+  content. That early return also skips the last step below. Find every marker matching \[(\d+)\] in the content, in order.
+  Citation n is the n-th entry of citations counted from 1, and only entries that are strings count (a non-string entry still
+  uses up its number). For each marker whose number has a citation, append {type: url_citation, url_citation: {url, title,
+  start_index, end_index}} where title is the title of the search_results entry with that url (the last one wins, entries
+  need both url and title, default empty string) and the indexes are the marker's start and end as character offsets, not
+  byte offsets. The same number twice gives two annotations. Annotations are appended to message.annotations (created when
+  absent). Last, when citations is non-empty it is copied onto the reply as citations, and when search_results is non-empty
+  as search_results, both as extra top-level reply fields.
+
+  perplexity_cost. cost_per_token(model, usage, current_time) returns (prompt_cost, completion_cost) in USD as exact Decimal
+  values (B204), never through binary floating point. The caller passes the resolved model_info for provider perplexity
+  (B2219); this task never looks the catalog up. If usage.cost is an object, its total_cost is used; if usage.cost is a
+  number (not a boolean) it is used directly. A non-null total returns (0, total) and skips every other rule, so zero is
+  authoritative. A cost object with a missing or null total_cost falls through to the manual path. Manual path: rates are
+  input_cost_per_token and output_cost_per_token, with cache and reasoning rates fixed at 0 and none, passed through the
+  B1669 off-peak replacement at current_time (UTC now when absent; take the instant as an argument). A missing, null or
+  unparseable rate is 0. prompt_cost = prompt_tokens * input rate (missing tokens count 0). When citation_tokens > 0 and
+  model_info has a non-null citation_cost_per_token, add citation_tokens * that rate to the prompt cost. Reasoning tokens
+  come from usage.reasoning_tokens, or when that is 0 from completion_tokens_details.reasoning_tokens. When they are above 0
+  and model_info has a non-null output_cost_per_reasoning_token, completion cost is max(0, completion_tokens -
+  reasoning_tokens) * output rate plus reasoning_tokens * the reasoning rate; otherwise completion_tokens * output rate.
+  Search: the count is prompt_tokens_details.web_search_requests (0 when absent). The rate is search_queries_cost_per_query,
+  or when that is falsy search_context_cost_per_query. When it is an object, use its search_context_size_low (0 when
+  missing); otherwise use it as a number (unparseable becomes 0). When count > 0 and the chosen value is non-null, add count
+  * rate to the completion cost, not the prompt cost.
+
+  The two source files hold 248 nonblank, non-comment lines. Tests use rstest rows named after the behavior. The oracle
+  helper replays the pinned PerplexityChatConfig methods and cost_per_token; it may accept an optional model_info map that
+  replaces get_model_info so off-peak windows, string rates and search_queries_cost_per_query, which no catalog row has, can
+  be covered.
+scope:
+  paths:
+    - crates/betterlite-openai/src/perplexity_chat.rs
+    - crates/betterlite-openai/src/perplexity_chat/**
+    - crates/betterlite-openai/src/perplexity_cost.rs
+    - crates/betterlite-openai/src/perplexity_cost/**
+    - crates/betterlite-openai/fuzz/corpus/chat_response/perplexity*
+    - tools/oracle/cases/helpers/perplexity-chat/**
+    - tools/oracle/helpers/b6120.py
+    - tools/oracle/helpers/b6120/**
+    - tools/oracle/src/helpers/openai/b6120.rs
+    - tools/oracle/src/helpers/openai/b6120/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/chat/transformation.py#L21-L66
+    why: Credential and base resolution and the fixed supported option list with the two capability lookups.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/chat/transformation.py#L68-L153
+    why: The guarded post-processing step and the citation token and search count extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/chat/transformation.py#L155-L230
+    why: Marker matching, url_citation annotations, early returns and the extra citations and search_results fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/cost_calculator.py#L14-L119
+    why: Reported cost shortcut, manual rates with off-peak, citation, reasoning and search charges.
+  - url: https://docs.perplexity.ai/api-reference/chat-completions-post
+    why: Wire shape of citations, search_results and usage fields.
+dod:
+  - text: The base, key and supported option list match the pinned config, including the two independent capability lookups and a failed lookup counting as false.
+    proof: [perplexity-chat-tests, oracle]
+  - text: Citation tokens and the search count are read from the reply with the documented key order, and a reply without usage gets a zero usage.
+    proof: [perplexity-chat-tests, oracle]
+  - text: Markers become url_citation annotations with character offsets, titles from search_results, and the early returns skip the extra citations field.
+    proof: [perplexity-chat-tests, oracle]
+  - text: A reported cost, including zero, bypasses token pricing, and manual pricing adds citation, reasoning and search charges to the right side.
+    proof: [perplexity-cost-tests, oracle]
+  - text: Off-peak replacement applies to the manual rates at the supplied instant.
+    proof: [perplexity-cost-tests, oracle]
+  - text: The new oracle cases exist and are tagged for this task's helper.
+    proof: [perplexity-chat-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: perplexity-chat-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^perplexity_chat::/)'
+      why: A plain OpenAI chat passthrough has no annotations, citation tokens or capability-dependent option list.
+    - id: perplexity-cost-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^perplexity_cost::/)'
+      why: A generic token calculator misses the reported-cost shortcut, citation tokens and the search charge on the completion side.
+    - id: perplexity-chat-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/perplexity-chat)" && /usr/bin/grep -rlE '^  b6120:' tools/oracle/cases/helpers/perplexity-chat
+      why: Without cases that call the B6120 helper nothing compares these transforms with LiteLLM.
+oracle_cases:
+  - tools/oracle/cases/helpers/perplexity-chat/credential-order.yaml
+  - tools/oracle/cases/helpers/perplexity-chat/supported-params-sonar.yaml
+  - tools/oracle/cases/helpers/perplexity-chat/supported-params-deep-research.yaml
+  - tools/oracle/cases/helpers/perplexity-chat/supported-params-lookup-failure.yaml
+  - tools/oracle/cases/helpers/perplexity-chat/citation-tokens-and-search-count.yaml
+  - tools/oracle/cases/helpers/perplexity-chat/search-count-key-order.yaml
+  - tools/oracle/cases/helpers/perplexity-chat/annotations-offsets-and-titles.yaml
+  - tools/oracle/cases/helpers/perplexity-chat/annotations-early-returns.yaml
+  - tools/oracle/cases/helpers/perplexity-chat/missing-usage.yaml
+  - tools/oracle/cases/helpers/perplexity-chat/reported-cost-object-and-zero.yaml
+  - tools/oracle/cases/helpers/perplexity-chat/manual-cost-citation-tokens.yaml
+  - tools/oracle/cases/helpers/perplexity-chat/manual-cost-reasoning-split.yaml
+  - tools/oracle/cases/helpers/perplexity-chat/manual-cost-search-rate.yaml
+  - tools/oracle/cases/helpers/perplexity-chat/off-peak-rates.yaml
+deviations:
+  - what: Costs are exact Decimal values. LiteLLM returns binary floats, so the last digits can differ.
+    why: B204 forbids binary floating point in prices. Oracle cases compare the two as decimal numbers rounded to 12 places.
+  - what: Environment values and the billing instant are arguments, not process globals.
+    why: Provider modules take credentials and clocks from the caller, so tests need no process state.
+out_of_scope:
+  - B668 and B504 own the OpenAI chat base the Perplexity config extends, including the reply conversion and the base error class.
+  - B2221 owns supports_reasoning and the web search capability lookup the supported option list reads. Neither lookup is called here.
+  - B1686 installs cost_per_token in the provider cost dispatch, and B2219 resolves the model_info it is called with.
+  - B1669 owns the off-peak replacement; this task only calls it.
+  - B8310 wires Perplexity into dispatch. This task touches neither dispatch file.
+  - Perplexity embeddings, Responses, search and decisions are B5834.
+  - citations entries that are not strings are not cases, since LiteLLM stringifies them with Python repr (docs/compatibility.md).
+pitfalls:
+  - The annotation step returns before copying citations and search_results onto the reply when content is empty, so a reply with citations but empty content carries no citations field.
+  - A non-string citation still uses up its number, so [2] points at the second entry even if the first is not a string.
+  - Offsets are Python string indexes, so a reply with an emoji before the marker needs character offsets, not UTF-8 byte offsets.
+  - Citation tokens are counted from characters of the citation strings divided by 4, not from the provider usage block, and the result is stored as an extra field on usage, which the helper must show is kept on the pinned Usage object.
+  - Both usage and annotation work sit in one guarded block, so an error in usage extraction also skips the annotations.
+  - usage.cost equal to zero still wins over the token rates.
+  - Search charges are added to the completion cost, and citation charges to the prompt cost.
+  - search_queries_cost_per_query is read with `or`, so a 0 there falls through to search_context_cost_per_query.
+  - Reasoning tokens are only split out when output_cost_per_reasoning_token is present; otherwise they stay billed at the output rate inside completion_tokens.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

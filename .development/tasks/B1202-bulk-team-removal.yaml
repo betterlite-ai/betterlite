@@ -37,7 +37,7 @@ description: >-
   memberships here. Failure at any transaction write rolls back these effects together.
 
   After commit, invoke B784 deleted-key audit logging only if keys existed, await B734 key-cache deletion,
-  await B878 mapping eviction/broadcast, and finally emit B111 team-member metrics. Audit/cache exceptions
+  await B878 mapping eviction/broadcast, and finally emit B3882 team-member metrics. Audit/cache exceptions
   propagate after commit and prevent subsequent steps; do not add compensation. A missing metrics logger
   is a no-op; metric failure debug-logs Prometheus: failed to emit team members metric: <message> and still
   returns results. Each result retains the original submitted ID/email and order, with success=true and

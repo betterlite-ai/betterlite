@@ -1,0 +1,74 @@
+id: B7929
+title: Python types for the small provider files and llms/base.py (types/llms aiml to xai)
+description: >-
+  Seventeen short files under `litellm/types/llms/` hold request params and message shapes for single providers. This task
+  ports them into one module each under `crates/betterlite-python/python/betterlite/types/llms/`: `aiml`, `azure`, `azure_ai`, `base`, `cohere`, `custom_http`, `databricks`,
+  `langgraph`, `meta`, `mistral`, `ollama`, `openrouter`, `recraft`, `rerank`, `stability`, `triton` and `xai`. `azure.py` has 3 lines and
+  `triton.py` is empty, so those two modules are near empty. It is Python only.
+
+
+  The biggest is `stability.py` (228 lines, nine request TypedDicts; `StabilityImageEditRequest` derives from
+  `StabilityImageGenerationRequest`). `base.py` has the pydantic bases `LiteLLMPydanticObjectBase` and
+  `BaseLiteLLMOpenAIResponseObject`, `HiddenParams` (derives from `OpenAIObject`, from B5657) and `CachedTokensDetails`. Its
+  `HiddenParams` must keep its attribute defaults. `custom_http.py` has the `httpxSpecialProvider` string Enum. `ollama.py` has
+  a class `OllamaToolCallFunction` plus three TypedDicts.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/llms/aiml.py
+  - crates/betterlite-python/python/betterlite/types/llms/azure.py
+  - crates/betterlite-python/python/betterlite/types/llms/azure_ai.py
+  - crates/betterlite-python/python/betterlite/types/llms/base.py
+  - crates/betterlite-python/python/betterlite/types/llms/cohere.py
+  - crates/betterlite-python/python/betterlite/types/llms/custom_http.py
+  - crates/betterlite-python/python/betterlite/types/llms/databricks.py
+  - crates/betterlite-python/python/betterlite/types/llms/langgraph.py
+  - crates/betterlite-python/python/betterlite/types/llms/meta.py
+  - crates/betterlite-python/python/betterlite/types/llms/mistral.py
+  - crates/betterlite-python/python/betterlite/types/llms/ollama.py
+  - crates/betterlite-python/python/betterlite/types/llms/openrouter.py
+  - crates/betterlite-python/python/betterlite/types/llms/recraft.py
+  - crates/betterlite-python/python/betterlite/types/llms/rerank.py
+  - crates/betterlite-python/python/betterlite/types/llms/stability.py
+  - crates/betterlite-python/python/betterlite/types/llms/triton.py
+  - crates/betterlite-python/python/betterlite/types/llms/xai.py
+  - crates/betterlite-python/tests/test_types_small_provider_types.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/base.py#L1-L83
+  why: Pydantic bases and HiddenParams.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/stability.py#L1-L228
+  why: The largest of the small files.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/cohere.py#L1-L100
+  why: Cohere chat history TypedDicts.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/databricks.py#L1-L84
+  why: Databricks message and delta TypedDicts.
+out_of_scope:
+- >-
+  The larger provider files (anthropic, bedrock, gemini, vertex_ai, oci, openai, watsonx) have their own parts.
+pitfalls:
+- >-
+  `HiddenParams` derives from `OpenAIObject`, which B5657 owns. If the class there lacks an attribute `HiddenParams` sets, say so in the task notes and do not add it from this task.
+- >-
+  `llms/databricks.py` defines its own `GenericStreamingChunk` TypedDict, separate from the one in `llms/bedrock.py`; keep both.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_small_provider_types.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

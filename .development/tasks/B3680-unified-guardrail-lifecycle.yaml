@@ -1,0 +1,215 @@
+id: B3680
+title: Unified guardrail lifecycle hooks, registry and HTTP cases
+description: >-
+  Build the part of `UnifiedLLMGuardrails` (litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py,
+  lines 171-380) that runs a guardrail at the pre-call, during-call and post-call points, fill B3679's translation
+  registry, and add the HTTP oracle cases for every endpoint family that the earlier parts left for the umbrella.
+  The split parts supply the pieces: B6160 (completion, embeddings, image, speech, transcription, video), B6161
+  (chat, Responses, Anthropic), B6162 (pass-through and Bedrock), B6163 (A2A) and B6164 (the incremental stream
+  loop). B3679 supplies the registry type, `resolve_endpoint_translation`, `infer_call_type`,
+  `ensure_request_metadata` and the stream helpers. B3681 owns the streaming iterator hook and guardrail_initializers.py.
+  This task registers no route.
+
+  Code goes in crates/betterlite-server/src/guardrails/unified_guardrail.rs and unified_guardrail/. Files:
+  translation.rs, other_adapters.rs, entries.rs, hooks.rs and recorder.rs.
+
+  `translation.rs`: the enum `UnifiedTranslation<S, H>` (generic over B6161's stamp source `S` and B6162's
+  post-call hook `H`) with one variant per adapter: B6160's six, B6161's three, B6162's endpoint wrapper and Bedrock
+  adapter, B6163's `A2ATranslation`, and the four adapters of `other_adapters.rs`. It implements B3661's
+  `BaseTranslation` by matching on the variant and forwarding each method. This is the `T` of
+  `TranslationRegistry<T>`; betterlite-guardrails cannot name these types because it cannot depend on
+  betterlite-server, so the enum lives here. Forward every method, including the two class flags.
+
+  `other_adapters.rs`: three adapters over handlers that other tasks ship as plain functions or their own types:
+  `RerankTranslation` for B1419's Cohere rerank handler (rerank, arerank), `GoogleGenAiTranslation` for B1391's handler (generate_content, agenerate_content,
+  generate_content_stream, agenerate_content_stream) and `McpTranslation` for B3818's MCP handler (call_mcp_tool,
+  list_mcp_tools). If one of those tasks already implements `BaseTranslation` for its handler, use that type directly
+  as the variant and skip its adapter. Each adapter calls the handler with the arguments it takes and keeps B3661's
+  defaults for every method LiteLLM does not define.
+
+  `entries.rs`: `pub fn build_registry(config: RegistryConfig<S, H>) -> TranslationRegistry<UnifiedTranslation<S, H>>`
+  builds the explicit `Vec<TranslationEntry>`: for each table constant of B6160 (six), B6161 (three, with the
+  `chat_completions` flag true for completion and acompletion only), B6163 (`A2A_CALL_TYPES`) and the three tables
+  of `other_adapters.rs`, one entry per call type. For pass-through, read B6162's `PASSTHROUGH_TABLE` and
+  `passthrough_provider_list`, build `LlmPassthroughRouteHandler::new(providers)` for the `LlmRoute` kind, and use the
+  endpoint wrapper for the `Endpoint` kind. `RegistryConfig` carries what the adapters need and nothing is read
+  from config here: the stamp source, the post-call hook, the Bedrock skip flags and user metadata. No file scanning.
+  A test asserts the 14 tables of the pinned `guardrail_translation_mappings` dicts (chat, responses, anthropic, text completion,
+  embeddings, image, speech, transcription, videos, pass_through, rerank, google_genai, a2a and mcp) is present once each, and that no call type appears twice.
+
+  `hooks.rs`: three async functions on a struct `UnifiedGuardrailHooks<S, H, R>` holding the registry and a
+  `R: AppliedGuardrailRecorder`. The struct holds no per-request state. Each hook takes the guardrail as a
+  `&G: GuardrailContract` plus its `GuardrailBase` (B5471), the request data map, the key dict and the call type.
+  Behavior follows LiteLLM exactly.
+  - "`pre_call(guardrail, data, user_api_key_dict, call_type)`. The \"guardrail to apply\" key of LiteLLM's data dict"
+    is a typed argument here: when it is `None`, return `data` unchanged. Event type is pre_call, or pre_mcp_call
+    when `call_type` is in the MCP call types (call_mcp_tool, list_mcp_tools). Ask B3665's `should_run_guardrail(data,
+    event_type, suppressed)` with an empty `suppressed` set; the gate returns `Result`, and an `Err` converts to
+    `GuardrailFailure` and is returned. A false result returns `data`. Resolve the translation with B3679's
+    `resolve_endpoint_translation`; unmapped returns `data`. Call B3679's `ensure_request_metadata`, then the
+    translation's `process_input_messages` with the logging object from `data["litellm_logging_obj"]`. Unless the
+    guardrail's `records_own_guardrail_information` is true, call the recorder with the guardrail name. Return the
+    data.
+  - "`moderation(...)`. Same, with during_call or during_mcp_call, and no header call."
+  - "`post_call_success(guardrail, data, user_api_key_dict, response)`. No guardrail returns `None`. A false gate"
+    result (post_call) returns `None`. Resolve the call type in this order: the first call type of
+    `get_call_types_for_route(user_api_key_dict.request_route)` (B207) when the route is set and has any; else
+    B3679's `infer_call_type(response kind)`; else the logging object's call type, accepted only when it is
+    pass_through, allm_passthrough_route, ocr or aocr. Unresolved: log a warning that names the guardrail and route
+    ("Guardrail '<name>' selected for route '<route>' but its call type could not be resolved; skipping post-call
+    scanning.") and return the response. Resolved but unmapped: log the second warning of LiteLLM (read it at line
+    347) and return the response. Otherwise call `process_output_response`. On `ModifyResponse` with no
+    `original_response`, set it to the response and return the failure. Then the recorder call as in pre_call, and
+    return the response.
+  - "Every apply_guardrail call that a translation makes for one of these hooks is recorded the way LiteLLM's"
+    log_guardrail_information records it: B3664's `GuardrailInvocation::begin` with `GuardrailHookName::ApplyGuardrail`
+    and the inputs before the call, then `finish_success` with the result or `finish_failure` with the error. At the pin
+    36 apply_guardrail methods carry @log_guardrail_information and CustomGuardrail.__init_subclass__ (custom_guardrail.py
+    L183-L188) wraps every other subclass's own apply_guardrail, so every guardrail records here.
+
+  `recorder.rs`: the trait `AppliedGuardrailRecorder { fn record(&self, request_data: &mut Map, guardrail_name: Option<&str>) }`
+  stands in for LiteLLM's `add_guardrail_to_applied_guardrails_header` (callback_utils.py). This task also builds the real one, `MetadataGuardrailRecorder`, a unit struct whose `record` is that function (callback_utils.py L591-L599): a None name does nothing; otherwise take the request's metadata bucket the way LiteLLM's get_or_create_metadata_bucket does (read it at the pin), and append the name to its `applied_guardrails` list when the name is not there yet, or create the list holding only that name. Tests use a double; B8399 passes `MetadataGuardrailRecorder` in production.
+
+  One source for the guardrail name. The hooks read it once, from `GuardrailBase`'s settings `guardrail_name`
+  (B5471), and pass the same `Option<&str>` to the recorder and to every translation call. B6161 and B6164 take it
+  from B3661's trait argument.
+
+  Global skip flags. B3680 owns the config section `guardrail_message_skip` (crates/betterlite-config/src/sections/guardrail_message_skip.rs) with `Settings { skip_system_message: bool, skip_tool_message: bool }`, both default false. It reads the `litellm_settings` keys `skip_system_message_in_guardrail` and `skip_tool_message_in_guardrail`. LiteLLM sets them as module attributes of litellm (defaults False, litellm/__init__.py L238-L239) and reads them only in `effective_skip_system_message_for_guardrail` and `effective_skip_tool_message_for_guardrail` (llms/base_llm/guardrail_translation/utils.py L194-L209, B3663's), each as `bool(...)` when the guardrail's own value is None. Where the pinned code reads the same module attribute elsewhere (the registry's scoping check in guardrail_registry.py) B3682 takes it as its `global_skip_tool_message` argument. B3680 gives both values to the hooks: `UnifiedGuardrailHooks` is built with `skip_defaults: GuardrailSkipDefaults { system: bool, tool: bool }` filled by the server from `config.sections.guardrail_message_skip`, and the same `tool` value is what the server passes to B3682's `InMemoryGuardrailHandler::new` as `global_skip_tool_message`. In `pre_call` and `moderation`, the hook resolves the two flags with B3663's effective functions (the guardrail's own scoping value when set, else the default) and passes them in the per-call context to the translation's `process_input_messages`. Nothing else in betterlite reads the two keys.
+
+  HTTP oracle cases. Each case boots both gateways with a `litellm_content_filter` guardrail (B3693, no network)
+  that blocks a fixed word, sends the request, and compares status, error body, headers and the upstream request.
+  Put them in tools/oracle/cases/guardrails/unified-lifecycle/. One file per case, named in oracle_cases below: chat pre-call block and mask, chat post-call block, chat during-call block,
+  Responses, Anthropic Messages (pre-call and post-call), text completion, embeddings, image generation and pass-through
+  pre-call blocks, and a post-call case for a route with no translation that must return the response unchanged. Each
+  case runs against both gateways. These are the cases that B3574, B3675, B3676, B3677, B5820 and B3678 left for the
+  umbrella, except speech, transcription, video, rerank and MCP. Those need provider mocks the content filter case
+  cannot reuse, so B3680 lists those as a deviation below.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/unified_guardrail.rs
+    - crates/betterlite-server/src/guardrails/unified_guardrail/**
+    - crates/betterlite-config/src/sections/guardrail_message_skip.rs
+    - crates/betterlite-config/src/sections/guardrail_message_skip/**
+    - tools/oracle/cases/guardrails/unified-lifecycle/**
+    - tools/oracle/helpers/b3680.py
+    - tools/oracle/helpers/b3680/**
+    - tools/oracle/src/helpers/server/b3680.rs
+    - tools/oracle/src/helpers/server/b3680/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L591-L599
+    why: add_guardrail_to_applied_guardrails_header, built here as MetadataGuardrailRecorder.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L159-L243
+    why: Metadata setup and the pre-call hook, including the MCP event type and the header rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L244-L283
+    why: The moderation hook never adds the header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L284-L380
+    why: The post-call hook, the call type resolution order and the original_response handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_translation_registry.py
+    why: The mapping loader that the explicit registry replaces.
+
+dod:
+  - text: The enum forwards every `BaseTranslation` method and both class flags to the variant it holds, for all variants.
+    proof: [translation-enum-tests]
+  - text: The three adapters for rerank, Google GenAI and MCP call their handlers and keep the trait defaults elsewhere.
+    proof: [other-adapter-tests]
+  - text: The registry holds every table once, only completion and acompletion carry the chat-completions flag, and no call type is listed twice.
+    proof: [registry-tests]
+  - text: Pre-call and moderation hooks return the data unchanged when there is no guardrail, the gate says no, or the call type is unmapped, and otherwise add metadata and run the input rewrite.
+    proof: [input-hook-tests, oracle]
+  - text: The pre-call hook records the applied guardrail only when the guardrail does not record its own information, and the moderation hook never does.
+    proof: [recorder-tests, oracle]
+  - text: Every apply_guardrail call made for the pre-call, moderation and post-call hooks gets one B3664 `GuardrailInvocation` with `ApplyGuardrail`, finished with success or with the failure, and none when the guardrail recorded its own entry, as LiteLLM's log_guardrail_information does for the 36 decorated apply_guardrail methods and the ones __init_subclass__ wraps.
+    proof: [apply-record-tests]
+  - text: MetadataGuardrailRecorder ignores a None name, creates applied_guardrails with the name when the metadata bucket has none, and adds a name once, never twice.
+    proof: [recorder-tests]
+  - text: The post-call hook resolves the call type in the order route, response kind, logging call type, warns and returns the response when unresolved or unmapped, and sets `original_response` on a block.
+    proof: [post-call-tests, oracle]
+  - text: The guardrail_message_skip section reads litellm_settings.skip_system_message_in_guardrail and skip_tool_message_in_guardrail as booleans that default to false, and the pre-call and moderation hooks use them only when the guardrail's own value is unset.
+    proof: [skip-defaults-tests]
+  - text: Pre-call, during-call and post-call blocks and masks reach clients through the booted proxy with the same status, error body and headers as LiteLLM on the endpoint families the cases cover.
+    proof: [oracle, http-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: translation-enum-tests
+      why: a variant misses a method or a flag in the forwarding
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_guardrail::translation::tests::/)'
+    - id: other-adapter-tests
+      why: an adapter for rerank, Google GenAI or MCP skips its handler
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_guardrail::other_adapters::tests::/)'
+    - id: registry-tests
+      why: a table is missing, a call type is duplicated or the chat flag is on the wrong entries
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_guardrail::entries::tests::/)'
+    - id: input-hook-tests
+      why: a skip rule, the metadata setup or the input rewrite call is missing in pre-call or moderation
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_guardrail::hooks::tests::input_/)'
+    - id: recorder-tests
+      why: the applied-guardrail record is written when it must not be, or not written when it must
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_guardrail::hooks::tests::recorder_/)'
+    - id: apply-record-tests
+      why: an apply_guardrail call on the unified path leaves no guardrail invocation record, or leaves two
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_guardrail::hooks::tests::apply_record_/)'
+    - id: post-call-tests
+      why: the call type order, a warning path or the original_response handling is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_guardrail::hooks::tests::post_call_/)'
+    - id: skip-defaults-tests
+      why: the two global skip flags are not read from litellm_settings or do not reach the hooks
+      run: cargo nextest run --locked -p betterlite-config -p betterlite-server --no-tests=fail -E 'test(/^(sections::guardrail_message_skip::|guardrails::unified_guardrail::hooks::tests::skip_)/)'
+    - id: http-case-corpus
+      why: the HTTP cases are not added in this change
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/guardrails/unified-lifecycle)"
+
+oracle_cases:
+  - tools/oracle/cases/guardrails/unified-lifecycle/chat-pre-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/chat-pre-call-mask.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/chat-post-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/chat-during-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/responses-pre-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/anthropic-messages-pre-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/anthropic-messages-post-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/text-completion-pre-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/embeddings-pre-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/image-generation-pre-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/passthrough-pre-call-block.yaml
+  - tools/oracle/cases/guardrails/unified-lifecycle/unmapped-route-post-call-skipped.yaml
+
+deviations:
+  - what: There are no HTTP cases for the speech, transcription, video, rerank, Google GenAI and MCP guardrail paths, and none for the applied-guardrails header.
+    why: The content filter cases cannot drive those provider mocks, and the applied-guardrails header case is B8399's (tools/oracle/cases/guardrails/proxy-logging/applied-guardrails-header.yaml).
+  - what: The guardrail to apply is a typed argument of each hook, not the "guardrail_to_apply" key that LiteLLM pops from the request data.
+    why: A typed argument keeps the guardrail out of the JSON body; clients see no difference.
+  - what: The applied-guardrail header call goes through the `AppliedGuardrailRecorder` trait.
+    why: Tests use a double through the trait; MetadataGuardrailRecorder here is the real function, and B8399's header case checks it through the booted proxy.
+
+out_of_scope:
+  - "The ocr and aocr entries and the Mistral OCR handler: B036 depends on tasks that depend on B3680, so B3680 cannot depend on it. B036 owns them and the architect decides how they join the registry."
+  - The six adapters for completion to video; B6160 owns them.
+  - The chat, Responses and Anthropic adapters and the undeliverable conversion; B6161 owns them.
+  - The pass-through and Bedrock adapters; B6162 owns them.
+  - The A2A handler; B6163 owns it.
+  - The incremental stream loop; B6164 owns it.
+  - "`async_post_call_streaming_iterator_hook`, the stream chunk predicates' use in buffering, `resolve_streaming_flag` and guardrail_initializers.py; B3681 owns them."
+  - HTTP cases for streamed responses; B3681 adds them with the iterator hook.
+  - The registry type, `infer_call_type`, `ensure_request_metadata` and the stream emit helpers; B3679 owns them.
+  - "`should_run_guardrail`; B3665 owns it."
+  - "The x-litellm-applied-guardrails header case through the booted proxy: B8399."
+
+pitfalls:
+  - The post-call hook returns `None`, not the response, when there is no guardrail or the gate is false; the other exits return the response.
+  - The moderation hook must not call the recorder, and the pre-call hook skips it for guardrails that record their own information.
+  - Call types come from the route first; `infer_call_type` is a fallback, and the logging call type is accepted for only four values.
+  - MCP call types use the pre_mcp_call and during_mcp_call events; every other call type uses pre_call and during_call.
+  - The sync `llm_passthrough_route` call type has no entry and must stay that way.
+  - The cases use the content filter guardrail only, so they need no network beyond the mock provider.
+  - "The global skip flags are `litellm_settings` keys, not environment variables, and a guardrail's own value of false still beats a global true: only an unset (None) own value falls back to the global."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

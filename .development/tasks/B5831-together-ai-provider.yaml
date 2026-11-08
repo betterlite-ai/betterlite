@@ -1,0 +1,207 @@
+id: B5831
+title: Together AI chat options, text completion, rerank and size-tier pricing names
+description: >-
+  Build four pure modules in betterlite-openai: together_ai_chat, together_ai_completion, together_ai_rerank and
+  together_ai_cost. They cover litellm/llms/together_ai/** (chat/transformation.py, completion/transformation.py,
+  rerank/transformation.py, rerank/handler.py, cost_calculator.py). Nothing here does HTTP, reads an env var, reads the
+  process clock or looks the model catalog up. The caller passes keys, bases and every catalog answer in. B8310 wires the
+  modules into dispatch and adds the HTTP cases.
+
+  together_ai_chat. TogetherAIChatConfig extends the OpenAI chat base, so B668 (option policy, map_openai_params) and
+  B503 (message transform) do the rest. This task adds four overrides. (1) Message transform: before B503's message
+  transform runs, every assistant message loses the keys thinking_blocks and provider_specific_fields (and only those;
+  reasoning_content stays, Together reads it back). Other roles and messages without those keys are returned as they are.
+  (2) Supported options: the B668 list for the model, plus reasoning_effort appended last when the model supports Together
+  reasoning. That is true when the model is in ADJUSTABLE_EFFORT_REASONING_MODELS {openai/gpt-oss-120b, openai/gpt-oss-20b},
+  or in HYBRID_REASONING_MODELS {MiniMaxAI/MiniMax-M3, Qwen/Qwen3.5-9B, Qwen/Qwen3.6-Plus, deepseek-ai/DeepSeek-V4-Pro,
+  moonshotai/Kimi-K3, nvidia/nemotron-3-ultra-550b-a55b, zai-org/GLM-5.2}, or starts with deepseek-ai/DeepSeek-V4-Pro,
+  or the caller's capability answer for supports_reasoning(model, together_ai) is true. (3) Option mapping: run B668's
+  map_openai_params first (it asks the overridden supported list), then three steps on its result, in this order.
+  Tool params: of tools, tool_choice, function_call (in that order) take those present. If none are present nothing
+  happens. Ask the function-calling verdict (below). True keeps them. Unknown (None) logs a warning and keeps them. False
+  with drop_params (the argument or the global litellm.drop_params) logs a warning and removes them. False without it
+  fails with UnsupportedParamsError, status 500, message "together_ai does not support parameters: tools, tool_choice, for
+  model=<model>. To drop it from the call, set `litellm.drop_params = True`." (the names joined with ", ", only the
+  present ones). response_format: absent does nothing. The structured-output verdict works the same way (True keeps, None
+  warns and keeps, False drops with a warning or fails with the same error shape naming response_format). Reasoning
+  effort: if reasoning_effort is present and a string, remove it and add the keys of the payload below with
+  setdefault, so a key the caller already set (for example reasoning) wins. A non-string value is left untouched.
+  (4) The verdict. For a flag (supports_function_calling or supports_response_schema) the caller answers through a small
+  trait: check(flag, model) -> Result<bool, LookupFailed> and registry_flag(flag, model) -> Option<bool>, the second
+  being the value stored on the catalog entry under key "together_ai/<model>" (only a stored false matters). The verdict
+  is True when check returns true. A failed check is logged at debug ("Error checking together_ai <flag> for <model>:
+  <error>") and falls through. Otherwise it is False when registry_flag is exactly false, else None. Do not call the
+  catalog or B2221 from inside this module; B2221 supplies the trait's answers.
+
+  Reasoning payload for a string effort: "default" gives nothing. A model in ADJUSTABLE_EFFORT_REASONING_MODELS gives
+  {reasoning_effort: X} where X is "low" for "none" (log at debug that none maps to low) and otherwise
+  EFFORT_TRANSLATION {minimal: low, xhigh: high, max: high} applied, unknown values kept. Any other model with effort
+  "none" gives {reasoning: {enabled: false}}. Else if the effort is in the model's declared efforts (the trait's
+  declared_reasoning_efforts(model, together_ai), None counts as empty) it gives {reasoning_effort: effort} unchanged.
+  Else a model starting with deepseek-ai/DeepSeek-V4-Pro gives {reasoning_effort: HIGH_MAX_EFFORT_TRANSLATION {minimal:
+  high, low: high, medium: high, xhigh: max} applied, others kept}. Else {reasoning_effort: EFFORT_TRANSLATION applied}.
+  B323 owns the declared-efforts function; this module only takes its answer through the trait.
+
+  together_ai_completion. TogetherAITextCompletionConfig extends B2237's text completion config. Its prompt projection
+  calls B2237's shared prompt projection and then: a list that is all integers or all lists of integers (B2237's token
+  check) fails with the error "TogetherAI does not support integers as input"; a list of exactly one string becomes that
+  string; any other list (including the empty list) fails with "TogetherAI does not support multiple prompts."; a plain
+  string is kept. Both failures are ValueError in LiteLLM; return a typed error that the caller maps the same way B2237
+  maps its own. transform_text_completion_request returns {model, prompt, then optional_params overlaid}, so an
+  optional_params key named model or prompt replaces the value. Headers are ignored.
+
+  together_ai_rerank. Pure replacement for TogetherAIRerank.rerank and TogetherAIRerankConfig. request(model, query,
+  documents, top_n, rank_fields, return_documents, max_chunks_per_doc, api_key, api_base) first builds the body with
+  keys in the order model, query, top_n, documents, rank_fields, return_documents and drops every None
+  (return_documents defaults to true when the caller supplies none). Then, when max_chunks_per_doc is not None, it fails
+  with "TogetherAI does not support max_chunks_per_doc" (the check comes after the body build, before anything is sent).
+  It returns the URL api_base with every trailing "/" removed plus "/rerank", and the headers accept: application/json,
+  content-type: application/json, authorization: Bearer <api_key> (names lowercase). The caller already resolved key and
+  base (B1079 owns the key order and the https://api.together.ai/v1 default) and sends the request. decode_response(status,
+  text) fails with the raw response text as the message when the status is not 200 (LiteLLM raises a bare Exception, so
+  no status class; keep that). On 200 the caller hands over the parsed JSON object and the transform returns the reply: id
+  is the response id when truthy, else an injected UUID string; meta.billed_units and meta.tokens are each a full copy
+  of the response usage object (every key, not only the known ones; an absent usage is an empty object); results missing
+  entirely fails with "No results found in the response=<response>"; a result without index or relevance_score fails with
+  "Missing required fields in the result=<result>"; index becomes an integer and relevance_score a float; a truthy document
+  object becomes {text: its text as a string, "" when absent} and a falsy one is left out of that result.
+
+  together_ai_cost. Name-only helpers the cost dispatch (B1686) calls before it prices; they return a model name, not
+  a cost. model_has_registry_pricing(model, cost_map) strips one leading "together_ai/" and is true when the cost map entry
+  "together_ai/<stripped>" is a map that has the key input_cost_per_token. Take the cost map through a one-method trait
+  the caller implements (is the entry a map holding this key); do not read the catalog here. pricing_category(model,
+  call_type, tiers) lowercases the name. For call_type embedding or aembedding it takes the first match of \d+m in the
+  lowercased name as millions; at most tiers.embedding_150_m gives together-ai-embedding-up-to-150m, at most
+  tiers.embedding_350_m gives together-ai-embedding-151m-to-350m, and anything above or no match gives the lowercased name.
+  For any other call type it takes the first match of \d+b as billions; at most 4 gives together-ai-up-to-4b, at most 8
+  gives together-ai-4.1b-8b, at most 21 gives together-ai-8.1b-21b, at most 41 gives together-ai-21.1b-41b, at most 80
+  gives together-ai-41.1b-80b, at most 110 gives together-ai-81.1b-110b, and above 110 or no match gives the lowercased
+  name. TogetherPricingTiers holds the limits the caller reads from env: TOGETHER_AI_4_B (4), TOGETHER_AI_8_B (8),
+  TOGETHER_AI_21_B (21), TOGETHER_AI_41_B (41), TOGETHER_AI_80_B (80), TOGETHER_AI_110_B (110),
+  TOGETHER_AI_EMBEDDING_150_M (150), TOGETHER_AI_EMBEDDING_350_M (350). Tiers are plain integer fields with these
+  defaults; the env read is the caller's. The cost dispatch calls these only when the model contains "togethercomputer"
+  or "together_ai", or the provider is together_ai, and model_has_registry_pricing is false; that condition is B1686's.
+
+  The five LiteLLM files hold about 330 nonblank, non-comment lines. Tests are rstest rows named after the behavior. The
+  oracle helper b5831 replays the pinned TogetherAIChatConfig methods, TogetherAITextCompletionConfig, the rerank
+  transform and the cost helpers; it may accept a model_cost map that it installs for the call, so registry-flag and
+  declared-effort cases (which no live catalog row covers) can be written.
+scope:
+  paths:
+    - crates/betterlite-openai/src/together_ai_chat.rs
+    - crates/betterlite-openai/src/together_ai_chat/**
+    - crates/betterlite-openai/src/together_ai_completion.rs
+    - crates/betterlite-openai/src/together_ai_completion/**
+    - crates/betterlite-openai/src/together_ai_rerank.rs
+    - crates/betterlite-openai/src/together_ai_rerank/**
+    - crates/betterlite-openai/src/together_ai_cost.rs
+    - crates/betterlite-openai/src/together_ai_cost/**
+    - tools/oracle/cases/helpers/together-ai/**
+    - tools/oracle/helpers/b5831.py
+    - tools/oracle/helpers/b5831/**
+    - tools/oracle/src/helpers/openai/b5831.rs
+    - tools/oracle/src/helpers/openai/b5831/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/together_ai/chat/transformation.py#L27-L131
+    why: Tool and response_format verdicts with registry fallback, the drop or fail rule, and the reasoning model sets and effort payload.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/together_ai/chat/transformation.py#L150-L243
+    why: Message field stripping, the supported list with reasoning_effort, and the order of the map_openai_params steps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/together_ai/completion/transformation.py#L15-L55
+    why: Single-string prompt rule and its two ValueErrors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/together_ai/rerank/handler.py#L11-L96
+    why: Request body, URL, headers and the non-200 error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/together_ai/rerank/transformation.py#L17-L58
+    why: Response transform with usage copies, required result fields and optional document.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/together_ai/cost_calculator.py#L22-L93
+    why: Registry-pricing test and the billions and millions category tables.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1777-L1780
+    why: The only call site of the cost helpers, with the condition that guards them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L284-L312
+    why: The caller of the rerank handler, to see what it resolves before the handler runs.
+  - url: https://docs.together.ai/docs/function-calling
+    why: Function calling support the tool verdict warns about.
+dod:
+  - text: Assistant messages lose only thinking_blocks and provider_specific_fields, and reasoning_effort is advertised only for Together reasoning models.
+    proof: [together-chat-tests, oracle]
+  - text: Tool params and response_format follow the verdict rules for true, unknown and false with and without drop_params, with the exact status 500 error.
+    proof: [together-chat-tests, oracle]
+  - text: Reasoning effort is rewritten per model family, with setdefault so a caller-set key wins.
+    proof: [together-chat-tests, oracle]
+  - text: The text completion prompt accepts one string and rejects token arrays and multiple prompts with the pinned messages.
+    proof: [together-completion-tests, oracle]
+  - text: The rerank request body, URL and headers match the handler, and max_chunks_per_doc is refused after the body is built.
+    proof: [together-rerank-tests, oracle]
+  - text: The rerank reply copies usage into both meta blocks, validates results and keeps a document only when it is truthy.
+    proof: [together-rerank-tests, oracle]
+  - text: Model names map to the billions and millions price categories at each boundary, and a model with a registry price is left alone.
+    proof: [together-cost-tests, oracle]
+  - text: The new oracle cases exist and call this task's helper.
+    proof: [together-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: together-chat-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^together_ai_chat::/)'
+      why: A plain OpenAI chat passthrough keeps assistant internal fields, never drops tools by verdict and never rewrites reasoning_effort.
+    - id: together-completion-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^together_ai_completion::/)'
+      why: The OpenAI text completion base accepts token arrays and prompt lists that Together refuses.
+    - id: together-rerank-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^together_ai_rerank::/)'
+      why: The generic rerank path neither copies usage into both meta blocks nor refuses max_chunks_per_doc.
+    - id: together-cost-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^together_ai_cost::/)'
+      why: Without these helpers a Together model with no catalog price has no size category to price by.
+    - id: together-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/together-ai)" && /usr/bin/grep -rlE '^  b5831:' tools/oracle/cases/helpers/together-ai
+      why: Without cases that call the b5831 helper nothing compares these transforms with LiteLLM.
+oracle_cases:
+  - tools/oracle/cases/helpers/together-ai/strip-assistant-internal-fields.yaml
+  - tools/oracle/cases/helpers/together-ai/supported-params-reasoning-models.yaml
+  - tools/oracle/cases/helpers/together-ai/tools-verdict-true-unknown.yaml
+  - tools/oracle/cases/helpers/together-ai/tools-registry-false-drop.yaml
+  - tools/oracle/cases/helpers/together-ai/tools-registry-false-error.yaml
+  - tools/oracle/cases/helpers/together-ai/response-format-verdicts.yaml
+  - tools/oracle/cases/helpers/together-ai/reasoning-adjustable-models.yaml
+  - tools/oracle/cases/helpers/together-ai/reasoning-none-and-declared.yaml
+  - tools/oracle/cases/helpers/together-ai/reasoning-deepseek-v4-pro.yaml
+  - tools/oracle/cases/helpers/together-ai/reasoning-caller-key-wins.yaml
+  - tools/oracle/cases/helpers/together-ai/completion-prompt-rules.yaml
+  - tools/oracle/cases/helpers/together-ai/completion-request-overlay.yaml
+  - tools/oracle/cases/helpers/together-ai/rerank-request.yaml
+  - tools/oracle/cases/helpers/together-ai/rerank-max-chunks-refused.yaml
+  - tools/oracle/cases/helpers/together-ai/rerank-response-usage-and-documents.yaml
+  - tools/oracle/cases/helpers/together-ai/rerank-response-errors.yaml
+  - tools/oracle/cases/helpers/together-ai/cost-category-billions.yaml
+  - tools/oracle/cases/helpers/together-ai/cost-category-embedding-millions.yaml
+  - tools/oracle/cases/helpers/together-ai/cost-registry-pricing.yaml
+deviations:
+  - what: The fallback rerank id, the global drop_params flag, the catalog answers and the env tier limits arrive as arguments, not process globals.
+    why: Provider modules take clocks, ids and settings from the caller, so tests need no process state.
+out_of_scope:
+  - B668 and B503 own the OpenAI chat base the Together config extends, including map_openai_params, the base supported list and the base message transform.
+  - B2221 owns supports_function_calling, supports_response_schema and supports_reasoning, and B323 owns declared_reasoning_efforts_for_model. This task takes their answers through a trait and never calls them.
+  - B2237 owns OpenAITextCompletionConfig, the shared prompt projection and the token-list check, and B2238 its transport. Selecting TogetherAITextCompletionConfig for the TOGETHER_AI provider (utils.py L9281-L9292) is B2237.
+  - B1079 owns the rerank entry point, the Together key order (TOGETHERAI_API_KEY and the globals), the https://api.together.ai/v1 base default and the "TogetherAI API key is required" error. B2454 owns the HTTP send.
+  - B1686 owns the cost dispatch condition (cost_calculator.py L1777-L1780) and the pricing that runs on the category name this task returns.
+  - completion/handler.py is a docstring and chat/__init__.py, embed.py hold only the TogetherAIConfig alias of TogetherAIChatConfig, so there is no logic to build. Together embeddings run through the OpenAI embeddings path (main.py L6502-L6508), owned by B024.
+  - Together credentials (TOGETHER_AI_API_KEY, TOGETHER_AI_TOKEN, TOGETHERAI_API_KEY, TOGETHER_AI_API_BASE) are resolved in get_llm_provider_logic.py, owned by B174.
+  - _complete_together_ai in main.py belongs to B8310, which wires dispatch and adds the HTTP cases; the ProviderConfigManager entry for TogetherAIChatConfig is B2230's selection. This task touches neither dispatch file.
+pitfalls:
+  - The unsupported-params error for a false verdict has status 500, not 400, and lists only the tool params that were actually passed, joined with ", ".
+  - A missing catalog entry (verdict None) never fails; it logs a warning and sends the params on, so only an entry that says false can drop or reject.
+  - The check function failing is not the same as it returning false; a failure is logged at debug and the registry flag is still consulted.
+  - map_openai_params reads reasoning_effort from the base result, and the base only keeps it when the overridden supported list contains it, so a non-reasoning model never reaches the payload step.
+  - The payload is applied with setdefault, so a reasoning key the caller already set survives; reasoning_effort itself is removed first, so a "default" effort leaves neither key behind.
+  - 'effort "none" on a gpt-oss model becomes "low", but on every other model it becomes reasoning with enabled false and never reaches the declared-effort check.'
+  - DeepSeek-V4-Pro sends the effort unchanged when the catalog declares it; the High and Max table only applies when the declaration lacks it.
+  - The assistant field strip keeps reasoning_content on purpose; stripping it would break preserved thinking.
+  - Both meta.billed_units and meta.tokens get the whole usage object, so an extra key like prompt_tokens shows up in both.
+  - A rerank result with a falsy document object (empty map) has no document key at all, not an empty one.
+  - The max_chunks_per_doc refusal happens after the body build and before the async branch, so it also fails async calls.
+  - '\d+b matches the first digits directly followed by b, so llama-3-70b-chat is 70 billion, and a name like mixtral-8x7b is 7, not 56.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,117 @@
+id: B5941
+title: OCI embedText request and response
+description: >-
+  Add oci_embed in betterlite-provider for litellm/llms/oci/embed/transformation.py. Own every
+  method of OCIEmbedConfig and the OCIEmbeddingConfig alias (no separate Rust item for the alias).
+  No task ports litellm/types/llms/oci.py on its own, so define the Rust equivalents in
+  this module: OciEmbedRequest (compartmentId, servingMode, inputs, inputType, truncate,
+  outputDimensions, with None fields skipped) and OciEmbedResponse (optional id, embeddings, modelId and modelVersion both required,
+  inputTextTokenCounts, usage with promptTokens and totalTokens). OciServingMode and OciError
+  come from B5940's oci_common, and the signing and URL functions come from there too.
+
+  Credentials are plain arguments: take B5940's OciCredentials and OciExplicitParams as input and
+  never read the environment. get_supported_openai_params returns only dimensions, and
+  map_openai_params writes dimensions to outputDimensions (cohere.embed-v4.0 and later) and
+  ignores other keys. validate_environment returns OciError 401 with the source message when the
+  user, fingerprint, tenancy, compartment id or both key sources are missing (the signer escape is
+  unsupported, see B5940), then applies B5940's validate_oci_environment. get_complete_url is
+  the B5940 base URL plus /20231130/actions/embedText. sign_request delegates to B5940.
+
+  transform_embedding_request builds the body. A missing compartment id is OciError 400. The input
+  is one string or a list of strings; a nested list is OciError 400 (token arrays) and a list
+  longer than 96 is OciError 400 with the count in the message. Serving mode is read case
+  insensitively (ON_DEMAND default, DEDICATED, anything else is OciError 400); DEDICATED uses
+  oci_endpoint_id and falls back to the model name, ON_DEMAND uses the model as modelId.
+  input_type maps search_document, search_query, classification and clustering (any casing) to the
+  upper-case names and any other value to its upper-case form. truncate defaults to END.
+
+  transform_embedding_response checks the status first: any status other than 200 is OciError
+  with that status and the raw body text. Invalid JSON is OciError with the HTTP status and a
+  JSON parse message; a body that does not fit OciEmbedResponse is OciError 500 with a schema
+  message. Rows become object embedding, index i and the vector. The model is modelId. Usage is
+  the sum of inputTextTokenCounts when present, else usage promptTokens and totalTokens, else
+  zeros; prompt_tokens and total_tokens are both set. get_error_class is OciError with the
+  status and message. Decode the response through one function, decode_embed_response, that
+  takes the bounded response bytes, with a cargo-fuzz target on it.
+
+  Plan 120 lines of module code, 130 of tests, 55 of adapters and 40 of fuzz and replay.
+  The remaining source is 270 nonblank, noncomment lines including the type declarations.
+scope:
+  paths:
+    - crates/betterlite-provider/src/oci_embed.rs
+    - crates/betterlite-provider/src/oci_embed/**
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/oci_embed_response.rs
+    - crates/betterlite-provider/fuzz/corpus/oci_embed_response/**
+    - tools/oracle/cases/helpers/oci-embed/**
+    - "tools/oracle/fuzz/corpus/helper_case/oci_embed-*"
+    - tools/oracle/helpers/b5941.py
+    - tools/oracle/helpers/b5941/**
+    - tools/oracle/src/helpers/provider/b5941.rs
+    - tools/oracle/src/helpers/provider/b5941/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/embed/transformation.py#L50-L64
+    why: Batch limit of 96 and the input_type name map.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/embed/transformation.py#L90-L173
+    why: Supported params, dimensions mapping, credential check, embedText URL and signing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/embed/transformation.py#L175-L246
+    why: Request body, input flattening, serving mode and input_type mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/embed/transformation.py#L248-L318
+    why: Response parsing, usage fallbacks and error class.
+  - url: https://docs.oracle.com/en-us/iaas/api/#/en/generative-ai-inference/20231130/EmbedTextResult/EmbedText
+    why: The embedText request and response shape.
+dod:
+  - text: The embedText URL, body, serving mode, input type and batch rules match LiteLLM for text inputs.
+    proof: [oci-embed-tests, oci-embed-python, oci-embed-seeds]
+  - text: Responses map to embedding rows with the same usage fallbacks, and error statuses and messages match.
+    proof: [oci-embed-tests, oci-embed-python, oci-embed-seeds]
+  - text: The response decoder survives arbitrary bytes and the corpus replays.
+    proof: [oci-embed-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: oci-embed-tests
+      why: request, response or credential check behavior is missing
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^oci_embed::/) - test(replays_oci_embed_response_corpus)'
+    - id: oci-embed-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5941)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5941 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5941/pyrightconfig.json
+    - id: oci-embed-seeds
+      why: new OCI embedding cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/oci_embed-*")" &&
+        grep -lE '^[[:space:]]+b5941:' tools/oracle/fuzz/corpus/helper_case/oci_embed-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: oci-embed-corpus
+      why: the response decoder fuzz target or its fresh replay corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-provider/fuzz/fuzz_targets/oci_embed_response.rs &&
+        grep -q 'name = "oci_embed_response"' crates/betterlite-provider/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/oci_embed_response)" &&
+        cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_oci_embed_response_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/oci-embed/request-on-demand-and-dedicated.yaml
+  - tools/oracle/cases/helpers/oci-embed/input-type-map-and-truncate.yaml
+  - tools/oracle/cases/helpers/oci-embed/batch-limit-and-nested-input.yaml
+  - tools/oracle/cases/helpers/oci-embed/dimensions-mapping.yaml
+  - tools/oracle/cases/helpers/oci-embed/missing-credentials-and-compartment.yaml
+  - tools/oracle/cases/helpers/oci-embed/response-usage-fallbacks.yaml
+  - tools/oracle/cases/helpers/oci-embed/non-200-and-bad-body.yaml
+deviations:
+  - what: Wording of the JSON parse failure and the schema mismatch messages differs from LiteLLM. LiteLLM embeds the text of a Python exception. The status codes (HTTP status for bad JSON, 500 for a schema mismatch) and the fixed prefixes are the same.
+    why: The Python exception text comes from json and pydantic and has no Rust equivalent.
+out_of_scope:
+  - B5940 owns signing, the base URL, credential merging and OciServingMode used here.
+  - B8330 owns wiring the embedding route to this module, the OCI_* environment reads and the HTTP oracle cases.
+pitfalls:
+  - Serving mode is upper-cased here (oci_serving_mode "dedicated" works) while the chat config compares it exactly, so do not share one parser.
+  - A non-string, non-list input is stringified, and non-string list items are stringified too; only a nested list is an error.
+  - inputTextTokenCounts wins over usage even when it is an empty list, and that sums to 0.
+  - input_type values outside the four known names are upper-cased, not rejected.
+  - outputDimensions is dropped from the body when None, but truncate always appears and defaults to END.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

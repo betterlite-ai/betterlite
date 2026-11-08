@@ -1,0 +1,26 @@
+kind: helper
+name: pangea-response-output-transformed
+call:
+  b3785:
+    post_call:
+      api_key: test-key
+      guardrail_name: pangea-ai-guard
+      kind: model
+      messages:
+        - {role: system, content: "You are a helpful assistant"}
+        - {role: user, content: "Hello"}
+      choices:
+        - message: {role: assistant, content: "Yes, here is an SSN: 078-05-1120"}
+      output_recipe: guard_llm_response
+      answer:
+        status: 200
+        headers: {}
+        body:
+          result:
+            blocked: false
+            transformed: true
+            output:
+              choices:
+                - message: {role: assistant, content: "Yes, here is an SSN: <US_SSN>"}
+env: {}
+compare: {ignore: []}

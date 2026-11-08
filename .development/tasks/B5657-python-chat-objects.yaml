@@ -1,0 +1,144 @@
+id: B5657
+title: Python response objects for chat
+description: >-
+  A caller of `betterlite.completion` reads `response.choices[0].message.content`, `response["usage"]` and
+  `response.model_dump()`, and passes the object around as LiteLLM's. Build those chat classes in Python, in the betterlite
+  wheel, under the same module path as LiteLLM: `betterlite.types.utils`.
+
+
+  The wheel has no pydantic dependency, so these classes do not use pydantic. `ResponseObject` is one small base with typed
+  plain attributes. It gives attribute and item access, `get`, `__contains__`, `model_dump`, `dict`, `json`,
+  `model_dump_json` and `__eq__`, and it keeps extra fields a provider sends as attributes, the way `extra="allow"` does.
+  Values are typed with a recursive `JsonValue` alias, since Any is banned. Deleting a missing attribute does nothing, as in
+  `SafeAttributeModel.__delattr__` (types/utils.py L131-L146). `model_dump` on a response defaults to `exclude_unset=True`
+  unless the caller passes `exclude_unset` or `exclude_none` (L2096-L2100), so the base records which fields were set.
+
+  The typed parts of B167 (B7920 to B7954) build their pydantic models on this base, so it also carries what those models use.
+  B7941 needs `RootModel`, B7932 and B7946 need `Generic` models, B7921 needs validators, and B7941 needs `Base64Str` and
+  `AwareDatetime`. Add: `RootModel[T]`, a subclass that wraps one value in `root`, takes it positionally and dumps to the bare
+  value. `ResponseObject` subclasses may also list `Generic[T]` and `ABC` as bases, and `Box[int]` keeps all base behavior. A
+  field with an annotation and no default is required, and a missing one raises `ValidationError`, a `ValueError` subclass
+  that names the fields. `field_validator(*names, mode)` and `model_validator(mode)` decorators run in `__init__`, and a
+  `ValueError` from one becomes a `ValidationError`. `Base64Str` is a `str` that decodes base64 input and dumps back to base64.
+  `AwareDatetime` accepts a `datetime` or an ISO string and raises `ValidationError` for a value with no timezone.
+
+
+  Port the `__init__` logic of each class line by line, because the rules live there. `Function` (L1183) turns dict arguments
+  into JSON text and falls back to `parameters`, then "". `ChatCompletionMessageToolCall` (L1288) defaults `id` to a uuid4
+  and `type` to `function`. `Message` (L1390) defaults `role` to `assistant`, turns empty `tool_calls` to None, and deletes
+  `audio`, `images`, `annotations`, `reasoning_content`, `thinking_blocks` and `reasoning_items` when they are None. `Delta`
+  (L1507) maps `reasoning` to `reasoning_content` and gives tool call dicts an index only when they have none. `Choices`
+  (L1644) turns a None `finish_reason` to `stop`, stores a changed value as `native_finish_reason` in
+  `provider_specific_fields`, and deletes `logprobs` and `provider_specific_fields` when None. `StreamingChoices` (L2006) pops
+  `message` and makes a falsy finish reason None. `Usage` (L1857) fills the token detail wrappers and works out
+  `text_tokens` as `max(0, completion - reasoning - image - audio)`. It sets `cached_tokens` from `prompt_cache_hit_tokens`
+  or `cache_read_input_tokens`, and `cache_write_tokens` from `cache_creation_input_tokens`.
+
+
+  `ModelResponse` (L2181) forces `object` to `chat.completion`, gives `[Choices()]` for non-list choices and sets `usage` only
+  when it isn't None. `ModelResponseStream` (L2103) forces `chat.completion.chunk`, gives `[StreamingChoices()]` and always
+  sets `provider_specific_fields`. `ModelResponseBase` carries `_hidden_params` and `_response_headers` with
+  `set_provider_response_headers`.
+
+
+  The rest of the list: `TopLogprob`, `ChatCompletionTokenLogprob`, `ChoiceLogprobs`, `FunctionCall`,
+  `ChatCompletionDeltaToolCall`, `_CustomToolCallAccess` with the custom tool classes (L1251-L1281),
+  `is_custom_tool_call_dict`, `chat_completion_tool_call_from_dict`, `ChatCompletionAudioResponse`,
+  `add_provider_specific_fields`, `text_tokens_without_nested_reasoning`, `CompletionTokensDetailsWrapper`,
+  `CacheCreationTokenDetails`, `PromptTokensDetailsWrapper`, `ServerToolUse`, `StreamingChatCompletionChunk` and
+  `_generate_id`. `map_finish_reason` gets its Python port here, with the same table as litellm_core_utils/core_helpers.py
+  and the same "Unmapped finish_reason '%s', defaulting to 'stop'" warning. `betterlite.types.completion` holds the TypedDicts
+  from types/completion.py L19-L138 and `CompletionRequest` (L175).
+
+
+  Files under `python/betterlite/types/utils/` stay under the 300-line limit, and `__init__.py` there re-exports the names
+  with an explicit `__all__`. The tests build the same object from `litellm.types.utils` and `betterlite.types.utils` with
+  the same arguments and compare `model_dump()`. Tests for the base features are named `base_root_model_dump`, `base_generic_subclass`, `base_required_field_missing`,
+  `base_field_validator_runs`, `base_model_validator_error`, `base_base64str_roundtrip` and `base_aware_datetime_rejects_naive`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/__init__.py
+  - crates/betterlite-python/python/betterlite/types/completion.py
+  - crates/betterlite-python/python/betterlite/types/utils/**
+  - crates/betterlite-python/tests/test_chat_response_objects.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1084-L1730
+  why: Tool call, message, delta and choice classes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1732-L2280
+  why: Usage and the response classes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/completion.py#L19-L205
+  why: The request TypedDicts.
+dod:
+- text: A response object answers attribute access, item access, `get`, `in`, `dict` and `json` as LiteLLM's does, and keeps extra provider fields.
+  proof: [object-access]
+- text: "`model_dump` gives LiteLLM's output, with `exclude_unset` on by default for responses."
+  proof: [object-dump]
+- text: Tool call classes and helpers give LiteLLM's ids, types, argument text and custom tool handling.
+  proof: [tool-calls]
+- text: Message and Delta fill, map and delete the same fields as LiteLLM.
+  proof: [message-delta]
+- text: Choices and StreamingChoices store the native finish reason and defaults as LiteLLM does, and unknown reasons map with the warning.
+  proof: [choices]
+- text: Usage fills token details and the cache fields as LiteLLM does.
+  proof: [usage]
+- text: ModelResponse and ModelResponseStream force their object name, default their choices and carry hidden params and headers.
+  proof: [model-response]
+- text: "`betterlite.types.completion` exposes the same TypedDict keys as LiteLLM."
+  proof: [completion-types]
+- text: "`RootModel`, generic subclasses, required fields, validators, `Base64Str` and `AwareDatetime` behave as described, so the B167 parts can use them."
+  proof: [base-features]
+- text: The chat classes pass ruff and strict basedpyright with no Any.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: object-access
+    why: A caller's `response["usage"]` stops working.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_chat_response_objects.py -k access
+  - id: object-dump
+    why: Serialized output gains or loses fields.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_chat_response_objects.py -k dump
+  - id: tool-calls
+    why: Tool arguments reach the caller in the wrong form.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_chat_response_objects.py -k tool_call
+  - id: message-delta
+    why: A None field shows up that LiteLLM deletes.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_chat_response_objects.py -k "message or delta"
+  - id: choices
+    why: The finish reason differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_chat_response_objects.py -k choices
+  - id: usage
+    why: Token details differ, and cost reads them.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_chat_response_objects.py -k usage
+  - id: model-response
+    why: The top-level response differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_chat_response_objects.py -k model_response
+  - id: completion-types
+    why: A typed caller's import fails.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_chat_response_objects.py -k typed_dict
+  - id: base-features
+    why: A B167 part needs a base feature that is missing or wrong.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_chat_response_objects.py -k base_
+  - id: python-lint
+    why: A loose type in the base class spreads to every response.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Response classes are plain Python classes, so `isinstance(x, pydantic.BaseModel)`, `model_validate`, `model_json_schema` and `model_fields` are not there.
+  why: The wheel depends only on python-dotenv, and pydantic would be a heavy runtime dependency for field holders. Attribute, item and dump access stay the same.
+out_of_scope:
+- Embedding, text, image, transcription and the smaller classes in types/utils.py are B5658.
+- All other classes in litellm/types/** are B167.
+- '`_CompletionDispatchContext` at types/completion.py L207 is B198.'
+- The pricing helpers in types/utils.py are B5650, and `is_litellm_owned_kwarg` is B2228.
+pitfalls:
+- '`Delta` keeps `content`, `role`, `function_call`, `tool_calls` and `audio` as attributes even when None, while `Message` deletes several, so the two need separate lists.'
+- '`Choices` stores `native_finish_reason` only when the mapped value differs from the input.'
+- '`Usage` writes private `_cache_creation_input_tokens` and `_cache_read_input_tokens`, and `model_dump` leaves them out.'
+- '`ModelResponse.__init__` sets `object` to `chat.completion` whatever the caller passed.'
+- Tool call dicts in `Delta` share one counter for the missing index, so a dict with its own index keeps it and doesn't move the counter.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

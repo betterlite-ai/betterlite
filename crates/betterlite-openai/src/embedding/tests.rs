@@ -4,11 +4,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 
+use crate::chat::MockSettings;
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults, Provider};
 use crate::chat::execution::ChatExecutor;
+use crate::chat::response::ChatResponse;
 use crate::openai_base_config::CatalogCapabilities;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::sections::mock_response::failure::MockError;
+use betterlite_config::sections::mock_response::selection::MockPlan;
+use betterlite_config::sections::mock_response::{MockResponse, UsageDefaults};
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use rand::SeedableRng as _;
@@ -17,6 +22,7 @@ use std::sync::{Arc, Mutex};
 use tokio::io::AsyncWriteExt as _;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use uuid::Uuid;
 
 use super::{
     EmbeddingError, EmbeddingInput, EmbeddingRequest, EmbeddingVector, EncodingFormat, servable,
@@ -28,6 +34,15 @@ fn parses_embedding_response_vectors() {
     let base64: EmbeddingVector = serde_json::from_str("\"AQID\"").expect("base64 vector");
     assert!(matches!(floats, EmbeddingVector::Floats(values) if values.len() == 2));
     assert!(matches!(base64, EmbeddingVector::Base64(value) if value == "AQID"));
+}
+
+#[rstest::rstest]
+#[case::mock_delay("mock_delay")]
+#[case::mock_timeout("mock_timeout")]
+fn refuses_the_gated_mock_testing_params(#[case] name: &str) {
+    let body = format!(r#"{{"input":"x","{name}":true}}"#);
+    let error = EmbeddingRequest::parse(body.as_bytes()).expect_err("gated parameter");
+    assert!(matches!(error, EmbeddingError::Unsupported { name: refused } if refused == name));
 }
 
 #[test]
@@ -124,6 +139,32 @@ async fn reports_embedding_provider_failures() {
         .expect("responder");
 }
 
+// the executor tests own the mock decision; the real content builders live in betterlite-core
+fn unused_chat(
+    _plan: &MockPlan<'_>,
+    _usage: UsageDefaults,
+    _model: &str,
+    _id: &str,
+    _created: u64,
+) -> Result<ChatResponse, MockError> {
+    Err(MockError::InternalServerError)
+}
+
+fn unused_embedding(
+    _response: Option<&MockResponse>,
+    _model: &str,
+) -> Result<super::EmbeddingResponse, MockError> {
+    Err(MockError::EmbeddingFailure)
+}
+
+fn fixed_clock() -> u64 {
+    1_700_000_000
+}
+
+fn fixed_id() -> Uuid {
+    Uuid::from_u128(7)
+}
+
 fn embedding_executor(base: &str) -> (ChatExecutor, ChatDeployment) {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
@@ -146,6 +187,11 @@ fn embedding_executor(base: &str) -> (ChatExecutor, ChatDeployment) {
             text_models: BTreeSet::new(),
         },
         random: Mutex::new(StdRng::seed_from_u64(1)),
+        clock: fixed_clock,
+        next_id: fixed_id,
+        mock: MockSettings::default(),
+        mock_chat: unused_chat,
+        mock_embedding: unused_embedding,
     };
     (executor, deployment)
 }

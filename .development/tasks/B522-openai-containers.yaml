@@ -1,8 +1,9 @@
 id: B522
 title: OpenAI containers and container files
 description: >-
-  Add typed ContainerCreate/ContainerReply/ContainerFile records and provider create/list/retrieve/delete, file
-  list and content methods. Use the source query-preserving path join for resource IDs; the initial get_complete_url
+  Implement B3360 BaseContainerConfig for OpenAI: the create, list, retrieve, delete, file list and
+  content methods. The records (ContainerObject, ContainerListResponse, DeleteContainerResult, ContainerFileObject,
+  ContainerFileListResponse, the optional param structs) and ContainerError come from B3360 and are not declared here. Use the source query-preserving path join for resource IDs; the initial get_complete_url
   unconditionally appends /containers. Preserve cursor/order fields. Container file uploads and public handlers
   are B094.
 
@@ -42,7 +43,7 @@ description: >-
   unchanged; get_error_class raises BaseLLMException with the supplied status/message/headers.
 
 
-  Reuse B500 config loading and B129 secret resolution for the key/base chains; B171 owns encode_url_path_segment
+  Reuse B500 config loading and B8500 secret resolution for the key/base chains; B171 owns encode_url_path_segment
   and B2202 owns BaseLLMException.
 
 
@@ -56,7 +57,7 @@ description: >-
 
 
   Implement crates/betterlite-openai/src/containers.rs with adjacent tests under containers/. Keep each Rust module
-  at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
+  at most 300 lines. Import the B3360 records, trait and error from betterlite-openai api::container_contracts and use the direct prerequisites listed in backlog.yaml; a provider leaf never
   imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
   tests and oracle adapters.
 

@@ -44,8 +44,6 @@ scope:
     - crates/betterlite-server/src/debug_routes/**
     - crates/betterlite-server/src/routes/debug_report.rs
     - crates/betterlite-server/src/routes/debug_report/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/debug/report/**
     - tools/oracle/helpers/b4171.py
     - tools/oracle/helpers/b4171/**
@@ -89,13 +87,13 @@ dod:
   - text: build_proxy_environment_report calls build_environment_report with surface='proxy' and config_lines from safe_config_lines, returning an EnvironmentReport.
     proof: [safe-proxy-config-tests]
   - text: GET /debug/report requires authentication through user_api_key_auth.
-    proof: [report-route-tests]
+    proof: [oracle]
   - text: GET /debug/report returns HTTP 403 Forbidden for authenticated non-admin users.
-    proof: [report-route-tests]
+    proof: [oracle]
   - text: GET /debug/report returns HTTP 200 with an EnvironmentReport for proxy admins.
-    proof: [report-route-tests]
+    proof: [oracle]
   - text: The EnvironmentReport returned by /debug/report matches the format from build_proxy_environment_report with safe_config_lines output.
-    proof: [report-route-tests]
+    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -105,9 +103,6 @@ checks:
     - id: safe-proxy-config-tests
       why: build_proxy_bug_report or build_proxy_environment_report is missing or does not integrate with B4170
       run: cargo nextest run --locked -p betterlite-reporting --no-tests=fail -E 'test(/^safe_proxy_config::tests::/) - test(/replays_the_/)'
-    - id: report-route-tests
-      why: The /debug/report route is missing, does not authenticate, does not check admin status, or returns wrong types
-      run: cargo gate run B4171 --only oracle
 oracle_cases:
   - tools/oracle/cases/debug/report/admin-access.yaml
   - tools/oracle/cases/debug/report/non-admin-403.yaml

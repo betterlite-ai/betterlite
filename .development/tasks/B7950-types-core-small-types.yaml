@@ -1,0 +1,64 @@
+id: B7950
+title: Python types for litellm_params, services, caching, tags, tools and other small core files
+description: >-
+  This task ports ten files from `litellm/types/` into `crates/betterlite-python/python/betterlite/types/`: `litellm_params.py` (320 lines), `router_weights.py`, `lar1.py`,
+  `scheduler.py`, `services.py`, `tag_management.py`, `tool_management.py`, `object_permission.py`, `caching.py` and `compression.py`.
+  It is Python only.
+
+
+  `litellm_params.py` defines `wire` (a function) and plain classes such as `ProviderConnection`, `BedrockBatchConnection`,
+  `ConnectionSettings`, `DispatchOptions` and `RoutingOptions`; read the file to see how each is declared before porting.
+  `router_weights.py` has three functions (`_validate_positive_router_weights`, `validate_router_weights`, `validate_router_settings_dict`) that
+  keep their output and raised errors for every input. `caching.py` has the cache type Enums and four Redis pipeline TypedDicts. `services.py`
+  has two Enums, two TypedDicts and `ServiceLoggerPayload`. `lar1.py` has four `str` Enums and `LAR1Metadata`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/litellm_params.py
+  - crates/betterlite-python/python/betterlite/types/router_weights.py
+  - crates/betterlite-python/python/betterlite/types/lar1.py
+  - crates/betterlite-python/python/betterlite/types/scheduler.py
+  - crates/betterlite-python/python/betterlite/types/services.py
+  - crates/betterlite-python/python/betterlite/types/tag_management.py
+  - crates/betterlite-python/python/betterlite/types/tool_management.py
+  - crates/betterlite-python/python/betterlite/types/object_permission.py
+  - crates/betterlite-python/python/betterlite/types/caching.py
+  - crates/betterlite-python/python/betterlite/types/compression.py
+  - crates/betterlite-python/tests/test_types_core_small_types.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/litellm_params.py#L1-L320
+  why: The connection and routing option classes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router_weights.py#L1-L21
+  why: Weight validators.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/services.py#L1-L84
+  why: Service Enums and payloads.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L1-L113
+  why: Cache type Enums and Redis pipeline TypedDicts.
+out_of_scope:
+- >-
+  The Rust router and cache crates use their own types; this adds Python mirrors only.
+pitfalls:
+- >-
+  `litellm_params.py` is a different file from `types/router.py`'s `LiteLLM_Params`. Port only the file named here.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_core_small_types.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,21 @@
+id: B8140
+milestone: M11 distribution
+title: "AWS Terraform module: network, database and cache"
+status: blocked
+depends_on: []
+file: tasks/B8140-aws-network-data-stores.yaml
+covers:
+  - "terraform/litellm/aws/versions.tf"
+  - "terraform/litellm/aws/.terraform.lock.hcl"
+  - "terraform/litellm/aws/locals.tf"
+  - "terraform/litellm/aws/network.tf"
+  - "terraform/litellm/aws/rds.tf"
+  - "terraform/litellm/aws/redis.tf"
+  - "terraform/litellm/aws/variables.tf"
+  - "terraform/litellm/aws/tests/byo_infrastructure.tftest.hcl"
+parent: B154
+split_from: B154
+resolution: null
+superseded_by: null
+blocked_reason: "waits for Max: the gate has no pinned terraform 1.13.x, and terraform init needs registry network for the aws, google and random providers"
+pr: null

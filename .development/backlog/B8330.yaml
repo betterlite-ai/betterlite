@@ -1,0 +1,13 @@
+id: B8330
+milestone: M3 providers
+title: Databricks, Snowflake and OCI dispatch in main.py
+status: todo
+depends_on: [B004, B005, B173, B249, B2230, B5841, B5843, B5844, B5940, B5941, B5980]
+file: tasks/B8330-data-cloud-dispatch.yaml
+covers: []
+parent: B042
+split_from: B042
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

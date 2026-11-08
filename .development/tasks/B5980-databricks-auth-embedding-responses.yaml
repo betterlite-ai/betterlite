@@ -1,0 +1,211 @@
+id: B5980
+title: Databricks credentials, endpoint URLs, embeddings, Responses and pricing
+description: >-
+  Build the Databricks pieces that sit around chat, in betterlite-provider. Four modules, one per family, all pure
+  transforms with no network call of their own: databricks_auth (litellm/llms/databricks/common_utils.py),
+  databricks_embedding (embed/handler.py and embed/transformation.py), databricks_responses (responses/transformation.py)
+  and databricks_cost (cost_calculator.py). Chat is B5841 and calls databricks_auth. Streaming_utils.py is already built
+  by B1427 and is not touched.
+
+  databricks_auth. Define DatabricksError with a status code, a message and optional headers (the type behind
+  DatabricksException). Define DatabricksEnv, a plain struct the caller fills from the process environment, with the
+  optional fields client_id (DATABRICKS_CLIENT_ID), client_secret (DATABRICKS_CLIENT_SECRET), api_base
+  (DATABRICKS_API_BASE), user_agent_override (LITELLM_USER_AGENT, falling back to DATABRICKS_USER_AGENT) and the version
+  text used in the User-Agent. Do not add a config section; the caller reads the variables, as LiteLLM does at call time.
+  validate_environment(api_key, api_base, endpoint_type, custom_endpoint, headers, custom_user_agent, env, token_source)
+  returns the final URL and headers, in this order. (1) api_base None takes env.api_base. (2) When client_id, client_secret
+  and api_base are all non-empty, ask the injected OauthTokenSource for a token, start from the given headers (or an empty
+  map) and set Authorization to "Bearer <token>" and Content-Type to application/json. (3) Else when api_key is None and
+  the headers are None or empty: custom_endpoint true gives DatabricksError 400 "Missing API Key - A call is being made
+  to LLM Provider but no key is set either in the environment variables ({LLM_PROVIDER}_API_KEY) or via params" (the
+  braces stay literal); otherwise run the SDK path below. (4) Then api_base still None: custom_endpoint truthy gives 400
+  "Missing API Base - A call is being made to LLM Provider but no api base is set either in the environment variables
+  ({LLM_PROVIDER}_API_KEY) or via params"; otherwise run the SDK path. (5) Headers None become Authorization "Bearer
+  <api_key>" plus Content-Type application/json, so a None key prints "Bearer None". Headers present and api_key not None
+  get Authorization replaced. (6) api_key not None sets Authorization to "Bearer <api_key>" again, so a key beats the OAuth
+  token from step 2. (7) Set User-Agent to build_user_agent(custom_user_agent). (8) Log the headers at debug level through
+  redact_headers_for_logging. (9) For chat_completions with custom_endpoint not exactly true, append "/chat/completions"
+  to the base; for embeddings append "/embeddings". The result is (url, headers).
+
+  The SDK path is LiteLLM's databricks-sdk fallback (WorkspaceClient, unified auth). betterlite has no Databricks SDK, so
+  it behaves like LiteLLM without the library installed: DatabricksError 400 with the exact ImportError text in
+  _get_databricks_credentials ("If the Databricks base URL and API key are not set, the databricks-sdk Python library must
+  be installed. Please install the databricks-sdk, set {LLM_PROVIDER}_API_BASE and {LLM_PROVIDER}_API_KEY environment
+  variables, or provide the base URL and API key as arguments."). get_api_base(None, ...) raises the other ImportError
+  text ("Either set the DATABRICKS_API_BASE and DATABRICKS_API_KEY environment variables, or install the databricks-sdk
+  Python library."), also 400.
+
+  get_api_base(api_base, use_ai_gateway): with use_ai_gateway false return the base untouched. Otherwise trim trailing
+  slashes; a base ending in /ai-gateway/mlflow/v1 stays; one ending in /serving-endpoints swaps that suffix for
+  /ai-gateway/mlflow/v1; a base with an empty or "/" URL path gains /ai-gateway/mlflow/v1; any other base is returned as
+  given (not trimmed). build_user_agent(custom, version): trim the custom value, take the text before the first "/"
+  trimmed as the partner, accept it when non-empty and made only of letters, digits, "_" and "-" (after removing those two
+  characters what is left must be non-empty and alphanumeric), and return "<partner>_litellm/<version>"; anything else
+  returns "litellm/<version>". redact_headers_for_logging copies headers; for names authorization, x-api-key, api-key and
+  x-databricks-token (case-insensitive) a value longer than 10 characters becomes its first 8 characters plus
+  "...[REDACTED]", otherwise "[REDACTED]". An empty map gives an empty map. redact_sensitive_data walks a serde_json
+  Value: strings go through the six SENSITIVE_PATTERNS in order (Bearer tokens, "Authorization:" values, api_key and
+  api-key assignments, client_secret assignments, dapi plus 32 or more alphanumerics replaced by [REDACTED_PAT], and
+  access_token assignments, all case-insensitive, keeping the matched prefix and adding [REDACTED]); object keys whose
+  lowercase form contains authorization, api_key, apikey, token, secret, password or credential get the value
+  "[REDACTED]" without descending; arrays recurse; other values pass through. Use the regex crate from the workspace.
+
+  OAuth M2M. oauth_token_request(api_base, client_id, client_secret) builds the request: URL is the scheme and host of
+  api_base plus "/oidc/v1/token", form body grant_type=client_credentials and scope=all-apis, HTTP basic auth with the
+  id and secret, Content-Type application/x-www-form-urlencoded, timeout 30 seconds. The OauthTokenSource trait sends it
+  and returns status and body text, or a transport error text. parse_oauth_token_reply(status, body) returns the
+  access_token. A transport error becomes 500 "OAuth M2M token request failed: <error>"; a status other than 200
+  becomes that status with "OAuth M2M token request failed: <body>". The decoder takes bytes from outside, so add a
+  cargo-fuzz target named databricks_oauth_reply in crates/betterlite-provider/fuzz and a check that replays its corpus.
+
+  databricks_embedding. DatabricksEmbeddingConfig keeps an optional instruction. get_config returns a map of the fields
+  that are set, get_supported_openai_params returns an empty list and map_openai_params returns optional_params
+  unchanged. The handler step prepare_embedding takes the optional params, the key, the base, custom_endpoint and the
+  headers. It pops user_agent; only when that value is empty or absent does it pop databricks_user_agent, and then it
+  falls back to the env override. A non-empty user_agent therefore leaves databricks_user_agent in the optional params,
+  and it is sent on. It then calls validate_environment with endpoint_type embeddings and returns the new URL, the
+  headers and the remaining optional params. The call itself is B1425's compatible embedding transport, run with
+  custom_endpoint true so it does not append another path.
+
+  databricks_responses. DatabricksResponsesAPIConfig reports provider databricks and supports_native_websocket false.
+  Its headers step takes the key and base from litellm_params, then DATABRICKS_API_KEY and DATABRICKS_API_BASE, runs
+  validate_environment with chat_completions and custom_endpoint false (the URL it returns is discarded), and sets
+  Content-Type to application/json. The URL step takes the base from the argument, then DATABRICKS_API_BASE, passes it
+  through get_api_base with the gateway off, trims trailing slashes and appends "/responses". The request step strips a
+  leading "databricks/" from the model and calls B507's OpenAI Responses request transform.
+
+  databricks_cost. cost_per_token strips a leading "databricks/" from the model, then picks the registry key: the first
+  entry of the legacy table whose name the model starts with replaces the whole name (dbrx-instruct to
+  databricks-dbrx-instruct, meta-llama-3.1-70b-instruct to databricks-meta-llama-3-1-70b-instruct,
+  meta-llama-3.1-405b-instruct to databricks-meta-llama-3-1-405b-instruct, mixtral-8x7b-instruct-v0.1 to
+  databricks-mixtral-8x7b-instruct, bge-large-en to databricks-bge-large-en, gte-large-en to databricks-gte-large-en,
+  llama-2-70b-chat to databricks-llama-2-70b-chat), in that order. Then call B1672's generic token cost with that key,
+  the usage, provider databricks and the service tier. The table is data in the module, not a config key.
+
+  Sizing: about 270 LiteLLM lines in common_utils.py, 25 in cost_calculator.py, 60 in the embed folder and 60 in
+  responses. Plan 330 transform lines, 300 tests, 130 for the fuzz target and exports and 150 for helper adapters.
+scope:
+  paths:
+    - crates/betterlite-provider/src/databricks_auth.rs
+    - crates/betterlite-provider/src/databricks_auth/**
+    - crates/betterlite-provider/src/databricks_embedding.rs
+    - crates/betterlite-provider/src/databricks_embedding/**
+    - crates/betterlite-provider/src/databricks_responses.rs
+    - crates/betterlite-provider/src/databricks_responses/**
+    - crates/betterlite-provider/src/databricks_cost.rs
+    - crates/betterlite-provider/src/databricks_cost/**
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/databricks_oauth_reply.rs
+    - crates/betterlite-provider/fuzz/corpus/databricks_oauth_reply/**
+    - tools/oracle/cases/helpers/databricks-auth/**
+    - "tools/oracle/fuzz/corpus/helper_case/databricks_auth-*"
+    - tools/oracle/helpers/b5980.py
+    - tools/oracle/helpers/b5980/**
+    - tools/oracle/src/helpers/provider/b5980.rs
+    - tools/oracle/src/helpers/provider/b5980/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/common_utils.py#L21-L135
+    why: DatabricksException, the log redaction patterns and header masking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/common_utils.py#L136-L207
+    why: Partner User-Agent rule and the AI gateway base rewrite.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/common_utils.py#L209-L305
+    why: OAuth M2M token request and the databricks-sdk fallback with its ImportError text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/common_utils.py#L308-L400
+    why: validate_environment, the order of the auth steps and the URL suffix rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/embed/handler.py#L14-L61
+    why: Embedding handler, user agent keys and custom_endpoint forced to true.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/embed/transformation.py#L9-L48
+    why: Embedding config with no supported OpenAI params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/responses/transformation.py#L27-L103
+    why: Responses headers, URL, model prefix strip and no native websocket.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/cost_calculator.py#L12-L49
+    why: Legacy endpoint name table and the generic cost call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6556-L6575
+    why: Embedding call site, showing the key and base lookup order the caller does before this task runs.
+  - url: https://docs.databricks.com/aws/en/dev-tools/auth/oauth-m2m
+    why: The client credentials request this code mirrors.
+dod:
+  - text: validate_environment follows the OAuth, key, headers and URL suffix order, including a key that overrides the OAuth token and the two 400 messages for custom endpoints.
+    proof: [auth-tests, helper-python, oracle]
+  - text: Without the Databricks SDK the SDK path raises the exact 400 ImportError texts instead of reading any profile or file.
+    proof: [auth-tests, oracle]
+  - text: get_api_base, the partner User-Agent and the header and body redaction match LiteLLM on slash, suffix and empty-name edge cases.
+    proof: [auth-tests, helper-python, oracle]
+  - text: The OAuth token request has the exact URL, form, basic auth and 30 second timeout, and error replies map to the listed statuses.
+    proof: [auth-tests, oauth-corpus]
+  - text: Embedding prepare, Responses headers, URL and model strip, and the legacy price table keys match LiteLLM.
+    proof: [endpoint-tests, cost-tests, helper-python, oracle]
+  - text: New helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: auth-tests
+      why: the credential order, URL rewrite, User-Agent, redaction or OAuth request tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^databricks_auth::/) - test(replays_the_databricks_oauth_reply_corpus)'
+    - id: endpoint-tests
+      why: the embedding or Responses transforms are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^databricks_embedding::/) | test(/^databricks_responses::/)'
+    - id: cost-tests
+      why: the legacy endpoint name table or the generic cost call is missing or fails
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^databricks_cost::/)'
+    - id: oauth-corpus
+      why: the OAuth reply fuzz target or its fresh replay corpus is missing
+      run: >-
+        test -f crates/betterlite-provider/fuzz/fuzz_targets/databricks_oauth_reply.rs &&
+        grep -q 'name = "databricks_oauth_reply"' crates/betterlite-provider/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/databricks_oauth_reply)" &&
+        cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_databricks_oauth_reply_corpus)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5980)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5980 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5980/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added Databricks helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/databricks_auth-*")" &&
+        grep -lE '^[[:space:]]+b5980:' tools/oracle/fuzz/corpus/helper_case/databricks_auth-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/databricks-auth/auth-order-and-key-override.yaml
+  - tools/oracle/cases/helpers/databricks-auth/custom-endpoint-missing-key-and-base.yaml
+  - tools/oracle/cases/helpers/databricks-auth/sdk-path-import-error.yaml
+  - tools/oracle/cases/helpers/databricks-auth/ai-gateway-base-rewrite.yaml
+  - tools/oracle/cases/helpers/databricks-auth/partner-user-agent.yaml
+  - tools/oracle/cases/helpers/databricks-auth/header-and-body-redaction.yaml
+  - tools/oracle/cases/helpers/databricks-auth/oauth-token-request-and-errors.yaml
+  - tools/oracle/cases/helpers/databricks-auth/embedding-and-responses-endpoints.yaml
+  - tools/oracle/cases/helpers/databricks-auth/legacy-price-keys.yaml
+deviations:
+  - what: When no key, headers or base resolve, betterlite does not try Databricks unified auth (profiles, ~/.databrickscfg, Azure CLI, cloud metadata). It raises the same 400 DatabricksError that LiteLLM raises when databricks-sdk is not installed.
+    why: There is no Databricks SDK for Rust that passes deny.toml. A user who runs LiteLLM with the SDK installed and relies on it must set DATABRICKS_API_BASE and a key, or the OAuth M2M variables, in betterlite.
+  - what: An OAuth token reply with status 200 whose body has no access_token (or is not JSON) becomes DatabricksError 500 with a message that names the missing field.
+    why: LiteLLM lets a raw KeyError or JSON error escape from response.json()["access_token"], which the proxy turns into a generic 500. A typed error carries the same status.
+  - what: The embedding config holds its instruction on the value, not on the class.
+    why: LiteLLM writes constructor arguments onto the class, so one call changes every later instance. Rust has no shared class state, and the config sections own settings.
+out_of_scope:
+  - B5841 owns chat (chat/transformation.py), including DatabricksConfig.validate_environment, which only calls databricks_auth here.
+  - B1427 already built databricks/streaming_utils.py as compatible_line_stream in betterlite-openai.
+  - B1425 owns the OpenAI-like embedding transport that databricks_embedding hands its URL and headers to.
+  - B507 owns OpenAIResponsesAPIConfig.transform_responses_api_request and the other inherited Responses methods.
+  - B1672 owns generic_cost_per_token. B1686 owns the call-price dispatch that picks databricks_cost for provider databricks.
+  - Reading DATABRICKS_API_BASE, DATABRICKS_API_KEY, litellm.databricks_key and the embedding call site in litellm/main.py is B8330's wiring. B8330 also reads the environment into DatabricksEnv, sends the OAuth request and registers DatabricksEmbeddingConfig and DatabricksResponsesAPIConfig in dispatch.
+  - B4782 owns the separate agent endpoint token cache in the proxy crate. It shares no code with this task.
+pitfalls:
+  - A non-None api_key sets Authorization after the OAuth branch ran, so with all three OAuth variables set a supplied key still wins and the token request is made anyway.
+  - OAuth only runs when the client id, the client secret and a base are all truthy; an empty string for any of them skips it silently and falls through to the key checks.
+  - Headers that are an empty map count as missing in the api_key None check, but a headers map holding any key (even Content-Type) skips both the SDK path and the missing-key error.
+  - custom_endpoint false and custom_endpoint None differ only at the URL step. The suffix is added unless the value is exactly true, while the 400 checks test truthiness.
+  - The AI gateway rewrite returns a non-matching base with its trailing slash intact, because only the matching branches use the trimmed copy.
+  - A partner made only of "_" or "-" is rejected, since the text left after removing those characters is empty and an empty string is not alphanumeric.
+  - The legacy table matches by prefix and replaces the whole model name, so "dbrx-instruct-v2" prices as databricks-dbrx-instruct.
+  - Responses validate_environment passes custom_endpoint false, so a missing key with no headers goes to the SDK path error, not to the Missing API Key error.
+  - The redaction key list matches substrings, so a key like "max_tokens" is redacted along with "access_token".
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

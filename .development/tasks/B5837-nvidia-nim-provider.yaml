@@ -1,0 +1,191 @@
+id: B5837
+title: NVIDIA NIM chat, embedding, rerank and passthrough transforms
+description: >-
+  Build the pure transforms of the nvidia_nim provider (litellm/llms/nvidia_nim). Four modules, one per family. B2324
+  already built the four path-hint functions in nvidia_nim/passthrough/transformation.py L28-L62 (is_nvidia_nim_deployment,
+  nvidia_nim_model_groups, nvidia_nim_model_group_in_path, nvidia_nim_router_model_in_endpoint) in betterlite-auth, so
+  do not write them again. Nothing here reads an environment variable or a global setting. The caller passes every key
+  and base as a plain argument. Dispatch wiring, the credential call sites in main.py and rerank_api/main.py, and the
+  HTTP cases belong to B8310.
+
+  Chat (crates/betterlite-openai/src/nvidia_nim_chat.rs, NvidiaNimConfig over B668's OpenAI base config). It overrides
+  two methods and inherits the rest. get_supported_openai_params(model) matches the model string exactly, with no prefix
+  stripping. The models google/recurrentgemma-2b, google/gemma-2-27b-it, google/gemma-2-9b-it and gemma-2-9b-it give
+  stream, temperature, top_p, max_tokens, stop, seed. nvidia/nemotron-4-340b-instruct gives stream, temperature, top_p,
+  max_tokens, max_completion_tokens. nvidia/nemotron-4-340b-reward gives only stream. google/codegemma-1.1-7b gives
+  stream, temperature, top_p, frequency_penalty, presence_penalty, max_tokens, max_completion_tokens, stop. Every other
+  model gives stream, temperature, top_p, frequency_penalty, presence_penalty, max_tokens, max_completion_tokens, stop,
+  seed, tools, tool_choice, parallel_tool_calls, response_format, in that order. map_openai_params walks
+  non_default_params in order. max_completion_tokens always writes optional_params["max_tokens"], whether or not the
+  model lists it. Any other param in the supported list is copied, and anything else is silently dropped. drop_params
+  is accepted and never read. The map the caller passed in is returned with the additions.
+
+  Embedding (crates/betterlite-openai/src/nvidia_nim_embedding.rs, NvidiaNimEmbeddingConfig). get_supported_openai_params
+  takes no model and returns encoding_format, user, dimensions. map_openai_params(non_default_params, optional_params,
+  kwargs) first adds an empty extra_body when optional_params has none. Then for each non_default_params entry in order,
+  input_type and truncate go into extra_body and every other key, including extra_body itself, is written to
+  optional_params[key]. A non-None kwargs map is merged into whatever extra_body is by then, so it is present (maybe empty)
+  after the call even when kwargs is empty. The constructor that copies its arguments onto the class and get_config have
+  no caller at the pin, so they are not built.
+
+  Rerank (crates/betterlite-provider/src/nvidia_nim_rerank.rs, over B1013's BaseRerankConfig and rerank records).
+  Two configs and one selector. select_nvidia_nim_rerank_config(model) returns the ranking config when the model starts
+  with ranking/ and the retrieval config otherwise (common_utils.py L5-L27). The retrieval config (NvidiaNimRerankConfig)
+  has default base https://ai.api.nvidia.com. Its URL: trim trailing slashes from the base (default when None or empty);
+  if the base contains /retrieval/ return it as is; otherwise drop a trailing /v1 and return
+  {base}/v1/retrieval/{model without a leading nvidia_nim/}/reranking. Supported cohere params are query, documents,
+  top_n. map_cohere_rerank_params starts from {query, documents}, adds top_k = top_n when top_n is not None, then
+  overlays every entry of non_default_params, so those win. validate_environment: an absent key becomes the
+  NVIDIA_NIM_API_KEY secret, then the global litellm api_key (both passed in as arguments), and still absent raises
+  ValueError "Nvidia NIM API key is required. Please set 'NVIDIA_NIM_API_KEY' in your environment". Defaults are
+  Authorization "Bearer {key}", accept application/json and content-type application/json, then the caller headers
+  overlay all of them. transform_rerank_request needs query and documents (ValueErrors "query is required for Nvidia NIM
+  rerank" and "documents is required for Nvidia NIM rerank"). The query becomes {text}. A string document becomes {text}.
+  A map document keeps its text field, and its image field only on the ranking config (SUPPORTED_PASSAGE_FIELDS is text
+  for retrieval, text and image for ranking). A map with neither field becomes {text: JSON of the map}, per
+  docs/compatibility.md for the JSON text. Any other document becomes {text: its string form}. The body model is the
+  model without a leading nvidia_nim/ and with every _ replaced by a period. top_k is added when present and not None.
+  truncate is added only when it is NONE or END, and any other value is dropped without an error.
+
+  transform_rerank_response parses the body as JSON; a body that is not JSON raises BaseLLMException (B2202) with the
+  upstream status, the body text and the headers. Each ranking {index, logit} becomes {index, relevance_score: logit},
+  and when the index is below the request's passage count and that passage has text, the result gets document {text}.
+  The id is the body id or a new UUID4. meta.billed_units.total_tokens is usage.total_tokens when above 0, else the
+  number of results. decode_nvidia_nim_rerank_reply(bytes) is the typed decoder for this body and gets a fuzz target.
+  get_error_class builds a BaseLLMException from message, status and headers.
+
+  The ranking config (NvidiaNimRankingConfig, ranking_transformation.py) is for models like ranking/nvidia/...
+  and talks to {base}/v1/ranking. Its URL: default base as above, return the base when it ends with /ranking, else drop a
+  trailing /v1 and append /v1/ranking. Its clean model name removes a leading nvidia_nim/ and then a leading ranking/.
+  The endpoint rejects top_k, so top_n stays in the mapped params (top_n is not mapped to top_k, and any top_k from
+  non_default_params is removed). transform_rerank_request checks top_n: an int below 1 raises ValueError "top_n must be
+  a positive integer, got: {top_n}", and a valid one is kept on the config instance. Then top_n and top_k are removed
+  from the params and the retrieval request transform runs on the clean model. transform_rerank_response runs the
+  retrieval conversion, picks top_n as optional_params.top_n when truthy else the kept value, and only when there are
+  more results than top_n sorts them by relevance_score descending (stable, ties keep their order) and keeps the first
+  top_n. With fewer or equal results the order is untouched. In Rust the kept top_n lives in the config value, which the
+  caller makes fresh for each request as LiteLLM does.
+
+  Passthrough (crates/betterlite-openai/src/nvidia_nim_passthrough.rs, NvidiaNimPassthroughConfig over B3570's
+  BasePassthroughConfig and format_url). is_streaming_request is bool(request_data.stream), default false.
+  get_complete_url: base is api_base or the NVIDIA_NIM_API_BASE secret (passed in); none raises ValueError "NVIDIA NIM api
+  base not found: set `api_base` on the deployment or NVIDIA_NIM_API_BASE". The native endpoint is the endpoint after
+  B3570's strip_leading_model_segment with the model and the model_group from litellm_params. The root is
+  without_repeated_version_prefix(base, native_endpoint): split the base path into non-empty segments; if the first
+  segment of the native endpoint (leading slashes removed) is v followed by digits and equals the last base segment,
+  drop that last base segment; rebuild the base with that path and no query, trailing slashes removed. The result is
+  (format_url(native_endpoint, root, request_query_params), root). validate_environment returns the headers unchanged
+  when api_key is None, else the headers plus Authorization "Bearer {key}" (overwrites). get_api_key and get_api_base
+  return the argument or the secret passed in. get_base_model returns the model, get_models returns an empty list.
+  logging_non_streaming_response returns relayed_body(response) (B3570) as the logged response object.
+
+  The LiteLLM code owned here is about 560 nonblank non-comment lines (chat 70, embedding 45, rerank 270, ranking 110,
+  selector 10, passthrough 60). Plan 330 production, 260 tests, 150 adapters, 60 fuzz and 20 wiring lines. No split.
+scope:
+  paths:
+    - crates/betterlite-openai/src/nvidia_nim_chat.rs
+    - crates/betterlite-openai/src/nvidia_nim_chat/**
+    - crates/betterlite-openai/src/nvidia_nim_embedding.rs
+    - crates/betterlite-openai/src/nvidia_nim_embedding/**
+    - crates/betterlite-openai/src/nvidia_nim_passthrough.rs
+    - crates/betterlite-openai/src/nvidia_nim_passthrough/**
+    - crates/betterlite-provider/src/nvidia_nim_rerank.rs
+    - crates/betterlite-provider/src/nvidia_nim_rerank/**
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/nvidia_nim_rerank_reply.rs
+    - crates/betterlite-provider/fuzz/corpus/nvidia_nim_rerank_reply/**
+    - tools/oracle/cases/helpers/nvidia-nim/**
+    - tools/oracle/helpers/b5837.py
+    - tools/oracle/helpers/b5837/**
+    - tools/oracle/src/helpers/openai/b5837.rs
+    - tools/oracle/src/helpers/openai/b5837/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/chat/transformation.py#L16-L113
+    why: Per-model supported lists and the max_completion_tokens rewrite.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/embed.py#L15-L82
+    why: Embedding params and the extra_body folding of input_type, truncate and kwargs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3872-L3881
+    why: The only call site of the embedding map_openai_params, which passes the leftover kwargs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/transformation.py#L47-L348
+    why: Retrieval rerank URL, params, headers, passages and response conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/ranking_transformation.py#L18-L191
+    why: Ranking URL, top_n kept out of the body and applied to the response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/common_utils.py#L5-L27
+    why: Selector by the ranking/ model prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8884-L8889
+    why: Call site of the selector.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/passthrough/transformation.py#L28-L29
+    why: The version segment pattern; the other constants and functions up to L62 are B2324's.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/passthrough/transformation.py#L65-L139
+    why: Repeated version removal and the passthrough config methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/passthrough/transformation.py#L141-L169
+    why: format_url, which get_complete_url calls and B3570 owns.
+dod:
+  - text: Chat supported params differ by model as listed, and map_openai_params rewrites max_completion_tokens and drops unsupported params.
+    proof: [nim-chat-tests, oracle]
+  - text: Embedding params fold input_type, truncate, a passed extra_body and the leftover kwargs into extra_body.
+    proof: [nim-embedding-tests, oracle]
+  - text: Retrieval rerank URL, params, headers, passages and response conversion match LiteLLM, including the missing-key error and the negative-index document lookup.
+    proof: [nim-rerank-tests, oracle]
+  - text: The ranking config builds /v1/ranking, keeps top_n out of the body and applies it to the response with the sort rule.
+    proof: [nim-rerank-tests, oracle]
+  - text: A rerank reply that is not valid JSON or lacks index or logit fails without panicking and the decoder corpus replays.
+    proof: [nim-rerank-corpus]
+  - text: Passthrough URL, repeated version removal, credentials and logged body match LiteLLM.
+    proof: [nim-passthrough-tests, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: nim-chat-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^nvidia_nim_chat::/)'
+      why: A generic OpenAI config would keep tools and seed for the models that reject them and would not rewrite max_completion_tokens.
+    - id: nim-embedding-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^nvidia_nim_embedding::/)'
+      why: Without this module input_type and truncate would be sent as top-level fields instead of extra_body.
+    - id: nim-rerank-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^nvidia_nim_rerank::/) - test(/replays_the_/)'
+      why: The two rerank configs differ in URL, passage fields, model name and top_n handling, and a Cohere-shaped body is rejected by NIM.
+    - id: nim-rerank-corpus
+      run: test -f crates/betterlite-provider/fuzz/fuzz_targets/nvidia_nim_rerank_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/nvidia_nim_rerank_reply)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_nvidia_nim_rerank_reply_corpus)'
+      why: The reply body comes from the network and needs a fuzz target with a replayed corpus.
+    - id: nim-passthrough-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^nvidia_nim_passthrough::/)'
+      why: Without it a base ending in /v1 and a native path starting with /v1 produce /v1/v1.
+oracle_cases:
+  - tools/oracle/cases/helpers/nvidia-nim/chat-supported-params.yaml
+  - tools/oracle/cases/helpers/nvidia-nim/chat-map-params.yaml
+  - tools/oracle/cases/helpers/nvidia-nim/embedding-map-params.yaml
+  - tools/oracle/cases/helpers/nvidia-nim/rerank-selector-and-url.yaml
+  - tools/oracle/cases/helpers/nvidia-nim/rerank-params-and-headers.yaml
+  - tools/oracle/cases/helpers/nvidia-nim/rerank-request-passages.yaml
+  - tools/oracle/cases/helpers/nvidia-nim/rerank-response.yaml
+  - tools/oracle/cases/helpers/nvidia-nim/ranking-url-and-model.yaml
+  - tools/oracle/cases/helpers/nvidia-nim/ranking-top-n.yaml
+  - tools/oracle/cases/helpers/nvidia-nim/passthrough-url.yaml
+  - tools/oracle/cases/helpers/nvidia-nim/passthrough-credentials-and-logging.yaml
+deviations:
+  - what: A rerank reply whose ranking entry lacks index or logit, or has an index below minus the passage count, fails with a typed error that names the field, status 500.
+    why: LiteLLM raises a raw KeyError or IndexError there. The Rust decoder must return an error, and 500 is the status LiteLLM's generic exception mapping gives an unclassified exception (to be confirmed by the architect, see notes).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/transformation.py#L314-L326
+out_of_scope:
+  - B2324 owns is_nvidia_nim_deployment, nvidia_nim_model_groups, nvidia_nim_model_group_in_path and nvidia_nim_router_model_in_endpoint (passthrough L28-L62, betterlite-auth resource_hints).
+  - B668, B503 and B504 own everything NvidiaNimConfig inherits from OpenAIGPTConfig (request and reply conversion, URL, headers, streaming). B2230 owns choosing NvidiaNimConfig for the nvidia_nim provider.
+  - B1013 owns BaseRerankConfig and the rerank records. B3570 owns BasePassthroughConfig, format_url, strip_leading_model_segment, model_group_from and relayed_body. B2202 owns BaseLLMException.
+  - 'The key and base defaults (chat and embedding base https://integrate.api.nvidia.com/v1 in get_llm_provider_logic.py L645, rerank base in rerank_api/main.py L334-L343), the lazy litellm.nvidiaNimConfig instances, get_supported_openai_params in litellm_core_utils (None for request types other than chat_completion and embeddings) and the utils.py L4839 and L3872 call sites are B211 (get_llm_provider defaults), B8310 (the rerank base and dispatch) and the get_optional_params owners; the lazy litellm.nvidiaNimConfig instances are Python module glue and are not built.'
+  - B8310 owns dispatch wiring of all four families, the rerank credential step and the HTTP oracle cases; the OpenAI-client embedding call is B044's arm (main.py L6504-L6555). This task touches no dispatch.rs or operation.rs.
+  - The proxy routes and the path-to-model-group lookup that call B2324's functions (auth_utils.py L2057, llm_passthrough_endpoints.py L2111) belong to B746 and B3628.
+pitfalls:
+  - max_completion_tokens is rewritten to max_tokens before the supported-list check, so it reaches nvidia/nemotron-4-340b-reward and the gemma models even though their lists do not include it.
+  - gemma-2-9b-it appears twice in the first branch, with and without the google/ prefix, and the match is exact, so nvidia_nim/google/gemma-2-9b-it must have its nvidia_nim/ removed by the caller first.
+  - In the embedding map an extra_body key inside non_default_params replaces the empty extra_body made at the start, and the kwargs merge then lands in that replacement.
+  - validate_environment lowercases accept and content-type in the defaults, so a caller header Content-Type is added next to content-type and both are sent.
+  - The retrieval URL tests /retrieval/ before it drops /v1, so a base like https://h/v1/retrieval/m/reranking is returned untouched, but https://h/v1/ becomes https://h/v1/retrieval/{model}/reranking.
+  - The path keeps underscores (llama-3_2) while the body model has them turned into periods (llama-3.2), and this replace covers the whole model string, including any other underscore.
+  - The selector tests the raw model for ranking/, so nvidia_nim/ranking/x selects the retrieval config, which then sends the body model ranking/x.
+  - A response index below zero but within the passage count picks the passage from the end, as Python does. Image-only passages have no text, so they give no document.
+  - The ranking config sorts only when there are more results than top_n, and a top_n of 0 in optional_params falls back to the kept value.
+  - get_complete_url in the ranking config tests endswith /ranking, so a base already ending in /v1/ranking is used as is.
+  - without_repeated_version_prefix drops the query from the base and compares only the last base segment with the first native segment, case-sensitive and only for v followed by digits.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

@@ -1,0 +1,89 @@
+id: B8135
+title: Component chart ingress, scaling and monitoring
+description: >-
+  Add the exposure and scaling templates of the component chart packaging/helm/betterlite (values and helpers from B8133, workloads from B8134): templates/ingress.yaml, templates/gateway/hpa.yaml, templates/backend/hpa.yaml, templates/ui/hpa.yaml, templates/gateway/poddisruptionbudget.yaml, templates/backend/poddisruptionbudget.yaml, templates/ui/poddisruptionbudget.yaml and templates/gateway/servicemonitor.yaml. Do not edit helpers or values.
+  ingress.yaml renders only when ingress.enabled. ingress.controller is "alb" (default) or "nginx"; any other value fails with 'ingress.controller: unknown controller "<value>", expected one of alb, nginx'. One Ingress routes three backends: the UI paths (/ Exact, /favicon.ico Exact, /litellm-asset-prefix Prefix, /_next Prefix, /ui Prefix, and /*.txt as ImplementationSpecific for alb only), the gateway prefixes and exact paths from LiteLLM's list (copy the list from the reference; it must match the gateway allowlist in crates/betterlite-routes from B4470), and the backend as the catch-all last. A dotted path takes pathType ImplementationSpecific on nginx through betterlite.ingress.pathType. ingress.extraPaths entries (path, service gateway|backend|ui with gateway as default, pathType Prefix by default) are placed after the built-in paths and before the backend catch-all; an entry that repeats a built-in path fails the render. className, annotations, host (rule host when set) and tls come from values.
+  Each hpa.yaml renders an autoscaling/v2 HorizontalPodAutoscaler for its component only when the component and its hpa.enabled are on, named after the component Deployment. The gateway one has cpu (a ContainerResource on container "gateway" when gateway.collector.enabled and gateway.collector.scaleOnGatewayContainerCpu), memory, requests-per-second and tokens-per-second metrics and behavior; backend and ui have cpu (and behavior). Each PDB file is one call to the betterlite.pdb helper with the component values. servicemonitor.yaml (gateway.serviceMonitor.enabled) scrapes the gateway Service port "metrics" when gateway.metricsServer.enabled and "http" otherwise, path /metrics/, interval and scrapeTimeout from values, with labels.
+scope:
+  paths:
+    - packaging/helm/betterlite/templates/ingress.yaml
+    - packaging/helm/betterlite/templates/gateway/hpa.yaml
+    - packaging/helm/betterlite/templates/backend/hpa.yaml
+    - packaging/helm/betterlite/templates/ui/hpa.yaml
+    - packaging/helm/betterlite/templates/gateway/poddisruptionbudget.yaml
+    - packaging/helm/betterlite/templates/backend/poddisruptionbudget.yaml
+    - packaging/helm/betterlite/templates/ui/poddisruptionbudget.yaml
+    - packaging/helm/betterlite/templates/gateway/servicemonitor.yaml
+    - packaging/helm/betterlite/tests/ingress_controller_tests.yaml
+    - packaging/helm/betterlite/tests/ingress_extra_paths_tests.yaml
+    - packaging/helm/betterlite/tests/hpa_behavior_tests.yaml
+    - packaging/helm/betterlite/tests/hpa_workload_metrics_tests.yaml
+    - packaging/helm/betterlite/tests/pdb_topology_spread_tests.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/ingress.yaml#L1-L209
+    why: Path lists, controller switch and extraPaths rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/routes/allowlist.py#L18-L147
+    why: The data-plane list the ingress prefixes must mirror.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/gateway/hpa.yaml#L1-L65
+    why: Gateway metrics and the container switch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/backend/hpa.yaml
+    why: Backend HPA.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/gateway/servicemonitor.yaml
+    why: ServiceMonitor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/tests/ingress_extra_paths_tests.yaml#L1-L328
+    why: extraPaths behaviors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/tests/ingress_controller_tests.yaml#L1-L215
+    why: Controller behaviors.
+dod:
+  - text: The Ingress renders the UI, gateway and backend paths per controller and rejects an unknown controller.
+    proof: [ingress-controller-suite]
+  - text: extraPaths are appended in order before the backend catch-all and a repeated built-in path fails the render.
+    proof: [extra-paths-suite]
+  - text: The HPAs render only for enabled components with their metrics and behavior.
+    proof: [hpa-suites]
+  - text: The PDBs and topology spread settings render as described, and the ServiceMonitor picks the right port.
+    proof: [pdb-suite]
+  - text: The chart lints and renders with the minimum values.
+    proof: [chart-lint]
+checks:
+  optional: []
+  commands:
+    - id: ingress-controller-suite
+      why: an Ingress controller behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite tests/ingress_controller_tests.yaml
+    - id: extra-paths-suite
+      why: an extraPaths behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite tests/ingress_extra_paths_tests.yaml
+    - id: hpa-suites
+      why: an HPA behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite tests/hpa_behavior_tests.yaml tests/hpa_workload_metrics_tests.yaml
+    - id: pdb-suite
+      why: a PDB, topology spread or ServiceMonitor behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite tests/pdb_topology_spread_tests.yaml
+    - id: chart-lint
+      why: the chart does not lint or render
+      run: test -f packaging/helm/betterlite/templates/ingress.yaml && sh packaging/helm/tests/helm_checks.sh lint packaging/helm/betterlite packaging/helm/betterlite/tests/values/required.yaml
+oracle_cases: []
+deviations:
+  - what: The gateway prefix list in the ingress is a copy of LiteLLM's data-plane list with betterlite's extra routes added by hand when a route task registers one.
+    why: The chart is rendered by Helm and cannot read crates/betterlite-routes; B4470 owns the list and a mismatch is a chart bug.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/routes/allowlist.py#L18-L147
+out_of_scope:
+  - Values, helpers and ServiceAccounts belong to B8133; Deployments, Services and the Job belong to B8134.
+  - The README and the suite-count check belong to B152.
+pitfalls:
+  - >-
+    Versioned prefixes such as /v1/chat are listed one by one on purpose; a broad /v1 or /v2 prefix would send management routes (/v1/mcp, /v2/login, /v2/team/list) to the gateway.
+  - >-
+    The /*.txt rule exists only for alb, since nginx treats ImplementationSpecific as a literal prefix and the wildcard could never match.
+  - >-
+    A path that contains a dot (/favicon.ico, /eu.assemblyai) is rejected by ingress-nginx as Exact or Prefix, so the pathType helper must see the final path.
+  - >-
+    A maxUnavailable of 0 in a PDB is valid and must be written, not replaced by the default 1.
+  - >-
+    extraPaths service names are matched exactly: a value other than gateway, backend or ui must fail the render.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

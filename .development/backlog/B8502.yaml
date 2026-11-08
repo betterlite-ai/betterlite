@@ -1,0 +1,15 @@
+id: B8502
+milestone: M8 platform
+title: Save cache settings and reload the cache from the database
+status: todo
+depends_on: [B003, B726, B872, B1600, B2330, B4306]
+file: tasks/B8502-cache-settings-update.yaml
+covers:
+  - "litellm/proxy/management_endpoints/cache_settings_endpoints.py"
+  - "litellm/caching/{__init__,_internal_lru_cache}.py"
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -85,7 +85,7 @@ deviations:
     why: Azure URLs can contain both path segments; rfind ensures exact semantics.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/azure_speech_passthrough_logging_handler.py#L33-L39
 out_of_scope:
-  - "Azure Speech route registration and HTTP method dispatch: B102 owns the route handlers and request routing for speech-to-text endpoints."
+  - "Azure Speech route registration and HTTP method dispatch: B3625 owns the route handlers and request routing for speech-to-text endpoints."
   - "Spend payload assembly and ledger writes: B190 provides the logging object structure and persistence for cost records."
   - "Authentication, security headers and upstream request validation: handled by the speech provider's credential and error-handling layer."
   - Audio format detection and validation.

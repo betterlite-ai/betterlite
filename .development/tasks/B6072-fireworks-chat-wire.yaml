@@ -1,0 +1,156 @@
+id: B6072
+title: Fireworks AI chat request, response, stream chunk and model list transforms
+description: >-
+  Build fireworks_ai_chat in betterlite-openai (crates/betterlite-openai/src/fireworks_ai_chat.rs and its folder), the wire side of
+  FireworksAIConfig and FireworksAIChatCompletionStreamingHandler in litellm/llms/fireworks_ai/chat/transformation.py. It covers
+  validate_environment, _transform_tools, _transform_messages_helper, transform_request, _handle_message_content_with_tool_calls,
+  transform_response, get_model_response_iterator, _get_openai_compatible_provider_info, get_models, get_api_key,
+  _extract_fireworks_hidden_params and chunk_parser. B2222 built the catalog lookups (lines 534 to 651 of that file) and B6071 the option
+  mapping; use them. The module makes no HTTP call and reads no env var. The caller passes api_key, api_base and a FireworksEnv value
+  from B6070 (the four key variables plus FIREWORKS_API_BASE and FIREWORKS_ACCOUNT_ID, an empty value counts as unset). Ids come from an
+  injected id source so cases can fix them.
+
+
+  Auth. validate_environment resolves the key with B6070 (argument first, then the env chain) and fails with MissingApiKey when none is
+  found. It builds headers with B504's chat auth rule (Authorization "Bearer {key}", caller content-type kept in either casing,
+  else Content-Type application/json) and then applies B6070 session affinity from litellm_params. This differs from the mixin merge in B6070.
+  _get_openai_compatible_provider_info returns (api_base or FIREWORKS_API_BASE or "https://api.fireworks.ai/inference/v1", key chain result).
+  get_api_key is the same key chain and is B6070's resolve_api_key.
+
+
+  Request. transform_request resolves the model with B2222 resolve_resource_name, runs the message helper with that resolved name, and, when
+  optional_params.tools is non-None, runs the tool helper. When stream is truthy: stream_options None becomes {include_usage: true}; a map
+  keeps its entries and gets include_usage true unless include_usage is explicitly false. Then it calls B503's transform_request with the
+  resolved model. The tool helper removes function.strict from each tool of type "function" and, when its parameters value is a map,
+  applies B217 unpack_legacy_defs to it; other tool types pass through. The message helper first reads
+  capability_exact(resolved_model, supports_vision) from B2222. For each message: a user message with list content is scanned in order;
+  a map block of type "file" is a 400 BadRequestError (text says Fireworks AI chat completions does not support file content blocks and
+  suggests images or extracted text); an "image_url" block when the exact vision flag is false is a 400 naming the model. Non-map blocks
+  are skipped. Then every message loses cache_control through B219 filter_value_from_dict, and the keys provider_specific_fields and
+  thinking_blocks.
+
+
+  Response. transform_response decodes the body with the existing chat response decoder B504 uses (no second JSON parser). A body that is
+  not JSON is FireworksError with message "Unable to get json response - ..." plus the raw text, the HTTP status and the headers.
+  The model gets the prefix "fireworks_ai/" when it is not None. For each choice,
+  when optional_params.tools is non-None, the message content is non-None and tool_calls is None, the content is parsed as a JSON object
+  and read as a function: arguments is the "arguments" value (a map is serialized to a JSON string), else the "parameters" map serialized,
+  else the empty string; name is the "name" value. If the name differs from "json_tool_call" and is one of the declared tool function
+  names, the message gets one tool call {id: fresh uuid4, type: function, function} and content becomes None. Any content that does not
+  parse as an object, or has no matching name, is left alone with no error. Hidden params are additional_headers (the response headers
+  through B2202's header helper) plus _extract_fireworks_hidden_params: from a payload, "perf_metrics" and "prompt_token_ids" copy to
+  fireworks_perf_metrics and fireworks_prompt_token_ids when the key is present; among choices that are maps, fireworks_raw_outputs
+  collects each present raw_output and fireworks_token_ids each present token_ids, and a key is added only when at least one choice has it.
+
+
+  Stream. chunk_parser calls B504's chunk_parser, then runs the same hidden-params extraction on the raw chunk and, when it is non-empty,
+  merges it over the parsed chunk's provider_specific_fields (kept entries first). get_model_response_iterator just builds this handler.
+
+
+  Models. get_models_request(api_base, api_key, env) resolves base and key as above; a missing base or key is a typed error with
+  LiteLLM's FIREWORKS_API_BASE or FIREWORKS_API_KEY text, a missing FIREWORKS_ACCOUNT_ID another. It trims trailing "/" and a final "/v1"
+  from the base and returns GET "{base}/v1/accounts/{account_id}/models" with only the Authorization Bearer header. decode_models_response(status,
+  bytes) fails on a status other than 200 with the status and body in the error, else reads models[].name and returns "fireworks_ai/" +
+  name in order. It is the fuzz entry point (1 MiB cap, typed error above it).
+
+
+  Helper cases (helper b6072) call the pinned FireworksAIConfig and handler with fixed ids and the local model map. LiteLLM size: about
+  230 lines.
+scope:
+  paths:
+    - crates/betterlite-openai/src/fireworks_ai_chat.rs
+    - crates/betterlite-openai/src/fireworks_ai_chat/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/fireworks_ai_models_response.rs
+    - crates/betterlite-openai/fuzz/corpus/fireworks_ai_models_response/**
+    - tools/oracle/cases/helpers/fireworks-ai-chat/**
+    - "tools/oracle/fuzz/corpus/helper_case/fireworks_ai_chat-*"
+    - tools/oracle/helpers/b6072.py
+    - tools/oracle/helpers/b6072/**
+    - tools/oracle/src/helpers/openai/b6072.rs
+    - tools/oracle/src/helpers/openai/b6072/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L64-L81
+    why: Hidden params collected from a payload or a stream chunk.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L201-L225
+    why: validate_environment over the OpenAI base plus session affinity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L464-L532
+    why: Tool and message cleanup with the two 400 errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L653-L764
+    why: Request, tool-call-in-content repair and response transform.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L766-L838
+    why: Iterator, base and key lookup, get_models and the stream handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1183-L1209
+    why: Function turns a dict or a parameters map into the arguments string.
+  - url: https://docs.fireworks.ai/api-reference/list-models
+    why: The account models listing that get_models calls.
+dod:
+  - text: Headers combine the OpenAI auth rule with session affinity, and the base and key lookups follow the env order.
+    proof: [fw-chat-tests, oracle]
+  - text: Tool and message cleanup strips strict, cache_control and the two extra keys and raises both 400 errors.
+    proof: [fw-chat-tests, oracle]
+  - text: stream_options and the resolved model reach the OpenAI request transform as LiteLLM sends them.
+    proof: [fw-chat-tests, oracle]
+  - text: Tool calls sent as content become tool_calls only for declared names, and hidden params carry the Fireworks fields on replies and chunks.
+    proof: [fw-chat-tests, oracle, helper-python]
+  - text: The model list request and decoder follow LiteLLM, and the decoder rejects over 1 MiB with a typed error and replays its corpus.
+    proof: [fw-chat-models-corpus, fw-chat-tests]
+  - text: The new helper cases replay through the shared parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: fw-chat-tests
+      why: Auth, cleanup, request, reply repair, stream metadata or the model list rule is missing.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^fireworks_ai_chat::/) - test(replays_the_models_response_corpus)'
+    - id: fw-chat-models-corpus
+      why: The models decoder fuzz target or its replay corpus is missing or fails.
+      run: >-
+        test -f crates/betterlite-openai/fuzz/fuzz_targets/fireworks_ai_models_response.rs &&
+        grep -q 'name = "fireworks_ai_models_response"' crates/betterlite-openai/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/fireworks_ai_models_response)" &&
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_models_response_corpus)'
+    - id: helper-python
+      why: The strict oracle adapter lint or type checks fail.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6072.py)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added cases are absent or do not replay.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/fireworks_ai_chat-*")" &&
+        grep -lE '^[[:space:]]+b6072:' tools/oracle/fuzz/corpus/helper_case/fireworks_ai_chat-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/fireworks-ai-chat/validate-environment.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat/provider-info-and-key.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat/tool-cleanup.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat/message-cleanup.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat/file-and-image-errors.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat/stream-options.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat/tool-call-in-content.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat/hidden-params.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat/stream-chunk-fields.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat/models-request.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat/models-response.yaml
+deviations:
+  - what: The model list is built as a request and a decoder, and the caller sends it; a non-200 status is a typed error with the status and body, not a bare ValueError.
+    why: A provider leaf makes no HTTP call, and the compatibility rules ask for typed errors; the status mapping follows B2454.
+  - what: A malformed JSON reply is a FireworksError that keeps the raw text, status and headers.
+    why: Same as LiteLLM's FireworksAIException; only the transport call moved to the caller.
+out_of_scope:
+  - B2222 owns lines 534 to 651 of chat/transformation.py (capability lookups, get_model_cost_key, get_provider_info). B6071 owns the option side of FireworksAIConfig. B6070 owns FireworksAIMixin and the key chain.
+  - B503 owns the OpenAI transform_request and B504 owns the OpenAI response decoder and chunk_parser this module calls.
+  - B8310 owns _complete_fireworks_ai in litellm/main.py, wires the config into dispatch and adds the HTTP cases.
+pitfalls:
+  - 'Fireworks sends a tool call as the message content, often as {"name": ..., "parameters": {...}} with no "arguments", so the parameters map must be serialized into arguments.'
+  - The repair runs only when optional_params.tools is non-None, content is non-None and tool_calls is None, and the name "json_tool_call" is never converted.
+  - The message helper is given the resolved accounts/fireworks/models/... name, so the exact vision lookup uses that name and its short forms.
+  - stream_options with include_usage false is kept as false, because the test is "is not False", not truthiness.
+  - validate_environment goes through the OpenAI auth rule, which keeps a caller Content-Type in either casing, while the mixin in B6070 appends it only when no content-type header exists.
+  - Hidden-params keys appear only when a choice carries the field, so a reply with raw_output on one of two choices lists one entry.
+  - get_models strips a trailing "/v1" before appending "/v1/accounts/...", so a base with and without /v1 give the same URL.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

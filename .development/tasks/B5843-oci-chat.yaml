@@ -1,0 +1,171 @@
+id: B5843
+title: OCI chat config, request payload and SSE stream decoding
+description: >-
+  Add oci_chat in betterlite-provider for litellm/llms/oci/chat/transformation.py. It is the last
+  part of the OCI provider. B5940 (oci_common) supplies OciError, credentials, signing, URLs and
+  OciServingMode. B5942 (oci_chat_wire) supplies the wire types, the message and tool adapters, and
+  the response and chunk parsers. This task owns OCIChatConfig, the helpers above it and the stream
+  wrapper. Credentials and the base URL are plain arguments: take B5940's OciCredentials and the
+  optional api_base, never read the environment or a config section. Also define OciCompletionPayload
+  (compartmentId, servingMode, chatRequest as the GENERIC or the Cohere request from B5942) here,
+  since litellm/types/llms/oci.py has no port of its own.
+
+  Parameter maps. Build the two maps exactly as in __init__: GENERIC maps stream to isStream,
+  max_tokens and max_completion_tokens to maxTokens, temperature, tools, frequency_penalty to
+  frequencyPenalty, logprobs to logProbs, logit_bias to logitBias, n to numGenerations,
+  presence_penalty to presencePenalty, reasoning_effort to reasoningEffort, seed, stop, tool_choice
+  to toolChoice, top_p to topP and response_format to responseFormat. These keys are known and
+  unsupported: max_retries, top_logprobs, modalities, prediction, stream_options, function_call,
+  functions, extra_headers, parallel_tool_calls, audio, web_search_options. The Cohere map changes
+  stop to stopSequences, marks tool_choice, n, reasoning_effort, logprobs and logit_bias
+  unsupported and adds top_k to topK. get_supported_openai_params lists the supported keys of the
+  vendor's map in map order. get_vendor_from_model strips a leading oci/ (any case), takes the text
+  before the first dot, lower-cased, and returns COHERE for cohere and GENERIC otherwise.
+
+  map_openai_params(non_default_params, optional_params, model, drop_params) walks the merged dict
+  (optional_params after non_default_params, so the second wins). An unsupported key is skipped for
+  max_retries, skipped for n when the value is None or 1, skipped when drop_params is true, and
+  otherwise OciError 400 "param `<key>` is not supported on OCI". A supported key is stored under
+  its OCI name, and response_format is also kept under its OpenAI name. A key not in the map is kept
+  under its own name. drop_params is a plain bool argument; B175 resolves the litellm.drop_params
+  global and passes the result.
+
+  Request building. validate_environment returns OciError 400 for empty messages, OciError 401 with
+  the source message when user, fingerprint, tenancy, compartment id or both key sources are missing,
+  then B5940's validate_oci_environment. get_complete_url is the B5940 base URL plus
+  /20231130/actions/chat. transform_request needs a compartment id (OciError 400), reads
+  oci_serving_mode (exact ON_DEMAND or DEDICATED, default ON_DEMAND, anything else is OciError 400;
+  DEDICATED uses oci_endpoint_id and falls back to the model name). For Cohere it needs a user
+  message (OciError 400), joins the text of all system messages with newlines into
+  preambleOverride when non-empty, sends the last user message as message and the rest from B5942
+  as chatHistory. For GENERIC it sends B5942's messages with apiFormat set to the vendor value.
+  The optional params come from get_optional_params: walk the vendor's map; the first OpenAI key
+  present in optional_params, else the OCI name, fills the target once; maxTokens is renamed
+  maxCompletionTokens for GENERIC models where model_uses_max_completion_tokens is true (a model
+  starting with openai. unless it starts with openai.gpt-oss, otherwise B2221's reasoning capability
+  lookup for provider oci; an oci/ prefix is stripped first); a missing token cap is filled with
+  4096; reasoningEffort is upper-cased and DISABLE becomes NONE; tools go through the vendor's B5942
+  adapter. normalize_tool_choice turns the strings auto, none, required and any (any casing) into
+  {"type": AUTO|NONE|REQUIRED}, any other string into {"type": "FUNCTION", "name": the string},
+  and a dict into the flat form with the OciError 400 messages for a missing type, an empty
+  function name and an unknown type. normalize_response_format maps text to TEXT, any other type for Cohere to
+  JSON_OBJECT with the schema value of json_schema when present, json_schema (GENERIC) to JSON_SCHEMA with name (default response),
+  description, schema and isStrict from strict, and any other type to its upper-case form with JSON
+  becoming JSON_OBJECT. Keep the OciError wording from lines 138 to 229.
+
+  Responses and streams. transform_response parses the body (the raw JSON-decode step is
+  decode_chat_body over bounded bytes): a non-object is OciError "Invalid response format from OCI"
+  and an object with a non-null error key is OciError with that value as text, both with the HTTP
+  status. It then calls B5942's COHERE or GENERIC handler and stores the response headers in the
+  hidden additional_headers. The stream decoder holds two flags, cohere_tool_calls_emitted and
+  cohere_text_emitted, splits incoming text on newlines across reads (a data: line is kept
+  after trimming, other lines are dropped, a trailing partial line is kept at the end), and for each
+  data: line returns None for [DONE], OciError 500 "Chunk cannot be parsed as JSON" for bad JSON,
+  and otherwise B5942's COHERE handler when apiFormat is COHERE and the GENERIC handler for any
+  other value. After a Cohere chunk the flags are set once a choice has tool calls or non-empty
+  content. The decoder reports, for the returned choices, whether any delta had tool calls and the
+  last finish reason, so the stream assembly of B2232 can set the same state. Streaming constants:
+  timeout 300 seconds, and a non-200 status is OciError with that status and the body text. The
+  HTTP posts themselves belong to B8330. get_error_class is OciError with the status and message.
+
+  Plan 330 lines of module code, 180 of tests and fixtures, 90 of oracle adapters and 52 of
+  fuzz and replay. The remaining source is 652 nonblank, noncomment lines.
+scope:
+  paths:
+    - crates/betterlite-provider/src/oci_chat.rs
+    - crates/betterlite-provider/src/oci_chat/**
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/oci_chat_bytes.rs
+    - crates/betterlite-provider/fuzz/corpus/oci_chat_bytes/**
+    - tools/oracle/cases/helpers/oci-chat/**
+    - "tools/oracle/fuzz/corpus/helper_case/oci_chat-*"
+    - tools/oracle/helpers/b5843.py
+    - tools/oracle/helpers/b5843/**
+    - tools/oracle/src/helpers/provider/b5843.rs
+    - tools/oracle/src/helpers/provider/b5843/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L76-L135
+    why: Max-completion-tokens model rule and the SSE line iterators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L138-L244
+    why: Tool choice and response format normalization and the vendor lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L247-L372
+    why: Parameter maps, supported params and map_openai_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L397-L593
+    why: Environment check, URL, optional params and the request payload for both vendors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L595-L793
+    why: Response entry point, streaming status handling and the chunk dispatcher.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L545
+    why: DEFAULT_OCI_CHAT_MAX_TOKENS is 4096.
+dod:
+  - text: Parameter support lists, mapping, dropping and the unsupported-param errors match LiteLLM for both vendors.
+    proof: [oci-chat-tests, oci-chat-python, oci-chat-seeds]
+  - text: Request payloads match for GENERIC and COHERE, including serving mode, token cap rules, reasoning effort, tool choice and response format.
+    proof: [oci-chat-tests, oci-chat-python, oci-chat-seeds]
+  - text: Response and error handling and the SSE decoder produce the same results, and arbitrary bytes never panic the decoders.
+    proof: [oci-chat-tests, oci-chat-python, oci-chat-seeds, oci-chat-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: oci-chat-tests
+      why: parameter mapping, payload building or stream decoding behavior is missing
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^oci_chat::/) - test(replays_oci_chat_bytes_corpus)'
+    - id: oci-chat-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5843)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5843 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5843/pyrightconfig.json
+    - id: oci-chat-seeds
+      why: new OCI chat cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/oci_chat-*")" &&
+        grep -lE '^[[:space:]]+b5843:' tools/oracle/fuzz/corpus/helper_case/oci_chat-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: oci-chat-corpus
+      why: the byte decoder fuzz target or its fresh replay corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-provider/fuzz/fuzz_targets/oci_chat_bytes.rs &&
+        grep -q 'name = "oci_chat_bytes"' crates/betterlite-provider/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/oci_chat_bytes)" &&
+        cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_oci_chat_bytes_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/oci-chat/supported-params-by-vendor.yaml
+  - tools/oracle/cases/helpers/oci-chat/map-params-unsupported-and-drop.yaml
+  - tools/oracle/cases/helpers/oci-chat/map-params-n-one-and-max-retries.yaml
+  - tools/oracle/cases/helpers/oci-chat/vendor-from-model.yaml
+  - tools/oracle/cases/helpers/oci-chat/request-generic-on-demand.yaml
+  - tools/oracle/cases/helpers/oci-chat/request-generic-dedicated-and-bad-mode.yaml
+  - tools/oracle/cases/helpers/oci-chat/request-cohere-preamble-and-history.yaml
+  - tools/oracle/cases/helpers/oci-chat/max-tokens-default-and-completion-tokens-key.yaml
+  - tools/oracle/cases/helpers/oci-chat/reasoning-effort-case.yaml
+  - tools/oracle/cases/helpers/oci-chat/tool-choice-normalization.yaml
+  - tools/oracle/cases/helpers/oci-chat/response-format-normalization.yaml
+  - tools/oracle/cases/helpers/oci-chat/missing-credentials-and-empty-messages.yaml
+  - tools/oracle/cases/helpers/oci-chat/response-error-key-and-non-object.yaml
+  - tools/oracle/cases/helpers/oci-chat/sse-split-reads-and-done.yaml
+  - tools/oracle/cases/helpers/oci-chat/cohere-stream-flag-state.yaml
+deviations:
+  - what: The oci_signer option is not supported; credentials are always manual user, fingerprint, tenancy and key.
+    why: See B5940. The check for a signer in validate_environment is dropped with it.
+  - what: A bad JSON body, a failed JSON decode of a chunk and a body that does not fit its type give a fixed message prefix without the Python exception text.
+    why: The Python message comes from json and pydantic.
+  - what: The user-agent version in validate_environment is the constructor argument litellm/1.105.1 until the architect decides.
+    why: A Rust gateway has no LiteLLM package version to report.
+out_of_scope:
+  - B5940 owns oci_common, B5941 owns the embedding config and B5942 owns every function in chat/cohere.py and chat/generic.py.
+  - The two get_*_custom_stream_wrapper methods send the HTTP request; B8330 owns those calls, the client choice and the signing call order, and calls this module only for the 300 second timeout, the status check and the decoder.
+  - B2232 owns the shared stream assembly that the CustomStreamWrapper base class provides; this task only returns what the decoder saw.
+  - B8330 owns reading the OCI_* environment variables, the _complete_oci dispatch and the HTTP oracle cases.
+pitfalls:
+  - The chat serving mode is compared exactly, so "dedicated" in lower case is an error here while the embedding config accepts it.
+  - maxTokens becomes maxCompletionTokens only for GENERIC vendors, never for Cohere, and the first of max_tokens or max_completion_tokens present wins and never writes both.
+  - A missing cap is filled under the key that was chosen (maxCompletionTokens for openai. models), not always under maxTokens.
+  - map_openai_params merges optional_params over non_default_params, and unsupported keys inside optional_params also raise or drop.
+  - The Cohere n=1 case is skipped silently but n=2 with drop_params false is OciError 400.
+  - tool_choice strings are matched in lower case, so Auto and AUTO work, but a function name is kept with its original case.
+  - A Cohere response format with json_schema keeps only its schema value and never sets name or isStrict.
+  - The decoder treats any apiFormat other than the exact string COHERE as GENERIC, so a missing apiFormat takes the GENERIC path.
+  - The SSE splitter yields a data line only at a newline or at the end, so a chunk split inside a JSON line must wait for the next read.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

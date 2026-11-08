@@ -1,0 +1,153 @@
+id: B4308
+title: Test cache connections with target-bound credentials
+description: >-
+  Serve POST /cache/settings/test from crates/betterlite-server. The admin UI sends the cache form to this route before it
+  saves, and the route answers whether a Redis built from those settings answers PING. It never changes the running cache.
+  The route is authenticated with the same dependency as the other management routes (user_api_key_auth, whose route check refuses a non-admin key for /cache/settings routes, as in LiteLLM). Put the handler and its types in crates/betterlite-server/src/cache_settings_test/route.rs and expose
+  pub fn router(state) -> axum::Router for the architect to merge. Do not register the route anywhere else and do not touch lib.rs.
+
+  The body is CacheTestRequest, one member cache_settings, a JSON object. A missing member or a non-object value is a 422 with
+  the validation error body B003 already produces. The answer is always HTTP 200 with CacheTestResponse: status ("success" or
+  "failed"), message, and error. error is always serialized and is null unless there is an error text.
+
+  The handler does these steps in order, as test_cache_connection does:
+  1. Load the saved settings (saved.rs). With no database connection the saved map is empty. Otherwise read the row with id
+     "cache_config" through B726's cache config repository. When the row exists and its cache_settings is not empty, parse it with
+     B4306's parse_stored_settings and decrypt every value as B1600's decrypt_value_helper does with return_original_value true
+     (a string that decrypts becomes the plaintext, any other string stays as stored, a non-string value passes through). Any
+     error in this step, from the repository, the parser or the decrypt, is swallowed and the saved map is empty. A broken saved
+     row must never block a test. This is the one place the route hides an error, so log nothing from it that holds a value.
+     B4307 reads the same row but turns a failure into a 500, so do not reuse its loader here.
+  2. Merge with B4306's merge_over_saved(request.cache_settings, saved). A credential the form left out or echoed back as
+     ***REDACTED*** gets the saved secret only when B4306's saved_secret_is_reusable says the request names the same target as the
+     saved row; otherwise the field is dropped. This route is the reason that rule exists: without it a caller could omit the password,
+     point host at a server they run, and receive the stored password there. The route calls the two functions only through
+     merge_over_saved and never builds its own comparison.
+  3. Apply B4306's resolve_cache_url_precedence to the merged map. Merge comes first and precedence second; reversing them
+     changes which fields survive.
+  4. Log the settings at debug level only after B4306's redact_credentials. The resolved map holds the plaintext secret, so the raw
+     map never reaches a log line, a span or an error text.
+  5. When the map's "type" is not the string "redis" (absent, null, "local", "redis-semantic" or anything else), answer
+     status "failed", message "Only Redis cache type is currently supported for testing", error null. Nothing is constructed.
+  6. Build a temporary cache from the map through B4299's Cache constructor, the same call Cache(**cache_settings) makes, then
+     call the backend's test_connection from B4326 and return its status, message and error unchanged. The temporary cache is
+     dropped afterwards; the route does not store it, register callbacks, or touch the global cache. Python gives Cache the whole
+     map: its named options (host, port, password, namespace, ttl, redis_startup_nodes and so on) are read by the constructor and
+     every other key (url, username, db, ssl, max_connections, sentinel_nodes, service_name, ssl_cert_reqs and the rest) goes through
+     to the Redis connection settings that B4321 resolves. Pass the map the same way; do not pick fields in this route.
+  7. Any error from step 6, constructing or connecting, answers status "failed", message "Cache connection test failed: <error text>",
+     error "<error text>". An exception is never a 500 here.
+
+  Tests drive the route through the real router. For the connection, start a small TCP listener in the test that speaks enough RESP
+  to answer HELLO or AUTH and PING and records the commands it received. That is how the tests prove which password was sent where.
+  Use a fake repository for the saved row; B726's repository trait is the seam, so add no trait of your own.
+scope:
+  paths:
+  - crates/betterlite-server/src/cache_settings_test.rs
+  - crates/betterlite-server/src/cache_settings_test/**
+  - tools/oracle/cases/cache_settings_test/**
+  - tools/oracle/helpers/b4308.py
+  - tools/oracle/helpers/b4308/**
+  - tools/oracle/src/helpers/server/b4308.rs
+  - tools/oracle/src/helpers/server/b4308/**
+  lint_tables: false
+
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L428-L436
+  why: CacheTestRequest and CacheTestResponse, the optional error member.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L508-L566
+  why: The POST /cache/settings/test decorator and auth dependency, the saved-row lookup that swallows errors, merge, precedence, redacted debug log, the redis-only guard, Cache(**settings) and the failed answer for any exception.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L155-L272
+  why: has_connection_target, target_repr, saved_secret_is_reusable and merge_over_saved. B4306 owns them; read them to see what the route relies on.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7614-L7622
+  why: _decrypt_db_variables, the per-key decrypt loop used on the saved row.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L80-L218
+  why: Cache.__init__ signature and the redis branch, to see which keys are named options and which go on as connection kwargs.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1883-L1913
+  why: RedisCache.test_connection, the answer shapes the route returns for a single node (B4326 owns it).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cluster_cache.py#L59-L90
+  why: RedisClusterCache.test_connection, the cluster answers (B4326 owns it).
+
+dod:
+- text: POST /cache/settings/test answers 401 without a valid key, the admin-only route error for a non-admin key, and 200 for a proxy admin key, with status, message and error in the body, error being null on success.
+  proof: [route-tests, oracle]
+- text: A body without cache_settings, or with a non-object cache_settings, answers 422 with B003's validation error body.
+  proof: [route-tests, oracle]
+- text: A type that is not the string "redis" (absent, null, "local" and others) answers status "failed" with the message "Only Redis cache type is currently supported for testing" and constructs no cache.
+  proof: [route-tests, oracle]
+- text: A reachable Redis answers status "success" with message "Redis connection test successful", and an unreachable one answers status "failed" with a non-null error.
+  proof: [route-tests, oracle]
+- text: >-
+    A password sent as ***REDACTED*** or left out, with the same host and port as the saved row, reaches the Redis as the saved
+    (decrypted) password.
+  proof: [route-tests]
+- text: >-
+    A password sent as ***REDACTED*** or left out, with a different host, port, url, redis_startup_nodes, sentinel_nodes or
+    service_name than the saved row, is not replaced by the saved one: the Redis at the new target never receives the saved password.
+  proof: [route-tests]
+- text: A password the caller typed is sent as typed, and an empty string or null clears the saved one.
+  proof: [route-tests]
+- text: With no saved row, a redacted password is dropped, and the marker string never reaches the Redis.
+  proof: [route-tests]
+- text: >-
+    The saved row is read through the repository, parsed and decrypted per value (a string that does not decrypt stays as stored,
+    non-strings pass through), and any failure in that step gives an empty saved map and still tests the connection.
+  proof: [saved-tests]
+- text: >-
+    A construction or connection error answers status "failed", the message "Cache connection test failed: " followed by the error text, and an equal non-null error, never a 500.
+  proof: [route-tests]
+- text: The debug log carries the redacted settings, and no log line or answer from the route contains the plaintext password, saved or typed.
+  proof: [route-tests]
+- text: Every mutant in the saved read, the merge and precedence order and the redis-only guard is caught by a test.
+  proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+  - id: saved-tests
+    why: the saved row is not read, parsed or decrypted, or a failure there blocks the test
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_settings_test::saved::/)'
+  - id: route-tests
+    why: the route does not authenticate, merge saved secrets by target, guard the type, test the connection or keep secrets out of logs
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_settings_test::route::/)'
+
+oracle_cases:
+- tools/oracle/cases/cache_settings_test/post-without-key.yaml
+- tools/oracle/cases/cache_settings_test/post-missing-cache-settings.yaml
+- tools/oracle/cases/cache_settings_test/post-type-absent.yaml
+- tools/oracle/cases/cache_settings_test/post-type-local.yaml
+- tools/oracle/cases/cache_settings_test/post-redis-unreachable.yaml
+- tools/oracle/cases/cache_settings_test/post-redis-redacted-password-no-saved.yaml
+
+deviations:
+- what: >-
+    The text after "Cache connection test failed: " and in the error member is betterlite error text, not the Python exception text.
+  why: Python exception strings (a redis-py connection error, a TypeError from a bad keyword) have no Rust equivalent; status, the prefix and the null or non-null error match.
+- what: >-
+    A settings map with redis_startup_nodes (cluster mode) answers status "failed" while B4299 cannot build a cluster cache.
+  why: B4299 raises its unsupported-type error for cluster mode and the route reports it in the failed message; LiteLLM would connect. Merged betterlite-redis already parses startup_nodes (B4321) and builds the Cluster client (B4323). B5220 opens it, B4325 adds `RedisCacheFamily::Cluster`, B5640's `connect` with that family is the cluster cache constructor and B4326 adds its test_connection, but no task wires B4299's Cache to that constructor yet, so this lasts until one does.
+
+out_of_scope:
+- GET /cache/settings and the effective values it returns; B4307 owns them.
+- POST /cache/settings, the encryption of the saved row, the audit log row and CacheSettingsManager; B8502 owns them.
+- parse_stored_settings, resolve_cache_url_precedence, redact_credentials, has_connection_target, target_repr, saved_secret_is_reusable and merge_over_saved; B4306 owns them and this route calls them.
+- RedisCache.test_connection and RedisClusterCache.test_connection; B4326 owns them and this route calls them.
+- Cache.__init__ and the Redis connection settings (including REDIS_ environment fallbacks and os.environ/ references in values); B4299 and B4321 own them.
+- The cache config repository adapter (B726) and decryption (B1600).
+
+pitfalls:
+- "os.environ/ strings in a posted settings map resolve as they do in LiteLLM, so the host the caller names can receive that secret in AUTH. We keep that since only a proxy admin reaches this route: /cache/settings/test is in no non-admin route list, and non_proxy_admin_allowed_routes_check ends in the admin-only 403 (route_checks.py L260-L365). The route must go through the same check, and a valid non-admin key must get that 403 with no connection tried."
+- "Merge runs before url precedence. merge_over_saved may drop a stored url when the request names a host, and precedence then sees the final map; calling precedence first keeps a url the merge would have removed."
+- "Only restoring the password on a matching target keeps the stored secret from being replayed to another server. Do not restore it from the environment or the saved row any other way, and do not widen the match to host alone."
+- "The saved map is decrypted but not overlaid with REDIS_ variables, unlike the GET route. A password that only came from the environment is shown as ***REDACTED*** by GET and arrives here with no saved secret, so it is dropped."
+- "The redis-only guard compares the type with the exact string \"redis\" after the merge, so a missing type is rejected and so is \"Redis\" with a capital."
+- "A saved-row failure must give an empty map, not a failed answer; a repository outage, a bad JSON column and a bad ciphertext all look the same to the caller."
+- "The resolved map holds the plaintext password. Log only the redact_credentials output, and keep the settings map out of the failed message and out of error text built from a connection error."
+- "error is null on success and on the redis-only rejection, and it is still a member of the body; a skipped null changes the answer shape."
+- "The temporary cache must not register callbacks, set the global cache or keep a connection pool after the answer; drop it before returning."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

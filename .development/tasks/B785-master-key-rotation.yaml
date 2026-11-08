@@ -11,7 +11,7 @@ description: >-
   user receive HTTPException 403 with detail.error set to CommonProxyErrors.not_allowed_access.
   Only then check DB presence, raising HTTPException 500 detail.error for database-not-connected.
   There is no local except block or management decorator: HTTP errors retain detail envelopes
-  with no type/param/code. Unexpected errors use B124's outer 500 error message/type envelope
+  with no type/param/code. Unexpected errors use B8591's outer 500 error message/type envelope
   (no param/code), including RuntimeError from an unavailable migration algorithm or salt.
   Cases migration_admin_only, migration_denial_before_database, migration_no_database,
   migration_algorithm_gate_error and migration_missing_salt_error compare those distinctions;
@@ -93,8 +93,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/master_key_rotation.rs
     - crates/betterlite-server/src/routes/master_key_rotation/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/master-key-rotation/**
     - crates/betterlite-server/src/master_key_rotation/fixtures.rs
     - crates/betterlite-server/src/master_key_rotation/fixtures/**

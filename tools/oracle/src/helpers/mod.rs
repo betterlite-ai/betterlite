@@ -44,6 +44,7 @@ mod lens;
 mod logging;
 mod mcp;
 mod models;
+mod ocr;
 mod openai;
 mod openapi;
 mod oracle;
@@ -53,6 +54,7 @@ mod prometheus;
 mod prompts;
 mod provider;
 mod proxy;
+mod pyhost;
 mod rate_limit;
 mod redact;
 mod redis;
@@ -125,7 +127,7 @@ struct Group {
     check: fn(&str, &serde_json::Value) -> Option<Result<(), String>>,
 }
 
-const GROUPS: [Group; 44] = [
+const GROUPS: [Group; 46] = [
     a2a::GROUP,
     anthropic::GROUP,
     auth::GROUP,
@@ -147,6 +149,7 @@ const GROUPS: [Group; 44] = [
     logging::GROUP,
     mcp::GROUP,
     models::GROUP,
+    ocr::GROUP,
     openai::GROUP,
     openapi::GROUP,
     oracle::GROUP,
@@ -156,6 +159,7 @@ const GROUPS: [Group; 44] = [
     prompts::GROUP,
     provider::GROUP,
     proxy::GROUP,
+    pyhost::GROUP,
     rate_limit::GROUP,
     redact::GROUP,
     redis::GROUP,

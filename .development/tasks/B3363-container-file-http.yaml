@@ -16,6 +16,16 @@ description: >-
   logging hooks, preserving the selected client's deadline when no timeout is passed. Do not add a
   timeout argument to HTTP sends or invent a per-call deadline behavior LiteLLM does not have.
 
+  Public API, all `pub` in crates/betterlite-openai/src/containers/container_file_http.rs (module `container_file_http`, re-exported from
+  containers.rs). `GenericContainerHandler` is built with its collaborators through the constructor and has two methods, the sync
+  `handle(&self, call: &ContainerFileHttpCall) -> Result<ContainerFileReply, ContainerFileHttpError>` and the async
+  `ahandle(&self, call: &ContainerFileHttpCall) -> Result<ContainerFileReply, ContainerFileHttpError>`. `ContainerFileHttpCall` holds the
+  endpoint name, provider config, LiteLLM params, logging state, optional extra headers and query overlay, optional timeout, the path
+  and query values and the optional `file` (`ContainerFileUpload`, the input handed to B235's file extraction). `ContainerFileReply` is
+  the enum `List(ContainerFileListResponse)`, `File(ContainerFileObject)`, `Deleted(DeleteContainerFileResponse)`, `Bytes(Vec<u8>)` and
+  `Raw(serde_json::Value)`. `ContainerFileHttpError` wraps the provider error class and the unknown-endpoint error. B3368 calls these
+  names from betterlite-core.
+
 scope:
   paths:
     - Cargo.toml
@@ -78,6 +88,9 @@ dod:
     proof:
       - behavior-tests
   - text: The singleton instance is injected at construction, not global.
+    proof:
+      - behavior-tests
+  - text: "`GenericContainerHandler` with `handle` and `ahandle`, `ContainerFileHttpCall`, `ContainerFileUpload`, `ContainerFileReply` and `ContainerFileHttpError` are `pub` and usable from betterlite-core."
     proof:
       - behavior-tests
 

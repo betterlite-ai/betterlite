@@ -1,0 +1,169 @@
+id: B5830
+title: OpenRouter image generation and image edit
+description: >-
+  Build openrouter_image in betterlite-openai from litellm/llms/openrouter/image_generation/ and image_edit/ (both
+  transformation.py and both __init__.py). OpenRouter makes images through its chat completions endpoint, so both
+  configs turn an image call into a chat body and read the pictures out of choices[].message.images[]. The module is
+  pure: no network call, no HTTP client. The error type OpenRouterError comes from B6080 and is used here as is. The
+  API key and base URL are plain arguments the caller has already read. An empty string counts as unset in every "a or b
+  or c" chain below. Selecting the OpenRouter config for a model is B5360's tag; the two get_openrouter_image_*_config
+  functions return a fresh config and ignore the model, so they are the two config constructors here.
+
+
+  Shared pieces (one private file in the module, since both configs use them). Size to aspect ratio: 256x256, 512x512,
+  1024x1024 and auto give "1:1"; 1536x1024 gives "3:2"; 1792x1024 gives "16:9"; 1024x1536 gives "2:3"; 1024x1792 gives
+  "9:16"; anything else gives "1:1". Quality to image size: low and standard give "1K"; medium "2K"; high and hd "4K"; auto
+  "1K"; anything else gives no value. Reading images: for each choice, take message.images (default empty); for each
+  entry take image_url.url; skip entries with no url. A url that starts with "data:" becomes an image object with b64_json =
+  the text after the first comma (null when there is no comma) and url null. Any other url becomes an image object with the
+  url and b64_json null. revised_prompt is always null. Cost and usage (_set_usage_and_cost) run only when the reply's
+  "usage" is a non-empty object. They set usage input_tokens = prompt_tokens, output_tokens =
+  completion_tokens_details.image_tokens, total_tokens = total_tokens (each defaulting to 0) and the input details below.
+  A numeric "cost" is stored as a float in hidden additional_headers under "llm_provider-x-litellm-response-cost". A
+  non-empty "cost_details" object is merged into hidden response_cost_details. After that, in every case, the hidden
+  "model" is set to the reply's "model" or the requested model.
+
+
+  OpenRouterImageGenerationConfig. Supported params are size, quality and n. map_openai_params walks the incoming params:
+  size writes image_config.aspect_ratio, quality writes image_config.image_size only when the mapping has a value, n is
+  copied, and an unsupported key is copied too unless drop_params is true. image_config is created on first use inside the
+  caller's optional_params. get_complete_url: with an api_base that already ends in "/chat/completions" return it as it is;
+  otherwise trim trailing slashes and append "/chat/completions"; with no api_base return
+  "https://openrouter.ai/api/v1/chat/completions". It never reads OPENROUTER_API_BASE. validate_environment sets
+  "Authorization: Bearer {key}" where key = api_key, litellm.api_key, OPENROUTER_API_KEY; with no key it still sends
+  "Bearer None" and does not fail. The request body is {"model", "messages": [{"role": "user", "content": prompt}]} plus
+  every optional param except model, messages and modalities. No modalities field is added. In the response, the body
+  must be JSON or the call fails with OpenRouterError (message "Error parsing OpenRouter response: {error}", the raw
+  response status, the raw response headers). The result starts from the data list already on the given response (it is
+  only replaced by an empty list when empty), appends the images, then sets usage with input image_tokens 0 and
+  text_tokens = prompt_tokens. Any failure after the JSON parse, including the usage step, becomes OpenRouterError 500 with
+  empty headers and message "Error transforming OpenRouter image generation response: {error}".
+
+
+  OpenRouterImageEditConfig. Supported params are size, quality and n. map_openai_params builds a new mapping (it does not
+  change its input): supported keys only, unsupported keys are dropped whatever drop_params says. size and quality share
+  one image_config map that is added to the result at the first of the two. n is copied. get_complete_url: api_base, then
+  OPENROUTER_API_BASE, then "https://openrouter.ai/api/v1"; trim trailing slashes; append "/chat/completions" unless it
+  already ends in it. validate_environment fails with a typed error "OPENROUTER_API_KEY is not set" when api_key,
+  litellm.api_key and OPENROUTER_API_KEY are all empty. use_multipart_form_data is false. transform_image_edit_request
+  builds one user message. Content is each source image first, as {"type": "image_url", "image_url": {"url":
+  "data:{mime};base64,{standard base64 of the bytes}"}}, with mime from B1120's get_image_content_type (null entries in an
+  image list are skipped), and then {"type": "text", "text": prompt} only when the prompt is not empty. The body is
+  {"model", "messages", "modalities": ["image", "text"]} plus every optional param except model, messages and modalities,
+  and the files value is an empty list. Image bytes come from the typed image input B1120/B512 define; a value that is
+  not bytes or a seekable reader is the typed error "Unsupported image type for OpenRouter image edit." and reading
+  leaves the reader's position where it was. transform_image_edit_response parses and reads the reply as the generation
+  config does (same parse error, same 500 error text but with "image edit response" in it), but starts from a fresh
+  response and then fills usage (the deviations list how a bad usage field differs). Edit usage has input
+  image_tokens = prompt_tokens_details.image_tokens (0 when absent) and text_tokens = prompt_tokens minus that.
+  get_error_class on both returns OpenRouterError.
+
+
+  The reply body comes from the network. The decoder is decode_openrouter_image_reply(bytes) -> reply record (choices,
+  images, usage) and a cargo-fuzz target openrouter_image_reply feeds it arbitrary bytes, with a replay test over fresh
+  seeds. Helper b5830 (named by the skeleton) calls the production functions and records what the pinned Python classes
+  return. The LiteLLM source here is 675 non-blank, non-comment lines, with about 190 of them the same in both configs
+  and written once here. Plan 380 transform lines, 380 tests, 100 for the fuzz target and exports and 220 for helper
+  adapters, under 1500.
+scope:
+  paths:
+    - crates/betterlite-openai/src/openrouter_image.rs
+    - crates/betterlite-openai/src/openrouter_image/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/openrouter_image_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/openrouter_image_reply/**
+    - tools/oracle/cases/helpers/openrouter-image/**
+    - "tools/oracle/fuzz/corpus/helper_case/openrouter_image-*"
+    - tools/oracle/helpers/b5830.py
+    - tools/oracle/helpers/b5830/**
+    - tools/oracle/src/helpers/openai/b5830.rs
+    - tools/oracle/src/helpers/openai/b5830/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/image_generation/transformation.py#L59-L119
+    why: Generation supported params and the drop_params rule in map_openai_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/image_generation/transformation.py#L121-L236
+    why: The size and quality tables and the generation usage and cost step.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/image_generation/transformation.py#L238-L310
+    why: Generation URL, key header and request body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/image_generation/transformation.py#L312-L409
+    why: Generation response parse, image extraction, the wrapped errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/image_edit/transformation.py#L74-L146
+    why: Edit params, key check, multipart flag and URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/image_edit/transformation.py#L147-L265
+    why: Edit request with image data URLs, and the edit response parse.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/image_edit/transformation.py#L267-L368
+    why: Edit size and quality tables, input image tokens in usage and the byte reader.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/image_edit/__init__.py#L1-L11
+    why: The edit config factory that ignores the model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/image_generation/__init__.py#L1-L13
+    why: The generation config factory that ignores the model.
+dod:
+  - text: Generation params, URL, key header and request body match OpenRouterImageGenerationConfig, including pass-through of unsupported keys and the missing modalities field.
+    proof: [image-tests, helper-python, oracle]
+  - text: Edit params, URL, key check and the chat body with data URLs and modalities match OpenRouterImageEditConfig.
+    proof: [image-tests, helper-python, oracle]
+  - text: Replies give the same image objects, usage, hidden cost header, cost details and hidden model, for data URLs, plain URLs and replies with no images.
+    proof: [image-tests, image-corpus, helper-python, oracle]
+  - text: A body that is not JSON, or has a bad shape, gives OpenRouterError with the status and headers LiteLLM uses, and arbitrary bytes never panic.
+    proof: [image-tests, image-corpus, oracle]
+  - text: Every new helper case replays through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: image-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^openrouter_image::/) - test(replays_the_openrouter_image_reply_corpus)'
+      why: Without these the two size tables, the usage split and the error statuses are unchecked.
+    - id: image-corpus
+      run: >-
+        test -f crates/betterlite-openai/fuzz/fuzz_targets/openrouter_image_reply.rs &&
+        grep -q 'name = "openrouter_image_reply"' crates/betterlite-openai/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openrouter_image_reply)" &&
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_openrouter_image_reply_corpus)'
+      why: The reply body comes from the network, so the decoder needs a fuzz target and fresh seeds.
+    - id: helper-python
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5830)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5830 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5830/pyrightconfig.json
+      why: The Python adapter must call the pinned OpenRouter image classes directly.
+    - id: helper-case-corpus
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openrouter_image-*")" &&
+        grep -lE '^[[:space:]]+b5830:' tools/oracle/fuzz/corpus/helper_case/openrouter_image-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: New seeds must name the b5830 operation and replay.
+oracle_cases:
+  - tools/oracle/cases/helpers/openrouter-image/generation-params-and-drop.yaml
+  - tools/oracle/cases/helpers/openrouter-image/generation-url-key-request.yaml
+  - tools/oracle/cases/helpers/openrouter-image/generation-response-data-and-url.yaml
+  - tools/oracle/cases/helpers/openrouter-image/generation-usage-cost-details.yaml
+  - tools/oracle/cases/helpers/openrouter-image/generation-bad-json.yaml
+  - tools/oracle/cases/helpers/openrouter-image/edit-params-new-mapping.yaml
+  - tools/oracle/cases/helpers/openrouter-image/edit-url-key-request.yaml
+  - tools/oracle/cases/helpers/openrouter-image/edit-response-input-image-tokens.yaml
+deviations:
+  - what: When a reply has a bad shape (for example choices is not a list), the 500 message is the text "Error transforming OpenRouter image generation response" (or "image edit response") plus a colon and betterlite's own description of the field that failed.
+    why: LiteLLM appends the text of whatever Python exception happened (an AttributeError or TypeError message), which depends on the interpreter. The status 500 and the empty headers are the same.
+  - what: In the edit config, a bad usage field (for example a non-numeric prompt_tokens) also gives OpenRouterError 500, not an unwrapped Python error.
+    why: LiteLLM runs the edit usage step outside its try block, so the raw TypeError reaches the proxy as a generic 500. A typed OpenRouterError with status 500 is the same code and a clearer message.
+out_of_scope:
+  - B6080 owns OpenRouterException (as OpenRouterError), chat, embedding, Responses and decisions for OpenRouter, and common_utils.py.
+  - B5360 owns choosing the OpenRouter image config for a model; the factories here ignore the model.
+  - B997 owns the image provider contracts these configs implement. B1120 owns get_image_content_type and the image input types.
+  - B998 and B999 own the image generation and image edit call paths. B8311 supplies OPENROUTER_API_KEY, OPENROUTER_API_BASE and litellm.api_key from its gateway_provider_keys section and builds these configs in dispatch; no HTTP case covers them until an image route selects openrouter.
+  - litellm/types/llms/openrouter.py only holds TypedDicts and is not built; nothing here needs it.
+pitfalls:
+  - Generation never reads OPENROUTER_API_BASE and never fails without a key. Edit reads the base env var and fails with "OPENROUTER_API_KEY is not set". They look alike and are not.
+  - Generation adds no "modalities" field, but it still skips a caller option named modalities. Edit adds modalities ["image", "text"] itself.
+  - A base that ends with "/chat/completions/" (trailing slash) is not recognised by generation, so it gets the suffix twice. Edit trims first, so it is recognised.
+  - An unsupported generation param is kept when drop_params is false and silently dropped when true. Edit always drops it.
+  - Quality "auto" gives "1K" but an unknown quality gives no image_size key at all, while an unknown size gives "1:1".
+  - A data URL without a comma has b64_json null and url null, and the image object is still appended.
+  - Existing data on the response passed to generation is kept and new images are appended; an empty list is replaced with a new empty list.
+  - Edit text_tokens = prompt_tokens minus the input image tokens, with no floor at zero. Generation text_tokens is prompt_tokens and its image_tokens is 0.
+  - The hidden model is the reply's "model" even when usage is missing, and response_cost_details is created only when cost_details is non-empty.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

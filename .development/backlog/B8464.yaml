@@ -1,0 +1,14 @@
+id: B8464
+milestone: M9 agents and mcp
+title: "MCP tool pre-call checks and guardrail hooks"
+status: todo
+depends_on: [B6590, B6594, B4672, B8401, B3664, B732]
+file: tasks/B8464-mcp-tool-precheck.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

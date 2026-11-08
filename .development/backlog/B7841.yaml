@@ -1,0 +1,14 @@
+id: B7841
+milestone: M12 python
+title: Python responses, aresponses, the streaming iterator and the retry wrappers
+status: todo
+depends_on: [B7840, B1078, B932, B955, B6040, B158]
+file: tasks/B7841-python-responses-create.yaml
+covers:
+  - "litellm/responses/main.py"
+parent: B160
+split_from: B160
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,55 @@
+id: B7930
+title: Python types for guardrails.py part one, enums, PII lists and per-vendor config models (L1-L835)
+description: >-
+  `litellm.types.guardrails` is the file users and the proxy config loader import most. It has 1378 lines, so it is split in two.
+  This task ports L1-L835 into the package `crates/betterlite-python/python/betterlite/types/guardrails/` as `core.py`, `pii.py` and `vendor_configs.py`. It is Python only.
+  B7931 ports the rest and the umbrella B167 writes `guardrails/__init__.py` that re-exports both.
+
+
+  In order: `SupportedGuardrailIntegrations` (Enum, L92), `Role`, `GuardrailItemSpec`, `GuardrailItem` (pydantic), `LakeraCategoryThresholds`,
+  the PII types (`PiiAction`, `PiiEntityCategory`, `PiiEntityType` which is a 195 line string Enum at L235-L430, and
+  `PiiEntityCategoryMap`), `GuardrailParamUITypes`, the Presidio config models, the Bedrock check models
+  (`BedrockChecks*` and `BedrockGuardrailConfigModel`, `BedrockGuardrailStreamingParams`) and the config models for Lakera v2, Lasso,
+  DeepKeep, Pillar, Noma, Zscaler and Javelin. Pydantic models go on `ResponseObject`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/guardrails/core.py
+  - crates/betterlite-python/python/betterlite/types/guardrails/pii.py
+  - crates/betterlite-python/python/betterlite/types/guardrails/vendor_configs.py
+  - crates/betterlite-python/tests/test_types_guardrails_core.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1-L441
+  why: Enums, the item classes and the PII lists.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L442-L835
+  why: Presidio, Bedrock and per-vendor config models.
+out_of_scope:
+- >-
+  L836 on (content filter models, `BaseLitellmParams`, `LitellmParams`, `Guardrail` and the endpoint request and response classes) belongs to B7931.
+pitfalls:
+- >-
+  `PiiEntityType` has about 190 members. A test compares the full member list of every Enum with `==`, not a sample.
+- >-
+  `PresidioConfigModel` derives from `PresidioPresidioConfigModelUserInterface` (the doubled name is how LiteLLM spells it); keep the exact name.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_guardrails_core.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

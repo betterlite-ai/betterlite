@@ -2,10 +2,11 @@ id: B3096
 milestone: M4 keys, spend and management
 title: Serve scoped key pages, model leaders and cache leakage reports
 status: todo
-depends_on: [B052, B729, B815, B865, B3090, B3092, B3094]
-file: null
+depends_on: [B052, B729, B815, B865, B3090, B3092, B3094, B3095]
+file: tasks/B3096-daily-activity-key-reports.yaml
 covers:
   - "litellm/proxy/management_endpoints/daily_activity_routes.py"
+  - "litellm/types/proxy/management_endpoints/common_daily_activity.py"
 parent: B074
 split_from: B074
 resolution: null

@@ -1,0 +1,162 @@
+id: B4776
+title: Reconcile agent registry entries and migrate stable grant ids
+description: >-
+  Build the in-memory agent registry and the one-time grant id migration in crates/betterlite-auth, module agent_registry. The registry holds the agents the proxy serves right now: the rows read from the database plus the agents declared in config.yaml under `agents` (alias `agent_list`). It also remembers how to turn an old config-agent id into the new one, so a key or team that stored the old id keeps working.
+
+  Two ids exist for a config agent. The stable id is the lowercase hex sha256 of the agent_name bytes (UTF-8). The legacy id is the lowercase hex sha256 of Python's `json.dumps(entry, sort_keys=True)` over the whole raw config entry, secrets included, so it changes whenever a field of the entry changes. Grants (`object_permission.agents` rows) written before the stable id existed hold legacy ids. The legacy id must be byte-identical to LiteLLM's, because it is compared with ids already stored in databases. Write a small serializer in agent_registry/python_json.rs that takes a serde_json::Value and emits exactly what Python emits: separators `, ` and `: `, keys sorted by code point (Rust String order is the same as code point order), ensure_ascii on (every char outside 0x20..0x7E becomes `\uXXXX` in lowercase hex, with a surrogate pair above U+FFFF, and 0x7F is escaped too), the short escapes `\"`, `\\`, `\n`, `\r`, `\t`, `\b`, `\f`, integers as digits, floats as Python repr (shortest round-trip digits, `1.0` for whole values, exponent form only below 1e-4 or from 1e16, written like `1e+16`, `1e-05`, `1.5e-07`), `NaN`, `Infinity`, `-Infinity`, `true`, `false`, `null`. Get the shortest digits from Rust's `{:e}` float formatting and lay them out by Python's rule. No crate does this, which is why it is written here.
+
+  AgentRegistry is a struct built once by the server and passed to its users (no static). It owns an RwLock around its state (agent list, config entries, legacy-to-stable map) and a tokio Mutex called the reconcile lock, handed out by `reconcile()` as a guard. The database reload and the read-through resync each take that guard around their read-then-register sequence. The registry methods never take it themselves. The public group list (`litellm_settings.public_agent_groups`, an optional list of ids, default none) is not read here: `get_public_agent_list` takes it as an argument.
+
+  Methods, with LiteLLM's names:
+  - `register_agent(AgentResponse)` appends, and duplicates are allowed. `deregister_agent(name)` removes every agent with that agent_name. `reset_agent_list()` empties the list.
+  - `get_agent_list(names: Option<&[String]>)` returns clones in list order; with names it keeps only agents whose name is in the slice (an empty slice returns nothing).
+  - `ids_for_agent(id)` returns the set of the id plus every legacy id whose stable id equals it. `stable_agent_id(id)` returns the mapped stable id, or the id itself when it is not a known legacy id.
+  - `get_public_agent_list(public_agent_groups: Option<&[String]>)` returns nothing for None, otherwise every agent whose `ids_for_agent(agent_id)` shares at least one id with the groups.
+  - `load_agents_from_config(Option<&[serde_json::Value]>)`. None changes nothing. Some first checks that every entry is a JSON object and returns the error "agent_config must be a list of dictionaries" if one is not, before touching state. Then it stores the entries as the remembered config agents (an empty slice clears them) and rebuilds the legacy map from every entry that has a non-empty `agent_name` and a non-empty `agent_card_params` (stable id from the name, legacy id from the entry). Then, in order, it registers each such entry as an AgentResponse with `agent_id` set to the stable id, skipping an entry whose name is already registered (so a database row, or an earlier config entry with the same name, wins). Entries with an empty name or empty card params are skipped without error.
+  - `load_agents_from_db_and_config(config: Option<&[Value]>, db_agents: Option<&[AgentResponse]>)` resets the list, registers the database agents in order, then calls `load_agents_from_config` with the given config, or with the remembered config agents when None is given. It returns the new list. An error half way leaves the list as it was at that moment (no rollback).
+  - `get_agent_by_id(id)` returns the first agent with that exact agent_id. Failing that, if the id is a known legacy id, it returns the first agent with the matching stable id. Otherwise None. `get_agent_by_name(name)` returns the first agent with that name.
+
+  Grant migration: `migrate_legacy_grant_ids` returns GrantMigrationResult { rewritten, missed }. It takes the legacy ids whose legacy id differs from the stable id. With none, it returns (0, 0) and does no query. Otherwise it reads the rows of `LiteLLM_ObjectPermissionTable` whose `agents` array overlaps those ids (SQL `agents && $1`), and for each row computes the new array: every id mapped through `stable_agent_id`, duplicates removed, first-seen order kept. Each row is then written with one `UPDATE ... SET agents = $new WHERE object_permission_id = $id AND agents = $snapshot`, where $snapshot is the array read a moment ago. The writes run together, and their affected row counts add up to `rewritten`. `missed` is the number of rows read minus `rewritten`. A row edited by someone else between read and write is not changed (zero rows affected) and counts as missed. The runtime alias in `ids_for_agent` and `get_agent_by_id` keeps covering it and the next boot tries again. Use the object-permission table binding from B726 and the PostgresStore and DbSession from B700. The two statements live in agent_registry/grant_migration.rs, since B726 has no helper for array overlap or array equality. A database error propagates unchanged.
+
+  Startup retry: `run_grant_id_migration` repeats the migration up to 3 times. After a pass it logs info "Rewrote {n} object_permission rows from legacy config agent ids" when rewritten is above zero and returns when missed is 0. When missed is above zero it logs a warning "Legacy agent grant id migration attempt {attempt}/3 left {missed} rows unmigrated". When the migration returns an error it logs a warning "Legacy agent grant id migration attempt {attempt}/3 failed: {error}" and carries on. Between attempts (not after the third) it waits 5 seconds with tokio::time::sleep, so tests run under tokio's paused clock. It never returns an error. The server spawns it as a background task after the database connects; that wiring is not part of this task.
+
+  LiteLLM's own calls into the registry from other modules (the read-through resync that registers a row under the lock, access group detach that deregisters and registers a copy, display names that call `ids_for_agent`) belong to their owners and use these methods.
+scope:
+  paths:
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-auth/src/agent_registry.rs
+    - crates/betterlite-auth/src/agent_registry/**
+    - tools/oracle/cases/agent-registry/**
+    - tools/oracle/helpers/b4776.py
+    - tools/oracle/helpers/b4776/**
+    - tools/oracle/src/helpers/auth/b4776.rs
+    - tools/oracle/src/helpers/auth/b4776/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L419-L465
+    why: GrantMigrationResult, the registry fields, register, deregister, list getters, the stable and legacy id functions, ids_for_agent and stable_agent_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L466-L535
+    why: load_agents_from_config (validation order, legacy map, name-collision skip) and load_agents_from_db_and_config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L537-L576
+    why: migrate_legacy_grant_ids with the compare-and-swap write per row and the rewritten/missed counts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L921-L960
+    why: get_agent_by_id with the legacy translation, get_agent_by_name, the global registry and AGENT_RECONCILE_LOCK.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1366-L1395
+    why: The startup retry loop around migrate_legacy_grant_ids (3 attempts, 5 second pause, log texts).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8983-L8995
+    why: The reload that takes the reconcile lock around get_all_agents_from_db and load_agents_from_db_and_config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L159-L195
+    why: The read-through resync that registers a database row under the same lock.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L379-L392
+    why: A caller that deregisters and registers a copy by name, so deregister must remove by name.
+  - url: https://docs.python.org/3/library/json.html#basic-usage
+    why: json.dumps defaults (separators, ensure_ascii, sort_keys, allow_nan) that the legacy id depends on.
+dod:
+  - text: The stable id is the lowercase hex sha256 of the UTF-8 agent_name, and the legacy id is the lowercase hex sha256 of the Python-compatible sorted json.dumps of the whole entry.
+    proof: [ids-tests, oracle-cases]
+  - text: The Python-compatible serializer escapes non-ASCII and DEL as lowercase \uXXXX (surrogate pairs above U+FFFF), sorts keys by code point at every depth, uses the comma-space and colon-space separators, and writes floats, NaN and Infinity as Python does.
+    proof: [json-compat-tests, oracle-cases]
+  - text: ids_for_agent returns the id plus every legacy id mapped to it, and stable_agent_id maps a known legacy id to its stable id and leaves any other id unchanged.
+    proof: [ids-tests, oracle-cases]
+  - text: load_agents_from_config registers entries with the stable id in order, skips entries with an empty agent_name or empty agent_card_params, skips an entry whose name is already registered, and does nothing for None.
+    proof: [config-load-tests, oracle-cases]
+  - text: A config list holding a non-object entry returns "agent_config must be a list of dictionaries" and leaves the remembered config agents, legacy map and agent list unchanged.
+    proof: [config-load-tests]
+  - text: load_agents_from_config builds the legacy map from every entry with a name and card params, including an entry skipped for a name collision, and an empty slice clears the remembered config agents.
+    proof: [config-load-tests, oracle-cases]
+  - text: load_agents_from_db_and_config registers database agents first, so a config entry with the same name is dropped, and falls back to the remembered config agents when no config is given.
+    proof: [reload-tests, oracle-cases]
+  - text: register_agent allows duplicates, deregister_agent removes every agent with the name, get_agent_list filters by names in list order, and get_public_agent_list returns nothing for None groups and matches legacy aliases for Some.
+    proof: [registry-ops-tests, oracle-cases]
+  - text: get_agent_by_id matches an exact id first, then a legacy id through the map, then returns None, and get_agent_by_name returns the first match.
+    proof: [lookup-tests, oracle-cases]
+  - text: The reconcile lock serializes two tasks that each hold the guard across a read and a register, and the registry methods work without taking it.
+    proof: [reconcile-lock-tests]
+  - text: migrate_legacy_grant_ids returns (0, 0) without a query when no legacy id differs from its stable id, and otherwise rewrites object_permission.agents rows that hold a legacy id to stable ids with duplicates removed and order kept.
+    proof: [grant-migration-tests]
+  - text: A row whose agents array changed between the read and the write is left untouched and counted in missed, and a second run after a clean first run rewrites nothing.
+    proof: [grant-migration-tests]
+  - text: run_grant_id_migration stops after a pass with missed 0, makes at most 3 attempts with a 5 second pause between them, logs the three texts, and swallows database errors.
+    proof: [migration-retry-tests]
+checks:
+  optional: []
+  commands:
+    - id: ids-tests
+      why: stable id, legacy id, ids_for_agent or stable_agent_id are missing or wrong
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_registry::ids::/)'
+    - id: json-compat-tests
+      why: the Python-compatible json.dumps serializer is missing or differs from Python on a covered value
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_registry::python_json::/)'
+    - id: config-load-tests
+      why: loading config agents does not register, skip, validate or remember entries as LiteLLM does
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_registry::config_load::/)'
+    - id: reload-tests
+      why: the database plus config rebuild has the wrong order or loses config agents
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_registry::reload::/)'
+    - id: registry-ops-tests
+      why: register, deregister, list filters or the public list are missing or wrong
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_registry::registry_ops::/)'
+    - id: lookup-tests
+      why: get_agent_by_id or get_agent_by_name does not resolve exact, legacy and missing ids
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_registry::lookup::/)'
+    - id: reconcile-lock-tests
+      why: the reconcile lock does not serialize two holders
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_registry::reconcile_lock::/)'
+    - id: grant-migration-tests
+      why: the grant rewrite or its compare-and-swap write is missing or wrong against real Postgres
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_registry::grant_migration::/)'
+    - id: migration-retry-tests
+      why: the startup retry loop does not stop, pause, log or swallow errors as specified
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_registry::migration_retry::/)'
+    - id: oracle-cases
+      why: the registry ids, loads and lookups differ from LiteLLM's on the same input
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/agent-registry)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::auth::b4776::/)'
+oracle_cases:
+  - tools/oracle/cases/agent-registry/ids-ascii-entry.yaml
+  - tools/oracle/cases/agent-registry/ids-non-ascii-and-escapes.yaml
+  - tools/oracle/cases/agent-registry/ids-floats-and-nesting.yaml
+  - tools/oracle/cases/agent-registry/config-load-skips-incomplete-entries.yaml
+  - tools/oracle/cases/agent-registry/config-load-name-collision.yaml
+  - tools/oracle/cases/agent-registry/config-load-legacy-map-includes-collision.yaml
+  - tools/oracle/cases/agent-registry/reload-db-wins-over-config.yaml
+  - tools/oracle/cases/agent-registry/reload-remembers-config.yaml
+  - tools/oracle/cases/agent-registry/lookup-exact-then-legacy.yaml
+  - tools/oracle/cases/agent-registry/ids-for-agent-and-stable-id.yaml
+  - tools/oracle/cases/agent-registry/public-list-legacy-alias.yaml
+  - tools/oracle/cases/agent-registry/deregister-removes-all-by-name.yaml
+deviations:
+  - what: The registry and the reconcile lock are fields of one AgentRegistry value that the server builds and passes around, not module globals (`global_agent_registry`, `AGENT_RECONCILE_LOCK`). Callers take the lock through `reconcile()`.
+    why: betterlite wires dependencies through constructors and keeps no module-level state. Behavior is the same since every LiteLLM user takes the one registry and the one lock.
+  - what: get_public_agent_list takes the public group list as an argument instead of reading `litellm.public_agent_groups`.
+    why: There is no settings global in betterlite. The caller passes the loaded `litellm_settings.public_agent_groups`.
+  - what: Database agents arrive as typed AgentResponse values, so LiteLLM's "db_agents must be a list of dictionaries" error cannot happen. Config entries arrive as JSON values and a non-object entry returns "agent_config must be a list of dictionaries", the same text.
+    why: A typed boundary replaces the runtime isinstance check. The config entry stays raw because the legacy id hashes every field of it.
+  - what: A config entry with a key AgentResponse does not have, or that already holds `agent_id`, fails with an error that names the key. LiteLLM ignores unknown keys, and a duplicate `agent_id` raises a Python TypeError.
+    why: B4770's records reject unknown fields. The legacy id still covers the full raw entry, so ids stay the same as LiteLLM's for entries both accept.
+  - what: Integers outside the i64 and u64 range in a config entry are rejected when computing the legacy id.
+    why: serde_json::Value cannot hold them. YAML configs do not use them for agent fields.
+  - what: The lookups cannot fail, so LiteLLM's `except Exception` wrappers that re-raise a generic "Error getting agent from DB" error are not built.
+    why: Nothing inside those try blocks can raise in Rust, and the message was never reachable by a caller at the pin.
+out_of_scope:
+  - "B4777 owns add_agent_to_db, delete_agent_from_db, patch_agent_in_db, update_agent_in_db, get_all_agents_from_db, _permission_write, _managed_fields, _patched_access_group_ids, _patched_kill_switch and the AgentRecord, AgentTableClient and AgentIdWhere protocols."
+  - "B4775 owns redact_sensitive_agent_litellm_params, parse_agent_litellm_params, parse_agent_kill_switch, serialize_agent_kill_switch and the _restore_redacted_* functions."
+  - "agents_table and object_permission_table are repository accessors. B726 owns the agentstable and objectpermissiontable bindings that replace them."
+  - "Reading the `agents` and `agent_list` config keys and calling load_agents_from_config at startup (proxy_server.py L7060-L7066) has no owner yet. See the notes."
+  - "Spawning run_grant_id_migration at startup belongs to B8374, the periodic _init_agents_in_db reload to B8384 and the read-through resync (registry_read_through._resync_agents) to B8231. They call this task's methods."
+  - "AgentResponse and AgentConfig records are B4770. Cache invalidation after a config sync is not part of the registry."
+pitfalls:
+  - The legacy id hashes the raw entry exactly as loaded, so the serializer must not drop null values, reorder lists (only object keys are sorted) or normalize numbers. `1` and `1.0` give different ids.
+  - Python's ensure_ascii escapes DEL (0x7F) as `\u007f` and writes hex digits in lowercase. A serializer that copies serde_json's escaping gets both wrong.
+  - Float text follows Python's repr, not Rust's. `1e16` is `1e+16`, `0.00001` is `1e-05`, `100000.0` stays `100000.0`, and a float that is a whole number keeps `.0`.
+  - The legacy map is built from every entry with a name and card params, before the collision skip, so an entry shadowed by a database agent still has its legacy id mapped to the stable id of its name.
+  - Two config entries with the same name give two legacy ids that both map to one stable id, and only the first entry is registered.
+  - Calling load_agents_from_config with None leaves everything alone but an empty slice clears the remembered config agents and the legacy map. Do not collapse the two into one empty check.
+  - load_agents_from_db_and_config resets the list before it registers anything, and the reconcile lock is the caller's job. Do not take the lock inside the method or the server's reload deadlocks.
+  - The migration only selects ids where legacy differs from stable, but the per-row mapping runs stable_agent_id over every id in the array, so an id that is already stable passes through unchanged and an unknown id is kept.
+  - The write's `agents = $snapshot` compares arrays in order. A reordered array counts as a concurrent edit and ends up in missed.
+  - deregister_agent matches agent_name, not agent_id. Access group code deregisters by name and registers a modified copy, so ids can repeat for a moment.
+  - get_agent_by_id tries the exact id before the legacy translation, so a legacy id that equals some other agent's real id returns that other agent.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

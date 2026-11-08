@@ -100,8 +100,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/organization_route_policy.rs
     - crates/betterlite-server/src/state/organization_route_policy/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/organization-route-policy/**
     - crates/betterlite-server/src/auth/organization_route_policy.rs
     - crates/betterlite-server/src/auth/organization_route_policy/**

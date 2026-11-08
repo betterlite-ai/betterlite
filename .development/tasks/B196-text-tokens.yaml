@@ -12,7 +12,7 @@ description: >-
   added operation and replay it through the common typed parser. Depend directly on B193 for open_ai_chat_completion_models,
   anthropic_models and cohere_models. For tiktoken counts, encode successive Unicode-scalar slices of TIKTOKEN_ENCODE_CHUNK_SIZE_CHARS
   (default 1024, range 1-4096) and sum; whole-string BPE differs at boundaries. Config resolves TOKEN_COUNTER_MAX_EXACT_CHARS
-  (default 4000000, range 1-1000000000); threshold cases set a small value in their environment. Above the exact
+  (default 4000000, range 1-1000000000) and builds B195's `EncodeLimits.input_bytes` from that value times 4; threshold cases set a small value in their environment. Above the exact
   threshold sample/extrapolate rather than reject; the HTTP body limit supplies the oversized-request cap. Invalid
   bounded-integer settings warn and fall back. Hugging Face family selection and the cl100k_base fallback are decided
   and owned by B195: token_count calls B195's select and never re-picks a family or a fallback. A custom tokenizer
@@ -145,7 +145,7 @@ out_of_scope:
 - Monetary cost calculation is B068.
 - Tool formatting and catalog-based model-name normalization are B259; engine/backend selection and Hugging Face
   family selection are B195.
-- The /utils/token_counter proxy route and the model_info.custom_tokenizer field it reads are unowned; this task
+- The /utils/token_counter proxy route and the model_info.custom_tokenizer field it reads belong to B8598; this task
   only consumes an already-built custom tokenizer input, never a raw identifier.
 pitfalls:
 - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/token_count-<case>.yaml. The rest of that folder belongs to other tasks.'

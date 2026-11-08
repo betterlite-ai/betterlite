@@ -1,0 +1,172 @@
+id: B3664
+title: Guardrail invocation records
+description: >-
+  Add the module `guardrail_records` to betterlite-guardrails. Every guardrail run in LiteLLM leaves one `StandardLoggingGuardrailInformation` entry in the request's metadata, and DataDog, Langfuse, OTEL and the spend log all read that list. This task builds that entry, cleans the provider's response before it is stored, and replaces the `log_guardrail_information` decorator with a value the caller starts and finishes. It builds on `GuardrailBase`, `GuardrailFailure`, `GuardrailApiInputs` and `GuardrailLogTarget` from B5471. Request bodies are `BTreeMap<String, GuardrailValue>`.
+
+  Types, all with LiteLLM's wire names. `GuardrailStatus` is an enum: `success`, `guardrail_flagged`, `guardrail_intervened`, `guardrail_failed_to_respond`, `not_run`. `GuardrailTracingDetail` (Default) has every field optional: `guardrail_id`, `policy_template`, `detection_method`, `confidence_score: f64`, `classification: GuardrailValue`, `match_details: GuardrailValue`, `patterns_checked: i64`, `alert_recipients: Vec<String>`, `risk_score: f64`, `violation_categories: Vec<String>`, `guardrail_action`, `guardrail_usage: BTreeMap<String, i64>`, `guardrail_cost: Decimal`, `guardrail_cost_by_unit: BTreeMap<String, Option<Decimal>>`, `guardrail_cost_in_spend: bool`. Costs stay `rust_decimal::Decimal` in the struct and are written as JSON numbers by `serialize_with` functions that call `ToPrimitive::to_f64` and `serialize_f64`, because plain Decimal Serialize writes a string and the logging crate reads `guardrail_cost` as a number. `GuardrailRecordMode` (untagged Serialize) is `Event(GuardrailEventHooks)` or `Configured(LitellmParamsMode)`. `GuardrailInvocationRecord` (Serialize) has `guardrail_name`, `guardrail_provider`, `guardrail_mode`, `guardrail_response`, `guardrail_status`, `start_time`, `end_time`, `duration`, `masked_entity_count`, always written even when null, then the tracing fields flattened in and written only when set. `crates/betterlite-logging/src/otel/model/payloads/guardrail.rs` reads the same names.
+
+  `sanitize_guardrail_response(response: GuardrailValue) -> Result<GuardrailValue, GuardrailRecordError>` runs these steps in order. Drop nulls from objects and lists, going at most 20 levels down: the root is level 0, and a value at level 20 is kept as it is, nulls inside included. Then remove the key `secret_fields` from the root when it is an object, and from each object directly inside the root when it is a list. Then call `crate::xecguard_primitives::redaction::redact_match_and_regex_keys`. Then run `serde_json::to_value`, `betterlite_redact::structured::mask_credentials_in_payload` and `serde_json::from_value` back to `GuardrailValue`. Don't reuse `RequestRecordProjection::filter_parameters`, it goes through bytes, and the last paragraph explains why that breaks floats.
+
+  `GuardrailRecordInput` holds the arguments of LiteLLM's `add_standard_logging_guardrail_information_to_request_data`: `guardrail_response: GuardrailValue`, `guardrail_status`, `start_time`, `end_time`, `duration` (`Option<f64>`), `masked_entity_count: Option<BTreeMap<String, i64>>`, `guardrail_provider: Option<String>`, `event_type: Option<GuardrailEventHooks>`, `tracing_detail: Option<GuardrailTracingDetail>`. `GuardrailRecordContext<'a>` groups what stays the same during one run: `base: &'a GuardrailBase`, `request_data: &'a mut BTreeMap<String, GuardrailValue>`, `log_target: Option<&'a mut GuardrailLogTarget>`, `sink: &'a dyn GuardrailSpanSink`. The caller resolves `log_target` once, from the hook's `logging_obj` argument or else the request's logging object.
+
+  `add_guardrail_record(context: &mut GuardrailRecordContext<'_>, input: GuardrailRecordInput) -> Result<(), GuardrailRecordError>` sanitizes the response and builds the record. `guardrail_mode` is `Event` when `event_type` is given, otherwise `Configured` with the base's `event_hook`, or null. It turns the record into a `GuardrailValue` with `to_value` and `from_value`, appends it to the metadata bucket and syncs the log target. Then it calls `sink.emit(&record)` and drops any error at `tracing::debug!`, since a span failure must never touch the request. The metadata bucket is `litellm_metadata` when that key exists in the body, otherwise `metadata`, and a value there that is not an object is replaced by a new empty object. Under the key `standard_logging_guardrail_information`, a missing or null value becomes a one-entry list, a list gets the entry appended, and any other value becomes a list of that value and the entry. `openai_moderation/logging.rs` has its own local write of this key, and B206's helper in betterlite-models works on typed requests, so keep a small private version here.
+
+  `sync_log_target(request_data: &BTreeMap<String, GuardrailValue>, target: &mut GuardrailLogTarget)` copies entries from the bucket to `target.litellm_params` and `target.model_call_params`. Reading never creates the bucket. No bucket or an empty or missing entry list means nothing happens, and a single non-list entry counts as a list of one. Each target that is `Some` gets a `metadata` object when its value is missing or null and a `standard_logging_guardrail_information` list inside it, and an entry is appended only when an equal entry isn't there yet.
+
+  `summarize_guardrail_response(response: Option<&GuardrailValue>, baseline: Option<&BTreeMap<String, GuardrailValue>>, event_type: Option<GuardrailEventHooks>) -> GuardrailValue` keeps user prompts out of the logs. No response gives an empty object. With no baseline, or a response that is not an object, the response is returned as is, so a guardrail's rejection text survives. Otherwise, for `pre_call` the response is first narrowed to the content keys `messages`, `input`, `prompt`, `system`, `instructions`, `tools`, `functions`, `function_call`, `tool_choice`. The two maps are then compared over the union of their keys, without `stream_holdback_chars`, with a missing key equal to null. Any difference gives the text `mask` and none gives `allow`.
+
+  `GuardrailHookName` is an enum of the hooks: `PreCall`, `Moderation`, `PostCallSuccess`, `PostCallStreaming`, `StreamingIterator`, `ApplyGuardrail`. The event type is `pre_call` for `PreCall`, `during_call` for `Moderation`, `post_call` for `PostCallSuccess` and `PostCallStreaming`, and none for the other two. `GuardrailInvocation::begin(hook: GuardrailHookName, request_data: &BTreeMap<String, GuardrailValue>, inputs: Option<&GuardrailApiInputs>, started_at: SystemTime) -> Result<Self, GuardrailRecordError>` runs before the hook and takes the baseline: for `ApplyGuardrail` a copy of `inputs` as a map through `to_value` and `from_value`, for an event type of `pre_call` a copy of the body's content keys, otherwise none. Taking the copy first matters because hooks edit their argument in place. The public field `self_recorded: GuardrailFlag` starts false and replaces LiteLLM's ContextVar, so a concurrent guardrail can't see another's flag.
+
+  `record_own(&mut self, context: &mut GuardrailRecordContext<'_>, input: GuardrailRecordInput)` is what a guardrail calls inside its hook to store a richer entry: it calls `add_guardrail_record` and sets `self_recorded`. `finish_success(self, context: &mut GuardrailRecordContext<'_>, response: Option<GuardrailValue>, finished_at: SystemTime) -> Result<(), GuardrailRecordError>` adds a record with status `success` and the summary as response, unless `self_recorded` or `switches.records_own_information` is on. `finish_failure(self, context: &mut GuardrailRecordContext<'_>, failure: GuardrailFailure, finished_at: SystemTime) -> Result<GuardrailFailure, GuardrailRecordError>` adds a record unless `self_recorded` is on, and hands the failure back for the caller to return. Its status is `guardrail_intervened` when `failure.is_intervention()` and `guardrail_failed_to_respond` otherwise. Its response is the failure's Display text, or `deny` when `switches.deny_text_on_error` is on. Both finish methods sync the log target at the end whether or not they recorded. `start_time` and `end_time` are seconds since the Unix epoch from `duration_since(UNIX_EPOCH)` and `as_secs_f64`, and `duration` is the span between the two times. Times come in as arguments so tests need no clock.
+
+  `GuardrailSpanSink` has one method, `emit(&self, record: &GuardrailInvocationRecord) -> Result<(), GuardrailSpanError>`, so startup can connect it to the OTEL span code without this crate depending on that code. Python wraps every subclass's `apply_guardrail` in `__init_subclass__`. Rust can't, so the code that calls a guardrail hook calls `begin` before it and a finish method after. That caller is B8392's `execute_guardrail_hook` (betterlite-server, guardrails/hook_execution/execute.rs) for a callback's own hook. On the unified path the apply_guardrail calls are made inside B3680's hooks.
+
+  `messages_for_call_type(call_type: &str, data: Option<&BTreeMap<String, GuardrailValue>>, tool_cache: <the cache type of message_inputs>) -> Result<Option<Vec<GuardrailValue>>, GuardrailRecordError>` is LiteLLM's `get_guardrails_messages_for_call_type`. No data gives none. `completion`, `acompletion`, `anthropic_messages`, `call_mcp_tool` and `list_mcp_tools` return the `messages` list. `responses` and `aresponses` give none when `input` is missing or null, and otherwise call `betterlite_core::api::responses_input_messages::message_inputs` with the replay flag false. Read its signature from `crates/betterlite-core/src/api/responses_input_messages.rs`, B909 builds it. Convert in both directions with `to_value` and `from_value`. Any other call type gives none. Add `betterlite-core` to `crates/betterlite-guardrails/Cargo.toml` for this function.
+
+  `GuardrailRecordError` is the module's thiserror enum, with a variant for the JSON conversions. Convert with `to_value` and `from_value` everywhere and never through bytes: the workspace turns on serde_json's `arbitrary_precision`, and `serde_json::from_slice` into the untagged `GuardrailValue` makes a float into the one-key object `{"$serde_json::private::Number": ...}`.
+
+  The task's oracle helper builds a `CustomGuardrail` and calls the function named by `function` with fixed times, so its answers are stable. Copy each helper case into `tools/oracle/fuzz/corpus/helper_case/` with the prefix `guardrail_records-`. Native tests live in `guardrail_records::tests` with the name prefixes in the check filters below.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/guardrail_records.rs
+    - crates/betterlite-guardrails/src/guardrail_records/**
+    - crates/betterlite-guardrails/Cargo.toml
+    - Cargo.lock
+    - tools/oracle/cases/helpers/guardrail-records/**
+    - "tools/oracle/fuzz/corpus/helper_case/guardrail_records-*"
+    - tools/oracle/helpers/b3664.py
+    - tools/oracle/helpers/b3664/**
+    - tools/oracle/src/helpers/guardrails/b3664.rs
+    - tools/oracle/src/helpers/guardrails/b3664/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1209-L1310
+    why: How a record is built, the order of the cleaning steps, the append rule and the span emit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1342-L1446
+    why: _process_response, _summarize_guardrail_response, _process_error and _inputs_were_modified.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1473-L1516
+    why: get_guardrails_messages_for_call_type and its call type lists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1519-L1577
+    why: The logging object sync, the dedup, the content keys and the baseline.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1580-L1713
+    why: log_guardrail_information with event type inference and the rules on self-recorded runs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L296-L339
+    why: The metadata bucket key and the replacement of a non-object bucket.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L620-L751
+    why: filter_exceptions_from_params with its depth limit and the match and regex redaction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3295-L3395
+    why: GuardrailMode, GuardrailStatus and StandardLoggingGuardrailInformation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3460-L3482
+    why: GuardrailTracingDetail field names and types.
+dod:
+  - text: A record always has the nine base keys, null where unset, and writes tracing fields flat and only when set.
+    proof: [record-tests, oracle, helper-python]
+  - text: "`guardrail_mode` is the event type when given, otherwise the base's single hook, hook list or `{tags, default}` object, otherwise null."
+    proof: [record-tests, oracle, helper-python]
+  - text: A `guardrail_cost` of `1.50` lands in the stored record as `GuardrailValue::Decimal(1.5)`, and a null entry in `guardrail_cost_by_unit` stays null.
+    proof: [record-tests]
+  - text: A failing span sink doesn't change the stored record or the result, and a working one receives the record once.
+    proof: [record-tests]
+  - text: 'Sanitizing drops nulls, so `"match": null` disappears and `"match": "x"` becomes `[REDACTED]`, and a null nested at level 20 survives while one at level 19 doesn''t.'
+    proof: [sanitize-tests, oracle, helper-python]
+  - text: "`secret_fields` is removed from a root object and from objects directly in a root list, and it stays in deeper objects."
+    proof: [sanitize-tests, oracle, helper-python]
+  - text: Credential-looking keys are masked after the other steps, and floats in the response stay numbers.
+    proof: [sanitize-tests]
+  - text: The record goes under `litellm_metadata` when that key exists and `metadata` otherwise, a non-object bucket is replaced, and the three append cases (missing, list, other value) give the right list.
+    proof: [metadata-tests, oracle, helper-python]
+  - text: Syncing fills both targets, creates `metadata` where it is missing or null, skips a `None` target, wraps a single entry and doesn't duplicate an equal entry on a second sync.
+    proof: [sync-tests, oracle, helper-python]
+  - text: Summarizing gives an empty object for no response, keeps text and non-object responses, gives `allow` and `mask` for equal and changed maps, and treats a key missing on one side and null on the other as equal.
+    proof: [summary-tests, oracle, helper-python]
+  - text: A `pre_call` summary ignores non-content keys the hook added, and a changed `stream_holdback_chars` alone gives `allow`.
+    proof: [summary-tests, oracle, helper-python]
+  - text: begin takes the baseline before the hook edits anything, using all inputs for `ApplyGuardrail`, only content keys for `PreCall`, and none for other hooks.
+    proof: [invocation-tests]
+  - text: Each hook name gives its event type, and a hook with none falls back to the base's `event_hook` in the stored record.
+    proof: [invocation-tests]
+  - text: finish_success skips the record when `self_recorded` or `records_own_information` is on, and finish_failure skips it only for `self_recorded`.
+    proof: [invocation-tests]
+  - text: finish_failure stores `guardrail_intervened` or `guardrail_failed_to_respond` with the failure text, stores `deny` when `deny_text_on_error` is on, and returns the failure.
+    proof: [invocation-tests]
+  - text: Both finish methods sync the log target on every path, a skipped record included.
+    proof: [invocation-tests]
+  - text: record_own stores the entry and sets `self_recorded`, so one run gives one entry.
+    proof: [invocation-tests]
+  - text: Times are epoch seconds and `duration` is their span, and a finish time before the start gives 0.0 with no panic.
+    proof: [invocation-tests]
+  - text: messages_for_call_type returns `messages` for the five chat-like call types, transforms `input` for the two responses call types, gives none for missing data, missing input and other call types.
+    proof: [messages-tests]
+  - text: Newly added helper corpus cases replay through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: record-tests
+      why: record keys, mode, cost numbers or span emission are wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_records::tests::record_/)'
+    - id: sanitize-tests
+      why: secrets, match text or credentials reach the stored record
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_records::tests::sanitize_/)'
+    - id: metadata-tests
+      why: the record lands in the wrong bucket or the append rule is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_records::tests::metadata_/)'
+    - id: sync-tests
+      why: spend log metadata misses entries or holds duplicates
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_records::tests::sync_/)'
+    - id: summary-tests
+      why: user prompts reach the logs or the allow and mask verdict is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_records::tests::summary_/)'
+    - id: invocation-tests
+      why: the begin and finish flow records the wrong thing or too often
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_records::tests::invocation_/)'
+    - id: messages-tests
+      why: the call type lookup reads the wrong field or skips the transform
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_records::tests::messages_/)'
+    - id: helper-python
+      why: the strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3664)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3664 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3664/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added guardrail record cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/guardrail_records-*")" &&
+        grep -lE '^[[:space:]]+b3664:' tools/oracle/fuzz/corpus/helper_case/guardrail_records-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-records/record-append.yaml
+  - tools/oracle/cases/helpers/guardrail-records/record-bucket.yaml
+  - tools/oracle/cases/helpers/guardrail-records/sanitize-secrets.yaml
+  - tools/oracle/cases/helpers/guardrail-records/sanitize-null-match.yaml
+  - tools/oracle/cases/helpers/guardrail-records/summarize-verdict.yaml
+  - tools/oracle/cases/helpers/guardrail-records/logging-sync.yaml
+deviations:
+  - what: A clock that steps back during a guardrail run logs a `duration` of 0.0, where LiteLLM logs a negative number.
+    why: "`SystemTime::duration_since` has no negative result."
+  - what: A tracing field set to null by a provider is left out of the record, where LiteLLM stores the key with null.
+    why: The record holds tracing fields as options, so an unset field and a null one are the same value.
+out_of_scope:
+  - The sync_wrapper branch of log_guardrail_information has no caller at the pin, since every decorated function is async, so nothing is built for it.
+  - B3853 owns emit_guardrail_span. This task only calls the injected GuardrailSpanSink.
+  - B206 owns get_or_create_metadata_bucket and get_metadata_variable_name_from_kwargs in betterlite-models, on typed requests.
+  - B5471 owns GuardrailBase, GuardrailFailure, the apply_guardrail contract, is_guardrail_intervention, render_violation_message, inject_advisory_message and the other shared behaviors of custom_guardrail.py.
+  - B3665 owns should_run_guardrail and the other request and metadata gates of custom_guardrail.py, and B3666 owns the scan cache, the pre-call markers and the deployment and logging hooks.
+  - Moving the local records in openai_moderation/logging.rs, content_filter/guardrail_tracing.rs and panw_prisma_airs/audit.rs onto this module.
+pitfalls:
+  - 'Null dropping must come before redaction, or `"match": null` turns into `"match": "[REDACTED]"` and the logs claim a match that never happened.'
+  - "`secret_fields` holds Authorization headers, and LiteLLM only removes it at the root and in the first level of a root list, so match that depth in the record and let credential masking catch the rest."
+  - A self-recorded run skips the record on both paths, while `records_own_information` skips only success, so a real failure of such a guardrail is still logged.
+  - LiteLLM logs `apply_guardrail` runs with no event type on purpose, so the record shows the configured `event_hook`, not the hook that ran.
+  - The pre_call baseline holds only content keys, so comparing the whole returned request would call every run `mask`.
+  - A text response must stay text in the summary, since the proxy turns it into a 400 and it isn't user input.
+  - "`standard_logging_guardrail_information` is written in two places on purpose: passthrough routes build the spend log from the logging object's own metadata, so a skipped sync leaves `guardrail_information` null there."
+  - 'The sink error is the one place errors are dropped, matching the `except Exception: pass` in LiteLLM, and only the span call gets this treatment.'
+  - "`to_f64` returns an Option, so the cost serializer maps `None` to `serde::ser::Error::custom` and doesn't unwrap."
+  - The sync reads the bucket without creating it, unlike the write path, so an untouched body stays untouched.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -15,7 +15,7 @@ description: >-
   to _mask_pii_in_messages when safe (no multimodal, no combined messages+input, no unmaskable fields), or
   to block/inject_system_message per on_flagged setting. PII masking handles both instructions (Responses-API)
   and messages, with scope filtering per skip_system_message_in_guardrail and skip_tool_message_in_guardrail flags.
-  Lakera's lifecycle and advisory policy remain in B107; this task owns only the pure masking and classification
+  Lakera's lifecycle and advisory policy are B8522's; this task owns only the pure masking and classification
   helpers. Depends on B3778 for Lasso constructor, API call, helper functions, and config model.
 
 scope:
@@ -190,7 +190,7 @@ out_of_scope:
     B3778 owns Lasso constructor, helper functions, _prepare_headers, _prepare_payload, _call_lasso_api,
     _process_lasso_response, error handling, and config model; this task calls those as public exports.
   - >-
-    B107 owns Lakera lifecycle hooks (async_pre_call_hook, async_moderation_hook, async_post_call_success_hook,
+    B8522 owns Lakera lifecycle hooks (async_pre_call_hook, async_moderation_hook, async_post_call_success_hook,
     async_post_call_streaming_iterator_hook) and Lakera advisory policy (inject_system_message,
     update_in_memory_litellm_params). This task owns pure masking and classification primitives only.
   - >-

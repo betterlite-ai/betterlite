@@ -1,0 +1,143 @@
+id: B165
+title: Embedded Python in the proxy, config-named hooks and the custom routing base class
+description: >-
+  This is the last part of B165. B8040 to B8043 built the embedded interpreter crate `betterlite-pyhost` (host, pool, JSON
+  crossing, callable handles, `InstanceLoader`, hook objects, optional libraries). This task connects it to the proxy: one
+  service in `crates/betterlite-server` that every task with a Python hook uses, and the small Python base class that users
+  subclass for routing. It owns the LiteLLM call-site behavior listed below, and no config section.
+
+
+  `crates/betterlite-server/src/python_hooks.rs` and its folder. `PythonHooks::new(config_file_path: Option<PathBuf>)`
+  builds the service and does not start Python. The first `load_*` call starts the interpreter through
+  `PythonHost::start` with `module_dirs` set to the folder of `config_file_path` (none when the path is None), so a proxy
+  with no Python hook never pays for an interpreter. `PythonHooks::shutdown()` calls the pool's shutdown, and the server's
+  stop path calls it. `HookSlot` names where a value came from, for logs and errors: `CustomAuth`, `CustomKeyGenerate`,
+  `CustomKeyUpdate`, `CustomKeyPolicy`, `CustomTeamMetadataValidate`, `CustomSso`, `CustomUiSsoSignInHandler`,
+  `PostCallRules`, `CustomValidate`, `PassThroughAdapter`, `McpToolHandler`, `GuardrailClass`, `CustomProvider`, `RoutingPlugin`
+  (B8587), `ClassifierPlugin` (B8587) and
+  `Callback(ListKey)`, with `ListKey` being `Callbacks`, `SuccessCallback`, `FailureCallback` or `AuditLogCallbacks`.
+  The callers keep reading their own keys (B054, B1220, B1224, B1624, B363, B189) and pass the string value here.
+
+
+  Methods, all `async` and each running the load on the pool with a 60 second deadline:
+
+  - `load_hook(slot, value: &str) -> Result<LoadedHook, HooksError>` calls `InstanceLoader::load(value, config_path)`, the
+    behavior of proxy_server.py L6771-L6811 and the other `get_instance_fn` call sites (tool_registry.py L122,
+    pass_through_endpoints.py L2008, guardrail_registry.py L616). `LoadedHook` pairs the `HookObject` with its slot, and
+    `call(&self, args, kwargs)` calls it with the default hook deadline of 30 seconds, the figure B054 relies on. A caller
+    can pass its own deadline with `call_within`.
+  - `load_callback(list_key, entry: &str) -> Result<LoadedCallback, HooksError>` ports callback_utils.py L127-L131 and the
+    dotted-entry branches of proxy_server.py L6480-L6540. An entry without a dot is not Python and is returned as
+    `LoadedCallback::Named(String)`, never loaded. For `ListKey::Callbacks` the loaded object is checked with `kind`: a
+    class gives `HooksError::CallbackIsClass` and anything not callable gives `HooksError::CallbackNotDispatchable`. Their
+    texts are the two ValueErrors at L100-L124 of callback_utils.py, word for word, including the hint that builds
+    `proxy_handler_instance = {ClassName}()` and `callbacks: ["{module_path}.proxy_handler_instance"]`. The other three keys
+    skip the check, as the source does.
+  - `load_post_call_rules(value: &str)` returns a list of one handle, as L6434 does. A YAML list value is not supported at the
+    pin and is the caller's type error.
+  - `load_custom_providers(items: &[CustomProviderItem])` loads each `custom_handler` and returns `(provider,
+    HookObject)` in order. Registering the provider name is B044's job.
+  - `load_custom_validate(value)` loads the function and runs `check_literal_true_return` on it, the behavior of
+    _types.py L5527-L5533.
+
+  Worker startup hooks. `run_startup_hooks(specs: &[String]) -> Result<(), HooksError>` takes the LITELLM_WORKER_STARTUP_HOOKS
+  specs B8374 reads ('module.path:function_name', blanks already skipped), imports each on the pool in list order with the 60
+  second load deadline, calls the function and awaits it when it returns a coroutine, with the messages B8374 lists: a spec without ":" is
+  "Invalid hook spec '{spec}': expected format is 'module.path:function_name'", success logs "Worker startup hook '{spec}'
+  executed successfully", and a failure logs "Worker startup hook '{spec}' failed: {error}" and returns that error without running
+  the later specs. B8587 wraps this method in the adapter that implements B8374's StartupHooks port in crates/betterlite; this
+  task does not depend on B8374, since that edge would form a cycle.
+
+  The downloader: `BucketModuleFetcher` implements pyhost's `ModuleFetcher` by calling B4143's `download_python_module`
+  with the matching `BucketType`, and turns its `ModuleDownloadError` into the fetch error. It lives in this task's
+  `bucket_fetcher.rs`.
+
+
+  Python class: `class CustomRoutingStrategyBase` with the two no-op methods `async_get_available_deployment` and
+  `get_available_deployment`, same parameter names, order and defaults as types/router.py L890-L935, each returning None.
+  Put it in `python/betterlite/_custom_routing/base.py` (explicit `__all__`) and a re-export module
+  `python/betterlite/_custom_routing/__init__.py`. B016 and B363 name these two methods as B165's. The class is re-exported from `betterlite.types.router` and `betterlite.router`. B8356 owns both files and depends on this task, so B8356 adds the one import line from `betterlite._custom_routing` to each. This task does not edit them. A pytest file
+  checks the signatures against LiteLLM's class with `inspect.signature` and that a subclass overriding both methods can be
+  called.
+scope:
+  paths:
+  - crates/betterlite-server/src/python_hooks.rs
+  - crates/betterlite-server/src/python_hooks/**
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-python/python/betterlite/_custom_routing/**
+  - crates/betterlite-python/tests/test_custom_routing.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6771-L6811
+  why: The general_settings hook slots and how each string is loaded with config_file_path.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6430-L6540
+  why: post_call_rules, custom_provider_map and the success, failure and audit callback lists.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L74-L131
+  why: The class and not-dispatchable errors for litellm_settings.callbacks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L370-L420
+  why: Where callbacks entries with a dot are loaded and dotless names are left alone.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L890-L935
+  why: The routing base class.
+dod:
+- text: A hook named by a dotted path next to config.yaml loads, runs sync and async, and a proxy with no hook never starts the interpreter.
+  proof: [hooks-tests]
+- text: Each of the callbacks, success_callback, failure_callback and audit_log_callbacks lists leaves dotless names alone and loads dotted ones.
+  proof: [callback-tests]
+- text: A callbacks entry that resolves to a class or to a non-callable fails with the source's two messages, and the other three lists do not check.
+  proof: [callback-tests]
+- text: post_call_rules, custom_provider_map handlers and custom_validate load as the source does, and custom_validate refuses a function not annotated Literal[True].
+  proof: [hooks-tests]
+- text: A remote module is fetched through B4143's download and failures read as in B8042.
+  proof: [fetcher-tests]
+- text: A hook that passes its deadline gives a timeout error and shutdown reports jobs still running.
+  proof: [hooks-tests]
+- text: run_startup_hooks runs each LITELLM_WORKER_STARTUP_HOOKS spec in order, awaits coroutines, rejects a spec without ":" with LiteLLM's message and stops at the first failing hook.
+  proof: [hooks-tests]
+- text: CustomRoutingStrategyBase has LiteLLM's two methods with the same signatures.
+  proof: [routing-base]
+- text: Python files pass ruff and basedpyright in strict mode.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: hooks-tests
+    why: Lazy start, slot loading, deadline or shutdown tests are missing.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^python_hooks::(load|slots|deadline|shutdown)::/)'
+  - id: callback-tests
+    why: Callback list handling or the two error texts are missing.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^python_hooks::callbacks::/)'
+  - id: fetcher-tests
+    why: The bucket fetcher tests are missing.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^python_hooks::bucket_fetcher::/)'
+  - id: routing-base
+    why: The routing base class differs from LiteLLM's.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_custom_routing.py
+  - id: python-lint
+    why: Strict typing has to hold for the new Python files.
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The interpreter starts on the first Python hook and not at proxy start.
+  why: Most deployments use no Python hook, and an interpreter costs memory and start time.
+- what: A hook call that takes longer than 30 seconds gives a timeout error to the caller.
+  why: LiteLLM sets no deadline on these hooks. B054 needs a bound, and the pool reports jobs it could not stop.
+- what: The proxy cannot import `litellm`. User modules import `betterlite` instead.
+  why: The module is named betterlite so that LiteLLM's name stays out of what betterlite ships (README, 2026-10-24).
+out_of_scope:
+- Which hook runs when, and what its result means, belongs to the task that owns the key (B054, B1220, B1224, B1624, B363, B189, B065, B044, B1506, B1546, B1547, B1553). No route reaches this service until they wire it, so their tasks add the HTTP oracle cases.
+- The custom_code guardrail (litellm/proxy/guardrails/guardrail_hooks/custom_code/**) is B3801 to B3803. The example modules custom_auth_auto.py and custom_validate.py are B054's, custom_sso.py and custom_hooks/** are B063's, and custom_prompt_management.py is B117's. None of them has a caller at the pin besides the example config.
+- types_utils/** is B8042. litellm/proxy/types_utils/README.md is empty.
+- Python package installation and the wheel are B5369 and B170.
+pitfalls:
+- 'The source loads post_call_rules as `[get_instance_fn(value)]`, so a list in YAML would fail at the pin. Do not accept a list.'
+- 'Only `callbacks` runs the class check. `success_callback`, `failure_callback` and `audit_log_callbacks` take whatever the dotted path gives, and a class there is silently skipped at call time. Keep that split.'
+- 'A callback entry without a dot (`langfuse`, `prometheus`) is not Python. Never hand it to the loader.'
+- 'The deadline argument of the pool bounds the wait, not the Python thread. Report abandoned jobs in `shutdown`.'
+- 'Do not log hook arguments or results. They carry API keys and prompts.'
+- 'Starting the interpreter is not free of races: two first loads at once must start it once. Guard with `tokio::sync::OnceCell`.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

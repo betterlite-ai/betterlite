@@ -1,0 +1,136 @@
+id: B3514
+title: Send decision requests and format their responses
+description: >-
+  Build the send half of the Decisions API in betterlite-core, module api::decisions_send. It takes the DecisionsCall that B3513's prepare_call returns, posts its body to the provider, and turns the provider answer into the client response. Two LiteLLM pieces become one module: the handler methods _prepare_decisions_request, decisions and adecisions in llm_http_handler.py, and asend, send, _format_response, _formatted_response and _map_upstream_exception in decisions/call.py. B3515 calls asend and send; nothing here calls B3515.
+
+  Public functions are `asend(call: &DecisionsCall) -> Result<DecisionsOutput, DecisionsSendError>` and `send(call: &DecisionsCall) -> Result<DecisionsOutput, DecisionsSendError>`. DecisionsOutput is an enum with the two B3510 response records, SystemOne `DecisionsResponse` and `OpenAIDecisionResponse`. DecisionsSendError carries the mapped client error from B184's taxonomy. The HTTP client comes in through the constructor of a DecisionsSender struct, from B173's pool, so tests can inject a client. The sync path uses the pool's default client. The async path asks the pool for the client of the call's provider, as get_async_httpx_client(llm_provider=...) does. Neither reads a global.
+
+  Request preparation (_prepare_decisions_request), in this order: outbound headers come from `provider_config.validate_environment(headers, model, api_key)`; the url comes from `provider_config.get_complete_url(api_base, model)`; the data is a copy of call.body; then, only if a logging object exists, B249's pre_call runs with input=data, api_key, model and additional_args holding api_base=url, complete_input_dict=data and headers=outbound headers. Logging sees the headers before signing.
+
+  Sending (decisions and adecisions): call `provider_config.sign_request(headers, url, api_base, body, api_key, litellm_params)`. It returns signed headers and an optional signed body. POST to the url with the signed headers and the call timeout (passed as it is, including None). When the signed body is present, send it as raw content and send no JSON; otherwise send the data as JSON. The sync path signs inline. The async path signs through B595's run_aws_signing (off the request task) only when `provider_config.signs_with_aws(api_base)` is true, and inline otherwise. Any transport error (a failed connection, or a status of 400 or more) goes through B2402's shared transport error conversion with the provider config, which asks `provider_config.get_error_class`. Then `provider_config.transform_decisions_response(model, custom_llm_provider, raw_response, request=call.ir_request)` gives the IR response. Errors from that call are not converted by the transport step.
+
+  Exception mapping (_map_upstream_exception) wraps everything inside the handler call, not only the POST. A BaseLLMException whose status_code_is_synthesized is true becomes an APIConnectionError with message `{Label} - {original message}`, where Label is the provider name with its first character upper-cased and the rest unchanged, plus the literal `Exception` (typesafe gives `TypesafeException`, hosted_vllm gives `Hosted_vllmException`). Its llm_provider is the provider name and its model is `{provider}/{model}`. Every other error goes through B186's exception_type with model `{provider}/{model}`, the provider name and the original error. The mapped error replaces the original and keeps it as its source.
+
+  Response formatting (_format_response): choose the shape from call.request, not from the provider. A SystemOne request uses B3511's ir_to_systemone_response(response, call.ir_request). An OpenAI request uses ir_to_openai_response(response, call.ir_request, call.requested_model), so the client sees the model name it sent. Then set hidden params on the result: `model` and `provider_response_model` both `{provider}/{model}` (the canonical model) and `custom_llm_provider`. When `provider_config.provider_reported_cost(response)` is not None, also set `additional_headers` to a map with the single key `llm_provider-x-litellm-response-cost` holding that float. With no cost the key `additional_headers` is not set at all. Hidden params never appear in the serialized body.
+
+  Tests live in crates/betterlite-core/src/api/decisions_send/tests.rs and use a mock server and a test provider config. Include the full path through B3511's TypeSafe config for the SystemOne case. For the OpenAI-format case and the cost header, use a fake config where the real one is not in this crate's reach.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/decisions_send.rs
+    - crates/betterlite-core/src/api/decisions_send/**
+    - tools/oracle/src/sdk_http.rs
+    - tools/oracle/src/sdk_http/decisions_send.rs
+    - tools/oracle/sdk_http/dispatch.py
+    - tools/oracle/sdk_http/decisions_send.py
+    - tools/oracle/cases/sdk-http/decisions-send/**
+    - tools/oracle/fuzz/corpus/sdk_http_case/decisions-send-*
+    - tools/oracle/helpers/b3514.py
+    - tools/oracle/helpers/b3514/**
+    - tools/oracle/src/helpers/core_ops/b3514.rs
+    - tools/oracle/src/helpers/core_ops/b3514/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/call.py#L258-L331
+    why: _format_response, _formatted_response, _map_upstream_exception, asend and send, including the hidden params and the synthesized-status label.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1418-L1438
+    why: _prepare_decisions_request, header validation, url, copy of the body and the pre_call log arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1440-L1486
+    why: The sync decisions method, with inline signing and the default client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1488-L1542
+    why: The async adecisions method, with signing off the request task only for AWS and the per-provider async client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6052-L6111
+    why: _handle_error, owned by B2402; read it to know what the transport step returns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/decisions/transformation.py#L1-L19
+    why: The only provider_reported_cost override; it reads usage.extra.cost.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L754
+    why: RESPONSE_COST_HEADER literal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L128-L149
+    why: set_hidden_params merges into the existing hidden params.
+
+dod:
+  - text: >-
+      prepare_request validates the environment first, builds the url from the validated model and api_base, copies the body, and logs pre_call once with the unsigned outbound headers only when a logging object exists. With no logging object nothing is logged and the send still works.
+    proof: [request-prep-tests]
+  - text: >-
+      A SystemOne call to a TypeSafe mock with api_base set returns the SystemOne answers keyed as the request keyed its questions, with the provider's usage, and the mock sees one POST of the transformed body with bearer authorization and Content-Type application/json.
+    proof: [send-behavior-tests, oracle, sdk-python]
+  - text: >-
+      An OpenAI-format call returns an OpenAI response whose model is the requested model name, not the canonical one, and the response shape follows the request shape for both sync and async sends.
+    proof: [format-tests]
+  - text: >-
+      Hidden params on a formatted response hold model, provider_response_model and custom_llm_provider, add additional_headers with llm_provider-x-litellm-response-cost only when the config reports a cost, and are absent from the serialized response.
+    proof: [format-tests]
+  - text: >-
+      A signed body is sent as raw content with no JSON, and an unsigned result is sent as JSON. The async path signs off the request task only when signs_with_aws is true for the api_base; the sync path always signs inline.
+    proof: [signing-tests]
+  - text: >-
+      A provider HTTP 429 with a Retry-After header reaches the client as the mapped rate-limit error with status 429 and the original provider message, and a 401 as the mapped authentication error. The provider is called once and nothing retries.
+    proof: [error-mapping-tests, oracle, sdk-python]
+  - text: >-
+      A connection failure or any error with no integer status becomes an APIConnectionError of status 500 with message `{Label} - {message}` for typesafe, hosted_vllm and strands_decider, and model `{provider}/{model}`.
+    proof: [error-mapping-tests]
+  - text: >-
+      A provider answer that fails response validation (transform_decisions_response returns its 500 BaseLLMException) is mapped through exception_type, not through the synthesized-status branch.
+    proof: [error-mapping-tests, oracle, sdk-python]
+  - text: Newly added decisions-send SDK cases reach both adapters through B2401's case parser.
+    proof: [sdk-corpus, oracle, sdk-python]
+
+checks:
+  optional: []
+  commands:
+    - id: request-prep-tests
+      why: header validation, url building, body copying or pre_call logging order is wrong or missing
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::decisions_send::tests::request_prep/)'
+    - id: send-behavior-tests
+      why: the POST body, headers, timeout or sync and async client selection differs from the handler
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::decisions_send::tests::send_behavior/)'
+    - id: format-tests
+      why: the response shape, requested-model echo or hidden params are wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::decisions_send::tests::format_response/)'
+    - id: signing-tests
+      why: signed bodies, JSON fallback or the async signing split are wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::decisions_send::tests::signing/)'
+    - id: error-mapping-tests
+      why: transport, synthesized-status or response-validation errors are mapped to the wrong client error
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::decisions_send::tests::error_mapping/)'
+    - id: sdk-python
+      why: the real-handler HTTP adapter is missing or untyped
+      run: test -f tools/oracle/sdk_http/decisions_send.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    - id: sdk-corpus
+      why: no new decisions_send call reaches the SDK HTTP parser
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/decisions-send-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+    - id: new-cases
+      why: the SDK cases for send, provider errors and invalid answers are missing
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/decisions-send)"
+
+oracle_cases:
+  - tools/oracle/cases/sdk-http/decisions-send/systemone-typesafe.yaml
+  - tools/oracle/cases/sdk-http/decisions-send/provider-rate-limit.yaml
+  - tools/oracle/cases/sdk-http/decisions-send/invalid-provider-answer.yaml
+
+deviations: []
+
+out_of_scope:
+  - B3513 owns prepare_call, DecisionsCall and reject_other_format; this task only consumes the call it returns.
+  - B3515 owns adecisions, decisions, asystemone and systemone, which call asend and send here.
+  - B8276 owns the HTTP routes, so the HTTP oracle cases for the Decisions routes belong there. This task uses SDK cases because no route reaches the send path yet.
+  - B2402 owns the shared transport error conversion (_handle_error); B173 owns the pooled client; B595 owns run_aws_signing.
+  - B3511 and B3512 own validate_environment, get_complete_url, sign_request, signs_with_aws and transform_decisions_response for each provider.
+  - B186 owns exception_type and the other error classifiers.
+
+pitfalls:
+  - The synthesized-status branch is checked on BaseLLMException only; every other error type, such as a validation error from the response transform, goes straight to exception_type.
+  - The label upper-cases only the first character, so `hosted_vllm` gives `Hosted_vllmException`, not `HostedVllmException`.
+  - Pre-call logging gets the headers from validate_environment, before sign_request changes them, and the body copy, not the signed bytes.
+  - With a signed body the request carries `content` and no `json`; passing both would send the body twice or drop the signature.
+  - additional_headers is left out entirely when the cost is None, and the cost header key is `llm_provider-x-litellm-response-cost`, not the upstream `x-litellm-response-cost`.
+  - The async client lookup can fail for a provider name the pool does not know, and that failure also goes through the exception mapping because it sits inside asend's try.
+  - The OpenAI-format response gets requested_model, while the SystemOne response gets the IR request; mixing them returns the canonical model name to the client.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

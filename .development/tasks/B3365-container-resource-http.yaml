@@ -15,6 +15,7 @@ description: >-
   Both handlers catch transport exceptions and delegate error conversion to the shared
   _handle_error before raising. Response errors raise through raise_for_error_status
   before transformation.
+  Fixed Rust names: container_retrieve_handler (blocking) and acontainer_retrieve_handler (async) take container_id, config, litellm_params, logging_obj, extra_headers, extra_query and timeout, plus the optional client. container_delete_handler (blocking) and acontainer_delete_handler (async) take the same arguments. B3370 calls these four names.
 
 scope:
   paths:

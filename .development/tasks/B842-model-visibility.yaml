@@ -187,7 +187,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/model-visibility/invalid-pattern-propagates.yaml
 deviations: []
 out_of_scope:
-  - B307 owns the router's health aggregation and staleness rules; B130 populates health snapshots.
+  - B307 owns the router's health aggregation and staleness rules; B4443 populates health snapshots.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as model_visibility in the server group. Replace the stub Op in tools/oracle/src/helpers/server/model_visibility.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_visibility.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

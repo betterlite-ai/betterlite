@@ -82,7 +82,7 @@ description: >-
 
   Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1020 (File credentials), B1036 (Batch
   provider create), B1041 (Batch managed records), B1047 (Batch precall), B1049 (Executed batch runner), B1087 (Api
-  boundaries), B1112 (Batch route support), B1100 (Shared request body decoding), B162 (Python Router class), B732
+  boundaries), B1112 (Batch route support), B1100 (Shared request body decoding), B8353 (Router file, vector store create and batch calls), B732
   (Typed authentication principals and grant resolution), B855 (Authenticated request admission and budget handoff),
   B756 (Authentication header selection and mode dispatch), B1021 (File upload options), B1019 (File routing ids),
   B1048 (Executed batch input), B003 (HTTP server, health routes and master key auth), B1139 (Stateful HTTP oracle

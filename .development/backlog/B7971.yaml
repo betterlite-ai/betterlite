@@ -1,0 +1,14 @@
+id: B7971
+milestone: M9 agents and mcp
+title: "MCP OAuth browser routes: authorize and per-server authorize, callback, register and per-server register, authorize flow and complete, session cookie reader and vendor credential state"
+status: todo
+depends_on: [B743, B1100, B4650, B4654, B4655, B4674, B4675, B4713, B4719, B4731, B6590, B7530, B7531, B7532]
+file: tasks/B7971-mcp-oauth-browser-routes.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py"
+parent: B136
+split_from: B7321
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

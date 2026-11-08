@@ -1,0 +1,90 @@
+id: B5971
+title: Watsonx chat parameters, URLs and request preparation
+description: >-
+  Build watsonx_chat in betterlite-openai (crates/betterlite-openai/src/watsonx_chat.rs and its folder) for the
+  watsonx provider, which calls watsonx.ai /ml/v1/text/chat. The wire format is OpenAI-shaped, so request and reply
+  conversion stay with B668/B503/B504 (OpenAIGPTConfig) and the call itself runs through B1428. This task owns
+  IBMWatsonXChatConfig except the three prompt template methods (B5972), and the preparation half of
+  WatsonXChatHandler.completion.
+
+  Supported params: temperature, max_tokens, top_p, frequency_penalty, stop, seed, stream, tools, tool_choice,
+  logprobs, top_logprobs, n, presence_penalty, response_format, reasoning_effort, in that order.
+  map_openai_params first pops tools from the non-default params, removes additionalProperties (B668's
+  _remove_additional_properties) and then strict (_remove_strict_from_schema) from them, and puts a non-None result back
+  at the end of the map. It then pops tool_choice: the strings auto, none and required (is_tool_choice_option; any
+  other string, a dict or None is not an option) are stored as optional_params["tool_choice_option"], any other
+  non-None value as optional_params["tool_choice"]. Last it delegates to B668's OpenAIGPTConfig.map_openai_params with
+  the mutated map, so max_tokens and the rest follow OpenAI rules. _get_openai_compatible_provider_info returns
+  (api_base or HOSTED_VLLM_API_BASE, api_key or HOSTED_VLLM_API_KEY or ""); the two env values come in as plain
+  arguments.
+
+  get_complete_url takes the base from B5970's get_base_url, builds the path from the model: a deployment/<id> model
+  uses the id after the first slash (everything after it, slashes kept) in /ml/v1/deployments/{id}/text/chat or
+  .../text/chat_stream when stream is true, any other model uses /ml/v1/text/chat or /ml/v1/text/chat_stream. The base
+  loses trailing slashes, then B5970's add_api_version_to_url pops api_version from the options and appends
+  ?version=2024-03-13 or the popped value.
+
+  Handler preparation (WatsonxChatPlan): in this order, B5970 get_api_params on the options (which pops project_id,
+  space_id and region fields and may fail 401), validate_environment on the caller headers, prepare_payload merged into
+  the options (so model_id and project_id or space_id travel as body fields; deployment models add nothing), the URL with
+  stream taken from options["stream"] (default false), then hand over to B1428 with model set to the payload model_id or
+  "" for deployments, custom_endpoint true, the same api_key, and no fake_stream. Return the plan as a typed record:
+  model, url, headers, options. Helper cases compare it with the source handler at the point it calls
+  OpenAILikeChatHandler.completion, using a fake sender.
+scope:
+  paths:
+    - crates/betterlite-openai/src/watsonx_chat.rs
+    - crates/betterlite-openai/src/watsonx_chat/**
+    - tools/oracle/cases/helpers/watsonx-chat/**
+    - tools/oracle/helpers/b5971.py
+    - tools/oracle/helpers/b5971/**
+    - tools/oracle/src/helpers/openai/b5971.rs
+    - tools/oracle/src/helpers/openai/b5971/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/chat/transformation.py#L22-L103
+    why: Supported params, tool and tool_choice mapping, vllm info method and URL building.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/chat/handler.py#L17-L93
+    why: Preparation order and the arguments passed to the OpenAI-like handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4937-L4949
+    why: Call site of map_openai_params for the watsonx provider (the text-param ValueError there belongs to B5972).
+dod:
+  - text: The supported list and tool, tool_choice and tool_choice_option mapping match IBMWatsonXChatConfig.
+    proof: [watsonx-chat-tests, oracle]
+  - text: Chat URLs for plain and deployment models, streaming and the version suffix match get_complete_url.
+    proof: [watsonx-chat-tests, oracle]
+  - text: The handler plan has the same headers, body ids, model and url as the source handler, and a missing project fails with 401 before any send.
+    proof: [watsonx-chat-tests, oracle]
+  - text: New helper cases for these functions exist.
+    proof: [watsonx-chat-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: watsonx-chat-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^watsonx_chat::/)'
+      why: A generic OpenAI chat config misses the tool_choice_option split, the stream endpoint and the id payload merge.
+    - id: watsonx-chat-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/watsonx-chat)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/helpers/watsonx-chat/tool-choice-option-split.yaml
+  - tools/oracle/cases/helpers/watsonx-chat/tools-lose-strict-and-additional-properties.yaml
+  - tools/oracle/cases/helpers/watsonx-chat/deployment-stream-url.yaml
+  - tools/oracle/cases/helpers/watsonx-chat/api-version-popped.yaml
+  - tools/oracle/cases/helpers/watsonx-chat/plan-project-id-in-body.yaml
+  - tools/oracle/cases/helpers/watsonx-chat/plan-deployment-empty-model.yaml
+deviations: []
+out_of_scope:
+  - B5972 owns IBMWatsonXChatConfig._apply_prompt_template_core, aapply_prompt_template and apply_prompt_template (lines 105-224 of chat/transformation.py), because the text completion config is their only caller besides prompt_factory.
+  - B5970 owns every function this task calls from common_utils.py, including credentials and the IAM token.
+  - B668, B503 and B504 own the OpenAI request and reply conversion this config inherits, and B1428 owns the HTTP execution and streaming.
+  - B8331 owns the main.py registration of watsonx_chat_completion and the HTTP oracle cases.
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as b5971 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task''s to edit.'
+  - map_openai_params removes tools from the caller's non-default params and puts them back last, so the key order of the delegated map changes.
+  - tool_choice given as an unknown string such as "any" is stored as tool_choice, not tool_choice_option.
+  - The handler passes custom_endpoint true and never passes fake_stream, so fake streaming never applies to watsonx chat.
+  - get_complete_url pops api_version from the options, so the body sent later no longer carries it.
+  - A deployment model reaches B1428 with an empty model string, not the deployment id.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

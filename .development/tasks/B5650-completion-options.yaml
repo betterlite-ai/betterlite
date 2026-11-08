@@ -1,0 +1,141 @@
+id: B5650
+title: Completion request options and per-request custom pricing
+description: >-
+  Before `completion` picks a provider it settles a few small request options, and a caller can pass custom prices for
+  one call. Build those pieces as plain Rust functions so the completion preparation task can call them in LiteLLM's
+  order. Nothing here touches the network and nothing here reads process state: each function takes what it needs as
+  arguments.
+
+
+  In betterlite-sdk add `completion_options` with `CompletionOptionsError`. `resolve_control_options(kwargs, model,
+  global_drop_params)` ports `_resolve_control_options` (main.py L347-L357). It calls `parse_control_options` from `betterlite_models::controls` (B176). A
+  good result is returned as is. An invalid option gives default `ControlOptions` when `global_drop_params` is `Some(true)`
+  or when `betterlite_models::call_helpers::normalize_drop_params` (B206) on `kwargs["drop_params"]` gives true. Otherwise it fails with a bad request error
+  that carries LiteLLM's message, the model, no provider and the body `{"param": <param>}`.
+
+
+  `merge_request_headers(headers, extra_headers, proxy_headers)` ports the merge at main.py L5342 and L5347-L5357. The
+  start value is `headers` when it is non-empty, otherwise `extra_headers`, otherwise empty. Then `extra_headers` is applied
+  over it, then `proxy_headers`. `proxy_headers` is a plain map because `litellm.proxy_auth` is a Python object: the Python
+  layer calls `get_auth_headers()` and logs "Failed to get proxy auth headers: %s" as a warning when it fails, so that
+  failure never reaches this function.
+
+
+  `is_claude_tool_target(custom_llm_provider, model)` ports `_is_claude_tool_target` (L1200-L1208).
+  `drop_anthropic_only_tool_keys(tools)` ports `_drop_anthropic_only_tool_keys` and `_without_anthropic_only_tool_keys`
+  (L1211-L1225). The keys are `input_examples` and `eager_input_streaming`, and they go from the tool and from its
+  `function` object. A tool that isn't a JSON object stays as it is, and `None` stays `None`.
+
+
+  In betterlite-models add `request_pricing`. `CUSTOM_PRICING_FIELDS` lists every field of `CustomPricingLiteLLMParams` and
+  its base `MirroredPricingParams` (types/utils.py from L3727) as an explicit `&[&str]`. `build_custom_pricing_entry`
+  (main.py L1244-L1267) starts from `litellm_provider`, copies each listed field that is present and not null from the
+  kwargs, then fills `mode`, `supports_prompt_caching` and `max_tokens` from model info without replacing a value already
+  there. `router_deployment_id` (L1270-L1281) looks in `litellm_metadata`, then `metadata`, for `model_info.id` and turns it
+  into a string. `register_custom_pricing_for_request` (L1284-L1317) calls B5365's `ModelRegistry::register_model` with
+  `persist_across_reloads` false. A direct call registers the full entry under `{provider}/{model}`. A router call
+  registers the full entry under the deployment id and the entry without pricing fields under `{provider}/{model}`, with
+  `warning_display_name` set to that shared key.
+
+
+  The same module holds the pure pricing helpers from types/utils.py: `strip_custom_pricing_fields` (L3845-L3854),
+  `shared_backend_model_info` (L3866-L3874), `is_server_derived_pricing_key` (L3886-L3894),
+  `without_server_derived_pricing` (L3901-L3912), `echoed_cost_map_pricing_fields` (L3915-L3925), `echoed_cost_map_fields`
+  (L3928-L3943) and `pricing_override_fields` (L3946-L3953), with the field sets they read
+  (`DEPLOYMENT_SCOPED_PRICING_FIELDS`, `SHARED_BACKEND_MODEL_INFO_FIELDS`, `SERVER_DERIVED_PRICING_FIELDS`,
+  `PRICING_OVERRIDES_KEY`, `COST_MAP_LOOKUP_KEY`). They sit in betterlite-models and not in the SDK because the router, the
+  cost code and the model management routes read them too. Keep the entries as `serde_json::Map`, the same form B5365's
+  cost map uses, since a user entry may hold any field.
+
+
+  Test names start with `control_`, `headers_`, `tool_keys_` in `completion_options::tests`, and with `entry_`, `register_`
+  and `fields_` in `request_pricing::tests`.
+scope:
+  paths:
+  - crates/betterlite-sdk/Cargo.toml
+  - crates/betterlite-sdk/src/completion_options.rs
+  - crates/betterlite-sdk/src/completion_options/**
+  - crates/betterlite-models/Cargo.toml
+  - crates/betterlite-models/src/request_pricing.rs
+  - crates/betterlite-models/src/request_pricing/**
+  - tools/oracle/cases/helpers/completion-options/**
+  - "tools/oracle/fuzz/corpus/helper_case/completion_options-*"
+  - tools/oracle/helpers/b5650.py
+  - tools/oracle/helpers/b5650/**
+  - tools/oracle/src/helpers/sdk/b5650.rs
+  - tools/oracle/src/helpers/sdk/b5650/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L347-L357
+  why: How an invalid control option is dropped or rejected.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1197-L1317
+  why: Tool key filtering, the proxy auth call and per-request pricing.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5342-L5357
+  why: The order headers are merged in.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3727-L3953
+  why: The pricing field list and the pure helpers over it.
+dod:
+- text: An invalid control option is dropped when the global or per-call drop_params says so, and otherwise fails with LiteLLM's message and the param in the body.
+  proof: [control-options, oracle, helper-python]
+- text: Merged headers keep LiteLLM's order, so extra_headers win over headers and proxy headers win over both.
+  proof: [header-merge]
+- text: Anthropic-only tool keys go from the tool and its function object for every target that isn't Claude, and Claude targets are told apart as in LiteLLM.
+  proof: [tool-keys, oracle, helper-python]
+- text: A custom pricing entry holds the listed fields, the provider and the model info defaults without replacing a caller's value.
+  proof: [pricing-entry, oracle, helper-python]
+- text: A direct call registers full pricing under the shared key, and a router call keeps pricing off the shared key and under the deployment id only.
+  proof: [pricing-registration]
+- text: The pure pricing helpers give LiteLLM's result for each kind of field.
+  proof: [pricing-fields, oracle, helper-python]
+- text: The new completion_options seeds in the helper corpus replay through the shared parser.
+  proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+  - id: control-options
+    why: An invalid option is dropped or rejected at the wrong time.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_options::tests::control_/)'
+  - id: header-merge
+    why: A header wins that shouldn't.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_options::tests::headers_/)'
+  - id: tool-keys
+    why: A provider receives keys it rejects, or Claude loses them.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_options::tests::tool_keys_/)'
+  - id: pricing-entry
+    why: A pricing field is lost or a caller's value is replaced.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^request_pricing::tests::entry_/)'
+  - id: pricing-registration
+    why: One deployment's price leaks to its neighbors through the shared key.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^request_pricing::tests::register_/)'
+  - id: pricing-fields
+    why: A helper treats a pricing field as a plain one or the reverse.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^request_pricing::tests::fields_/)'
+  - id: helper-python
+    why: This proves a real b5650 adapter exists and type checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5650)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5650 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5650/pyrightconfig.json
+  - id: helper-case-corpus
+    why: Parsing seeds for b5650 have to replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/completion_options-*")" && grep -lE '^[[:space:]]+b5650:' tools/oracle/fuzz/corpus/helper_case/completion_options-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/completion-options/control-options.yaml
+- tools/oracle/cases/helpers/completion-options/tool-keys.yaml
+- tools/oracle/cases/helpers/completion-options/claude-targets.yaml
+- tools/oracle/cases/helpers/completion-options/pricing-entry.yaml
+- tools/oracle/cases/helpers/completion-options/router-deployment-id.yaml
+- tools/oracle/cases/helpers/completion-options/pricing-fields.yaml
+deviations: []
+out_of_scope:
+- Calling these functions from a real completion is B5655, and the embedding path that uses the same merge is B159.
+- Calling `get_auth_headers()` on the Python object in `litellm.proxy_auth` and logging its failure is B158.
+- The `_provider_config_items` and `_locals_snapshot` helpers at main.py L1236-L1241 are B198.
+- The fields of `CustomPricingLiteLLMParams` as a Python class are B167.
+pitfalls:
+- The start value is `kwargs.get("headers") or extra_headers`, so an empty `headers` map falls through to `extra_headers` before the update even runs.
+- A metadata bucket that isn't an object is skipped and the search goes on, and a null `model_info.id` also moves on to the next bucket.
+- Bedrock is a Claude target for any model name holding both `arn:` and `:bedrock:`, even without the word claude, and the match is on the lowered name.
+- The field list comes from `model_fields`, so it holds the fields of the base class too.
+- A value of zero is a real price, so the entry only skips nulls.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

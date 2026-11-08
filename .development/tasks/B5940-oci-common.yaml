@@ -1,0 +1,153 @@
+id: B5940
+title: OCI request signing, region URLs and schema cleanup
+description: >-
+  Add oci_common in betterlite-provider for litellm/llms/oci/common_utils.py. It is the
+  shared base of the OCI chat and embedding tasks (B5941, B5942, B5843), so it also owns
+  OciServingMode, the small request object both of them send: servingType ON_DEMAND with
+  modelId, or DEDICATED with endpointId. No task ports the pydantic types in
+  litellm/types/llms/oci.py on their own, so each OCI task defines the Rust
+  types it needs inside its own module and serializes them with serde, skipping None fields.
+
+  Credentials are plain arguments. OciExplicitParams holds the optional oci_region, oci_user,
+  oci_fingerprint, oci_tenancy, oci_key, oci_key_file and oci_compartment_id values a caller
+  passed. OciEnvValues holds the same seven values read from OCI_REGION, OCI_USER,
+  OCI_FINGERPRINT, OCI_TENANCY, OCI_KEY, OCI_KEY_FILE and OCI_COMPARTMENT_ID. B8330 reads the
+  process environment and passes it in; this module never touches it.
+  resolve_oci_credentials(explicit, env) returns OciCredentials: for each field the explicit
+  value wins over the env value when it is non-empty, and oci_region falls back to
+  us-ashburn-1. The signer object (oci_signer) is not supported, see deviations.
+
+  get_oci_base_url(region, api_base) returns api_base with a trailing
+  /20231130/actions/<name> segment removed and trailing slashes trimmed when api_base is
+  given and non-empty. Otherwise the region must match ^[a-z][a-z0-9-]{0,30}[a-z0-9]$ and the
+  result is https://inference.generativeai.<region>.oci.oraclecloud.com. A bad region is an
+  OciError with status 400 and the message from the source. OciError holds a status code and
+  a message and converts into B184's shared provider error with both unchanged; the other
+  OCI tasks reuse it.
+
+  sign_oci_request builds the signed header set and the body bytes. Serialize the request
+  value once, and sign and return exactly those bytes. Compute x-content-sha256 as the base64
+  of the SHA-256 digest of the body. The date header is the current time in RFC 7231 GMT form
+  (chrono), read through an injected clock so tests can fix it. host is the URL authority and
+  the request target is the lowercase method plus the URL path, or / for an empty path. Sign
+  these lines in this order: date, (request-target), host, content-length, content-type,
+  x-content-sha256, each as name: value joined with newlines. Sign them with RSA PKCS1v15
+  SHA-256 using aws-lc-rs (RsaKeyPair from the PKCS8 or PKCS1 DER decoded by the pem crate)
+  and base64 the signature. The Authorization value is exactly
+  Signature version="1",keyId="<tenancy>/<user>/<fingerprint>",algorithm="rsa-sha256",headers="date (request-target) host content-length content-type x-content-sha256",signature="<b64>".
+  The returned headers get authorization, date, host, content-type (existing value or
+  application/json), content-length and x-content-sha256. Method is POST.
+
+  Missing user, fingerprint, tenancy or both key sources is OciError 401 with the source
+  message. A non-string key cannot occur, so that branch is dropped. The inline oci_key wins
+  over oci_key_file; it has literal backslash-n sequences replaced by newlines and CRLF replaced
+  by LF first. oci_key_file is read as UTF-8 and trimmed; a missing file, an unreadable file
+  and an empty file keep the three source messages. The key must be an RSA key; any
+  parse or type failure becomes OciError 500 with the reason, see deviations.
+  validate_oci_environment sets content-type application/json and user-agent
+  litellm/<version> only when absent; the version string is a constructor argument with the
+  default litellm/1.105.1.
+
+  Also own the tool-schema cleanup that the Cohere and generic tool tasks call. They work on
+  serde_json::Value. resolve_oci_schema_refs inlines only refs that start with #/$defs/ using
+  the top-level $defs table (the last path segment is the key), replaces a ref already being
+  expanded with {"type": "object"}, leaves any other $ref object as it is, and a ref whose key
+  is missing stays as the ref object. It removes the top-level $defs from the result.
+  resolve_oci_schema_anyof applies only when an object has anyOf and no type key: it takes the
+  first branch that is not {"type": "null"}, merges the object with that branch (branch keys
+  win), drops anyOf and recurses; with no non-null branch it recurses into the values as they
+  are. sanitize_oci_schema drops title keys and default null, turns type "any" into "object", turns a
+  list type into its first non-null entry (or "string"), gives an array without items
+  {"type": "object"}, and filters required to the names present in properties (a non-list
+  required becomes []). OCI_JSON_TO_PYTHON_TYPES maps string to str, number to float, boolean
+  to bool, integer to int, array to List, object to Dict and any to any.
+  enrich_cohere_param_description joins the description and the Allowed values, Format, Range
+  (min= and max= parts joined by ", ") and Pattern parts with ". ".
+
+  Plan roughly 330 lines of module code, 190 of tests and fixtures, 70 of oracle adapters
+  and 30 of dependency lines. The remaining source is 419 nonblank, noncomment lines.
+scope:
+  paths:
+    - Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-provider/src/oci_common.rs
+    - crates/betterlite-provider/src/oci_common/**
+    - tools/oracle/cases/helpers/oci-common/**
+    - "tools/oracle/fuzz/corpus/helper_case/oci_common-*"
+    - tools/oracle/helpers/b5940.py
+    - tools/oracle/helpers/b5940/**
+    - tools/oracle/src/helpers/provider/b5940.rs
+    - tools/oracle/src/helpers/provider/b5940/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L41-L58
+    why: OCIError carries a status code, a message and optional headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L93-L205
+    why: Body hash, signing string, key loading, credential merge and the region and api_base URL rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L247-L422
+    why: Manual signing, signer routing and the default headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L425-L543
+    why: Schema reference and anyOf cleanup, the Cohere type map and description enrichment.
+  - url: https://docs.oracle.com/en-us/iaas/Content/API/Concepts/signingrequests.htm
+    why: The header list and string-to-sign format OCI verifies.
+  - url: https://docs.rs/aws-lc-rs/latest/aws_lc_rs/rsa/struct.KeyPair.html
+    why: RSA key parsing and RSA_PKCS1_SHA256 signing without adding the rsa crate.
+dod:
+  - text: The Authorization header, signed header list, key id and body hash match LiteLLM, and the signature verifies against the public key.
+    proof: [oci-common-tests, oci-common-python, oci-common-seeds]
+  - text: Region, api_base and credential merge rules produce the same URLs, defaults and error statuses.
+    proof: [oci-common-tests, oci-common-python, oci-common-seeds]
+  - text: Tool schemas lose references, anyOf and unsupported keys exactly as in the source, and Cohere descriptions carry the constraint text.
+    proof: [oci-common-tests, oci-common-python, oci-common-seeds]
+checks:
+  optional: []
+  commands:
+    - id: oci-common-tests
+      why: signing, URL, credential or schema behavior is missing
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^oci_common::/)'
+    - id: oci-common-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5940)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5940 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5940/pyrightconfig.json
+    - id: oci-common-seeds
+      why: new OCI common cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/oci_common-*")" &&
+        grep -lE '^[[:space:]]+b5940:' tools/oracle/fuzz/corpus/helper_case/oci_common-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/oci-common/credential-merge-and-default-region.yaml
+  - tools/oracle/cases/helpers/oci-common/base-url-region-and-api-base.yaml
+  - tools/oracle/cases/helpers/oci-common/invalid-region.yaml
+  - tools/oracle/cases/helpers/oci-common/manual-signature-projection.yaml
+  - tools/oracle/cases/helpers/oci-common/missing-credentials.yaml
+  - tools/oracle/cases/helpers/oci-common/key-source-precedence-and-escaped-newlines.yaml
+  - tools/oracle/cases/helpers/oci-common/schema-refs-and-anyof.yaml
+  - tools/oracle/cases/helpers/oci-common/cohere-description-enrichment.yaml
+deviations:
+  - what: oci_signer (an OCI SDK Signer object in optional_params) is not supported; only manual user, fingerprint, tenancy and key signing exists.
+    why: There is no Rust OCI SDK signer object, and a Python object cannot arrive through the config or the proxy. A caller that sets oci_signer gets the manual credentials path.
+  - what: A private key that fails to parse, or is not RSA, returns OciError status 500 with the reason. In LiteLLM a ValueError or TypeError escapes unconverted.
+    why: Errors must surface as typed provider errors in betterlite.
+  - what: Keys shorter than 2048 bits are rejected with OciError 500 at signing time.
+    why: aws-lc-rs refuses them and OCI itself requires 2048 bits or more.
+  - what: oci_region with a trailing newline is rejected.
+    why: Python re.match with $ accepts one trailing newline; the Rust pattern is anchored at both ends.
+out_of_scope:
+  - B5941 owns OCIEmbedConfig in litellm/llms/oci/embed/transformation.py and calls sign_oci_request and validate_oci_environment from here.
+  - B5942 owns litellm/llms/oci/chat/cohere.py and generic.py and calls the schema helpers from here.
+  - B5843 owns OCIChatConfig, the stream wrapper and get_vendor_from_model.
+  - sign_with_oci_signer and OCISignerProtocol and OCIRequestWrapper have no Rust equivalent, see deviations.
+  - B8330 owns reading the OCI_* environment variables, passing the values in and the proxy HTTP cases.
+pitfalls:
+  - The request-target path is the URL path only. An api_base with a query string must not leak it into the signed line, and an empty path is /.
+  - oci_key_file is trimmed, but oci_key is not; only oci_key gets the literal backslash-n and CRLF replacement.
+  - get_oci_base_url strips the /20231130/actions/<name> suffix only at the end of api_base, then trims all trailing slashes.
+  - resolve_oci_schema_anyof skips an object that already has a type key, so Optional fields written as type plus anyOf keep their anyOf.
+  - enrich_cohere_param_description prints enum lists with Python repr (single-quoted strings), so Allowed values for ["a", "b"] reads ['a', 'b'].
+  - validate_oci_environment keeps a caller content-type or user-agent when the key exists in lowercase, and adds the default otherwise.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: security

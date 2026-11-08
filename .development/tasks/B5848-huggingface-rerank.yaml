@@ -1,0 +1,134 @@
+id: B5848
+title: Hugging Face rerank request and response
+description: >-
+  Build huggingface_rerank in betterlite-openai (crates/betterlite-openai/src/huggingface_rerank.rs and its folder) over B1013's rerank records (OptionalRerankParams, RerankResponse and
+  the result, meta and token records) and B5990's HuggingfaceError. It ports HuggingFaceRerankConfig from litellm/llms/huggingface/rerank/transformation.py. rerank/handler.py is a
+  docstring and nothing else. The module reads no env var and makes no HTTP call. The caller (B8332 and B2454 wire it) passes the resolved api_key and api_base and an HuggingfaceEnv value
+  with the HF_API_BASE and HUGGINGFACE_API_BASE values it read. Token counting is an injected TextTokenCounter trait, count(model, text) -> Result<u64, _>, backed in the helper adapter
+  by B196's text counter. A request id comes from an injected id source, so cases can fix it.
+
+
+  URL. get_api_base returns the given api_base, else HF_API_BASE if set, else HUGGINGFACE_API_BASE if set, else "https://api-inference.huggingface.co". get_complete_url strips trailing
+  slashes and appends "/rerank" unless the base already ends in "/rerank".
+
+
+  Params. The supported list is query, documents, top_n, return_documents. map_cohere_rerank_params walks the non_default_params map (None means empty) in order and builds the provider
+  record: documents becomes texts, return_documents becomes return_text only when it is a bool, top_n and query copy through, and each key is copied only when its value is not None. Every
+  other key is dropped, and the formal arguments (rank_fields, max_chunks_per_doc, max_tokens_per_doc, instruction, drop_params) are not read.
+
+
+  Headers. validate_environment resolves the credentials (the argument key and base; the base result is not used), starts from accept "application/json" and content-type
+  "application/json", adds Authorization "Bearer {api_key}" when a key is present, replaces it with the caller's "Authorization" header when the caller sent that exact key, and lets
+  every caller header override the defaults. get_error_class returns HuggingfaceError with the status and message and no headers.
+
+
+  Request. transform_rerank_request needs "query" and "texts" in the params, otherwise a typed error naming the field ("query is required for HuggingFace rerank", "Cohere 'documents'
+  param is required for HuggingFace rerank"). The body starts from {raw_scores: false, truncate: false, truncation_direction: "Right"} and the params overwrite it, so a param named
+  truncate wins.
+
+
+  Response. transform_rerank_response parses the body as a JSON list; a body that is not JSON is HuggingfaceError with the raw text and the HTTP status (500 when there is none).
+  Tokens: output tokens count the text form of the parsed list, input tokens count query + " " + each document text followed by " " (a string document, or the "text" of an object document),
+  both with the injected counter and the model. When either count fails, output becomes 10 times the list length (10 for an empty list) and input becomes 4 times the character length of
+  input_text as it stood at the failure: the query alone when the output count failed, the full query-and-documents string when the input count failed. Meta is api_version {"version": "1.0"},
+  billed_units search_units 1 and the two token counts. Results: one per item that has both index and score, as {index, relevance_score}; items missing either are skipped. When
+  request_data has a truthy return_text or return_documents, each result also gets a document: the item's "text" when non-empty, else the original request document at that index when the
+  index is in range (a string, or the "text" of an object document). The response id is a fresh uuid4 string. decode_rerank_response(bytes) is the fuzz entry point (1 MiB cap): target
+  huggingface_rerank_response, replay test replays_the_rerank_response_corpus.
+
+
+  Helper cases (helper b5848) call the pinned HuggingFaceRerankConfig methods; the token counter and uuid are replaced by the case's recorded values. Size: about 200 LiteLLM lines; budget 1500
+  changed lines. This part is the last of the Hugging Face provider folder (B5990 chat and common, B5991 embedding).
+scope:
+  paths:
+    - crates/betterlite-openai/src/huggingface_rerank.rs
+    - crates/betterlite-openai/src/huggingface_rerank/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/huggingface_rerank_response.rs
+    - crates/betterlite-openai/fuzz/corpus/huggingface_rerank_response/**
+    - tools/oracle/cases/helpers/huggingface-rerank/**
+    - "tools/oracle/fuzz/corpus/helper_case/huggingface_rerank-*"
+    - tools/oracle/helpers/b5848.py
+    - tools/oracle/helpers/b5848/**
+    - tools/oracle/src/helpers/openai/b5848.rs
+    - tools/oracle/src/helpers/openai/b5848/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/rerank/transformation.py#L52-L119
+    why: API base, complete URL, supported params and the param map.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/rerank/transformation.py#L121-L167
+    why: Header merge and the request body defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/rerank/transformation.py#L169-L283
+    why: Response parse, token estimates and their fallback, result projection, error class and credentials.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8861-L8883
+    why: ProviderConfigManager returns HuggingFaceRerankConfig for the huggingface provider.
+  - url: https://huggingface.github.io/text-embeddings-inference/
+    why: The TEI /rerank request and response this config targets.
+dod:
+  - text: The rerank URL follows api_base, the two env values and the default, and always ends in /rerank.
+    proof: [hf-rerank-url-tests, oracle]
+  - text: Param mapping and the header merge match LiteLLM, including the bool-only return_text rule.
+    proof: [hf-rerank-request-tests, oracle]
+  - text: The request body keeps the three defaults, lets params overwrite them and rejects a missing query or texts.
+    proof: [hf-rerank-request-tests, oracle]
+  - text: The response keeps only items with index and score, adds documents under return_text, and estimates tokens with the stated fallbacks.
+    proof: [hf-rerank-response-tests, oracle, helper-python]
+  - text: The response decoder rejects over 1 MiB and malformed JSON with a typed error, and the corpus replays.
+    proof: [hf-rerank-response-corpus]
+  - text: The new helper cases replay through the shared parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: hf-rerank-url-tests
+      why: The rerank base or suffix rule differs from LiteLLM.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^huggingface_rerank::tests::url_/)'
+    - id: hf-rerank-request-tests
+      why: Param mapping, headers or the request body rule is missing.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^huggingface_rerank::tests::request_/)'
+    - id: hf-rerank-response-tests
+      why: Result projection, documents or the token fallback is missing.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^huggingface_rerank::tests::response_/)'
+    - id: hf-rerank-response-corpus
+      why: The rerank decoder fuzz target or its replay corpus is missing or fails.
+      run: >-
+        test -f crates/betterlite-openai/fuzz/fuzz_targets/huggingface_rerank_response.rs &&
+        grep -q 'name = "huggingface_rerank_response"' crates/betterlite-openai/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/huggingface_rerank_response)" &&
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_rerank_response_corpus)'
+    - id: helper-python
+      why: The strict oracle adapter lint or type checks fail.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5848.py)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added rerank cases are absent or do not replay.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/huggingface_rerank-*")" &&
+        grep -lE '^[[:space:]]+b5848:' tools/oracle/fuzz/corpus/helper_case/huggingface_rerank-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/huggingface-rerank/url-and-env.yaml
+  - tools/oracle/cases/helpers/huggingface-rerank/param-mapping.yaml
+  - tools/oracle/cases/helpers/huggingface-rerank/headers-merge.yaml
+  - tools/oracle/cases/helpers/huggingface-rerank/request-body.yaml
+  - tools/oracle/cases/helpers/huggingface-rerank/response-results.yaml
+  - tools/oracle/cases/helpers/huggingface-rerank/response-token-fallback.yaml
+deviations:
+  - what: A missing query or texts is a typed error that names the field, not a bare ValueError.
+    why: The compatibility rules reject a value the declared type cannot hold at the point it enters; the status follows B2454's mapping of request errors.
+out_of_scope:
+  - B2454 owns the rerank HTTP execution and the route behavior, and B1013 owns the rerank records and get_optional_rerank_params that feed map_cohere_rerank_params.
+  - B8332 owns resolving the key (api_key, litellm.huggingface_key, HUGGINGFACE_API_KEY) and base for the call; the get_secret_str lookups in get_api_credentials are done by the caller.
+  - The 5-line rerank/handler.py holds a docstring only.
+  - B5990 owns HuggingfaceError and B196 owns the token counter that the trait is backed by.
+pitfalls:
+  - map_cohere_rerank_params has a duplicated documents branch, so only the first runs, and a return_documents that is not a bool is dropped without any error.
+  - The body defaults are applied first and then updated, so a caller truthy truncate or raw_scores replaces them.
+  - On a token counting failure the input estimate uses input_text as it was when the failure happened, so the output-count failure yields 4 times the query length only.
+  - Documents are matched by the request "texts" list, so an index at or past its length adds no document unless the item carries text.
+  - get_error_class here drops the headers that the chat and embedding errors keep.
+  - Authorization from the caller headers replaces the Bearer built from api_key, and every other caller header also overrides the defaults.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

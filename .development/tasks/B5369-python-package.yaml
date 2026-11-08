@@ -1,0 +1,115 @@
+id: B5369
+title: The betterlite Python crate, wheel build and version
+description: >-
+  Users get `import betterlite as litellm` from a wheel with Rust inside. Nothing in the repo builds a wheel yet, so this
+  task creates the crate `crates/betterlite-python` and proves the whole path: build, install, import and a call into Rust.
+
+
+  Add `crates/betterlite-python/Cargo.toml` with `crate-type = ["cdylib", "rlib"]` and pyo3 0.30.1 with the `abi3-py310`
+  feature. Add `crates/betterlite-python/pyproject.toml`: name `betterlite`, `requires-python = ">=3.10"`,
+  `[build-system] requires = ["maturin==1.16.0"]`, `python-source = "python"`, `module-name = "betterlite._native"`, and
+  two runtime dependencies at the versions in `tools/oracle/litellm/uv.lock`: python-dotenv, since B157 loads `.env` at import,
+  and typing_extensions, since LiteLLM's type modules import `NotRequired`, `ReadOnly` and `Required` from it at run time.
+
+
+  The native module `betterlite._native` exposes three functions. `core_version` returns the crate version.
+  `bundled_model_cost_json` returns the pinned model cost text from B193. `provider_model_sets` returns B5361's sets as a
+  dict of name to sorted list. Keep the Rust side thin: put the plain conversion functions in `src/native_api.rs`, and
+  let each `#[pyfunction]` in `src/lib.rs` call one of them, so the unit tests need no interpreter. Python type stubs go in `python/betterlite/_native.pyi`.
+
+
+  The Python side is small here. `python/betterlite/__init__.py` holds `__version__` and imports `_native`.
+  `python/betterlite/_version.py` follows litellm/_version.py: it reads the installed version through `importlib.metadata`
+  for the distribution "betterlite" and gives "unknown" when the lookup fails. Add `python/betterlite/py.typed` and
+  `pyrightconfig.json`. B157 fills in the settings.
+
+
+  Native families join the crate through one explicit list that this task writes, as B5659 describes. `src/lib.rs` declares
+  every family with one `mod <family>;` line and one `<family>::register(module)?;` line, and each `src/<family>.rs` is the stub
+  `pub(crate) fn register(_module: &Bound<'_, PyModule>) -> PyResult<()> { Ok(()) }`. `python/betterlite/_native.pyi` holds one
+  `from betterlite._native_<family> import *` line per family, and each `python/betterlite/_native_<family>.pyi` starts empty. The
+  families, alphabetically, are `a2a`, `assistant_calls`, `assistant_runs`, `audio`, `batch_calls`, `batch_listing`, `cache`, `cache_backends`, `completion`, `container_calls`, `container_files`, `cost`, `cost_extra`, `decision_calls`, `embeddings`, `eval_calls`, `eval_runs`, `file_calls`, `file_content`, `genai`, `guardrail_call`, `images`, `interactions`, `mcp`, `messages`, `model_info`, `moderation`, `passthrough_calls`, `provider`, `proxy_client`, `rag_calls`, `realtime_calls`, `rerank`, `response_lifecycle`, `responses`, `router_call`, `search_ocr`, `skill_calls`, `tokens`, `tuning_calls`, `vector_files`, `vector_manage`, `vector_search`, `video_calls`, `video_edits`. A family task fills its stub and never edits the lists.
+
+
+  The package `__init__.py` also has one star line per Python module that a later task fills: `_tokens`, `_model_info`,
+  `_provider`, `_cost`, `_cost_extra`, `_cache_ops`, `caching`, `budget_manager` and `utils`. Each is created here as an empty
+  stub (an empty `__init__.py` for a package), and the later task fills it and never edits `betterlite/__init__.py`.
+
+
+  Tests run with LiteLLM and betterlite installed side by side, so the same test can read `litellm.model_cost` and compare
+  it with `json.loads(betterlite._native.bundled_model_cost_json())`.
+scope:
+  paths:
+  - crates/betterlite-python/**
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml
+  why: Package metadata the wheel replaces.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_version.py
+  why: The version lookup and its fallback.
+- url: https://github.com/PyO3/pyo3/blob/v0.30.1/tests/ui/forbid_unsafe.rs
+  why: PyO3's own test that its macros compile under forbid(unsafe_code). The repo's lint needs this.
+- url: https://github.com/PyO3/maturin/tree/v1.16.0
+  why: The build backend, for pyproject keys.
+dod:
+- text: '`uv build --wheel` builds an abi3 wheel named betterlite for Python 3.10 and up.'
+  proof: [wheel-build]
+- text: >-
+    The wheel installs next to LiteLLM, `import betterlite` works, and `betterlite.__version__` equals the crate version.
+  proof: [package-import]
+- text: '`bundled_model_cost_json` parses to the same data as `litellm.model_cost` with `LITELLM_LOCAL_MODEL_COST_MAP=True`.'
+  proof: [package-import]
+- text: '`provider_model_sets` equals the sets in LiteLLM for every name B5361 owns.'
+  proof: [package-import]
+- text: >-
+    `src/lib.rs`, `_native.pyi` and `betterlite/__init__.py` list every native family and Python module named in the description with empty stubs, and the wheel imports.
+  proof: [package-import]
+- text: The Rust functions behind the wrappers have unit tests in `native_api`, and those run with no wheel installed.
+  proof: [native-api]
+- text: The wheel METADATA lists python-dotenv and typing-extensions as its only `Requires-Dist` entries, at the lock versions.
+  proof: [package-import]
+- text: Python files pass ruff and basedpyright in strict mode.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: native-api
+    why: A wrapper returns the wrong data.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^native_api::/)'
+  - id: wheel-build
+    why: The build backend or the crate setup is broken.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python
+  - id: package-import
+    why: The wheel doesn't import or differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm
+      --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_package.py
+  - id: python-lint
+    why: The other-languages rule needs clean strict checks.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests
+      && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The distribution and module are `betterlite`, not `litellm`.
+  why: The litellm-boundaries rule. Users alias it with `import betterlite as litellm`.
+- what: This task has no helper oracle cases.
+  why: The pytest file imports both packages and compares them directly, and the helper oracle speaks to Rust functions, not to a wheel.
+out_of_scope:
+- >-
+  LiteLLM's extras, console scripts and Python dependencies are not carried. The gateway binary comes from
+  `crates/betterlite`, and the wheel depends only on python-dotenv and typing_extensions.
+- The module settings are B157. SDK functions such as `completion` are B158 and helpers such as `token_counter` are B166.
+- '`litellm/_lazy_imports.py`, `litellm/_lazy_imports_registry.py` and `litellm/rust_bridge/**` are excluded in litellm.yaml.'
+pitfalls:
+- >-
+  Never enable the `extension-module` feature, in default features or anywhere else. PyO3 0.30 deprecates it, and it turns off libpython linking for every target, so `cargo nextest` and a workspace `cargo clippy` would fail beside betterlite-pyhost, which embeds Python with `auto-initialize`. maturin 1.16.0 (at least 1.9.4) sets `PYO3_BUILD_EXTENSION_MODULE` during the wheel build only, which is the supported way (https://pyo3.rs/v0.30.1/building-and-distribution.html, https://pyo3.rs/v0.30.1/features.html).
+- >-
+  `unsafe_code = "forbid"` stays. If a PyO3 macro fails under it, stop and report a blocker with the exact error. Don't
+  relax the lint.
+- >-
+  `abi3-py310` limits the C API PyO3 may use, and a wheel tag without abi3 means the feature didn't reach the build.
+- A check that runs `ls` on `target/python-wheel` fails with two wheels there, so build into a clean folder when testing by hand.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

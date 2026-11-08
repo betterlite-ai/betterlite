@@ -1,0 +1,284 @@
+id: B4448
+title: Readiness diagnostics, backlog counters and graceful drain routes
+description: >-
+  Build the probe-facing half of LiteLLM's health routes in betterlite-server, in a new module `health_readiness`,
+  plus the process-wide shutdown state that /health/drain flips. LiteLLM's source is
+  litellm/proxy/health_endpoints/_health_endpoints.py (lines 1412-2015, minus the liveliness GET) and
+  litellm/proxy/shutdown/graceful_shutdown_manager.py. Split Rust files at the repository 300-line limit:
+  shutdown_state, db_readiness, readiness_details, readiness_routes and callback_listing under
+  crates/betterlite-server/src/health_readiness/, with `health_readiness.rs` declaring them.
+
+  Shutdown state. `ShutdownState` is an owned value built at startup (no global, no lazy static) and shared as an Arc.
+  It holds an in-flight counter source taken from B022 (read crates/betterlite-server/src/admission_control.rs for its
+  public in-flight and stats accessors and call them; add no second counter), a shutting-down flag, a
+  drain-performed flag and the timeout. It has `is_shutting_down()`, `start_shutdown()` and
+  `wait_for_drain(timeout: Option<Duration>, exclude_self: bool) -> u64`. start_shutdown is idempotent: a second call
+  changes nothing and logs nothing; the first logs `graceful_shutdown_started in_flight_requests=<n>` at info.
+  wait_for_drain returns 0 at once when a drain already ran (the flag is set on entry, before any waiting), so a
+  preStop drain followed by the SIGTERM drain never waits twice. The target is 1 when exclude_self is true (the
+  /health/drain request counts itself), else 0. A timeout of zero or less returns max(0, initial - target) at once.
+  Otherwise poll every 100 ms: when current <= target return max(0, initial - current) and log
+  `graceful_shutdown_complete drained_requests=<n> elapsed_s=<x.xx>`; at the timeout log a warning
+  `graceful_shutdown_timeout in_flight_requests=<n> elapsed_s=<x.xx> timeout_s=<t>` and return max(0, initial - current);
+  every 5 s of waiting log `drain_waiting in_flight_requests=<n> elapsed_s=<x.xx>`. Use tokio::time (not std
+  Instant or sleep) so tests run under tokio's paused clock. The timeout comes from the config section below. This task
+  does not call start_shutdown on SIGTERM: the existing signal code in crates/betterlite-server/src/shutdown.rs
+  (B003) and the lifespan owner call it (see notes in the report).
+
+  Config section `health_readiness`, in crates/betterlite-config/src/sections/health_readiness.rs. It reads
+  general_settings.allow_public_health_readiness_details (default false, true only for boolean true),
+  general_settings.enable_drain_endpoint (default false, true only for boolean true),
+  general_settings.drain_endpoint_token (a string, kept as secrecy::SecretString; empty or non-string falls to the env
+  var DRAIN_ENDPOINT_TOKEN, and an empty env var means no token), env GRACEFUL_SHUTDOWN_TIMEOUT (seconds, default 30.0;
+  a value that is not a number logs a warning naming the raw value and uses 30.0), env
+  PROXY_DB_LOOKUP_STALL_WINDOW_SECONDS (default 30, clamped to at least 0.0), and env LITELLM_DISABLE_NO_REDIS_WARNING
+  (boolean, default false). Use betterlite_env helpers as sections/aiohttp_transport_toggle.rs does. It also exposes
+  the resolved litellm_settings.request_timeout (default 6000) for /settings, taken from the value B002 already
+  resolves. Settings reach this module as config.sections.health_readiness.
+
+  Database readiness (`db_readiness`). `DbReadiness` owns the cached state and is built with an injected
+  `DatabaseProbe` trait (defined here): `async health_check()`, `async attempt_reconnect(reason, timeout, lock_timeout)`
+  and `async live_worker_count() -> Option<u32>`, plus `configured() -> bool`. The cache starts as "unknown" with a
+  last-updated instant and sits behind a Mutex in the struct. check(): if cached status is "connected" and younger than 15 s,
+  return it. Else, no database configured gives "disconnected" (cached). Else run health_check under a 2.0 s timeout:
+  success caches "connected". Any failure caches "disconnected"; when B872's `is_database_transport_error` says the
+  failure is a transport error, log a warning, call attempt_reconnect(reason "health_readiness_check", both timeouts 2.0 s),
+  re-run health_check under 2.0 s and on success cache "connected" and log info `reconnect succeeded`; if the
+  reconnect or second check fails log error `reconnect failed` and return "disconnected". The whole check is wrapped in
+  a 4.0 s deadline; on expiry return status "disconnected" with the previous last-updated and do not touch the cache.
+  `readiness_db_status(status)`: any status other than "connected" is returned as is; "connected" becomes "stalled" when
+  B715's stall tracker `stalled_within(stall_window)` is true. `resolve_public_db()`: no database configured gives
+  "Not connected" and never a 503; otherwise compute the status and answer 503 when it is not "connected" and B1217's
+  `should_allow_request_on_db_unavailable` is false. `show_no_redis_warning()`: false when Redis is configured
+  anywhere (the coordination cache or the router's own Redis, reported by `ReadinessSources::redis_configured`), false
+  when LITELLM_DISABLE_NO_REDIS_WARNING is true, true when no database is configured, else true unless
+  live_worker_count() is exactly Some(1) (None counts as not one). `show_env_credential_login_warning()` calls B788's
+  `is_env_credential_login_enabled` with the general settings.
+
+  Readiness details (`readiness_details`). Inputs come through a second injected trait `ReadinessSources` (async where
+  noted): `success_callback_names()` (names from B189's registry, via `callback_name`), `cache_report()` (async),
+  `redis_configured()`, `log_level()` (name such as "INFO" or "DEBUG") and `version()`. `cache_report` is None when no
+  cache exists, the cache type string, or, for a Redis semantic cache, an object `{"type": <type>, "index_info": <value>}`
+  where a failing index lookup becomes the string `index does not exist - error: <error text>`. The value comes from B4382's `RedisSemanticCache::index_info(&self) -> Result<Json, RedisSemanticError>`, whose Display text is the bare Redis error, so build the string from that text and add no other prefix. Build the body: status
+  "healthy", db, cache, litellm_version, success_callbacks, use_aiohttp_transport (false when B173's
+  aiohttp_transport_toggle section says disabled, else true), log_level, is_detailed_debug (true when the effective level
+  is debug or lower), show_no_redis_warning, show_env_credential_login_warning. With a database configured, db is the
+  readiness_db_status string and the response flips to 503 when it is not "connected" unless
+  should_allow_request_on_db_unavailable is true; without a database db is "Not connected" and the status stays 200.
+  Any failure building the body is HTTP 503 with detail `Service Unhealthy (<error>)`.
+
+  Routes (`readiness_routes`, one function that returns the router with its state; B8540 mounts it). Each
+  path is listed with its aliases:
+  GET /health/readiness: unauthenticated. If shutting down: 503 and `{"status": "shutting_down"}`, checked first. Else
+  if allow_public_health_readiness_details: the detailed body above (same 503 rule). Else `{"status": "healthy", "db":
+  <resolve_public_db>}`.
+  GET /health/readiness/details: authenticated with B052's user_api_key_auth; always the detailed body, and it does not
+  look at the shutdown flag.
+  GET /health/backlog: authenticated; `{"in_flight_requests", "admitted_requests", "queued_requests",
+  "rejected_requests"}` from the B022 in-flight count and admission stats (rejected_requests is the stats' total
+  rejected count).
+  GET /health/drain: unauthenticated by key. If enable_drain_endpoint is not true: 404 detail "Not Found". If a token is
+  configured and the X-Drain-Token header (empty if absent) differs in a constant-time comparison: 401 detail "Invalid or
+  missing X-Drain-Token". Else start_shutdown, wait_for_drain(exclude_self true), answer `{"status": "drained",
+  "drained_requests": <n>}`. With no token configured, the enable flag is the only gate.
+  OPTIONS /health/readiness, /health/liveliness and /health/liveness: 200, empty body, headers Allow "GET, OPTIONS",
+  Access-Control-Allow-Methods "GET, OPTIONS", Access-Control-Allow-Headers "*".
+  GET /health/license: authenticated. See the deviation: betterlite has no license check, so it always answers
+  `{"has_license": false, "license_type": "community", "expiration_date": null, "allowed_features": [], "limits":
+  {"max_users": null, "max_teams": null}}`.
+  GET /settings and GET /active/callbacks: authenticated, same handler (`callback_listing`). Body keys: alerting (the
+  general_settings.alerting value as text, "None" when absent, a list rendered as `['a', 'b']`), litellm.callbacks,
+  litellm.input_callback, litellm.failure_callback, litellm.success_callback, litellm._async_success_callback,
+  litellm._async_failure_callback, litellm._async_input_callback (each a list of names), all_litellm_callbacks (the seven
+  lists concatenated in that order), num_callbacks (its length), num_alerting (length of general_settings.alerting when it
+  is a list, else 0) and litellm.request_timeout. Also public here: `callback_name(callback) -> String`, which B4447 calls;
+  it returns the callback's registered name.
+
+  Existing code. B003 already registers GET /health/readiness in crates/betterlite-server/src/routes.rs, and axum panics on a duplicate route. B4448 removes B003's readiness handler and mounts its own router there. The master-key check in crates/betterlite-server/src/auth.rs and the route admission in crates/betterlite-server/src/auth/route_match.rs both skip a short list of paths now (liveliness, liveness, readiness). B4448 extends both lists so the drain route, the three OPTIONS paths and /health/readiness skip master-key auth as in LiteLLM.
+
+  Tests live in `health_readiness::tests` (any submodule below it), with these prefixes: `shutdown_`, `drain_wait_`,
+  `db_`, `stall_`, `no_redis_`, `public_`, `details_`, `backlog_`, `drain_route_`, `options_`, `license_`, `callbacks_`,
+  `settings_`. Every branch in the description gets a named case; time-dependent ones use tokio's paused clock and
+  fake DatabaseProbe, ReadinessSources and in-flight sources. Config tests live in sections::health_readiness::tests.
+  The HTTP oracle cases run through the booted proxy.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/health_readiness.rs
+    - crates/betterlite-server/src/health_readiness/**
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/auth/route_match.rs
+    - crates/betterlite-config/src/sections/health_readiness.rs
+    - crates/betterlite-config/src/sections/health_readiness/**
+    - "crates/betterlite-config/fuzz/corpus/config_yaml/health-readiness-*"
+    - tools/oracle/cases/health/readiness-public.yaml
+    - tools/oracle/cases/health/readiness-public-details-flag.yaml
+    - tools/oracle/cases/health/readiness-details-no-key.yaml
+    - tools/oracle/cases/health/readiness-details-with-key.yaml
+    - tools/oracle/cases/health/backlog-no-key.yaml
+    - tools/oracle/cases/health/backlog-with-key.yaml
+    - tools/oracle/cases/health/drain-disabled.yaml
+    - tools/oracle/cases/health/drain-token-missing.yaml
+    - tools/oracle/cases/health/drain-token-wrong.yaml
+    - tools/oracle/cases/health/drain-ok-no-token.yaml
+    - tools/oracle/cases/health/drain-ok-with-token.yaml
+    - tools/oracle/cases/health/options-readiness.yaml
+    - tools/oracle/cases/health/options-liveliness.yaml
+    - tools/oracle/cases/health/options-liveness.yaml
+    - tools/oracle/cases/health/license-community.yaml
+    - tools/oracle/cases/health/settings-callbacks.yaml
+    - tools/oracle/cases/health/active-callbacks.yaml
+    - tools/oracle/helpers/b4448.py
+    - tools/oracle/helpers/b4448/**
+    - tools/oracle/src/helpers/server/b4448.rs
+    - tools/oracle/src/helpers/server/b4448/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/shutdown/graceful_shutdown_manager.py#L37-L175
+    why: GracefulShutdownManager, the timeout read, the idempotent start, the one-time drain and the poll loop with its log lines.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1489-L1553
+    why: DB readiness cache, the 2 s and 4 s deadlines and the reconnect path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1651-L1683
+    why: No-Redis warning rules and the env credential login warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1686-L1771
+    why: The detailed readiness body, cache index lookup and the 503 rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1774-L1884
+    why: Drain settings, token check, readiness_db_status, public db status and the two readiness routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1887-L1956
+    why: The backlog and drain routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1980-L2013
+    why: The OPTIONS routes for readiness, liveliness and liveness.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1446-L1486
+    why: /health/license body for a deployment without a license.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1556-L1646
+    why: /settings and /active/callbacks and callback_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1584-L1591
+    why: The lifespan shutdown that calls start_shutdown then wait_for_drain (owned by the startup task, not here).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1812
+    why: PROXY_DB_LOOKUP_STALL_WINDOW_SECONDS default 30 with the zero floor.
+
+dod:
+  - text: start_shutdown is idempotent, and wait_for_drain returns the drained count (initial minus current, never below zero), honours exclude_self, and returns 0 at once on its second call.
+    proof: [shutdown-tests]
+  - text: A zero or negative timeout returns immediately, a timeout while requests remain returns what drained so far, and GRACEFUL_SHUTDOWN_TIMEOUT defaults to 30.0 and falls back with a warning on a non-number.
+    proof: [shutdown-tests, health-readiness-config-tests]
+  - text: The DB readiness check caches only "connected" for 15 s, reconnects only after a transport error, caps the whole check at 4 s without touching the cache, and reports "stalled" only over a connected ping.
+    proof: [db-readiness-tests]
+  - text: show_no_redis_warning follows Redis presence, the LITELLM_DISABLE_NO_REDIS_WARNING flag, a missing database and a worker count other than exactly one.
+    proof: [db-readiness-tests]
+  - text: The public GET /health/readiness answers 503 shutting_down first, then the detailed body when allow_public_health_readiness_details is true, else status and db with a 503 for an unreachable database unless requests are allowed on unavailability. B003's old readiness handler in routes.rs is gone so the router builds without a duplicate route, and the drain route, the three OPTIONS paths and /health/readiness pass master-key auth and route admission without a key.
+    proof: [route-tests, oracle]
+  - text: GET /health/readiness/details needs a key, returns every documented field, and returns 503 with "Service Unhealthy (...)" when building the body fails.
+    proof: [details-tests, oracle]
+  - text: GET /health/backlog needs a key and returns the four counters from the in-flight count and admission stats.
+    proof: [route-tests, oracle]
+  - text: GET /health/drain returns 404 when disabled, 401 on a missing or wrong X-Drain-Token, and otherwise starts shutdown and returns the drained count.
+    proof: [route-tests, oracle]
+  - text: The three OPTIONS routes answer 200 with the Allow and Access-Control headers.
+    proof: [route-tests, oracle]
+  - text: GET /health/license answers the community body, and /settings and /active/callbacks return the listing with the concatenated list, counts and request_timeout.
+    proof: [route-tests, oracle]
+  - text: The health_readiness section loads every key and env var above with its default, and the config corpus has the new seeds.
+    proof: [health-readiness-config-tests, config-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: shutdown-tests
+      why: the shutdown state, drain wait or its log and timeout behavior is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_readiness::(.*::)?tests::(shutdown_|drain_wait_)/)'
+    - id: db-readiness-tests
+      why: DB readiness caching, deadlines, reconnect, stall or no-Redis warning behavior is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_readiness::(.*::)?tests::(db_|stall_|no_redis_)/)'
+    - id: details-tests
+      why: the detailed readiness body or its 503 rules are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_readiness::(.*::)?tests::details_/)'
+    - id: route-tests
+      why: a route, its auth, status code, header or body is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_readiness::(.*::)?tests::(public_|backlog_|drain_route_|options_|license_|callbacks_|settings_)/)'
+    - id: health-readiness-config-tests
+      why: the health_readiness section keys, env vars or defaults are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::health_readiness::/) - test(replays_the_config_yaml_corpus)'
+    - id: config-corpus
+      why: the new health-readiness config seeds are missing or do not replay
+      run: >-
+        git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml | grep -Fq "/health-readiness-" &&
+        grep -Fq 'enable_drain_endpoint' crates/betterlite-config/fuzz/corpus/config_yaml/health-readiness-valid.yaml &&
+        test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs &&
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/health/readiness-public.yaml
+  - tools/oracle/cases/health/readiness-public-details-flag.yaml
+  - tools/oracle/cases/health/readiness-details-no-key.yaml
+  - tools/oracle/cases/health/readiness-details-with-key.yaml
+  - tools/oracle/cases/health/backlog-no-key.yaml
+  - tools/oracle/cases/health/backlog-with-key.yaml
+  - tools/oracle/cases/health/drain-disabled.yaml
+  - tools/oracle/cases/health/drain-token-missing.yaml
+  - tools/oracle/cases/health/drain-token-wrong.yaml
+  - tools/oracle/cases/health/drain-ok-no-token.yaml
+  - tools/oracle/cases/health/drain-ok-with-token.yaml
+  - tools/oracle/cases/health/options-readiness.yaml
+  - tools/oracle/cases/health/options-liveliness.yaml
+  - tools/oracle/cases/health/options-liveness.yaml
+  - tools/oracle/cases/health/license-community.yaml
+  - tools/oracle/cases/health/settings-callbacks.yaml
+  - tools/oracle/cases/health/active-callbacks.yaml
+
+deviations:
+  - what: /health/license always answers the community body, with has_license false.
+    why: betterlite has no license check or enterprise tier. This is also what LiteLLM answers with no LITELLM_LICENSE set.
+  - what: GRACEFUL_SHUTDOWN_TIMEOUT and DRAIN_ENDPOINT_TOKEN are read once when the config loads, not on every call.
+    why: The repository rule keeps environment reads inside the config crate.
+  - what: use_aiohttp_transport in the detailed readiness body reports B173's disable toggle only (false when disabled, else true), and ignores LITELLM_HTTP2.
+    why: The Rust client has one transport, so the field is informational. Open question in the report notes.
+  - what: The _async_* callback lists in /settings repeat the matching sync list, and callback names are betterlite's registered names.
+    why: B189's registry has no sync and async split and no Python objects, so the Python __name__ and class-name fallbacks do not exist.
+  - what: litellm_version in the detailed body is betterlite's own version string.
+    why: There is no LiteLLM version to report.
+  - what: The drain, backlog, readiness and details error text for 401 and 404 keeps LiteLLM's detail strings, and error messages elsewhere are betterlite's own.
+    why: Probes and preStop hooks key off the status code, and the oracle ignores only /error/message where LiteLLM's text differs.
+
+out_of_scope:
+  - "The proxy lifespan and its shutdown calls: B8374. The liveliness and liveness handlers over ShutdownState and the SIGTERM flag: B8540."
+  - "GET /health/liveliness and /health/liveness (the GET handlers): B003 owns them. They must read this module's ShutdownState instead of B003's bare flag; B8540 does that wiring."
+  - "Calling start_shutdown and wait_for_drain from the SIGTERM path and the lifespan teardown (proxy_server.py lines 1584-1591): the startup and shutdown owner does it with the ShutdownState built here."
+  - "The production DatabaseProbe and ReadinessSources implementations over the database, cache and Redis crates: B8540 builds them. This task defines the traits and fakes only."
+  - "test_endpoint, health_services_endpoint, get_callback_identifier and every other route above line 1412 of the file: B4447 and B4444 to B4446 own them. B4447 calls `callback_name` from here."
+  - "_read_license_data and _read_allowed_features: no license source exists in betterlite, and the deviation answers the route with the constant body."
+  - "SIGTERM handling and axum graceful serve: B003 owns crates/betterlite-server/src/shutdown.rs."
+  - "Admission middleware and the in-flight counter: B022 owns them. This task only reads them."
+
+pitfalls:
+  - "wait_for_drain sets its drain-performed flag before any waiting, so /health/drain followed by the SIGTERM drain returns 0 the second time and never doubles the wait."
+  - "The drain route passes exclude_self true because the request counts itself; confirm in B022's code that its counter includes the current request, and keep the target of 1 only if it does."
+  - "A configured empty drain_endpoint_token (or a non-string) falls to the DRAIN_ENDPOINT_TOKEN env var, and with neither the route needs no token."
+  - "The X-Drain-Token comparison is constant time, an absent header compares as the empty string, and the token never appears in a log or Debug output."
+  - "Only a \"connected\" status is served from the 15 s cache; \"disconnected\" and \"unknown\" re-probe on every call."
+  - "The 4 s deadline returns \"disconnected\" with the old last-updated instant and leaves the cache as it was, so one slow probe does not poison the next."
+  - "The word stalled replaces only a successful connected status; a failed ping stays disconnected even when lookups also stalled."
+  - "A 503 from the DB status needs a configured database; \"Not connected\" stays 200, and allow_requests_on_db_unavailable keeps 200 while db still reports the bad state."
+  - "The authenticated /health/readiness/details ignores the shutdown flag, while the public route checks it before anything else, including before the allow_public flag."
+  - "A live_worker_count of None (census failed) is not 1, so the no-Redis warning stays on."
+  - "/health/backlog reports rejected_requests from the stats' total rejected count, not from a per-reason counter."
+  - "/settings and /active/callbacks are one handler on two paths, so register both on the same function and not twice with different state."
+  - "GET /health/drain, OPTIONS and /health/readiness carry no key check, so auth.rs and auth/route_match.rs must exempt them (both are in scope); the other health routes keep their key check."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

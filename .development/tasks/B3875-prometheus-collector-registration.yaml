@@ -1,0 +1,222 @@
+id: B3875
+title: Prometheus exporter collector registration
+description: >-
+  Port the constructor of PrometheusLogger, litellm/integrations/prometheus.py lines 267-879, to a new module
+  crates/betterlite-logging/src/prometheus_exporter.rs. The constructor creates every collector the exporter ever emits to and registers it.
+  After this task the exporter exists with all 81 collectors in place and nothing writes to them yet. B3876, B3877, B3878, B3879, B3881, B3882 and the other emitters
+  only read fields from the struct this task builds, so the field names must be exactly LiteLLM's attribute names.
+
+  Public surface. `PrometheusCollectors` is a struct with one public field per collector, named like the LiteLLM attribute (for example
+  `litellm_proxy_failed_requests_metric`, `litellm_spend_metric`, `litellm_tokens_metric`). It also holds `label_filters`, `exclude_metrics`, `exclude_labels`,
+  the label cache, `latency_buckets` and the `emit_input_sequence_length_label` flag, plus the bounded series tracker. `PrometheusCollectors::register(settings, label_settings, registry)`
+  returns `Result<PrometheusCollectors, PrometheusExporterError>`. `PrometheusExporterError` is this module's own thiserror enum and wraps the errors of the steps below.
+  `settings` is `PrometheusExporterSettings` (defined here): the raw prometheus_metrics_config list, prometheus_exclude_metrics, prometheus_exclude_labels,
+  prometheus_latency_buckets and prometheus_emit_input_sequence_length_label, all read from config.sections.prometheus_exporter (see the config section below).
+  `label_settings` is B3872's `PrometheusLabelSettings`.
+
+  Order of work inside register, as LiteLLM does it:
+  1. Validate the caller-identity mode (B3870 `validate_prometheus_deployment_and_latency_caller_identity`) before anything registers, so an invalid value never leaves a half-registered set behind.
+  2. Parse prometheus_metrics_config into label_filters, then parse prometheus_exclude_metrics and prometheus_exclude_labels into exclude_metrics and exclude_labels. Both come from B3874 (`_parse_prometheus_config`, `_parse_exclude_config`).
+  3. Start with an empty label cache (B3874 `get_labels_for_metric` fills it) and set emit_input_sequence_length_label to true only when the setting is exactly true.
+  4. latency_buckets is prometheus_latency_buckets when it is set (any list, including an empty one), else B3870's LATENCY_BUCKETS.
+  5. Create the bounded series tracker with B3876's default constructor.
+  6. Build the counter, gauge and histogram factories with B3874's `_create_metric_factory` equivalent, then create the 81 collectors in the order of the table below.
+
+  Collector table (name given to Prometheus; the struct field is LiteLLM's attribute name). "schema" means labelnames come from B3874 `get_labels_for_metric(<name>)`.
+  Counters with schema labels, in order: litellm_proxy_failed_requests_metric, litellm_proxy_total_requests_metric.
+  Histograms with schema labels and the latency buckets: litellm_request_total_latency_metric, litellm_llm_api_latency_metric, litellm_llm_api_time_to_first_token_metric.
+  Counters with schema labels: litellm_spend_metric; litellm_total_tokens_metric (field litellm_tokens_metric); litellm_input_tokens_metric; litellm_output_tokens_metric;
+  litellm_input_cached_tokens_metric; litellm_input_cache_creation_tokens_metric; litellm_input_audio_tokens_metric; litellm_output_reasoning_tokens_metric;
+  litellm_output_audio_tokens_metric; litellm_video_duration_seconds_metric; litellm_images_generated_metric.
+  Gauges with schema labels: the team, org, api key, user and customer budget gauges (remaining, max and budget_remaining_hours for each, plus litellm_team_members_metric),
+  that is litellm_remaining_team_budget_metric, litellm_team_max_budget_metric, litellm_team_budget_remaining_hours_metric, litellm_team_members_metric,
+  litellm_remaining_org_budget_metric, litellm_org_max_budget_metric, litellm_org_budget_remaining_hours_metric,
+  litellm_remaining_api_key_budget_metric, litellm_api_key_max_budget_metric, litellm_api_key_budget_remaining_hours_metric,
+  litellm_remaining_user_budget_metric, litellm_user_max_budget_metric, litellm_user_budget_remaining_hours_metric,
+  litellm_remaining_customer_budget_metric, litellm_customer_max_budget_metric, litellm_customer_budget_remaining_hours_metric.
+  Gauges with schema labels: litellm_remaining_api_key_requests_for_model, litellm_remaining_api_key_tokens_for_model, litellm_api_key_rate_limit_allowed_metric,
+  litellm_api_key_rate_limit_used_metric, litellm_team_rate_limit_allowed_metric, litellm_team_rate_limit_used_metric, litellm_remaining_requests_metric, litellm_remaining_tokens_metric.
+  Histograms with schema labels and the latency buckets: litellm_overhead_latency_metric, litellm_overhead_with_guardrails_latency_metric,
+  litellm_request_queue_time_seconds (field litellm_request_queue_time_metric).
+  Histogram with fixed labels and the latency buckets: litellm_guardrail_latency_seconds with [guardrail_name, status, error_type, hook_type].
+  Counters with fixed labels: litellm_guardrail_errors_total with [guardrail_name, error_type, hook_type]; litellm_guardrail_requests_total with [guardrail_name, status, hook_type].
+  Gauge with fixed labels: litellm_provider_remaining_budget_metric with [api_provider].
+  Gauges with schema labels: litellm_deployment_state, litellm_deployment_tpm_limit, litellm_deployment_rpm_limit.
+  Counters with schema labels: litellm_deployment_cooled_down, litellm_deployment_success_responses, litellm_deployment_failure_responses, litellm_deployment_total_requests.
+  Histogram with schema labels and NO buckets argument: litellm_deployment_latency_per_output_token. It keeps the Prometheus client default buckets, not latency_buckets.
+  Counters with schema labels: litellm_deployment_successful_fallbacks, litellm_deployment_failed_fallbacks.
+  Counter with fixed labels: litellm_callback_logging_failures_metric with [callback_name].
+  Counters with schema labels: litellm_llm_api_failed_requests_metric, litellm_requests_metric, litellm_zero_cost_requests_total.
+  Gauge with schema labels: litellm_spend_capture_rate.
+  Counters with schema labels: litellm_cache_hits_metric, litellm_cache_misses_metric, litellm_cached_tokens_metric,
+  litellm_provider_cache_read_input_tokens_metric, litellm_provider_cache_creation_input_tokens_metric.
+  Gauges with no labels: litellm_total_users, litellm_active_users, litellm_teams_count (fields litellm_total_users_metric, litellm_active_users_metric, litellm_teams_count_metric).
+  Counters with fixed labels: litellm_managed_batch_created_total and litellm_managed_file_created_total, both [model, api_provider, user, user_email, api_key_alias].
+  Gauge with fixed labels: litellm_managed_file_size_bytes with [purpose, file_type, model, api_provider, user].
+  Histogram with fixed labels [model, api_provider] and B3870's BATCH_DURATION_BUCKETS: litellm_managed_batch_duration_seconds.
+  Counter with fixed labels: litellm_managed_file_deleted_total with [result].
+  Gauge with no labels: litellm_check_batch_cost_jobs_polled.
+  Counters with fixed labels: litellm_check_batch_cost_jobs_processed_total with [model, api_provider]; litellm_check_batch_cost_errors_total with [error_type].
+  Gauge with no labels: litellm_check_batch_cost_last_run_timestamp.
+  Counters with schema labels: litellm_mcp_tool_calls_total, litellm_mcp_tool_call_spend_metric.
+  Copy each collector's help text word for word from the LiteLLM source, because /metrics prints it. Several help strings are long or contain typos ("deploymeny" in litellm_deployment_failure_responses); keep them.
+
+  Because the factory is B3874's, a metric that is in exclude_metrics or outside a non-empty enabled set becomes a no-op collector and is not registered, and a metric with excluded labels is registered with the kept labelnames only.
+  The fixed label lists above also pass through the factory, so prometheus_exclude_labels removes names from them too.
+
+  Registry. No other task owns one, so this task adds `CollectorRegistry` in crates/betterlite-logging/src/prometheus_exporter/registry.rs. It mirrors prometheus_client's rules.
+  A collector registers the sample names it will expose: a counter registers NAME_total and NAME_created (a counter name that already ends in _total, like litellm_guardrail_errors_total, is first stripped of that suffix),
+  a gauge registers NAME, a histogram registers NAME_bucket, NAME_count, NAME_sum and NAME_created. Registering a name that is already taken fails with a typed duplicate-timeseries error
+  that names the clashing sample names, as prometheus_client does with ValueError. `CollectorRegistry` also offers a lookup by collector name and a listing of registered collectors with kind, help text, labelnames and buckets,
+  so B3886's scrape rendering and the oracle helper can read it. A second `register` call against the same registry therefore fails, as a second PrometheusLogger() does in LiteLLM; the callback layer decides when to construct (see out_of_scope).
+
+  A failure while creating any collector stops the constructor and returns the error. Collectors made before it stay registered; there is no rollback, as in LiteLLM. Log the failure at debug level (LiteLLM's print_verbose) and return it.
+
+  Config section. Add crates/betterlite-config/src/sections/prometheus_exporter.rs. It parses litellm_settings.prometheus_latency_buckets (optional list of floats, default none)
+  and litellm_settings.prometheus_emit_input_sequence_length_label (bool, default false; only the value true turns it on). Anything else follows config rules already in the crate (typed error on a wrong type).
+  The other settings the constructor reads (prometheus_metrics_config, prometheus_exclude_metrics, prometheus_exclude_labels, custom label lists, caller identity) are not parsed here; B3874 and B3872 take them as inputs.
+
+  Oracle. Add helper cases that build the exporter in LiteLLM and in betterlite and compare the registered collectors (name, kind, help text, labelnames, buckets, in creation order).
+  The helper operation is named b3875 by the skeleton, takes the settings as inputs and returns that listing. Cases: defaults; exclude_metrics; exclude_labels; prometheus_metrics_config with include_labels for one metric;
+  custom prometheus_latency_buckets; prometheus_emit_input_sequence_length_label true; caller identity user_email; caller identity both. Send settings of the declared types only.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/prometheus_exporter.rs
+    - crates/betterlite-logging/src/prometheus_exporter/**
+    - crates/betterlite-config/src/sections/prometheus_exporter.rs
+    - crates/betterlite-config/src/sections/prometheus_exporter/**
+    - tools/oracle/cases/helpers/prometheus-exporter/**
+    - "tools/oracle/fuzz/corpus/helper_case/prometheus_exporter-*"
+    - tools/oracle/helpers/b3875.py
+    - tools/oracle/helpers/b3875/**
+    - tools/oracle/src/helpers/logging/b3875.rs
+    - tools/oracle/src/helpers/logging/b3875/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L267-L319
+    why: Constructor start. Caller-identity validation first, label_filters, exclusions, label cache, input-length flag, latency buckets, tracker and the three factories.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L320-L531
+    why: Request, latency, token, media and budget collectors, including the attribute names that differ from the Prometheus names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L533-L690
+    why: Rate-limit, deployment, overhead, queue-time and guardrail collectors with their fixed label lists, and the histogram that has no buckets argument.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L692-L790
+    why: Fallback, callback-failure, deprecated, zero-cost, spend-capture, cache and count collectors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L792-L879
+    why: Managed batch, check-batch-cost and MCP collectors, and the print_verbose-and-raise handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L137-L189
+    why: LATENCY_BUCKETS and BATCH_DURATION_BUCKETS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L483-L487
+    why: Defaults of prometheus_metrics_config, the exclude lists and prometheus_emit_input_sequence_length_label.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L190
+    why: prometheus_latency_buckets default (None).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4590-L4602
+    why: The only place PrometheusLogger() is called, so one logger exists per process.
+  - url: https://github.com/prometheus/client_python/blob/master/prometheus_client/metrics.py
+    why: Counter, Gauge and Histogram naming rules, default histogram buckets and the sample names each one registers.
+
+dod:
+  - text: register creates exactly the 81 collectors of the table, each with LiteLLM's Prometheus name, kind, help text, fixed or schema labelnames and bucket choice.
+    proof: [exporter-tests, exporter-oracle]
+  - text: >-
+      Struct fields use LiteLLM's attribute names, including the five that differ from the metric name
+      (litellm_tokens_metric, litellm_request_queue_time_metric, litellm_total_users_metric, litellm_active_users_metric, litellm_teams_count_metric).
+    proof: [exporter-tests]
+  - text: An invalid caller-identity mode fails register before any collector is registered, and the registry stays empty.
+    proof: [exporter-tests]
+  - text: Histograms use prometheus_latency_buckets when set, else LATENCY_BUCKETS; litellm_managed_batch_duration_seconds uses BATCH_DURATION_BUCKETS; litellm_deployment_latency_per_output_token keeps the client default buckets.
+    proof: [exporter-tests, exporter-oracle]
+  - text: A metric in prometheus_exclude_metrics is a no-op collector and is absent from the registry; a metric with excluded labels is registered with the kept labelnames only, for schema and fixed label lists alike.
+    proof: [exporter-tests, exporter-oracle]
+  - text: prometheus_metrics_config include_labels narrow the labelnames of the named metric and nothing else, and the label cache keeps those sets after later toggles change.
+    proof: [exporter-tests, exporter-oracle]
+  - text: CollectorRegistry registers counter, gauge and histogram sample names as listed above (counter _total stripping, _created, _bucket, _count, _sum) and rejects a clash with a typed duplicate error naming the sample names.
+    proof: [registry-tests]
+  - text: A second register on the same registry fails with the duplicate error, and collectors created before the failing one stay registered.
+    proof: [registry-tests]
+  - text: >-
+      The config section reads litellm_settings.prometheus_latency_buckets (default none) and prometheus_emit_input_sequence_length_label (default false, only true enables),
+      and rejects a wrong type with a typed error.
+    proof: [config-tests]
+  - text: Oracle helper cases for the eight settings combinations match LiteLLM's registered collector listing.
+    proof: [exporter-oracle, helper-python, helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: exporter-tests
+      why: the collector table, field names, bucket choices, exclusions or early validation are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_exporter::tests::/) - test(replays_the_helper_case_corpus)'
+    - id: registry-tests
+      why: sample-name registration or duplicate rejection is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_exporter::registry::tests::/)'
+    - id: config-tests
+      why: the prometheus_exporter section does not load its two keys or their defaults
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::prometheus_exporter::/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3875)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3875 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3875/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added exporter cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/prometheus_exporter-*")" &&
+        grep -lE '^[[:space:]]+b3875:' tools/oracle/fuzz/corpus/helper_case/prometheus_exporter-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: exporter-oracle
+      why: the registered collector listing differs from LiteLLM's for some settings
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/prometheus-exporter)" &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/prometheus-exporter
+
+oracle_cases:
+  - tools/oracle/cases/helpers/prometheus-exporter/defaults.yaml
+  - tools/oracle/cases/helpers/prometheus-exporter/exclude-metrics.yaml
+  - tools/oracle/cases/helpers/prometheus-exporter/exclude-labels.yaml
+  - tools/oracle/cases/helpers/prometheus-exporter/include-labels-for-one-metric.yaml
+  - tools/oracle/cases/helpers/prometheus-exporter/custom-latency-buckets.yaml
+  - tools/oracle/cases/helpers/prometheus-exporter/input-sequence-length-label.yaml
+  - tools/oracle/cases/helpers/prometheus-exporter/caller-identity-user-email.yaml
+  - tools/oracle/cases/helpers/prometheus-exporter/caller-identity-both.yaml
+
+deviations:
+  - what: Collectors register in a betterlite CollectorRegistry owned by the exporter, not in a process-global default registry.
+    why: Dependencies come in through constructors and module-level state is forbidden; the duplicate-name rules are the same as prometheus_client's.
+  - what: A failed constructor returns a typed error and logs at debug level instead of printing through print_verbose and re-raising.
+    why: Errors surface as typed values; the visible result (construction fails, earlier collectors stay registered) is the same.
+  - what: Metric values are Decimal or integer types from B3874's collector interface, never Python floats.
+    why: Money must not pass through binary floats; this task creates collectors only, so the helper listing shows no values.
+
+out_of_scope:
+  - "get_instance, the metric factories, _ExcludedLabelMetric, get_labels_for_metric, config parsing and validation and the pretty printers: B3874 owns them and this task calls them."
+  - "Label schema (PrometheusMetricLabels.get_labels): B3872 and B3871. Caller-identity validation functions, LATENCY_BUCKETS, BATCH_DURATION_BUCKETS and the metric vocabulary: B3870."
+  - "BoundedPrometheusSeriesTracker and _inc_labeled_counter: B3876."
+  - "Writing to token, spend and media collectors (lines 1560-1735, 1987-2040): B3877. Latency, overhead and guardrail observations (2253-2365, 3211-3258): B3878."
+  - "Budget gauge projection and the budget initialization and cron job (3617-4535): B3882, B3883 and B3884. Rate-limit gauges (2049-2222, 2938-3065): B3879."
+  - "Failure hooks, deployment outcome and fallback emission, managed batch and cache emitters (lines 2365-3210, 3259-3600): B3880, B3881 and B8561 for the hooks."
+  - "_mount_metrics_endpoint (4565-4594), scrape rendering and its auth: B3886. PROMETHEUS_MULTIPROC_DIR handling is there too."
+  - "Building the logger on first use and caching it in the callback list (litellm_logging.py:4590-4602): the callback layer from B189 decides when to call register. B8561 builds that first-use construction."
+  - "PrometheusServicesLogger and its own service collectors: B3885."
+  - "The module-level helpers in lines 91-250 (_bounded_requested_model_label, _get_budget_metrics_per_request_timeout, _get_proxy_llm_router): the emitters that call them own them."
+
+pitfalls:
+  - The Prometheus name and the LiteLLM attribute differ for litellm_total_tokens_metric (attribute litellm_tokens_metric), litellm_request_queue_time_seconds, litellm_total_users, litellm_active_users and litellm_teams_count; emitters look fields up by attribute name.
+  - litellm_deployment_latency_per_output_token is the only histogram built without a buckets argument, so it must keep the client default buckets and not latency_buckets.
+  - The three guardrail collectors, the provider budget gauge, callback failures and the managed batch and check-batch-cost collectors use literal labelnames, not the schema; the factory still strips excluded labels from them.
+  - A counter whose name already ends in _total (litellm_guardrail_errors_total, litellm_zero_cost_requests_total, litellm_managed_batch_created_total) registers NAME without the suffix plus NAME_total and NAME_created, so a duplicate check on the raw name misses the clash.
+  - "prometheus_latency_buckets set to an empty list is still set: LiteLLM checks `is not None`, not truthiness."
+  - Validation of the caller-identity mode runs first on purpose; moving it after the first collector leaves a partly filled registry on a bad value.
+  - prometheus_emit_input_sequence_length_label counts only when it is exactly true (`is True`), so the string "true" stays off.
+  - The label cache is filled at register time through get_labels_for_metric; toggles changed later must not change the labelnames already used to create collectors.
+  - Help strings for litellm_request_total_latency_metric and litellm_request_queue_time_seconds span several concatenated Python string literals with spaces and a double hyphen; join them exactly.
+  - litellm_overhead_latency_metric says milliseconds in its help text yet uses latency_buckets in seconds-scale; keep both as they are.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

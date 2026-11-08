@@ -1,0 +1,130 @@
+id: B4788
+title: Prepare A2A forwarding and route agent model names
+description: >-
+  Build two modules in the existing agent_endpoints folder of crate betterlite-proxy: a2a_forwarding and a2a_routing. They hold the checks and helpers that run before an A2A call is sent to an agent's own URL, plus the routing of a model name that starts with "a2a/". No HTTP route calls them yet. B4789 (stream relay) and B8589's route handler do. Add `pub mod a2a_forwarding;` and `pub mod a2a_routing;` to crates/betterlite-proxy/src/agent_endpoints.rs. Dependencies come in through constructors and generics, as in agent_endpoints/databricks_oauth. No statics, no trait objects, native async traits.
+
+  Part one, a2a_forwarding.
+
+  1. `jsonrpc_error(request_id: &serde_json::Value, code: i64, message: &str) -> JsonRpcErrorBody`. It returns the body {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}. The HTTP status is chosen by the caller (LiteLLM default is 400), so the struct holds only the body. Mirrors _jsonrpc_error (a2a_endpoints.py L194-L208).
+
+  2. `caller_identity_headers(caller: &CallerIdentity) -> Vec<(String, String)>`. Input record CallerIdentity { agent_caller: Option<AgentCaller>, user_id: Option<String>, team_id: Option<String> }, filled by the caller from the key (the key's own fields are private to betterlite-auth). AgentCaller is the betterlite-core api::agents record with user_id and team_id. When agent_caller is set, its user_id and team_id are used and the key's own are ignored, even if the agent_caller field is None. Output order is "X-LiteLLM-User-Id" then "X-LiteLLM-Team-Id". A value that is None or empty is left out. Mirrors _caller_identity_headers (L148-L163).
+
+  3. `forwarding_headers(input: &ForwardingInput) -> Option<Vec<(String, String)>>` with ForwardingInput { caller_identity: Vec<(String,String)>, trace_id: Option<String>, agent_extra_headers: Option<Vec<(String,String)>>, backend_auth: Option<Vec<(String,String)>> }. Mirrors _forwarding_headers (L175-L191). Steps, in order:
+  - passthrough = the agent_extra_headers pairs whose lowercase name does not start with "x-litellm-" and is not equal (lowercase) to any name in backend_auth.
+  - trace = one pair ("X-LiteLLM-Trace-Id", trace_id) when trace_id is Some and not empty.
+  - Build one ordered map from passthrough, then caller_identity, then trace, then backend_auth. A later pair with the exact same name (case-sensitive) replaces the earlier value and keeps the earlier position, like a Python dict. Use a Vec and a manual replace loop, or an index map, not a HashMap.
+  - Return None when the result is empty.
+
+  4. `backend_auth_header` : trait HopAuth { async fn resolve(&self, litellm_params: &BTreeMap<String, AgentJson>, custom_llm_provider: Option<&str>) -> Result<Option<Vec<(String,String)>>, HopAuthError> } is the port for resolve_a2a_hop_auth_header (B050 owns it, nothing here). Function `resolve_backend_auth<D, H>(databricks: &D, hop: &H, litellm_params, custom_llm_provider)`: when litellm_params holds a truthy value under the key that databricks_oauth names as DATABRICKS_OAUTH_PARAM (look it up in agent_endpoints/databricks_oauth/config.rs and use that constant; truthy means not null, not false, not 0 and not an empty string/list/object), call the Databricks side and return its header. Otherwise call HopAuth. Make the Databricks side a second small trait `AppAuth` with one method returning Result<Option<Vec<(String,String)>>, _>, so the test can fake it. The real impl over resolve_oauth_header is wired by B141. Mirrors _resolve_backend_auth_header (L166-L172).
+
+  5. `enforce_inbound_trace_id(agent: &AgentResponse, chain_id: Option<&str>) -> Result<(), ForwardingError>`. When agent.litellm_params has a truthy "require_trace_id_on_calls_to_agent" this needs chain_id to be Some and not empty. If not, return ForwardingError::TraceIdRequired(agent_id) and its message is "Agent '<agent_id>' requires x-litellm-trace-id header on all inbound requests.". The caller maps it to HTTP 400. chain_id is what get_chain_id_from_headers returns (litellm_pre_call_utils.py L746-L773); that function has no owner in this backlog, so the caller passes it in. Mirrors _enforce_inbound_trace_id (L220-L234).
+
+  6. `validate_push_url<R>(validator: &UrlValidator<R>, url: &str) -> Result<(), ForwardingError>`. Reject with ForwardingError::PushUrl("Push notification URL must use HTTPS") when the scheme of the url is not exactly "https" (scheme compare is lowercase, as Python's urlparse lowercases it; an unparseable url has an empty scheme and fails too). Then call betterlite_http user_url `UrlValidator::validate_url` and map its error to ForwardingError::PushUrl(err Display). Both map to HTTP 400 with the message as detail. Mirrors _validate_push_notification_url (L135-L145).
+
+  7. `forward_jsonrpc(client: &ProxiedClient, agent_url: &str, body: &serde_json::Value, extra_headers: Option<&[(String,String)]>) -> Result<serde_json::Value, ForwardingError>`. Send one POST with `ProxiedClient::send_buffered`. Look at agent_endpoints/databricks_oauth/fetch.rs for how OutboundRequest is built. Headers: "Content-Type: application/json" first, then extra_headers; an extra header with the same name replaces it. Timeout 60 seconds (set the deadline). Body is the JSON text of `body`. Result: parse the response body as JSON. When it is not a JSON object (parse fails or other type) and the status is not 2xx, return ForwardingError::Status(code); when it is not JSON and the status is 2xx return ForwardingError::Body. When it parses and the status is not 2xx and the object has no "error" key, return ForwardingError::Status(code). Otherwise return the object, even for a non-2xx status that carries "error". Mirrors _forward_jsonrpc (L246-L267).
+
+  Part two, a2a_routing.
+
+  `route_a2a_model<L, G, B>(lookup: &L, gate: &G, bridge: &B, request: A2aModelRequest) -> Result<Option<B::Output>, RoutingError>` mirrors route_a2a_agent_request (a2a_routing.py L17-L81). A2aModelRequest { model: serde_json::Value, route_type: String, data: serde_json::Map, auth: Option<RoutingAuth> } and RoutingAuth { is_proxy_admin: bool, key: ... whatever the gate port needs }. Ports (native async traits, defined in a2a_routing.rs): AgentLookup { async fn get(&self, id_or_name: &str) -> Result<Option<AgentResponse>, _> } (the B124 registry read-through is the real impl), InvocationGate { async fn is_allowed(&self, agent_id: &str, auth: Option<&RoutingAuth>) -> bool } (wired over betterlite-auth is_agent_allowed from B4780), and CompletionBridge { type Output; async fn call(&self, route_type: &str, data: serde_json::Map) -> Result<Self::Output, _> } (the caller of litellm.<route_type>(**data); route_type is a method name such as "acompletion" or "aresponses"). Steps, in order:
+  1. When `model` is not a string or does not start with "a2a/", return Ok(None). Nothing else happens.
+  2. agent_name is model without the 4 byte prefix. Look it up. None gives RoutingError::ModelNotFound { route, model } where route is ROUTE_ENDPOINT_MAPPING[route_type] or route_type itself when not in the map. ROUTE_ENDPOINT_MAPPING and ProxyModelNotFoundError live in route_llm_request.py and have no owner: take the route name from a `route_name: String` field of A2aModelRequest the caller fills in, and say so in notes. Log an error line "[A2A] Agent '<name>' not found in registry".
+  3. The permission check runs when the caller is not a proxy admin OR the agent has identity_managed true. With no auth at all it also runs (not admin). If the gate says no, return RoutingError::Forbidden with message "Agent '<agent_name>' is not allowed for your key/team. Contact proxy admin for access." (HTTP 403).
+  4. Set data["api_base"] = agent.agent_card_params.url, log a debug line "[A2A] Routing <model> to <api_base>", and return Some(bridge.call(route_type, data)).
+
+  The "no url configured" branch in LiteLLM (L63-L67) cannot happen here, because AgentCard.url is required in the typed record. Do not write it.
+
+  Oracle. Only the four pure functions get helper cases: jsonrpc_error, caller_identity_headers, forwarding_headers and validate_push_url's scheme check (a case file may only use urls that fail on the scheme or that are plain public https hosts; leave DNS to the Rust unit tests). A route-level case comes with B8589.
+scope:
+  paths:
+    - crates/betterlite-proxy/src/agent_endpoints.rs
+    - crates/betterlite-proxy/src/agent_endpoints/a2a_forwarding.rs
+    - crates/betterlite-proxy/src/agent_endpoints/a2a_forwarding/**
+    - crates/betterlite-proxy/src/agent_endpoints/a2a_routing.rs
+    - crates/betterlite-proxy/src/agent_endpoints/a2a_routing/**
+    - crates/betterlite-proxy/Cargo.toml
+    - tools/oracle/cases/agents/a2a-forwarding/**
+    - tools/oracle/helpers/b4788.py
+    - tools/oracle/helpers/b4788/**
+    - tools/oracle/src/helpers/proxy/b4788.rs
+    - tools/oracle/src/helpers/proxy/b4788/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L135-L267
+    why: Push url check, caller identity, backend auth choice, forwarding headers, JSON-RPC error body, trace id check and the buffered forward.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_routing.py
+    why: The whole "a2a/<name>" routing function.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L706-L717
+    why: The one caller of route_a2a_agent_request.
+dod:
+  - text: jsonrpc_error returns the JSON-RPC 2.0 error body with the given id, code and message.
+    proof: [oracle, forwarding-tests]
+  - text: caller_identity_headers prefers the agent caller over the key, orders user then team, and drops None and empty values.
+    proof: [oracle, forwarding-tests]
+  - text: forwarding_headers drops x-litellm- and backend-auth names from the agent's extra headers, adds trace id, lets later sources win on an exact-name clash, and returns None when empty.
+    proof: [oracle, forwarding-tests]
+  - text: resolve_backend_auth uses the Databricks side when the OAuth param is truthy and the hop auth port otherwise.
+    proof: [forwarding-tests]
+  - text: enforce_inbound_trace_id fails with the exact LiteLLM message only when the agent requires a trace id and none is given.
+    proof: [forwarding-tests]
+  - text: validate_push_url rejects non-https urls with "Push notification URL must use HTTPS" and passes the rest through UrlValidator.
+    proof: [oracle, forwarding-tests]
+  - text: forward_jsonrpc sends Content-Type then extra headers, returns a JSON object even on a non-2xx status that has "error", and fails on a non-2xx status without it.
+    proof: [forwarding-tests]
+  - text: route_a2a_model returns None for a model that is not a string or lacks the "a2a/" prefix, and calls nothing.
+    proof: [routing-tests]
+  - text: route_a2a_model fails with ModelNotFound for an unknown agent, and with Forbidden (exact message) when the gate refuses. A proxy admin skips the gate unless the agent is identity managed.
+    proof: [routing-tests]
+  - text: route_a2a_model sets api_base to the agent card url and returns the bridge result.
+    proof: [routing-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: forwarding-tests
+      why: the a2a_forwarding behavior tests fail or do not exist
+      run: >-
+        cargo nextest run --locked -p betterlite-proxy --no-tests=fail
+        -E 'test(/^agent_endpoints::a2a_forwarding::(.*::)?a2a_forwarding_tests_behavior($|::)/) - test(/replays_the_/)'
+    - id: routing-tests
+      why: the a2a_routing behavior tests fail or do not exist
+      run: >-
+        cargo nextest run --locked -p betterlite-proxy --no-tests=fail
+        -E 'test(/^agent_endpoints::a2a_routing::(.*::)?a2a_routing_tests_behavior($|::)/) - test(/replays_the_/)'
+    - id: helper-python
+      why: the oracle adapter fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/agents/a2a-forwarding/jsonrpc-error-body.yaml
+  - tools/oracle/cases/agents/a2a-forwarding/identity-agent-caller-wins.yaml
+  - tools/oracle/cases/agents/a2a-forwarding/identity-empty-values-dropped.yaml
+  - tools/oracle/cases/agents/a2a-forwarding/headers-passthrough-filtered.yaml
+  - tools/oracle/cases/agents/a2a-forwarding/headers-backend-auth-wins.yaml
+  - tools/oracle/cases/agents/a2a-forwarding/headers-trace-id.yaml
+  - tools/oracle/cases/agents/a2a-forwarding/headers-empty-is-none.yaml
+  - tools/oracle/cases/agents/a2a-forwarding/push-url-http-rejected.yaml
+  - tools/oracle/cases/agents/a2a-forwarding/push-url-private-host-rejected.yaml
+deviations:
+  - what: Failures return typed ForwardingError and RoutingError values. LiteLLM raises HTTPException (400, 403) and ProxyModelNotFoundError. The messages are the same; the caller picks the status.
+    why: The route layer is B8589's, and Rust errors carry no HTTP framework.
+  - what: The no-url branch of route_a2a_agent_request is dropped.
+    why: AgentCard.url is a required field in betterlite, so the state cannot exist.
+  - what: forward_jsonrpc fails with ForwardingError::Status for a non-2xx answer with a non-JSON body. LiteLLM calls httpx raise_for_status, which raises HTTPStatusError.
+    why: There is no httpx. The caller turns both into the same internal error.
+out_of_scope:
+  - "The message/send, message/stream and card routes, the SSE relay (_a2a_sse_event_source, _forward_jsonrpc_sse, _handle_stream_message) are B4789 and B8589."
+  - "_build_message_send_params is B6950."
+  - "_served_version and the 0.3/1.0 conversion are B4811 and B4812."
+  - "resolve_a2a_hop_auth_header stays B050's. This task only calls it through the HopAuth port."
+  - "get_chain_id_from_headers, ROUTE_ENDPOINT_MAPPING and ProxyModelNotFoundError have no owner in the backlog. The callers pass their results in."
+pitfalls:
+  - The header map keeps names with their exact case. "x-trace" and "X-Trace" are two entries, but the passthrough filter and the backend-auth filter compare lowercase.
+  - Python's `if user_id` drops an empty string as well as None. Do the same.
+  - agent_caller set but with user_id None means no X-LiteLLM-User-Id header at all, not a fallback to the key's user id.
+  - is_proxy_admin is the proxy admin role only. Other admin-like roles still go through the gate.
+  - Do not add a retry or a fallback around forward_jsonrpc.
+  - The oracle adapter returns the header list as ordered pairs, because order matters in forwarding_headers.
+review_level: standard
+budget:
+  max_changed_lines: 1400
+  max_new_expects: 0

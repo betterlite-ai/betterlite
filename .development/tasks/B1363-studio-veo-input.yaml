@@ -68,7 +68,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B1364 owns _json_payload, _usage_video_resolution_from_parameters and every method from transform_video_create_response through get_error_class at L299-L618.
-  - B035 assembles the Studio provider; B093 owns the eventual video route and operation dispatcher.
+  - B035 assembles the Studio provider; B3343 owns the video routes and B3332 the operation dispatcher.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as studio_veo_request in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/studio_veo_request.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/studio_veo_request.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An explicit empty api_base is not replaced with the Gemini default host.

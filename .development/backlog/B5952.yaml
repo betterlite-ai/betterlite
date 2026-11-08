@@ -1,0 +1,14 @@
+id: B5952
+milestone: M3 providers
+title: SAP orchestration stream events and error type
+status: todo
+depends_on: [B004, B005, B171]
+file: tasks/B5952-sap-stream.yaml
+covers:
+  - "litellm/llms/sap/chat/handler.py"
+parent: B5845
+split_from: B5845
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

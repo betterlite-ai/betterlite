@@ -1,0 +1,14 @@
+id: B8603
+milestone: M8 platform
+title: Stream keepalive heartbeats
+status: todo
+depends_on: [B7324]
+file: tasks/B8603-stream-keepalive.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"
+parent: B7980
+split_from: B7980
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,5 +1,6 @@
 pub mod aws;
 pub mod aws_kms;
+pub mod aws_secret_reads;
 pub mod aws_secrets;
 pub mod custom_interface;
 pub mod custom_loader;
@@ -9,7 +10,9 @@ pub mod google_secret_manager;
 pub mod oidc;
 pub mod secret_contracts;
 pub mod secret_helpers;
+pub mod secret_lookup;
 pub mod secret_name;
 pub mod secret_read_dispatch;
 pub mod secret_types;
+pub mod vault;
 pub mod vault_secret_operations;

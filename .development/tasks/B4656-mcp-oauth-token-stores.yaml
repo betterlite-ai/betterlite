@@ -26,6 +26,7 @@ description: >-
 
   RefreshCoordinator is a protocol ensuring one refresh runs per (user_id, server_id) at a time, with run() accepting
   a refresh callable and a reread callable (for cross-replica losers to re-read the persisted token).
+  In Rust the coordinator is generic over the result and error of those callables: run<T, E>(key, refresh, reread) -> Result<T, E>, so RefreshingTokenStore uses T = Option<OAuthToken> and other callers (B4664) use T = () with their own error type.
   InProcessRefreshCoordinator implements in-process single-flight: first caller per key refreshes, concurrent callers
   await the same in-flight task and share its result. RefreshingTokenStore wraps an inner store and proactively refreshes
   near-expiry tokens via the injected TokenRefresher and RefreshCoordinator, returning None when refresh fails (triggering a challenge).
@@ -99,6 +100,9 @@ dod:
       RefreshCoordinator protocol and InProcessRefreshCoordinator implement per-(user, server) single-flight:
       first caller refreshes, concurrent callers await the same in-flight task and share its result.
     proof: [refresh-coordinator-tests, refresh-singleflight]
+  - text: >-
+      The coordinator is generic over the refresh and reread callables' result and error types (run<T, E>), so a caller may run unit-returning callables that fail with its own error and get that error back unchanged.
+    proof: [refresh-coordinator-tests]
   - text: >-
       RefreshingTokenStore proactively refreshes near-expiry tokens (within expiry_skew_seconds) via injected TokenRefresher
       and RefreshCoordinator, returning None when refresh fails, and preserving unexpired tokens.

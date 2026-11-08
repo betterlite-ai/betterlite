@@ -1,0 +1,15 @@
+id: B7925
+milestone: M12 python
+title: Python types for Vertex AI and Gemini request, response, tuning, embedding and batch shapes (types/llms/vertex_ai)
+status: todo
+depends_on: [B5657, B7920]
+file: tasks/B7925-types-vertex-ai.yaml
+covers:
+  - "litellm/types/llms/vertex_ai.py"
+  - "litellm/types/llms/vertex_ai_gemma.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

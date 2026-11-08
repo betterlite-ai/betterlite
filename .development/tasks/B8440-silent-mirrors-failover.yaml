@@ -1,0 +1,244 @@
+id: B8440
+title: Silent experiment mirrors and weighted failover
+description: >-
+  Two small router features that LiteLLM keeps in `litellm/router.py` have no Rust owner yet. This task builds both as
+  plain services that other router tasks call. It adds no route and changes no caller.
+
+
+  Part one is the silent experiment, LiteLLM's shadow traffic. A deployment may carry `silent_model` in its
+  `litellm_params` (declared `str | Sequence[str] | None` in `litellm/types/litellm_params.py`). After the router picks
+  that deployment, it starts one extra completion per silent target in the background and never waits for it, so the
+  client only sees the primary answer. Put this in the new module `crates/betterlite-sdk/src/silent_experiment.rs`
+  with its folder, because its only caller, B6020's `RouterCompletion` in `crates/betterlite-sdk/src/router_completion.rs`,
+  lives in that crate and owns the tokio runtime handle. Add `tracing.workspace = true` to
+  `crates/betterlite-sdk/Cargo.toml` if it is not there yet; touch nothing else in that file.
+
+
+  `silent_targets(value: Option<&serde_json::Value>) -> Vec<String>` ports `_silent_experiment_targets`. Absent or
+  null gives no targets. A string gives one target. An array whose items are all strings gives those items in order
+  (an empty array gives none). Any other value logs a `tracing::warn!` with the text
+  "silent_model must be a model name or a list of model names, got {value}; skipping shadow traffic" and gives no
+  targets, the way LiteLLM skips the mirror with a warning instead of failing the request.
+
+
+  `silent_kwargs(request: &serde_json::Map<String, serde_json::Value>) -> Result<Map, SilentExperimentError>` ports
+  `_get_silent_experiment_kwargs`. It returns a copy of the request map, never touching the caller's map. In the copy,
+  `metadata` becomes an empty object when it is absent or null, and a `metadata` that is not an object is the error
+  `SilentExperimentError::MetadataNotObject`. Then remove `litellm_parent_otel_span` from the copy's metadata, set
+  `is_silent_experiment` to true in it, and remove the top-level keys `litellm_call_id`, `litellm_logging_obj` and
+  `standard_logging_object`. Every other key stays, `proxy_server_request` and `stream` included, because LiteLLM's
+  spend log metadata needs `proxy_server_request` on the mirror call.
+
+
+  `MirrorCall<M>` is the seam back into the router, so this module never depends on B6020. It has an associated
+  `type Error: std::fmt::Display + Send + 'static` and one method,
+  `fn complete(&self, args: MirrorArgs<M>) -> Pin<Box<dyn Future<Output = Result<(), Self::Error>> + Send + 'static>>`.
+  `MirrorArgs<M>` holds `model: String`, `messages: Vec<M>`, `stream: bool` and `request: Map`. `M` is the caller's
+  message type (`Clone + Send + 'static`). The trait doc says what an implementor does, as LiteLLM's
+  `_run_silent_experiment` does: call `acompletion` with `model`, `messages`, `stream` and the request's keys as the
+  other arguments, and when the answer is a stream, read every chunk to the end and drop it. The first error from the
+  call or from a chunk is the result.
+
+
+  `SilentExperiments` is built with `new(runtime: tokio::runtime::Handle)` and has two methods that take
+  `call: Arc<C>` where `C: MirrorCall<M> + Send + Sync + 'static`, plus `target: String`, `messages: Vec<M>` and
+  `request: Map`. The caller passes a copy of its request taken at start time, which stands in for
+  `_silent_experiment_kwargs_snapshot`, so later changes to the primary request never reach the mirror.
+  `start` ports `_silent_experiment_acompletion`: it spawns the mirror on the runtime and returns the
+  `tokio::task::JoinHandle<()>`, which B6020 drops. `start_blocking` ports `_silent_experiment_completion`: it spawns a
+  `std::thread` that runs the same mirror with `runtime.block_on` and returns the `std::thread::JoinHandle<()>`.
+  Both run one private async function with these steps in this order. When the incoming request's `metadata` has
+  `is_silent_experiment` set to true, return at once without a log line: that is the guard against a silent model
+  whose own deployment has a `silent_model`. Log `tracing::info!` "Starting silent experiment for model {target}".
+  Build the copy with `silent_kwargs`, set the copy's `metadata.model_group` to the target, read `stream` from the
+  copy (true only when it is the JSON value true) and remove `stream` from it, then await `call.complete`. Any error,
+  from `silent_kwargs` or from the call, logs `tracing::error!` "Silent experiment failed for model {target}: {error}"
+  and ends the mirror. Nothing ever reaches the caller, and a panic is never the way out.
+
+
+  Part two is weighted failover, `router_settings.enable_weighted_failover` (default false). With the flag on and the
+  routing strategy "simple-shuffle", a failed deployment makes the router try the other healthy deployments of the
+  same model group before any cross-group fallback. Put the decision in the new module
+  `crates/betterlite-router/src/weighted_failover.rs` with its folder. This crate has no async runtime and no logger,
+  so the module is pure: it does not run the retry and does not port LiteLLM's debug log line.
+
+
+  `plan_weighted_failover(inputs: &FailoverInputs<'_>, request: &mut serde_json::Map<String, Value>, metadata_key: &str)
+  -> Option<FailoverEntry>` ports `_maybe_run_weighted_failover` up to the fallback call. `FailoverInputs` holds
+  `strategy: &str` (the group's routing strategy as the router resolved it), `failed_deployment_id: Option<&str>` (the
+  id B017 stamps on the error), `model_group: &str`, `deployment_ids: &[String]` (the `model_info.id` of every
+  deployment in the group that has one) and `cooldown_ids: &[String]` (the router-wide list of deployments in
+  cooldown). `metadata_key` is `litellm_metadata` when the request has that key, else `metadata`; the caller passes it.
+  Steps, in LiteLLM's order: a strategy other than "simple-shuffle" gives none. A missing or empty failed id gives
+  none. When `request[metadata_key]` is absent or null, insert an empty object there; when it is present but not an
+  object, give none. Read the earlier exclusions from that object's `_failover_excluded_ids` (absent or null means
+  none) and add the failed id, keeping each id once in first-seen order. The remaining set is `deployment_ids` minus
+  `cooldown_ids` minus the exclusions; when it is empty, give none (the metadata object inserted above stays). Write
+  the exclusion list back under `_failover_excluded_ids` and return `FailoverEntry { model: model_group,
+  excluded_deployment_ids }`. `FailoverEntry` serializes with serde as `{"model": ..., "_excluded_deployment_ids":
+  [...]}`, the fallback entry shape LiteLLM's fallback walk passes into the next selection.
+
+
+  `drop_excluded<T>(deployments: Vec<T>, excluded: &[String], id_of: impl Fn(&T) -> Option<&str>) -> Vec<T>` ports
+  `get_excluded_filtered_deployments` from `litellm/utils.py`. An empty exclusion list returns the input unchanged.
+  Otherwise keep each deployment whose id is missing or not excluded, in order. The result may be empty; the caller
+  then raises its usual no-deployments error, unlike the retry skip, which falls back to the unfiltered list. This is
+  the only port of that function: its callers are in betterlite-router, and that crate may not depend on
+  betterlite-models, so B5365's deployment_filters leaves it out.
+
+
+  Write the module doc so the callers can follow it. The fallback dispatcher (B399's
+  `async_function_with_fallbacks_common_utils` port, with B310 running the hop) asks for the plan when the flag is on,
+  the request did not skip order fallbacks and the original model group is known, after the order-based fallbacks and
+  before the generic fallback walk. It runs one hop with `fallback_model_group` set to `[entry]` and
+  `original_model_group` set to the group. When that hop fails with a provider API error or a no-deployments error, it
+  goes on to the generic fallbacks; any other error propagates. Selection (B016's `async_get_healthy_deployments`
+  and its sync `get_available_deployment`) takes `_excluded_deployment_ids` out of the request after order filtering
+  and before the retry skip and filters with `drop_excluded`, whether or not the flag is on.
+
+
+  The flag lives in the new config section `crates/betterlite-config/src/sections/weighted_failover.rs` with its
+  folder, in the shape the other sections use (a `Raw` view of the whole file, a `Settings` struct and
+  `impl Section for Raw`). It reads `router_settings.enable_weighted_failover`: a YAML bool, or an `os.environ/NAME`
+  reference read through the shared resolver the other sections use. Absent or null is false. Any other value is a
+  load error that names `router_settings.enable_weighted_failover`. Settings reach other crates as
+  `config.sections.weighted_failover.enabled`. LiteLLM passes every `router_settings` key that `Router.__init__`
+  accepts straight to the constructor, so this key is read from the config file just as the proxy reads it.
+
+
+  Tests live in each module's `tests.rs`: `silent_experiment::tests` with names starting `targets_`, `kwargs_`,
+  `start_` and `blocking_` (drive `start` on a current-thread runtime and `start_blocking` with a multi-thread
+  runtime handle, against a fake `MirrorCall` that records its arguments), `weighted_failover::tests` with names
+  starting `plan_` and `excluded_`, and `sections::weighted_failover::tests`. The task parses no outside bytes, so
+  there is no fuzz target. Add helper oracle cases that run LiteLLM's `_silent_experiment_targets`,
+  `Router(model_list=[])._get_silent_experiment_kwargs(**request)` and `litellm.utils.get_excluded_filtered_deployments`
+  against `silent_targets`, `silent_kwargs` and `drop_excluded` (with `id_of` reading `model_info.id`), using only
+  inputs of the declared types. Put them in `tools/oracle/cases/helpers/silent-experiment/` and
+  `tools/oracle/cases/helpers/weighted-failover/`. No route reaches this code yet, so HTTP cases come with the wiring.
+
+scope:
+  paths:
+    - crates/betterlite-router/src/weighted_failover.rs
+    - crates/betterlite-router/src/weighted_failover/**
+    - crates/betterlite-sdk/Cargo.toml
+    - crates/betterlite-sdk/src/silent_experiment.rs
+    - crates/betterlite-sdk/src/silent_experiment/**
+    - crates/betterlite-config/src/sections/weighted_failover.rs
+    - crates/betterlite-config/src/sections/weighted_failover/**
+    - tools/oracle/cases/helpers/silent-experiment/**
+    - tools/oracle/cases/helpers/weighted-failover/**
+    - tools/oracle/helpers/b8440.py
+    - tools/oracle/helpers/b8440/**
+    - tools/oracle/src/helpers/router/b8440.rs
+    - tools/oracle/src/helpers/router/b8440/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L483-L501
+    why: _silent_experiment_targets (string or list, warning on anything else) and the kwargs snapshot taken at start.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2656-L2754
+    why: _get_silent_experiment_kwargs, _run_silent_experiment with the stream drain, and the thread variant with its private event loop.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3650-L3670
+    why: _silent_experiment_acompletion, the recursion guard, the model_group override and the failure log.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3720-L3740
+    why: The async caller that pops silent_model from the deployment params and starts one mirror per target (B6020 ports it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2571-L2592
+    why: The blocking caller that starts one thread per target (B6020 ports it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/litellm_params.py#L154
+    why: Declared type of silent_model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7195-L7270
+    why: _maybe_run_weighted_failover, the decision this task ports, and the errors that send the caller on to the generic fallbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7372-L7383
+    why: Where the fallback dispatcher calls it, between order fallbacks and the generic walk.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L13130-L13137
+    why: The async selection step that pops _excluded_deployment_ids and filters, regardless of the flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L14238-L14245
+    why: The same step in sync selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5220-L5242
+    why: get_excluded_filtered_deployments, which may return an empty list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L875
+    why: enable_weighted_failover documentation, default False, simple-shuffle only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6967-L6991
+    why: router_settings keys reach Router.__init__ unchanged, so enable_weighted_failover is a config file key.
+
+dod:
+  - text: silent_targets gives one target for a string, the items in order for a list of strings, none for absent or null, and none with a warning for any other value.
+    proof: [silent-experiment-tests, oracle, helper-python]
+  - text: silent_kwargs copies the request, fills a missing or null metadata, drops litellm_parent_otel_span from metadata, sets is_silent_experiment, drops litellm_call_id, litellm_logging_obj and standard_logging_object, and keeps proxy_server_request and stream.
+    proof: [silent-experiment-tests, oracle, helper-python]
+  - text: A mirror whose incoming metadata has is_silent_experiment true makes no call.
+    proof: [silent-experiment-tests]
+  - text: A mirror calls MirrorCall with the target as model, metadata.model_group set to the target, stream as its own flag and stream removed from the request, and leaves the caller's request unchanged.
+    proof: [silent-experiment-tests]
+  - text: start runs the mirror on the runtime and start_blocking on its own thread, and a failing call is logged and never reaches the caller.
+    proof: [silent-experiment-tests]
+  - text: plan_weighted_failover gives none for a strategy other than simple-shuffle, a missing or empty failed id, metadata that is not an object, or no remaining healthy deployment.
+    proof: [weighted-failover-tests]
+  - text: plan_weighted_failover adds the failed id to earlier exclusions, writes them back under _failover_excluded_ids in the metadata named by metadata_key, and returns an entry that serializes as model plus _excluded_deployment_ids.
+    proof: [weighted-failover-tests]
+  - text: drop_excluded keeps order, keeps deployments without an id, returns the input for an empty exclusion list, and may return an empty list.
+    proof: [weighted-failover-tests, oracle, helper-python]
+  - text: router_settings.enable_weighted_failover loads as false when absent or null, reads a bool or an os.environ reference, and fails the load for any other value.
+    proof: [failover-config-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: silent-experiment-tests
+      why: the silent target parsing, the mirror request copy, the recursion guard or the two start paths are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-sdk --no-tests=fail
+        -E 'test(/^silent_experiment::tests::/)'
+    - id: weighted-failover-tests
+      why: the failover plan, its metadata write-back or the exclusion filter is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-router --no-tests=fail
+        -E 'test(/^weighted_failover::tests::/)'
+    - id: failover-config-tests
+      why: the enable_weighted_failover config key is not loaded
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::weighted_failover::tests::/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8440)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8440 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8440/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/helpers/silent-experiment/targets.yaml
+  - tools/oracle/cases/helpers/silent-experiment/mirror-kwargs.yaml
+  - tools/oracle/cases/helpers/weighted-failover/excluded-filter.yaml
+
+deviations:
+  - what: _failover_excluded_ids lists ids in first-seen order.
+    why: LiteLLM builds the list from a Python set, so its order is arbitrary; a fixed order keeps logged metadata stable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7220-L7245
+
+out_of_scope:
+  - "Reading silent_model from the deployment params, removing it from the params and the request, and calling start or start_blocking once per target: B6020 (completion and acompletion attempts)."
+  - "Calling plan_weighted_failover from the fallback dispatcher and treating a provider API error or a no-deployments error from the retry as not applicable: B399, with B310 running the hop."
+  - "Popping _excluded_deployment_ids and calling drop_excluded during selection: B016 for async_get_healthy_deployments and the sync get_available_deployment."
+  - "Router.__init__ storing enable_weighted_failover (B8356) and _anthropic_messages_stream_can_fall_back reading it (B8351); they read config.sections.weighted_failover."
+  - "HTTP oracle cases for silent_model and enable_weighted_failover through the booted proxy: the router wiring that composes B6020, B399 and B310 into the chat route."
+  - "Router._initialize_alerting and send_llm_exception_alert: not built, since the proxy only reaches them through router_settings.alerting_config, which LiteLLM keeps as a dict and fails on at startup, and the alert skips every call that carries proxy_server_request."
+  - "Every other function in litellm/router.py: the owners in the litellm/router.py ownership inventory of tasks/B021-automatic-router-pipeline.yaml."
+  - "The shadow evaluation logger and its judge calls: B4081 to B4085."
+
+pitfalls:
+  - "The recursion guard reads is_silent_experiment from the incoming request's metadata before the copy; checking the copy would always be true and no mirror would ever run."
+  - "proxy_server_request must survive the copy, while litellm_call_id, litellm_logging_obj and standard_logging_object must not, or the mirror reuses the primary call's spend log id."
+  - "litellm_parent_otel_span is removed only from the copy's metadata; the primary request keeps its span."
+  - "metadata.model_group on the mirror is the silent target, not the primary model group, so metrics land on the silent model."
+  - "stream leaves the request and travels as MirrorArgs.stream; a missing stream key means false."
+  - "Weighted failover applies only when the strategy is exactly \"simple-shuffle\"; latency, usage and cost strategies keep the plain fallback path."
+  - "cooldown_ids is the router-wide cooldown list, not only the failed group's, and it is subtracted before the exclusions."
+  - "When metadata is absent the empty object is inserted before the remaining check, so it stays in the request even when the plan gives none."
+  - "drop_excluded never falls back to the unfiltered list; only the retry skip with _retry_skipped_deployment_ids does that."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

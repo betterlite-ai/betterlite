@@ -1,0 +1,119 @@
+id: B6020
+title: Router completion calls, sync stream fallback and batch helpers
+description: >-
+  Build the Rust side of `Router.completion`, `Router.acompletion` and the two batch helpers, so a Python `Router` has something native to call. Today no task owns a Rust function that runs a chat completion through the router: B016 builds the route pipeline, B017 and B310 build retries and fallbacks, B311 wraps a chat stream, and B5656 calls one deployment. This task joins them in one typed object, the way LiteLLM's `Router` joins them in `router.py`. It is also the owner of a Rust `Router.acompletion` for other callers, such as B4084's `ShadowRouter` seam.
+
+
+  Put the code in the new module `crates/betterlite-sdk/src/router_completion.rs` and its folder. Add `betterlite-core` to `crates/betterlite-sdk/Cargo.toml` if it is not there yet. betterlite-sdk may not depend on betterlite-router or betterlite-server (deny.toml), so each service below that a router task builds (B016, B017, B303, B310, B311, B323, B336, B346, B397) is a port: a trait this module defines with only the calls this task makes, held as an `Arc<dyn ...>`. Parts from betterlite-sdk or betterlite-core (B5656's targets, B8440's `SilentExperiments`) are used as they are. The wave 17 inference wiring part implements every port in betterlite-server over the router task named next to it.
+
+
+  `RouterCompletion` is built once from `RouterCompletionParts`: B016's pipeline and catalog handle, B017's attempt executor, B310's fallback engine, B346's scheduler, B8440's silent experiment starter (`SilentExperiments` in `silent_experiment.rs`), B8466's prompt management entry, B336's compaction step, B397's metrics hook, B303's slot and kwargs helpers, B5656's `AsyncCompletionTarget` and `CompletionTarget`, a clock, and the router's own settings: `cache_responses` (default false), `default_priority` (default none), `default_litellm_params` (default empty map), `fallbacks`, `context_window_fallbacks` and `content_policy_fallbacks` (default none), and `expose_router_debug_in_errors` (default false). It owns three counters per model, `total_calls`, `success_calls` and `fail_calls`. No static, no global.
+
+
+  `acompletion` (L2779-L2830). Set `model`, `messages` and `stream` on the request, then call B310's update-before-fallbacks step. The priority is the request's `priority`, else `default_priority`. A model that B8466 says is a prompt management model goes to B8466's factory with the request and returns its answer. An integer priority goes to B346's scheduled call. Anything else goes to B017/B310's fallback-with-retries executor with `acompletion_attempt` as the attempt. On success record the elapsed time as a router service success with call type `acompletion`, in the background. On any error return the error unchanged.
+
+
+  `acompletion_attempt` is `_acompletion` (L3672-L3835), one attempt. Copy the request before selection and set the copy's `model` to the group name, because the stream fallback needs the original request. Pick the deployment through B016's async selection with `specific_deployment` taken out of the request. Drop unsupported classifier reasoning effort (B323). Record the selection time with call type `async_get_available_deployment`. Track the pick with B397's hook. Take the deployment's params, apply the request reasoning override (B323), and take `silent_model` out: for each silent target start B8440's mirror call (`SilentExperiments::start`, with `silent_targets` for the targets) without waiting for it. Then `setdefault` the messages, update the request with the deployment (B303), drop `silent_model` from the request, and add one to `total_calls` for the deployment's model. Build the call arguments in this order: deployment params, `messages`, `caching` set to `cache_responses`, `client` from B303, then the request; remove `silent_model` and `include_fallback_errors`. Run B336's compaction with surface `chat`. Hold the deployment slot (B303) for the call, run the async pre-call checks, and call `AsyncCompletionTarget`. After the call, B016's content filter check turns a blocked response into `ContentPolicyViolationError` with message "Response output was blocked.", model set to the group and an empty provider. A stream that has no source yet is fetched. Add one to `success_calls`, track the response, and for a stream return B311's async stream wrapper built from the copied request, with the slot handed over to it. On a timeout error, when `expose_router_debug_in_errors` is true, append "\n\nDeployment Info: request_timeout: {x}\ntimeout: {y}" from the deployment's params. Every error sets the deployment's `num_retries` and the failed deployment id on the error (B017), and every non-timeout error adds one to `fail_calls` for the model that was picked, when one was.
+
+
+  `completion` and `completion_attempt` (L2533-L2654) are the blocking twins. They use `CompletionTarget`, B016's sync selection and B8440's `SilentExperiments::start_blocking` for each silent target, and they have no compaction, no scheduler and no prompt management step. Differences to keep: `completion` has no priority and no service timing, and the sync attempt does not touch the counters.
+
+
+  `completion_stream_fallback` is `_completion_streaming_iterator` (L3518-L3648). It wraps a sync stream in `SyncFallbackStream`, which carries the source stream's model, provider, logging handle and hidden params and is an `Iterator`. When the source raises a mid-stream fallback error, the wrapper re-raises the original error if fallbacks are off for the request (B311's check), or if the stream is past its first chunk and has produced content (the error says so, or B311's content check finds it in the chunks). Otherwise it builds the full response from the chunks read so far, takes its usage, and runs the blocking fallback executor with the saved request, `messages`, and `fallbacks`, `context_window_fallbacks` and `content_policy_fallbacks` taken from the request first and the router second. It forwards each item of the fallback stream, adopts the fallback's response headers (B311), applies the hidden params to each item, and adds the earlier usage to any item that has usage. A fallback answer that is not a stream yields one empty item. If the fallback fails with a mid-stream error that holds an original error, raise that original error. On finish, close the source and the fallback stream and ignore errors while closing.
+
+
+  `update_kwargs_with_default_litellm_params` (L3916-L3935) takes the request map and a metadata key name (default `metadata`). Copy the defaults, take `metadata` out of the copy, `setdefault` every non-null default into the request, then merge the metadata defaults into the request's map under the key name, creating it when absent.
+
+
+  `batch_one_model_multiple_requests` (L4249-L4286) runs `acompletion` once for each message list and joins them in order. A failed call becomes an error value at its index, not a failure of the whole batch. `batch_fastest_response` (L4291-L4375) splits `model` on commas and trims each name, starts `acompletion` for each with the same `stream`, and returns the first success, which is a model response or a stream. It cancels the rest, and sets hidden param `fastest_response_batch_completion` to true on the winner. A failed call is ignored. When all fail, return the error text "All tasks failed". A cancelled call re-raises the cancel and does not count as a failure.
+
+
+  Add a cargo-fuzz target only if you parse bytes. This task parses none, so there is no fuzz target. Tests are in `router_completion/tests.rs`; names start with `completion_`, `acompletion_`, `stream_fallback_`, `defaults_` and `batch_`. Drive them with fake services for each part, so no network and no clock are used.
+scope:
+  paths:
+  - crates/betterlite-sdk/Cargo.toml
+  - crates/betterlite-sdk/src/router_completion.rs
+  - crates/betterlite-sdk/src/router_completion/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2533-L2654
+    why: Blocking completion and one blocking attempt, including the silent experiment thread and the stream wrap.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2759-L2830
+    why: The acompletion overloads (decorators only) and the real function with priority, scheduler and prompt management routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3518-L3648
+    why: The sync stream fallback wrapper and its fallback loop.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3672-L3835
+    why: One async attempt, from deployment pick to the stream wrap and the error stamps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3916-L3935
+    why: Default litellm params merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4249-L4375
+    why: Both batch helpers.
+dod:
+  - text: "`acompletion` picks the route by model and priority: a prompt management model goes to B8466, an integer priority to B346, and everything else to the fallback executor with `acompletion_attempt`."
+    proof: [acompletion-routes]
+  - text: "`acompletion_attempt` builds the call arguments in LiteLLM's order, strips `silent_model` and `include_fallback_errors`, starts silent mirror calls without waiting, and keeps the counters."
+    proof: [acompletion-attempt]
+  - text: "A blocked response raises `ContentPolicyViolationError` with \"Response output was blocked.\", a timeout gets the debug text only when `expose_router_debug_in_errors` is true, and an error carries the deployment's retry count and failed id."
+    proof: [acompletion-errors]
+  - text: "A stream result is wrapped by B311's async wrapper with the request copy taken before selection and the deployment slot handed over."
+    proof: [acompletion-stream]
+  - text: "`completion` and its attempt mirror the async path without the scheduler, prompt management, compaction or counters."
+    proof: [completion-blocking]
+  - text: "`SyncFallbackStream` re-raises the original error when fallbacks are off or content was already produced, and otherwise forwards the fallback stream with merged usage and headers."
+    proof: [stream-fallback]
+  - text: "`update_kwargs_with_default_litellm_params` keeps request values, skips null defaults and merges metadata under the given key."
+    proof: [defaults-merge]
+  - text: "The batch helpers keep order, turn errors into values, pick the first success, cancel the rest and report \"All tasks failed\"."
+    proof: [batch-helpers]
+checks:
+  optional: []
+  commands:
+  - id: acompletion-routes
+    why: A prompt management model or an integer priority takes the plain route.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_completion::tests::acompletion_route/)'
+  - id: acompletion-attempt
+    why: The argument order, the stripped keys, the silent calls or the counters differ from LiteLLM.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_completion::tests::acompletion_attempt/)'
+  - id: acompletion-errors
+    why: An error loses its retry count, the debug text shows when it should not, or a blocked answer passes.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_completion::tests::acompletion_error/)'
+  - id: acompletion-stream
+    why: A stream escapes the fallback wrapper or the slot is released early.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_completion::tests::acompletion_stream/)'
+  - id: completion-blocking
+    why: The blocking path drifts from the async one.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_completion::tests::completion_/)'
+  - id: stream-fallback
+    why: A half-read stream is replayed, or the original error is lost.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_completion::tests::stream_fallback_/)'
+  - id: defaults-merge
+    why: A default overwrites the request or a null default leaks.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_completion::tests::defaults_/)'
+  - id: batch-helpers
+    why: A batch loses order, hides the winner flag or never ends.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_completion::tests::batch_/)'
+oracle_cases: []
+deviations:
+  - what: "`acompletion_attempt` and `completion_attempt` take the call target and every router service as constructor fields, and no `litellm.acompletion` module function is looked up."
+    why: Rust has no module state, and the rules ask for constructor wiring.
+  - what: "`batch_fastest_response` returns a typed error with the text \"All tasks failed\", where LiteLLM raises a bare `Exception` with that text."
+    why: Rust has no bare exception, and the text is the same.
+out_of_scope:
+  - "B016 owns route selection, the content filter and refusal checks, B017 the attempt loop and the error stamps, B310 the fallback executor and update-before-fallbacks, B311 the async stream wrapper and the fallback header and usage helpers."
+  - "B303 owns the deployment slot and kwargs update, B323 the reasoning effort steps, B336 the compaction step, B346 the scheduler, B8440 the silent experiment calls and B8466 prompt management."
+  - "B305 owns Router.abatch_completion with its nested helpers, because it calls them; this task owns only the two helpers named above."
+  - "B6021 owns the generic and anthropic_messages calls, B6022 the Python bridge and B5078 the Python methods."
+  - "The rest of litellm/router.py (constructor, endpoint setup, embeddings, images, batches, files, vector stores) stays with B162's last part."
+pitfalls:
+  - The request copy for the stream fallback is taken before `specific_deployment` is removed and before any deployment key is added, and its `model` is the group name.
+  - "`silent_model` is removed from the deployment params copy and from the request, and from the final arguments again, so it never reaches a provider."
+  - "`include_fallback_errors` is removed only in the async attempt; the blocking attempt leaves it."
+  - "The async stream wrapper gets the deployment slot, so a stream keeps its parallel-request permit until it ends, while the sync wrapper holds none."
+  - "A `Timeout` error skips the `fail_calls` increment, because LiteLLM's timeout branch re-raises before the generic branch."
+  - "Defaults skip a `None` value but keep `False` and `0`."
+  - "`batch_fastest_response` sets `fastest_response_batch_completion` only on the winner, and a cancel from the caller is not swallowed."
+  - "There is no exception alert sink: `router_settings.alerting_config` is refused at config load with an error naming the key, so LiteLLM's `send_llm_exception_alert` call point is left out."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

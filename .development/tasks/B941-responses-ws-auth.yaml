@@ -382,8 +382,8 @@ out_of_scope:
 - 'litellm/proxy/auth/user_api_key_auth.py: B754 owns _run_centralized_common_checks called after _enforce_key_and_fallback_model_access; B941 owns only the gate conditions and its pre-call error frame.'
 - 'litellm/proxy/common_request_processing.py: B014 owns ProxyBaseLLMRequestProcessing and common_processing_pre_call_logic; B941 records its call-before-route ordering and route_type without reimplementing admission, guardrails, rate limits, or budgets.'
 - 'litellm/proxy/route_llm_request.py: B014 owns route_request dispatch; B943 owns native Responses WebSocket execution and B945 owns managed turn execution. B941 supplies routed_data and handles only the surrounding failure control flow.'
-- 'litellm/proxy/utils.py: B124 owns ProxyLogging.post_call_failure_hook L3197-L3314 and B012 owns logger/event integration; B941 records hook order without implementing callback, persistence, or redaction.'
-- 'Database/cache reads or writes reached through auth, common processing, failure hooks, and provider execution belong to B732, B748, B754, B124, B856, B943, and B945. The owned endpoints.py slice performs no database write.'
+- 'litellm/proxy/utils.py: B8395 owns ProxyLogging.post_call_failure_hook L3197-L3314 and B012 owns logger/event integration; B941 records hook order without implementing callback, persistence, or redaction.'
+- 'Database/cache reads or writes reached through auth, common processing, failure hooks, and provider execution belong to B732, B748, B754, B8395, B856, B943, and B945. The owned endpoints.py slice performs no database write.'
 - 'Provider and Python package/event-loop facades belong to B943, B945, and B158-B161; this task forwards the prepared operation and does not create a helper oracle for a provider call.'
 - 'litellm/proxy/proxy_server.py: B003 owns application startup and the single app.include_router(response_router) registration at L19949-L19952; B941 supplies one Rust route factory and must not duplicate that mount.'
 pitfalls:

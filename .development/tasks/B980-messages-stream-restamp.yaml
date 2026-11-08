@@ -175,6 +175,7 @@ pitfalls:
   preserve return None and its nested guards.
 - Within _restamped_event\'s message.get('model') == requested_model branch, preserve return None and its nested
   guards.
+- "Use CacheWriteTracker::spawn."
 review_level: standard
 budget:
   max_changed_lines: 1500

@@ -1,0 +1,55 @@
+id: B7948
+title: Python types for the policy engine (types/policy_engine.py, types/proxy/policy_engine/*)
+description: >-
+  This task ports `policy_engine.py` (29 lines) and `proxy/policy_engine/` (`pipeline_types.py`, `policy_types.py` 252 lines,
+  `resolver_types.py` 321 lines, `validation_types.py`) into `crates/betterlite-python/python/betterlite/types/policy_engine.py` and `crates/betterlite-python/python/betterlite/types/proxy/policy_engine/`. It is Python
+  only.
+
+
+  All are pydantic models: policy condition, scope, guardrails, policy, attachment and config (`policy_types.py`), the match context, the
+  resolved policy and the info, summary and list responses (`resolver_types.py`), pipeline step and result models, and the validation
+  error Enum `PolicyValidationErrorType` with `PolicyValidationError`, `PolicyValidationResponse` and `PolicyValidateRequest`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/policy_engine.py
+  - crates/betterlite-python/python/betterlite/types/proxy/policy_engine/pipeline_types.py
+  - crates/betterlite-python/python/betterlite/types/proxy/policy_engine/policy_types.py
+  - crates/betterlite-python/python/betterlite/types/proxy/policy_engine/resolver_types.py
+  - crates/betterlite-python/python/betterlite/types/proxy/policy_engine/validation_types.py
+  - crates/betterlite-python/tests/test_types_policy_engine.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/policy_types.py#L1-L252
+  why: Policy, scope and attachment models.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/resolver_types.py#L1-L321
+  why: Resolved policy and response models.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/validation_types.py#L1-L59
+  why: Validation error Enum and models.
+out_of_scope:
+- >-
+  `proxy/policy_engine/__init__.py` (97 lines of exports) is written by the umbrella B167.
+pitfalls:
+- >-
+  The policy models nest several levels (a policy holds scope, guardrails and conditions). A test builds one full policy from a dict and compares `model_dump` with LiteLLM.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_policy_engine.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

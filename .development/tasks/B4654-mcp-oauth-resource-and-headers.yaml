@@ -1,0 +1,245 @@
+id: B4654
+title: "MCP OAuth resource URLs and request header parsing"
+description: >-
+  Build two small pure modules in betterlite-mcp that the MCP route handlers and the MCP admission code call: oauth_resource (the URLs the gateway advertises and the RFC 8707 resource it sends upstream) and request_headers (what the gateway reads out of the inbound MCP request headers and path). Both take plain values, not framework requests. The caller reads the HTTP request, the config and the trusted-proxy decision and passes them in, so nothing here reads a global.
+
+
+  oauth_resource has three submodules, each with a tests.rs beside it.
+
+
+  base_url. strip_default_port(scheme, netloc) lowercases the netloc and drops the scheme's default port (http 80, https 443); for an IPv6 literal the port is whatever follows the closing bracket, and a port that is not a number leaves the lowercased netloc unchanged. normalize_proxy_base_url(raw) is LiteLLM's _resolve_proxy_base_url_env with the env read moved out: it takes the PROXY_BASE_URL text, trims it, returns None for empty text, returns scheme://netloc/path with a trailing slash removed when the scheme is http or https and there is a netloc (params, query and fragment are dropped), and otherwise logs a warning that PROXY_BASE_URL is not a valid http(s) URL and returns None. get_request_base_url(proxy_base_url, origin) takes a RequestOrigin value with the base_url Starlette would give (scheme://host[:port]/root_path), the X-Forwarded-Proto, X-Forwarded-Host and X-Forwarded-Port values as Option<&str>, and from_trusted_proxy: bool. Order: a normalized PROXY_BASE_URL wins; else the literal base_url without its trailing slash when the caller is not a trusted proxy; else the forwarded values, exactly as LiteLLM combines them (scheme from the proto header when it is non-empty; a host that already holds a colon and does not start with "[" is used as is and the port header is ignored; otherwise host plus port header; with no host header the base_url's own netloc gets the port header only when that netloc has no colon). A forwarded result is rebuilt with strip_default_port and the base_url's path.
+
+
+  challenge. well_known_root_suffix(server_root_path) returns the SERVER_ROOT_PATH text, or "" when it is "/". route_relative_request_path takes the ASGI values (original_path, path, app_root_path, root_path, each optional except path) and returns the original path (first non-empty of original_path and path) with the root path removed on a whole-segment boundary; the root path is app_root_path when non-empty, else root_path, with trailing slashes removed. passthrough_resource_metadata_url(base_url, route_path, server_name, root_suffix) returns base_url + "/.well-known/oauth-protected-resource" + root_suffix + "/{server}/mcp" when the route path starts with "/{server}/mcp", else "/mcp/{server}". passthrough_www_authenticate returns Bearer, then error="invalid_token", when asked, then resource_metadata="url". byok_www_authenticate(proxy_base_url, request_root_path) returns Bearer resource_metadata="{base}{BYOK_RESOURCE_METADATA_PATH}", where base is the normalized PROXY_BASE_URL or else the request root path with trailing slashes removed (so it can be a bare path, as in LiteLLM). BYOK_RESOURCE_METADATA_PATH is "/v1/mcp/oauth/protected-resource". TOKEN_NO_CACHE_HEADERS is Cache-Control: no-store and Pragma: no-cache.
+
+
+  resource_identity. A small python_url module reproduces the parts of Python's urlparse, urlsplit, urlunparse and urlunsplit that these functions use (scheme, netloc, path, params, query, fragment, hostname, port). Do not use the url crate for this; it normalizes differently (percent-encoding, IDNA, default ports). canonicalize_url_identity lowercases the scheme, drops userinfo (everything up to the last "@" of the netloc), applies strip_default_port, drops params, query and fragment, and removes trailing slashes from the path. canonical_resource_uri returns None when the URL has no scheme or no netloc, else the identity. resolve_upstream_resource(upstream_resource, url, server_id) trims the configured value; blank gives None; any value that is not "auto" (compared case-insensitively) is returned verbatim; "auto" derives canonical_resource_uri(url), and with no url or an unparseable url it logs a warning naming server_id and returns None. build_upstream_oauth2_token_request takes the same three server fields plus auth_method, client_id and client_secret, builds the client auth with B4650's normalize_token_auth_method and build_token_client_auth, and adds a resource entry to the body when resolve_upstream_resource gives one. redact_mcp_resource_url(url) reduces a URL to scheme://hostname[:port] for logs and spend metadata and returns None when there is no host or the port is invalid.
+
+
+  request_headers has three submodules, each with a tests.rs beside it.
+
+
+  raw_headers. RawHeaders is built from the ordered (name bytes, value bytes) pairs of the request, like LiteLLM's _safe_get_headers_from_scope. It first rejects a request with more than one Authorization header (name compared case-insensitively) with a typed error that carries status 400 and the detail "Multiple Authorization headers are not allowed". It then decodes names and values as latin-1, collapses exact-name duplicates the way a Python dict does (first position kept, last value wins), lowercases names, and keeps the header order. lookup(name) is case-insensitive and returns the first match.
+
+
+  client_headers. Constants: x-litellm-api-key, Authorization, x-mcp-auth, x-mcp-servers, x-mcp-access-groups. get_litellm_api_key returns x-litellm-api-key when it is non-empty, else Authorization when non-empty, else None. mcp_auth_header returns the configured client-side header (default x-mcp-auth, from config) and logs the deprecation warning when it is present. server_auth_headers collects every x-mcp-{alias}-{header} header into alias -> header -> value, skipping x-mcp-servers and x-mcp-access-groups; the alias is the text before the first dash after "x-mcp-", the header name is the rest (lowercase, except "authorization" which becomes "Authorization"), and a later header with the same alias and name overwrites the earlier one. oauth2_headers returns {"Authorization": value} of the last header whose name starts with "authorization", or an empty map. parse_mcp_servers_header and parse_mcp_access_groups_header split a comma list, trim each item, drop empty items, return None when the header is absent and Some(empty list) when it is present but holds no items. The servers parser is the inline block in process_mcp_request; B4673 calls it.
+
+
+  path_targets. extract_target_server_names_from_path(path) decides which MCP server a request path targets, and auth gating relies on it, so it must agree with LiteLLM on every input (the same function in server.py::_get_mcp_servers_in_path is what routing uses). It returns an empty list for "/mcp/sse" and "/mcp/sse/messages" (trailing slashes ignored); [first] for "/{server}/mcp[/...]" when the first segment is not "mcp"; a comma list for "/mcp/a,b[/tail]"; and one name (with at most one slash inside it) for "/mcp/{name}[/tail]". Anything else gives an empty list so callers fail closed. This is the decoder for outside input: add a cargo-fuzz target request_path_targets that feeds UTF-8 path text to it, with a corpus replay test. resolve_target_server_names(path, header_servers) returns the path targets when there are any, else the header list, else empty. cold_start_server_names(path, header_servers) returns the single path target, or None when the path gives no single target or the header names a server the path does not.
+
+
+  mcp_client_side_auth_header_name is a config value: a small section crates/betterlite-config/src/sections/mcp_client_side_auth.rs reads the env var LITELLM_MCP_CLIENT_SIDE_AUTH_HEADER_NAME and general_settings.mcp_client_side_auth_header_name. If the env var is set, its value is used, and an empty value falls back to the default "x-mcp-auth"; else if the general_settings key is set, the same rule; else the default.
+
+
+  The module and test names above are the contract; the skeleton creates the empty files. Sizing: about 320 non-blank LiteLLM source lines are owned, split roughly 150 in oauth_utils and 170 in user_api_key_auth_mcp.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/oauth_resource.rs
+    - crates/betterlite-mcp/src/oauth_resource/**
+    - crates/betterlite-mcp/src/request_headers.rs
+    - crates/betterlite-mcp/src/request_headers/**
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/fuzz/Cargo.toml
+    - crates/betterlite-mcp/fuzz/fuzz_targets/request_path_targets.rs
+    - crates/betterlite-mcp/fuzz/corpus/request_path_targets/**
+    - crates/betterlite-config/src/sections/mcp_client_side_auth.rs
+    - crates/betterlite-config/src/sections/mcp_client_side_auth/**
+    - tools/oracle/cases/helpers/mcp-oauth-resource/**
+    - tools/oracle/cases/helpers/mcp-request-headers/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-oauth-resource-*
+    - tools/oracle/fuzz/corpus/helper_case/mcp-request-headers-*
+    - tools/oracle/helpers/b4654.py
+    - tools/oracle/helpers/b4654/**
+    - tools/oracle/src/helpers/mcp/b4654.rs
+    - tools/oracle/src/helpers/mcp/b4654/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L24-L57
+    why: Constants TOKEN_NO_CACHE_HEADERS, the default-port table and UPSTREAM_RESOURCE_AUTO ("auto").
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L87-L107
+    why: _redact_mcp_resource_url, used for logs and spend metadata; note IPv6 hosts lose their brackets.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L110-L135
+    why: PROXY_BASE_URL normalization with its warning, BYOK_RESOURCE_METADATA_PATH and get_byok_www_authenticate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L138-L177
+    why: get_request_base_url, the X-Forwarded-* rules and the trusted-proxy gate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L180-L236
+    why: well_known_root_suffix, get_route_relative_request_path, the per-server protected-resource metadata URL and the 401 challenge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L277-L307
+    why: _strip_default_port, needed by base_url and canonicalize_url_identity (B4655 reuses it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L648-L685
+    why: canonicalize_url_identity and canonical_resource_uri.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L688-L754
+    why: resolve_upstream_resource and build_upstream_oauth2_token_request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L98-L129
+    why: _parse_mcp_server_names_from_path, the cold-start target check with the x-mcp-servers cross-check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L406-L414
+    why: The header-name constants on MCPRequestHandler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L449-L476
+    why: How process_mcp_request reads the key and parses the x-mcp-servers header inline.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L680-L737
+    why: extract_target_server_names_from_path with its two regexes and the sse exclusion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1349-L1366
+    why: _resolve_target_server_names, path wins over the header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1369-L1478
+    why: Client-side auth header, per-server x-mcp-{alias}-{header} parsing, the oauth2 header and the configurable header name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1481-L1552
+    why: LiteLLM key lookup, header building from the ASGI scope and the duplicate Authorization rejection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3777-L3795
+    why: x-mcp-access-groups parsing from headers and from the scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4946-L4954
+    why: SpecialHeaders values for the five header names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1074-L1140
+    why: _get_mcp_servers_in_path, the routing twin of extract_target_server_names_from_path.
+  - url: https://github.com/encode/starlette/blob/master/starlette/datastructures.py
+    why: Headers class that LiteLLM builds from a dict, which lowercases names and keeps differently cased duplicates.
+  - url: https://www.rfc-editor.org/rfc/rfc8707
+    why: Resource indicators, the reason the resource is canonicalized and sent on every upstream token request.
+  - url: https://www.rfc-editor.org/rfc/rfc9728
+    why: Protected resource metadata, the resource_metadata challenge parameter.
+dod:
+  - text: >-
+      strip_default_port, normalize_proxy_base_url and get_request_base_url match LiteLLM for PROXY_BASE_URL set or invalid, an untrusted caller, and trusted forwarded proto, host, port and IPv6 combinations.
+    proof: [base-url-tests, oracle]
+  - text: >-
+      well_known_root_suffix, route_relative_request_path, passthrough_resource_metadata_url, passthrough_www_authenticate and byok_www_authenticate return LiteLLM's strings for both path spellings, the invalid_token form, a root path and an unset PROXY_BASE_URL.
+    proof: [challenge-tests, oracle]
+  - text: >-
+      canonicalize_url_identity, canonical_resource_uri and redact_mcp_resource_url match LiteLLM for default ports, userinfo, params, query, IPv6 literals, relative URLs and an invalid port.
+    proof: [resource-identity-tests, oracle]
+  - text: >-
+      resolve_upstream_resource handles blank, verbatim and "auto" (with a url, without a url and with a relative url), and build_upstream_oauth2_token_request adds the resource to the body for client_secret_post and client_secret_basic.
+    proof: [resource-identity-tests, oracle]
+  - text: >-
+      RawHeaders rejects two Authorization headers with status 400 and the exact detail, collapses exact-name duplicates last-wins, and looks names up case-insensitively.
+    proof: [raw-headers-tests, oracle]
+  - text: >-
+      get_litellm_api_key, mcp_auth_header, server_auth_headers, oauth2_headers, parse_mcp_servers_header and parse_mcp_access_groups_header match LiteLLM on the cases in the oracle list.
+    proof: [client-headers-tests, oracle]
+  - text: >-
+      extract_target_server_names_from_path, resolve_target_server_names and cold_start_server_names match LiteLLM on every path shape listed in the oracle cases.
+    proof: [path-targets-tests, oracle]
+  - text: >-
+      extract_target_server_names_from_path has a cargo-fuzz target whose corpus replays without a panic.
+    proof: [parser-corpus]
+  - text: >-
+      The mcp_client_side_auth section loads the env var and the general_settings key with LiteLLM's precedence and empty-value fallback.
+    proof: [config-tests]
+  - text: >-
+      The oracle helper adapters pass strict Python checks and the new helper seeds replay.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: base-url-tests
+      why: The base URL, port stripping or PROXY_BASE_URL tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_resource::base_url::tests::/)'
+    - id: challenge-tests
+      why: The well-known path, route path or WWW-Authenticate tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_resource::challenge::tests::/)'
+    - id: resource-identity-tests
+      why: The URL identity, upstream resource or token request tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_resource::resource_identity::tests::/)'
+    - id: raw-headers-tests
+      why: The request header collection and duplicate Authorization tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^request_headers::raw_headers::tests::/)'
+    - id: client-headers-tests
+      why: The client credential header, server auth header and list header tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^request_headers::client_headers::tests::/)'
+    - id: path-targets-tests
+      why: The path target parsing tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^request_headers::path_targets::tests::/) - test(/replays_the_/)'
+    - id: parser-corpus
+      why: The request_path_targets fuzz target, its added corpus or its replay test is missing or fails.
+      run: test -f crates/betterlite-mcp/fuzz/fuzz_targets/request_path_targets.rs && grep -q request_path_targets crates/betterlite-mcp/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-mcp/fuzz/corpus/request_path_targets)" && cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(replays_the_request_path_targets_corpus)'
+    - id: config-tests
+      why: The mcp_client_side_auth section tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_client_side_auth::/)'
+    - id: helper-python
+      why: The helper adapter is missing or fails strict Python checks.
+      run: test -f tools/oracle/helpers/b4654.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b4654 operation reaches the shared helper case parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-oauth-resource-*' 'tools/oracle/fuzz/corpus/helper_case/mcp-request-headers-*')" && grep -rlq b4654 tools/oracle/fuzz/corpus/helper_case/mcp-oauth-resource-* && grep -rlq b4654 tools/oracle/fuzz/corpus/helper_case/mcp-request-headers-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-oauth-resource/strip-default-port.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/proxy-base-url-valid.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/proxy-base-url-invalid.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/request-base-url-untrusted.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/request-base-url-forwarded.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/request-base-url-forwarded-ipv6.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/request-base-url-env-wins.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/well-known-root-suffix.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/route-relative-path.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/passthrough-metadata-url.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/passthrough-www-authenticate.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/byok-www-authenticate.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/canonicalize-identity.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/canonicalize-identity-params.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/canonical-resource-uri.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/redact-resource-url.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/upstream-resource-auto.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/upstream-resource-explicit.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/upstream-token-request-post.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-resource/upstream-token-request-basic.yaml
+  - tools/oracle/cases/helpers/mcp-request-headers/scope-duplicate-authorization.yaml
+  - tools/oracle/cases/helpers/mcp-request-headers/scope-collapse-duplicates.yaml
+  - tools/oracle/cases/helpers/mcp-request-headers/litellm-api-key.yaml
+  - tools/oracle/cases/helpers/mcp-request-headers/client-side-auth-header-name.yaml
+  - tools/oracle/cases/helpers/mcp-request-headers/server-auth-headers.yaml
+  - tools/oracle/cases/helpers/mcp-request-headers/oauth2-headers.yaml
+  - tools/oracle/cases/helpers/mcp-request-headers/servers-header.yaml
+  - tools/oracle/cases/helpers/mcp-request-headers/access-groups-header.yaml
+  - tools/oracle/cases/helpers/mcp-request-headers/target-names-server-first.yaml
+  - tools/oracle/cases/helpers/mcp-request-headers/target-names-mcp-single.yaml
+  - tools/oracle/cases/helpers/mcp-request-headers/target-names-mcp-csv.yaml
+  - tools/oracle/cases/helpers/mcp-request-headers/target-names-excluded.yaml
+  - tools/oracle/cases/helpers/mcp-request-headers/target-names-odd-shapes.yaml
+  - tools/oracle/cases/helpers/mcp-request-headers/resolve-target-names.yaml
+  - tools/oracle/cases/helpers/mcp-request-headers/cold-start-names.yaml
+deviations:
+  - what: Header values are not written to the debug log when a server auth header is found. LiteLLM logs the first 10 characters of the value.
+    why: Ten characters of a bearer token or API key is a secret leak in a log line; the alias and header name are enough to debug.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1437-L1442
+  - what: The invalid PROXY_BASE_URL warning is logged each time normalize_proxy_base_url runs, not once per distinct value. The caller resolves it once at startup.
+    why: LiteLLM keeps a module global to deduplicate the warning; betterlite keeps no module state, and one startup call gives the same single line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L110-L127
+  - what: LITELLM_MCP_CLIENT_SIDE_AUTH_HEADER_NAME is read from the process environment only, not from a configured secret manager.
+    why: The secret manager lookup (get_secret_str) belongs to the secret manager task; the header name is not a credential, and the env var is the documented way to set it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1458-L1478
+  - what: A path that ends in a newline character is not treated as ending at the newline. LiteLLM's regex $ also matches just before a final newline.
+    why: An HTTP request target cannot carry a raw newline, so no request reaches this case; the oracle cases send none.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L717-L737
+  - what: The fallback to empty headers when an ASGI header entry is malformed (the AttributeError and TypeError branch) does not exist. RawHeaders takes typed name and value byte pairs.
+    why: The server layer hands over bytes from the HTTP parser, so a malformed entry cannot occur.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1519-L1529
+out_of_scope:
+  - "oauth_utils.py redirect policy (validate_loopback_redirect_uri, validate_redirect_uri_shape, validate_trusted_redirect_uri, is_loopback_redirect_host, the MCP_TRUSTED_REDIRECT_ORIGINS and MCP_TRUSTED_NATIVE_REDIRECT_URIS parsing and matching, _resolve_proxy_base_for_redirect, _build_trusted_redirect_rejection_message, _raise_trusted_redirect_uri_rejected, _oauth_invalid_request, _origin_label): B4655, which covers oauth_utils.py and calls strip_default_port and get_request_base_url from here."
+  - "get_request_root_path (per_request_root_path_middleware.py): B4200. The caller passes its value in."
+  - "IPAddressUtils.is_request_from_trusted_proxy and get_mcp_client_ip: B743. The caller passes the trust decision in as from_trusted_proxy."
+  - "build_token_client_auth, normalize_token_auth_method and TokenEndpointClientAuth: B4650, which this task calls."
+  - "The MCPServer type (url, upstream_resource, server_id): owned by the MCP types task; this task takes the three fields as arguments."
+  - "get_secret_str and secret manager lookup: the secret manager task (B8500 covers secret_managers/main.py)."
+  - "process_mcp_request, the admission arms, _admission_failure_fallback, the cold-start checks (_is_mcp_passthrough_cold_start, _is_legacy_delegate_cold_start) and the DCR bridge and gateway session admission: B4673, which covers user_api_key_auth_mcp.py and calls the parsers built here."
+  - "_is_gateway_admission_credential and _scrub_gateway_admission_credentials: B4679, which covers user_api_key_auth_mcp.py."
+  - "_target_servers_are_true_passthrough: B4673 (it reads the server registry; this task only supplies resolve_target_server_names)."
+  - "Everything from get_mcp_server_access down (server, tool, team, key, user, org, agent and end-user grants, access group lookups, ceilings): B4668, B4669, B4670, B4671 and B4672 by their titles."
+pitfalls:
+  - "extract_target_server_names_from_path with a comma list finds the tail with re.search(r\"/([^/,]+(?:/[^/,]+)*)$\"): a tail that contains a comma, an empty segment (\"a,b//c\") or only a trailing slash (\"a,b/\") changes where the name list ends, so \"a,b/\" yields [\"a\", \"b/\"]. Write cases for each."
+  - "Path /mcp/mcp/foo does not hit the /{server}/mcp branch because the first segment is \"mcp\"; it falls to the /mcp/ branch and returns [\"mcp/foo\"]. Path /mcp//x returns [\"/x\"] because the single-server regex needs a non-slash first character."
+  - "The /{server}/mcp branch runs before the /mcp/ branch and only checks the second segment, so /foo/mcp/bar is [\"foo\"] while a path with a query like /foo/mcp?x=1 is not (its second segment is \"mcp?x=1\") and returns []."
+  - "Header names reach the parsers lowercased, but alias and header name in x-mcp-{alias}-{header} split on the first dash: x-mcp-my-server-authorization gives alias \"my\" and header \"server-authorization\". Only the header name \"authorization\" is capitalized."
+  - "oauth2_headers matches any header whose name starts with \"authorization\" (authorization-foo as well) and the last match wins; the output key is always \"Authorization\"."
+  - "get_litellm_api_key falls through an empty x-litellm-api-key to Authorization, but process_mcp_request's has_explicit_litellm_key only checks that x-litellm-api-key is present, so the two disagree on an empty value. Return both facts (value and is-present) and let B4673 use them."
+  - "The configured LITELLM_MCP_CLIENT_SIDE_AUTH_HEADER_NAME is matched case-insensitively against the incoming headers, so lowercase it for the lookup. A configured name starting with x-mcp- and containing another dash is also picked up as a server auth header by server_auth_headers; keep that."
+  - "get_byok_www_authenticate has no host: with PROXY_BASE_URL unset it returns a relative path such as Bearer resource_metadata=\"/litellm/v1/mcp/oauth/protected-resource\". Do not add the request origin."
+  - "get_request_base_url trusts X-Forwarded-Proto verbatim (no lowercase, no comma split) and applies strip_default_port, which lowercases the netloc, only on the forwarded branch. The untrusted and PROXY_BASE_URL branches return their text unchanged except for the trailing slash."
+  - "With no X-Forwarded-Host, the forwarded port is added to the base_url netloc only when that netloc has no colon, so an IPv6 base URL such as https://[::1]/ never gets the port."
+  - "redact_mcp_resource_url drops IPv6 brackets (it uses the hostname), omits port 0 because it is falsy, and returns \"//host\" for a URL with no scheme but a netloc; a non-numeric or out-of-range port makes it return None, not an error."
+  - "urlparse drops params, so canonicalize_url_identity of https://h/a;b/ is https://h/a. Python also raises on a netloc with an unmatched bracket; return a typed error there instead of panicking. Callers pass server URLs that come from the database."
+  - "resolve_upstream_resource compares the trimmed value to \"auto\" case-insensitively but returns any other value verbatim with its original case, because the authorization server matches the resource exactly."
+  - "build_upstream_oauth2_token_request must keep the client auth headers untouched and only add the resource key to the body; the RFC 8693 legs (OBO, id_jag) do not call it and carry audience instead."
+  - "Duplicate Authorization is counted on the raw pairs before the dict collapse. Two headers named Authorization and authorization are a duplicate; one Authorization plus one x-litellm-api-key is not."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

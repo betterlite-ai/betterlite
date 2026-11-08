@@ -1,0 +1,132 @@
+id: B5832
+title: Fireworks AI text completion and Responses API transforms
+description: >-
+  Build fireworks_ai_text_completion and fireworks_ai_responses in betterlite-openai (crates/betterlite-openai/src/ with a folder
+  for each), the last part of the Fireworks AI provider folder. They port FireworksAITextCompletionConfig from
+  litellm/llms/fireworks_ai/completion/transformation.py and FireworksAIResponsesAPIConfig with its module helpers from
+  litellm/llms/fireworks_ai/responses/transformation.py. B6070 built the shared auth and header helpers, B6071 the chat option
+  helpers, B6072 the chat wire side. Both modules are pure, read no env var and make no HTTP call: the caller passes api_key,
+  api_base and a FireworksEnv value from B6070 (the key variables and FIREWORKS_API_BASE; an empty value counts as unset).
+
+
+  Text completion. The supported list is max_tokens, logprobs, echo, temperature, top_p, top_k, frequency_penalty, presence_penalty,
+  n, stop, response_format, stream, user. map_openai_params copies each listed key of non_default_params into optional_params in order,
+  null values included (unlike chat). map_extra_body_params starts from a copy of extra_body when it is a map, else an empty map, and
+  runs four steps. (1) Strip: truncate_prompt_tokens, prompt_truncate_len and every B6071 NIM_VLLM_STRIP_PARAMS key are removed, with a
+  debug log of the sorted names. (2) Move: for response_format, reasoning_effort and thinking, a non-None value in optional_params
+  is written into the body, replacing any extra_body value (debug log). (3) chat_template_kwargs: when present it is removed from the
+  body; a non-map value is dropped with a log; keys outside the effort keys are logged; B6071 effort_from_chat_template_kwargs gives
+  the effort; with no effort the body is returned; reasoning_effort or thinking already in the body or in optional_params means the
+  kwargs are ignored (log); B2221 supports_reasoning false drops them (log); otherwise reasoning_effort is added. (4) Guided: B6071
+  translate_guided_params(body, optional_params) runs, guided_json, guided_grammar and guided_choice are removed from the body, and the
+  one response_format entry it returns, if any, is added. The result is optional_params without extra_body, response_format,
+  reasoning_effort and thinking, plus extra_body when the body is non-empty. transform_text_completion_request returns
+  {model: B2222 resolve_resource_name(model), prompt: B2237 prompt projection of the messages, then every translated entry}.
+
+
+  Responses. custom_llm_provider is fireworks_ai, supports_native_websocket and supports_native_file_search are false.
+  validate_environment resolves the key (given key, then the env chain) or fails with MissingApiKey; headers start as Content-Type
+  "application/json", then the caller headers override, then Authorization "Bearer {key}" overrides all; session affinity is applied
+  from the params' litellm_session_id and litellm_metadata (read as metadata). get_complete_url is (api_base or FIREWORKS_API_BASE or
+  "https://api.fireworks.ai/inference/v1") with trailing "/" trimmed plus "/responses". transform_responses_api_request validates the
+  input with B507's input check, then folds instruction items. When the "instructions" param is a string or None, the item folding
+  applies; when it is anything else, instructions stay as given and only developer items are converted. Folding: a string input is
+  untouched. For a list, roles are read per item (None when there is no string role). The leading block is the run of items from the
+  start whose role is system or developer. The closing start is len(items), unless the last item outside the leading block is an
+  assistant item, in which case it is that index plus one. Hoist candidates are indices below the closing start that are in the leading
+  block or have role developer. A candidate is folded only when its content is a string, or a list whose every part is an input_text
+  with a string text (texts joined by "\n\n", empty texts skipped). New instructions are the old instructions and the folded texts joined by
+  "\n\n" with empty chunks skipped, or None when that is empty; with nothing folded, instructions stay as they were. Remaining items with
+  role developer become {role: system, content, type: message} (other keys dropped). The params keep every key except instructions in
+  order, then instructions last when it is not None. The model becomes resolve_resource_name(model) and the rest goes to B507's
+  transform_responses_api_request. transform_delete_response_api_response takes the request URL path, percent-decodes its last segment
+  and returns B1138 DeleteResponseResult {id, object "response", deleted true}.
+
+
+  Helper cases (helper b5832) call the pinned config methods with fixed ids and the local model map. LiteLLM size: 156 completion and
+  152 responses lines, 308 in all.
+scope:
+  paths:
+    - crates/betterlite-openai/src/fireworks_ai_text_completion.rs
+    - crates/betterlite-openai/src/fireworks_ai_text_completion/**
+    - crates/betterlite-openai/src/fireworks_ai_responses.rs
+    - crates/betterlite-openai/src/fireworks_ai_responses/**
+    - tools/oracle/cases/helpers/fireworks-ai-completion-responses/**
+    - "tools/oracle/fuzz/corpus/helper_case/fireworks_ai_completion_responses-*"
+    - tools/oracle/helpers/b5832.py
+    - tools/oracle/helpers/b5832/**
+    - tools/oracle/src/helpers/openai/b5832.rs
+    - tools/oracle/src/helpers/openai/b5832/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/completion/transformation.py#L18-L75
+    why: Strip set, supported list, param copy and the four-step extra_body flow.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/completion/transformation.py#L76-L169
+    why: Strip, move, chat_template_kwargs and guided steps, then the request body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/responses/transformation.py#L24-L116
+    why: Session params, developer-to-system conversion and the instruction folding helpers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/responses/transformation.py#L118-L186
+    why: Responses config overrides, URL, request transform, delete result and capability flags.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9281-L9292
+    why: Text completion config selection that picks the Fireworks class.
+  - url: https://docs.fireworks.ai/api-reference/post-completions
+    why: The provider's text completion request.
+dod:
+  - text: Text completion params, the four extra_body steps and the request body match LiteLLM.
+    proof: [fw-completion-tests, oracle, helper-python]
+  - text: Responses auth, URL and capability flags match LiteLLM.
+    proof: [fw-responses-tests, oracle]
+  - text: Instruction folding follows the leading, closing and developer rules and keeps non-text items in the input.
+    proof: [fw-responses-tests, oracle]
+  - text: The delete result reads the decoded id from the request path.
+    proof: [fw-responses-tests, oracle]
+  - text: The new helper cases replay through the shared parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: fw-completion-tests
+      why: A completion param or extra_body step is missing.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^fireworks_ai_text_completion::/)'
+    - id: fw-responses-tests
+      why: Responses auth, URL, folding, delete result or capability flags are missing.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^fireworks_ai_responses::/)'
+    - id: helper-python
+      why: The strict oracle adapter lint or type checks fail.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5832.py)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added cases are absent or do not replay.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/fireworks_ai_completion_responses-*")" &&
+        grep -lE '^[[:space:]]+b5832:' tools/oracle/fuzz/corpus/helper_case/fireworks_ai_completion_responses-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/fireworks-ai-completion-responses/completion-params.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-completion-responses/completion-extra-body.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-completion-responses/completion-template-kwargs.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-completion-responses/completion-guided.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-completion-responses/completion-request.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-completion-responses/responses-auth-and-url.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-completion-responses/responses-instruction-folding.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-completion-responses/responses-closing-assistant.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-completion-responses/responses-delete-result.yaml
+deviations: []
+out_of_scope:
+  - B6070 owns FireworksAIMixin, the key chain and session affinity; B6071 owns effort_from_chat_template_kwargs, translate_guided_params and the strip list; B6072 owns the chat wire side.
+  - B2237 owns the prompt projection and the text config selector (get_provider_text_completion_config); B507 owns the base Responses request transform and input check; B1138 owns DeleteResponseResult.
+  - B2454 and B8310 own the HTTP execution, the routes and the dispatch wiring for these configs, including the HTTP oracle cases.
+  - FireworksAIResponsesAPIConfig inherits every method not listed here from the OpenAI Responses config (B506 to B509).
+pitfalls:
+  - Text completion copies a listed key even when its value is null, where the chat map skips null values.
+  - The chat_template_kwargs step reads the body after the move step, so a top-level reasoning_effort or thinking in optional_params always blocks the kwargs effort.
+  - Text completion removes response_format, reasoning_effort and thinking from the top level and puts them in extra_body, so the sent body has them under extra_body only.
+  - An instruction item is hoisted only when it is plain text; a system item with an image part stays in the input and, if it was developer, is renamed to system.
+  - When the last non-instruction item is an assistant message, system and developer items after it are not hoisted.
+  - A developer item that is converted keeps only role, content and type, so any other key on it is lost.
+  - The "instructions" key is removed and re-added last only when its final value is not None, so an explicit null instructions disappears from the request.
+  - The delete result id comes from the last path segment of the request URL, percent-decoded, not from the response body.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

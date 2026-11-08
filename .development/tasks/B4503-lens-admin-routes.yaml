@@ -1,0 +1,221 @@
+id: B4503
+title: Lens administration routes and access checks
+description: >-
+  Build the 16 administrator-facing Lens routes of litellm/proxy/lens/endpoints.py and the access helpers that the worker routes share.
+  Two modules in betterlite-server, each a file plus a folder of submodules with adjacent tests.rs files: lens_access (the shared helpers)
+  and lens_admin_routes (the handlers and the router). Add betterlite-lens and betterlite-db to the server's Cargo.toml if B4504 has not already (no cycle, the server is the top crate).
+  The worker routes (everything under /lens/worker/...), worker_auth, assigned, claim_candidate, validate_finding and merge_results belong to B4505,
+  which imports lens_access from this task. This task registers its 16 routes in one function `lens_admin_routes::router(state)` and the wave 17 Lens wiring part composes it, so nothing is registered twice.
+  Every route sits behind the existing auth layer (B003 and B052), exactly like the routes of B3125. Every error body is {"detail": "<text>"} with the status below.
+
+  Outside services come through a state struct `LensRoutesState` (`crate::lens_access::state::LensRoutesState`, with the `Clock` and `IdSource` traits beside it in the same file, all `pub(crate)`), built once by the caller and passed to the router: the Lens repository (B4501 LensRepository, absent when the server has no Postgres),
+  the trace storage (Option of the B4502 Storage port; the owner of the ClickHouse implementation and of provide_storage is B3867 and the later storage task, this task only reads what the state holds),
+  ModelNames (a trait with get_model_names(team_id: Option<&str>) -> Vec<String>, backed by B844 get_model_names on the router, absent when no router is configured),
+  KeyResolver (the B4504 port that validate_key takes), a Clock (now in UTC) and an IdSource (new uuid v4 text, and the random bytes for the worker token). Tests use fakes for all of them.
+  For the repository in tests, use B4501's fake Database if it exports one; otherwise write a small one in tests.rs that answers by SQL text.
+
+  lens_access::scope: user_scope(auth, write) -> Result<Scope, LensAccessError>. The caller type is B2314's resolved key (UserAPIKeyAuth) and its user_role is the LitellmUserRoles value.
+  write = true and role is not proxy_admin: 403 "Only proxy admins can configure or run Lens". Otherwise role proxy_admin or proxy_admin_viewer returns Scope with all_teams = true (team_id and api_key_hash empty).
+  Any other role, or no role: 403 "Lens requires proxy administrator access".
+
+  lens_access::lookup: lens_repository(state) returns the repository, or 503 "Lens needs a connected Postgres database" when the state has none.
+  get_lens(repo, lens_id, scope): repo.get(lens_id); None, or B4500 can_access(scope, lens.scope) false, is 404 "Lens not found". required(option): None becomes 409 "Lens changed concurrently; retry the operation".
+  B4505 calls get_lens with the worker's own scope, so keep it free of any assumption that the scope is all_teams. B4505 imports them by these exact paths, all `pub(crate)` in the same crate (betterlite-server): `crate::lens_access::lookup::get_lens`, `crate::lens_access::lookup::required` and `crate::lens_access::storage::source_reader`. `lens_access.rs` re-exports nothing else.
+
+  lens_access::storage: source_reader(storage) builds a B4502 SourceReader from the state's storage, or fails with 501 and detail "Agent tracing is not enabled. Set `tracing:` in general_settings and CLICKHOUSE_URL." when there is none.
+
+  lens_access::selection: validate_selection(settings). Each entry of settings.execution_ids goes through B4502 parse_execution; a decoding error, or a source that is not "traces" or "requests", is 422 "Choose execution IDs returned by the activity preview".
+
+  lens_access::model: validate_model(settings, auth, state). Run validate_selection first. Then 400 "Choose a model configured on this LiteLLM instance" when the state has no ModelNames or settings.model is not in get_model_names(team_id = the caller's team_id).
+  Then take the caller's allowed models list (empty when the key has none). A caller whose role is not proxy_admin, with a non-empty list that holds neither settings.model nor "all-proxy-models", gets 403 "This key does not have access to the analysis model".
+  Build that last branch; only write routes call validate_model and they already demand proxy_admin, so no HTTP case reaches it.
+
+  lens_admin_routes, the 16 routes, all under the /lens prefix. Each handler order is: the auth layer, request decoding (body, query), then the handler steps below. A malformed body or query is the server's shared 422 response before any handler step, even for a caller who would get 403.
+  Bodies are B4500 records (unknown fields are rejected) and are decoded by B4500's decoders; do not write new record types except Preview and WorkerBilling and WorkerName below.
+
+  lenses: GET /lens. user_scope(read). Response LensList: every Lens that can_access(scope, lens.scope), every Worker likewise, tracing_enabled = the state has storage. The lens list is read before the worker list.
+  POST /lens with a LensSettings body. user_scope(write), then validate_model. now = clock; Lens with id = new uuid, scope = the all_teams scope, settings, created_at = now, next_run_at = now, budget_month = now as "%Y-%m", other fields B4500 defaults.
+  Apply B4500 queue_job(lens, now, new uuid) and call repo.create on the result; the response is that Lens (revision 1, version 0, one queued job).
+  GET /lens/{lens_id}: get_lens with user_scope(read). PUT /lens/{lens_id} with LensSettings: get_lens with user_scope(write) first (404 before any settings check), then validate_model, then repo.update with a transform that sets settings and revision = revision + 1 and keeps the jobs; required(result).
+
+  runs: POST /lens/{lens_id}/runs with RunRequest (settings and lookback_hours both optional). get_lens (write), validate_model only when settings is present, now = clock, job id = new uuid,
+  repo.update with B4500 queue_job(lens, now, job id, lookback_hours, settings), required(result). queue_job returns the lens unchanged when a queued or running job exists, so a second run request is a 200 with no new job.
+  GET /lens/{lens_id}/runs with query offset (integer, 0 or more, default 0): get_lens (read), then repo.jobs(lens_id, offset), each job returned with sample = null, findings = null and assessments = [].
+  GET /lens/{lens_id}/runs/{job_id}: get_lens (read), repo.job(lens_id, job_id), None is 404 "Investigation not found"; the full job is returned.
+  POST /lens/{lens_id}/cancel: get_lens (write), now = clock, repo.update with a transform: no current_job returns the lens unchanged, otherwise the job gets status "cancelled", stage "Cancelled", finished_at = now,
+  and the lens gets next_run_at = now + settings.interval_minutes minutes (of the lens settings); required(result).
+
+  findings: PATCH /lens/{lens_id}/findings/{finding_id} with FindingUpdate (status, reason default ""). get_lens (write), then repo.update where the finding with that id gets both status and reason replaced; other findings stay; required(result). An id that matches nothing is a 200 with the lens unchanged.
+
+  preview: POST /lens/preview/sample with body Preview: as_of (optional ISO 8601 datetime that must carry an offset), offset (integer 0 or more, default 0), settings (LensSettings), lookback_hours (integer 1 to 8760, default 24).
+  Steps in this order: validate_selection(settings); now = the smaller of as_of (or the clock when absent) and the clock; build the SourceReader (501 when there is no storage, which comes before the role check);
+  user_scope(read); then reader.sample(scope, settings, start_ms, end_ms, offset, preview = true) with start_ms = (now - lookback_hours hours) in milliseconds and end_ms = (now - 2 minutes) in milliseconds. Return the Sample.
+
+  workers: bodies WorkerBilling { analysis_key_id: 64 lowercase hex characters, exactly the pattern ^[a-f0-9]{64}$ } and WorkerName (the same field plus name, 1 to 100 characters counted as characters, default "Lens worker"); both reject unknown fields.
+  POST /lens/workers/register: user_scope(write), validate_key(analysis_key_id) from B4504, then token = "lens-" + the URL-safe base64 text, without padding, of 40 random bytes from IdSource. Worker { id = new uuid, name, scope, analysis_key_id, last_seen = 1970-01-01T00:00:00Z, revoked false }.
+  repo.save_worker(worker, lowercase hex SHA-256 of the token's UTF-8 bytes). Response WorkerCreated { worker, token }. The token is shown once and never stored in plain.
+  PUT /lens/workers/{worker_id}/billing-key with WorkerBilling: user_scope(write); find the worker in repo.workers() by id; missing or not can_access: 404 "Worker not found"; revoked: 409 "Register a new worker instead of updating revoked access";
+  validate_key; repo.set_worker_billing(worker id, key id), None is 409 "Worker access was revoked"; return the updated Worker.
+  DELETE /lens/workers/{worker_id}: user_scope(write); the same 404; then scan every job of every lens from repo.lenses(): a job with status "running" and worker_id equal to this worker is 409 "Wait for this worker's investigation to finish or cancel it before revoking access". Otherwise repo.revoke_worker(id) and the response body is the JSON value true.
+
+  evidence: GET /lens/{lens_id}/executions/{execution_id} with query cursor (default "") and offset (0 or more, default 0). get_lens (read) first. Then parse_execution(execution_id): a decoding error is 404 "Execution not found".
+  Source other than "traces" or "requests" is the same 404, and so is a lens whose scope is not all_teams when the execution's team differs from lens.scope.team_id. Build Execution { id = the given execution_id, source, trace_id, trace_ref, team_id = the team, name = trace_id, start_time = "", span_count = 1, root_seen = (source is "requests") }.
+  Only then build the SourceReader (501 without storage) and return reader.content(lens.scope, execution, cursor, offset).
+
+  availability and agents: GET /lens/activity/available: user_scope(read); with storage, reader.availability(scope), without it ActivityAvailability with traces false and requests false (200, not 501). GET /lens/agents: user_scope(read); with storage reader.agents(scope), without it [].
+
+  Route table: the router mounts exactly these 16 (method path): GET /lens, POST /lens, GET /lens/activity/available, GET /lens/agents, PUT /lens/{lens_id}, POST /lens/{lens_id}/runs, GET /lens/{lens_id}, GET /lens/{lens_id}/runs,
+  GET /lens/{lens_id}/runs/{job_id}, POST /lens/{lens_id}/cancel, PATCH /lens/{lens_id}/findings/{finding_id}, POST /lens/preview/sample, POST /lens/workers/register, PUT /lens/workers/{worker_id}/billing-key,
+  DELETE /lens/workers/{worker_id}, GET /lens/{lens_id}/executions/{execution_id}. Static segments (agents, activity, preview, workers) must win over {lens_id}, as they do in LiteLLM where they are declared first.
+  No /v1 or provider-prefixed alias exists for these routes at the pin.
+
+  Errors: lens_access owns LensAccessError (one variant per status and detail above, with status() and detail()), lens_admin_routes owns LensRouteError that wraps LensAccessError, the B4504 key-validation error, the repository error and the B4502 source error.
+  A repository or storage error that is not one of the listed details is a 500 and is not hidden.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lens_access.rs
+    - crates/betterlite-server/src/lens_access/**
+    - crates/betterlite-server/src/lens_admin_routes.rs
+    - crates/betterlite-server/src/lens_admin_routes/**
+    - tools/oracle/cases/http/lens-admin-routes/**
+    - tools/oracle/helpers/b4503.py
+    - tools/oracle/helpers/b4503/**
+    - tools/oracle/src/helpers/server/b4503.rs
+    - tools/oracle/src/helpers/server/b4503/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L51-L86
+    why: Router prefix /lens, the repository and source_reader helpers with their 503 and 501 texts, user_scope and get_lens.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L114-L143
+    why: required, validate_selection and validate_model with the 409, 422, 400 and 403 texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L146-L181
+    why: Decorators and handlers of GET /lens, POST /lens, GET /lens/activity/available and GET /lens/agents.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L184-L254
+    why: PUT /lens/{lens_id}, POST runs, GET lens, GET runs with the stripped jobs, GET one run and POST cancel.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L257-L294
+    why: PATCH findings and the Preview body with POST /lens/preview/sample, including the order of the 501 and the role check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L297-L346
+    why: WorkerBilling and WorkerName bodies, register, billing-key and revoke handlers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L557-L584
+    why: GET /lens/{lens_id}/executions/{execution_id} and the Execution it builds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/billing.py#L19-L31
+    why: validate_key, the call the two worker billing routes make (owned by B4504).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/state.py#L9-L46
+    why: can_access and queue_job as the handlers use them (owned by B4500).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/sources.py#L74-L83
+    why: parse_execution, the 3 or 4 element decoder that validate_selection and the evidence route call (owned by B4502).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_runtime.py#L26-L32
+    why: provide_storage returns None when tracing is off, which the routes turn into 501, an empty answer or tracing_enabled false (owned by B3867).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L525-L545
+    why: litellm_native_routes lists the lens paths that the route checker lets a non-admin key reach, so user_scope answers 403 (owned by the route-group task).
+dod:
+  - text: user_scope returns an all_teams scope for proxy_admin and, for reads only, proxy_admin_viewer, and answers 403 with the write text or the access text for every other role.
+    proof: [access-scope-tests]
+  - text: get_lens answers 404 "Lens not found" for a missing lens and for a scope that cannot access it, required answers 409, and the repository and storage helpers answer 503 and 501 with the stated details.
+    proof: [access-lookup-tests, access-storage-tests]
+  - text: validate_selection and validate_model apply the 422, 400 and 403 rules in the stated order.
+    proof: [access-selection-tests, access-model-tests]
+  - text: The router mounts exactly the 16 listed method and path pairs and no worker route, and static segments win over {lens_id}.
+    proof: [router-tests, oracle]
+  - text: List, create, read and update lens follow the stated role checks, validation order, created record fields and revision change.
+    proof: [lens-routes-tests, oracle]
+  - text: Run, run history, one run and cancel follow the stated queueing, job stripping, 404 and cancel transform.
+    proof: [run-routes-tests, oracle]
+  - text: The finding update replaces status and reason on the matching finding only, and an unknown finding id changes nothing.
+    proof: [finding-route-tests]
+  - text: The preview route validates the selection first, answers 501 before it checks the role, clamps as_of to the clock and passes the stated start and end milliseconds.
+    proof: [preview-route-tests, oracle]
+  - text: Worker register stores only the SHA-256 of a "lens-" token, validates the billing key, and returns the token once; billing-key and revoke apply the stated 404, 409 and running-job rules.
+    proof: [worker-route-tests, oracle]
+  - text: The evidence route checks the lens scope before decoding, answers 404 for bad ids, wrong source and other-team executions, and builds the Execution with the stated fields.
+    proof: [evidence-route-tests, oracle]
+  - text: Availability and agents answer 200 with empty values when tracing is off, and the list route reports tracing_enabled from the storage.
+    proof: [lens-routes-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: access-scope-tests
+      why: user_scope role rules are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_access::scope::/)'
+    - id: access-lookup-tests
+      why: repository, get_lens or required behavior is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_access::lookup::/)'
+    - id: access-storage-tests
+      why: the 501 for missing tracing storage is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_access::storage::/)'
+    - id: access-selection-tests
+      why: execution id selection validation is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_access::selection::/)'
+    - id: access-model-tests
+      why: the analysis model validation is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_access::model::/)'
+    - id: router-tests
+      why: the route table is missing or mounts a wrong route
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_admin_routes::router::/)'
+    - id: lens-routes-tests
+      why: list, create, read, update, availability or agents handlers are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_admin_routes::lenses::/)'
+    - id: run-routes-tests
+      why: run, history, one run or cancel handlers are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_admin_routes::runs::/)'
+    - id: finding-route-tests
+      why: the finding update handler is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_admin_routes::findings::/)'
+    - id: preview-route-tests
+      why: the preview handler is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_admin_routes::preview::/)'
+    - id: worker-route-tests
+      why: register, billing-key or revoke handlers are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_admin_routes::workers::/)'
+    - id: evidence-route-tests
+      why: the evidence content handler is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_admin_routes::evidence::/)'
+oracle_cases:
+  - tools/oracle/cases/http/lens-admin-routes/list-without-database-503.yaml
+  - tools/oracle/cases/http/lens-admin-routes/list-without-auth-401.yaml
+  - tools/oracle/cases/http/lens-admin-routes/create-empty-body-422.yaml
+  - tools/oracle/cases/http/lens-admin-routes/create-unknown-model-400.yaml
+  - tools/oracle/cases/http/lens-admin-routes/create-bad-execution-id-422.yaml
+  - tools/oracle/cases/http/lens-admin-routes/create-known-model-without-database-503.yaml
+  - tools/oracle/cases/http/lens-admin-routes/read-without-database-503.yaml
+  - tools/oracle/cases/http/lens-admin-routes/runs-negative-offset-422.yaml
+  - tools/oracle/cases/http/lens-admin-routes/availability-without-tracing-200.yaml
+  - tools/oracle/cases/http/lens-admin-routes/agents-without-tracing-200.yaml
+  - tools/oracle/cases/http/lens-admin-routes/preview-without-tracing-501.yaml
+  - tools/oracle/cases/http/lens-admin-routes/preview-naive-as-of-422.yaml
+  - tools/oracle/cases/http/lens-admin-routes/register-bad-key-id-422.yaml
+  - tools/oracle/cases/http/lens-admin-routes/billing-key-without-database-503.yaml
+  - tools/oracle/cases/http/lens-admin-routes/revoke-without-database-503.yaml
+  - tools/oracle/cases/http/lens-admin-routes/evidence-without-database-503.yaml
+deviations:
+  - what: The preview window bounds are computed in whole milliseconds from the integer microsecond timestamp, not from a float seconds value multiplied by 1000.
+    why: LiteLLM's int(timestamp() * 1000) can land one millisecond low when the float is just under a whole millisecond. Integer arithmetic is exact, and the difference cannot change which executions a preview shows in any way a user could rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L283-L294
+out_of_scope:
+  - "B4505 owns the worker routes under /lens/worker (claim, progress, sample, content, model, result, heartbeat), worker_auth, assigned, claim_candidate, validate_finding and merge_results of endpoints.py. It imports get_lens, required and source_reader from this task's lens_access module."
+  - "The cases need no database and no tracing store, so rows, paging, 403 for non-admin callers and the success bodies of the database routes are covered by native tests only. The oracle worker sandbox has no Postgres for either gateway."
+  - "B4501 owns LensRepository and its SQL, B4500 the records, can_access, queue_job, current_job and replace_job, B4502 the SourceReader, Storage port and parse_execution, B4504 validate_key."
+  - "The ClickHouse implementation of the lens_* storage queries and provide_storage are owned by B3867 and the later storage task, not here. No task owns the Lens storage queries yet; the architect names the owner."
+  - "B844 owns get_model_names. The route-group task that owns _types.py litellm_native_routes decides which lens paths a non-admin key can reach before user_scope runs."
+  - "The wave 17 Lens wiring part composes lens_admin_routes::router with B4505's router and mounts both; this task never mounts itself."
+pitfalls:
+  - user_scope(read) and user_scope(write) both return the all_teams scope, so for these routes get_lens never answers 404 from can_access; only B4505's worker scope can. Keep the check in get_lens anyway.
+  - preview_sample builds the SourceReader before it calls user_scope, so a caller who is not an administrator gets 501 when tracing is off and 403 only when tracing is on.
+  - A body that fails decoding is a 422 before the handler runs, so a non-admin key with a bad body gets 422, not 403.
+  - update_finding copies status and reason from the body, and reason defaults to "". A request that sends only status clears the finding's old reason.
+  - run_lens on a lens that already has a queued or running job returns 200 with the lens unchanged; there is no 409. A later run with new settings is dropped too.
+  - update_lens bumps revision by 1 but leaves the queued job's own settings alone. Only a job queued after the update uses the new settings.
+  - list_runs removes sample, findings and assessments from every job; read_run returns the full job. Do not strip in the repository call.
+  - cancel_lens moves next_run_at to now plus the lens's interval_minutes, and it does so only when a queued or running job exists; with none it returns the lens untouched.
+  - The activity availability route answers 200 with both flags false when tracing is off, while the preview and evidence routes answer 501; the agents route answers an empty list.
+  - evidence_content calls get_lens before it parses the execution id, so a missing lens is 404 "Lens not found" and a bad id is 404 "Execution not found"; without a database both come after the 503.
+  - The evidence route builds root_seen from the source (true only for "requests") and fills start_time with "" and span_count with 1; it does not read storage for them.
+  - revoke_worker only looks at jobs inside lens.jobs with status "running"; a queued job has no worker_id and does not block revocation.
+  - The register token is shown once. Store only the SHA-256 hex digest through save_worker and never log the token or the digest.
+  - A lens with the id "agents", "activity" or "preview" can never be read through GET or POST because the static routes win; this matches LiteLLM, where the static routes are declared first.
+  - Strings with min_length or max_length count characters, not bytes, so a worker name of 100 emoji is valid.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

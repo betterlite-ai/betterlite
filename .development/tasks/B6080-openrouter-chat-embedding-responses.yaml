@@ -1,0 +1,202 @@
+id: B6080
+title: OpenRouter chat, embedding, Responses and decisions transforms
+description: >-
+  Build the OpenRouter pieces that sit around OpenAI chat, in betterlite-openai, as four modules: openrouter_chat
+  (litellm/llms/openrouter/chat/transformation.py and common_utils.py), openrouter_embedding
+  (embedding/transformation.py), openrouter_responses (responses/transformation.py) and openrouter_decisions
+  (decisions/transformation.py). All of them are pure transforms with no network call. Images are B5830, which imports the
+  error type defined here. Credentials and base URLs are plain arguments the caller has already read; no config section is
+  added. An empty string counts as unset in every "a or b or c" chain below, as it does in LiteLLM.
+
+
+  openrouter_chat. Define OpenRouterError (LiteLLM's OpenRouterException) with a message, a status code and headers, in its
+  own error file, and make it the one type every OpenRouter module and B5830 returns. get_error_class builds it from the
+  message, status and headers it is given. OpenrouterConfig wraps the shared OpenAI chat policy: it does not copy it, it
+  calls B668 for the base supported list and map_openai_params, B503 for transform_request and the cache_control removal,
+  and B504 for transform_response, all through injected calls so this module never imports their internals.
+  get_supported_openai_params is the base list plus "reasoning_effort" and "thinking", each once, base order first.
+  map_openai_params first replaces reasoning_effort "max" with "xhigh" (on a copy), then runs the base mapping, then reads
+  "transforms", "models" and "route" out of the incoming params. Each one that is present and not null goes into an
+  extra_body map. The result always gets an "extra_body" key, an empty map when none was given. Cache control: a model
+  "supports cache_control in content" when its lowercased name contains any of claude, gemini, minimax, glm or z-ai.
+  remove_cache_control_flag_from_messages_and_tools returns messages and tools untouched for those models and calls the
+  B503 removal for all others. transform_request, for a supporting model, first moves each message-level cache_control into
+  the content: the key is removed from the message whenever it is present; when its value is not null and the content is a
+  list, only the last block gets it (an empty list stays empty and the value is dropped); when the content is anything else
+  (a string, or null on an assistant tool-call message) the content becomes one block {"type": "text", "text": content,
+  "cache_control": value}. Then it removes "extra_body" from optional_params (default empty map), calls the B503 request
+  build, merges the extra_body entries over the built body (extra_body wins), and finally adds "usage": {"include": true}
+  only when the body has no "usage" key. transform_response calls the B504 response build, then looks at the raw JSON body:
+  when "usage" is a non-empty object whose "cost" is a number, it stores that cost as a float in the response's hidden
+  additional_headers under "llm_provider-x-litellm-response-cost" (keeping other headers there). Any failure while reading
+  the cost is swallowed and the response goes out without it. Streaming: chunk_parser takes one parsed chunk. A chunk with an "error" key
+  raises OpenRouterError with status = error.code, message "Message: {message}, Metadata: {metadata}, User ID: {user_id}"
+  (metadata defaults to an empty map, user_id to an empty string) and headers = error.metadata.headers or an empty map.
+  Otherwise every choice gets delta.reasoning_content = delta.reasoning (null when absent), and a stream chunk is built from
+  id, created, model, optional usage and the choices with object "chat.completion.chunk". A missing key anywhere in that
+  block becomes OpenRouterError 400, headers {"Content-Type": "application/json"}, message "KeyError: '{key}', Got
+  unexpected response from OpenRouter: {chunk}". get_model_response_iterator only picks this parser for B010's iterator
+  lifecycle, so B010 and B8311 wire it and no iterator is built here.
+
+
+  openrouter_embedding. validate_environment starts from HTTP-Referer = OR_SITE_URL or "https://litellm.ai", X-Title =
+  OR_APP_NAME or "liteLLM" and Content-Type "application/json", adds "Authorization: Bearer {api_key}" only for a non-empty
+  api_key, then merges the caller's headers over them (a plain map merge, so a caller key that differs only in letter case
+  from a default key adds a second entry). OR_SITE_URL and OR_APP_NAME arrive as plain optional arguments. get_complete_url
+  trims trailing slashes from api_base, falls back to "https://openrouter.ai/api/v1" when it is empty or None, and appends
+  "/embeddings". transform_embedding_request wraps a single string input in a list, removes one leading "openrouter/" from
+  the model, and returns {"model", "input"} with every optional param laid over them (so an option named model or input
+  wins). get_supported_openai_params is timeout, dimensions, encoding_format, user. map_openai_params copies only those
+  four and drops the rest without error, whatever drop_params says. transform_embedding_response first hands the raw
+  response text to an injected post_call hook (LiteLLM's logging_obj.post_call(original_response=text)), then decodes the
+  body with the existing EmbeddingResponse type in crates/betterlite-openai/src/embedding.rs. The decoder takes bytes and
+  returns a typed error for invalid JSON or a wrong shape; it is the fuzz target's input. get_error_class returns
+  OpenRouterError.
+
+
+  openrouter_responses. OpenRouterResponsesApiConfig reports provider openrouter and no native websocket. validate_environment
+  picks the key from litellm_params.api_key, litellm.api_key, OPENROUTER_API_KEY, OR_API_KEY in that order, fails with a typed
+  error carrying LiteLLM's exact text "OpenRouter API key is required. Set OPENROUTER_API_KEY environment variable or pass
+  api_key parameter." when none is set, and sets only "Authorization: Bearer {key}" on the headers it was given. It adds no
+  Content-Type and no HTTP-Referer. get_complete_url takes api_base, litellm.api_base, OPENROUTER_API_BASE, then
+  "https://openrouter.ai/api/v1", trims trailing slashes and appends "/responses". Every other Responses method is the OpenAI
+  one (B506 to B509) and is not repeated.
+
+
+  openrouter_decisions. OpenRouterDecisionsConfig plugs into B3511's BaseDecisionsConfig with path "/alpha/decisions",
+  api_key_env ["OPENROUTER_API_KEY"], api_base_env ["OPENROUTER_API_BASE"] and default api base "https://openrouter.ai/api".
+  provider_reported_cost reads response.usage.extra["cost"] and returns it as a float when it is a JSON number, else None
+  (a missing key, null, a string, an object). Cost handling: this is the only decisions override, and B3514 reads its answer
+  to set the same "llm_provider-x-litellm-response-cost" hidden header that chat sets from usage.cost, so both paths end with
+  one float or no header. A JSON boolean is not a number here; Python would count True as 1.0, which is a runtime detail
+  (docs/compatibility.md), so no case sends one.
+
+
+  Helper b6080 (named by the skeleton) calls the production functions and records what the pinned Python classes return, so a
+  case can compare request bodies, headers, URLs, mapped params, hidden cost and parsed chunks. The LiteLLM source here is 452
+  non-blank, non-comment lines. Plan 330 transform lines, 380 tests, 90 for the fuzz target and exports and 200 for helper
+  adapters, under 1500.
+scope:
+  paths:
+    - crates/betterlite-openai/src/openrouter_chat.rs
+    - crates/betterlite-openai/src/openrouter_chat/**
+    - crates/betterlite-openai/src/openrouter_embedding.rs
+    - crates/betterlite-openai/src/openrouter_embedding/**
+    - crates/betterlite-openai/src/openrouter_responses.rs
+    - crates/betterlite-openai/src/openrouter_responses/**
+    - crates/betterlite-openai/src/openrouter_decisions.rs
+    - crates/betterlite-openai/src/openrouter_decisions/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/openrouter_embedding_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/openrouter_embedding_reply/**
+    - tools/oracle/cases/helpers/openrouter-wire/**
+    - "tools/oracle/fuzz/corpus/helper_case/openrouter_wire-*"
+    - tools/oracle/helpers/b6080.py
+    - tools/oracle/helpers/b6080/**
+    - tools/oracle/src/helpers/openai/b6080.rs
+    - tools/oracle/src/helpers/openai/b6080/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/chat/transformation.py#L29-L72
+    why: Cache-control model list, the extra supported params, the "max" to "xhigh" rename and the extra_body keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/chat/transformation.py#L74-L163
+    why: Substring test, cache_control removal skip, the move into content blocks and the request build order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/chat/transformation.py#L165-L242
+    why: Cost read into additional_headers, swallowed failures, error class and iterator choice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/chat/transformation.py#L243-L283
+    why: Stream error chunk, reasoning_content copy and the KeyError text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/common_utils.py#L1-L5
+    why: OpenRouterException adds nothing to the base native error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/embedding/transformation.py#L29-L183
+    why: Embedding headers, URL, model prefix strip, four supported params and the logging call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/responses/transformation.py#L20-L77
+    why: Responses key order, error text, URL and websocket flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/decisions/transformation.py#L1-L19
+    why: The only provider_reported_cost override and the decisions endpoint names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3444-L3518
+    why: Read-only context for what _complete_openrouter does before these transforms run (B8311 owns it).
+dod:
+  - text: Chat params, cache_control placement, the extra_body merge and the usage.include default match OpenrouterConfig.
+    proof: [chat-tests, helper-python, oracle]
+  - text: A numeric usage.cost lands in the hidden cost header, a bad or missing cost leaves no header, and the decisions cost reads usage.extra.cost the same way.
+    proof: [chat-tests, decisions-tests, oracle]
+  - text: Stream error chunks, reasoning_content copies and missing-key chunks give the same error or chunk as LiteLLM.
+    proof: [chat-tests, helper-python, oracle]
+  - text: Embedding headers, URL, request, params and response decoding match OpenrouterEmbeddingConfig, and arbitrary bytes never panic the decoder.
+    proof: [embedding-tests, embedding-corpus, oracle]
+  - text: Responses key order, the missing-key text and the URL match OpenRouterResponsesAPIConfig.
+    proof: [responses-tests, oracle]
+  - text: Every new helper case replays through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: chat-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^openrouter_chat::/)'
+      why: A plain OpenAI passthrough has no extra_body merge, content-block cache_control or usage.include default.
+    - id: embedding-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^openrouter_embedding::/) - test(replays_the_openrouter_embedding_reply_corpus)'
+      why: Without these the header merge, the prefix strip and the four-param filter are unchecked.
+    - id: responses-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^openrouter_responses::/)'
+      why: The OR_API_KEY fallback, the error text and the URL suffix are only visible here.
+    - id: decisions-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^openrouter_decisions::/)'
+      why: Without these the cost read from usage.extra and the endpoint constants are unchecked.
+    - id: embedding-corpus
+      run: >-
+        test -f crates/betterlite-openai/fuzz/fuzz_targets/openrouter_embedding_reply.rs &&
+        grep -q 'name = "openrouter_embedding_reply"' crates/betterlite-openai/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openrouter_embedding_reply)" &&
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_openrouter_embedding_reply_corpus)'
+      why: The embedding body comes from the network, so the decoder needs a fuzz target and fresh seeds.
+    - id: helper-python
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6080)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b6080 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b6080/pyrightconfig.json
+      why: The Python adapter must call the pinned OpenRouter classes directly.
+    - id: helper-case-corpus
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openrouter_wire-*")" &&
+        grep -lE '^[[:space:]]+b6080:' tools/oracle/fuzz/corpus/helper_case/openrouter_wire-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: New seeds must name the b6080 operation and replay.
+oracle_cases:
+  - tools/oracle/cases/helpers/openrouter-wire/chat-params-and-extra-body.yaml
+  - tools/oracle/cases/helpers/openrouter-wire/chat-cache-control-move.yaml
+  - tools/oracle/cases/helpers/openrouter-wire/chat-request-usage-include.yaml
+  - tools/oracle/cases/helpers/openrouter-wire/chat-response-cost-header.yaml
+  - tools/oracle/cases/helpers/openrouter-wire/stream-chunks-and-errors.yaml
+  - tools/oracle/cases/helpers/openrouter-wire/embedding-headers-url-request.yaml
+  - tools/oracle/cases/helpers/openrouter-wire/embedding-params-and-response.yaml
+  - tools/oracle/cases/helpers/openrouter-wire/responses-key-url-websocket.yaml
+  - tools/oracle/cases/helpers/openrouter-wire/decisions-config-and-cost.yaml
+deviations:
+  - what: A usage.cost given as a numeric string, such as "0.5", sets no cost header in betterlite. Only a JSON number does.
+    why: LiteLLM's float() turns the string into 0.5 by accident of Python. The OpenRouter docs define cost as a number, so a string is a bad reply and is treated like any other unreadable cost.
+  - what: The KeyError text names the missing key and prints the chunk as compact JSON, not as a Python dict.
+    why: Python's dict repr is not reproducible (docs/compatibility.md), so the helper cases only send chunks whose text is the same in both, such as {}.
+out_of_scope:
+  - B8311 owns _complete_openrouter and the embedding branch in litellm/main.py (L3444-L3518, L6687 and after), including OPENROUTER_API_BASE and OR_API_KEY resolution, litellm.openrouter_key, the HTTP-Referer and X-Title headers for chat, OpenrouterConfig.get_config merging, registering these configs in dispatch and the HTTP oracle cases. litellm/types/llms/openrouter.py only holds TypedDicts and is not built, so the OpenRouterErrorMessage TypedDict is not built either; chunk_parser uses plain locals.
+  - B668, B503 and B504 own the inherited OpenAIGPTConfig methods (get_complete_url, validate_environment, get_api_key for chat, the base cache_control removal, transform_request and transform_response). Chat reaches them through injected calls.
+  - B010 owns BaseModelResponseIterator framing, DONE handling and close semantics. B2214 owns its constructor and string-chunk helpers. This task supplies only the parsed-chunk projection.
+  - B506 to B509 own every OpenAIResponsesAPIConfig method that OpenRouterResponsesAPIConfig inherits, including transform_responses_api_request.
+  - B3511 owns BaseDecisionsConfig and its defaults. B3513 picks OpenRouterDecisionsConfig in get_provider_decisions_config. B3514 sets the hidden cost header from provider_reported_cost.
+  - B5830 owns image generation and image edit.
+pitfalls:
+  - Cache control support is a substring test on the lowercased model name, so "glm" also matches any model whose name contains it, and "z-ai" matches the "z-ai/" vendor prefix.
+  - A message with cache_control set to null still loses the key, but its content is left as it was.
+  - An assistant tool-call message with content null and a cache_control value becomes a single text block whose text is null.
+  - extra_body is merged after the base request is built, so extra_body can overwrite model, messages or temperature, and a "usage" key in it stops the usage.include default.
+  - map_openai_params always returns an extra_body key, even for a plain request, and transform_request removes it again before the body is built.
+  - Only transforms, models and route reach extra_body. Other OpenRouter fields such as provider are dropped by the base mapping.
+  - The cost is read from the raw JSON body, not from the parsed response, so a usage object with cost null or a missing usage object gives no header.
+  - A chunk that has both "error" and "choices" is an error. A chunk with usage but no choices still needs id, created and model or it fails with the KeyError text.
+  - Embedding headers are merged with a plain map overlay, so a caller header "content-type" does not replace "Content-Type" and both are sent.
+  - The embedding model prefix strip removes "openrouter/" once and only at the start, so "x/openrouter/y" is unchanged.
+  - The Responses key chain checks OR_API_KEY last and its base chain has no OR_ variant. The Responses headers get no Content-Type.
+  - The decisions default base has no "/v1". B3511's URL join removes one trailing "/v1" and then adds "/alpha/decisions".
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

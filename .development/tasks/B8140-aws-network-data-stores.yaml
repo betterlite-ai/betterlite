@@ -1,0 +1,170 @@
+id: B8140
+title: "AWS Terraform module: network, database and cache"
+description: >-
+  Start the AWS Terraform module that deploys betterlite on ECS Fargate. This part writes the base layer: provider requirements, the
+  network (module-owned or bring-your-own), the Aurora Postgres cluster and the ElastiCache Redis group. Later parts add secrets and IAM (B8141),
+  the ECS service and load balancer (B8142) and the example root (B8143). The module lives in packaging/terraform/aws/ and is a reusable module:
+  it has no provider block, so the caller controls region, role assumption and default_tags.
+
+  Files, all in packaging/terraform/aws/. versions.tf sets required_version ">= 1.6.0" and the providers hashicorp/aws "~> 5.60" and hashicorp/random "~> 3.6".
+  .terraform.lock.hcl comes from `terraform providers lock -platform=linux_amd64 -platform=linux_arm64 -platform=darwin_arm64 -platform=darwin_amd64`
+  and is never typed by hand. variables_data.tf declares these variables with LiteLLM's defaults: region (string, required), tenant (required, regex
+  ^[a-z][a-z0-9-]{0,20}$), env (required, regex ^[a-z][a-z0-9-]{0,8}$), tags (map(string), {}), vpc_id ("" means the module creates the VPC),
+  public_subnet_ids ([]), private_subnet_ids ([]), additional_task_security_group_ids ([]), vpc_cidr ("10.40.0.0/16"), azs ([]),
+  create_database (true), database_url ("" , sensitive), db_instance_class ("db.r6g.large"), db_engine_version ("16.4"), db_name ("litellm"),
+  db_master_username ("postgres"), db_username ("litellm_app"), create_redis (true), redis_url ("", sensitive), redis_node_type ("cache.t4g.small"),
+  redis_num_replicas (1, must be >= 0) and skip_final_snapshot (false). Each variable has a description and each validation has an error_message.
+
+  locals.tf computes: name = "${var.tenant}-litellm-${var.env}"; tags = merge({"litellm:stack" = local.name, "managed-by" = "terraform"}, var.tags);
+  create_vpc = var.vpc_id == ""; vpc_id, public_subnet_ids and private_subnet_ids that read the created resources or the variables;
+  task_security_group_ids = concat([aws_security_group.tasks.id], var.additional_task_security_group_ids);
+  byo_database = !var.create_database && nonsensitive(var.database_url != ""); byo_redis likewise with redis_url;
+  database_enabled = var.create_database || local.byo_database; redis_enabled likewise; managed_stores_need_two_azs = var.create_database || var.create_redis.
+  The nonsensitive() wrapper is only on the emptiness test, so the URL itself stays redacted in plans.
+
+  network.tf builds, when create_vpc: aws_vpc.this (dns support and hostnames on), an internet gateway, one public and one private subnet per entry
+  of var.azs (cidrsubnet(var.vpc_cidr, 8, index) and index + 10), one NAT gateway with its EIP in the first public subnet, and the public and private route tables
+  with their associations. It always builds four security groups: aws_security_group.alb (80 and 443 from 0.0.0.0/0), aws_security_group.tasks (all ports from the
+  ALB group only), aws_security_group.rds (5432 from the tasks group; count create_database) and aws_security_group.redis (6379 from the tasks group; count create_redis);
+  every group allows all egress. A lifecycle precondition on aws_security_group.tasks fails when a supplied VPC has fewer private subnets than needed
+  (2 when managed_stores_need_two_azs, else 1), and another fails when create_vpc is true and var.azs is empty.
+  rds.tf builds, when create_database: a random_password.db_master_password (32 characters, no special), the subnet group, a cluster parameter group
+  (family "aurora-postgresql" plus the major version), aws_rds_cluster.this (aurora-postgresql, provisioned, iam_database_authentication_enabled, storage_encrypted,
+  backup_retention_period 7, window 07:00-09:00, final snapshot named from the name and a short md5 unless skip_final_snapshot), a writer instance with
+  promotion_tier 0 and a reader instance with promotion_tier 15, both with performance insights on and no public access.
+  redis.tf builds, when create_redis: the subnet group and aws_elasticache_replication_group.this (engine redis 7.1, parameter group default.redis7, port 6379,
+  at rest and in transit encryption on, 1 + redis_num_replicas nodes, automatic failover and multi-AZ when replicas >= 1).
+
+  The test file tests/byo_infrastructure.tftest.hcl uses mock_provider "aws" (with a mock aws_iam_policy_document whose json is a parsable policy) and
+  mock_provider "random", so it needs no cloud account. It has six run blocks with command = plan: the default creates a VPC, one NAT gateway, two private subnets, Aurora and
+  ElastiCache; a supplied vpc_id with subnets creates no aws_vpc, subnet or NAT; create_database = false with a database_url and create_redis = false
+  with a redis_url create neither store while database_enabled and redis_enabled stay true; a vpc_id with no private subnets fails on the
+  precondition (expect_failures); no vpc_id and no azs fails; one private subnet fails while a managed store is on and passes when both stores are off.
+scope:
+  paths:
+    - packaging/terraform/aws/versions.tf
+    - packaging/terraform/aws/.terraform.lock.hcl
+    - packaging/terraform/aws/variables_data.tf
+    - packaging/terraform/aws/locals.tf
+    - packaging/terraform/aws/network.tf
+    - packaging/terraform/aws/rds.tf
+    - packaging/terraform/aws/redis.tf
+    - packaging/terraform/aws/tests/byo_infrastructure.tftest.hcl
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/network.tf
+    why: VPC, subnets, NAT, route tables, the four security groups and the private-subnet precondition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/rds.tf
+    why: Aurora cluster and the writer and reader instances.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/redis.tf
+    why: ElastiCache group settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/locals.tf
+    why: name, tags and the bring-your-own flags (the gateway path lists in this file are not built).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/tests/byo_infrastructure.tftest.hcl
+    why: The plan-only permutations to port.
+  - url: https://developer.hashicorp.com/terraform/language/tests/mocking
+    why: How mock_provider and mock_data work, so the tests need no credentials.
+
+dod:
+  - text: The module has versions.tf with the required version and provider constraints, a lock file made by terraform, and no provider block outside examples.
+    proof: [aws-layout, aws-lock-file, aws-no-provider-block]
+  - text: All files in packaging/terraform/aws pass terraform fmt and the module passes terraform validate after an init that is not allowed to change the lock file.
+    proof: [aws-fmt, aws-validate]
+  - text: The variables listed in the description exist with LiteLLM's defaults and the tenant and env regex validations.
+    proof: [aws-variable-defaults]
+  - text: The module creates its own VPC, subnets, NAT gateway and route tables only when vpc_id is empty, and always creates the four security groups with the rules above.
+    proof: [aws-byo-tests, aws-network-literals]
+  - text: Aurora and ElastiCache are created only when create_database and create_redis are true, with IAM authentication, encryption and the writer and reader tiers set.
+    proof: [aws-byo-tests, aws-data-store-literals]
+  - text: Plan-only tests cover the default, the supplied VPC, the supplied database and Redis, and the three failing network cases, with mocked providers and no credentials.
+    proof: [aws-byo-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: aws-layout
+      why: A planned file is missing, so a later part has nothing to build on.
+      run: >-
+        test -f packaging/terraform/aws/versions.tf && test -f packaging/terraform/aws/variables_data.tf && test -f packaging/terraform/aws/locals.tf &&
+        test -f packaging/terraform/aws/network.tf && test -f packaging/terraform/aws/rds.tf && test -f packaging/terraform/aws/redis.tf &&
+        grep -q 'required_version = ">= 1.6.0"' packaging/terraform/aws/versions.tf && grep -q 'hashicorp/aws' packaging/terraform/aws/versions.tf && grep -q 'hashicorp/random' packaging/terraform/aws/versions.tf
+    - id: aws-lock-file
+      why: The lock file is missing, has no hashes or was written by hand.
+      run: >-
+        grep -q 'provider "registry.terraform.io/hashicorp/aws"' packaging/terraform/aws/.terraform.lock.hcl &&
+        grep -q 'provider "registry.terraform.io/hashicorp/random"' packaging/terraform/aws/.terraform.lock.hcl &&
+        grep -q '"h1:' packaging/terraform/aws/.terraform.lock.hcl
+    - id: aws-no-provider-block
+      why: A provider block in the module takes region and credentials away from the caller.
+      run: >-
+        test -f packaging/terraform/aws/versions.tf && ! grep -rEq '^provider "' packaging/terraform/aws --include='*.tf' --exclude-dir=examples --exclude-dir=.terraform
+    - id: aws-fmt
+      why: A Terraform file is not formatted the way terraform fmt writes it.
+      run: >-
+        test -f packaging/terraform/aws/versions.tf && terraform -chdir=packaging/terraform/aws fmt -check -recursive -diff
+    - id: aws-validate
+      why: The module does not initialise against the committed lock file or does not validate.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/aws" TF_IN_AUTOMATION=1 &&
+        terraform -chdir=packaging/terraform/aws init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/aws validate
+    - id: aws-variable-defaults
+      why: A variable is missing or its default differs from LiteLLM's.
+      run: >-
+        for v in region tenant env tags vpc_id public_subnet_ids private_subnet_ids additional_task_security_group_ids vpc_cidr azs create_database database_url db_instance_class db_engine_version db_name db_master_username db_username create_redis redis_url redis_node_type redis_num_replicas skip_final_snapshot; do grep -q "^variable \"$v\"" packaging/terraform/aws/variables_data.tf || { echo "missing variable $v"; exit 1; }; done &&
+        grep -q '10.40.0.0/16' packaging/terraform/aws/variables_data.tf && grep -q 'db.r6g.large' packaging/terraform/aws/variables_data.tf && grep -q '"16.4"' packaging/terraform/aws/variables_data.tf &&
+        grep -q 'cache.t4g.small' packaging/terraform/aws/variables_data.tf && grep -q 'litellm_app' packaging/terraform/aws/variables_data.tf && grep -q '\[a-z0-9-\]{0,20}' packaging/terraform/aws/variables_data.tf
+    - id: aws-network-literals
+      why: A network resource or security group rule from the description is missing.
+      run: >-
+        grep -q 'resource "aws_nat_gateway" "this"' packaging/terraform/aws/network.tf && grep -q 'resource "aws_security_group" "alb"' packaging/terraform/aws/network.tf &&
+        grep -q 'resource "aws_security_group" "tasks"' packaging/terraform/aws/network.tf && grep -q 'resource "aws_security_group" "rds"' packaging/terraform/aws/network.tf &&
+        grep -q 'resource "aws_security_group" "redis"' packaging/terraform/aws/network.tf && grep -q 'cidrsubnet(var.vpc_cidr, 8, count.index + 10)' packaging/terraform/aws/network.tf
+    - id: aws-data-store-literals
+      why: Aurora or ElastiCache lost an encryption, IAM or failover setting.
+      run: >-
+        grep -q 'iam_database_authentication_enabled *= *true' packaging/terraform/aws/rds.tf && grep -q 'storage_encrypted *= *true' packaging/terraform/aws/rds.tf &&
+        grep -q 'promotion_tier *= *15' packaging/terraform/aws/rds.tf && grep -q 'transit_encryption_enabled *= *true' packaging/terraform/aws/redis.tf &&
+        grep -q 'at_rest_encryption_enabled *= *true' packaging/terraform/aws/redis.tf && grep -q 'default.redis7' packaging/terraform/aws/redis.tf
+    - id: aws-byo-tests
+      why: A plan-only permutation fails or the test file is missing.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/aws" TF_IN_AUTOMATION=1 &&
+        test -f packaging/terraform/aws/tests/byo_infrastructure.tftest.hcl &&
+        terraform -chdir=packaging/terraform/aws init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/aws test -filter=tests/byo_infrastructure.tftest.hcl
+
+oracle_cases: []
+
+deviations:
+  - what: The variables are split over variables_data.tf, variables_identity.tf and variables_service.tf instead of one variables.tf.
+    why: Three parallel tasks write them, and a Terraform module reads every .tf file in the folder, so the split changes nothing for a caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/variables.tf
+  - what: The module sits in packaging/terraform/aws/, not terraform/litellm/aws/.
+    why: The repository keeps distribution files under packaging/, the same place as the Docker and provider files.
+    link: https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws
+  - what: There is no gateway_metrics_scrape_cidrs ingress rule on the tasks security group.
+    why: The Prometheus sidecar it opened is not part of this module (see B8142 out_of_scope).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/network.tf#L160-L175
+
+out_of_scope:
+  - "Secrets Manager secrets, IAM roles and policies, the S3 bucket, the ECS cluster and the database bootstrap task. Owned by B8141."
+  - "The ECS task definition, service, load balancer, autoscaling, migration task and outputs. Owned by B8142."
+  - "The check block redis_less_rate_limits_are_per_process in redis.tf and the max_gateway_processes local. They read service variables, so B8142 owns them, with the two redis-less runs of byo_infrastructure.tftest.hcl."
+  - "The gateway_path_prefixes, ui_path_prefixes, ui_exact_paths and gateway_path_chunks locals in locals.tf. betterlite is one service behind one target group, so there is nothing to route by path."
+  - "The example root and the README. Owned by B8143."
+
+pitfalls:
+  - "terraform fmt -check fails on a column-misaligned equals sign, so run `terraform fmt` on the folder before the checks."
+  - "mock_provider returns random strings for every computed attribute, and aws_iam_policy_document.json must be overridden with a parsable policy or the plan fails when a later part attaches it."
+  - "Run init with -lockfile=readonly in the checks; without it terraform rewrites the lock file and a stale lock would pass."
+  - "The count on aws_security_group.rds and aws_security_group.redis follows create_database and create_redis, not database_enabled: a supplied database_url has no module-owned group to open."
+  - "Keep the TF_DATA_DIR under target/ in every command, or terraform writes .terraform/ next to the module and the scope check sees it."
+  - "database_url and redis_url are sensitive, so any condition that tests them for emptiness goes through nonsensitive(), or the flag taints every value built from it."
+  - "aws_rds_cluster.this needs final_snapshot_identifier = null when skip_final_snapshot is true; setting both is an apply-time error the mocked plan does not show."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

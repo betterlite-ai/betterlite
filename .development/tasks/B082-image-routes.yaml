@@ -5,7 +5,7 @@ description: >-
   and POST /v1/images/edits,/images/edits,/openai/deployments/{model:path}/images/edits exactly once in
   betterlite-server::api::image_routes. Own every function in image_endpoints/endpoints.py, including the
   UploadFile-to-named-buffer helpers; the two package initializers add no executable behavior. No variation
-  route exists. Use B756 authentication, B124 proxy hooks, B1103 authenticated request enrichment, B1102 model
+  route exists. Use B756 authentication, B8399 proxy hooks, B1103 authenticated request enrichment, B1102 model
   precedence/destination checks, B014 routing, B1121/B999 SDK calls and B004 common request/error processing.
   B014 registers the ImageGeneration and ImageEdit entries as stubs, so replace the stubs and their not-built tests
   in the image_generation and image_edit modules under crates/betterlite-core/src/operation/ and
@@ -143,7 +143,7 @@ deviations: []
 out_of_scope:
 - B004 owns ProxyBaseLLMRequestProcessing, resolve_litellm_call_id and log_llm_api_exception; B1103 owns shared OpenAI error-payload helpers and authenticated request enrichment.
 - B1100/B1101 own multipart/body extraction and numeric coercion; B1102 owns model precedence and reject_url_valued_destination; B218 owns get_str_from_messages.
-- B1121/B998 and B999 own SDK image calls, B124 proxy hook/status services and B756 authentication. No other function in image_endpoints/endpoints.py is left unassigned.
+- B1121/B998 and B999 own SDK image calls, B8399 proxy hook/status services and B756 authentication. No other function in image_endpoints/endpoints.py is left unassigned.
 pitfalls:
 - Generation merges the trusted call id over the body; reversing the union lets a client forge the logging identifier.
 - Upload conflicts and plain-string failures occur outside the edit processor's try block and retain FastAPI detail bodies.

@@ -7,7 +7,7 @@ description: >-
   _fingerprint_agentic_tools, _refused_agentic_tool_identifiers, _is_refused_tool_use_block and
   _can_replace_turn_with_terminal_response as whole functions. Also own the complete shared
   agentic_followup_kwargs.py and agentic_loop_settings.py helpers below the future B119 interception
-  integration. B189 supplies callback/plan types, B248 string callback resolution, B247 logging
+  integration. B189 supplies callback types, B4119 supplies the plan types (AgenticLoopPlan, AgenticLoopRequestPatch), B248 string callback resolution, B247 logging
   records, B010 generic parameters and B902 Responses option names. Inject B157's deployment-hook
   dispatcher as a typed port; this task owns its invocation and merge, not Python import machinery.
 
@@ -46,6 +46,10 @@ scope:
   - tools/oracle/cases/helpers/responses-hook-policy/**
   - tools/oracle/fuzz/corpus/helper_case/responses_hook_policy-*
   - Cargo.lock
+  - tools/oracle/helpers/b2419.py
+  - tools/oracle/helpers/b2419/**
+  - tools/oracle/src/helpers/core_ops/b2419.rs
+  - tools/oracle/src/helpers/core_ops/b2419/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L315-L351
@@ -134,7 +138,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - B2415 owns whole agentic execution/cleanup/finalization functions; B2414 owns create sends and fake-stream preparation.
-- B189 owns AgenticLoopPlan/RequestPatch and interception-prefix helpers; B119 installs websearch/code-interpreter callbacks after API assembly.
+- B4119 owns AgenticLoopPlan and AgenticLoopRequestPatch (betterlite_context::agentic_loop_plan), B189 owns the interception-prefix helpers; B119 installs websearch/code-interpreter callbacks after API assembly.
 - _agentic_hook_kwargs and _server_fulfilled_tools_in_request serve other HTTP-handler paths and remain with their Anthropic API integration; they are not called by this policy slice.
 - Other llm_http_handler.py families retain their endpoint owners; this task claims only the eleven named functions.
 pitfalls:

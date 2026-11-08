@@ -7,7 +7,7 @@ description: >-
   Require a database first or raise HTTP500 with detail.error=CommonProxyErrors.db_not_connected_error.
   Defaults are organization_ids, exclude_organization_ids, start_date, end_date, model and api_key
   absent, page=1 and page_size=10. Truthy ID strings split on commas without trimming or deduplication;
-  empty strings become None. Pass pagination/date validation to B074, without inventing route limits.
+  empty strings become None. Pass pagination/date validation to B3091, without inventing route limits.
 
   B732's admin-view predicate lets proxy admin/view callers skip membership lookup. Others query B726
   OrganizationMembershipRepository for their user_id and retain only ORG_ADMIN.value memberships.
@@ -18,7 +18,7 @@ description: >-
 
   B826's typed adapter over B723 OrganizationRepository loads metadata with B700 find_many_in for a
   concrete scope, otherwise find_many(where={}). Metadata maps ID to organization_alias, including
-  null aliases. Missing rows do not change the requested IDs or produce404. Call B074 get_daily_activity
+  null aliases. Missing rows do not change the requested IDs or produce404. Call B3091 get_daily_activity
   with table litellm_dailyorganizationspend, entity_id_field organization_id, None or the original scope
   list, metadata, split exclusions and every date/model/key/page argument. This route has no except
   block and never calls handle_exception_on_proxy; preserve B003's global HTTP exception envelopes
@@ -38,8 +38,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/organization_activity.rs
     - crates/betterlite-server/src/routes/organization_activity/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/organization-activity/**
     - tools/oracle/helpers/b058.py
     - tools/oracle/helpers/b058/**
@@ -74,7 +72,7 @@ oracle_cases:
   - tools/oracle/cases/management/organization-activity/no-database.yaml
 deviations: []
 out_of_scope:
-  - B074 owns daily activity filtering, time windows, pagination and response aggregation.
+  - B3091 owns daily activity filtering, time windows, pagination and response aggregation.
   - B826 owns organization table adapters; B700 owns chunked membership reads.
   - Organization writes, access groups, permissions and projects remain their existing task owners.
 pitfalls:
