@@ -1,7 +1,7 @@
 use rstest::rstest;
 
 use super::support;
-use crate::fetch_policy::retry::{MAX_FETCH_WAIT_SECONDS, retry_wait_seconds};
+use crate::fetch_policy::retry::{MAX_FETCH_ATTEMPTS, MAX_FETCH_WAIT_SECONDS, retry_wait_seconds};
 
 #[rstest]
 #[case::retry_after_used(Some("3.5"), 1, &[], "3.5")]
@@ -25,4 +25,5 @@ fn catalog_fetch_policy_behavior_tests_behavior(
         support::decimal(expected)
     );
     assert_eq!(MAX_FETCH_WAIT_SECONDS, support::decimal("30"));
+    assert_eq!(MAX_FETCH_ATTEMPTS, 3);
 }
