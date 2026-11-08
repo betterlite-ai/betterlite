@@ -55,6 +55,18 @@ fn load(yaml: &str) -> Option<Vec<String>> {
     "litellm_settings: {provider_url_destination_allowed_hosts: ['[::1]:8080']}",
     &["::1|None|Some(8080)"]
 )]
+#[case::an_ipvfuture_host_is_kept(
+    "litellm_settings: {provider_url_destination_allowed_hosts: ['[v1.a]:80']}",
+    &["v1.a|None|Some(80)"]
+)]
+#[case::an_ipvfuture_host_needs_a_version(
+    "litellm_settings: {provider_url_destination_allowed_hosts: ['[v.a]']}",
+    &[]
+)]
+#[case::an_ipvfuture_host_needs_a_label(
+    "litellm_settings: {provider_url_destination_allowed_hosts: ['[v1.]']}",
+    &[]
+)]
 #[case::invalid_entries_are_skipped(
     "litellm_settings: {provider_url_destination_allowed_hosts: ['ftp://api.example.com', 'user@api.example.com', 'api.example.com:8o', '[zz]', 'http://[::1', '']}",
     &[]
@@ -78,6 +90,14 @@ fn load(yaml: &str) -> Option<Vec<String>> {
 fn http_boundaries_url_boundary_tests_behavior(#[case] yaml: &str, #[case] expected: &[&str]) {
     let wanted: Vec<String> = expected.iter().map(|entry| (*entry).to_owned()).collect();
     assert_eq!(load(yaml).unwrap(), wanted);
+}
+
+#[rstest]
+#[case::at_the_limit(2048, true)]
+#[case::one_past_the_limit(2049, false)]
+fn applies_the_entry_length_bound_exactly(#[case] length: usize, #[case] accepted: bool) {
+    let parsed = AllowedDestination::parse(&"a".repeat(length));
+    assert_eq!(parsed.is_some(), accepted);
 }
 
 #[test]

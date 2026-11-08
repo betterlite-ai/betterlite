@@ -10,7 +10,7 @@ use url::Url;
 
 use crate::url_policy::base::ConfiguredBase;
 use crate::url_policy::destination::{candidates, destination_allowed};
-use crate::url_policy::origin::assert_same_origin;
+use crate::url_policy::origin::{MAX_URL_CHARS, Origin, assert_same_origin};
 
 #[derive(Clone, Copy)]
 enum Behavior {
@@ -18,6 +18,7 @@ enum Behavior {
     Destination(&'static str, &'static [&'static str]),
     Base(&'static str),
     Candidates(&'static str),
+    Parsed(&'static str),
 }
 
 fn origin_outcome(candidate: &str, expected: &str) -> String {
@@ -56,6 +57,10 @@ fn observe(behavior: Behavior) -> String {
         Behavior::Destination(url, entries) => destination_outcome(url, entries),
         Behavior::Base(url) => base_outcome(url),
         Behavior::Candidates(value) => candidates(value).join("|"),
+        Behavior::Parsed(url) => {
+            let origin = Origin::parse(url).unwrap();
+            format!("{}|{}|{}", origin.scheme, origin.host, origin.port)
+        }
     }
 }
 
@@ -135,6 +140,7 @@ fn observe(behavior: Behavior) -> String {
     "Port out of range 0-65535"
 )]
 #[case::a_bare_host_allows_any_port(Behavior::Destination("https://api.example.com/v1", &["api.example.com"]), "true")]
+#[case::an_http_entry_matches_an_http_url(Behavior::Destination("http://api.example.com/v1", &["http://api.example.com"]), "true")]
 #[case::a_scheme_entry_pins_the_scheme(Behavior::Destination("http://api.example.com/v1", &["https://api.example.com"]), "false")]
 #[case::an_https_entry_uses_port_443(Behavior::Destination("https://api.example.com/v1", &["https://api.example.com"]), "true")]
 #[case::a_port_entry_pins_the_port(Behavior::Destination("https://api.example.com:8443/v1", &["api.example.com:8443"]), "true")]
@@ -182,6 +188,14 @@ fn observe(behavior: Behavior) -> String {
     "a.example.com/v1|v1|b.example.com"
 )]
 #[case::empty_candidates_are_dropped(Behavior::Candidates(",,"), "")]
+#[case::a_parsed_https_origin_uses_port_443(
+    Behavior::Parsed("https://api.example.com/v1"),
+    "https|api.example.com|443"
+)]
+#[case::a_parsed_http_origin_uses_port_80(
+    Behavior::Parsed("http://api.example.com/v1"),
+    "http|api.example.com|80"
+)]
 fn http_boundaries_url_boundary_tests_behavior(#[case] behavior: Behavior, #[case] expected: &str) {
     assert_eq!(observe(behavior), expected);
 }
@@ -193,6 +207,27 @@ fn refuses_inputs_past_the_length_bound() {
     assert_eq!(error.to_string(), "the URL is longer than 65536 characters");
     assert!(!destination_allowed(&long_url, &[]));
     assert!(AllowedDestination::parse(&long_url).is_none());
+}
+
+#[rstest]
+#[case::at_the_limit(0, true)]
+#[case::one_past_the_limit(1, false)]
+fn applies_the_length_bound_exactly(#[case] extra: usize, #[case] accepted: bool) {
+    let prefix = "https://api.example.com/";
+    let url = format!(
+        "{prefix}{}",
+        "a".repeat(
+            MAX_URL_CHARS
+                .checked_sub(prefix.len())
+                .unwrap()
+                .checked_add(extra)
+                .unwrap()
+        )
+    );
+    let allowed = [AllowedDestination::parse("api.example.com").unwrap()];
+    assert_eq!(destination_allowed(&url, &allowed), accepted);
+    let origin = assert_same_origin(&url, "https://api.example.com/v1");
+    assert_eq!(origin.is_ok(), accepted);
 }
 
 #[rstest]

@@ -13,7 +13,7 @@ use crate::user_url::httpx_url::HttpxUrl;
 use crate::user_url::redirect::{location, redirect_headers, redirect_url};
 
 pub(crate) const MAX_REDIRECTS: usize = 10;
-const REDIRECT_BODY_BYTES: usize = 16 * 1024;
+const REDIRECT_BODY_BYTES: usize = 0x4000;
 
 const SECRET_HEADERS: [HeaderName; 8] = [
     AUTHORIZATION,
@@ -112,7 +112,8 @@ fn next_request(
         reused
     };
     *next.headers_mut() = headers;
-    if changed && *method == Method::GET {
+    // a rewritten method is always GET, and httpx drops the body headers for it
+    if changed {
         next.headers_mut().remove(CONTENT_LENGTH);
         next.headers_mut().remove(TRANSFER_ENCODING);
     }
@@ -163,3 +164,5 @@ pub(crate) async fn send(
         hops = hops.saturating_add(1);
     }
 }
+
+mod tests;
