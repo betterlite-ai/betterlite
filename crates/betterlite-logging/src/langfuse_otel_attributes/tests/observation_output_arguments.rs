@@ -40,3 +40,19 @@ fn keeps_arguments_that_are_not_text() {
         )]
     );
 }
+
+#[test]
+fn falls_back_to_an_empty_object_for_text_over_one_mebibyte() {
+    let arguments = format!(r#"{{"pad":"{}"}}"#, "a".repeat(1_100_000));
+    let escaped = serde_json::to_string(&arguments).unwrap();
+    let response =
+        r#"{"choices":[{"message":{"tool_calls":[{"function":{"arguments":ESCAPED}}]}}]}"#
+            .replace("ESCAPED", &escaped);
+    assert_eq!(
+        observation_attributes(&response),
+        vec![attr(
+            "langfuse.observation.output",
+            r#"[{"arguments":{},"call_id":"","id":"","name":"","type":"function_call"}]"#
+        )]
+    );
+}

@@ -104,7 +104,7 @@ fn text_or_empty(value: &Json, name: &str) -> Json {
 fn transformed_tool_call(response: &Json, call: &Json) -> Json {
     let function = field(call, "function");
     let arguments = match function.and_then(|body| field(body, "arguments")) {
-        Some(Json::Text(text)) => parse_arguments(text),
+        Some(Json::Text(text)) => safe_arguments(text),
         Some(other) => other.clone(),
         None => Json::Object(IndexMap::new()),
     };
@@ -118,13 +118,6 @@ fn transformed_tool_call(response: &Json, call: &Json) -> Json {
         text_or_empty(call, "id"),
         arguments,
     )
-}
-
-fn parse_arguments(text: &str) -> Json {
-    match serde_json::from_str(text) {
-        Ok(parsed) => parsed,
-        Err(_source) => Json::Object(IndexMap::new()),
-    }
 }
 
 fn set_output_items<S>(span: &mut S, output: &[Json])

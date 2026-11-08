@@ -91,6 +91,18 @@ fn an_explicit_empty_environment_is_used_as_given() {
 }
 
 #[test]
+fn an_empty_environment_variable_writes_no_environment() {
+    let environment = BTreeMap::from([("LANGFUSE_TRACING_ENVIRONMENT".to_owned(), String::new())]);
+    assert_eq!(
+        entry_attributes("{}", None, &environment),
+        vec![
+            attr("langfuse.observation.input", r#"{"messages":null}"#),
+            attr("langfuse.observation.type", "generation"),
+        ]
+    );
+}
+
+#[test]
 fn writes_the_observation_output_from_the_response() {
     assert_eq!(
         entry_attributes(
