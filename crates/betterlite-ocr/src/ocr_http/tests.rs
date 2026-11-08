@@ -2,6 +2,7 @@
 
 pub(crate) mod support;
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -11,34 +12,51 @@ use http::{HeaderMap, Method};
 use url::Url;
 
 use crate::json::{Json, Object};
-use crate::ocr_config::DecodedOcrResponse;
+use crate::ocr_auth::{AwsRequestSigner, AwsSigningContext, AwsSigningRequest};
 use crate::ocr_config::decode::response_format;
+use crate::ocr_config::{DecodedOcrResponse, OcrEnvironment};
+use crate::ocr_document::OcrDocument;
 use crate::ocr_error::{OcrError, OcrTransportError};
-use crate::ocr_http::{CallHooks, OcrWireRequest, ocr, read_json_response, read_response_bytes};
+use crate::ocr_http::{
+    CallHooks, OcrCallContext, OcrWireRequest, body_document, build_http_request,
+    guardrail_document, ocr, read_json_response, read_response_bytes, transform_request_body,
+};
 use crate::ocr_settings::OcrSettings;
 use crate::request_format::RequestFormat;
 
 use support::{
-    MockServer, TestConfig, TestPayload, chunked, delayed, http_client, object, ocr_client,
-    prepared_request, reply,
+    MockServer, TestBody, TestConfig, TestPayload, chunked, delayed, http_client, object,
+    ocr_client, prepared_request, reply,
 };
 
-struct AssertingHooks;
+struct TestHooks;
 
 #[async_trait]
-impl CallHooks for AssertingHooks {
+impl CallHooks for TestHooks {
     async fn before_provider_request(
         &self,
-        request: OcrWireRequest,
+        mut request: OcrWireRequest,
     ) -> Result<OcrWireRequest, OcrError> {
-        let Json::Object(body) = &request.body else {
+        let Json::Object(body) = &mut request.body else {
             panic!("the hook sees the composed object body");
         };
-        assert!(body.contains_key("model"));
-        assert!(body.contains_key("document"));
-        let mut headers = request.headers;
-        headers.push(("x-hook".to_owned(), "seen".to_owned()));
-        Ok(OcrWireRequest { headers, ..request })
+        assert!(body.contains_key("document") || body.contains_key("type"));
+        let rewrite = object(&[
+            ("type", Json::Text("image_url".to_owned())),
+            (
+                "image_url",
+                Json::Text("https://example.com/guardrail.png".to_owned()),
+            ),
+        ]);
+        if body.contains_key("document") {
+            let _previous = body.insert("document".to_owned(), Json::Object(rewrite));
+        } else {
+            *body = rewrite;
+        }
+        request
+            .headers
+            .push(("x-hook".to_owned(), "seen".to_owned()));
+        Ok(request)
     }
 
     async fn response_received(&self, body: &[u8]) -> Result<(), OcrError> {
@@ -57,7 +75,7 @@ async fn sends_one_request_in_order_and_runs_the_hooks_before_decoding() {
         ("future_option", Json::Bool(true)),
     ]);
     let request = prepared_request(format!("{}/base", server.base), params);
-    let response = ocr(&TestConfig, &client, &request, &AssertingHooks)
+    let response = ocr(&TestConfig, &client, &request, &TestHooks)
         .await
         .expect("the call succeeds");
     assert_eq!(response.model, "requested-model");
@@ -245,4 +263,154 @@ async fn a_stalled_provider_times_out() {
         .await
         .expect_err("the stalled server times out");
     assert_eq!(error.http_status_code(), Some(408));
+}
+
+fn provider_document() -> OcrDocument {
+    OcrDocument::DocumentUrl {
+        document_url: "data:application/pdf;base64,YWJj".to_owned(),
+        extra: BTreeMap::new(),
+    }
+}
+
+#[test]
+fn build_http_request_carries_the_json_body_and_deadline() {
+    let request = prepared_request("http://example.com".to_owned(), Object::new());
+    let body = TestBody {
+        model: "requested-model".to_owned(),
+        document: provider_document(),
+    };
+    let outbound = build_http_request(&request, "http://example.com/v1/ocr", Vec::new(), &body)
+        .expect("the request builds");
+    assert_eq!(outbound.url.as_str(), "http://example.com/v1/ocr");
+    assert_eq!(outbound.deadline, request.connection.timeout);
+    assert_eq!(
+        outbound
+            .headers
+            .get("content-type")
+            .and_then(|value| value.to_str().ok()),
+        Some("application/json")
+    );
+    let RequestBody::Json(bytes) = outbound.body else {
+        panic!("the provider body is JSON");
+    };
+    let decoded: Json = serde_json::from_slice(&bytes).expect("the body is JSON");
+    let Json::Object(sent) = decoded else {
+        panic!("the body is an object");
+    };
+    assert_eq!(
+        sent.get("model"),
+        Some(&Json::Text("requested-model".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn guardrail_document_lets_the_hook_rewrite_the_document() {
+    let request = prepared_request("http://example.com".to_owned(), Object::new());
+    let (document, headers) =
+        guardrail_document(&request, "http://example.com/v1/ocr", &[], &TestHooks)
+            .await
+            .expect("the document passes the hook");
+    assert_eq!(document.source(), "https://example.com/guardrail.png");
+    assert!(
+        headers
+            .iter()
+            .any(|(name, value)| name == "x-hook" && value == "seen"),
+        "{headers:?}"
+    );
+}
+
+#[test]
+fn body_document_reads_the_document_from_a_composed_body() {
+    let body = Json::Object(object(&[
+        ("model", Json::Text("requested-model".to_owned())),
+        (
+            "document",
+            Json::Object(object(&[
+                ("type", Json::Text("document_url".to_owned())),
+                (
+                    "document_url",
+                    Json::Text("https://example.com/a.pdf".to_owned()),
+                ),
+            ])),
+        ),
+    ]));
+    let document = body_document(&body).expect("the document is read");
+    assert_eq!(document.source(), "https://example.com/a.pdf");
+    let missing = Json::Object(object(&[("model", Json::Text("m".to_owned()))]));
+    assert!(matches!(
+        body_document(&missing),
+        Err(OcrError::RequestField { path }) if path == "body.document"
+    ));
+}
+
+struct SigningEnvironment {
+    headers: Vec<(String, String)>,
+    signer: RecordingSigner,
+    region: String,
+    service: String,
+}
+
+impl OcrEnvironment for SigningEnvironment {
+    fn headers(&self) -> &[(String, String)] {
+        &self.headers
+    }
+
+    fn signer(&self) -> Option<AwsSigningContext<'_>> {
+        Some(AwsSigningContext {
+            signer: &self.signer,
+            region: &self.region,
+            service: &self.service,
+        })
+    }
+}
+
+struct RecordingSigner;
+
+#[async_trait]
+impl AwsRequestSigner for RecordingSigner {
+    async fn sign(
+        &self,
+        request: &AwsSigningRequest<'_>,
+    ) -> Result<Vec<(String, String)>, OcrError> {
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.service, "textract");
+        assert_eq!(request.region, "us-east-1");
+        assert!(request.body.windows(7).any(|window| window == b"\"model\""));
+        Ok(vec![("x-amz-signature".to_owned(), "signed".to_owned())])
+    }
+}
+
+#[tokio::test]
+async fn signed_provider_requests_carry_the_signature_headers() {
+    let request = prepared_request("http://example.com".to_owned(), Object::new());
+    let environment = SigningEnvironment {
+        headers: vec![("content-type".to_owned(), "application/json".to_owned())],
+        signer: RecordingSigner,
+        region: "us-east-1".to_owned(),
+        service: "textract".to_owned(),
+    };
+    let context = OcrCallContext {
+        environment: &environment,
+        hooks: &NoHooks,
+    };
+    let body = TestBody {
+        model: "requested-model".to_owned(),
+        document: provider_document(),
+    };
+    let outbound = transform_request_body(
+        &TestConfig,
+        &request,
+        "http://example.com/v1/ocr",
+        context,
+        body,
+    )
+    .await
+    .expect("the signed request builds");
+    assert_eq!(
+        outbound
+            .headers
+            .get("x-amz-signature")
+            .and_then(|value| value.to_str().ok()),
+        Some("signed")
+    );
 }
