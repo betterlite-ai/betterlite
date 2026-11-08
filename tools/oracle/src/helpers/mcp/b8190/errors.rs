@@ -26,6 +26,12 @@ pub(crate) struct OpenApiFields {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(crate) struct ToolResultFields {
+    pub(super) message: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ServerListFields {
     fault: String,
     server_name: String,

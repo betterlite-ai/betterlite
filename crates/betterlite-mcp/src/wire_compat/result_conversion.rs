@@ -1,4 +1,5 @@
 use betterlite_prompts::arguments::json::{Json, Object};
+use serde::Serialize;
 
 use crate::client::tools::result::{CallToolResult, ContentBlock, TextContent, ToolCallResult};
 use crate::tools::schemas::McpTool;
@@ -65,11 +66,31 @@ pub fn complete_call_tool_result(outcome: ToolOutcome, compat: WireCompat) -> Ca
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct GatewayTool {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(rename = "inputSchema", skip_serializing_if = "Option::is_none")]
+    pub input_schema: Option<Object>,
+    #[serde(flatten)]
+    pub extra: Object,
+}
+
+// LiteLLM dumps the tool with exclude_none, so a null optional never reaches the wire
 #[must_use]
-pub fn to_gateway_tool(tool: &McpTool, name: &str) -> McpTool {
-    let mut renamed = tool.clone();
-    name.clone_into(&mut renamed.name);
-    renamed
+pub fn to_gateway_tool(tool: &McpTool, name: &str) -> GatewayTool {
+    GatewayTool {
+        name: name.to_owned(),
+        description: tool.description.clone(),
+        input_schema: tool.input_schema.clone(),
+        extra: tool
+            .extra
+            .iter()
+            .filter(|(_, value)| !matches!(value, Json::Null))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect(),
+    }
 }
 
 fn input_required_unsupported() -> CallToolResult {

@@ -84,9 +84,11 @@ pub struct OpenApiUpstreamError {
     pub server_name: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
-#[error("")]
-pub struct ToolResultError;
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error("{message}")]
+pub struct ToolResultError {
+    pub message: String,
+}
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("Listing tools from MCP server '{server_name}' failed")]

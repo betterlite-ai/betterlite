@@ -138,8 +138,13 @@ fn the_openapi_upstream_error_reports_only_the_status() {
 }
 
 #[rstest]
-fn the_tool_result_error_carries_no_message() {
-    assert_eq!(ToolResultError.to_string(), "");
+#[case::text("tool failed: bad input")]
+#[case::empty("")]
+fn the_tool_result_error_displays_the_message_it_was_built_with(#[case] message: &str) {
+    let error = ToolResultError {
+        message: message.to_owned(),
+    };
+    assert_eq!(error.to_string(), message);
 }
 
 #[rstest]

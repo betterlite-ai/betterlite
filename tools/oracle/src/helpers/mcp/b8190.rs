@@ -7,7 +7,7 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 
 use capabilities::{AdvertisedFields, DiscoveryFields, PolicyFields};
 use conversion::{BodyFields, Conversion, ConvertFields, GatewayToolFields, ProtocolFields};
-use errors::{OpenApiFields, ServerListFields, UpstreamAuthFields};
+use errors::{OpenApiFields, ServerListFields, ToolResultFields, UpstreamAuthFields};
 
 mod capabilities;
 mod conversion;
@@ -46,7 +46,12 @@ impl Helper for Op {
                     "server_name": error.server_name,
                 }))
             }
-            Input::ToolResultError => Ok(json!({ "message": ToolResultError.to_string() })),
+            Input::ToolResultError(fields) => {
+                let error = ToolResultError {
+                    message: fields.message.clone(),
+                };
+                Ok(json!({ "message": error.to_string() }))
+            }
             Input::ServerListError(fields) => Ok(errors::run_server_list(fields)),
         }
     }
@@ -77,6 +82,6 @@ pub(crate) enum Input {
     UrlCredentials,
     UpstreamAuth(UpstreamAuthFields),
     OpenapiUpstream(OpenApiFields),
-    ToolResultError,
+    ToolResultError(ToolResultFields),
     ServerListError(ServerListFields),
 }

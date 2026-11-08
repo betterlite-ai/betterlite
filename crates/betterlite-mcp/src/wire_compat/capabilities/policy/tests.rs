@@ -1,10 +1,11 @@
 #![cfg(test)]
 
+use betterlite_prompts::arguments::json::Object;
 use rstest::rstest;
 
 use super::{
-    ADVERTISED_VERSIONS_FIELD, ConfigError, GatewayVersionPolicy, UnsupportedVersion,
-    VersionRequest, advertised_versions,
+    ADVERTISED_VERSIONS_FIELD, ConfigError, GatewayVersionPolicy, INVALID_PARAMS,
+    UnsupportedVersion, VersionRejection, VersionRequest, advertised_versions,
 };
 use crate::client::sessions::negotiate::Implementation;
 use crate::wire_compat::capabilities::discovery::{
@@ -18,6 +19,13 @@ fn policy(versions: &[SpecVersion]) -> GatewayVersionPolicy {
     GatewayVersionPolicy {
         versions: versions.to_vec(),
     }
+}
+
+fn initialize_params(requested: &str) -> Object {
+    let raw = format!(
+        r#"{{"protocolVersion":"{requested}","capabilities":{{}},"clientInfo":{{"name":"client","version":"1"}}}}"#
+    );
+    serde_json::from_str(&raw).unwrap()
 }
 
 fn capabilities() -> ServerCapabilities {
@@ -54,12 +62,37 @@ fn an_initialize_offer_negotiates_the_handshake_revision(
     #[case] negotiated: &str,
 ) {
     let policy = policy(&HANDSHAKE_VERSIONS);
+    let params = initialize_params(requested);
     assert_eq!(
         policy
-            .negotiate(VersionRequest::Initialize { requested })
+            .negotiate(VersionRequest::Initialize { params: &params })
             .unwrap(),
         negotiated
     );
+}
+
+#[rstest]
+#[case::no_params("{}")]
+#[case::no_protocol_version(r#"{"capabilities":{},"clientInfo":{"name":"c","version":"1"}}"#)]
+#[case::no_capabilities(
+    r#"{"protocolVersion":"2025-11-25","clientInfo":{"name":"c","version":"1"}}"#
+)]
+#[case::no_client_info(r#"{"protocolVersion":"2025-11-25","capabilities":{}}"#)]
+#[case::client_info_without_version(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c"}}"#
+)]
+#[case::numeric_protocol_version(
+    r#"{"protocolVersion":20251125,"capabilities":{},"clientInfo":{"name":"c","version":"1"}}"#
+)]
+fn an_initialize_with_invalid_params_is_rejected_with_the_invalid_params_code(#[case] raw: &str) {
+    let policy = policy(&HANDSHAKE_VERSIONS);
+    let params: Object = serde_json::from_str(raw).unwrap();
+    let error = policy
+        .negotiate(VersionRequest::Initialize { params: &params })
+        .unwrap_err();
+    assert!(matches!(error, VersionRejection::InvalidParams(_)));
+    assert_eq!(error.code(), INVALID_PARAMS);
+    assert_eq!(error.code(), -32_602_i32);
 }
 
 #[rstest]
@@ -85,7 +118,7 @@ fn a_session_revision_outside_the_configuration_is_rejected() {
             protocol_version: Some("2026-07-28"),
         })
         .unwrap_err();
-    assert_eq!(error.code, -32_022_i32);
+    assert_eq!(error.code(), -32_022_i32);
 }
 
 #[rstest]
@@ -96,26 +129,24 @@ fn a_session_without_a_revision_is_rejected() {
             protocol_version: None,
         })
         .unwrap_err();
-    assert_eq!(error.code, -32_022_i32);
+    assert_eq!(error.code(), -32_022_i32);
 }
 
 #[rstest]
 fn an_unconfigured_revision_is_rejected_with_the_python_code_and_supported_list() {
     let policy = policy(&[SpecVersion::Jun2025, SpecVersion::Nov2025]);
+    let params = initialize_params("2024-11-05");
     let error = policy
-        .negotiate(VersionRequest::Initialize {
-            requested: "2024-11-05",
-        })
+        .negotiate(VersionRequest::Initialize { params: &params })
         .unwrap_err();
-    assert_eq!(error.code, -32_022_i32);
+    assert_eq!(error.code(), -32_022_i32);
     assert_eq!(error.to_string(), "Unsupported MCP protocol version");
-    assert_eq!(error.supported, ["2025-06-18", "2025-11-25"]);
     assert_eq!(
         error,
-        UnsupportedVersion {
+        VersionRejection::Unsupported(UnsupportedVersion {
             code: -32_022_i32,
             supported: vec!["2025-06-18".to_owned(), "2025-11-25".to_owned()],
-        }
+        })
     );
 }
 

@@ -42,7 +42,7 @@ class VersionPolicyInput(TypedDict):
     function: Literal["version_policy"]
     versions: list[str]
     method: str
-    requested: NotRequired[str]
+    params: NotRequired[dict[str, Json]]
     protocol_version: NotRequired[str | None]
     initialized: dict[str, Json]
 
@@ -120,6 +120,7 @@ class OpenApiUpstreamInput(TypedDict):
 
 class ToolResultErrorInput(TypedDict):
     function: Literal["tool_result_error"]
+    message: str
 
 
 class ServerListErrorInput(TypedDict):
@@ -175,14 +176,9 @@ class Downstream:
 
 async def _apply_policy(input_value: VersionPolicyInput) -> Json:
     policy = capabilities.GatewayVersionPolicy(lambda: tuple(input_value["versions"]))
-    params: dict[str, Json] = {
-        "protocolVersion": input_value.get("requested", ""),
-        "capabilities": {},
-        "clientInfo": {"name": "oracle", "version": "1"},
-    }
     context = SimpleNamespace(
         method=input_value["method"],
-        params=params,
+        params=input_value.get("params"),
         protocol_version=input_value.get("protocol_version"),
     )
 
@@ -228,18 +224,11 @@ def _convert(input_value: ConvertInput) -> Json:
     outcome = _outcome(input_value["outcome"])
     compat = WireCompat(input_value["compat"])
     if input_value["function"] == "complete_call_tool_result":
-        return _complete_wire(result_conversion.complete_call_tool_result(outcome, compat))
+        return {"complete": _wire(result_conversion.complete_call_tool_result(outcome, compat))}
     converted = result_conversion.to_call_tool_result(outcome, compat)
     if isinstance(converted, InputRequiredResult):
         return {"input_required": _wire(converted)}
-    return _complete_wire(converted)
-
-
-def _complete_wire(result: CallToolResult) -> Json:
-    wire = _wire(result)
-    # the Rust CallToolResult has no resultType field, and every complete result carries "complete"
-    del wire["resultType"]
-    return {"complete": wire}
+    return {"complete": _wire(converted)}
 
 
 def _parse_body(body: str) -> Json:
@@ -320,7 +309,7 @@ def _errors(
                 "server_name": openapi_error.server_name,
             }
         case "tool_result_error":
-            return {"message": str(exceptions.MCPToolResultError())}
+            return {"message": str(exceptions.MCPToolResultError(input_value["message"]))}
         case "server_list_error":
             list_error = exceptions.MCPServerListError(
                 input_value["fault"], input_value["server_name"]

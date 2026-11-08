@@ -3,7 +3,7 @@ use betterlite_mcp::wire_compat::capabilities::discovery::{
     DiscoveryRequest, InitializeResult, ServerCapabilities, build_discovery,
 };
 use betterlite_mcp::wire_compat::capabilities::policy::{
-    GatewayVersionPolicy, VersionRequest, advertised_versions,
+    GatewayVersionPolicy, VersionRejection, VersionRequest, advertised_versions,
 };
 use betterlite_mcp::wire_compat::capabilities::versions::SpecVersion;
 use betterlite_prompts::arguments::json::Object;
@@ -37,7 +37,7 @@ pub(crate) struct PolicyFields {
     versions: Vec<String>,
     method: String,
     #[serde(default)]
-    requested: Option<String>,
+    params: Option<Object>,
     #[serde(default)]
     protocol_version: Option<String>,
     initialized: Object,
@@ -90,23 +90,30 @@ pub(crate) fn run_policy(fields: &PolicyFields) -> HelperResult {
     let policy = GatewayVersionPolicy {
         versions: known_versions(&fields.versions),
     };
+    let no_params = Object::new();
     let request = if fields.method == "initialize" {
         VersionRequest::Initialize {
-            requested: fields.requested.as_deref().unwrap_or_default(),
+            params: fields.params.as_ref().unwrap_or(&no_params),
         }
     } else {
         VersionRequest::Session {
             protocol_version: fields.protocol_version.as_deref(),
         }
     };
-    if let Err(rejection) = policy.negotiate(request) {
-        return Ok(json!({
-            "rejected": {
-                "code": rejection.code,
-                "message": rejection.to_string(),
-                "data": { "supported": rejection.supported },
-            }
-        }));
+    match policy.negotiate(request) {
+        Ok(_) => {}
+        Err(VersionRejection::Unsupported(rejection)) => {
+            return Ok(json!({
+                "rejected": {
+                    "code": rejection.code,
+                    "message": rejection.to_string(),
+                    "data": { "supported": rejection.supported },
+                }
+            }));
+        }
+        Err(invalid @ VersionRejection::InvalidParams(_)) => {
+            return Err(failure("InvalidParams", invalid.to_string()));
+        }
     }
     if fields.method != "initialize" {
         return Ok(json!({ "result": { "called": true } }));

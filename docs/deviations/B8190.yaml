@@ -1,2 +1,5 @@
 task: B8190
-deviations: []
+deviations:
+  - what: A complete CallToolResult from to_call_tool_result and complete_call_tool_result has no resultType key, where LiteLLM's carries resultType "complete". An input_required result keeps its resultType.
+    why: CallToolResult is defined in crates/betterlite-mcp/src/client/tools/result.rs, outside this task's paths, and has no resultType field. The cases that compare these results name the pointer in compare.ignore.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/result_conversion.py#L67-L103

@@ -1,12 +1,17 @@
 use betterlite_db::mcp_stored_contracts::MCPTransport;
+use betterlite_prompts::arguments::json::Object;
+use serde::Deserialize;
 use thiserror::Error;
 
 use super::discovery::{DiscoveryRequest, InitializeResult, build_discovery};
 use super::versions::{
     GATEWAY_OPERATIONS, HANDSHAKE_VERSIONS, LATEST_HANDSHAKE_VERSION, SpecVersion,
 };
+use crate::client::sessions::negotiate::Implementation;
 
 pub const UNSUPPORTED_PROTOCOL_VERSION: i32 = -32022;
+
+pub const INVALID_PARAMS: i32 = -32602;
 
 pub const ADVERTISED_VERSIONS_FIELD: &str = "general_settings.mcp_advertised_versions";
 
@@ -18,7 +23,7 @@ pub struct GatewayVersionPolicy {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VersionRequest<'request> {
     Initialize {
-        requested: &'request str,
+        params: &'request Object,
     },
     Session {
         protocol_version: Option<&'request str>,
@@ -32,25 +37,56 @@ pub struct UnsupportedVersion {
     pub supported: Vec<String>,
 }
 
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum VersionRejection {
+    #[error(transparent)]
+    Unsupported(UnsupportedVersion),
+    #[error("invalid initialize params: {0}")]
+    InvalidParams(String),
+}
+
+impl VersionRejection {
+    #[must_use]
+    pub const fn code(&self) -> i32 {
+        match self {
+            Self::Unsupported(rejection) => rejection.code,
+            Self::InvalidParams(_) => INVALID_PARAMS,
+        }
+    }
+}
+
+// the three fields the SDK requires of initialize params; only the version is read
+#[derive(Deserialize)]
+struct InitializeParams {
+    #[serde(rename = "protocolVersion")]
+    protocol_version: String,
+    #[serde(rename = "capabilities")]
+    _capabilities: Object,
+    #[serde(rename = "clientInfo")]
+    _client_info: Implementation,
+}
+
 impl GatewayVersionPolicy {
     pub fn negotiate<'request>(
         &self,
         request: VersionRequest<'request>,
-    ) -> Result<&'request str, UnsupportedVersion> {
+    ) -> Result<&'request str, VersionRejection> {
         let negotiated = match request {
-            VersionRequest::Initialize { requested } => {
-                if SpecVersion::from_wire(requested).is_some_and(SpecVersion::is_handshake) {
-                    requested
-                } else {
-                    LATEST_HANDSHAKE_VERSION
-                }
+            VersionRequest::Initialize { params } => {
+                let value = serde_json::to_value(params)
+                    .map_err(|error| VersionRejection::InvalidParams(error.to_string()))?;
+                let parsed = serde_json::from_value::<InitializeParams>(value)
+                    .map_err(|error| VersionRejection::InvalidParams(error.to_string()))?;
+                SpecVersion::from_wire(&parsed.protocol_version)
+                    .filter(|version| version.is_handshake())
+                    .map_or(LATEST_HANDSHAKE_VERSION, SpecVersion::as_str)
             }
             VersionRequest::Session {
                 protocol_version: Some(version),
             } => version,
             VersionRequest::Session {
                 protocol_version: None,
-            } => return Err(self.rejection()),
+            } => return Err(VersionRejection::Unsupported(self.rejection())),
         };
         if self
             .versions
@@ -59,7 +95,7 @@ impl GatewayVersionPolicy {
         {
             Ok(negotiated)
         } else {
-            Err(self.rejection())
+            Err(VersionRejection::Unsupported(self.rejection()))
         }
     }
 

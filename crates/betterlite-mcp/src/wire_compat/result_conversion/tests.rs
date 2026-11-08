@@ -223,3 +223,34 @@ fn a_gateway_tool_keeps_every_field_and_takes_the_gateway_name() {
     assert_eq!(renamed.input_schema, tool.input_schema);
     assert_eq!(renamed.extra, tool.extra);
 }
+
+#[rstest]
+fn a_gateway_tool_leaves_out_a_missing_description_and_schema() {
+    let tool = McpTool {
+        name: "original".to_owned(),
+        description: None,
+        input_schema: None,
+        extra: Object::new(),
+    };
+    let wire = serde_json::to_string(&to_gateway_tool(&tool, "gateway")).unwrap();
+    assert_eq!(wire, r#"{"name":"gateway"}"#);
+}
+
+#[rstest]
+fn a_gateway_tool_drops_null_optionals_and_keeps_the_rest() {
+    let tool = McpTool {
+        name: "original".to_owned(),
+        description: Some("does things".to_owned()),
+        input_schema: None,
+        extra: Object::from([
+            ("title".to_owned(), Json::Null),
+            ("outputSchema".to_owned(), Json::Null),
+            ("icons".to_owned(), Json::List(Vec::new())),
+        ]),
+    };
+    let wire = serde_json::to_string(&to_gateway_tool(&tool, "gateway")).unwrap();
+    assert_eq!(
+        wire,
+        r#"{"name":"gateway","description":"does things","icons":[]}"#
+    );
+}
