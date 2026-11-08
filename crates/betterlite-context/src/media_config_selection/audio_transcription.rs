@@ -56,7 +56,6 @@ pub fn select_transcription_config(
     bundled: &ModelCatalog,
 ) -> Option<AudioTranscriptionConfigTag> {
     if provider == ProviderId::Azure {
-        // LiteLLM reads the cost entry once for every provider, but only Azure branches on it
         let speech = provider_cost_entry(model, provider, live, bundled)
             .and_then(|entry| entry.fields.metadata.audio_transcription_config.as_deref())
             == Some("azure_speech");

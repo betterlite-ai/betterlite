@@ -16,7 +16,7 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 _LLMS: Final = "litellm.llms."
 _ARGUMENTS: Final[dict[str, Json]] = {}
 
-_GENERATION_FACTORIES: Final[dict[str, str]] = {
+_FACTORIES: Final[dict[str, str]] = {
     "openai.image_generation": "OpenAIImageGenerationConfig",
     "azure.image_generation": "AzureImageGenerationConfig",
     "azure_ai.image_generation": "AzureAIImageGenerationConfig",
@@ -32,9 +32,6 @@ _GENERATION_FACTORIES: Final[dict[str, str]] = {
     "vertex_ai.image_generation": "VertexAIImageGenerationConfig",
     "openrouter.image_generation": "OpenRouterImageGenerationConfig",
     "modelscope.image_generation": "ModelScopeImageGenerationConfig",
-}
-
-_EDIT_FACTORIES: Final[dict[str, str]] = {
     "openai.image_edit": "OpenAIImageEditConfig",
     "hosted_vllm.image_edit": "HostedVLLMImageEditConfig",
     "fal_ai.image_edit": "FalAIImageEditConfig",
@@ -74,12 +71,12 @@ class Facts:
         facts = _object(call, "facts")
         azure = _object(facts, "azure")
         mantle = _object(facts, "mantle")
-        self.supports_reasoning = azure.get("supports_reasoning") is True
-        self.native_responses = azure.get("native_responses") is True
-        self.github_copilot = facts.get("github_copilot_responses") is True
-        self.mantle_supported = mantle.get("supported") is True
-        self.use_openai_path = mantle.get("use_openai_path") is True
-        self.is_lyria = call.get("is_lyria") is True
+        self.supports_reasoning = _bool(azure, "supports_reasoning")
+        self.native_responses = _bool(azure, "native_responses")
+        self.github_copilot = _bool(facts, "github_copilot_responses")
+        self.mantle_supported = _bool(mantle, "supported")
+        self.use_openai_path = _bool(mantle, "use_openai_path")
+        self.is_lyria = _bool(call, "is_lyria")
 
 
 _FACTS: Final = Facts()
@@ -115,6 +112,13 @@ def _optional_text(fields: dict[str, Json], name: str) -> str | None:
     return value
 
 
+def _bool(fields: dict[str, Json], name: str) -> bool:
+    value = fields.get(name, False)
+    if isinstance(value, bool):
+        return value
+    raise TypeError(f"{name} must be a boolean")
+
+
 def _provider(fields: dict[str, Json]) -> LlmProviders:
     return LlmProviders(_text(fields, "provider"))
 
@@ -125,10 +129,10 @@ def _optional_provider(fields: dict[str, Json]) -> LlmProviders | None:
 
 
 def _patch_factories(stack: ExitStack) -> None:
-    for module_suffix, label in _GENERATION_FACTORIES.items():
-        provider = module_suffix.split(".", 1)[0]
+    for module_suffix, label in _FACTORIES.items():
+        provider, family = module_suffix.split(".", 1)
         module = import_module(_LLMS + module_suffix)
-        attribute = f"get_{provider}_image_generation_config"
+        attribute = f"get_{provider}_{family}_config"
         stack.enter_context(patch.object(module, attribute, Factory(label)))
     stack.enter_context(
         patch.object(
@@ -137,11 +141,6 @@ def _patch_factories(stack: ExitStack) -> None:
             Factory("DashscopeFamilyImageGenerationConfig"),
         )
     )
-    for module_suffix, label in _EDIT_FACTORIES.items():
-        provider = module_suffix.split(".", 1)[0]
-        module = import_module(_LLMS + module_suffix)
-        attribute = f"get_{provider}_image_edit_config"
-        stack.enter_context(patch.object(module, attribute, Factory(label)))
     bedrock_edit = import_module(
         _LLMS + "bedrock.image_edit.amazon_nova_canvas_image_edit_transformation"
     )

@@ -50,7 +50,6 @@ pub fn select_vector_stores_config(
     api_type: Option<&str>,
 ) -> Option<VectorStoresConfigTag> {
     if provider == ProviderId::VertexAi {
-        // LiteLLM defaults a missing api_type to the RAG API
         let tag = if api_type == Some("search_api") {
             VectorStoresConfigTag::VertexSearchAPI
         } else if api_type.is_none() || api_type == Some("rag_api") {

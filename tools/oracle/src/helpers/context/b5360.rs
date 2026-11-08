@@ -54,7 +54,29 @@ struct Call {
     search_provider: Option<search_harness::SearchProvider>,
     harness: Option<search_harness::Harness>,
     is_lyria: bool,
-    facts: Value,
+    facts: Facts,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+struct Facts {
+    azure: AzureFacts,
+    github_copilot_responses: bool,
+    mantle: MantleFacts,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+struct AzureFacts {
+    supports_reasoning: bool,
+    native_responses: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+struct MantleFacts {
+    supported: bool,
+    use_openai_path: bool,
 }
 
 fn invalid(message: &str) -> Box<HelperError> {
@@ -85,29 +107,21 @@ fn model_of(call: &Call) -> Result<&str, Box<HelperError>> {
         .ok_or_else(|| invalid("a call needs a model"))
 }
 
-fn flag(fields: Option<&Value>, name: &str) -> bool {
-    let value = fields.and_then(|object| object.get(name));
-    let flag = value.and_then(Value::as_bool);
-    flag.unwrap_or(false)
-}
-
-fn facts_of(facts: &Value) -> responses::ResponsesModelFacts {
-    let azure = facts.get("azure");
-    let mantle = facts.get("mantle");
-    let supported = if flag(mantle, "supported") {
+const fn facts_of(facts: &Facts) -> responses::ResponsesModelFacts {
+    let mantle = if facts.mantle.supported {
         responses::MantleResponses::Supported {
-            use_openai_path: flag(mantle, "use_openai_path"),
+            use_openai_path: facts.mantle.use_openai_path,
         }
     } else {
         responses::MantleResponses::Unsupported
     };
     responses::ResponsesModelFacts {
         azure: responses::AzureResponsesFacts {
-            supports_reasoning: flag(azure, "supports_reasoning"),
-            native_responses: flag(azure, "native_responses"),
+            supports_reasoning: facts.azure.supports_reasoning,
+            native_responses: facts.azure.native_responses,
         },
-        github_copilot_responses: flag(Some(facts), "github_copilot_responses"),
-        mantle: supported,
+        github_copilot_responses: facts.github_copilot_responses,
+        mantle,
     }
 }
 
@@ -125,18 +139,6 @@ fn map_calls(
     Ok(results)
 }
 
-fn map_plain(
-    input: &BatchInput,
-    calls: &[Call],
-    select: fn(&BatchInput, &Call) -> Value,
-) -> Vec<Value> {
-    let mut results = Vec::with_capacity(calls.len());
-    for call in calls {
-        results.push(select(input, call));
-    }
-    results
-}
-
 fn run_request(
     input: &BatchInput,
     selector: Selector,
@@ -148,7 +150,7 @@ fn run_request(
         Selector::ImageEdit => map_calls(input, calls, selectors::image_edit),
         Selector::TextToSpeech => map_calls(input, calls, selectors::text_to_speech),
         Selector::Messages => map_calls(input, calls, selectors::messages),
-        Selector::Responses => Ok(map_plain(input, calls, selectors::responses)),
+        Selector::Responses => map_calls(input, calls, selectors::responses),
         Selector::Passthrough => map_calls(input, calls, selectors::passthrough),
         Selector::Batches => map_calls(input, calls, selectors::batches),
         Selector::VectorStore => map_calls(input, calls, selectors::vector_store),

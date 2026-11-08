@@ -11,15 +11,19 @@ use crate::helpers::HelperError;
 
 pub(crate) type CallResult = Result<Value, Box<HelperError>>;
 
-fn arguments_of<T>(tag: &T) -> Value
+fn arguments_of<T>(tag: &T) -> CallResult
 where
     T: serde::Serialize,
 {
-    let serialized = serde_json::to_value(tag).unwrap_or(Value::Null);
+    let serialized = serde_json::to_value(tag).map_err(|error| invalid(&error.to_string()))?;
     match serialized {
-        Value::Object(fields) => fields.into_values().next().unwrap_or_else(|| json!([])),
+        Value::Object(fields) => fields
+            .into_iter()
+            .next()
+            .map(|(_, arguments)| arguments)
+            .ok_or_else(|| invalid("a tag serialized to an empty object")),
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
-            json!([])
+            Ok(json!([]))
         }
     }
 }
@@ -53,12 +57,12 @@ pub(crate) fn text_to_speech(_input: &BatchInput, call: &Call) -> CallResult {
     ))
 }
 
-pub(crate) fn responses(_input: &BatchInput, call: &Call) -> Value {
+pub(crate) fn responses(_input: &BatchInput, call: &Call) -> CallResult {
     let facts = facts_of(&call.facts);
-    responses::select_responses_config(call.provider, call.model.as_deref(), &facts).map_or(
-        Value::Null,
-        |tag| json!({"class": tag.class_name(), "arguments": arguments_of(&tag)}),
-    )
+    match responses::select_responses_config(call.provider, call.model.as_deref(), &facts) {
+        Some(tag) => Ok(json!({"class": tag.class_name(), "arguments": arguments_of(&tag)?})),
+        None => Ok(Value::Null),
+    }
 }
 
 pub(crate) fn vector_stores(_input: &BatchInput, call: &Call) -> CallResult {
@@ -90,26 +94,26 @@ pub(crate) fn harness(_input: &BatchInput, call: &Call) -> CallResult {
 
 pub(crate) fn image_generation(_input: &BatchInput, call: &Call) -> CallResult {
     let selected = image_generation::select_image_generation(model_of(call)?, provider_of(call)?);
-    if let Some(tag) = selected {
-        return Ok(json!({"class": tag.class_name(), "arguments": arguments_of(&tag)}));
-    }
-    Ok(Value::Null)
+    let Some(tag) = selected else {
+        return Ok(Value::Null);
+    };
+    Ok(json!({"class": tag.class_name(), "arguments": arguments_of(&tag)?}))
 }
 
 pub(crate) fn image_edit(_input: &BatchInput, call: &Call) -> CallResult {
     let selected = image_edit::select_image_edit(model_of(call)?, provider_of(call)?);
-    if let Some(tag) = selected {
-        return Ok(json!({"class": tag.class_name(), "arguments": arguments_of(&tag)}));
-    }
-    Ok(Value::Null)
+    let Some(tag) = selected else {
+        return Ok(Value::Null);
+    };
+    Ok(json!({"class": tag.class_name(), "arguments": arguments_of(&tag)?}))
 }
 
 pub(crate) fn messages(_input: &BatchInput, call: &Call) -> CallResult {
     let selected = messages::select_messages_config(model_of(call)?, provider_of(call)?);
-    if let Some(tag) = selected {
-        return Ok(json!({"class": tag.class_name(), "arguments": arguments_of(&tag)}));
-    }
-    Ok(Value::Null)
+    let Some(tag) = selected else {
+        return Ok(Value::Null);
+    };
+    Ok(json!({"class": tag.class_name(), "arguments": arguments_of(&tag)?}))
 }
 
 pub(crate) fn passthrough(_input: &BatchInput, call: &Call) -> CallResult {
