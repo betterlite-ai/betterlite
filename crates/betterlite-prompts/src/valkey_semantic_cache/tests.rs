@@ -4,6 +4,8 @@ mod fixtures;
 
 use std::sync::Arc;
 
+use betterlite_rag::valkey_vector_store::pack_vector;
+use redis::Value;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -15,11 +17,14 @@ use self::fixtures::{
 use crate::arguments::json::{Json, Object};
 use crate::redis_semantic_cache::SIMILARITY_FIELD;
 use crate::valkey_semantic_cache::ValkeySemanticCache;
-use crate::valkey_semantic_cache::live::{create_command, search_command, store_command};
+use crate::valkey_semantic_cache::error::ValkeySemanticError;
+use crate::valkey_semantic_cache::live::{
+    create_command, parse_search_reply, search_command, store_command,
+};
 use crate::valkey_semantic_cache::options::ValkeyEnv;
 use crate::valkey_semantic_cache::ports::{IndexSchema, ValkeyIndex};
 use crate::valkey_semantic_cache::schema::{
-    assert_dim_matches, doc_mapping, extract_index_dim, knn_query, pack_vector, scope_tag,
+    assert_dim_matches, doc_mapping, extract_index_dim, knn_query, scope_tag,
 };
 
 fn url_of(cache: &ValkeySemanticCache) -> String {
@@ -161,6 +166,20 @@ fn options_missing_host_or_port_fails_with_litellms_message(
         "Missing required Valkey configuration. Provide host and port (or VALKEY_HOST/VALKEY_PORT), \
          or pass redis_url."
     );
+}
+
+#[test]
+fn options_a_non_numeric_port_fails_naming_the_field() {
+    let mut settings = options();
+    settings.port = Some("not-a-port".to_owned());
+    let Err(error) = build(settings, empty_env()) else {
+        panic!("a non-numeric port must fail");
+    };
+    assert_eq!(
+        error.to_string(),
+        "the valkey port 'not-a-port' is not a number between 0 and 65535"
+    );
+    assert!(std::error::Error::source(&error).is_some());
 }
 
 #[rstest]
@@ -876,6 +895,25 @@ async fn lookup_errors_become_misses_with_zero_similarity(#[case] failure: &str)
         .await;
     assert!(value.is_none());
     assert_similarity(&metadata, 0.0_f64);
+}
+
+#[test]
+fn lookup_a_non_numeric_distance_keeps_its_parse_source() {
+    let reply = vec![
+        Value::Int(1),
+        Value::BulkString(b"doc".to_vec()),
+        Value::Array(vec![
+            Value::BulkString(b"response".to_vec()),
+            Value::BulkString(b"{}".to_vec()),
+            Value::BulkString(b"vector_distance".to_vec()),
+            Value::BulkString(b"not-a-number".to_vec()),
+        ]),
+    ];
+    let Err(error) = parse_search_reply(&reply) else {
+        panic!("a non-numeric distance must fail");
+    };
+    assert!(matches!(&error, ValkeySemanticError::MalformedDistance(_)));
+    assert!(std::error::Error::source(&error).is_some());
 }
 
 #[tokio::test]

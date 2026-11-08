@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use betterlite_rag::valkey_vector_store::pack_vector;
 use betterlite_redis::redis_live_client::LiveClientError;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
@@ -16,7 +17,6 @@ use crate::valkey_semantic_cache::options::{ValkeyEnv, ValkeySemanticOptions};
 use crate::valkey_semantic_cache::ports::{
     DocIdSource, DocMapping, Hit, IndexSchema, KnnQuery, ValkeyConnector, ValkeyIndex,
 };
-use crate::valkey_semantic_cache::schema::pack_vector;
 
 pub(crate) const VECTOR: [f32; 3] = [0.25, 0.5, 0.75];
 pub(crate) const PROMPT: &str = "what is the weather";

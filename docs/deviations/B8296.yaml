@@ -12,3 +12,6 @@ deviations:
   - what: The debug entry logs that print the request kwargs are not ported; only the error and missing-prompt lines are.
     why: Those lines carry the prompt and response text from the request, and betterlite does not log payloads.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/valkey_semantic_cache.py#L297-L331
+  - what: A port that is not a number fails with an error naming the port, instead of producing a URL that fails at connect time.
+    why: B7813's shared build_valkey_url takes a u16, and docs/compatibility.md makes a value of the wrong type an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/valkey_semantic_cache.py#L102-L118

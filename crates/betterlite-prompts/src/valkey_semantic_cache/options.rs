@@ -1,19 +1,12 @@
 use std::sync::Arc;
 
-use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, percent_encode};
+use betterlite_rag::valkey_vector_store::build_valkey_url;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::ValkeySemanticError;
 use super::ports::ValkeyIndex;
 
 pub const DEFAULT_VALKEY_INDEX_NAME: &str = "litellm_semantic_cache_index";
-
-// Python's quote(password, safe='') keeps only these four punctuation marks unescaped
-const PYTHON_QUOTE_UNSAFE: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'_')
-    .remove(b'.')
-    .remove(b'-')
-    .remove(b'~');
 
 pub struct ValkeyEnv {
     pub valkey_host: Option<String>,
@@ -67,6 +60,12 @@ pub(crate) fn resolve_url(
     let (Some(host), Some(port)) = (resolved_host, resolved_port) else {
         return Err(ValkeySemanticError::MissingConfiguration);
     };
+    let port_number = port
+        .parse::<u16>()
+        .map_err(|source| ValkeySemanticError::InvalidPort {
+            port: port.to_owned(),
+            source,
+        })?;
     let password = settings
         .password
         .as_ref()
@@ -81,7 +80,7 @@ pub(crate) fn resolve_url(
                 .as_ref()
                 .filter(|secret| !secret.expose_secret().is_empty())
         });
-    Ok(build_valkey_url(host, port, password, settings.ssl))
+    Ok(build_valkey_url(host, port_number, password, settings.ssl))
 }
 
 fn first_set<'value>(
@@ -93,18 +92,4 @@ fn first_set<'value>(
         .filter(|value| !value.is_empty())
         .or_else(|| valkey.filter(|value| !value.is_empty()))
         .or_else(|| redis.filter(|value| !value.is_empty()))
-}
-
-fn build_valkey_url(
-    host: &str,
-    port: &str,
-    password: Option<&SecretString>,
-    ssl: bool,
-) -> SecretString {
-    let scheme = if ssl { "rediss" } else { "redis" };
-    let Some(secret) = password.filter(|secret| !secret.expose_secret().is_empty()) else {
-        return SecretString::from(format!("{scheme}://{host}:{port}"));
-    };
-    let encoded = percent_encode(secret.expose_secret().as_bytes(), PYTHON_QUOTE_UNSAFE);
-    SecretString::from(format!("{scheme}://:{encoded}@{host}:{port}"))
 }

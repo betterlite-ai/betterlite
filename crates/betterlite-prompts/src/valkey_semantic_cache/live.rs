@@ -197,7 +197,7 @@ fn reply_to_json(value: &Value) -> Result<Json, ValkeySemanticError> {
     }
 }
 
-fn parse_search_reply(items: &[Value]) -> Result<Vec<Hit>, ValkeySemanticError> {
+pub(crate) fn parse_search_reply(items: &[Value]) -> Result<Vec<Hit>, ValkeySemanticError> {
     let Some(Value::Int(_)) = items.first() else {
         return Err(ValkeySemanticError::MalformedSearchReply);
     };
@@ -250,6 +250,6 @@ fn distance_of(value: &Value) -> Result<f64, ValkeySemanticError> {
         return Ok(*number);
     }
     text_of(value)?
-        .parse()
-        .map_err(|_error| ValkeySemanticError::MalformedSearchReply)
+        .parse::<f64>()
+        .map_err(ValkeySemanticError::MalformedDistance)
 }

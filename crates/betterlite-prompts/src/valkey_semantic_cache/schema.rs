@@ -1,3 +1,4 @@
+use betterlite_rag::valkey_vector_store::pack_vector;
 use sha2::{Digest as _, Sha256};
 
 use super::error::ValkeySemanticError;
@@ -15,14 +16,6 @@ pub(crate) fn scope_tag(key: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(key.as_bytes());
     hex::encode(hasher.finalize())
-}
-
-pub(crate) fn pack_vector(vector: &[f32]) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    for value in vector {
-        bytes.extend(value.to_le_bytes());
-    }
-    bytes
 }
 
 pub(crate) fn doc_mapping(

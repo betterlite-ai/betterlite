@@ -1,3 +1,4 @@
+use std::num::{ParseFloatError, ParseIntError};
 use std::string::FromUtf8Error;
 
 use betterlite_redis::redis_live_client::LiveClientError;
@@ -23,6 +24,12 @@ pub enum ValkeySemanticError {
          or pass redis_url."
     )]
     MissingConfiguration,
+    #[error("the valkey port '{port}' is not a number between 0 and 65535")]
+    InvalidPort {
+        port: String,
+        #[source]
+        source: ParseIntError,
+    },
     #[error(transparent)]
     Embed(#[from] SemanticEmbedError),
     #[error(transparent)]
@@ -43,6 +50,8 @@ pub enum ValkeySemanticError {
     MalformedIndexInfo,
     #[error("the FT.SEARCH reply from Valkey is malformed")]
     MalformedSearchReply,
+    #[error("the vector distance in the FT.SEARCH reply is not a number")]
+    MalformedDistance(#[from] ParseFloatError),
     #[error("the cached response could not be serialized")]
     Encode(#[source] serde_json::Error),
     #[error("a Valkey reply string is not valid UTF-8")]
