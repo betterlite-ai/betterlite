@@ -1014,6 +1014,381 @@ fn creator_repetition_limit_is_honoured() {
 }
 
 #[test]
+fn generic_custom_provider_rejects_a_text_chunk() {
+    let mut decode_state = custom_state("custom-model");
+    let error = decode_error("custom-provider", &text("plain"), &mut decode_state);
+    assert_eq!(
+        error.to_string(),
+        "the provider stream did not send a generic streaming chunk"
+    );
+}
+
+#[test]
+fn generic_custom_content_after_a_finish_reason_is_accepted() {
+    let mut decode_state = custom_state("custom-model");
+    decode_state.received_finish_reason = Some("stop".to_owned());
+    let chunk = json_chunk(r#"{"id":"c1","choices":[{"index":0,"delta":{"content":"hi"}}]}"#);
+    let decoded = decode("custom-provider", &chunk, &mut decode_state);
+    assert!(decoded.early_return);
+    assert!(decoded.original.is_some());
+}
+
+#[test]
+fn generic_custom_empty_tool_calls_stop_the_stream() {
+    let mut decode_state = custom_state("custom-model");
+    decode_state.received_finish_reason = Some("stop".to_owned());
+    let chunk =
+        json_chunk(r#"{"id":"c1","choices":[{"index":0,"delta":{"content":"","tool_calls":[]}}]}"#);
+    let error = decode_error("custom-provider", &chunk, &mut decode_state);
+    assert!(matches!(error, ProviderChunkError::StopIteration));
+}
+
+#[test]
+fn generic_tool_use_after_a_finish_reason_is_accepted() {
+    let mut decode_state = state("gpt-4");
+    decode_state.received_finish_reason = Some("stop".to_owned());
+    let chunk = generic_chunk(
+        r#"{"text": "", "tool_use": {"id": "call_1", "type": "function", "function": {"name": "f", "arguments": "{}"}}, "is_finished": false, "finish_reason": "", "usage": null}"#,
+    );
+    let decoded = decode("openai", &chunk, &mut decode_state);
+    assert_eq!(decoded.text, "");
+    assert!(decoded.tool_use.is_some());
+}
+
+#[test]
+fn text_providers_triton_is_finished_false() {
+    let mut decode_state = state("gpt-4");
+    let chunk =
+        json_chunk(r#"{"text_output": "hi", "is_finished": false, "stop_reason": "length"}"#);
+    let decoded = decode("triton", &chunk, &mut decode_state);
+    assert!(!decoded.is_finished);
+    assert_eq!(decoded.finish_reason.as_deref(), Some("length"));
+    assert!(decode_state.received_finish_reason.is_none());
+}
+
+#[test]
+fn errors_vertex_function_call_is_built() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"candidates": [{"content": {"parts": [{"function_call": {"name": "lookup", "args": {"where": "x"}}}]}, "finish_reason": "STOP"}]}"#,
+    );
+    let decoded = decode("vertex_ai", &chunk, &mut decode_state);
+    let calls = decoded.tool_calls.as_ref().expect("a call is built");
+    let items = as_array(calls).expect("the calls are a list");
+    let call = as_object(items.first().expect("one call")).expect("the call is an object");
+    let identifier = call.get("id").and_then(JsonValue::as_str);
+    assert!(identifier.is_some_and(|value| value.starts_with("call_")));
+    assert_eq!(
+        call.get("type").and_then(JsonValue::as_str),
+        Some("function")
+    );
+    let function =
+        as_object(call.get("function").expect("a function")).expect("the function is an object");
+    assert_eq!(
+        function.get("name").and_then(JsonValue::as_str),
+        Some("lookup")
+    );
+    assert_eq!(
+        function.get("arguments").and_then(JsonValue::as_str),
+        Some(r#"{"where":"x"}"#)
+    );
+    assert!(
+        decoded
+            .original
+            .as_ref()
+            .is_some_and(|original| !original.choices.is_empty())
+    );
+    assert_eq!(decode_state.received_finish_reason.as_deref(), Some("stop"));
+}
+
+#[test]
+fn openai_vertex_openai_shaped_chunk_keeps_the_openai_reader() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"content": "hi"}, "finish_reason": "stop"}]}"#,
+    );
+    let decoded = decode("vertex_ai", &chunk, &mut decode_state);
+    assert_eq!(decoded.text, "hi");
+}
+
+#[test]
+fn openai_null_delta_is_an_empty_delta() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": null, "finish_reason": "stop"}]}"#,
+    );
+    let decoded = decode("openai", &chunk, &mut decode_state);
+    assert_eq!(decoded.text, "");
+    assert_eq!(decoded.finish_reason.as_deref(), Some("stop"));
+}
+
+#[test]
+fn openai_cached_response_reads_the_choice() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"content": "cached"}, "finish_reason": "stop"}]}"#,
+    );
+    let decoded = decode("cached_response", &chunk, &mut decode_state);
+    assert_eq!(decoded.text, "cached");
+    assert!(decoded.is_finished);
+    assert_eq!(decoded.finish_reason.as_deref(), Some("stop"));
+    assert!(decoded.original.is_some());
+    assert!(decoded.usage.is_none());
+    assert_eq!(decode_state.received_finish_reason.as_deref(), Some("stop"));
+}
+
+#[test]
+fn openai_cached_response_keeps_the_chunk_usage() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"content": "x"}}], "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}"#,
+    );
+    let decoded = decode("cached_response", &chunk, &mut decode_state);
+    assert!(decoded.usage.is_none());
+    let created_chunk =
+        created("cached_response", &mut decode_state, &chunk).expect("a chunk is emitted");
+    assert_eq!(created_chunk.usage, Some(usage(1, 2, 3)));
+}
+
+#[test]
+fn creator_ignores_the_id_of_a_non_openai_chunk() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(r#"{"output": "hi", "id": "chunk-id"}"#);
+    let mut shaping = shaper("replicate");
+    shaping.response_id = Some("chatcmpl-state".to_owned());
+    let created_chunk = chunk_creator(&mut shaping, &mut decode_state, &chunk)
+        .expect("the chunk shapes")
+        .expect("a chunk is emitted");
+    assert_eq!(created_chunk.id, "chatcmpl-state");
+}
+
+#[test]
+fn creator_empty_tool_calls_are_not_used() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"content": "", "tool_calls": []}}]}"#,
+    );
+    let mut shaping = shaper("cached_response");
+    let created_chunk = chunk_creator(&mut shaping, &mut decode_state, &chunk)
+        .expect("the chunk shapes")
+        .expect("a chunk is emitted");
+    assert!(!shaping.tool_call);
+    let calls = first_choice(&created_chunk)
+        .delta
+        .tool_calls
+        .as_ref()
+        .expect("the calls are kept");
+    assert!(as_array(calls).expect("the calls are a list").is_empty());
+}
+
+#[test]
+fn creator_keeps_no_usage_for_a_non_openai_chunk_with_a_usage_field() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"output": "hi", "usage": {"prompt_tokens": 9, "completion_tokens": 9, "total_tokens": 18}}"#,
+    );
+    let created_chunk =
+        created("replicate", &mut decode_state, &chunk).expect("a chunk is emitted");
+    assert!(created_chunk.usage.is_none());
+}
+
+#[test]
+fn creator_hidden_params_include_the_provider_model() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "model": "provider-model", "choices": [{"delta": {"content": "hi"}}]}"#,
+    );
+    let created_chunk = created("openai", &mut decode_state, &chunk).expect("a chunk is emitted");
+    assert_eq!(
+        created_chunk
+            .hidden_params
+            .get("provider_response_model")
+            .and_then(JsonValue::as_str),
+        Some("provider-model")
+    );
+}
+
+#[test]
+fn creator_carries_hidden_provider_fields() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "choices": [{"delta": {"content": "hi"}}], "hidden_params": {"provider_specific_fields": {"trace": "t1"}}}"#,
+    );
+    let created_chunk = created("openai", &mut decode_state, &chunk).expect("a chunk is emitted");
+    assert!(
+        created_chunk
+            .hidden_params
+            .contains_key("provider_specific_fields")
+    );
+}
+
+#[test]
+fn creator_first_role_only_chunk_is_emitted() {
+    let mut decode_state = state("gpt-4");
+    let chunk =
+        json_chunk(r#"{"id": "c1", "choices": [{"index": 0, "delta": {"role": "assistant"}}]}"#);
+    let created_chunk = created("openai", &mut decode_state, &chunk).expect("a chunk is emitted");
+    assert_eq!(
+        first_choice(&created_chunk).delta.role.as_deref(),
+        Some("assistant")
+    );
+}
+
+#[test]
+fn creator_tool_call_delta_is_emitted() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "f", "arguments": "{}"}}]}}]}"#,
+    );
+    let created_chunk = created("openai", &mut decode_state, &chunk).expect("a chunk is emitted");
+    let calls = first_choice(&created_chunk)
+        .delta
+        .tool_calls
+        .as_ref()
+        .expect("the calls are kept");
+    assert_eq!(as_array(calls).expect("the calls are a list").len(), 1);
+}
+
+fn provider_field_chunk() -> ProviderChunk {
+    generic_chunk(
+        r#"{"text": "hi", "is_finished": false, "finish_reason": "", "usage": null, "provider_specific_fields": {
+            "id": "provider-id",
+            "object": "provider.object",
+            "model": "provider-model",
+            "created": 1234,
+            "system_fingerprint": "provider-fp",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+            "provider_specific_fields": {"nested": 1},
+            "hidden_params": {"marker": "h"},
+            "choices": [{"index": 3, "delta": {"content": "ignored"}}],
+            "unknown_key": "extra"
+        }}"#,
+    )
+}
+
+#[test]
+fn creator_provider_fields_set_the_chunk_identity() {
+    let mut decode_state = state("gpt-4");
+    let chunk = provider_field_chunk();
+    let created_chunk = chunk_creator(&mut shaper("openai"), &mut decode_state, &chunk)
+        .expect("the chunk shapes")
+        .expect("a chunk is emitted");
+    assert_eq!(created_chunk.id, "provider-id");
+    assert_eq!(created_chunk.object, "provider.object");
+    assert_eq!(created_chunk.model, "provider-model");
+    assert_eq!(created_chunk.created, 1234);
+    assert_eq!(
+        created_chunk.system_fingerprint.as_deref(),
+        Some("provider-fp")
+    );
+}
+
+#[test]
+fn creator_provider_fields_set_the_structured_fields() {
+    let mut decode_state = state("gpt-4");
+    let chunk = provider_field_chunk();
+    let created_chunk = chunk_creator(&mut shaper("openai"), &mut decode_state, &chunk)
+        .expect("the chunk shapes")
+        .expect("a chunk is emitted");
+    assert_eq!(created_chunk.usage, Some(usage(1, 2, 3)));
+    assert_eq!(
+        created_chunk
+            .provider_specific_fields
+            .as_ref()
+            .and_then(|fields| fields.get("nested"))
+            .and_then(JsonValue::as_i64),
+        Some(1)
+    );
+    assert_eq!(
+        created_chunk
+            .hidden_params
+            .get("marker")
+            .and_then(JsonValue::as_str),
+        Some("h")
+    );
+    assert_eq!(created_chunk.choices.len(), 1);
+    assert_eq!(first_choice(&created_chunk).index, 3);
+    assert_eq!(
+        created_chunk
+            .extra
+            .get("unknown_key")
+            .and_then(JsonValue::as_str),
+        Some("extra")
+    );
+}
+
+#[test]
+fn creator_function_call_arguments_default_to_empty() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"function_call": {"name": "f"}}}]}"#,
+    );
+    let created_chunk = created("openai", &mut decode_state, &chunk).expect("a chunk is emitted");
+    let function = first_choice(&created_chunk)
+        .delta
+        .function_call
+        .as_ref()
+        .expect("the function call is kept");
+    assert_eq!(
+        as_object(function).and_then(|fields| fields.get("arguments")),
+        Some(&JsonValue::String(String::new()))
+    );
+}
+
+#[test]
+fn creator_tool_call_type_becomes_function() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"tool_calls": [{"id": "call_1", "type": null, "function": {"name": "f", "arguments": "{}"}}]}}]}"#,
+    );
+    let created_chunk = created("openai", &mut decode_state, &chunk).expect("a chunk is emitted");
+    let call = first_tool_call(&created_chunk);
+    assert_eq!(
+        as_object(&call)
+            .and_then(|fields| fields.get("type"))
+            .and_then(JsonValue::as_str),
+        Some("function")
+    );
+}
+
+#[test]
+fn creator_tool_without_function_keeps_its_type() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"tool_calls": [{"id": "call_1", "type": null}]}}]}"#,
+    );
+    let created_chunk = created("openai", &mut decode_state, &chunk).expect("a chunk is emitted");
+    let call = first_tool_call(&created_chunk);
+    assert_eq!(
+        as_object(&call).and_then(|fields| fields.get("type")),
+        Some(&JsonValue::Null)
+    );
+}
+
+fn first_tool_call(chunk: &StreamChunk) -> JsonValue {
+    let calls = first_choice(chunk)
+        .delta
+        .tool_calls
+        .as_ref()
+        .expect("the calls are kept");
+    as_array(calls)
+        .and_then(|items| items.first())
+        .cloned()
+        .expect("one call")
+}
+
+#[test]
+fn generic_custom_tool_calls_after_a_finish_reason_are_accepted() {
+    let mut decode_state = custom_state("custom-model");
+    decode_state.received_finish_reason = Some("stop".to_owned());
+    let chunk = json_chunk(
+        r#"{"id":"c1","choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"f","arguments":"{}"}}]}}]}"#,
+    );
+    let decoded = decode("custom-provider", &chunk, &mut decode_state);
+    assert!(decoded.early_return);
+}
+
+#[test]
 fn replays_the_provider_stream_chunk_corpus() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/provider_stream_chunk");
     let entries: Vec<_> = fs::read_dir(root).expect("the corpus exists").collect();

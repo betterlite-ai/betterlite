@@ -30,13 +30,13 @@ pub fn chunk_creator(
         return Ok(decoded.original);
     }
     fill_decoded(chunk, state, shaper, &decoded, &mut model_response);
-    let response_obj = ChunkResponseObject {
+    let mut response_obj = ChunkResponseObject {
         original_chunk: decoded.original.clone(),
         provider_specific_fields: decoded.provider_specific_fields.clone(),
     };
     let mut completion_obj = StreamDelta::default();
     fill_completion(&mut completion_obj, &decoded);
-    let processed = match prepare_original(shaper, state, &response_obj, model_response) {
+    let processed = match prepare_original(shaper, state, &mut response_obj, model_response) {
         Prepared::Continue(response) => response,
         Prepared::Emit(ready) => return Ok(Some(ready)),
         Prepared::Skip => return Ok(None),
@@ -69,12 +69,13 @@ enum Prepared {
 fn prepare_original(
     shaper: &mut ChunkShaper,
     state: &mut DecodeState,
-    response_obj: &ChunkResponseObject,
+    response_obj: &mut ChunkResponseObject,
     mut model_response: StreamChunk,
 ) -> Prepared {
-    let Some(original) = &response_obj.original_chunk else {
+    let Some(original) = &mut response_obj.original_chunk else {
         return Prepared::Continue(model_response);
     };
+    normalize_original(original);
     set_model_id(shaper, &original.id, &mut model_response);
     copy_provider_specific_fields(original, &mut model_response);
     if !original.choices.is_empty() {
@@ -88,6 +89,36 @@ fn prepare_original(
     }
     record_usage_only_chunk(shaper, model_response);
     Prepared::Skip
+}
+
+fn normalize_original(original: &mut StreamChunk) {
+    let Some(choice) = original.choices.first_mut() else {
+        return;
+    };
+    let delta = &mut choice.delta;
+    if let Some(JsonValue::Object(function)) = &mut delta.function_call
+        && matches!(function.get("arguments"), None | Some(JsonValue::Null))
+    {
+        function.insert("arguments".to_owned(), JsonValue::String(String::new()));
+    }
+    if let Some(JsonValue::Array(tools)) = &mut delta.tool_calls {
+        for tool in tools {
+            normalize_tool(tool);
+        }
+    }
+}
+
+fn normalize_tool(tool: &mut JsonValue) {
+    let JsonValue::Object(fields) = tool else {
+        return;
+    };
+    let needs_type = matches!(fields.get("type"), None | Some(JsonValue::Null));
+    let has_function = fields
+        .get("function")
+        .is_some_and(|function| as_object(function).is_some());
+    if needs_type && has_function {
+        fields.insert("type".to_owned(), JsonValue::String("function".to_owned()));
+    }
 }
 
 fn sync_finish(shaper: &mut ChunkShaper, state: &DecodeState) {
@@ -168,7 +199,10 @@ fn apply_original_choice(model_response: &mut StreamChunk, original: &StreamChun
         return;
     };
     let delta = &choice.delta;
-    if delta.function_call.is_some() || delta.tool_calls.is_some() {
+    if matches!(
+        (&delta.function_call, &delta.tool_calls),
+        (Some(_), _) | (_, Some(_))
+    ) {
         fill_function_call(model_response, original, delta);
     } else if has_any_special_attributes(delta) {
         apply_special_delta_attributes(delta, model_response);
@@ -192,36 +226,11 @@ fn fill_function_call(
         .system_fingerprint
         .clone_from(&original.system_fingerprint);
     let mut normalized = delta.clone();
-    if let Some(JsonValue::Object(function)) = &mut normalized.function_call
-        && matches!(function.get("arguments"), None | Some(JsonValue::Null))
-    {
-        function.insert("arguments".to_owned(), JsonValue::String(String::new()));
-    }
     if normalized.role.is_none() {
         normalized.role = Some("assistant".to_owned());
     }
-    if let Some(JsonValue::Array(tools)) = &mut normalized.tool_calls {
-        for tool in tools {
-            normalize_tool_type(tool);
-        }
-    }
     if let Some(target) = model_response.choices.first_mut() {
         target.delta = normalized;
-    }
-}
-
-fn normalize_tool_type(tool: &mut JsonValue) {
-    let JsonValue::Object(fields) = tool else {
-        return;
-    };
-    if fields
-        .get("function")
-        .is_none_or(|function| as_object(function).is_none())
-    {
-        return;
-    }
-    if matches!(fields.get("type"), None | Some(JsonValue::Null)) {
-        fields.insert("type".to_owned(), JsonValue::String("function".to_owned()));
     }
 }
 

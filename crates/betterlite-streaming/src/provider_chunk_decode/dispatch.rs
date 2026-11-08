@@ -346,10 +346,10 @@ fn fill_codestral(
 
 fn codestral_line(line: &str) -> Option<JsonValue> {
     let stripped = strip_sse_data_from_chunk(Some(line)).unwrap_or(line).trim();
-    if stripped.is_empty() || stripped == "[DONE]" {
-        return None;
+    match stripped {
+        "" | "[DONE]" => None,
+        payload => serde_json::from_str(payload).ok(),
     }
-    serde_json::from_str(stripped).ok()
 }
 
 fn fill_codestral_choice(
