@@ -3,7 +3,7 @@ use std::time::Duration;
 use betterlite_config::loader::EnvironmentLookup;
 use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::error::RubrikError;
 use super::transport::{LOGGING_TIMEOUT, MODERATION_TIMEOUT, Timeout};
@@ -16,25 +16,12 @@ pub const DROP_WARNING_INTERVAL: Duration = Duration::from_secs(60);
 pub const DEFAULT_BATCH_SIZE: usize = 512;
 pub const DEFAULT_GUARDRAIL_NAME: &str = "rubrik";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RubrikEventHook {
     PreCall,
     PostCall,
 }
-
-impl RubrikEventHook {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::PreCall => "pre_call",
-            Self::PostCall => "post_call",
-        }
-    }
-}
-
-pub const SUPPORTED_EVENT_HOOKS: [RubrikEventHook; 2] =
-    [RubrikEventHook::PreCall, RubrikEventHook::PostCall];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StreamFlags {
@@ -50,6 +37,7 @@ pub struct RubrikInit {
     pub default_on: Option<bool>,
     pub guardrail_name: Option<String>,
     pub timeout: Option<Duration>,
+    pub request_timeout: Option<Duration>,
 }
 
 #[derive(Clone, Debug)]
@@ -86,10 +74,7 @@ impl RubrikSettings {
         }
         let batch_size = parse_batch_size(environment);
         let base = webhook_base(init, environment)?;
-        let moderation_timeout = init.timeout.map_or(MODERATION_TIMEOUT, |timeout| Timeout {
-            total: timeout,
-            connect: timeout,
-        });
+        let (moderation_timeout, logging_timeout) = resolve_timeouts(init);
         Ok(Self {
             guardrail_name: init
                 .guardrail_name
@@ -106,7 +91,7 @@ impl RubrikSettings {
                 buffer_until_moderated: true,
             },
             moderation_timeout,
-            logging_timeout: LOGGING_TIMEOUT,
+            logging_timeout,
             response_moderation_endpoint: format!("{base}{RESPONSE_MODERATION_PATH}"),
             prompt_moderation_endpoint: format!("{base}{PROMPT_MODERATION_PATH}"),
             logging_endpoint: format!("{base}{LOGGING_BATCH_PATH}"),
@@ -126,6 +111,21 @@ impl RubrikSettings {
         headers.insert(AUTHORIZATION, value);
         Ok(headers)
     }
+}
+
+fn resolve_timeouts(init: &RubrikInit) -> (Timeout, Timeout) {
+    let moderation = init.timeout.map_or(MODERATION_TIMEOUT, |timeout| Timeout {
+        total: timeout,
+        connect: timeout,
+    });
+    // The logging client keeps the 5-second connect and takes its total from litellm.request_timeout.
+    let logging = init
+        .request_timeout
+        .map_or(LOGGING_TIMEOUT, |request_timeout| Timeout {
+            total: request_timeout,
+            connect: LOGGING_TIMEOUT.connect,
+        });
+    (moderation, logging)
 }
 
 fn webhook_base(

@@ -2,10 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_logging::rubrik_delivery::config::{
-    DEFAULT_BATCH_SIZE, DEFAULT_GUARDRAIL_NAME, MAX_QUEUE_SIZE, RubrikEventHook,
-    SUPPORTED_EVENT_HOOKS, StreamFlags,
+    DEFAULT_BATCH_SIZE, DEFAULT_GUARDRAIL_NAME, MAX_QUEUE_SIZE, RubrikEventHook, StreamFlags,
 };
 use betterlite_logging::rubrik_delivery::error::RubrikError;
+use betterlite_logging::rubrik_delivery::queue::queue_length;
 use betterlite_logging::rubrik_delivery::transport::{
     HttpTransport, LOGGING_TIMEOUT, MODERATION_TIMEOUT, Timeout,
 };
@@ -13,8 +13,9 @@ use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use rstest::rstest;
 
 use super::support::{
-    Environment, FixedClock, bare_init, build, capture, empty_policy, environment, init, logger,
-    logger_with_environment, logging_timeout, moderation_timeout, number,
+    Environment, FixedClock, bare_init, build, capture, dropped_since_warning, empty_policy,
+    environment, init, last_drop_warning_time, last_flush_time, logger, logger_with_environment,
+    logging_timeout, moderation_timeout, number,
 };
 
 #[test]
@@ -24,8 +25,8 @@ fn defaults_fill_every_field() {
     assert_eq!(settings.guardrail_name, DEFAULT_GUARDRAIL_NAME);
     assert_eq!(settings.event_hook, RubrikEventHook::PostCall);
     assert_eq!(
-        SUPPORTED_EVENT_HOOKS,
-        [RubrikEventHook::PreCall, RubrikEventHook::PostCall]
+        serde_json::to_string(&RubrikEventHook::PreCall).expect("the hook serializes"),
+        "\"pre_call\""
     );
     assert!(!settings.default_on);
     assert_eq!(number(settings.sampling_rate), number(1.0));
@@ -45,11 +46,10 @@ fn stream_flags_are_true_and_the_queue_starts_empty() {
     );
     assert_eq!(logger.settings.moderation_timeout, moderation_timeout());
     assert_eq!(logger.settings.logging_timeout, logging_timeout());
-    let state = logger.state();
-    assert_eq!(state.length, 0);
-    assert_eq!(state.dropped_since_warning, 0);
-    assert_eq!(state.last_drop_warning_time, Duration::ZERO);
-    assert_eq!(state.last_flush_time, Duration::from_secs(1));
+    assert_eq!(queue_length(&logger), 0);
+    assert_eq!(dropped_since_warning(&logger), 0);
+    assert_eq!(last_drop_warning_time(&logger), Duration::ZERO);
+    assert_eq!(last_flush_time(&logger), Duration::from_secs(1));
     assert_eq!(transport.call_count(), 0);
 }
 
@@ -265,8 +265,8 @@ fn constructor_api_base_wins_over_environment() {
 
 #[test]
 fn http_clients_build_with_the_lite_llm_timeouts() {
-    let transport = HttpTransport::new(&empty_policy(), MODERATION_TIMEOUT, LOGGING_TIMEOUT)
-        .expect("clients build");
+    let (logger, _scripted) = logger(&init("https://rubrik.test", "key"), Vec::new());
+    let transport = HttpTransport::new(&empty_policy(), &logger.settings).expect("clients build");
     assert_eq!(
         MODERATION_TIMEOUT,
         Timeout {
@@ -281,5 +281,7 @@ fn http_clients_build_with_the_lite_llm_timeouts() {
             connect: Duration::from_secs(5),
         }
     );
+    assert_eq!(logger.settings.moderation_timeout, MODERATION_TIMEOUT);
+    assert_eq!(logger.settings.logging_timeout, LOGGING_TIMEOUT);
     drop(transport);
 }

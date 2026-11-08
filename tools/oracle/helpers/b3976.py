@@ -8,7 +8,9 @@ from typing import TypeAlias, cast
 from unittest.mock import patch
 
 import httpx
+import litellm
 from litellm._logging import verbose_logger
+from litellm.constants import DEFAULT_REQUEST_TIMEOUT_SECONDS
 from litellm.integrations.rubrik import RubrikLogger
 from litellm.llms.custom_httpx.http_handler import (
     AsyncHTTPHandler,
@@ -93,9 +95,7 @@ class ScriptedHandler:
 
     def record(self, url: str, options: dict[str, object]) -> None:
         headers = cast("dict[str, str] | None", options.get("headers"))
-        pairs: list[Json] = []
-        for name, value in sorted((headers or {}).items()):
-            pairs.append([name.lower(), value])
+        pairs = cast(Json, {name.lower(): value for name, value in (headers or {}).items()})
         self.script.calls.append(
             {
                 "tier": self.tier,
@@ -250,7 +250,13 @@ def logger_options(init: Fields) -> dict[str, object]:
     return options
 
 
-def settings_json(logger: RubrikLogger, factory: ClientFactory) -> Fields:
+def report(
+    logger: RubrikLogger,
+    script: Script,
+    factory: ClientFactory,
+    recorder: WarningRecorder,
+    results: list[Json],
+) -> Json:
     client_timeout = factory.moderation.client_timeout
     if client_timeout is None:
         raise InputError("the moderation client timeout is unknown")
@@ -261,34 +267,24 @@ def settings_json(logger: RubrikLogger, factory: ClientFactory) -> Fields:
         else {"total": override, "connect": override}
     )
     logging_timeout = _default_cached_client_timeout()
-    return {
-        "guardrail_name": cast(str, logger.guardrail_name),
-        "event_hook": cast(GuardrailEventHooks, logger.event_hook).value,
-        "default_on": logger.default_on,
-        "sampling_rate": logger.sampling_rate,
-        "batch_size": logger.batch_size,
-        "max_queue_size": logger.max_queue_size,
-        "streaming_end_of_stream_only": logger.streaming_end_of_stream_only,
-        "streaming_buffer_until_moderated": logger.streaming_buffer_until_moderated,
-        "authenticated": logger.key is not None,
-        "response_moderation_endpoint": logger.response_moderation_endpoint,
-        "prompt_moderation_endpoint": logger.prompt_moderation_endpoint,
-        "logging_endpoint": logger.logging_endpoint,
-        "moderation_timeout": moderation_timeout,
-        "logging_timeout": {"total": logging_timeout.read, "connect": logging_timeout.connect},
-    }
-
-
-def report(
-    logger: RubrikLogger,
-    script: Script,
-    factory: ClientFactory,
-    recorder: WarningRecorder,
-    results: list[Json],
-) -> Json:
     queue = cast("list[Json]", logger.log_queue)
     reporting: Fields = {
-        "settings": settings_json(logger, factory),
+        "settings": {
+            "guardrail_name": cast(str, logger.guardrail_name),
+            "event_hook": cast(GuardrailEventHooks, logger.event_hook).value,
+            "default_on": logger.default_on,
+            "sampling_rate": logger.sampling_rate,
+            "batch_size": logger.batch_size,
+            "max_queue_size": logger.max_queue_size,
+            "streaming_end_of_stream_only": logger.streaming_end_of_stream_only,
+            "streaming_buffer_until_moderated": logger.streaming_buffer_until_moderated,
+            "authenticated": logger.key is not None,
+            "response_moderation_endpoint": logger.response_moderation_endpoint,
+            "prompt_moderation_endpoint": logger.prompt_moderation_endpoint,
+            "logging_endpoint": logger.logging_endpoint,
+            "moderation_timeout": moderation_timeout,
+            "logging_timeout": {"total": logging_timeout.read, "connect": logging_timeout.connect},
+        },
         "results": results,
         "calls": cast(Json, script.calls),
         "queue": {"length": len(queue), "head": queue[:3], "tail": queue[-3:]},
@@ -310,6 +306,12 @@ def run(input_value: Fields) -> Json:
     clock = list_value(input_value.get("clock", []), "clock")
     clock_values = [number_value(value, "clock entry") for value in clock]
     actions = list_value(input_value.get("actions", []), "actions")
+    configured_timeout = init.get("request_timeout_seconds")
+    request_timeout = (
+        DEFAULT_REQUEST_TIMEOUT_SECONDS
+        if configured_timeout is None
+        else number_value(configured_timeout, "init.request_timeout_seconds")
+    )
     factory = ClientFactory(script)
     fake_time = FakeTime(clock_values)
     recorder = WarningRecorder()
@@ -321,6 +323,8 @@ def run(input_value: Fields) -> Json:
             patch("litellm.integrations.rubrik.time", fake_time),
             patch("litellm.integrations.custom_batch_logger.time", fake_time),
             patch.object(RubrikLogger, "_start_periodic_flush_task", disable_periodic_flush),
+            patch.object(litellm, "request_timeout", request_timeout),
+            patch.object(litellm, "request_timeout_explicitly_set", configured_timeout is not None),
         ):
             for name in [name for name in os.environ if name.startswith("RUBRIK_")]:
                 del os.environ[name]

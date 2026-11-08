@@ -3,13 +3,14 @@ use std::time::Duration;
 
 use betterlite_logging::rubrik_delivery::config::MAX_QUEUE_SIZE;
 use betterlite_logging::rubrik_delivery::queue::{
-    append_and_maybe_flush, push_payload, queue_snapshot,
+    append_and_maybe_flush, push_payload, queue_length, queue_snapshot,
 };
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    Environment, FixedClock, ScriptedReply, SequenceClock, build, capture, environment, fill,
-    index_of, init, integer, logger_with_clock, logger_with_environment, object,
+    Environment, FixedClock, ScriptedReply, SequenceClock, build, capture, dropped_since_warning,
+    environment, fill, index_of, init, integer, last_drop_warning_time, logger_with_clock,
+    logger_with_environment, object,
 };
 
 fn payload_at(index: u64) -> Json {
@@ -23,7 +24,7 @@ async fn appending_below_the_batch_size_does_not_flush() {
         logger_with_environment(&init("https://rubrik.test", "key"), &values, Vec::new());
     append_and_maybe_flush(&logger, payload_at(0)).await;
     append_and_maybe_flush(&logger, payload_at(1)).await;
-    assert_eq!(logger.state().length, 2);
+    assert_eq!(queue_length(&logger), 2);
     assert_eq!(transport.call_count(), 0);
 }
 
@@ -38,7 +39,7 @@ async fn reaching_the_batch_size_flushes_immediately() {
     append_and_maybe_flush(&logger, payload_at(0)).await;
     append_and_maybe_flush(&logger, payload_at(1)).await;
     append_and_maybe_flush(&logger, payload_at(2)).await;
-    assert_eq!(logger.state().length, 0);
+    assert_eq!(queue_length(&logger), 0);
     let calls = transport.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(
@@ -57,7 +58,7 @@ async fn a_batch_size_of_one_flushes_every_append() {
     );
     append_and_maybe_flush(&logger, payload_at(0)).await;
     append_and_maybe_flush(&logger, payload_at(1)).await;
-    assert_eq!(logger.state().length, 0);
+    assert_eq!(queue_length(&logger), 0);
     let calls = transport.calls();
     assert_eq!(calls.len(), 2);
     assert_eq!(calls[0].payload, Json::List(vec![payload_at(0)]));
@@ -70,9 +71,8 @@ fn overflow_drops_exactly_the_oldest_entries() {
     let (logger, transport) =
         logger_with_environment(&init("https://rubrik.test", "key"), &values, Vec::new());
     fill(&logger, 0, 10_003);
-    let state = logger.state();
-    assert_eq!(state.length, MAX_QUEUE_SIZE);
-    assert_eq!(state.dropped_since_warning, 3);
+    assert_eq!(queue_length(&logger), MAX_QUEUE_SIZE);
+    assert_eq!(dropped_since_warning(&logger), 3);
     let queue = queue_snapshot(&logger);
     assert_eq!(queue.first().and_then(index_of), Some(3));
     assert_eq!(queue.last().and_then(index_of), Some(10_002));
@@ -86,9 +86,8 @@ fn an_append_at_the_cap_drops_the_oldest_event() {
         logger_with_environment(&init("https://rubrik.test", "key"), &values, Vec::new());
     fill(&logger, 0, 10_000);
     push_payload(&logger, payload_at(10_000));
-    let state = logger.state();
-    assert_eq!(state.length, MAX_QUEUE_SIZE);
-    assert_eq!(state.dropped_since_warning, 1);
+    assert_eq!(queue_length(&logger), MAX_QUEUE_SIZE);
+    assert_eq!(dropped_since_warning(&logger), 1);
     let queue = queue_snapshot(&logger);
     assert_eq!(queue.first().and_then(index_of), Some(1));
     assert_eq!(queue.last().and_then(index_of), Some(10_000));
@@ -112,10 +111,9 @@ fn queue_overflow_warns_at_most_once_per_interval() {
         (logger, transport)
     });
     let (logger, transport) = result;
-    let state = logger.state();
-    assert_eq!(state.length, MAX_QUEUE_SIZE);
-    assert_eq!(state.dropped_since_warning, 1);
-    assert_eq!(state.last_drop_warning_time, Duration::from_secs(200));
+    assert_eq!(queue_length(&logger), MAX_QUEUE_SIZE);
+    assert_eq!(dropped_since_warning(&logger), 1);
+    assert_eq!(last_drop_warning_time(&logger), Duration::from_secs(200));
     assert_eq!(warnings.count_containing("log queue exceeded"), 2);
     let queue = queue_snapshot(&logger);
     assert_eq!(queue.first().and_then(index_of), Some(4));
@@ -138,9 +136,8 @@ fn overflow_below_the_warning_interval_accumulates_dropped_events() {
         (logger, transport)
     });
     let (logger, _transport) = result;
-    let state = logger.state();
-    assert_eq!(state.dropped_since_warning, 1);
-    assert_eq!(state.last_drop_warning_time, Duration::from_secs(100));
+    assert_eq!(dropped_since_warning(&logger), 1);
+    assert_eq!(last_drop_warning_time(&logger), Duration::from_secs(100));
     assert_eq!(warnings.count_containing("log queue exceeded"), 1);
 }
 

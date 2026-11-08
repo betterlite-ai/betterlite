@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_config::loader::EnvironmentLookup;
@@ -12,14 +12,6 @@ use super::clock::Clock;
 use super::config::{RubrikInit, RubrikSettings};
 use super::error::RubrikError;
 use super::transport::Transport;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct QueueState {
-    pub length: usize,
-    pub dropped_since_warning: u64,
-    pub last_drop_warning_time: Duration,
-    pub last_flush_time: Duration,
-}
 
 pub struct RubrikLogger {
     pub settings: RubrikSettings,
@@ -54,29 +46,5 @@ impl RubrikLogger {
             last_drop_warning_time: Mutex::new(Duration::ZERO),
             last_flush_time: Mutex::new(last_flush_time),
         })
-    }
-
-    #[must_use]
-    pub fn state(&self) -> QueueState {
-        let length = self
-            .queue
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len();
-        let dropped_since_warning = self.dropped_since_warning.load(Ordering::SeqCst);
-        let last_drop_warning_time = *self
-            .last_drop_warning_time
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        let last_flush_time = *self
-            .last_flush_time
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        QueueState {
-            length,
-            dropped_since_warning,
-            last_drop_warning_time,
-            last_flush_time,
-        }
     }
 }

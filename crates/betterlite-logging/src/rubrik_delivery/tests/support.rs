@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::Duration;
 
@@ -242,6 +243,7 @@ pub(super) fn init(api_base: &str, api_key: &str) -> RubrikInit {
         default_on: None,
         guardrail_name: None,
         timeout: None,
+        request_timeout: None,
     }
 }
 
@@ -253,6 +255,7 @@ pub(super) fn bare_init() -> RubrikInit {
         default_on: None,
         guardrail_name: None,
         timeout: None,
+        request_timeout: None,
     }
 }
 
@@ -406,4 +409,22 @@ pub(super) fn index_of(payload: &Json) -> Option<u64> {
         Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
         | None => None,
     }
+}
+
+pub(super) fn dropped_since_warning(logger: &RubrikLogger) -> u64 {
+    logger.dropped_since_warning.load(Ordering::SeqCst)
+}
+
+pub(super) fn last_drop_warning_time(logger: &RubrikLogger) -> Duration {
+    *logger
+        .last_drop_warning_time
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+}
+
+pub(super) fn last_flush_time(logger: &RubrikLogger) -> Duration {
+    *logger
+        .last_flush_time
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
 }

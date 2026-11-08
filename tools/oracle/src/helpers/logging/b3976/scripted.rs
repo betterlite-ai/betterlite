@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::Duration;
@@ -58,7 +58,7 @@ impl ScriptedTransport {
 
     fn record(&self, request: &JsonPost) {
         let payload: Value = serde_json::from_slice(&request.body).unwrap_or(Value::Null);
-        let mut headers: Vec<(String, String)> = request
+        let headers: BTreeMap<String, String> = request
             .headers
             .iter()
             .map(|(name, value)| {
@@ -68,7 +68,6 @@ impl ScriptedTransport {
                 )
             })
             .collect();
-        headers.sort();
         let (tier, timeout) = match request.tier {
             ClientTier::Moderation => (
                 "moderation",

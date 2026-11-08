@@ -17,9 +17,18 @@ pub fn push_payload(logger: &RubrikLogger, payload: Json) {
 
 pub async fn append_and_maybe_flush(logger: &RubrikLogger, payload: Json) {
     push_payload(logger, payload);
-    if logger.state().length >= logger.settings.batch_size {
+    if queue_length(logger) >= logger.settings.batch_size {
         flush_queue(logger).await;
     }
+}
+
+#[must_use]
+pub fn queue_length(logger: &RubrikLogger) -> usize {
+    logger
+        .queue
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .len()
 }
 
 #[must_use]
@@ -61,10 +70,7 @@ pub async fn async_send_batch(logger: &RubrikLogger) -> Result<(), RubrikError> 
 }
 
 fn enforce_max_queue_size(logger: &RubrikLogger) {
-    let overflow = logger
-        .state()
-        .length
-        .saturating_sub(logger.settings.max_queue_size);
+    let overflow = queue_length(logger).saturating_sub(logger.settings.max_queue_size);
     if overflow == 0 {
         return;
     }
@@ -78,17 +84,17 @@ fn enforce_max_queue_size(logger: &RubrikLogger) {
         .fetch_add(overflow_count, Ordering::SeqCst)
         .saturating_add(overflow_count);
     let now = logger.clock.now_unix();
-    if now.saturating_sub(logger.state().last_drop_warning_time) >= DROP_WARNING_INTERVAL {
+    let mut last_warning = logger
+        .last_drop_warning_time
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if now.saturating_sub(*last_warning) >= DROP_WARNING_INTERVAL {
         tracing::warn!(
             max_queue_size = logger.settings.max_queue_size,
             dropped,
             "Rubrik: log queue exceeded max_queue_size; dropped oldest events since the last warning"
         );
         logger.dropped_since_warning.store(0, Ordering::SeqCst);
-        let mut last_warning = logger
-            .last_drop_warning_time
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
         *last_warning = now;
     }
 }

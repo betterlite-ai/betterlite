@@ -13,6 +13,8 @@ use http::header::HeaderMap;
 use thiserror::Error;
 use url::{ParseError, Url};
 
+use super::config::RubrikSettings;
+
 // httpx.Timeout(5.0, connect=2.0) on the moderation client
 pub const MODERATION_TIMEOUT: Timeout = Timeout {
     total: Duration::from_secs(5),
@@ -88,12 +90,11 @@ pub struct HttpTransport {
 impl HttpTransport {
     pub fn new(
         policy: &Arc<ProxyPolicy>,
-        moderation: Timeout,
-        logging: Timeout,
+        settings: &RubrikSettings,
     ) -> Result<Self, ClientBuildError> {
         Ok(Self {
-            moderation: client(policy, moderation)?,
-            logging: client(policy, logging)?,
+            moderation: client(policy, settings.moderation_timeout)?,
+            logging: client(policy, settings.logging_timeout)?,
         })
     }
 }

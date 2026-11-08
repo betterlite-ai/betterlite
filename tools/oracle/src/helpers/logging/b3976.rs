@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 use betterlite_logging::rubrik_delivery::config::{RubrikEventHook, RubrikInit, RubrikSettings};
@@ -9,7 +9,7 @@ use betterlite_logging::rubrik_delivery::error::RubrikError;
 use betterlite_logging::rubrik_delivery::logger::RubrikLogger;
 use betterlite_logging::rubrik_delivery::post::{post_prompt_moderation, post_response_moderation};
 use betterlite_logging::rubrik_delivery::queue::{
-    append_and_maybe_flush, async_send_batch, flush_queue, queue_snapshot,
+    append_and_maybe_flush, async_send_batch, flush_queue, queue_length, queue_snapshot,
 };
 use betterlite_logging::rubrik_delivery::transport::Timeout;
 use betterlite_models::decisions::Json;
@@ -44,6 +44,7 @@ struct Init {
     default_on: Option<bool>,
     guardrail_name: Option<String>,
     timeout_seconds: Option<f64>,
+    request_timeout_seconds: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -73,21 +74,24 @@ where
     })
 }
 
-fn rubrik_init(init: &Init) -> Result<RubrikInit, Box<HelperError>> {
-    let timeout = match init.timeout_seconds {
-        Some(seconds) => Some(
+fn seconds(value: Option<f64>, name: &str) -> Result<Option<Duration>, Box<HelperError>> {
+    value
+        .map(|seconds| {
             Duration::try_from_secs_f64(seconds)
-                .map_err(|error| failure(format!("init.timeout_seconds: {error}")))?,
-        ),
-        None => None,
-    };
+                .map_err(|error| failure(format!("{name}: {error}")))
+        })
+        .transpose()
+}
+
+fn rubrik_init(init: &Init) -> Result<RubrikInit, Box<HelperError>> {
     Ok(RubrikInit {
         api_key: init.api_key.clone().map(SecretString::from),
         api_base: init.api_base.clone(),
         event_hook: init.event_hook,
         default_on: init.default_on,
         guardrail_name: init.guardrail_name.clone(),
-        timeout,
+        timeout: seconds(init.timeout_seconds, "init.timeout_seconds")?,
+        request_timeout: seconds(init.request_timeout_seconds, "init.request_timeout_seconds")?,
     })
 }
 
@@ -112,9 +116,8 @@ const fn classify(error: &RubrikError) -> &'static str {
 }
 
 fn outcome(logger: &RubrikLogger, error: Option<&'static str>) -> Value {
-    let queue_length = logger.state().length;
     json!({
-        "queue_length": queue_length,
+        "queue_length": queue_length(logger),
         "error": error,
     })
 }
@@ -168,7 +171,7 @@ fn settings_value(settings: &RubrikSettings) -> Value {
     };
     json!({
         "guardrail_name": settings.guardrail_name,
-        "event_hook": settings.event_hook.as_str(),
+        "event_hook": settings.event_hook,
         "default_on": settings.default_on,
         "sampling_rate": settings.sampling_rate,
         "batch_size": settings.batch_size,
@@ -237,18 +240,25 @@ fn report(
     warnings: &WarningCount,
     results: &[Value],
 ) -> Value {
-    let state = logger.state();
     let queue = queue_snapshot(logger);
     let head: Vec<Json> = queue.iter().take(3).cloned().collect();
     let tail: Vec<Json> = queue.iter().rev().take(3).rev().cloned().collect();
+    let last_drop = *logger
+        .last_drop_warning_time
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let last_flush = *logger
+        .last_flush_time
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     json!({
         "settings": settings_value(&logger.settings),
         "results": results,
         "calls": transport.calls(),
-        "queue": {"length": state.length, "head": head, "tail": tail},
-        "dropped_since_warning": state.dropped_since_warning,
-        "last_drop_warning_time": state.last_drop_warning_time.as_secs_f64(),
-        "last_flush_time": state.last_flush_time.as_secs_f64(),
-        "overflow_warning_count": warnings.0.load(Ordering::SeqCst),
+        "queue": {"length": queue.len(), "head": head, "tail": tail},
+        "dropped_since_warning": logger.dropped_since_warning.load(Ordering::SeqCst),
+        "last_drop_warning_time": last_drop.as_secs_f64(),
+        "last_flush_time": last_flush.as_secs_f64(),
+        "warning_count": warnings.0.load(Ordering::SeqCst),
     })
 }
