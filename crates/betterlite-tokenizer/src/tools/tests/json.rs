@@ -26,8 +26,16 @@ fn names_the_json_type_found(#[case] byte: u8, #[case] expected: &str) {
 
 #[rstest]
 fn takes_the_byte_it_expects() {
-    let mut scanner = Scanner { bytes: b"[", at: 0 };
-    scanner.take_byte(b'{').unwrap_err();
+    let mut accepted = Scanner {
+        bytes: b" [x",
+        at: 0,
+    };
+    accepted.take_byte(b'[').unwrap();
+    assert_eq!(accepted.at, 2);
+
+    let mut refused = Scanner { bytes: b"[", at: 0 };
+    refused.take_byte(b'{').unwrap_err();
+    assert_eq!(refused.at, 0);
 }
 
 #[rstest]
