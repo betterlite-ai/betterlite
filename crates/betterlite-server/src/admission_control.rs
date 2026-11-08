@@ -185,24 +185,14 @@ impl AdmissionStack {
 // uvicorn reads the last Upgrade and Connection header, and its handshake takes only a GET with a key and a version
 fn is_websocket_upgrade(request: &Request<Body>) -> bool {
     let headers = request.headers();
-    let upgrades = headers
-        .get_all(header::UPGRADE)
-        .iter()
-        .next_back()
-        .is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"websocket"));
-    let connects = headers
-        .get_all(header::CONNECTION)
-        .iter()
-        .next_back()
-        .is_some_and(|value| {
-            value
-                .as_bytes()
-                .split(|byte| *byte == b',')
-                .any(|token| token.trim_ascii().eq_ignore_ascii_case(b"upgrade"))
-        });
+    let upgrade = headers.get_all(header::UPGRADE).iter().next_back();
+    let connection = headers.get_all(header::CONNECTION).iter().next_back();
     request.method() == Method::GET
-        && upgrades
-        && connects
+        && upgrade.is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"websocket"))
+        && connection.is_some_and(|value| {
+            let mut tokens = value.as_bytes().split(|byte| *byte == b',');
+            tokens.any(|token| token.trim_ascii().eq_ignore_ascii_case(b"upgrade"))
+        })
         && headers.contains_key(header::SEC_WEBSOCKET_KEY)
         && headers.contains_key(header::SEC_WEBSOCKET_VERSION)
 }
