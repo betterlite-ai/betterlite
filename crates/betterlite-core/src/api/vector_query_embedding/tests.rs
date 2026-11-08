@@ -74,19 +74,20 @@ impl VectorStoreEmbeddingExecutor for ScriptedExecutor {
         _query: &str,
         _configuration: &Params,
     ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
-        self.0.as_deref().map_or_else(
-            || {
-                Err(VectorStoreEmbeddingError::DuplicateArgument {
-                    name: "input".to_owned(),
-                })
-            },
-            |body| {
-                serde_json::from_str(body).map_err(|source| VectorStoreEmbeddingError::Embedding {
-                    source: EmbeddingError::Decode { source },
-                })
-            },
-        )
+        let Some(body) = &self.0 else {
+            return Err(VectorStoreEmbeddingError::DuplicateArgument {
+                name: "input".to_owned(),
+            });
+        };
+        decode(body)
     }
+}
+
+fn decode(body: &str) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
+    let decoded = serde_json::from_str::<EmbeddingResponse>(body);
+    decoded.map_err(|source| VectorStoreEmbeddingError::Embedding {
+        source: EmbeddingError::Decode { source },
+    })
 }
 
 struct FakeRouter;
