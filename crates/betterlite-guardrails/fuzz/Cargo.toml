@@ -100,3 +100,10 @@ path = "fuzz_targets/content_regex.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "mcp_jwt_idp_document"
+path = "fuzz_targets/mcp_jwt_idp_document.rs"
+test = false
+doc = false
+bench = false
