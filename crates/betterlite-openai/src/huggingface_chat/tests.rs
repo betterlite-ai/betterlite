@@ -568,6 +568,17 @@ fn mapping_fetch_keeps_the_error_status_and_headers() {
 }
 
 #[test]
+fn mapping_fetch_redirect_is_a_huggingface_error_too() {
+    let hub = ScriptedHub::with(vec![Reply::Response(response(302, ""))]);
+    let error = fetch(hub).unwrap_err();
+    let HuggingfaceChatError::Huggingface(failure) = &error else {
+        panic!("unexpected {error:?}");
+    };
+    assert_eq!(failure.status_code, 302);
+    assert_eq!(failure.headers.get("x-hub"), Some(&"1".to_owned()));
+}
+
+#[test]
 fn mapping_fetch_transport_failure_is_a_500_with_no_headers() {
     let hub = ScriptedHub::with(vec![Reply::Failure]);
     let error = fetch(hub).unwrap_err();

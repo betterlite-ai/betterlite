@@ -81,7 +81,8 @@ impl<G: HubGet> ProviderMappingCache<G> {
                 message: format!("Failed to fetch provider mapping: {source}"),
                 headers: Headers::new(),
             })?;
-        if response.status_code >= 400 {
+        // httpx's raise_for_status fails on every non-2xx answer, redirects included
+        if !(200..=299).contains(&response.status_code) {
             let error = HuggingfaceError {
                 status_code: response.status_code,
                 message: format!(
