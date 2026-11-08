@@ -10,9 +10,8 @@ mod records;
 
 use records::{
     CancelTaskRequest, DeletePushConfigParams, DeletePushConfigRequest, GetPushConfigRequest,
-    GetTaskRequest, IntegerRepr, ListPushConfigsRequest, ListTasksParams, ListTasksRequest,
-    PushConfigParams, SubscribeToTaskRequest, TaskIdParams, TaskQueryParams, TaskState,
-    integer_value,
+    GetTaskRequest, ListPushConfigsRequest, ListTasksParams, ListTasksRequest, PushConfigParams,
+    SubscribeToTaskRequest, TaskIdParams, TaskQueryParams, TaskState, integer_value,
 };
 
 const V0_3_TASK_STATES: [&str; 9] = [
@@ -137,14 +136,20 @@ fn task_state(value: TaskState) -> Option<String> {
             if PROTO_TASK_STATES.contains(&name.as_str()) {
                 return map_task_state(&name);
             }
-            let index = integer_value(IntegerRepr::Text(name), "status").ok()?;
-            state_name(index)
+            // protobuf reads an unnamed enum value with plain int(), which trims and rejects floats
+            state_name(name.trim().parse::<i64>().ok()?)
         }
-        TaskState::Number(number) => {
-            let index = integer_value(IntegerRepr::Number(number), "status").ok()?;
-            state_name(index)
-        }
+        TaskState::Number(number) => state_name(truncated_index(&number)?),
     }
+}
+
+fn truncated_index(number: &serde_json::Number) -> Option<i64> {
+    if let Some(index) = number.as_i64() {
+        return Some(index);
+    }
+    let value = number.as_f64()?;
+    let whole = value.trunc();
+    format!("{whole:.0}").parse::<i64>().ok()
 }
 
 fn state_name(index: i64) -> Option<String> {

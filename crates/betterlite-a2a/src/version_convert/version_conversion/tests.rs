@@ -440,6 +440,9 @@ fn lowers_request_params(#[case] method: &str, #[case] input: &str, #[case] expe
 #[case::numeric_status(r#"{"status":2}"#, r#"{"status":"working"}"#)]
 #[case::numeric_string_status(r#"{"status":"2"}"#, r#"{"status":"working"}"#)]
 #[case::float_status(r#"{"status":2.0}"#, r#"{"status":"working"}"#)]
+#[case::numeric_string_float_status(r#"{"status":"2.0","tenant":"x"}"#, r#"{"tenant":"x"}"#)]
+#[case::spaced_numeric_status(r#"{"status":" 2"}"#, r#"{"status":"working"}"#)]
+#[case::truncated_float_status(r#"{"status":2.5}"#, r#"{"status":"working"}"#)]
 #[case::unmapped_status(r#"{"status":"TASK_STATE_BOGUS","tenant":"x"}"#, r#"{"tenant":"x"}"#)]
 #[case::history_and_timestamp(
     r#"{"historyLength":3,"statusTimestampAfter":"2026-01-01T00:00:00Z"}"#,
@@ -527,11 +530,24 @@ fn keeps_a_card_that_lacks_required_03_members() {
     );
 }
 
-#[test]
-fn keeps_a_card_whose_skill_lacks_required_members() {
-    let card = object(
-        r#"{"name":"agent","description":"d","version":"1","url":"https://a","capabilities":{},"defaultInputModes":["text"],"defaultOutputModes":["text"],"skills":[{"id":"s","name":"n"}]}"#,
-    );
+#[rstest]
+#[case::skill_missing_members(
+    r#"{"name":"agent","description":"d","version":"1","url":"https://a","capabilities":{},"defaultInputModes":["text"],"defaultOutputModes":["text"],"skills":[{"id":"s","name":"n"}]}"#
+)]
+#[case::provider_missing_url(
+    r#"{"name":"agent","description":"d","version":"1","url":"https://a","capabilities":{},"defaultInputModes":["text"],"defaultOutputModes":["text"],"skills":[],"provider":{"organization":"o"}}"#
+)]
+#[case::extension_missing_uri(
+    r#"{"name":"agent","description":"d","version":"1","url":"https://a","capabilities":{"extensions":[{}]},"defaultInputModes":["text"],"defaultOutputModes":["text"],"skills":[]}"#
+)]
+#[case::signature_missing_signature(
+    r#"{"name":"agent","description":"d","version":"1","url":"https://a","capabilities":{},"defaultInputModes":["text"],"defaultOutputModes":["text"],"skills":[],"signatures":[{"protected":"p"}]}"#
+)]
+#[case::additional_interface_missing_transport(
+    r#"{"name":"agent","description":"d","version":"1","url":"https://a","capabilities":{},"defaultInputModes":["text"],"defaultOutputModes":["text"],"skills":[],"additionalInterfaces":[{"url":"https://b"}]}"#
+)]
+fn keeps_a_card_whose_nested_records_lack_required_members(#[case] text: &str) {
+    let card = object(text);
     assert_eq!(
         normalize_agent_card(card.clone(), ProtocolVersion::V1_0),
         card
