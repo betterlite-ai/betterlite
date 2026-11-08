@@ -165,7 +165,7 @@ fn routing_value_store_behaviors(#[case] name: &str) {
             let store = Arc::new(store_with(None, &clock()));
             let key = route_key("dynamic_rate:00-00:model");
             std::thread::scope(|scope| {
-                for index in 0..16 {
+                for index in 0..16_u32 {
                     let shared = Arc::clone(&store);
                     let route_key = key.clone();
                     scope.spawn(move || {
@@ -175,7 +175,7 @@ fn routing_value_store_behaviors(#[case] name: &str) {
                     });
                 }
             });
-            let expected = (0..16).map(|index| format!("team-{index}")).collect();
+            let expected = (0..16_u32).map(|index| format!("team-{index}")).collect();
             assert_eq!(
                 store.get(&key).unwrap(),
                 StoreRead::Value(RouteValue::Members(expected))

@@ -155,30 +155,30 @@ fn incremented(
     stored: &StoreRead,
     by: &RouteIncrement,
 ) -> Result<RouteValue, StoreError> {
-    let key = key.as_ref().to_owned();
+    let key_name = key.as_ref().to_owned();
     match (stored, by) {
         (StoreRead::Missing, RouteIncrement::Counter(value)) => Ok(RouteValue::Counter(*value)),
         (StoreRead::Missing, RouteIncrement::Spend(value)) => Ok(RouteValue::Spend(*value)),
         (StoreRead::Value(RouteValue::Counter(current)), RouteIncrement::Counter(value)) => current
             .checked_add(*value)
             .map(RouteValue::Counter)
-            .ok_or(StoreError::CounterOverflow { key }),
+            .ok_or(StoreError::CounterOverflow { key: key_name }),
         (StoreRead::Value(RouteValue::Spend(current)), RouteIncrement::Spend(value)) => current
             .checked_add(*value)
             .map(RouteValue::Spend)
-            .ok_or(StoreError::SpendOverflow { key }),
+            .ok_or(StoreError::SpendOverflow { key: key_name }),
         (StoreRead::Value(RouteValue::Counter(current)), RouteIncrement::Spend(value)) => {
             Decimal::from(*current)
                 .checked_add(*value)
                 .map(RouteValue::Spend)
-                .ok_or(StoreError::SpendOverflow { key })
+                .ok_or(StoreError::SpendOverflow { key: key_name })
         }
         (StoreRead::Value(RouteValue::Spend(current)), RouteIncrement::Counter(value)) => current
             .checked_add(Decimal::from(*value))
             .map(RouteValue::Spend)
-            .ok_or(StoreError::SpendOverflow { key }),
+            .ok_or(StoreError::SpendOverflow { key: key_name }),
         (StoreRead::Value(_), RouteIncrement::Counter(_) | RouteIncrement::Spend(_)) => {
-            Err(StoreError::NotIncrementable { key })
+            Err(StoreError::NotIncrementable { key: key_name })
         }
     }
 }
