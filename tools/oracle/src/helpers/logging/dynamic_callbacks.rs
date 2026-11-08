@@ -120,9 +120,15 @@ fn combined(input: &Input) -> Value {
 
 fn filter(input: &Input) -> Value {
     let callbacks = entries(&input.callbacks, &Markers::default());
+    let mut names = Vec::new();
+    let mut internal = Vec::new();
+    for callback in &callbacks {
+        names.push(get_callback_name(callback));
+        internal.push(is_internal_callback(callback));
+    }
     json!({
-        "names": callbacks.iter().map(get_callback_name).collect::<Vec<_>>(),
-        "internal": callbacks.iter().map(is_internal_callback).collect::<Vec<_>>(),
+        "names": names,
+        "internal": internal,
         "litellm_kept": entry_values(&remove_internal_callbacks(&callbacks)),
         "logger_kept": entry_values(&remove_logger_callbacks(&callbacks)),
     })
