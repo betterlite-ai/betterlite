@@ -2,7 +2,7 @@ id: B7326
 milestone: M5 api families
 title: Container CRUD routes
 status: todo
-depends_on: [B3362, B3371, B7430, B004, B2400, B1100, B1018, B732, B756, B003]
+depends_on: [B3362, B3371, B7430, B004, B2400, B1100, B1018, B732, B756, B003, B8801]
 file: tasks/B7326-container-crud-routes.yaml
 covers:
   - "litellm/proxy/container_endpoints/endpoints.py"

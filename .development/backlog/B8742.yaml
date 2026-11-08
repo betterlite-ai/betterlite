@@ -1,0 +1,13 @@
+id: B8742
+milestone: M8 platform
+title: Callback loggers ServerState slot and the server name resolver
+status: todo
+depends_on: [B8741, B8655, B1100, B8610, B8656, B8399, B8612, B8390]
+file: tasks/B8742-callback-loggers-slot.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

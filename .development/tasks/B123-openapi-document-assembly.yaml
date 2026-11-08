@@ -86,7 +86,7 @@ description: >-
   committed pair is crates/betterlite-openapi/tests/fixtures/document_inputs.json (hand-written: the 11 LLM paths of part
   4 as POST routes, one route with `error_responses: true` at `/openai/deployments/{model}/chat/completions`, one websocket
   at `/v1/realtime`, root path empty) and crates/betterlite-openapi/tests/fixtures/openapi.generated.json (produced only by
-  the binary). The real server-wide snapshot waits for the server wiring that owns the full route list; see notes.
+  the binary). B8681 serves the document at openapi_url; a server-wide route list waits for a route catalog; see notes.
 scope:
   paths:
     - crates/betterlite-openapi/src/error_responses.rs
@@ -205,7 +205,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/openapi-document/llm-bodies-missing-schema.yaml
 deviations:
   - what: The document is built from typed route entries (`RouteDoc`) and not from route handlers, so request and response schemas of ordinary routes appear only when the route entry carries them.
-    why: axum has no route introspection and no pydantic models. LiteLLM's FastAPI output for every management route cannot be reproduced mechanically; the server wiring that owns the route list supplies the entries.
+    why: axum has no route introspection and no pydantic models. LiteLLM's FastAPI output for every management route cannot be reproduced mechanically; B8681 supplies the entries.
   - what: The `openapi` field is "3.1.0" and the document has no lazy-feature stub paths, no `/lazy/warm` tag stubs and no `lazy` snapshot fragments.
     why: LiteLLM registers some routers on first use and shows placeholders until then. betterlite registers every route at startup, so `/openapi.json` always lists the real routes; the committed `_lazy_openapi_snapshot.json` and its generator have no purpose here.
   - what: Operation ids of multi-method routes are built from an explicit single method per `RouteDoc`, so they never depend on set iteration order.
@@ -220,7 +220,7 @@ out_of_scope:
   - "litellm/proxy/common_utils/openapi_schema_compat.py get_openapi_schema_with_compat: it patches pydantic's GenerateSchema._unknown_type_schema so FastAPI survives types like openai.Timeout, and falls back to an empty document on PydanticSchemaGenerationError. There is no pydantic here, so nothing can fail the same way."
   - "litellm/proxy/common_utils/custom_openapi_spec.py everything except the leftover decorators in part 4: B4230 owns the schema transforms, inline_request_body and the helper functions. _extract_field_schema has no caller at the pin (B4230 lists it too)."
   - "litellm/proxy/common_utils/swagger_utils.py is built here; litellm/proxy/swagger/** (the four static files) is B7740's."
-  - "Registering the openapi_url route and choosing the full route list for the document is the server wiring's job (see notes); this task registers no route and has no HTTP oracle cases."
+  - "Registering the openapi_url route and choosing the full route list for the document is B8681's job (see notes); this task registers no route and has no HTTP oracle cases."
 pitfalls:
   - ERROR_RESPONSES is attached to one decorator only, `/openai/deployments/{model:path}/chat/completions`. The `engines`, `/chat/completions` and `/v1/chat/completions` operations have only the plain 200, so error_responses is a per-route flag and not a default.
   - The status table collapses 20 exception classes into nine statuses; InternalServerError is listed twice and 400 is claimed by five classes. The winner is the last class in the list, not the first or the most specific.

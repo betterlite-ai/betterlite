@@ -1,7 +1,7 @@
 id: B8276
 title: Serve the decisions and SystemOne routes
 description: >-
-  Register LiteLLM's four decisions routes from proxy/decisions_endpoints/endpoints.py in betterlite-server: `POST /v1/systemone` and `POST /systemone` (SystemOne format, route type `asystemone`), and `POST /v1/decisions` and `POST /decisions` (OpenAI Decisions format, route type `adecisions`). Each pair shares one handler and sits behind the normal key check. Code in `crates/betterlite-server/src/decisions_routes.rs` and its folder; `pub fn routes()` is built like the sibling route modules and the architect mounts it. The wire records and their validation are B3510's (`DecisionsRequestBody` for SystemOne, `OpenAIDecisionRequestBody` for decisions); the calls are B3515's `asystemone` and `adecisions`. This task is the HTTP layer between them.
+  Register LiteLLM's four decisions routes from proxy/decisions_endpoints/endpoints.py in betterlite-server: `POST /v1/systemone` and `POST /systemone` (SystemOne format, route type `asystemone`), and `POST /v1/decisions` and `POST /decisions` (OpenAI Decisions format, route type `adecisions`). Each pair shares one handler and sits behind the normal key check. Code in `crates/betterlite-server/src/decisions_routes.rs` and its folder; `pub fn routes()` is built like the sibling route modules and B8634 mounts it. The wire records and their validation are B3510's (`DecisionsRequestBody` for SystemOne, `OpenAIDecisionRequestBody` for decisions); the calls are B3515's `asystemone` and `adecisions`. This task is the HTTP layer between them.
 
   Handler steps, the same for both pairs; only the body validator and the route type differ.
   (1) Read the raw body and parse it as a JSON object into a map of string to value. If that fails (bad JSON, or a body that is not an object) answer through the shared exception handler with a 400 bad request error, message `Invalid Decisions request: <validation text>` and an empty `model`.
@@ -16,7 +16,6 @@ scope:
   paths:
     - crates/betterlite-server/src/decisions_routes.rs
     - crates/betterlite-server/src/decisions_routes/**
-    - tools/oracle/cases/decisions-routes/**
     - tools/oracle/helpers/b8276.py
     - tools/oracle/helpers/b8276/**
     - tools/oracle/src/helpers/server/b8276.rs
@@ -30,12 +29,12 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/decisions_endpoints/__init__.py#L1-L1
     why: The package marker; it holds no code.
 dod:
-  - text: The four routes exist on exactly their paths for POST, each behind the key check, and a request with no valid key gets the usual 401 body.
-    proof: [route-tests, oracle]
+  - text: The four routes exist on exactly their paths for POST, each behind the key check, and a request with no valid key gets the usual 401 body. Tests drive the handlers with tower's oneshot over the module's own Router and fake ports; B8634 mounts the routes and proves them over HTTP.
+    proof: [route-tests]
   - text: The two systemone paths validate against the SystemOne body and dispatch asystemone; the two decisions paths validate against the OpenAI body and dispatch adecisions.
     proof: [flow-tests]
   - text: 'A body that is not a JSON object, or that fails validation, answers 400 with a message starting "Invalid Decisions request: " before any dispatch.'
-    proof: [flow-tests, oracle]
+    proof: [flow-tests]
   - text: safety_identifier is ignored by the validation but stays in the data passed to dispatch.
     proof: [flow-tests]
   - text: A failure in dispatch is answered through the shared exception serialization, and a success returns the response as JSON.
@@ -49,13 +48,7 @@ checks:
     - id: flow-tests
       why: the body parsing, validation, dispatch or error answers are wrong
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^decisions_routes::tests::flow_/)'
-    - id: new-cases
-      why: the decisions routes have no HTTP parity case on this branch
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/decisions-routes)"
-oracle_cases:
-  - tools/oracle/cases/decisions-routes/auth-required-systemone.yaml
-  - tools/oracle/cases/decisions-routes/auth-required-decisions.yaml
-  - tools/oracle/cases/decisions-routes/invalid-body-decisions.yaml
+oracle_cases: []
 deviations:
   - what: "The text after Invalid Decisions request:  comes from B3510's validators, not from Pydantic's multi-line error text."
     why: Pydantic's exact wording and line layout have no Rust equivalent; the status, the error type and the prefix match.

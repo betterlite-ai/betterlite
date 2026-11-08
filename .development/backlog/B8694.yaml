@@ -1,0 +1,14 @@
+id: B8694
+milestone: M5 api families
+title: Passthrough LLM request pipeline and router hop wiring
+status: todo
+depends_on: [B8610, B8611, B8612, B8631, B8641, B8656, B8690, B8691, B8692, B8693, B7324, B3618, B6460, B844, B8800, B8801, B8802, B247, B8399, B004]
+file: tasks/B8694-passthrough-llm-pipeline.yaml
+covers:
+  - "litellm/proxy/common_request_processing.py"
+parent: B101
+split_from: B101
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

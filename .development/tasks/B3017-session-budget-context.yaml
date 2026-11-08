@@ -4,8 +4,8 @@ description: >-
   Extract the read-only agent lookup and rate-limit error context into lower services consumed by the session hook.
 
   Build betterlite-auth::agent_service with `get_agent_by_id(registry: &AgentRegistry, id: &str) -> Option<AgentRef>`
-  checking exact ID first, then legacy ID mapping. Accept an injected registry view carrying a list of agent entries
-  (agent_id, litellm_params) plus a separate legacy_id_map: HashMap<String, String>.
+  checking exact ID first, then legacy ID mapping. The registry is B4776's AgentRegistry (crates/betterlite-auth/src/agent_registry), passed in by reference
+  and read through its own get_agent_by_id and legacy id map; define no second registry type or view.
 
   Add betterlite-auth::provider_resolution module with `resolve_rate_limit_provider(model: Option<&str>) -> (String, String)`
   that attempts `B174::get_llm_provider(model)` first, falls back to router `model_list` alias scanning for deployments
@@ -160,11 +160,11 @@ deviations:
       Agent registry is accepted as a read-only injected view,
       not as a mutable registry with DB access or cache population.
     why: >-
-      Registry mutation, database reads and startup population are not built here; the wave 17 agents wiring part populates the registry at startup.
+      Registry mutation, database reads and startup population are not built here; B8590 through B8612 loads config agents and B8384 loads database agents at startup.
       B3017 consumes an already-populated registry snapshot to support rate-limit context in session hooks.
 
 out_of_scope:
-  - Agent registry mutation, database loading or cache population (the wave 17 agents wiring part).
+  - Agent registry mutation, database loading or cache population (B8590 through B8612 for config agents, B8384 for database agents).
   - Agent route definitions, dispatch or pre-call hook assembly (B141).
   - Rate limiter policy, admission decisions or v3 limiter internals (B072).
   - The full rate limiter implementations that call ProxyRateLimitError (B3007, B072).

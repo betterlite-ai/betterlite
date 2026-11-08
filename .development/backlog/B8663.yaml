@@ -1,0 +1,13 @@
+id: B8663
+milestone: M4 keys, spend and management
+title: Prove the spend log and capture rate routes over HTTP
+status: todo
+depends_on: [B8662, B069, B860]
+file: tasks/B8663-spend-log-cases.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

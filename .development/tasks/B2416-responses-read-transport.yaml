@@ -27,7 +27,7 @@ scope:
   - crates/betterlite-core/src/api/responses_read_http.rs
   - crates/betterlite-core/src/api/responses_read_http/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/responses_read_transport.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/responses_read_transport.py
   - tools/oracle/cases/sdk-http/responses-read-transport/**

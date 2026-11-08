@@ -23,7 +23,7 @@ description: >-
 
   The steps per chunk follow L1978-L2099: stop when `sent_last_chunk`, read from the source, run `chunk_creator`, apply
   post-call rules to `response_uptil_now`, move usage to hidden params, skip an empty chunk, add the extra usage chunk when
-  `send_stream_usage` asks for it. `finalize_completed_stream` (L2101-L2206) runs success logging and cache storage once.
+  `send_stream_usage` asks for it. `finalize_completed_stream` (L2101-L2206) runs success logging and cache storage once. It skips that success logging when litellm.disable_streaming_logging is true (streaming_handler.py L1692 and L1798). This task owns that key: new section `streaming_logging` in crates/betterlite-config/src/sections/streaming_logging.rs, type `StreamingLogging { disable: bool }` with a Default of false (litellm/__init__.py L337), read as config.sections.streaming_logging, and its test `sections::streaming_logging::tests::loads_disable_flag` loads the production Config with the key true, false and missing.
   `run_success_logging_and_cache_storage` (L1688-L1713), `cache_streaming_response` (L1674) and
   `async_cache_streaming_response` (L1681) go through B4300's cache port and B252's stream logging. Hand B252 the chunks at
   the same point LiteLLM does, since B252 owns the three `stream_chunk_builder` call sites.
@@ -51,6 +51,9 @@ scope:
   - crates/betterlite-sdk/Cargo.toml
   - crates/betterlite-sdk/src/chat_stream.rs
   - crates/betterlite-sdk/src/chat_stream/**
+  - crates/betterlite-config/src/sections/streaming_logging.rs
+  - crates/betterlite-config/src/sections/streaming_logging/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/streaming-logging-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L208-L409
@@ -74,8 +77,10 @@ dod:
   proof: [stream-mcp]
 - text: Closing closes the source once and swallows a close failure with a debug log.
   proof: [stream-close]
+- text: litellm_settings.disable_streaming_logging loads as true, false and missing (false), and a true value skips the success logging of a finished stream.
+  proof: [config-tests, config-corpus, stream-finalize]
 checks:
-  optional: []
+  optional: [mutants]
   commands:
   - id: stream-next
     why: Chunks arrive out of order, or the usage chunk appears unasked.
@@ -98,6 +103,12 @@ checks:
   - id: stream-close
     why: A connection leaks, or close raises.
     run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^chat_stream::tests::close_/)'
+  - id: config-tests
+    why: disable_streaming_logging is never loaded by the real Config loader
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::streaming_logging::tests::loads_disable_flag($|::)/)'
+  - id: config-corpus
+    why: the new key has no config replay seeds
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/streaming-logging-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases: []
 deviations:
 - what: "`__del__` (L358-L383) and the `_next_sync_or_exhausted`, `is_async_iterable` and `print_verbose` helpers are not built, so a stream dropped without a close frees its connection through Rust's drop."

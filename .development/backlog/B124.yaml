@@ -2,7 +2,7 @@ id: B124
 milestone: M8 platform
 title: Remaining proxy server routes, shared proxy types and request preparation
 status: todo
-depends_on: [B4260, B4261, B4262, B4263, B4264, B1106, B7323, B7980]
+depends_on: [B4260, B4261, B4262, B4263, B4264, B1106, B7323, B7980, B8671]
 file: null
 covers:
   - "litellm/proxy/{__init__,proxy_server,_types,utils,plugin_routes,lambda,post_call_rules,litellm_pre_call_utils}.py"
