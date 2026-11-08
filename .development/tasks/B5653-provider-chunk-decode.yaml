@@ -116,5 +116,5 @@ pitfalls:
 - Python `str` slicing never fails on a short string, and Rust `&s[..n]` panics on a short string or a split character.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2300
   max_new_expects: 0
