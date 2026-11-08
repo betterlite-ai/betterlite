@@ -16,7 +16,7 @@ pub fn hostname(netloc: &str) -> Option<String> {
     ))
 }
 
-// CPython's port property, except that a signed port text parses here where int() would reject it.
+// CPython's port property, except that a signed port text parses here where the port property rejects it.
 pub fn port(netloc: &str) -> Result<Option<u16>, UrlParseError> {
     let Some(text) = hostinfo(netloc).1 else {
         return Ok(None);
@@ -32,12 +32,21 @@ pub fn port(netloc: &str) -> Result<Option<u16>, UrlParseError> {
 pub fn int_value(text: &str) -> Option<i128> {
     let trimmed = text.trim();
     let negative = trimmed.starts_with('-');
-    let unsigned = trimmed.strip_prefix(['-', '+']).unwrap_or(trimmed);
-    let digits: String = unsigned
-        .chars()
-        .filter(|character| *character != '_')
-        .collect();
-    let value = digits.parse::<i128>().ok()?;
+    let digits = trimmed.strip_prefix(['-', '+']).unwrap_or(trimmed);
+    let mut value: i128 = 0;
+    let mut after_digit = false;
+    for character in digits.chars() {
+        if character == '_' && after_digit {
+            after_digit = false;
+            continue;
+        }
+        let digit = character.to_digit(10)?;
+        value = value.checked_mul(10)?.checked_add(i128::from(digit))?;
+        after_digit = true;
+    }
+    if !after_digit {
+        return None;
+    }
     Some(if negative {
         value.checked_neg()?
     } else {
