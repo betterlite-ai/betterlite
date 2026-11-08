@@ -1,0 +1,14 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-primitive-float",
+  "call": {
+    "b3844": {
+      "function": "primitive_value",
+      "value": 1.5
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
