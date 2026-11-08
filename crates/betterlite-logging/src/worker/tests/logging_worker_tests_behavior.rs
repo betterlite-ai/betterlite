@@ -9,7 +9,7 @@ use tokio::sync::Notify;
 use tokio::task::yield_now;
 use tokio::time::Instant as TokioInstant;
 use tokio::time::{sleep, timeout};
-use tracing::subscriber::set_default;
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Level, Span};
 use tracing_subscriber::fmt::MakeWriter;
 
@@ -190,6 +190,37 @@ fn line_with<'text>(contents: &'text str, needle: &str) -> &'text str {
         .unwrap_or("")
 }
 
+fn summary_lines(contents: &str) -> Vec<&str> {
+    contents
+        .lines()
+        .filter(|line| line.contains("timed out and released their permits"))
+        .collect()
+}
+
+fn capture_warnings() -> (Buffer, DefaultGuard) {
+    let buffer = Buffer::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(Level::WARN)
+        .with_writer(buffer.clone())
+        .finish();
+    let guard = set_default(subscriber);
+    (buffer, guard)
+}
+
+fn enqueue_hangs(
+    worker: &LoggingWorker<ScriptedCallback>,
+    record: &Arc<Record>,
+    spans: &Arc<SpanContexts>,
+    names: &[&'static str],
+) {
+    for name in names {
+        let admission = worker.enqueue(callback(record, name, Outcome::Hang, spans));
+        assert_eq!(admission, Admission::Accepted);
+    }
+}
+
 #[test]
 fn defaults_match_the_litellm_worker() {
     let settings = WorkerSettings::default();
@@ -267,14 +298,7 @@ async fn successful_callbacks_run_and_flush_waits_for_them() {
 
 #[tokio::test]
 async fn a_failed_callback_is_isolated_from_the_model_response() {
-    let buffer = Buffer::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_ansi(false)
-        .without_time()
-        .with_max_level(Level::WARN)
-        .with_writer(buffer.clone())
-        .finish();
-    let _guard = set_default(subscriber);
+    let (buffer, _guard) = capture_warnings();
     let record = Arc::new(Record::default());
     let spans = Arc::new(SpanContexts::default());
     let worker = LoggingWorker::start(settings(8, 1)).unwrap();
@@ -486,14 +510,7 @@ async fn stop_accounts_for_events_left_at_the_deadline() {
 
 #[tokio::test(start_paused = true)]
 async fn a_timeout_burst_is_summarized_once() {
-    let buffer = Buffer::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_ansi(false)
-        .without_time()
-        .with_max_level(Level::WARN)
-        .with_writer(buffer.clone())
-        .finish();
-    let _guard = set_default(subscriber);
+    let (buffer, _guard) = capture_warnings();
     let record = Arc::new(Record::default());
     let spans = Arc::new(SpanContexts::default());
     let settings = timed_settings(
@@ -503,36 +520,65 @@ async fn a_timeout_burst_is_summarized_once() {
         Duration::from_millis(50),
     );
     let worker = LoggingWorker::start(settings).unwrap();
-    let _first = worker.enqueue(callback(&record, "first", Outcome::Hang, &spans));
-    let _second = worker.enqueue(callback(&record, "second", Outcome::Hang, &spans));
-    let _third = worker.enqueue(callback(&record, "third", Outcome::Hang, &spans));
-    let _fourth = worker.enqueue(callback(&record, "fourth", Outcome::Hang, &spans));
-    let _fifth = worker.enqueue(callback(&record, "fifth", Outcome::Hang, &spans));
+    enqueue_hangs(
+        &worker,
+        &record,
+        &spans,
+        &["first", "second", "third", "fourth", "fifth"],
+    );
     let flush = worker.flush().await;
     assert_eq!(flush.timed_out, 5);
     sleep(Duration::from_millis(20)).await;
     let contents = buffer.contents();
-    assert_eq!(
-        contents
-            .matches("timed out and released their permits")
-            .count(),
-        1
-    );
-    assert!(contents.contains("callbacks=5"));
+    let summaries = summary_lines(&contents);
+    assert_eq!(summaries.len(), 1);
+    assert!(summaries[0].contains("callbacks=5"));
     let shutdown = worker.stop().await;
     assert_eq!(shutdown.timed_out, 5);
 }
 
 #[tokio::test(start_paused = true)]
+async fn timeout_bursts_are_summarized_once_per_window() {
+    let (buffer, _guard) = capture_warnings();
+    let record = Arc::new(Record::default());
+    let spans = Arc::new(SpanContexts::default());
+    let settings = timed_settings(
+        1,
+        Duration::from_millis(10),
+        Duration::from_secs(1),
+        Duration::from_millis(25),
+    );
+    let worker = LoggingWorker::start(settings).unwrap();
+    enqueue_hangs(
+        &worker,
+        &record,
+        &spans,
+        &[
+            "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth",
+        ],
+    );
+    sleep(Duration::from_millis(40)).await;
+    let first_contents = buffer.contents();
+    let first_window = summary_lines(&first_contents);
+    assert_eq!(first_window.len(), 1);
+    assert!(first_window[0].contains("callbacks=3"));
+    assert!(worker.stats().started < 8);
+    let flush = worker.flush().await;
+    assert_eq!(flush.timed_out, 8);
+    sleep(Duration::from_millis(30)).await;
+    let contents = buffer.contents();
+    let summaries = summary_lines(&contents);
+    assert_eq!(summaries.len(), 3);
+    assert!(summaries[0].contains("callbacks=3"));
+    assert!(summaries[1].contains("callbacks=3"));
+    assert!(summaries[2].contains("callbacks=2"));
+    let shutdown = worker.stop().await;
+    assert_eq!(shutdown.timed_out, 8);
+}
+
+#[tokio::test(start_paused = true)]
 async fn stop_emits_an_open_timeout_window_at_the_deadline() {
-    let buffer = Buffer::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_ansi(false)
-        .without_time()
-        .with_max_level(Level::WARN)
-        .with_writer(buffer.clone())
-        .finish();
-    let _guard = set_default(subscriber);
+    let (buffer, _guard) = capture_warnings();
     let record = Arc::new(Record::default());
     let spans = Arc::new(SpanContexts::default());
     let settings = timed_settings(
@@ -550,13 +596,9 @@ async fn stop_emits_an_open_timeout_window_at_the_deadline() {
     assert_eq!(shutdown.timed_out, 1);
     assert_eq!(shutdown.cancelled, 1);
     let contents = buffer.contents();
-    assert_eq!(
-        contents
-            .matches("timed out and released their permits")
-            .count(),
-        1
-    );
-    assert!(contents.contains("callbacks=1"));
+    let summaries = summary_lines(&contents);
+    assert_eq!(summaries.len(), 1);
+    assert!(summaries[0].contains("callbacks=1"));
 }
 
 #[tokio::test]
