@@ -1,0 +1,23 @@
+task: B4417
+deviations:
+  - what: >-
+      Vault secret values in rotation error messages are redacted (replaced with placeholder text),
+      not echoed verbatim. When a value mismatch is detected during rotation verification, the message
+      shows that a mismatch occurred, but does not include the actual expected or retrieved values.
+    why: >-
+      LiteLLM logs and returns error messages that include secret values (lines 611-620, 629-634).
+      betterlite redacts these values in accordance with the secrets rule: secrets must never appear
+      in logs, error responses, or debug output that users might capture or forward. Status remains
+      "error" and the fact of mismatch is communicated; only the values are hidden.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L611-L620
+  - what: A Vault response body over 1 MiB is a failed read, write or rotation step instead of being parsed.
+    why: >-
+      Every outside body has a size limit in betterlite. LiteLLM reads any size. B4416 records the same
+      cap for the decoders it owns; this task applies it to the response bodies its operations handle.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L408-L414
+  - what: A Vault answer outside 2xx is a failed operation, 3xx included.
+    why: >-
+      httpx's raise_for_status raises only for 4xx and 5xx, so LiteLLM would parse the body of a
+      redirect it could not follow. The client follows redirects, so a working Vault setup sees only
+      2xx on success and an error status otherwise.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L412
