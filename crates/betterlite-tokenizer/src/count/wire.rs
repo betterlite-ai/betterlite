@@ -18,6 +18,30 @@ pub enum CustomTokenizerWire {
     HuggingFace { tokenizer_json: String },
 }
 
+// absent takes LiteLLM's default of False and adds the reply tokens; an explicit null is LiteLLM's None and skips them
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(untagged)]
+pub enum ResponseTokens {
+    Flag(bool),
+    Null,
+}
+
+impl Default for ResponseTokens {
+    fn default() -> Self {
+        Self::Flag(false)
+    }
+}
+
+impl ResponseTokens {
+    #[must_use]
+    pub const fn optional(self) -> Option<bool> {
+        match self {
+            Self::Flag(flag) => Some(flag),
+            Self::Null => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct TokenRequestWire {
     #[serde(default)]
@@ -29,7 +53,7 @@ pub struct TokenRequestWire {
     #[serde(default)]
     pub messages: Option<Vec<Message>>,
     #[serde(default)]
-    pub count_response_tokens: bool,
+    pub count_response_tokens: ResponseTokens,
     #[serde(default)]
     pub tools: Option<Vec<Json>>,
     #[serde(default)]
@@ -68,7 +92,7 @@ impl TokenRequestWire {
             custom_tokenizer,
             text: self.text.as_ref(),
             messages: self.messages.as_deref(),
-            count_response_tokens: self.count_response_tokens,
+            count_response_tokens: self.count_response_tokens.optional(),
             tools: self.tools.as_deref(),
             tool_choice: self.tool_choice.as_ref(),
         }

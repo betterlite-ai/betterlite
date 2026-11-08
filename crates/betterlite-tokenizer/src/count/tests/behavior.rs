@@ -52,16 +52,16 @@ enum Expected {
     Expected::Tokens(6)
 )]
 #[case::text_empty_model_falls_back_to_cl100k(
-    r#"{"text":"hello world"}"#,
+    "{\"text\":\"hello world \u{4e16}\u{754c}\"}",
     4_000_000,
     1024,
-    Expected::Tokens(2)
+    Expected::Tokens(6)
 )]
-#[case::text_p50k_model(
-    r#"{"model":"text-davinci-003","text":"hello world"}"#,
+#[case::text_completion_model_falls_back_to_cl100k(
+    "{\"model\":\"text-davinci-003\",\"text\":\"hello world \u{4e16}\u{754c}\"}",
     4_000_000,
     1024,
-    Expected::Tokens(2)
+    Expected::Tokens(6)
 )]
 #[case::text_anthropic_model_counts_directly(
     "{\"model\":\"claude-haiku-4-5\",\"text\":\"hello world \u{4e16}\u{754c}\"}",
@@ -166,6 +166,18 @@ enum Expected {
     Expected::Tokens(18)
 )]
 #[case::sampled_long_text(r#"{"model":"gpt-3.5-turbo","text":"hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world "}"#, 32, 1024, Expected::Tokens(71))]
+#[case::sampled_with_a_single_sample(
+    r#"{"model":"gpt-3.5-turbo","text":"hello world hello world"}"#,
+    1,
+    1024,
+    Expected::Tokens(23)
+)]
+#[case::sampled_below_the_sample_count(
+    r#"{"model":"gpt-3.5-turbo","text":"hello world hello world"}"#,
+    8,
+    1024,
+    Expected::Tokens(23)
+)]
 #[case::exact_at_threshold(
     "{\"model\":\"gpt-3.5-turbo\",\"text\":\"H\u{e9}llo, \u{4e16}\u{754c}! \u{1f44b} the\"}",
     16,
@@ -213,6 +225,7 @@ enum Expected {
 #[case::messages_name_on_turbo_0301(r#"{"model":"gpt-3.5-turbo-0301","messages":[{"role":"user","content":"hello world","name":"bob"}]}"#, 4_000_000, 1024, Expected::Tokens(11))]
 #[case::messages_two_named_messages(r#"{"model":"gpt-3.5-turbo-0301","messages":[{"role":"user","content":"hi","name":"bob"},{"role":"user","content":"hi","name":"ann"}]}"#, 4_000_000, 1024, Expected::Tokens(17))]
 #[case::messages_response_count_skips_the_extra(r#"{"model":"gpt-3.5-turbo","messages":[{"role":"user","content":"hello world"}],"count_response_tokens":true}"#, 4_000_000, 1024, Expected::Tokens(6))]
+#[case::messages_response_count_null_skips_the_extra(r#"{"model":"gpt-3.5-turbo","messages":[{"role":"user","content":"hello world"}],"count_response_tokens":null}"#, 4_000_000, 1024, Expected::Tokens(6))]
 #[case::messages_tool_calls(r#"{"model":"gpt-3.5-turbo","messages":[{"role":"assistant","tool_calls":[{"id":"1","type":"function","function":{"name":"f","arguments":"{\"x\": 1}"}}]}]}"#, 4_000_000, 1024, Expected::Tokens(13))]
 #[case::messages_function_call(r#"{"model":"gpt-3.5-turbo","messages":[{"role":"assistant","function_call":{"name":"f","arguments":"{\"y\": 2}"}}]}"#, 4_000_000, 1024, Expected::Tokens(13))]
 #[case::messages_tool_call_without_function_fails(r#"{"model":"gpt-3.5-turbo","messages":[{"role":"assistant","tool_calls":[{"id":"1","type":"function"}]}]}"#, 4_000_000, 1024, Expected::Fails)]

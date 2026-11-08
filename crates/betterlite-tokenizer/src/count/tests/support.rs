@@ -20,7 +20,7 @@ use tokio::time::Instant;
 use crate::count::Counter;
 use crate::count::request::TextInput;
 use crate::count::settings::Settings;
-use crate::count::wire::{CustomTokenizerWire, TokenRequestWire};
+use crate::count::wire::{CustomTokenizerWire, ResponseTokens, TokenRequestWire};
 use crate::engine::Engine;
 use crate::engine::error::EngineError;
 use crate::engine::fetch::TiktokenFetcher;
@@ -126,7 +126,7 @@ pub(crate) async fn count_with_tokenizer(
         custom_tokenizer: Some(tokenizer),
         text: Some(TextInput::One(text.to_owned())),
         messages: None,
-        count_response_tokens: false,
+        count_response_tokens: ResponseTokens::default(),
         tools: None,
         tool_choice: None,
     };
@@ -141,39 +141,39 @@ async fn count_wire(counter: &Counter, wire: &TokenRequestWire) -> Result<usize,
         .map_err(|error| error.to_string())
 }
 
-fn parts(
-    settings: Settings,
-) -> (
-    Arc<TiktokenFetcher>,
-    Arc<CountingService>,
-    Arc<ModelCatalog>,
-) {
+fn parts(settings: Settings) -> (Arc<TiktokenFetcher>, Arc<CountingService>) {
     let service = service(settings);
     let fetcher = Arc::new(TiktokenFetcher::new(client(), None, Arc::clone(&service)));
-    (fetcher, service, catalog())
+    (fetcher, service)
 }
 
-pub(crate) fn selector(hub: &HubSettings, settings: Settings) -> Selector {
-    let (fetcher, service, catalog) = parts(settings);
-    let downloader = Arc::new(HubDownloader::new(
+fn downloader(hub: &HubSettings) -> Arc<HubDownloader> {
+    Arc::new(HubDownloader::new(
         Arc::new(hub.clone()),
         resolver(hub),
         system_clock(),
-    ));
-    Selector::new(fetcher, downloader, catalog, service, false)
+    ))
+}
+
+pub(crate) fn selector(hub: &HubSettings, settings: Settings) -> Selector {
+    let (fetcher, service) = parts(settings);
+    Selector::new(fetcher, downloader(hub), catalog(), service, false)
 }
 
 pub(crate) fn counter(settings: Settings, directory: &Path) -> Counter {
+    counter_with_catalog(settings, directory, catalog())
+}
+
+pub(crate) fn counter_with_catalog(
+    settings: Settings,
+    directory: &Path,
+    catalog: Arc<ModelCatalog>,
+) -> Counter {
     let hub = hub_settings("http://127.0.0.1:1", directory);
-    let downloader = Arc::new(HubDownloader::new(
-        Arc::new(hub.clone()),
-        resolver(&hub),
-        system_clock(),
-    ));
-    let (fetcher, service, catalog) = parts(settings);
+    let (fetcher, service) = parts(settings);
     let selector = Arc::new(Selector::new(
         Arc::clone(&fetcher),
-        downloader,
+        downloader(&hub),
         Arc::clone(&catalog),
         Arc::clone(&service),
         false,

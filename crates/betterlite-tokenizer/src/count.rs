@@ -98,7 +98,7 @@ impl Counter {
         };
         let params = messages::message_params(request.model, &self.catalog);
         let mut total = messages::count_messages(&texter, params, messages).await?;
-        if !request.count_response_tokens {
+        if request.count_response_tokens == Some(false) {
             let includes_system = messages.iter().any(|message| message.role == "system");
             let extra =
                 messages::count_extra(&texter, request.tools, request.tool_choice, includes_system)

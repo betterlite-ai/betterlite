@@ -72,6 +72,17 @@ def _tools(input_value: dict[str, Json]) -> list[ChatCompletionToolParam] | None
     return cast("list[ChatCompletionToolParam]", value)
 
 
+def _response_tokens(input_value: dict[str, Json]) -> bool | None:
+    if "count_response_tokens" not in input_value:
+        return False
+    value = input_value["count_response_tokens"]
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise ValueError("count_response_tokens must be a boolean or null")
+    return value
+
+
 def _tool_choice(input_value: dict[str, Json]) -> ChatCompletionNamedToolChoiceParam | None:
     value = input_value.get("tool_choice")
     if value is None:
@@ -115,7 +126,7 @@ def run(input_value: dict[str, Json]) -> Json:
         custom_tokenizer=custom_tokenizer,
         text=_optional_text(input_value),
         messages=_messages(input_value),
-        count_response_tokens=input_value.get("count_response_tokens") is True,
+        count_response_tokens=_response_tokens(input_value),
         tools=_tools(input_value),
         tool_choice=_tool_choice(input_value),
     )

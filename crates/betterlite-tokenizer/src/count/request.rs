@@ -124,7 +124,7 @@ pub struct TokenRequest<'request> {
     pub custom_tokenizer: Option<&'request SelectedTokenizer>,
     pub text: Option<&'request TextInput>,
     pub messages: Option<&'request [Message]>,
-    pub count_response_tokens: bool,
+    pub count_response_tokens: Option<bool>,
     pub tools: Option<&'request [Json]>,
     pub tool_choice: Option<&'request ToolChoice>,
 }
