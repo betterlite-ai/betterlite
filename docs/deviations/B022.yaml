@@ -6,3 +6,6 @@ deviations:
   - what: A max_in_flight_requests_per_worker or max_queued_requests_per_worker above the platform's addressable range disables admission with a warning, where LiteLLM stores any Python int.
     why: the worker slots come from a tokio semaphore with a fixed maximum permit count and a usize queue bound, so a larger configured limit cannot be represented; the pinned fallback of disabling admission keeps the gateway serving.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L86
+  - what: An unquoted exponent number such as 1e3 or 1.0e3 on max_in_flight_requests_per_worker or max_queued_requests_per_worker is read as a number (1000), where LiteLLM disables admission.
+    why: the YAML parser resolves these to floats, but PyYAML loads them as strings and pydantic's int rejects the string, so LiteLLM silently runs with no limit. No working setup can rely on a limit that is never applied. The config test plain_exponent pins the betterlite value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L266

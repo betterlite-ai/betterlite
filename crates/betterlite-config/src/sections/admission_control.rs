@@ -25,18 +25,22 @@ struct RawGeneral {
     max_in_flight: Option<RawSetting>,
     #[serde(rename = "max_queued_requests_per_worker")]
     max_queued: Option<RawSetting>,
-    #[serde(rename = "admission_queue_timeout_seconds")]
-    queue_timeout: Option<RawSetting>,
+    // an explicit null reaches LiteLLM's float adapter as None and fails, unlike an absent key
+    #[serde(rename = "admission_queue_timeout_seconds", default)]
+    queue_timeout: RawSetting,
 }
 
 // LiteLLM's _hashable turns every other JSON shape into a repr, so a list or map reaches the same failed check.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(untagged)]
 enum RawSetting {
     Integer(i64),
     Float(f64),
     Text(String),
     Other(IgnoredAny),
+    #[default]
+    #[serde(skip_deserializing)]
+    Absent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -70,14 +74,14 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let general = self.general_settings;
-        let max_in_flight = scalar(general.max_in_flight, lookup);
+        let max_in_flight = scalar(general.max_in_flight.unwrap_or_default(), lookup);
         if matches!(max_in_flight, Scalar::Unset | Scalar::EnvironmentUnset) {
             return Ok(Settings::default());
         }
         let Some(max_in_flight_requests) = positive_integer(&max_in_flight) else {
             return Ok(invalid(MAX_IN_FLIGHT));
         };
-        let configured_queue = scalar(general.max_queued, lookup);
+        let configured_queue = scalar(general.max_queued.unwrap_or_default(), lookup);
         let Some(max_queued_requests) = max_queued(&configured_queue, max_in_flight_requests)
         else {
             return Ok(invalid(MAX_QUEUED));
@@ -120,14 +124,12 @@ fn queue_timeout(configured: &Scalar) -> Option<Duration> {
     }
 }
 
-fn scalar(raw: Option<RawSetting>, lookup: &dyn EnvironmentLookup) -> Scalar {
-    let Some(configured) = raw else {
-        return Scalar::Unset;
-    };
-    match configured {
+fn scalar(raw: RawSetting, lookup: &dyn EnvironmentLookup) -> Scalar {
+    match raw {
         RawSetting::Integer(number) => Scalar::Integer(number),
         RawSetting::Float(number) => Scalar::Float(number),
         RawSetting::Other(_) => Scalar::Invalid,
+        RawSetting::Absent => Scalar::Unset,
         RawSetting::Text(text) => {
             let Some(variable) = text.strip_prefix("os.environ/").map(str::to_owned) else {
                 return Scalar::Text(text);
@@ -135,15 +137,7 @@ fn scalar(raw: Option<RawSetting>, lookup: &dyn EnvironmentLookup) -> Scalar {
             let Some(resolved) = lookup.lookup(&variable) else {
                 return Scalar::EnvironmentUnset;
             };
-            let trimmed = resolved.trim();
-            if trimmed.is_empty() {
-                return Scalar::Unset;
-            }
-            match betterlite_env::number::<f64>(&variable, trimmed) {
-                Ok(Some(number)) => Scalar::Float(number),
-                Ok(None) => Scalar::Unset,
-                Err(_) => Scalar::Invalid,
-            }
+            Scalar::Text(resolved)
         }
     }
 }

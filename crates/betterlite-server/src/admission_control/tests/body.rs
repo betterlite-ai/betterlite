@@ -2,7 +2,7 @@ use std::io::Error as IoError;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use axum::body::Bytes;
+use axum::body::{Body, Bytes};
 use futures_util::StreamExt as _;
 use futures_util::stream;
 
@@ -20,10 +20,11 @@ impl Drop for Guard {
 async fn guarded_body_releases_at_the_final_frame() {
     let released = Arc::new(AtomicBool::new(false));
     let source = stream::iter([Ok::<Bytes, IoError>(Bytes::from_static(b"last"))]);
-    let mut body = GuardedBody {
-        inner: source,
+    let mut body = Body::new(GuardedBody {
+        inner: Body::from_stream(source),
         guard: Some(Guard(Arc::clone(&released))),
-    };
+    })
+    .into_data_stream();
     assert_eq!(
         body.next().await.unwrap().unwrap(),
         Bytes::from_static(b"last")
@@ -41,10 +42,11 @@ async fn guarded_body_dropped_mid_stream_releases_the_guard() {
         Ok::<Bytes, IoError>(Bytes::from_static(b"first")),
         Ok::<Bytes, IoError>(Bytes::from_static(b"last")),
     ]);
-    let mut body = GuardedBody {
-        inner: source,
+    let mut body = Body::new(GuardedBody {
+        inner: Body::from_stream(source),
         guard: Some(Guard(Arc::clone(&released))),
-    };
+    })
+    .into_data_stream();
     assert_eq!(
         body.next().await.unwrap().unwrap(),
         Bytes::from_static(b"first")

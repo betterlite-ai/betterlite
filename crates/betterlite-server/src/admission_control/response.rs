@@ -1,6 +1,6 @@
-use axum::body::Body;
-use axum::http::{HeaderValue, StatusCode, header};
-use axum::response::Response;
+use axum::Json;
+use axum::http::{StatusCode, header};
+use axum::response::{IntoResponse as _, Response};
 use serde::Serialize;
 
 use super::AdmissionStats;
@@ -29,14 +29,10 @@ pub(super) fn overloaded(stats: &AdmissionStats) -> Response {
             code: "503",
         },
     };
-    let mut response = Response::new(Body::from(serde_json::to_vec(&body).unwrap_or_default()));
-    *response.status_mut() = StatusCode::SERVICE_UNAVAILABLE;
-    response
-        .headers_mut()
-        .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
-    response.headers_mut().insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("application/json"),
-    );
-    response
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        [(header::RETRY_AFTER, "1")],
+        Json(body),
+    )
+        .into_response()
 }

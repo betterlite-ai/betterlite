@@ -4,20 +4,25 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::Duration;
 
+use axum::Router;
 use axum::body::Body;
-use axum::http::{Request, StatusCode};
+use axum::http::{Request, StatusCode, header};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::admission_control::{Limits, Settings};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
+use tokio::time::timeout;
 use tower::ServiceExt as _;
 
-use super::harness::{Behavior, Requests, await_queued, await_started, gates, harness};
+use super::harness::{Behavior, Requests, WAIT, await_queued, await_started, gates, harness};
 use crate::admission_control::AdmissionControl;
 use crate::routing::admission_control::hot_routes_first;
-use crate::server::application;
 use crate::server::chat_setup::chat_executor;
+use crate::server::{application, configure_connection_builder, serve_connection};
 
 const RESERVATION_THREADS: usize = 8;
 const RESERVATION_ROUNDS: u32 = 200;
@@ -32,6 +37,8 @@ enum Boundary {
     HotRoutesFirst,
     InstallWiresTheStack,
     UpgradeBypassesSaturation,
+    UpgradeWithoutConnectionIsHttp,
+    ContentLengthSurvivesTheStack,
 }
 
 #[rstest]
@@ -43,6 +50,8 @@ enum Boundary {
 #[case::hot_routes_first(Boundary::HotRoutesFirst)]
 #[case::install_wires_the_stack(Boundary::InstallWiresTheStack)]
 #[case::upgrade_bypasses_saturation(Boundary::UpgradeBypassesSaturation)]
+#[case::upgrade_without_connection_is_http(Boundary::UpgradeWithoutConnectionIsHttp)]
+#[case::content_length_survives_the_stack(Boundary::ContentLengthSurvivesTheStack)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn admission_control_boundaries(#[case] boundary: Boundary) {
     match boundary {
@@ -56,6 +65,8 @@ async fn admission_control_boundaries(#[case] boundary: Boundary) {
         Boundary::HotRoutesFirst => hot_routes_first_audit(),
         Boundary::InstallWiresTheStack => install_wires_the_stack().await,
         Boundary::UpgradeBypassesSaturation => upgrade_bypasses_saturation().await,
+        Boundary::UpgradeWithoutConnectionIsHttp => upgrade_without_connection_is_http().await,
+        Boundary::ContentLengthSurvivesTheStack => content_length_survives_the_stack().await,
     }
 }
 
@@ -217,16 +228,65 @@ fn hot_routes_first_audit() {
     );
 }
 
-async fn install_wires_the_stack() {
-    let source = "general_settings:\n  max_in_flight_requests_per_worker: 1\n  max_queued_requests_per_worker: 0";
+const SATURATED: &str = "general_settings:\n  max_in_flight_requests_per_worker: 1\n  max_queued_requests_per_worker: 0";
+
+fn server_application() -> Router {
     let environment = BTreeMap::new();
     let config = ConfigLoader {
         lookup: environment.clone(),
     }
-    .load(source)
+    .load(SATURATED)
     .unwrap();
     let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(1)).unwrap();
-    let router = application(&config, executor, Arc::new(AtomicBool::new(false))).unwrap();
+    application(&config, executor, Arc::new(AtomicBool::new(false))).unwrap()
+}
+
+async fn content_length_survives_the_stack() {
+    for path in ["/health/liveliness", "/models"] {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let router = server_application();
+        let mut serving = JoinSet::new();
+        serving.spawn(async move {
+            let (stream, remote) = listener.accept().await.unwrap();
+            serve_connection(configure_connection_builder(), router, stream, remote).await;
+        });
+        let mut client = TcpStream::connect(address).await.unwrap();
+        let request =
+            format!("GET {path} HTTP/1.1\r\nhost: localhost\r\nconnection: close\r\n\r\n");
+        client.write_all(request.as_bytes()).await.unwrap();
+        let mut raw = String::new();
+        timeout(WAIT, client.read_to_string(&mut raw))
+            .await
+            .unwrap()
+            .unwrap();
+        serving.join_next().await.unwrap().unwrap();
+        let head = raw.split("\r\n\r\n").next().unwrap().to_ascii_lowercase();
+        assert!(head.contains("\r\ncontent-length: "), "{path}: {head}");
+        assert!(!head.contains("transfer-encoding"), "{path}: {head}");
+    }
+}
+
+async fn upgrade_without_connection_is_http() {
+    let gates = gates(&[("/a", Behavior::Hold), ("/ws", Behavior::Immediate)]);
+    let harness = harness(SATURATED, "", gates);
+    let mut requests = Requests::default();
+    requests.start(&harness.router, "/a");
+    await_started(&harness.gates, "/a").await;
+    let request = Request::builder()
+        .uri("/ws")
+        .header(header::UPGRADE, "websocket")
+        .body(Body::empty())
+        .unwrap();
+    let response = harness.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(harness.stack.admission.stats().rejected_total, 1);
+    harness.gates.get("/a").unwrap().release.notify_one();
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
+}
+
+async fn install_wires_the_stack() {
+    let router = server_application();
     let get = |path: &str| Request::builder().uri(path).body(Body::empty()).unwrap();
     let held = router.clone().oneshot(get("/models")).await.unwrap();
     let saturated = router.clone().oneshot(get("/models")).await.unwrap();

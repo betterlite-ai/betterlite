@@ -40,8 +40,8 @@ pub(super) async fn track_in_flight(
     let (parts, body) = response.into_parts();
     Response::from_parts(
         parts,
-        Body::from_stream(GuardedBody {
-            inner: body.into_data_stream(),
+        Body::new(GuardedBody {
+            inner: body,
             guard: Some(guard),
         }),
     )

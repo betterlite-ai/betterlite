@@ -144,7 +144,7 @@ async fn accept_connection(listener: &TcpListener) -> Option<(TcpStream, SocketA
         Err(_) => None,
     }
 }
-fn configure_connection_builder() -> Builder<TokioExecutor> {
+pub(crate) fn configure_connection_builder() -> Builder<TokioExecutor> {
     let mut builder = Builder::new(TokioExecutor::new()).http1_only();
     let mut http1 = builder.http1();
     http1.timer(TokioTimer::new());
@@ -152,7 +152,7 @@ fn configure_connection_builder() -> Builder<TokioExecutor> {
     http1.keep_alive(false);
     builder
 }
-async fn serve_connection(
+pub(crate) async fn serve_connection(
     builder: Builder<TokioExecutor>,
     application: Router,
     stream: TcpStream,

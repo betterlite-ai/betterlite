@@ -2492,6 +2492,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.3",
  "hex",
+ "http-body 1.1.0",
  "hyper-util",
  "icu_properties",
  "indexmap 2.14.2",

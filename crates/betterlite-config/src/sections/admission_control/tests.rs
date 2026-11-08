@@ -77,6 +77,18 @@ fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
     "general_settings:\n  max_in_flight_requests_per_worker: 2\n  admission_queue_timeout_seconds: {seconds: 1}",
     None
 )]
+#[case::null_timeout(
+    "general_settings:\n  max_in_flight_requests_per_worker: 2\n  admission_queue_timeout_seconds: null",
+    None
+)]
+#[case::plain_exponent(
+    "general_settings:\n  max_in_flight_requests_per_worker: 1e3",
+    Some((1000, 1000, 1.0_f64))
+)]
+#[case::plain_exponent_fraction(
+    "general_settings:\n  max_in_flight_requests_per_worker: 1.0e3",
+    Some((1000, 1000, 1.0_f64))
+)]
 #[case::exponent_text(
     "general_settings:\n  max_in_flight_requests_per_worker: \"1e3\"",
     None
@@ -131,11 +143,6 @@ fn assert_admission(
     &[("IN_FLIGHT", "2")],
     Some((2, 2, 1.0_f64))
 )]
-#[case::empty_environment_is_unset(
-    "general_settings:\n  max_in_flight_requests_per_worker: os.environ/IN_FLIGHT",
-    &[("IN_FLIGHT", "")],
-    None
-)]
 #[case::invalid_environment(
     "general_settings:\n  max_in_flight_requests_per_worker: os.environ/IN_FLIGHT",
     &[("IN_FLIGHT", "many")],
@@ -152,6 +159,30 @@ fn resolves_environment_references(
     #[case] expected: Option<(usize, usize, f64)>,
 ) {
     assert_admission(source, variables, expected);
+}
+
+const IN_FLIGHT: &str = "general_settings:\n  max_in_flight_requests_per_worker: os.environ/V";
+const QUEUE: &str = "general_settings:\n  max_in_flight_requests_per_worker: 2\n  max_queued_requests_per_worker: os.environ/V";
+const TIMEOUT: &str = "general_settings:\n  max_in_flight_requests_per_worker: 2\n  admission_queue_timeout_seconds: os.environ/V";
+
+#[rstest]
+#[case::exponent(IN_FLIGHT, Some("1e3"), None)]
+#[case::trailing_dot(IN_FLIGHT, Some("4."), None)]
+#[case::underscored(IN_FLIGHT, Some("1_000"), Some((1000, 1000, 1.0_f64)))]
+#[case::empty_in_flight(IN_FLIGHT, Some(""), None)]
+#[case::empty_queue(QUEUE, Some(""), None)]
+#[case::unset_queue_uses_in_flight(QUEUE, None, Some((2, 2, 1.0_f64)))]
+#[case::unset_timeout(TIMEOUT, None, None)]
+#[case::empty_timeout(TIMEOUT, Some(""), None)]
+#[case::underscored_timeout(TIMEOUT, Some("1_000"), Some((2, 2, 1000.0_f64)))]
+#[case::infinite_timeout(TIMEOUT, Some("inf"), Some((2, 2, Duration::MAX.as_secs_f64())))]
+fn environment_values_use_the_text_grammar(
+    #[case] source: &str,
+    #[case] value: Option<&str>,
+    #[case] expected: Option<(usize, usize, f64)>,
+) {
+    let variables: Vec<(&str, &str)> = value.map(|text| ("V", text)).into_iter().collect();
+    assert_admission(source, &variables, expected);
 }
 
 #[test]

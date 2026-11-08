@@ -52,11 +52,13 @@ pub struct AdmissionControl {
     rejected_queue_timeout: AtomicU64,
 }
 
-impl Default for AdmissionControl {
-    fn default() -> Self {
+impl AdmissionControl {
+    fn with_limits(limits: Option<Limits>) -> Self {
         Self {
-            limits: None,
-            semaphore: Arc::new(Semaphore::new(0)),
+            limits,
+            semaphore: Arc::new(Semaphore::new(
+                limits.map_or(0, |set| set.max_in_flight_requests),
+            )),
             admitted: AtomicU64::new(0),
             queued: AtomicU64::new(0),
             rejected_total: AtomicU64::new(0),
@@ -64,30 +66,20 @@ impl Default for AdmissionControl {
             rejected_queue_timeout: AtomicU64::new(0),
         }
     }
-}
 
-impl AdmissionControl {
     #[must_use]
     pub fn from_settings(settings: &Settings) -> Self {
         let Some(limits) = settings.limits else {
-            return Self::default();
+            return Self::with_limits(None);
         };
         if limits.max_in_flight_requests > Semaphore::MAX_PERMITS {
             tracing::warn!(
                 max_in_flight_requests = limits.max_in_flight_requests,
                 "admission control limit exceeds the semaphore maximum; per-worker admission control is disabled"
             );
-            return Self::default();
+            return Self::with_limits(None);
         }
-        Self {
-            limits: Some(limits),
-            semaphore: Arc::new(Semaphore::new(limits.max_in_flight_requests)),
-            admitted: AtomicU64::new(0),
-            queued: AtomicU64::new(0),
-            rejected_total: AtomicU64::new(0),
-            rejected_queue_full: AtomicU64::new(0),
-            rejected_queue_timeout: AtomicU64::new(0),
-        }
+        Self::with_limits(Some(limits))
     }
 
     #[must_use]
@@ -101,7 +93,6 @@ impl AdmissionControl {
         }
     }
 
-    #[must_use]
     fn reserve_queue_slot(&self, max_queued: u64) -> bool {
         self.queued
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |queued| {
@@ -191,11 +182,19 @@ impl AdmissionStack {
     }
 }
 
+// uvicorn builds a websocket scope only when Upgrade is websocket and Connection carries the upgrade token
 fn is_websocket_upgrade(request: &Request<Body>) -> bool {
-    request
-        .headers()
+    let headers = request.headers();
+    let upgrades = headers
         .get(header::UPGRADE)
-        .is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"websocket"))
+        .is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"websocket"));
+    upgrades
+        && headers.get_all(header::CONNECTION).iter().any(|value| {
+            value
+                .as_bytes()
+                .split(|byte| *byte == b',')
+                .any(|token| token.trim_ascii().eq_ignore_ascii_case(b"upgrade"))
+        })
 }
 
 // LiteLLM strips the scope root_path itself, and a scalar SERVER_ROOT_PATH has no middleware to do it here
@@ -238,8 +237,8 @@ async fn admit_request(
     let (parts, body) = response.into_parts();
     Response::from_parts(
         parts,
-        Body::from_stream(GuardedBody {
-            inner: body.into_data_stream(),
+        Body::new(GuardedBody {
+            inner: body,
             guard: Some(slot),
         }),
     )
