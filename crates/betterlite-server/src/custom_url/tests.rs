@@ -6,10 +6,10 @@ use super::{CustomUrls, get_custom_url, join_paths};
 
 #[rstest]
 #[case::empty_base("", "v1/chat", "/v1/chat")]
-#[case::empty_route("https://host", "", "https://host")]
+#[case::empty_route("https://host/", "", "https://host")]
 #[case::both_empty("", "", "/")]
 #[case::slashes_on_both_sides("https://host/", "/v1/chat", "https://host/v1/chat")]
-#[case::tail_already_present("https://host/v1", "v1", "https://host/v1")]
+#[case::tail_already_present("https://host/v1/", "/v1", "https://host/v1")]
 #[case::similar_tail_is_appended("https://host/xv1", "v1", "https://host/xv1/v1")]
 #[case::nested_route(
     "https://host/base",
@@ -66,6 +66,13 @@ fn join_paths_trims_slashes_and_joins(
     "",
     Some("/v1/chat"),
     "https://request.example.com/v1/chat"
+)]
+#[case::no_root_path_without_route_trims_the_base(
+    None,
+    "https://request.example.com/",
+    "",
+    None,
+    "https://request.example.com"
 )]
 #[case::request_base_ends_in_root_path(
     None,
