@@ -1,0 +1,26 @@
+# async_log_failure_event samples with ARGILLA_SAMPLING_RATE, logs verbose_logger.info and never runs the async_dataset_hook loop
+kind: helper
+name: argilla-async-failure-event-logging
+call:
+  b3960:
+    scenarios:
+      - environment: {ARGILLA_API_KEY: key, ARGILLA_SAMPLING_RATE: "0"}
+        transformation_object: {input: messages}
+        random: [0.5, 0.0]
+        hooks: [identity]
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: async_failure
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+          - do: async_failure
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+      - environment: {ARGILLA_API_KEY: key, ARGILLA_SAMPLING_RATE: "0"}
+        transformation_object: {input: messages}
+        random: [0.5]
+        hooks: [identity]
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: async_failure
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+env: {}
+compare: {ignore: []}

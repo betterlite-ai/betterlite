@@ -1,0 +1,11 @@
+task: B3960
+deviations:
+  - what: ARGILLA_BATCH_SIZE overrides the batch size, where LiteLLM reads the variable before CustomBatchLogger.__init__ replaces it with the default.
+    why: A user who sets the variable expects that size, and no working setup relies on the override being discarded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L66-L71
+  - what: A failed async batch keeps its records for the next flush, on a non-2xx answer or a request with no answer, where LiteLLM's async_send_batch logs and lets flush_queue clear the queue.
+    why: Clearing a failed delivery loses the records for good; the sync path still clears after any HTTP response like LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L315-L335
+  - what: The async PUT carries Content-Type application/json, where LiteLLM passes json.dumps bytes as httpx data and sends no content type.
+    why: betterlite's outbound client tags every JSON body, and the Argilla API reads the body as JSON either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/argilla.py#L316-L325
