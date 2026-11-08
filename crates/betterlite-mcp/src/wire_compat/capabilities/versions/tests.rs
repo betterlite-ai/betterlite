@@ -34,7 +34,6 @@ fn a_string_outside_the_registry_is_not_a_revision(#[case] text: &str) {
 #[case::nov_2025(SpecVersion::Nov2025)]
 fn a_handshake_revision_is_completed_on_every_transport(#[case] version: SpecVersion) {
     assert!(version.is_handshake());
-    assert!(!version.is_modern());
     let support = revision_support(version);
     assert!(support.completed);
     assert_eq!(
@@ -49,7 +48,6 @@ fn a_handshake_revision_is_completed_on_every_transport(#[case] version: SpecVer
 #[rstest]
 fn the_modern_revision_is_uncompleted_http_only_and_allows_input_required() {
     let version = SpecVersion::Jul2026;
-    assert!(version.is_modern());
     assert!(!version.is_handshake());
     let support = revision_support(version);
     assert!(!support.completed);

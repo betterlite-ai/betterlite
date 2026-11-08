@@ -73,14 +73,6 @@ impl SpecVersion {
             Self::Jul2026 => false,
         }
     }
-
-    #[must_use]
-    pub const fn is_modern(self) -> bool {
-        match self {
-            Self::Nov2024 | Self::Mar2025 | Self::Jun2025 | Self::Nov2025 => false,
-            Self::Jul2026 => true,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

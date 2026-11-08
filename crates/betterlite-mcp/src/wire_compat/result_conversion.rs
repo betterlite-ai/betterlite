@@ -1,25 +1,14 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Serialize;
 
-use crate::client::tools::result::{CallToolResult, ContentBlock, TextContent, ToolCallResult};
+use crate::client::tools::result::{
+    CallToolResult, ContentBlock, TextContent, ToolCallResult, error_text_result,
+};
 use crate::tools::schemas::McpTool;
 
-use super::tool_outcome::{ToolFailure, ToolOutcome, WireCompat};
+use super::tool_outcome::{ToolOutcome, WireCompat};
 
 pub const INPUT_REQUIRED_UNSUPPORTED: &str = "Error: upstream tool returned an input_required interim result, which this MCP protocol revision cannot carry";
-
-#[must_use]
-pub fn error_text_result(failure: &ToolFailure) -> CallToolResult {
-    CallToolResult {
-        content: vec![ContentBlock::Text(TextContent {
-            text: format!("{}: {}", failure.error_type, failure.message),
-            extra: Object::new(),
-        })],
-        is_error: true,
-        structured_content: None,
-        meta: None,
-    }
-}
 
 #[must_use]
 pub fn to_call_tool_result(outcome: ToolOutcome, compat: WireCompat) -> ToolCallResult {
@@ -54,7 +43,7 @@ pub fn to_call_tool_result(outcome: ToolOutcome, compat: WireCompat) -> ToolCall
             WireCompat::Modern => ToolCallResult::InputRequired(result),
             WireCompat::Legacy => ToolCallResult::Complete(input_required_unsupported()),
         },
-        ToolOutcome::Failure(failure) => ToolCallResult::Complete(error_text_result(&failure)),
+        ToolOutcome::Failure(failure) => error_text_result(&failure.error_type, &failure.message),
     }
 }
 

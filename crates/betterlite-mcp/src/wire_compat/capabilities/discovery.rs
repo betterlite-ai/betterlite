@@ -16,24 +16,18 @@ pub enum CacheScope {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ListChangedCapability {
-    #[serde(
-        rename = "listChanged",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub list_changed: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResourcesCapability {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subscribe: Option<bool>,
-    #[serde(
-        rename = "listChanged",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub list_changed: Option<bool>,
 }
 
@@ -50,28 +44,24 @@ pub struct ServerCapabilities {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DiscoverResult {
-    #[serde(rename = "supportedVersions")]
     pub supported_versions: Vec<String>,
     pub capabilities: ServerCapabilities,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
-    #[serde(rename = "resultType")]
     pub result_type: ResultKind,
-    #[serde(rename = "cacheScope")]
     pub cache_scope: CacheScope,
-    #[serde(rename = "ttlMs")]
     pub ttl_ms: u64,
     #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<Object>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InitializeResult {
-    #[serde(rename = "protocolVersion")]
     pub protocol_version: String,
     pub capabilities: ServerCapabilities,
-    #[serde(rename = "serverInfo")]
     pub server_info: Implementation,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
@@ -166,22 +156,21 @@ fn offered_capabilities(
     if operations.contains(&"resources/list") && operations.contains(&"resources/read") {
         offered.resources = capabilities.resources;
     }
-    offered.extensions = capabilities.extensions.and_then(|extensions| {
-        let kept: BTreeMap<String, Object> = if operations.is_empty() {
-            BTreeMap::new()
-        } else {
+    offered.extensions = capabilities
+        .extensions
+        .map(|extensions| -> BTreeMap<String, Object> {
             extensions
                 .into_iter()
                 .filter(|(key, _)| {
                     let name = key.as_str();
-                    supported_extensions.contains(&name)
+                    !operations.is_empty()
+                        && supported_extensions.contains(&name)
                         && client_extensions.contains(&name)
                         && upstream_extensions.contains(&name)
                 })
                 .collect()
-        };
-        if kept.is_empty() { None } else { Some(kept) }
-    });
+        })
+        .filter(|kept| !kept.is_empty());
     offered
 }
 

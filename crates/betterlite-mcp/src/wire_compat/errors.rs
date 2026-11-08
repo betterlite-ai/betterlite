@@ -45,21 +45,15 @@ impl UpstreamAuthError {
             && let Some(origin) = base_url.filter(|base| !base.is_empty())
         {
             let prefix = origin.trim_end_matches('/');
-            let legacy_path = format!("/{}/mcp", self.server_name);
-            let resource_metadata_url =
-                if request_path.is_some_and(|path| path.starts_with(&legacy_path)) {
-                    format!(
-                        "{prefix}/.well-known/oauth-protected-resource/{}/mcp",
-                        self.server_name
-                    )
+            let name = &self.server_name;
+            let route =
+                if request_path.is_some_and(|path| path.starts_with(&format!("/{name}/mcp"))) {
+                    format!("{name}/mcp")
                 } else {
-                    format!(
-                        "{prefix}/.well-known/oauth-protected-resource/mcp/{}",
-                        self.server_name
-                    )
+                    format!("mcp/{name}")
                 };
             challenge = Some(format!(
-                "Bearer resource_metadata=\"{resource_metadata_url}\""
+                "Bearer resource_metadata=\"{prefix}/.well-known/oauth-protected-resource/{route}\""
             ));
         }
         let detail = if self.status_code == 403 {

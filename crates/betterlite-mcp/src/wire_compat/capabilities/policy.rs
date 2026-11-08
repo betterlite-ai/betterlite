@@ -73,30 +73,29 @@ impl GatewayVersionPolicy {
     ) -> Result<&'request str, VersionRejection> {
         let negotiated = match request {
             VersionRequest::Initialize { params } => {
-                let value = serde_json::to_value(params)
-                    .map_err(|error| VersionRejection::InvalidParams(error.to_string()))?;
-                let parsed = serde_json::from_value::<InitializeParams>(value)
+                let parsed = serde_json::to_value(params)
+                    .and_then(serde_json::from_value::<InitializeParams>)
                     .map_err(|error| VersionRejection::InvalidParams(error.to_string()))?;
                 SpecVersion::from_wire(&parsed.protocol_version)
                     .filter(|version| version.is_handshake())
                     .map_or(LATEST_HANDSHAKE_VERSION, SpecVersion::as_str)
             }
-            VersionRequest::Session {
-                protocol_version: Some(version),
-            } => version,
-            VersionRequest::Session {
-                protocol_version: None,
-            } => return Err(VersionRejection::Unsupported(self.rejection())),
+            VersionRequest::Session { protocol_version } => protocol_version.unwrap_or_default(),
         };
-        if self
-            .versions
+        self.versions
             .iter()
             .any(|version| version.as_str() == negotiated)
-        {
-            Ok(negotiated)
-        } else {
-            Err(VersionRejection::Unsupported(self.rejection()))
-        }
+            .then_some(negotiated)
+            .ok_or_else(|| {
+                VersionRejection::Unsupported(UnsupportedVersion {
+                    code: UNSUPPORTED_PROTOCOL_VERSION,
+                    supported: self
+                        .versions
+                        .iter()
+                        .map(|version| version.as_str().to_owned())
+                        .collect(),
+                })
+            })
     }
 
     #[must_use]
@@ -117,17 +116,6 @@ impl GatewayVersionPolicy {
             capabilities: discovery.capabilities,
             server_info: initialized.server_info,
             instructions: initialized.instructions,
-        }
-    }
-
-    fn rejection(&self) -> UnsupportedVersion {
-        UnsupportedVersion {
-            code: UNSUPPORTED_PROTOCOL_VERSION,
-            supported: self
-                .versions
-                .iter()
-                .map(|version| version.as_str().to_owned())
-                .collect(),
         }
     }
 }

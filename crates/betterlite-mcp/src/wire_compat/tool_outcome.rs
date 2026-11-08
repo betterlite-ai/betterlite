@@ -1,10 +1,12 @@
 use betterlite_prompts::arguments::json::Json;
+use serde::{Deserialize, Serialize};
 
 use crate::client::tools::result::{CallToolResult, InputRequiredResult};
 
 use super::capabilities::versions::SpecVersion;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum WireCompat {
     Legacy,
     Modern,
@@ -12,7 +14,7 @@ pub enum WireCompat {
 
 #[must_use]
 pub fn wire_compat_for(protocol_version: &str) -> WireCompat {
-    if SpecVersion::from_wire(protocol_version).is_some_and(SpecVersion::is_modern) {
+    if SpecVersion::from_wire(protocol_version).is_some_and(|version| !version.is_handshake()) {
         WireCompat::Modern
     } else {
         WireCompat::Legacy

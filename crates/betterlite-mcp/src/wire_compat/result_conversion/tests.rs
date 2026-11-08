@@ -5,8 +5,7 @@ use rstest::rstest;
 use serde_json::Number;
 
 use super::{
-    INPUT_REQUIRED_UNSUPPORTED, complete_call_tool_result, error_text_result, to_call_tool_result,
-    to_gateway_tool,
+    INPUT_REQUIRED_UNSUPPORTED, complete_call_tool_result, to_call_tool_result, to_gateway_tool,
 };
 use crate::client::tools::result::{
     CallToolResult, ContentBlock, InputRequiredResult, TextContent, ToolCallResult,
@@ -172,13 +171,12 @@ fn an_error_outcome_becomes_a_text_block_naming_the_exception() {
         error_type: "ValueError".to_owned(),
         message: "bad input".to_owned(),
     };
-    let converted = to_call_tool_result(ToolOutcome::Failure(failure.clone()), WireCompat::Modern);
+    let converted = to_call_tool_result(ToolOutcome::Failure(failure), WireCompat::Modern);
     let ToolCallResult::Complete(result) = converted else {
         panic!("an error outcome converts to a complete result");
     };
     assert!(result.is_error);
     assert_eq!(result.content, [text_block("ValueError: bad input")]);
-    assert_eq!(result, error_text_result(&failure));
 }
 
 #[rstest]

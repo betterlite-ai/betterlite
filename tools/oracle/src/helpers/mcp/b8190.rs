@@ -1,5 +1,6 @@
 use betterlite_mcp::wire_compat::errors::{OpenApiUpstreamError, ToolResultError};
 use betterlite_mcp::wire_compat::result_conversion::to_gateway_tool;
+use betterlite_mcp::wire_compat::tool_outcome::wire_compat_for;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -24,7 +25,7 @@ impl Helper for Op {
             Input::Discovery(fields) => Ok(capabilities::run_discovery(fields)),
             Input::VersionPolicy(fields) => capabilities::run_policy(fields),
             Input::AdvertisedVersions(fields) => capabilities::run_advertised(fields),
-            Input::WireCompatFor(fields) => Ok(conversion::run_wire_compat(fields)),
+            Input::WireCompatFor(fields) => Ok(json!(wire_compat_for(&fields.protocol_version))),
             Input::ParseHttpBody(fields) => conversion::run_parse_body(fields),
             Input::ToCallToolResult(fields) => {
                 Ok(conversion::run_convert(fields, &Conversion::Wire))
