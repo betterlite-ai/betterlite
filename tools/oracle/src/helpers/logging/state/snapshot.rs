@@ -23,6 +23,8 @@ pub(super) fn snapshot(state: &LoggingState, context: &CorrelationContext) -> Va
         "request_logging": state.request_logging,
         "completion_start_time_micros": state.completion_start_time.map(|time| time.timestamp_micros()),
         "response_timing_metrics": &state.response_timing_metrics,
+        "message_copy_duration_ms": state.message_copy_duration_ms,
+        "callback_duration_ms": state.callback_duration_ms,
         "model_call_details": &state.model_call_details,
         "callback_dynamic_params": &state.callback_dynamic_params,
         "correlation": {

@@ -7,7 +7,7 @@ use betterlite_logging::logging_state::correlation::{
 };
 use betterlite_logging::logging_state::events::{
     LoggingEvent, claim_async_success_log, has_run_logging, is_sync_litellm_request,
-    set_response_timing_metrics, update_completion_start_time,
+    set_response_timing_metrics, should_run_logging, update_completion_start_time,
 };
 use betterlite_logging::logging_state::updates::{
     CallUpdate, update_environment_variables, update_from_kwargs, update_messages,
@@ -18,6 +18,7 @@ use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
+use std::time::Duration;
 
 use crate::compare::helper::HelperError;
 use crate::helpers::{Helper, HelperResult};
@@ -40,6 +41,8 @@ struct Instance {
     init: LoggingInit,
     #[serde(default)]
     correlation: CorrelationInput,
+    #[serde(default)]
+    clock_step_millis: u64,
     #[serde(default)]
     operations: Vec<Step>,
 }
@@ -130,6 +133,7 @@ fn run_instance(instance: &Instance, redactor: &Redactor) -> Result<Value, Box<H
         },
         redactor,
         || instance.correlation.generated_trace_id.clone(),
+        stepping_clock(instance.clock_step_millis),
     )
     .map_err(|error| failure("LoggingStateError", error.to_string()))?;
     let initial = snapshot::snapshot(&state, &context);
@@ -138,6 +142,16 @@ fn run_instance(instance: &Instance, redactor: &Redactor) -> Result<Value, Box<H
         results.push(apply_operation(&mut state, &mut context, step)?);
     }
     Ok(serde_json::json!({ "init": initial, "results": results }))
+}
+
+fn stepping_clock(step_millis: u64) -> impl FnMut() -> Duration {
+    let step = Duration::from_millis(step_millis);
+    let mut now = Duration::ZERO;
+    move || {
+        let reading = now;
+        now = now.saturating_add(step);
+        reading
+    }
 }
 
 fn apply_operation(
@@ -162,9 +176,10 @@ fn apply_operation(
         Operation::IsSyncLitellmRequest => Ok(serde_json::json!(is_sync_litellm_request(
             &step.litellm_params
         ))),
-        Operation::ShouldRunLogging => Ok(serde_json::json!(
-            state.model_call_details.get(required_event(step)?.key()) != Some(&Json::Bool(true))
-        )),
+        Operation::ShouldRunLogging => Ok(serde_json::json!(should_run_logging(
+            state,
+            required_event(step)?
+        ))),
         Operation::HasRunLogging => {
             has_run_logging(state, required_event(step)?);
             Ok(Value::Null)

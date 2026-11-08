@@ -109,7 +109,7 @@ fn user_cleared_outcome() -> String {
         .expect("the fixture update succeeds");
     update_environment_variables(&mut state, &params(&[]), empty_update())
         .expect("the fixture update succeeds");
-    encoded(&summary(&state, &["user"]))
+    summary(&state, &["user"])
 }
 
 fn provider_wrong_type_outcome() -> String {
@@ -246,10 +246,10 @@ fn outcome(scenario: &Scenario) -> String {
 
 #[rstest]
 #[case::environment_update_merges_and_overrides(Scenario::Environment, r#"gpt-4.1/"u1"/true/{"include_usage":true}/true/"openai"/{"api_base":"http://proxy","litellm_request_debug":true,"stream_options":{"include_usage":true},"input_cost_per_token":0.5}/{"model":"gpt-4.1","messages":[{"role":"user","content":"hi"}],"optional_params":{"temperature":0.2,"custom_llm_provider":"azure"},"litellm_params":{"api_base":"http://proxy","litellm_request_debug":true,"stream_options":{"include_usage":true},"input_cost_per_token":0.5},"start_time":"2026-01-01T00:00:00+00:00","stream":false,"user":"u1","call_type":"completion","custom_llm_provider":"openai","stream_options":{"include_usage":true},"standard_callback_dynamic_params":{"langfuse_host":"h"}}"#)]
-#[case::a_missing_model_keeps_the_previous_one(Scenario::ModelKept, r#"gpt-4o/null/false/null/false/null/{}/{"model":"gpt-4o","messages":null,"optional_params":{},"litellm_params":{},"start_time":"2026-01-01T00:00:00+00:00","stream":false,"user":null,"call_type":"completion","custom_llm_provider":"<missing>","stream_options":"<missing>","standard_callback_dynamic_params":{"langfuse_host":"h"}}"#)]
+#[case::a_missing_model_keeps_the_previous_one(Scenario::ModelKept, r#"gpt-4o/null/false/null/false/null/{}/{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"optional_params":{},"litellm_params":{},"start_time":"2026-01-01T00:00:00+00:00","stream":false,"user":null,"call_type":"completion","custom_llm_provider":"<missing>","stream_options":"<missing>","standard_callback_dynamic_params":{"langfuse_host":"h"}}"#)]
 #[case::a_missing_user_clears_the_field(Scenario::UserCleared, r#"{"user":null}"#)]
-#[case::a_null_pricing_key_is_not_custom_pricing(Scenario::PricingNull, r#"gpt-4o/null/false/null/false/null/{"input_cost_per_token":null}/{"model":"gpt-4o","messages":null,"optional_params":{},"litellm_params":{"input_cost_per_token":null},"start_time":"2026-01-01T00:00:00+00:00","stream":false,"user":null,"call_type":"completion","custom_llm_provider":"<missing>","stream_options":"<missing>","standard_callback_dynamic_params":{"langfuse_host":"h"}}"#)]
-#[case::a_missing_pricing_key_is_not_custom_pricing(Scenario::PricingAbsent, r#"gpt-4o/null/false/null/false/null/{"api_base":"http://proxy"}/{"model":"gpt-4o","messages":null,"optional_params":{},"litellm_params":{"api_base":"http://proxy"},"start_time":"2026-01-01T00:00:00+00:00","stream":false,"user":null,"call_type":"completion","custom_llm_provider":"<missing>","stream_options":"<missing>","standard_callback_dynamic_params":{"langfuse_host":"h"}}"#)]
+#[case::a_null_pricing_key_is_not_custom_pricing(Scenario::PricingNull, r#"gpt-4o/null/false/null/false/null/{"input_cost_per_token":null}/{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"optional_params":{},"litellm_params":{"input_cost_per_token":null},"start_time":"2026-01-01T00:00:00+00:00","stream":false,"user":null,"call_type":"completion","custom_llm_provider":"<missing>","stream_options":"<missing>","standard_callback_dynamic_params":{"langfuse_host":"h"}}"#)]
+#[case::a_missing_pricing_key_is_not_custom_pricing(Scenario::PricingAbsent, r#"gpt-4o/null/false/null/false/null/{"api_base":"http://proxy"}/{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"optional_params":{},"litellm_params":{"api_base":"http://proxy"},"start_time":"2026-01-01T00:00:00+00:00","stream":false,"user":null,"call_type":"completion","custom_llm_provider":"<missing>","stream_options":"<missing>","standard_callback_dynamic_params":{"langfuse_host":"h"}}"#)]
 #[case::a_wrongly_typed_provider_names_the_field(
     Scenario::ProviderWrongType,
     "the custom_llm_provider value must be a string"
@@ -258,7 +258,7 @@ fn outcome(scenario: &Scenario) -> String {
 #[case::kwargs_metadata_loses_to_caller_litellm_params(Scenario::FromKwargs, r#"{"metadata":{"a":1.0,"c":4.0},"litellm_metadata":{"a":2.0,"b":3.0},"litellm_call_id":"call-2"}/{"litellm_params":{"metadata":{"a":1.0,"c":4.0},"litellm_metadata":{"a":2.0,"b":3.0},"litellm_call_id":"call-2"},"model":"gpt-4.1","litellm_call_id":"call-1","custom_llm_provider":"openai"}"#)]
 #[case::litellm_metadata_fills_an_absent_metadata(
     Scenario::FromKwargsMetadataOnly,
-    r#"{"metadata":{"b":3.0},"litellm_metadata":{"b":3.0}}"#
+    r#"{"litellm_metadata":{"b":3.0},"metadata":{"b":3.0}}"#
 )]
 #[case::empty_caller_metadata_adds_no_key(
     Scenario::FromKwargsEmptyCallerMetadata,

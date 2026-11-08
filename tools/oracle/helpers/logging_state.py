@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 from unittest.mock import patch
 
 import litellm
+from litellm import _logging
 from litellm._logging import session_id_var, trace_id_var
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils import litellm_logging
@@ -25,6 +26,17 @@ DEFAULT_GENERATED_TRACE_ID = "00000000-0000-4000-8000-000000000000"
 ProxySpendLogger = cast("type[CustomLogger]", type("_PROXY_SpendLogger", (CustomLogger,), {}))
 
 
+class _Clock:
+    def __init__(self, step_seconds: float) -> None:
+        self._step_seconds = step_seconds
+        self._ticks = 0
+
+    def time(self) -> float:
+        now = self._ticks * self._step_seconds
+        self._ticks += 1
+        return now
+
+
 def run(input_value: dict[str, Json]) -> Json:
     instances = input_value.get("instances")
     if not isinstance(instances, list):
@@ -37,6 +49,7 @@ def _instance(value: dict[str, Json]) -> Json:
     correlation = _object(value.get("correlation"))
     settings = _object(correlation.get("settings"))
     context = _object(correlation.get("context"))
+    step_millis = cast(int, value.get("clock_step_millis") or 0)
     operations = value.get("operations")
     if not isinstance(operations, list):
         raise ValueError("operations must be a list")
@@ -51,7 +64,7 @@ def _instance(value: dict[str, Json]) -> Json:
     generated = correlation.get("generated_trace_id")
     generated_id = DEFAULT_GENERATED_TRACE_ID if generated is None else _string(generated)
     try:
-        logging_obj = _build(init, settings, generated_id)
+        logging_obj = _build(init, settings, generated_id, _Clock(step_millis / 1000))
         snapshot = _snapshot(logging_obj)
         results = [
             _operation(logging_obj, cast("dict[str, Json]", operation))
@@ -65,7 +78,9 @@ def _instance(value: dict[str, Json]) -> Json:
         session_id_var.set("")
 
 
-def _build(init: dict[str, Json], settings: dict[str, Json], generated: str) -> Logging:
+def _build(
+    init: dict[str, Json], settings: dict[str, Json], generated: str, clock: _Clock
+) -> Logging:
     dynamic = _object(init.get("dynamic_callbacks"))
     flags = _object(init.get("request_logging"))
     with (
@@ -92,6 +107,10 @@ def _build(init: dict[str, Json], settings: dict[str, Json], generated: str) -> 
             return_value=_object(init.get("standard_built_in_tools_params")),
         ),
         patch.object(litellm_logging.uuid, "uuid4", return_value=uuid.UUID(generated)),
+        patch.object(litellm_logging, "time", clock),
+        patch.object(
+            _logging, "_ENABLE_SECRET_REDACTION", settings.get("secret_redaction") != "disabled"
+        ),
     ):
         return Logging(
             model=_string(init.get("model")),
@@ -109,7 +128,7 @@ def _build(init: dict[str, Json], settings: dict[str, Json], generated: str) -> 
             dynamic_async_failure_callbacks=_callbacks(dynamic.get("async_failure")),
             kwargs=_object(init.get("kwargs")),
             log_raw_request_response=flags.get("log_raw_request_response") is True,
-            supports_correlation_logging=settings.get("supports_correlation_logging") is True,
+            supports_correlation_logging=settings.get("supports_correlation_logging") is not False,
             raw_request_only=flags.get("raw_request_only") is True,
         )
 
@@ -256,6 +275,8 @@ def _snapshot(logging_obj: Logging) -> Json:
             "custom_llm_provider": getattr(logging_obj, "custom_llm_provider", None),
             "completion_start_time_micros": None if completion is None else _micros(completion),
             "response_timing_metrics": dict(logging_obj.response_timing_metrics),
+            "message_copy_duration_ms": logging_obj.message_copy_duration_ms,
+            "callback_duration_ms": logging_obj.callback_duration_ms,
             "model_call_details": _plain(logging_obj.model_call_details),
             "callback_dynamic_params": logging_obj.standard_callback_dynamic_params,
             "request_logging": {

@@ -1,10 +1,12 @@
 use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use std::time::Duration;
 
-use super::support::{build, build_in, encoded, init, object, params, text, try_build};
-use crate::logging_state::correlation::{CorrelationContext, CorrelationSettings};
+use super::support::{build, build_in, encoded, init, object, params, redactor, text, try_build};
+use crate::logging_state::correlation::{
+    CorrelationContext, CorrelationSettings, CorrelationSetup, SecretRedaction,
+};
 use crate::logging_state::types::{Messages, RequestLoggingFlags};
 use crate::logging_state::{LoggingInit, LoggingState};
 
@@ -21,7 +23,9 @@ enum Scenario {
     Details,
     Dependencies,
     DebugOutput,
-    Correlation(CorrelationSettings),
+    CopyTiming,
+    Correlation(CorrelationSettings, &'static str),
+    OmittedSettings(&'static str),
 }
 
 fn input(state: &LoggingState) -> String {
@@ -88,6 +92,24 @@ fn trusted_json(state: &LoggingState) -> Json {
     )
 }
 
+fn completion_json(state: &LoggingState) -> Json {
+    state
+        .completion_start_time
+        .map_or(Json::Null, |moment| Json::Text(moment.to_rfc3339()))
+}
+
+fn timing_json(state: &LoggingState) -> Json {
+    let timing = state
+        .response_timing_metrics
+        .iter()
+        .map(|(name, value)| {
+            let number = serde_json::Number::from_f64(*value).map_or(Json::Null, Json::Number);
+            (name.clone(), number)
+        })
+        .collect();
+    Json::Object(timing)
+}
+
 fn dependencies_outcome() -> String {
     let state = build(LoggingInit {
         litellm_params: params(&[("api_base", text("http://proxy"))]),
@@ -125,8 +147,8 @@ fn dependencies_outcome() -> String {
             ]),
         ),
         ("custom_pricing", Json::Bool(state.cost.custom_pricing)),
-        ("completion_start_time", Json::Null),
-        ("timing", Json::Object(IndexMap::new())),
+        ("completion_start_time", completion_json(&state)),
+        ("timing", timing_json(&state)),
     ]);
     encoded(&summary)
 }
@@ -150,14 +172,54 @@ fn debug_outcome() -> String {
         .to_string()
 }
 
-fn correlation_outcome(settings: CorrelationSettings) -> String {
+fn timing_outcome() -> String {
+    let step = Duration::from_millis(250);
+    let mut now = Duration::ZERO;
+    let clock = move || {
+        let reading = now;
+        now = now.saturating_add(step);
+        reading
+    };
+    let mut context = CorrelationContext::default();
+    let built = LoggingState::new(
+        LoggingInit {
+            messages: Some(Messages::Text("hi".to_owned())),
+            ..init()
+        },
+        CorrelationSetup {
+            context: &mut context,
+            settings: CorrelationSettings::default(),
+        },
+        &redactor(),
+        || "generated-trace".to_owned(),
+        clock,
+    );
+    built.map_or_else(
+        |error| error.to_string(),
+        |state| {
+            format!(
+                "{}/{}",
+                state.message_copy_duration_ms, state.callback_duration_ms
+            )
+        },
+    )
+}
+
+fn omitted_settings_outcome(settings: &str) -> String {
+    serde_json::from_str::<CorrelationSettings>(settings).map_or_else(
+        |error| error.to_string(),
+        |parsed| correlation_outcome(parsed, "inner\r-trace"),
+    )
+}
+
+fn correlation_outcome(settings: CorrelationSettings, trace_id: &str) -> String {
     let mut context = CorrelationContext {
         trace_id: "outer-trace".to_owned(),
         session_id: "outer-session".to_owned(),
     };
     let state = build_in(
         LoggingInit {
-            litellm_trace_id: Some("inner\r-trace".to_owned()),
+            litellm_trace_id: Some(trace_id.to_owned()),
             kwargs: params(&[("litellm_session_id", text("inner-session"))]),
             ..init()
         },
@@ -194,7 +256,9 @@ fn outcome(scenario: &Scenario) -> String {
         Scenario::Details => details_outcome(),
         Scenario::Dependencies => dependencies_outcome(),
         Scenario::DebugOutput => debug_outcome(),
-        Scenario::Correlation(settings) => correlation_outcome(*settings),
+        Scenario::CopyTiming => timing_outcome(),
+        Scenario::Correlation(settings, trace_id) => correlation_outcome(*settings, trace_id),
+        Scenario::OmittedSettings(settings) => omitted_settings_outcome(settings),
     }
 }
 
@@ -214,7 +278,7 @@ fn outcome(scenario: &Scenario) -> String {
     Scenario::GeneratedTraceId,
     r#"generated-trace/"generated-trace""#
 )]
-#[case::an_explicit_trace_id_is_used_as_given(Scenario::EmptyTraceId, "")]
+#[case::an_explicit_trace_id_is_used_as_given(Scenario::EmptyTraceId, r#"/"""#)]
 #[case::session_id_comes_from_kwargs(Scenario::Session(text("session-1")), "session-1")]
 #[case::null_session_id_is_empty(Scenario::Session(Json::Null), "")]
 #[case::a_numeric_session_id_names_the_field(
@@ -228,17 +292,41 @@ fn outcome(scenario: &Scenario) -> String {
     Scenario::Correlation(CorrelationSettings {
         supports_correlation_logging: true,
         request_correlation_in_logs: false,
-    }), r#"{"trace_id":"outer-trace","session_id":"outer-session"}/{"trace_id":"outer-trace","session_id":"outer-session"}/{"trace_id":"outer-trace","session_id":"outer-session"}"#)]
+        secret_redaction: SecretRedaction::Enabled,
+    }, "inner\r-trace"), r#"{"trace_id":"outer-trace","session_id":"outer-session"}/{"trace_id":"outer-trace","session_id":"outer-session"}/{"trace_id":"outer-trace","session_id":"outer-session"}"#)]
 #[case::unsupported_correlation_leaves_the_context_alone(
     Scenario::Correlation(CorrelationSettings {
         supports_correlation_logging: false,
         request_correlation_in_logs: true,
-    }), r#"{"trace_id":"outer-trace","session_id":"outer-session"}/{"trace_id":"outer-trace","session_id":"outer-session"}/{"trace_id":"outer-trace","session_id":"outer-session"}"#)]
+        secret_redaction: SecretRedaction::Enabled,
+    }, "inner\r-trace"), r#"{"trace_id":"outer-trace","session_id":"outer-session"}/{"trace_id":"outer-trace","session_id":"outer-session"}/{"trace_id":"outer-trace","session_id":"outer-session"}"#)]
 #[case::enabled_correlation_stamps_sanitized_ids(
     Scenario::Correlation(CorrelationSettings {
         supports_correlation_logging: true,
         request_correlation_in_logs: true,
-    }), r#"{"trace_id":"inner-trace","session_id":"inner-session"}/{"trace_id":"outer-trace","session_id":"outer-session"}/{"trace_id":"inner-trace","session_id":"inner-session"}"#)]
+        secret_redaction: SecretRedaction::Enabled,
+    }, "inner\r-trace"), r#"{"trace_id":"inner-trace","session_id":"inner-session"}/{"trace_id":"outer-trace","session_id":"outer-session"}/{"trace_id":"inner-trace","session_id":"inner-session"}"#)]
+#[case::an_omitted_support_flag_defaults_to_true(
+    Scenario::OmittedSettings(r#"{"request_correlation_in_logs":true}"#),
+    r#"{"trace_id":"inner-trace","session_id":"inner-session"}/{"trace_id":"outer-trace","session_id":"outer-session"}/{"trace_id":"inner-trace","session_id":"inner-session"}"#
+)]
+#[case::an_explicit_false_support_flag_is_kept(
+    Scenario::OmittedSettings(r#"{"supports_correlation_logging":false,"request_correlation_in_logs":true}"#),
+    r#"{"trace_id":"outer-trace","session_id":"outer-session"}/{"trace_id":"outer-trace","session_id":"outer-session"}/{"trace_id":"outer-trace","session_id":"outer-session"}"#
+)]
+#[case::a_secret_shaped_trace_id_is_redacted_when_redaction_is_on(
+    Scenario::Correlation(CorrelationSettings {
+        supports_correlation_logging: true,
+        request_correlation_in_logs: true,
+        secret_redaction: SecretRedaction::Enabled,
+    }, "sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r"), r#"{"trace_id":"REDACTED","session_id":"inner-session"}/{"trace_id":"outer-trace","session_id":"outer-session"}/{"trace_id":"REDACTED","session_id":"inner-session"}"#)]
+#[case::a_secret_shaped_trace_id_is_kept_but_still_stripped_when_redaction_is_off(
+    Scenario::Correlation(CorrelationSettings {
+        supports_correlation_logging: true,
+        request_correlation_in_logs: true,
+        secret_redaction: SecretRedaction::Disabled,
+    }, "sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r"), r#"{"trace_id":"sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","session_id":"inner-session"}/{"trace_id":"outer-trace","session_id":"outer-session"}/{"trace_id":"sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","session_id":"inner-session"}"#)]
+#[case::message_normalization_is_timed_by_the_injected_clock(Scenario::CopyTiming, "250/0")]
 fn logging_state_behavior_tests_behavior(#[case] scenario: Scenario, #[case] expected: &str) {
     assert_eq!(outcome(&scenario), expected);
 }

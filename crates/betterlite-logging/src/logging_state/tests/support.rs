@@ -3,6 +3,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use serde::Serialize;
+use std::time::Duration;
 
 use crate::logging_state::LoggingInit;
 use crate::logging_state::LoggingState;
@@ -88,6 +89,7 @@ pub(crate) fn try_build(init: LoggingInit) -> Result<LoggingState, LoggingStateE
         },
         &redactor(),
         || "generated-trace".to_owned(),
+        Duration::default,
     )
 }
 
@@ -101,6 +103,7 @@ pub(crate) fn build_in(
         CorrelationSetup { context, settings },
         &redactor(),
         || "generated-trace".to_owned(),
+        Duration::default,
     )
     .expect("the fixture builds")
 }

@@ -13,11 +13,32 @@ pub struct CorrelationContext {
     pub session_id: String,
 }
 
+// LITELLM_DISABLE_REDACT_SECRETS=true resolves to Disabled
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SecretRedaction {
+    #[default]
+    Enabled,
+    Disabled,
+}
+
+// Mirrors LiteLLM's constructor default: supports_correlation_logging is True unless the caller passes False
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct CorrelationSettings {
     pub supports_correlation_logging: bool,
     pub request_correlation_in_logs: bool,
+    pub secret_redaction: SecretRedaction,
+}
+
+impl Default for CorrelationSettings {
+    fn default() -> Self {
+        Self {
+            supports_correlation_logging: true,
+            request_correlation_in_logs: false,
+            secret_redaction: SecretRedaction::Enabled,
+        }
+    }
 }
 
 pub struct CorrelationSetup<'context> {
@@ -33,7 +54,7 @@ pub struct CorrelationOwnership {
 
 // Python's str.isprintable drops separators and other control, format, private and unassigned characters
 #[must_use]
-pub fn sanitize_correlation_id(value: &str, redactor: &Redactor) -> String {
+pub fn sanitize_correlation_id(value: &str, redactor: Option<&Redactor>) -> String {
     let printable: String = value
         .chars()
         .filter(|character| {
@@ -44,7 +65,10 @@ pub fn sanitize_correlation_id(value: &str, redactor: &Redactor) -> String {
                 )
         })
         .collect();
-    let redacted = redactor.redact_string(&printable);
+    let redacted = match redactor {
+        Some(active) => active.redact_string(&printable),
+        None => printable,
+    };
     redacted
         .chars()
         .take(MAXIMUM_CORRELATION_ID_LENGTH)
@@ -61,8 +85,10 @@ pub(super) fn apply_correlation(
     if correlation.settings.supports_correlation_logging
         && correlation.settings.request_correlation_in_logs
     {
-        correlation.context.trace_id = sanitize_correlation_id(trace_id, redactor);
-        correlation.context.session_id = sanitize_correlation_id(session_id, redactor);
+        let active =
+            (correlation.settings.secret_redaction == SecretRedaction::Enabled).then_some(redactor);
+        correlation.context.trace_id = sanitize_correlation_id(trace_id, active);
+        correlation.context.session_id = sanitize_correlation_id(session_id, active);
     }
     let own = correlation.context.clone();
     CorrelationOwnership { pre_call, own }

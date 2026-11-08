@@ -4,12 +4,13 @@ use rstest::rstest;
 use super::support::{build_in, init, params, redactor, text};
 use crate::logging_state::LoggingInit;
 use crate::logging_state::correlation::{
-    CorrelationContext, CorrelationSettings, restore_correlation_context,
+    CorrelationContext, CorrelationSettings, SecretRedaction, restore_correlation_context,
     restore_correlation_guarded, sanitize_correlation_id,
 };
 
 enum Scenario {
     Sanitize(&'static str),
+    SanitizeUnredacted(&'static str),
     SanitizeBound,
     Unguarded,
     GuardedOwn,
@@ -22,6 +23,7 @@ fn enabled() -> CorrelationSettings {
     CorrelationSettings {
         supports_correlation_logging: true,
         request_correlation_in_logs: true,
+        secret_redaction: SecretRedaction::Enabled,
     }
 }
 
@@ -57,7 +59,7 @@ fn restore_outcome(mut working: CorrelationContext, guarded: bool) -> String {
 
 fn bound_outcome() -> String {
     let long = "a".repeat(300);
-    let bounded = sanitize_correlation_id(&long, &redactor());
+    let bounded = sanitize_correlation_id(&long, Some(&redactor()));
     format!(
         "{}:{}",
         bounded.len(),
@@ -103,7 +105,8 @@ fn isolated_outcome() -> String {
 
 fn outcome(scenario: &Scenario) -> String {
     match scenario {
-        Scenario::Sanitize(value) => sanitize_correlation_id(value, &redactor()),
+        Scenario::Sanitize(value) => sanitize_correlation_id(value, Some(&redactor())),
+        Scenario::SanitizeUnredacted(value) => sanitize_correlation_id(value, None),
         Scenario::SanitizeBound => bound_outcome(),
         Scenario::Unguarded => restore_outcome(context("foreign", "foreign"), false),
         Scenario::GuardedOwn => restore_outcome(context("inner-trace", "inner-session"), true),
@@ -119,6 +122,10 @@ fn outcome(scenario: &Scenario) -> String {
 #[case::a_secret_shaped_id_is_redacted(
     Scenario::Sanitize("sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
     "REDACTED"
+)]
+#[case::an_unredacted_id_is_still_stripped(
+    Scenario::SanitizeUnredacted("sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\r"),
+    "sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 )]
 #[case::a_non_breaking_space_is_not_printable(Scenario::Sanitize("sp\u{a0}ace"), "space")]
 #[case::printable_unicode_is_kept(Scenario::Sanitize("\u{e9}t\u{e9}"), "\u{e9}t\u{e9}")]

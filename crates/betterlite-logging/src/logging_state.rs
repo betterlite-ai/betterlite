@@ -14,6 +14,8 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Deserialize;
 use std::fmt;
+use std::ops::Mul as _;
+use std::time::Duration;
 use thiserror::Error;
 
 use self::correlation::{CorrelationOwnership, CorrelationSetup, apply_correlation};
@@ -76,6 +78,8 @@ pub struct LoggingState {
     pub custom_llm_provider: Option<String>,
     pub model_call_details: IndexMap<String, Json>,
     pub response_timing_metrics: IndexMap<String, f64>,
+    pub message_copy_duration_ms: f64,
+    pub callback_duration_ms: f64,
     pub completion_start_time: Option<DateTime<FixedOffset>>,
     pub dynamic_callbacks: DynamicCallbacks,
     pub callback_dynamic_params: IndexMap<String, Json>,
@@ -120,18 +124,20 @@ pub enum LoggingStateError {
 }
 
 impl LoggingState {
-    pub fn new<Id>(
+    pub fn new<Id, Clock>(
         init: LoggingInit,
         mut correlation: CorrelationSetup<'_>,
         redactor: &Redactor,
         next_trace_id: Id,
+        mut clock: Clock,
     ) -> Result<Self, LoggingStateError>
     where
         Id: FnOnce() -> String,
+        Clock: FnMut() -> Duration,
     {
         let session_id = session_id_from_kwargs(&init.kwargs)?;
         let trace_id = init.litellm_trace_id.clone().unwrap_or_else(next_trace_id);
-        let messages = init.messages.as_ref().map(Messages::normalized);
+        let (messages, copy_ms) = normalized_messages(init.messages.as_ref(), &mut clock);
         let ownership = apply_correlation(&mut correlation, &trace_id, &session_id, redactor);
         let model_call_details = initial_model_call_details(&init, &trace_id);
         Ok(Self {
@@ -153,6 +159,8 @@ impl LoggingState {
             custom_llm_provider: None,
             model_call_details,
             response_timing_metrics: IndexMap::new(),
+            message_copy_duration_ms: copy_ms,
+            callback_duration_ms: 0.0,
             completion_start_time: None,
             dynamic_callbacks: init.dynamic_callbacks,
             callback_dynamic_params: init.callback_dynamic_params,
@@ -168,6 +176,20 @@ impl LoggingState {
             callback_policy: init.callback_policy,
         })
     }
+}
+
+// The elapsed time is read from the injected clock, the way LiteLLM reads time.time() around its message copy
+fn normalized_messages<Clock>(
+    messages: Option<&Messages>,
+    clock: &mut Clock,
+) -> (Option<Vec<Json>>, f64)
+where
+    Clock: FnMut() -> Duration,
+{
+    let started = clock();
+    let normalized = messages.map(Messages::normalized);
+    let elapsed = clock().saturating_sub(started);
+    (normalized, elapsed.as_secs_f64().mul(1000.0_f64))
 }
 
 fn session_id_from_kwargs(kwargs: &IndexMap<String, Json>) -> Result<String, LoggingStateError> {

@@ -6,7 +6,7 @@ use super::support::{build, encoded, init, moment, params, text};
 use crate::logging_state::LoggingInit;
 use crate::logging_state::events::{
     LoggingEvent, claim_async_success_log, has_run_logging, is_sync_litellm_request,
-    set_response_timing_metrics, update_completion_start_time,
+    set_response_timing_metrics, should_run_logging, update_completion_start_time,
 };
 
 #[derive(Clone, Copy)]
@@ -59,21 +59,19 @@ fn should_run_outcome() -> String {
         LoggingEvent::SyncFailure,
     ];
     events
-        .map(|event| {
-            (state.model_call_details.get(event.key()) != Some(&Json::Bool(true))).to_string()
-        })
+        .map(|event| should_run_logging(&state, event).to_string())
         .join("/")
 }
 
 fn record_outcome(stream: Option<bool>, recorded: LoggingEvent, untouched: LoggingEvent) -> String {
     let mut state = build(LoggingInit { stream, ..init() });
-    let before = state.model_call_details.get(recorded.key()) != Some(&Json::Bool(true));
+    let before = should_run_logging(&state, recorded);
     has_run_logging(&mut state, recorded);
     format!(
         "{}/{}/{}",
         before,
-        state.model_call_details.get(recorded.key()) != Some(&Json::Bool(true)),
-        state.model_call_details.get(untouched.key()) != Some(&Json::Bool(true))
+        should_run_logging(&state, recorded),
+        should_run_logging(&state, untouched)
     )
 }
 
