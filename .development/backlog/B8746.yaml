@@ -1,0 +1,13 @@
+id: B8746
+milestone: M8 platform
+title: Catalog arms for the OpenTelemetry family of callback names
+status: todo
+depends_on: [B8741, B3851, B3853, B3862, B3863, B3868, B3910, B3942, B3852, B3859]
+file: tasks/B8746-otel-catalog-arms.yaml
+covers: []
+parent: B110
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,9 @@
+kind: helper
+name: condition-wrapper-only-pattern
+call:
+  b3240:
+    function: evaluate_condition
+    condition: {model: "x)|(.*"}
+    context: {model: gpt-4}
+env: {}
+compare: {ignore: []}

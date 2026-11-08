@@ -206,6 +206,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_thread_runs"
+path = "fuzz_targets/openai_thread_runs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "watsonx_iam_token"
 path = "fuzz_targets/watsonx_iam_token.rs"
 test = false

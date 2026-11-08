@@ -47,7 +47,6 @@ scope:
     - tools/oracle/helpers/session_cursor/**
     - tools/oracle/cases/helpers/session-cursor/**
     - tools/oracle/fuzz/corpus/helper_case/session-cursor-*
-    - tools/oracle/cases/http/spend-session/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3078-L3262
@@ -59,8 +58,10 @@ references:
 dod:
   - text: Session grouping pages by last activity, chooses the pinned representative and preserves count shortcuts and offset caps.
     proof: [session-tests, session-input-corpus, oracle, session-python, session-helper-corpus]
-  - text: Session expansion retains own/team authorization, its separate size limit and the lean uncapped-count response contract.
-    proof: [session-tests, session-input-corpus, oracle]
+  - text: Session expansion retains own/team authorization, its separate size limit and the lean uncapped-count response contract. B8663 proves it over HTTP.
+    proof: [session-tests, session-input-corpus]
+  - text: The handlers answer through tower's oneshot over the module's own Router with fake ports; B8663 merges them through B069's spend routes and proves them over HTTP.
+    proof: [session-tests]
 checks:
   optional: []
   commands:
@@ -77,8 +78,6 @@ checks:
       why: Cursor operation is missing from typed helper replay.
       run: grep -rlq 'session_cursor:' tools/oracle/fuzz/corpus/helper_case/session-cursor-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-  - tools/oracle/cases/http/spend-session/own-user-permitted-team-and-collision.yaml
-  - tools/oracle/cases/http/spend-session/page-size-100-and-lean-row-fields.yaml
   - tools/oracle/cases/helpers/session-cursor/tuple-order-empty-key-and-extra-pipes.yaml
   - tools/oracle/cases/helpers/session-cursor/malformed-cursor-falls-back.yaml
 deviations: []

@@ -1,0 +1,67 @@
+id: B8744
+title: Catalog adapters for the argilla, galileo and helicone loggers
+description: >-
+  Three more merged loggers have no way to receive a call: Argilla (crates/betterlite-logging/src/argilla_logging.rs,
+  B3960), Galileo (galileo.rs, galileo/ and galileo_payloads.rs, B3963 to B3965) and Helicone (helicone.rs, B3966).
+  Argilla and Galileo take a `CallbackKwargs` record, Helicone a `SuccessEvent`; Galileo's entry points are free
+  functions plus an admission queue. This task implements B8740's CallbackLogger for each and fills its catalog
+  module, as B8743 does for four others.
+
+
+  Write each wrapper in crates/betterlite-logging/src/registry/catalog/<name>.rs and <name>/ (argilla, galileo,
+  helicone). Build CallbackKwargs or SuccessEvent from the LoggerEvent's payload, using the payload field that carries
+  the same LiteLLM kwargs key. Forward the events each logger has: argilla has the sync success and both async events;
+  galileo has async success and async failure; helicone has the sync success event only, because LiteLLM calls
+  heliconeLogger.log_success from the sync success handler body (L2975-L2997) and never from the async one.
+
+
+  Production transports. Write the missing ones over CatalogInputs.http, matching each merged Transport trait.
+  Argilla's dataset hook (DatasetHook) keeps LiteLLM's default when argilla_transformation_object is not configured.
+  Galileo's admission queue starts its flush on inputs.tracker and stops on inputs.shutdown.
+
+
+  build(inputs) follows LiteLLM: argilla's arm L4566-L4572, galileo's arm L4830-L4836, helicone's set_callbacks line
+  L4468-L4469. Read credentials through inputs.env with the env var names the merged settings use; a missing
+  required key gives CatalogError::Init with LiteLLM's message.
+
+
+  Tests in each <name>/tests.rs: the name resolves to a logger with that callback_name, a missing key gives Init, and
+  the forwarded events reach a fake transport with the payload fields mapped.
+scope:
+  paths:
+    - crates/betterlite-logging/src/registry/catalog/argilla.rs
+    - crates/betterlite-logging/src/registry/catalog/argilla/**
+    - crates/betterlite-logging/src/registry/catalog/galileo.rs
+    - crates/betterlite-logging/src/registry/catalog/galileo/**
+    - crates/betterlite-logging/src/registry/catalog/helicone.rs
+    - crates/betterlite-logging/src/registry/catalog/helicone/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4566-L4572
+    why: The argilla arm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4830-L4836
+    why: The galileo arm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2975-L2997
+    why: Helicone is called from the sync success handler body only.
+dod:
+  - text: argilla, galileo and helicone resolve by name to CallbackLogger wrappers over the merged loggers with production transports.
+    proof: [adapter-tests]
+  - text: Each wrapper forwards only the events LiteLLM calls on that logger, and helicone gets no async event.
+    proof: [adapter-tests]
+checks:
+  optional: []
+  commands:
+    - id: adapter-tests
+      why: a wrapper is missing, forwards the wrong events or the catalog module still returns Unavailable
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::(argilla|galileo|helicone)::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The merged loggers' records and delivery: B3960, B3963, B3964, B3965 and B3966."
+pitfalls:
+  - Helicone is a legacy string callback reached from the sync success handler, which LiteLLM also runs for async calls; an async event too would log each call twice.
+  - Galileo's async_log_success_event is a free function over shared queue state; the wrapper owns that state, one per process.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

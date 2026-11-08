@@ -1,0 +1,125 @@
+id: B8647
+title: Mount the agents API and the public agent fields route
+description: >-
+  The /v1/agents routes are built by four tasks and mounted by none: B4784 `agent_read_routes` (GET `/v1/agents`, GET `/v1/agents/{agent_id}`), B4785 `agent_write_routes` (POST `/v1/agents`, PUT, PATCH and DELETE `/v1/agents/{agent_id}`), B4781 `agent_identity_routes` (GET `/v1/agents/identity/providers`, GET `/v1/agents/{agent_id}/identity`) and B4786's admin action routes (POST `/v1/agents/{agent_id}/kill_switch`, POST `/v1/agents/{agent_id}/make_public`, POST `/v1/agents/make_public`). B3191's `public_endpoints::agent_fields::agent_fields_routes()` (GET `/public/agents/fields`) is done and never mounted. So the agents API answers 404 today. LiteLLM registers the first group as one lazy feature named agents (path prefixes /v1/agents, /agents, /agent/), every route behind user_api_key_auth with the tag "[beta] A2A Agents" (DELETE has "Agents"), and serves /public/agents/fields with no key check. This task builds the state those route functions take, from config and Shared, mounts them, and proves them over HTTP: the route tasks test their handlers with tower's oneshot only, and their HTTP oracle cases moved here. GET `/agent/daily/activity` is not here: spend's B8482 mounts it.
+
+  Where. crates/betterlite-server/src/app/agents.rs, where the skeleton stubs `mount(router, state)` (inside the auth layers), `mount_public(router, state)` (outside them) and `async fn start(state)`, all called by B8610's app.rs; `start` stays as the stub left it. The route state goes in app/agents/api.rs with app/agents/api/** (settings.rs, stores.rs, embedder.rs, public_groups.rs, tests.rs). Keep the mod lines the skeleton put in app/agents.rs. Read each route module before writing: crates/betterlite-server/src/agent_endpoints/{agent_reads,agent_listing,agent_lookup,agent_writes,identity_admin,admin_actions,search,health}.rs and their folders. Use the route function names and state types they export. No statics, no trait objects, native async fn.
+
+  1. Config. A new config section `agent_routes` (crates/betterlite-config/src/sections/agent_routes.rs and agent_routes/**) reads what no other section reads yet: `litellm_settings.public_agent_groups` (list of strings, default absent) and the env vars JWT_ISSUER, JWT_AUDIENCE, MICROSOFT_TENANT and MICROSOFT_CLIENT_ID (each optional, an empty string kept as given). Before adding a key, look in crates/betterlite-config/src/sections for a section that already reads it (B762's JWT sections, B1622's microsoft_login) and take the value from there instead. Tests in sections::agent_routes::tests load each key and its default.
+
+  2. Settings (api/settings.rs). Build B4781's IdentitySettings once at mount: enable_jwt_auth from general_settings.enable_jwt_auth (default false) and issuers from litellm_jwtauth.issuers through B869's section, plus the four env values. Build B4775's JwtAgentSettings from the general_settings keys it names. Never read them again per request.
+
+  3. Public agent groups (api/public_groups.rs). `PublicAgentGroups` is one `Arc<tokio::sync::RwLock<Option<Vec<String>>>>` seeded from litellm_settings.public_agent_groups. B4784's AgentListSettings implementation (`ServerAgentListSettings`) reads it in public_agent_groups(), returns the JwtAgentSettings from item 2 in jwt_agent_settings() and B4783's search section in search_settings(). B4786's make_public routes write through the same holder, so a make_public call is seen by the next list call (LiteLLM writes litellm.public_agent_groups in memory).
+
+  4. Stores (api/stores.rs). B4784's PgAgentReads and B4785's PgAgentWriteStore over `shared.db`, and B4777's AgentStore (max_json_depth 100, the publisher B4777 names for production). B4781's IdentityStatusReads (`StoreIdentityStatus`): with a store, forward to the store's agent method; with no database answer the policy_unavailable failure "Agent policy could not be loaded", which the route turns into 503 (LiteLLM builds the store even without a database and its read fails). B4786's ports (the kill switch webhook through B4774 with `shared.http`, the audit writer, the config writer for public_agent_groups and the database check) are built here too, from the types B4786 defines. B4785's route state takes a ProxyUrls: pass `crate::app::admin::urls::proxy_urls(&state.config)` from B8675, built once per mount.
+
+  5. Search and health (api/embedder.rs). B4783's AgentHealthTransport production implementation over `shared.http`. `InferenceAgentEmbedders` implements B4783's AgentEmbedders over the one RouterEmbedder that inference's B8631 builds next to RouterCalls in crates/betterlite-server/src/app/inference/router_calls (LiteLLM's router_embedder: the proxy logging pre-call hook with call type aembedding, then the router). Reach it through the app::inference module (same crate) as B8631 exposes it. embedder_for answers None when the router has no model list, and otherwise an Embedder that sends the texts to that RouterEmbedder with the embedding model and the caller. Write no second embedder.
+
+  6. Mount (app/agents.rs). mount merges, in this order, agent_identity_routes, agent_read_routes, agent_write_routes and the B4786 routes, each given its state from items 2 to 5 and B8645's AgentServices built once in mount with AgentServices::new(&state.config, &state.shared). axum prefers the static paths (/v1/agents/identity/providers, /v1/agents/make_public) over /v1/agents/{agent_id} on its own; do not register a path twice, and do not call .fallback. mount_public merges agent_fields_routes(), the route LiteLLM serves with no key check. Delete the stale comment line "Awaits a future B003 integration task..." above agent_fields_routes in crates/betterlite-server/src/public_endpoints/agent_fields.rs and change nothing else there.
+
+  HTTP oracle cases through the booted proxy. The cases below moved here from the route tasks; write each from that task's text, with the config its name implies (master key set, no database unless the name says db). From B4781 (items 6 and 7 of its text): providers-jwt-off-empty, providers-jwt-on-issuers, providers-no-key-401 and status-no-database-503. From B4784 (its list and lookup sections): the ten listing cases, covering config agents in order, public agent groups present and empty, the redacted litellm_params, the three 422 query errors, the 400 agent_search_not_configured, the bad key 401 and GET by id without a database. From B4785 (its check order): the 401 without a key on POST and DELETE and the no-database answers of POST, PUT, PATCH and DELETE. From B4786 (its DoD lines): the fifteen kill switch and make_public cases. Plus one of this task's own: GET /public/agents/fields without a key answers 200 with the bundled list.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/agents.rs
+    - crates/betterlite-server/src/app/agents/api.rs
+    - crates/betterlite-server/src/app/agents/api/**
+    - crates/betterlite-server/src/public_endpoints/agent_fields.rs
+    - crates/betterlite-config/src/sections/agent_routes.rs
+    - crates/betterlite-config/src/sections/agent_routes/**
+    - tools/oracle/cases/agents/wiring/**
+    - tools/oracle/cases/agents/listing/**
+    - tools/oracle/cases/management/agent-admin-actions/**
+    - tools/oracle/cases/agents/identity-admin/providers-jwt-off-empty.yaml
+    - tools/oracle/cases/agents/identity-admin/providers-jwt-on-issuers.yaml
+    - tools/oracle/cases/agents/identity-admin/providers-no-key-401.yaml
+    - tools/oracle/cases/agents/identity-admin/status-no-database-503.yaml
+    - tools/oracle/cases/agents/writes/create-no-key-401.yaml
+    - tools/oracle/cases/agents/writes/create-no-database-500.yaml
+    - tools/oracle/cases/agents/writes/update-no-database-500.yaml
+    - tools/oracle/cases/agents/writes/patch-no-database-500.yaml
+    - tools/oracle/cases/agents/writes/delete-no-database-500.yaml
+    - tools/oracle/cases/agents/writes/delete-no-key-401.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L91-L108
+    why: The agents and a2a lazy features, their modules and path prefixes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L378-L384
+    why: GET /v1/agents decorator; the other agents routes start at L554, L562, L584, L706, L786, L893, L1001, L1058, L1126 and L1229 with the same dependency and tag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L593-L598
+    why: GET /public/agents/fields has no auth dependency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_search.py#L144-L144
+    why: Agent search embeds through router_embedder with the caller's auth, the embedder shared.router_embedder provides.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L519-L551
+    why: The settings and env values IdentitySettings carries.
+dod:
+  - text: The agent_routes section loads public_agent_groups and the four env values with their defaults.
+    proof: [config-tests]
+  - text: IdentitySettings, JwtAgentSettings and the public group holder are built once, the list route reads the holder and make_public writes it.
+    proof: [api-tests]
+  - text: StoreIdentityStatus answers the policy_unavailable failure without a database, and InferenceAgentEmbedders answers None without a model list and otherwise embeds through B8631's RouterEmbedder.
+    proof: [api-tests]
+  - text: The identity, list, lookup, write and admin action routes answer through the booted proxy as LiteLLM does, with 401 for a missing or bad key, and /public/agents/fields answers 200 without a key.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: config-tests
+      why: the agent_routes section is missing or reads a key or default wrong
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::agent_routes::/)'
+    - id: api-tests
+      why: the agents route state is missing or built per request, or the embedder or status reads differ
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::agents::api::/)'
+oracle_cases:
+  - tools/oracle/cases/agents/wiring/public-fields-no-key.yaml
+  - tools/oracle/cases/agents/identity-admin/providers-jwt-off-empty.yaml
+  - tools/oracle/cases/agents/identity-admin/providers-jwt-on-issuers.yaml
+  - tools/oracle/cases/agents/identity-admin/providers-no-key-401.yaml
+  - tools/oracle/cases/agents/identity-admin/status-no-database-503.yaml
+  - tools/oracle/cases/agents/listing/list-config-agents-in-order.yaml
+  - tools/oracle/cases/agents/listing/list-public-agent-groups.yaml
+  - tools/oracle/cases/agents/listing/list-empty-public-groups.yaml
+  - tools/oracle/cases/agents/listing/list-redacts-litellm-params.yaml
+  - tools/oracle/cases/agents/listing/list-empty-query-422.yaml
+  - tools/oracle/cases/agents/listing/list-top-k-over-max-422.yaml
+  - tools/oracle/cases/agents/listing/list-bad-health-check-422.yaml
+  - tools/oracle/cases/agents/listing/list-query-not-configured-400.yaml
+  - tools/oracle/cases/agents/listing/list-bad-key-401.yaml
+  - tools/oracle/cases/agents/listing/get-agent-no-database-500.yaml
+  - tools/oracle/cases/agents/writes/create-no-key-401.yaml
+  - tools/oracle/cases/agents/writes/create-no-database-500.yaml
+  - tools/oracle/cases/agents/writes/update-no-database-500.yaml
+  - tools/oracle/cases/agents/writes/patch-no-database-500.yaml
+  - tools/oracle/cases/agents/writes/delete-no-database-500.yaml
+  - tools/oracle/cases/agents/writes/delete-no-key-401.yaml
+  - tools/oracle/cases/management/agent-admin-actions/kill-switch-resolve-db.yaml
+  - tools/oracle/cases/management/agent-admin-actions/kill-switch-resolve-registry.yaml
+  - tools/oracle/cases/management/agent-admin-actions/kill-switch-missing-agent.yaml
+  - tools/oracle/cases/management/agent-admin-actions/kill-switch-no-config.yaml
+  - tools/oracle/cases/management/agent-admin-actions/kill-switch-success.yaml
+  - tools/oracle/cases/management/agent-admin-actions/kill-switch-webhook-failure-502.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-single-admin-check.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-single-missing-agent.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-single-duplicate.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-single-success.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-single-db-missing.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-admin-check.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-validate-all.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-success.yaml
+  - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-db-missing.yaml
+deviations:
+  - what: The agents routes are registered at startup, not on the first request under a matching prefix.
+    why: betterlite has no lazy import cost. LiteLLM's OpenAPI document omits them until warmed; the answers to requests are the same.
+out_of_scope:
+  - "The handlers and their checks: B4781, B4784, B4785, B4786 and B3191. GET /agent/daily/activity: B8482."
+  - "The admission and invocation helper cases stay with B4781 and the merged card helper cases with B4785."
+  - "The adapters for the agent auth ports: B8645 and B8646. A2A and skills routes: B8648. The embedder itself: B8631."
+pitfalls:
+  - Mount /public/agents/fields only through mount_public; merged in mount it gets the key check and answers 401 where LiteLLM answers 200.
+  - The public group holder is one value shared by the list route and both make_public routes; two copies make a make_public call invisible to the list.
+  - The identity status route answers 503 "Agent policy could not be loaded" without a database, not 404, because LiteLLM always builds the store.
+  - The 401 for a missing key comes from the auth layers around mount, before any query-parameter 422 of the list route; a case with a bad key and a bad top_k must still answer 401.
+  - JWT_ISSUER and JWT_AUDIENCE are read once into IdentitySettings; reading the environment per request breaks the config crate rule.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

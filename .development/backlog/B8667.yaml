@@ -1,0 +1,13 @@
+id: B8667
+milestone: M8 platform
+title: Shared guardrail route state and the guardrail admin read and write mounts
+status: todo
+depends_on: [B8610, B8665, B8612, B8231, B3243, B3684, B3685]
+file: tasks/B8667-guardrail-admin-mount.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

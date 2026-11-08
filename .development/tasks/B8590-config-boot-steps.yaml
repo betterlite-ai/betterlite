@@ -31,8 +31,8 @@ description: >-
   ports.vector_stores. worker_registry, when truthy, fails with ConfigBootError::WorkerRegistryNeedsPremium whose text
   is "Trying to use `worker_registry`" followed by LiteLLM's CommonProxyErrors.not_premium_user text, because
   open-source LiteLLM without a license refuses it the same way; otherwise the worker list is empty. The ports are one
-  trait `NonLlmRegistries` with four methods, so the wave 17 wiring part plugs in B4680, B4776, B6764 and the vector
-  store registry.
+  trait `NonLlmRegistries` with four methods, and B8614's BootRegistries implements it over the agent, MCP and vector
+  store registries that Shared holds.
 
 
   `init_policy_engine(config, has_db, ports)` ports _init_policy_engine: no config or a falsy policies key does
@@ -97,8 +97,8 @@ deviations:
   - what: LITELLM_LICENSE in environment_variables does not re-check a premium license.
     why: betterlite has no paid tier.
 out_of_scope:
-  - "Calling these steps at startup in load_config order: B8374. Building the production SecretLookup with real HTTP: the wave 17 cache and secrets wiring part."
-  - "The response cache build (_init_cache) is B5630 with B8377's usage cache selection; switch_on_llm_response_caching is the wave 17 cache and secrets wiring part's CacheReinit for B8502."
+  - "Calling these steps at startup in load_config order: B8374. Building the production SecretLookup with real HTTP: B8612."
+  - "The response cache build (_init_cache) is B5630 with B8377's usage cache selection; switch_on_llm_response_caching is the production CacheReinit for B8502 that B8612 builds."
   - "The registries behind the ports: MCP tools B4680, agents B4776, MCP servers B6764, policies B3250, alerting update_values B8399."
   - "The router settings hierarchy (_parse_router_settings_value, get_hierarchical_router_settings): B881."
 pitfalls:

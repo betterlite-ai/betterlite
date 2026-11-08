@@ -24,6 +24,8 @@ description: >-
   forward. Client-forwarded auth types (true_passthrough and oauth_delegate) share one stored
   credential shape, while cross-class changes (e.g., oauth2 row becoming a BYOK row) discard
   the old credentials entirely.
+
+  The plan registers helper operation b4710 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b4710.rs, write tools/oracle/helpers/b4710.py, and leave both registries as they are.
 scope:
   paths:
     - crates/betterlite-db/Cargo.toml
@@ -32,6 +34,10 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/mcp-server-encoding/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-server-encoding-*
+    - tools/oracle/helpers/b4710.py
+    - tools/oracle/helpers/b4710/**
+    - tools/oracle/src/helpers/mcp/b4710.rs
+    - tools/oracle/src/helpers/mcp/b4710/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L107-L110

@@ -65,6 +65,8 @@ dod:
     proof: [create-call-tests]
   - text: "Exceptions are wrapped via B185/B186's exception_type with model, custom_llm_provider, original_exception, completion_kwargs and extra_kwargs, preserving the original exception chain."
     proof: [create-call-tests]
+  - text: "acreate() takes an injected ReservationRelease port, a trait in this module with one async method, release, that takes the reservation the logging object carries and returns B3496's ReleaseError; the SettlementHost the background poll gets forwards release_reservation to it unchanged, and a test with a fake port sees exactly one call per release. B8660 implements the port over the shared budget services."
+    proof: [create-call-tests]
 
 checks:
   optional: []

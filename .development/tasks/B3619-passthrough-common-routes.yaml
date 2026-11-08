@@ -4,12 +4,12 @@ description: >-
   Build the seven small provider pass-through routes and the /openai_passthrough alias as the module passthrough_common_routes in crates/betterlite-server.
   They are Gemini, Cohere, Mistral, TypeSafe, OpenRouter, Anthropic and Cursor.
   Each route works out a target URL and the upstream credential headers, then hands the request to B3615's create_pass_through_route handler.
-  This task registers the routes, so it adds HTTP oracle cases.
+  This task builds the routers; B8606 mounts them and owns their HTTP oracle cases, so test the handlers here with tower oneshot over the router and fakes.
   Every name below is at most 30 characters.
 
   Registration. `common_routes_router(deps)` returns the axum router with these paths, each for GET, POST, PUT, DELETE and PATCH, where `endpoint` is the rest of the path after the prefix, without a leading slash: `/gemini/{endpoint}`, `/cohere/{endpoint}`, `/mistral/{endpoint}`, `/typesafe/{endpoint}`, `/openrouter/{endpoint}`, `/anthropic/{endpoint}`, `/cursor/{endpoint}` and `/openai_passthrough/{endpoint}`.
-  `deps` is the same HandlerDeps value B3613 declares; the architect adds the router to the app once. No other path or alias exists for these routes at the pin.
-  The composition of all provider pass-through routes is the architect's, so this module only exposes the one function.
+  `deps` is the same HandlerDeps value B3613 declares; B8606 merges the router into the app once. B8606 also owns the one GET handler of `/openai_passthrough/{endpoint}` that sends an upgrade request to B3628's WebSocket route, so expose `openai_alias_route` as a function and leave GET on that path out of this router. Expose the Gemini route as its own `gemini_router(deps)` and leave it out of common_routes_router: LiteLLM gives it no auth dependency, so B8606 mounts it outside the auth layers. No other path or alias exists for these routes at the pin.
+  The composition of all provider pass-through routes is B8606's, so this module only exposes the one function.
 
   Shared steps. Every route except Gemini authenticates the caller through B052's key authentication, the same way the other proxy routes do. The target URL is B3618's `provider_target_url(base, endpoint)`: do not copy its path join. A base URL read from an environment variable counts as unset when the variable is empty, so the default applies (Python's `or`).
   The credential is B3602's `get_credentials(provider, None)`: a matching `use_in_pass_through` deployment first, then the `{PROVIDER}_API_KEY` environment variable. It returns an `Option`.
@@ -35,7 +35,6 @@ scope:
   paths:
     - crates/betterlite-server/src/passthrough_common_routes.rs
     - crates/betterlite-server/src/passthrough_common_routes/**
-    - tools/oracle/cases/server/passthrough-common-routes/**
     - tools/oracle/helpers/b3619.py
     - tools/oracle/helpers/b3619/**
     - tools/oracle/src/helpers/server/b3619.rs
@@ -65,20 +64,22 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/openai_passthrough_endpoints.py#L1-L44
     why: The /openai_passthrough alias route and why it is registered ahead of the native files and batches routes.
 dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports. B8606 mounts the routes and proves them over HTTP with the oracle cases that were listed here.
+    proof: [router-tests]
   - text: common_routes_router serves the eight paths for GET, POST, PUT, DELETE and PATCH, builds without an axum path conflict, and /openai_passthrough/v1/files reaches the pass-through, not a native route.
-    proof: [router-tests, oracle]
+    proof: [router-tests]
   - text: is_url_streaming is true when "stream" is in the target URL text and false when it is only in the query or the body, and the Gemini and Cohere routes use it.
-    proof: [target-tests, oracle]
+    proof: [target-tests]
   - text: Gemini takes the caller key from the query param key or x-goog-api-key, authenticates with "Bearer {key}", replaces the key param with the upstream key and keeps the other params, and answers 500 with the GEMINI_API_KEY message when no upstream key exists.
-    proof: [gemini-tests, oracle]
+    proof: [gemini-tests]
   - text: Cohere, Mistral, TypeSafe and OpenRouter send the Bearer header (TypeSafe and OpenRouter add Content-Type application/json), use their env bases and defaults, and OpenRouter strips one trailing slash and one /v1 from its base.
-    proof: [bearer-tests, oracle]
+    proof: [bearer-tests]
   - text: Anthropic merges the caller's headers without LiteLLM secrets with the proxy auth header (proxy wins), reads the base from ANTHROPIC_API_BASE then ANTHROPIC_BASE_URL, and answers 401 when neither side has a credential.
-    proof: [anthropic-tests, oracle]
+    proof: [anthropic-tests]
   - text: Cursor reads the key from get_credentials, then from the first cursor entry of the credential list (key and api_base), sends Basic base64 of "key:", and answers 401 with the Cursor message when no key exists.
-    proof: [cursor-tests, oracle]
+    proof: [cursor-tests]
   - text: The /openai_passthrough alias calls the OpenAI handler with the same endpoint and returns its result unchanged.
-    proof: [alias-tests, oracle]
+    proof: [alias-tests]
 checks:
   optional: []
   commands:
@@ -103,22 +104,7 @@ checks:
     - id: alias-tests
       why: the /openai_passthrough alias does not call the OpenAI handler or changes its result
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_common_routes::tests::alias(::|$)/)'
-oracle_cases:
-  - tools/oracle/cases/server/passthrough-common-routes/gemini-key-in-query.yaml
-  - tools/oracle/cases/server/passthrough-common-routes/gemini-key-in-header.yaml
-  - tools/oracle/cases/server/passthrough-common-routes/gemini-no-upstream-key.yaml
-  - tools/oracle/cases/server/passthrough-common-routes/gemini-stream-in-path.yaml
-  - tools/oracle/cases/server/passthrough-common-routes/cohere-bearer-key.yaml
-  - tools/oracle/cases/server/passthrough-common-routes/mistral-body-stream.yaml
-  - tools/oracle/cases/server/passthrough-common-routes/typesafe-headers.yaml
-  - tools/oracle/cases/server/passthrough-common-routes/openrouter-strips-v1-base.yaml
-  - tools/oracle/cases/server/passthrough-common-routes/anthropic-proxy-key.yaml
-  - tools/oracle/cases/server/passthrough-common-routes/anthropic-caller-key.yaml
-  - tools/oracle/cases/server/passthrough-common-routes/anthropic-no-credential.yaml
-  - tools/oracle/cases/server/passthrough-common-routes/anthropic-base-url-fallback.yaml
-  - tools/oracle/cases/server/passthrough-common-routes/cursor-basic-auth.yaml
-  - tools/oracle/cases/server/passthrough-common-routes/cursor-no-key.yaml
-  - tools/oracle/cases/server/passthrough-common-routes/openai-passthrough-alias.yaml
+oracle_cases: []
 deviations:
   - what: The TypeSafe and OpenRouter bases are read from the environment variable through betterlite-config, not through a key-management secret manager.
     why: LiteLLM's get_secret_str would ask a configured secret manager first. No secret-manager lookup has an owner for these two names yet (see notes); the environment value is what a default deployment sees.
