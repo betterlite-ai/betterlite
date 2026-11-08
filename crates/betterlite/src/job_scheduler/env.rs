@@ -13,18 +13,11 @@ pub struct JobDefaults {
 
 impl JobDefaults {
     pub fn from_env(env: &BTreeMap<String, String>) -> Result<Self, SchedulerError> {
-        let coalesce = match env.get("APSCHEDULER_COALESCE") {
-            Some(text) => {
-                let value =
-                    betterlite_env::flag("APSCHEDULER_COALESCE", text).map_err(|_source| {
-                        SchedulerError::InvalidEnv {
-                            name: "APSCHEDULER_COALESCE".to_owned(),
-                        }
-                    })?;
-                value.unwrap_or(true)
-            }
-            None => true,
-        };
+        // LiteLLM spells this one out with .lower() in ["true", "1"]: every other value is false, never an error.
+        let coalesce = env.get("APSCHEDULER_COALESCE").is_none_or(|text| {
+            let lowered = text.to_lowercase();
+            lowered == "true" || lowered == "1"
+        });
         let misfire_grace_seconds =
             env_number::<u64>(env, "APSCHEDULER_MISFIRE_GRACE_TIME")?.unwrap_or(3600);
         let max_instances = env_number::<u32>(env, "APSCHEDULER_MAX_INSTANCES")?.unwrap_or(1);

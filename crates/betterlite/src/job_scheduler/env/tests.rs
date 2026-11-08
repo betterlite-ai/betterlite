@@ -42,6 +42,10 @@ fn job_defaults_read_the_environment() {
 #[case::upper_case("TRUE", true)]
 #[case::false_word("false", false)]
 #[case::zero("0", false)]
+#[case::yes_is_not_litellm_true("yes", false)]
+#[case::on_is_not_litellm_true("on", false)]
+#[case::empty_is_false("", false)]
+#[case::unknown_text_is_false("perhaps", false)]
 fn job_defaults_read_coalesce_as_a_bool(#[case] text: &str, #[case] expected: bool) {
     let defaults = JobDefaults::from_env(&env(&[("APSCHEDULER_COALESCE", text)])).unwrap();
     assert_eq!(defaults.coalesce, expected);
@@ -50,7 +54,6 @@ fn job_defaults_read_coalesce_as_a_bool(#[case] text: &str, #[case] expected: bo
 #[rstest]
 #[case::grace("APSCHEDULER_MISFIRE_GRACE_TIME", "soon")]
 #[case::instances("APSCHEDULER_MAX_INSTANCES", "many")]
-#[case::coalesce("APSCHEDULER_COALESCE", "perhaps")]
 fn job_defaults_reject_an_invalid_value(#[case] name: &str, #[case] value: &str) {
     let error = JobDefaults::from_env(&env(&[(name, value)])).unwrap_err();
     assert!(matches!(error, SchedulerError::InvalidEnv { .. }));
