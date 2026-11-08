@@ -3,7 +3,9 @@ use std::time::Duration;
 
 use secrecy::{ExposeSecret, SecretString};
 
-use crate::secret_read_dispatch::http_transport::{HttpError, HttpExchange, HttpMethod};
+use crate::secret_read_dispatch::http_transport::{
+    HttpError, HttpExchange, HttpMethod, RequestHeader,
+};
 use crate::secret_read_dispatch::vault_http::VaultHttpTransport;
 use crate::vault::transport::{VaultMethod, VaultRequest, VaultTransport as _};
 
@@ -47,6 +49,12 @@ async fn vault_http_transport_sends_the_token_and_namespace() {
     assert_eq!(requests[0].url, "http://127.0.0.1:8200/v1/secret/data/db");
     assert_eq!(header(&requests[0], "x-vault-token"), Some(TOKEN));
     assert_eq!(header(&requests[0], "x-vault-namespace"), Some("team"));
+    let token = requests[0]
+        .headers
+        .iter()
+        .find(|(name, _)| *name == "x-vault-token")
+        .map(|(_, value)| value);
+    assert!(matches!(token, Some(RequestHeader::Secret(_))));
     assert_eq!(requests[0].timeout, Duration::from_secs(5));
     assert!(requests[0].follow_redirects);
     assert!(requests[0].verify_tls);

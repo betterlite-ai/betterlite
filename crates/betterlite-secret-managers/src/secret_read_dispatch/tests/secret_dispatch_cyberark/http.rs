@@ -2,7 +2,7 @@ use secrecy::{ExposeSecret, SecretString};
 
 use crate::cyberark::transport::{ConjurRequest, ConjurTransport as _, HttpMethod as ConjurMethod};
 use crate::secret_read_dispatch::conjur_http::ConjurHttpTransport;
-use crate::secret_read_dispatch::http_transport::{self, HttpError, HttpMethod};
+use crate::secret_read_dispatch::http_transport::{self, HttpError, HttpMethod, RequestHeader};
 
 use super::super::exchange::{header, reply, scripted};
 
@@ -37,6 +37,12 @@ async fn conjur_http_transport_sends_the_authorization_header() {
         header(&requests[0], "authorization"),
         Some("Token token=\"abc\"")
     );
+    let sent = requests[0]
+        .headers
+        .iter()
+        .find(|(name, _)| *name == "authorization")
+        .map(|(_, value)| value);
+    assert!(matches!(sent, Some(RequestHeader::Secret(_))));
     assert_eq!(requests[0].timeout, http_transport::DEFAULT_TIMEOUT);
     assert_eq!(
         requests[0].max_response_bytes,
