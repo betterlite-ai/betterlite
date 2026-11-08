@@ -1,14 +1,14 @@
 id: B4114
 milestone: M7 observability
 title: Search tool selection authorization and parent attribution
-status: todo
+status: done
 depends_on: []
 file: tasks/B4114-websearch-tool-access.yaml
 covers:
   - "litellm/integrations/websearch_interception/handler.py"
 parent: B119
 split_from: B119
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 916
