@@ -3,7 +3,7 @@ use super::issuer::normalized_authorize_endpoint;
 use crate::oauth_resource::resource_identity::canonicalize_url_identity;
 use crate::server_record::{MCPOAuthMetadata, MCPServer};
 
-const BAD_URL_PLACEHOLDER: &str = "<unparseable url>";
+const BAD_URL_PLACEHOLDER: &str = "<unparsable url>";
 
 #[must_use]
 pub fn restrict_to_corroborated(
