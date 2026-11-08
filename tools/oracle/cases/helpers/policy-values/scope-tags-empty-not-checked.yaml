@@ -1,0 +1,9 @@
+kind: helper
+name: scope-tags-empty-not-checked
+call:
+  b3240:
+    function: scope_matches
+    scope: {teams: [], keys: [], models: [], tags: []}
+    context: {team_alias: anything, key_alias: key, model: gpt-4, tags: []}
+env: {}
+compare: {ignore: []}

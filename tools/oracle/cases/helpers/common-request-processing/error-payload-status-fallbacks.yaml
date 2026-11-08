@@ -1,0 +1,16 @@
+kind: helper
+name: common-request-processing-error-payload-status-fallbacks
+call:
+  b7324:
+    function: error_payload
+    failures:
+      - {status_code: 401}
+      - {status_code: 403, error_type: custom_error}
+      - {status_code: 429, error_type: "None"}
+      - {status_code: 400, param: messages}
+      - {status_code: 500, param: "None"}
+      - {code: "418", detail: teapot}
+      - {code: not-a-code}
+      - {status_code: 503, detail: {error: "upstream refused"}}
+env: {}
+compare: {ignore: []}
