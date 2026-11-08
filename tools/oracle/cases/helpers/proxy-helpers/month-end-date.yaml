@@ -1,0 +1,40 @@
+kind: helper
+name: month-end-date
+call:
+  b8400:
+    calls:
+      - do: month_end
+        today: "2024-01-15"
+      - do: month_end
+        today: "2024-02-10"
+      - do: month_end
+        today: "2023-02-10"
+      - do: month_end
+        today: "2024-06-15"
+      - do: month_end
+        today: "2024-12-20"
+      - do: projection
+        spend: "140"
+        soft_limit: "200"
+        today: "2024-06-15"
+      - do: projection
+        spend: "140"
+        soft_limit: "300"
+        today: "2024-06-15"
+      - do: projection
+        spend: "140"
+        soft_limit: "290"
+        today: "2024-06-15"
+      - do: projection
+        spend: "100"
+        soft_limit: "110"
+        today: "2024-06-01"
+      - do: projection
+        spend: "190"
+        soft_limit: "290"
+        today: "2024-12-20"
+      - do: projection
+        spend: "1000"
+        today: "2024-06-15"
+env: {}
+compare: {ignore: []}
