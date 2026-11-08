@@ -1,5 +1,6 @@
 pub mod background_jobs;
 pub mod banner;
+pub mod boot_registries;
 pub mod cleanup_schedule;
 pub mod collector;
 pub mod config_boot;
@@ -7,7 +8,6 @@ pub mod db_config_overlay;
 pub mod db_object_sync;
 pub mod deployment_sync;
 pub mod diagnostic_commands;
-pub mod guardrails;
 pub mod job_scheduler;
 pub mod lifespan;
 pub mod metrics_listener;

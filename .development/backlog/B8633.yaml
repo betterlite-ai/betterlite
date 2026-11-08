@@ -1,0 +1,13 @@
+id: B8633
+milestone: M8 platform
+title: Chat streaming through the SSE data generator
+status: todo
+depends_on: [B8632, B5654, B8605, B8610, B8612, B2400, B247, B250, B2227, B342, B6370, B012, B010, B014, B016, B1103, B1137, B5095, B002]
+file: tasks/B8633-chat-stream-generator.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

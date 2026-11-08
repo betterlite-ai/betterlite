@@ -19,7 +19,7 @@ description: >-
   its trait if it declared one instead of adding a second). `UpstreamConnector::connect(&self, target: &url::Url, headers: &IndexMap<String,String>) -> Result<Box<dyn UpstreamSocket>, ConnectError>`.
   `ConnectError` is Rejected { status: u16 } (the upstream answered the upgrade with a non-101 status; LiteLLM's InvalidStatus) or Failed(String) (DNS, TLS, timeout, bad URL or scheme, anything else). `UpstreamSocket` has `&self` methods:
   send_text, send_bytes, recv (returns `UpstreamEvent`: Text, Binary, or Closed(Option<CloseFrame>) for a clean or error close the peer announced, with the received code and reason, or an Err for any other failure) and close.
-  CloseFrame is B3611's close record if it has one, else a struct of code (u16) and reason (String). A production adapter over axum's WebSocket and tokio-tungstenite is not part of this task (see notes in the planner report); the contract an adapter must keep is what websockets 15.0.1 does at the pin:
+  CloseFrame is B3611's close record if it has one, else a struct of code (u16) and reason (String). A production adapter over axum's WebSocket and tokio-tungstenite is not part of this task (B8642 builds it); the contract an adapter must keep is what websockets 15.0.1 does at the pin:
   open timeout 10 seconds, ping interval 20 seconds, ping timeout 20 seconds, largest incoming message 1048576 bytes (a larger one closes the socket with 1009 and the relay sees Closed(None)), permessage-deflate on.
 
   Flow of `relay`, in this order.
@@ -151,7 +151,7 @@ out_of_scope:
   - "The success completion, UpstreamExchange, PassThroughRequestState, ReservationBinder and PassThroughSuccessCompletion belong to B3607; PassThroughCallState to B3605; the ProxyHooks trait, FailureCause and PassThroughError to B6510."
   - "The route functions, their auth (user_api_key_auth_websocket), model allowlists, the Vertex Live credentials and upstream URL belong to B3628 and B3629, and the registration to B3616."
   - "ProxyLogging.pre_call_hook, post_call_success_hook and post_call_failure_hook are reached through B6510's trait. Their real implementations have no owner in this task."
-  - "The production ClientSocket (axum) and UpstreamConnector (tokio-tungstenite) adapters are not built here; a task that wires the routes must supply them."
+  - "The production ClientSocket (axum) and UpstreamConnector (tokio-tungstenite) adapters are not built here; B8642 builds them."
 pitfalls:
   - "The two Vertex provider strings differ on purpose: the client setup read writes kwargs custom_llm_provider as vertex_ai-language-models (hyphens) and model_call_details as vertex_ai, the server setup response read writes vertex_ai_language_models (underscores) to both. Keep both, because the later one wins."
   - "The first JSON object frame from the upstream is consumed as the setup response for a /vertex_ai/live endpoint and is not in websocket_messages. The counter counts only JSON object frames, so a leading binary or non-JSON frame does not use it up."

@@ -1,0 +1,14 @@
+id: B8805
+milestone: M8 platform
+title: Production hook ports for the shared pre-call step
+status: todo
+depends_on: [B8800, B8610, B8611, B8612, B8391, B3546, B8393, B8399, B750, B752, B3269, B3030]
+file: tasks/B8805-pre-call-hook-ports.yaml
+covers:
+  - "litellm/proxy/common_request_processing.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

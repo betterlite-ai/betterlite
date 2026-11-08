@@ -1,7 +1,7 @@
 id: B4785
 title: Create, replace, patch and delete registered agents
 description: >-
-  Build the write side of the agents API in betterlite-server, module `agent_writes` under agent_endpoints (LiteLLM's create_agent, update_agent, patch_agent and delete_agent in endpoints.py, plus its `_proxy_base_url`, `_validate_protocol_version` and `_build_merged_agent_card`). Four routes: POST `/v1/agents`, PUT `/v1/agents/{agent_id}`, PATCH `/v1/agents/{agent_id}` and DELETE `/v1/agents/{agent_id}`. POST, PUT and PATCH carry the tag "[beta] A2A Agents" and answer with an AgentResponse; DELETE carries the tag "Agents" (not the beta one). All four are authenticated by B052 before anything else runs. The pure pieces and the database layer belong to other tasks and this task calls them in LiteLLM's order. Read the existing files first for exact names and use them: crates/betterlite-core/src/agents.rs (AgentConfig, PatchAgentRequest, AgentResponse, ExecutionMode), crates/betterlite-server/src/agent_endpoints/identity_admin (B4781), agent_reads.rs and agent_listing.rs (B4784), agent_credentials (B4775), agent_persistence (B4777), crates/betterlite-auth/src/agent_registry (B4776), agent_identity (B4772) and crates/betterlite-a2a/src/agent_card (B4811). All JSON values use the `AgentJson` alias from betterlite_core::agents::json. Expose one function, `agent_write_routes`, that returns the axum routes for the four method and path pairs; B074 composes it. This task registers nothing else: GET on the same paths belongs to B4784 and axum merges the methods by itself.
+  Build the write side of the agents API in betterlite-server, module `agent_writes` under agent_endpoints (LiteLLM's create_agent, update_agent, patch_agent and delete_agent in endpoints.py, plus its `_proxy_base_url`, `_validate_protocol_version` and `_build_merged_agent_card`). Four routes: POST `/v1/agents`, PUT `/v1/agents/{agent_id}`, PATCH `/v1/agents/{agent_id}` and DELETE `/v1/agents/{agent_id}`. POST, PUT and PATCH carry the tag "[beta] A2A Agents" and answer with an AgentResponse; DELETE carries the tag "Agents" (not the beta one). All four are authenticated by B052 before anything else runs. The pure pieces and the database layer belong to other tasks and this task calls them in LiteLLM's order. Read the existing files first for exact names and use them: crates/betterlite-core/src/agents.rs (AgentConfig, PatchAgentRequest, AgentResponse, ExecutionMode), crates/betterlite-server/src/agent_endpoints/identity_admin (B4781), agent_reads.rs and agent_listing.rs (B4784), agent_credentials (B4775), agent_persistence (B4777), crates/betterlite-auth/src/agent_registry (B4776), agent_identity (B4772) and crates/betterlite-a2a/src/agent_card (B4811). All JSON values use the `AgentJson` alias from betterlite_core::agents::json. Expose one function, `agent_write_routes`, that returns the axum routes for the four method and path pairs; B8647 composes it. This task registers nothing else: GET on the same paths belongs to B4784 and axum merges the methods by itself.
 
   Ports and wiring, in agent_writes.rs. Native async fn, no statics, no trait objects; tests use in-memory fakes. `AgentWriteStore` has `add_agent(&self, agent: &AgentConfig, created_by: &str, agent_id: Option<&str>)`, `update_agent(&self, agent_id: &str, agent: &AgentConfig, updated_by: &str)`, `patch_agent(&self, agent_id: &str, agent: &PatchAgentRequest, updated_by: &str)` (each returns `Result<AgentResponse, AgentPersistenceError>`) and `delete_agent(&self, agent_id: &str) -> Result<(), AgentPersistenceError>`. The production implementation `PgAgentWriteStore<P>` (agent_writes/pg.rs) holds B4777's `AgentStore<P>` and forwards each call to the method of the same name; it adds no logic. The existing-agent read and the "has a database" test use B4784's `AgentReads` port (`has_database()` and `agent_row(agent_id)`), so no second SQL read is written here. `ProxyUrls` is a second port with `custom_url(&self, request_base_url: &str, request_root_path: &str) -> String` (LiteLLM's `get_custom_url(request_base_url, route=None)`: PROXY_BASE_URL when set, else the request base URL, then joined with the request root path). The route handler gets the root path from B4200's `get_request_root_path` and passes it in. B7323's `CustomUrls::custom_url(&self, request_base_url, request_root_path)` is the real implementation behind ProxyUrls and the server wires it in. This task defines the port and tests with a fake. The routes also take the caller's UserApiKeyAuth from B052 (its user_id and user_role), the B4775 `SensitiveDataMasker` built once in the constructor, the `JwtAgentSettings` value (built by the server from `general_settings.enable_jwt_auth` and `litellm_jwtauth.agent_id_jwt_field`, exactly as B4784's listing route takes it), and the `AgentRegistry` handle the same way B4784 takes it.
 
@@ -50,8 +50,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4391-L4395
     why: The db_not_connected_error text that PUT and PATCH answer with when there is no database.
 dod:
-  - text: POST, PUT, PATCH and DELETE on the agents paths run the feature check, then the admin-only permission check, then the database check, in that order, and answer 401 without a key, 403 for a non-admin, and 500 `Prisma client not initialized` (POST, DELETE) or the DB not connected text (PUT, PATCH) without a database.
-    proof: [route-tests, oracle]
+  - text: POST, PUT, PATCH and DELETE on the agents paths run the feature check, then the admin-only permission check, then the database check, in that order, and answer 403 for a non-admin and 500 `Prisma client not initialized` (POST, DELETE) or the DB not connected text (PUT, PATCH) without a database.
+    proof: [route-tests]
   - text: The identity request is Absent when the key is missing, Null when it is null and Value when it is set, for AgentConfig and for PatchAgentRequest, and the execution mode is copied.
     proof: [identity-request-tests]
   - text: The card merge answers 400 with the Unsupported protocolVersion message (naming the version and listing 0.3 and 1.0) for an unsupported version, builds the proxy url `<proxy_base>/a2a/<agent_id>`, and uses the card's own name before the agent name.
@@ -64,8 +64,10 @@ dod:
     proof: [remove-tests]
   - text: A persistence error answers 409 for a conflict, 503 or 400 for an identity failure by its code, and 500 with its text for anything else, and an IdentityAdminError keeps its own status and detail.
     proof: [error-tests]
-  - text: The oracle cases give LiteLLM's answers for the unauthenticated and no-database requests and for the merged card.
+  - text: The oracle helper cases give LiteLLM's answers for the merged card.
     proof: [oracle]
+  - text: The four handlers are tested with tower's oneshot over agent_write_routes and fake ports; B8647 mounts them and proves the 401 and no-database answers over HTTP with the oracle cases moved there.
+    proof: [route-tests]
 checks:
   optional: []
   commands:
@@ -91,12 +93,6 @@ checks:
       why: a persistence or identity error answers with another status than the one LiteLLM sends
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::agent_writes::error::/)'
 oracle_cases:
-  - tools/oracle/cases/agents/writes/create-no-key-401.yaml
-  - tools/oracle/cases/agents/writes/create-no-database-500.yaml
-  - tools/oracle/cases/agents/writes/update-no-database-500.yaml
-  - tools/oracle/cases/agents/writes/patch-no-database-500.yaml
-  - tools/oracle/cases/agents/writes/delete-no-database-500.yaml
-  - tools/oracle/cases/agents/writes/delete-no-key-401.yaml
   - tools/oracle/cases/agents/writes/merged-card-basic.yaml
   - tools/oracle/cases/agents/writes/merged-card-unsupported-version.yaml
   - tools/oracle/cases/agents/writes/merged-card-name-from-card.yaml
@@ -112,7 +108,7 @@ out_of_scope:
   - "GET /v1/agents and GET /v1/agents/{agent_id} belong to B4784, and /v1/agents/identity/providers and /v1/agents/{agent_id}/identity to B4781. The kill switch and make_public routes belong to B4786."
   - "AgentStore and its SQL belong to B4777, the redaction and restore functions to B4775, AgentRegistry to B4776, reject_legacy_identity and managed_write_fields to B4772, check_feature_access_for_user to B864 and merge_agent_card to B4811."
   - "get_custom_url (proxy/utils.py) is owned by B7323; this task defines the ProxyUrls port only."
-  - "Building IdentitySettings, JwtAgentSettings and the stores from config, and composing agent_write_routes into the app, is the wave 17 agents wiring part's and is not built here."
+  - "Building IdentitySettings, JwtAgentSettings and the stores from config, and composing agent_write_routes into the app, is B8647's and is not built here."
 pitfalls:
   - PUT and PATCH read the existing agent and answer 404 before they check the identity request, and both 404 texts say `not found` while DELETE says `not found in DB.`.
   - The identity request keeps a missing `identity` key and a null identity apart; null means no binding and skips the check, while a missing key falls back to the stored binding.

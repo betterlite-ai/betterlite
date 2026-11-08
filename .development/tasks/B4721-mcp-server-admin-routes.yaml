@@ -7,7 +7,7 @@ description: >-
   Errors are FastAPI HTTPException values. A detail that is an object gives {"detail": {"error": "..."}} and a detail that is a string gives {"detail": "..."}. The texts below say which one each error uses. A request body that fails to parse gives FastAPI's 422 with a list under "detail", and that comes from the request types of B4716 and the body extractor, not from this module.
 
 
-  Layout. crates/betterlite-server/src/mcp/server_admin.rs holds ServerAdmin (a struct whose fields are the ports and values the routes need, built by the composition root with a struct literal), the AdminError enum (thiserror, one variant per failure, with a method that gives the HTTP status and the JSON detail) and `routes()` which returns the axum router with the five routes.
+  Layout. crates/betterlite-server/src/mcp/server_admin.rs holds ServerAdmin (a struct whose fields are the ports and values the routes need, built by B8627 with a struct literal), the AdminError enum (thiserror, one variant per failure, with a method that gives the HTTP status and the JSON detail) and `routes()` which returns the axum router with the five routes.
   The files beside it, each with a tests.rs: create.rs (route 1), import.rs (route 2), update.rs (route 3), delete.rs (route 4), public_servers.rs (route 5).
   No global state. LiteLLM's globals become fields of ServerAdmin: the database handle and writes (B4711, B4712), the registry for reads (B4731 SharedRegistry), the registry mutator (B6765 RegistryMutator), the payload rules and stdio policy (B4716 PayloadRules and StdioPolicy), the token cache port (B4715 UserTokenCaches), and two ports declared in this module for route 5 (below).
   Every handler of routes 1 to 4 runs inside B865's management_endpoint_wrapper; route 5 does not (its decorator has no wrapper), so build it without that layer. Each route needs a valid key (the Depends(user_api_key_auth) argument); use the same authenticated-caller extractor that B4720 and B4723 use.
@@ -64,7 +64,7 @@ description: >-
   Route 5. POST /v1/mcp/make_public sets which servers the AI Hub shows. Body MakeMCPServersPublicRequest { mcp_server_ids: Vec<String> } (declared in this module; a missing field or a non-list is a 422). Status 202.
   The whole handler body is one guard. An HTTPException passes through; any other error becomes 500 with the string detail <error text> and an error log "Error making agent public: <error>" (LiteLLM's own wording, keep it).
   Steps. a. Read the stored config through the ConfigStore port (below), before any role check. b. Role gate: not admin gives 403 with the object detail {"error": "Only proxy admins can update public mcp servers. Your role=<role>"}, where <role> is the role's string value as LiteLLM prints it (a key without a role prints None; read how B4720 prints it for the same kind of text). c. For each id in order, B4731's server_by_id(id) with no client ip (config servers and database servers both count); the first unknown id gives 404 with the string detail "MCP Server with ID <id> not found". d. Set config["litellm_settings"]["public_mcp_servers"] = ids (create litellm_settings when it is missing or null). e. ConfigStore::save_config(config). f. PublicServerSetting::set(ids), which updates the live public list in memory. g. Log at debug level "Updated public mcp servers to: <ids> by user: <user_id>". h. Return {"message": "Successfully updated public mcp servers", "public_mcp_servers": <ids>, "updated_by": <caller user_id or null>}, keys in that order.
-  Two ports are declared here for route 5. ConfigStore: get_config() -> serde_json::Value and save_config(Value), the same stored configuration LiteLLM's ProxyConfig reads and writes (see notes; no task owns it yet at the time of writing). PublicServerSetting: set(Vec<String>), which the composition root implements over the live RegistrySettings.public_mcp_servers of B4731.
+  Two ports are declared here for route 5. ConfigStore: get_config() -> serde_json::Value and save_config(Value), the same stored configuration LiteLLM's ProxyConfig reads and writes (B8627 implements it over B8380's ProxyConfigState in shared.proxy_config). PublicServerSetting: set(Vec<String>), which B8627 implements over the live RegistrySettings.public_mcp_servers of B4731.
 
   Tests use synthetic servers (ids like test-srv-1, names like test-weather, urls like https://mcp.example.test/sse), fakes for every port, a recording fake for the registry mutator and the token purge, and a fake database whose methods can fail on demand. They cover every branch above, including the order of the checks in routes 1, 3 and 5 and the order of the calls to the registry mutator.
 
@@ -73,7 +73,6 @@ scope:
   paths:
     - crates/betterlite-server/src/mcp/server_admin.rs
     - crates/betterlite-server/src/mcp/server_admin/**
-    - tools/oracle/cases/http/mcp-server-admin/**
     - tools/oracle/helpers/b4721.py
     - tools/oracle/helpers/b4721/**
     - tools/oracle/src/helpers/server/b4721.rs
@@ -109,32 +108,34 @@ references:
     why: The documented admin routes for adding, updating and removing servers.
 
 dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports; B8627 mounts the routes and proves the items below over HTTP with the cases that moved there.
+    proof: [admin-tests]
   - text: >-
       POST /v1/mcp/server runs the database check, payload validation, the oauth2 flow stamp, the admin gate, the reserved id check and the existing id check in that order with the exact texts,
       forces approval_status active and clears submitted_by and submitted_at, answers 201 with the redacted row, and maps a conflict to 400 and a write error to 500.
-    proof: [create-tests, oracle]
+    proof: [create-tests]
   - text: >-
       A failing registry refresh after a successful create is logged and the route still answers 201 with the redacted row.
     proof: [create-tests]
   - text: >-
       POST /v1/mcp/server/import converts, classifies against existing and earlier aliases, creates entries one at a time in order, reloads the registry once and only when something was imported,
       and returns imported, skipped and errors lists with LiteLLM's exact skip and error texts; a bad entry never fails the request.
-    proof: [import-tests, oracle]
+    proof: [import-tests]
   - text: >-
       PUT /v1/mcp/server validates before the admin gate, snapshots the stored row with a swallowed read error, applies the discovery and DCR checks with their read-failed rules,
       maps conflict to 400 and a missing row to 404, updates and reloads the registry, purges per-user OAuth tokens only when the token identity changed, and answers 202 with the redacted row.
-    proof: [update-tests, oracle]
+    proof: [update-tests]
   - text: >-
       DELETE /v1/mcp/server/{server_id} checks the database then the admin gate, answers 404 for an unknown id, removes the server from the registry and reloads it, and answers 202 with an empty body.
-    proof: [delete-tests, oracle]
+    proof: [delete-tests]
   - text: >-
       POST /v1/mcp/make_public reads the config before the admin check, answers 403 and 404 with their exact detail shapes, saves litellm_settings.public_mcp_servers, updates the live setting
       and returns message, public_mcp_servers and updated_by; an unexpected error is a 500 with a string detail.
-    proof: [public-tests, oracle]
+    proof: [public-tests]
   - text: >-
       The five routes are registered once under /v1/mcp with the methods, paths and status codes in the description, every error body has the object or string detail shape the description names,
       and a view-only admin is refused by all five.
-    proof: [admin-tests, oracle]
+    proof: [admin-tests]
 
 checks:
   optional: [mutants]
@@ -158,37 +159,7 @@ checks:
       why: the make-public route, its config order, its detail shapes or its saved list is missing or wrong
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::server_admin::public_servers::/)'
 
-oracle_cases:
-  - tools/oracle/cases/http/mcp-server-admin/create-no-database-500.yaml
-  - tools/oracle/cases/http/mcp-server-admin/create-non-admin-403.yaml
-  - tools/oracle/cases/http/mcp-server-admin/create-bad-name-before-gate-400.yaml
-  - tools/oracle/cases/http/mcp-server-admin/create-reserved-id-400.yaml
-  - tools/oracle/cases/http/mcp-server-admin/create-existing-id-400.yaml
-  - tools/oracle/cases/http/mcp-server-admin/create-alias-conflict-400.yaml
-  - tools/oracle/cases/http/mcp-server-admin/create-forces-active-201.yaml
-  - tools/oracle/cases/http/mcp-server-admin/create-view-only-403.yaml
-  - tools/oracle/cases/http/mcp-server-admin/import-non-admin-403.yaml
-  - tools/oracle/cases/http/mcp-server-admin/import-mapping-form.yaml
-  - tools/oracle/cases/http/mcp-server-admin/import-list-form-missing-name.yaml
-  - tools/oracle/cases/http/mcp-server-admin/import-existing-alias-skipped.yaml
-  - tools/oracle/cases/http/mcp-server-admin/import-duplicate-in-payload-skipped.yaml
-  - tools/oracle/cases/http/mcp-server-admin/import-url-and-command-error.yaml
-  - tools/oracle/cases/http/mcp-server-admin/import-stdio-disabled-error.yaml
-  - tools/oracle/cases/http/mcp-server-admin/update-non-admin-403.yaml
-  - tools/oracle/cases/http/mcp-server-admin/update-bad-name-before-gate-400.yaml
-  - tools/oracle/cases/http/mcp-server-admin/update-unknown-server-404.yaml
-  - tools/oracle/cases/http/mcp-server-admin/update-partial-keeps-fields.yaml
-  - tools/oracle/cases/http/mcp-server-admin/update-null-clears-field.yaml
-  - tools/oracle/cases/http/mcp-server-admin/update-discovery-not-eligible-400.yaml
-  - tools/oracle/cases/http/mcp-server-admin/update-dcr-bridge-wrong-auth-400.yaml
-  - tools/oracle/cases/http/mcp-server-admin/update-alias-conflict-400.yaml
-  - tools/oracle/cases/http/mcp-server-admin/delete-non-admin-403.yaml
-  - tools/oracle/cases/http/mcp-server-admin/delete-unknown-server-404.yaml
-  - tools/oracle/cases/http/mcp-server-admin/delete-empty-202.yaml
-  - tools/oracle/cases/http/mcp-server-admin/delete-then-fetch-404.yaml
-  - tools/oracle/cases/http/mcp-server-admin/make-public-non-admin-403.yaml
-  - tools/oracle/cases/http/mcp-server-admin/make-public-unknown-server-404.yaml
-  - tools/oracle/cases/http/mcp-server-admin/make-public-saves-list.yaml
+oracle_cases: []
 
 deviations:
   - what: >-

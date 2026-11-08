@@ -22,6 +22,8 @@ scope:
     - crates/betterlite-logging/src/gcs_pubsub.rs
     - crates/betterlite-logging/src/gcs_pubsub/tests.rs
     - crates/betterlite-logging/src/gcs_pubsub/tests/**
+    - crates/betterlite-logging/src/registry/catalog/gcs_pubsub.rs
+    - crates/betterlite-logging/src/registry/catalog/gcs_pubsub/**
   lint_tables: false
 
 references:
@@ -37,6 +39,8 @@ references:
     why: publish_message base64-encodes message JSON, constructs request, POSTs to Pub/Sub REST API.
 
 dod:
+  - text: "The Pub/Sub logger implements CallbackLogger for its async success and failure events, and registry/catalog/gcs_pubsub.rs builds it from the project and topic variables read through CatalogInputs.env (tests named callback_logger_* in gcs_pubsub and registry/catalog/gcs_pubsub/tests.rs)."
+    proof: [callback-logger]
   - text: GcsPubSubLogger.__init__ requires both project_id and topic_id, raising ValueError if either is missing.
     proof: [pubsub-tests]
   - text: Missing project_id and topic_id are resolved from GCS_PUBSUB_PROJECT_ID and GCS_PUBSUB_TOPIC_ID environment variables.
@@ -84,6 +88,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: callback-logger
+      why: gcs_pubsub stays unavailable or publishes nothing from a logger event
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::gcs_pubsub::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_pubsub::(.*::)?callback_logger_/)'
     - id: pubsub-tests
       why: the gcs_pubsub tests fail, do not exist, or are incomplete
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_pubsub::/) - test(/replays_the_/)'
