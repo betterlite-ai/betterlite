@@ -8,7 +8,8 @@ use betterlite_server::proxy_helpers::checks::{
     premium_user_check, prisma_client_or_throw,
 };
 use betterlite_server::proxy_helpers::projected::{
-    ProjectionError, is_projected_spend_over_limit, month_end_date, projected_spend_over_limit,
+    ProjectedLimit, ProjectionError, is_projected_spend_over_limit, month_end_date,
+    projected_spend_over_limit,
 };
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
@@ -139,13 +140,7 @@ fn perform(call: &Call) -> HelperResult {
                 .map_err(|error: ProjectionError| failure(&error.to_string()))?;
             let reached = projected_spend_over_limit(spend_amount, limit_value, *today)
                 .map_err(|error: ProjectionError| failure(&error.to_string()))?;
-            let limit = match reached {
-                Some(limit) => json!({
-                    "projected_spend": float_text(limit.projected_spend)?,
-                    "date": limit.limit_exceed_date.format("%Y-%m-%d").to_string(),
-                }),
-                None => Value::Null,
-            };
+            let limit = reached.map(limit_json).transpose()?.unwrap_or(Value::Null);
             Ok(json!({ "over_limit": over, "limit": limit }))
         }
         Call::Premium {
@@ -187,6 +182,13 @@ fn outcome_name(outcome: &Result<(), ProxyCheckError>) -> &'static str {
 fn parse_amount(text: &str) -> Result<Decimal, Box<HelperError>> {
     text.parse()
         .map_err(|error: rust_decimal::Error| failure(&error.to_string()))
+}
+
+fn limit_json(limit: ProjectedLimit) -> Result<Value, Box<HelperError>> {
+    Ok(json!({
+        "projected_spend": float_text(limit.projected_spend)?,
+        "date": limit.limit_exceed_date.format("%Y-%m-%d").to_string(),
+    }))
 }
 
 fn float_text(value: Decimal) -> Result<String, Box<HelperError>> {
