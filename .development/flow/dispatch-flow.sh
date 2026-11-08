@@ -43,6 +43,7 @@ trap 'rm -f -- "$args"' EXIT
 worktree=$worktrees/$id
 events=$L/flow-events.log
 say() { echo "$(date +%H:%M) $id $*" >> "$events"; }
+park() { say "blocked: $*"; printf '%s\t%s\t%s\t%s\t%s\n' "$(date '+%F %H:%M')" "$id" "$run" "$main/.git/betterlite/$id" "$(tr '\t\n' '  ' <<< "$*")" >> "$L/parked.tsv"; }
 if [ -z "$LAND_ONLY" ]; then
 while ! (cd "$main" && cargo gate availability) > "$L/availability-$id.log" 2>&1; do
   maintenance
@@ -56,9 +57,9 @@ if [ -d "$worktree" ]; then
   # a paused worker leaves uncommitted work, and git merge refuses to start over it; all worktrees share one stash list, so the entry is kept by its commit, never by position
   stashed=
   [ -n "$(git -C "$worktree" status --porcelain)" ] && stashed=$(flock "$L/locks/stash.lock" sh -c 'git -C "$1" stash push -u -q -m "$2" && git -C "$1" rev-parse refs/stash' sh "$worktree" "$id $run uncommitted work")
-  bash "$P/merge-main.sh" "$worktree" | grep -q -E '^merged' || { say "blocked: main does not merge cleanly before $run${stashed:+ (uncommitted work kept in git stash $stashed)}"; exit 3; }
+  bash "$P/merge-main.sh" "$worktree" | grep -q -E '^merged' || { park "main does not merge cleanly before $run${stashed:+ (uncommitted work kept in git stash $stashed)}"; exit 3; }
   if [ -n "$stashed" ]; then
-    git -C "$worktree" stash apply -q "$stashed" || { say "blocked: the worker's uncommitted work conflicts with main after the merge (git stash $stashed)"; exit 3; }
+    git -C "$worktree" stash apply -q "$stashed" || { park "the worker's uncommitted work conflicts with main after the merge (git stash $stashed)"; exit 3; }
     flock "$L/locks/stash.lock" sh -c 'n=$(git -C "$1" stash list --format=%H | grep -n -x -F "$2" | cut -d: -f1) && [ -n "$n" ] && git -C "$1" stash drop -q "stash@{$((n - 1))}"' sh "$worktree" "$stashed"
   fi
 fi
@@ -73,7 +74,7 @@ if [ "$code" -ne 0 ]; then
   # the gate keeps progress.json in the journal until the task merges, so a rerun goes on from the same counts and needs no note again
   rm -rf "$main/.git/betterlite/$id"/mutants-work*
   if [ -z "$RETRIED" ] && grep -q -E 'does not match its format|merge conflict|behind main' "$log"; then
-    bash "$P/merge-main.sh" "$worktree" | grep -q -E '^merged' || { say "blocked: main does not merge cleanly"; exit 3; }
+    bash "$P/merge-main.sh" "$worktree" | grep -q -E '^merged' || { park "main does not merge cleanly"; exit 3; }
     RETRIED=1 exec bash "$0" "$id" "${run}b" "main is merged into your branch now; continue where the last run stopped."
   fi
   if grep -q -E 'at its usage limit|ladder is unavailable|every worker vendor is unavailable' "$log"; then
@@ -89,7 +90,12 @@ if [ "$code" -ne 0 ]; then
     maintenance
     PAUSES=$(( ${PAUSES:-0} + 1 )) exec bash "$0" "$id" "${run}p" "$note"
   fi
-  say "blocked: $(grep -m1 -o -E 'cannot dispatch [^:]+: .{0,300}' "$log")"
+  reason=$(grep -m1 -o -E 'cannot dispatch [^:]+: .*' "$log")
+  if [ -n "$reason" ] && [ -d "$worktree" ] && unblock_note=$(bash "$P/unblock.sh" "$id" "$worktree" "$reason"); then
+    say "unblocked by a rule: $unblock_note"
+    GRANT=1 exec bash "$0" "$id" "${run}u" "$unblock_note"
+  fi
+  park "${reason:0:300}"
   # Preserve the build target and task temp files for a later explicit resume.
   exit 2
 fi
@@ -165,7 +171,7 @@ case "$result" in
   # CI runs every check that builds tests, so a red run goes back to the worker with its gate lines and logs, three rounds at most
   *" run "*" failed"*)
     run_id=$(grep -o -E 'run [0-9]+ failed' <<< "$result" | head -1 | tr -dc 0-9)
-    [ "${CI_ROUNDS:-0}" -lt 3 ] || { say "blocked: CI failed on PR #$pr (run $run_id) after 3 fix rounds"; exit 5; }
+    [ "${CI_ROUNDS:-0}" -lt 3 ] || { park "CI failed on PR #$pr (run $run_id) after 3 fix rounds"; exit 5; }
     rm -rf -- "$worktree/target/ci-logs"
     logs=$worktree/target/ci-logs/$run_id
     gh run download "$run_id" -D "$logs" > /dev/null 2>&1
@@ -185,7 +191,7 @@ $timed_out}
 The gate logs of that run are in target/ci-logs/$run_id/ in your worktree. Fix the cause and finish as usual. The final gate here runs only the lint checks; CI runs the tests again once the branch is pushed." ;;
   # main moved under the open PR; the land path merges main again (line 88) and stops when the merge needs a person, three rounds at most
   *" conflicts with main"*)
-    [ "${CONFLICTS:-0}" -lt 3 ] || { say "blocked: PR #$pr conflicts with main after 3 merges of main"; exit 5; }
+    [ "${CONFLICTS:-0}" -lt 3 ] || { park "PR #$pr conflicts with main after 3 merges of main"; exit 5; }
     say "PR #$pr conflicts with main; merging main and landing again"
     LAND_ONLY=1 CONFLICTS=$(( ${CONFLICTS:-0} + 1 )) exec bash "$0" "$id" "${run}m" "" ;;
   *) exit 5 ;;
