@@ -1,0 +1,9 @@
+kind: helper
+name: login-form-default-seed
+call:
+  login_form:
+    environment: {}
+    general_settings: {}
+    show_deprecation_banner: true
+env: {}
+compare: {ignore: []}

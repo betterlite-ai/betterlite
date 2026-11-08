@@ -1,0 +1,5 @@
+kind: helper
+name: policy-registry-load-seed
+call: {"b3241": {policy_memory_matching_registry: {action: load_policies, policies: {baseline: {guardrails: {add: [pii]}}, child: {inherit: baseline, guardrails: [phi]}}}}}
+env: {}
+compare: {ignore: []}
