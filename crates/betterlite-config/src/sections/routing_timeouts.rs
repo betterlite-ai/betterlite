@@ -1,1 +1,195 @@
-crate::sections::stub_section!();
+use serde::Deserialize;
+
+use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::raw::RawNumber;
+use crate::resolve::{parse_float, resolve_number};
+use crate::sections::Section;
+
+mod tests;
+
+// LiteLLM's package default: request_timeout is 6000 unless a config value or the REQUEST_TIMEOUT environment replaces it
+const DEFAULT_TIMEOUT_SECONDS: f64 = 6000.0;
+
+#[derive(Debug, Default, Deserialize)]
+pub struct Raw {
+    #[serde(default)]
+    model_list: Vec<RawDeployment>,
+    #[serde(default)]
+    router_settings: RawRouter,
+    #[serde(default)]
+    litellm_settings: RawLiteLlm,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawDeployment {
+    #[serde(default)]
+    litellm_params: RawParams,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawParams {
+    timeout: Option<RawNumber>,
+    stream_timeout: Option<RawNumber>,
+    request_timeout: Option<RawNumber>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawRouter {
+    timeout: Option<RawNumber>,
+    stream_timeout: Option<RawNumber>,
+    #[serde(default)]
+    default_litellm_params: RawDefaultParams,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawDefaultParams {
+    timeout: Option<RawNumber>,
+    stream_timeout: Option<RawNumber>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawLiteLlm {
+    request_timeout: Option<RawNumber>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GlobalTimeout {
+    pub seconds: f64,
+    pub explicitly_set: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct RouterTimeouts {
+    pub timeout: Option<f64>,
+    pub stream_timeout: Option<f64>,
+    pub default_timeout: Option<f64>,
+    pub default_stream_timeout: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct DeploymentTimeouts {
+    pub timeout: Option<f64>,
+    pub stream_timeout: Option<f64>,
+    pub request_timeout: Option<f64>,
+}
+
+// deployments stay index-aligned with model_list, which the router keeps in config order
+#[derive(Debug, Clone, PartialEq)]
+pub struct Settings {
+    pub global: GlobalTimeout,
+    pub router: RouterTimeouts,
+    pub deployments: Vec<DeploymentTimeouts>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            global: GlobalTimeout {
+                seconds: DEFAULT_TIMEOUT_SECONDS,
+                explicitly_set: false,
+            },
+            router: RouterTimeouts::default(),
+            deployments: Vec::new(),
+        }
+    }
+}
+
+impl Section for Raw {
+    type Settings = Settings;
+
+    fn convert<L>(self, lookup: &L) -> Result<Self::Settings, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
+        let configured = resolve_number(
+            self.litellm_settings.request_timeout,
+            "litellm_settings.request_timeout",
+            lookup,
+            parse_float,
+        )?;
+        let environment_text = lookup.lookup("REQUEST_TIMEOUT").unwrap_or_default();
+        let environment = betterlite_env::number::<f64>("REQUEST_TIMEOUT", &environment_text)?;
+        let global = match configured {
+            Some(seconds) => GlobalTimeout {
+                seconds,
+                explicitly_set: true,
+            },
+            None => environment.map_or(
+                GlobalTimeout {
+                    seconds: DEFAULT_TIMEOUT_SECONDS,
+                    explicitly_set: false,
+                },
+                |seconds| GlobalTimeout {
+                    seconds,
+                    explicitly_set: true,
+                },
+            ),
+        };
+        Ok(Settings {
+            global,
+            router: router_settings(self.router_settings, lookup)?,
+            deployments: deployment_settings(self.model_list, lookup)?,
+        })
+    }
+}
+
+fn router_settings<L>(raw: RawRouter, lookup: &L) -> Result<RouterTimeouts, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    Ok(RouterTimeouts {
+        timeout: resolve_number(raw.timeout, "router_settings.timeout", lookup, parse_float)?,
+        stream_timeout: resolve_number(
+            raw.stream_timeout,
+            "router_settings.stream_timeout",
+            lookup,
+            parse_float,
+        )?,
+        default_timeout: resolve_number(
+            raw.default_litellm_params.timeout,
+            "router_settings.default_litellm_params.timeout",
+            lookup,
+            parse_float,
+        )?,
+        default_stream_timeout: resolve_number(
+            raw.default_litellm_params.stream_timeout,
+            "router_settings.default_litellm_params.stream_timeout",
+            lookup,
+            parse_float,
+        )?,
+    })
+}
+
+fn deployment_settings<L>(
+    raw: Vec<RawDeployment>,
+    lookup: &L,
+) -> Result<Vec<DeploymentTimeouts>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let mut deployments = Vec::with_capacity(raw.len());
+    for (index, deployment) in raw.into_iter().enumerate() {
+        let prefix = format!("model_list.{index}.litellm_params");
+        deployments.push(DeploymentTimeouts {
+            timeout: resolve_number(
+                deployment.litellm_params.timeout,
+                &format!("{prefix}.timeout"),
+                lookup,
+                parse_float,
+            )?,
+            stream_timeout: resolve_number(
+                deployment.litellm_params.stream_timeout,
+                &format!("{prefix}.stream_timeout"),
+                lookup,
+                parse_float,
+            )?,
+            request_timeout: resolve_number(
+                deployment.litellm_params.request_timeout,
+                &format!("{prefix}.request_timeout"),
+                lookup,
+                parse_float,
+            )?,
+        });
+    }
+    Ok(deployments)
+}
