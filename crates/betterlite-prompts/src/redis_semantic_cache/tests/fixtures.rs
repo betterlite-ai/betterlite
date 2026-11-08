@@ -328,7 +328,9 @@ fn attribute(name: &str, kind: &str, tail: &[String]) -> Json {
 }
 
 pub(crate) struct InfoShape {
+    pub(crate) key_type: String,
     pub(crate) prefix: String,
+    pub(crate) prefix_as_text: bool,
     pub(crate) vector_name: String,
     pub(crate) response_kind: String,
     pub(crate) vector_tail: Vec<String>,
@@ -337,7 +339,9 @@ pub(crate) struct InfoShape {
 impl InfoShape {
     pub(crate) fn matching(prefix: &str, dimension: usize) -> Self {
         Self {
+            key_type: "HASH".to_owned(),
             prefix: prefix.to_owned(),
+            prefix_as_text: false,
             vector_name: "prompt_vector".to_owned(),
             response_kind: "TEXT".to_owned(),
             vector_tail: words(&[
@@ -363,15 +367,20 @@ pub(crate) fn info_reply(name: &str, dimension: usize) -> Json {
 }
 
 pub(crate) fn info_reply_shaped(name: &str, shape: &InfoShape) -> Json {
+    let prefixes = if shape.prefix_as_text {
+        Json::Text(shape.prefix.clone())
+    } else {
+        Json::List(vec![Json::Text(shape.prefix.clone())])
+    };
     Json::List(vec![
         Json::Text("index_name".to_owned()),
         Json::Text(name.to_owned()),
         Json::Text("index_definition".to_owned()),
         Json::List(vec![
             Json::Text("key_type".to_owned()),
-            Json::Text("HASH".to_owned()),
+            Json::Text(shape.key_type.clone()),
             Json::Text("prefixes".to_owned()),
-            Json::List(vec![Json::Text(shape.prefix.clone())]),
+            prefixes,
         ]),
         Json::Text("attributes".to_owned()),
         Json::List(vec![

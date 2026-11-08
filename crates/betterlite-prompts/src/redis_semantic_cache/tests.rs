@@ -1,21 +1,27 @@
 #![cfg(test)]
 
+mod fake_redis;
 mod fixtures;
 
+use std::str;
 use std::sync::Arc;
 
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 
+use self::fake_redis::FakeRedis;
 use self::fixtures::{
     FakeConnector, FakeEmbedder, FakeIndex, InfoShape, PROBE, TIMESTAMP, VECTOR, alternative_error,
     cache_with, cache_with_shared, command_args, empty_env, hit, info_reply, info_reply_shaped,
     kwargs_with_message, options, stored_cache, text_args, words,
 };
 use crate::arguments::json::{Json, Object};
+use crate::redis_semantic_cache::error::RedisSemanticError;
 use crate::redis_semantic_cache::options::RedisEnv;
-use crate::redis_semantic_cache::ports::{CacheEntryFields, IndexSchema, SemanticSearchQuery};
+use crate::redis_semantic_cache::ports::{
+    CacheEntryFields, IndexSchema, SemanticClock as _, SemanticSearchQuery, SystemClock,
+};
 use crate::redis_semantic_cache::{RedisSemanticCache, SIMILARITY_FIELD, SemanticCacheKwargs};
 
 #[test]
@@ -325,6 +331,10 @@ fn vector_tail(algorithm: &str, datatype: &str, metric: &str) -> Vec<String> {
 #[case::uppercase_algorithm_name(InfoShape { vector_tail: words(&["ALGORITHM", "HNSW", "TYPE", "FLOAT32", "DIM", "3"]), ..matching_shape() }, false)]
 #[case::uppercase_metric_name(InfoShape { vector_tail: words(&["DISTANCE_METRIC", "L2", "DIM", "3"]), ..matching_shape() }, false)]
 #[case::uppercase_names_with_type_datatype(InfoShape { vector_tail: words(&["ALGORITHM", "FLAT", "TYPE", "FLOAT32", "DIM", "3"]), ..matching_shape() }, true)]
+#[case::key_type(InfoShape { key_type: "JSON".to_owned(), ..matching_shape() }, false)]
+#[case::prefix_as_text(InfoShape { prefix_as_text: true, ..matching_shape() }, true)]
+#[case::other_prefix_as_text(InfoShape { prefix: "other".to_owned(), prefix_as_text: true, ..matching_shape() }, false)]
+#[case::dims_at_an_odd_offset(InfoShape { vector_tail: words(&["FLAT", "TYPE", "FLOAT32", "DIMS", "3"]), ..matching_shape() }, true)]
 #[case::dimension_at_an_odd_offset(InfoShape { vector_tail: words(&["FLAT", "TYPE", "FLOAT32", "DIM", "3"]), ..matching_shape() }, true)]
 fn index_schema_compare_flags_every_difference(#[case] shape: InfoShape, #[case] expected: bool) {
     let schema = IndexSchema {
@@ -976,4 +986,187 @@ fn lookup_server_replies_for_a_missing_index_are_recognised(
 fn lookup_rejects_a_malformed_search_reply() {
     let reply = Json::List(vec![Json::Text("not a count".to_owned())]);
     super::query::parse_search_reply(&reply).expect_err("a malformed reply");
+}
+
+#[rstest]
+#[case::empty(vec![], false)]
+#[case::one_item(vec![Json::Text("index_name".to_owned())], false)]
+#[case::odd_length(vec![Json::Text("a".to_owned()), Json::Null, Json::Null], false)]
+#[case::a_single_pair(vec![Json::Text("index_name".to_owned()), Json::Text("idx".to_owned())], true)]
+fn info_object_needs_whole_name_value_pairs(#[case] items: Vec<Json>, #[case] valid: bool) {
+    let parsed = super::schema::info_object(&Json::List(items));
+    assert_eq!(parsed.is_ok(), valid);
+}
+
+#[test]
+fn lookup_search_reply_accepts_a_numeric_distance() {
+    let reply = Json::List(vec![
+        Json::Number(Number::from(1_i64)),
+        Json::Text("idx:entry".to_owned()),
+        Json::List(vec![
+            Json::Text("vector_distance".to_owned()),
+            Json::Number(Number::from_f64(0.25).expect("a number")),
+        ]),
+    ]);
+    let hits = super::query::parse_search_reply(&reply).expect("a search reply");
+    assert_eq!(hits[0].vector_distance, Some(0.25_f64));
+}
+
+#[test]
+fn store_system_clock_reports_seconds_since_the_epoch() {
+    let now = SystemClock.now_seconds().expect("a clock after the epoch");
+    assert!(now > 1_700_000_000.0_f64);
+}
+
+#[tokio::test]
+async fn index_live_info_converts_every_reply_kind() {
+    let server = FakeRedis::start().await;
+    server.reply(
+        "FT.INFO",
+        "*5\r\n$3\r\nabc\r\n:7\r\n+simple\r\n$-1\r\n*1\r\n:1\r\n",
+    );
+    let reply = server
+        .connect()
+        .await
+        .ft_info("idx")
+        .await
+        .expect("a reply");
+    assert_eq!(
+        reply,
+        Some(Json::List(vec![
+            Json::Text("abc".to_owned()),
+            Json::Number(Number::from(7_i64)),
+            Json::Text("simple".to_owned()),
+            Json::Null,
+            Json::List(vec![Json::Number(Number::from(1_i64))]),
+        ]))
+    );
+    assert_eq!(
+        server.commands("FT.INFO"),
+        [vec![b"FT.INFO".to_vec(), b"idx".to_vec()]]
+    );
+}
+
+#[tokio::test]
+async fn index_live_info_rejects_a_reply_that_is_not_text_numbers_or_lists() {
+    let server = FakeRedis::start().await;
+    server.reply("FT.INFO", "+OK\r\n");
+    let error = server
+        .connect()
+        .await
+        .ft_info("idx")
+        .await
+        .expect_err("an unsupported reply kind");
+    assert!(matches!(
+        error,
+        RedisSemanticError::UnexpectedReply { kind: "value" }
+    ));
+}
+
+#[rstest]
+#[case::unknown_index(b"-Unknown index name\r\n", true)]
+#[case::no_such_index(b"-no such index\r\n", true)]
+#[case::other_error(b"-ERR syntax error\r\n", false)]
+#[tokio::test]
+async fn index_live_info_turns_only_a_missing_index_into_none(
+    #[case] wire: &[u8],
+    #[case] missing: bool,
+) {
+    let server = FakeRedis::start().await;
+    server.reply("FT.INFO", str::from_utf8(wire).expect("text"));
+    let result = server.connect().await.ft_info("idx").await;
+    if missing {
+        assert_eq!(result.expect("a missing index is not an error"), None);
+    } else {
+        assert!(matches!(result, Err(RedisSemanticError::Backend(_))));
+    }
+}
+
+#[tokio::test]
+async fn index_live_create_and_drop_send_their_commands() {
+    let server = FakeRedis::start().await;
+    let schema = IndexSchema {
+        name: "idx".to_owned(),
+        prefix: "idx".to_owned(),
+        dimension: 3,
+    };
+    let index = server.connect().await;
+    index.ft_create(&schema).await.expect("created");
+    index.ft_dropindex("idx").await.expect("dropped");
+    assert_eq!(
+        server.commands("FT.CREATE"),
+        [command_args(&super::live::create_command(&schema))]
+    );
+    assert_eq!(
+        server.commands("FT.DROPINDEX"),
+        [vec![b"FT.DROPINDEX".to_vec(), b"idx".to_vec()]]
+    );
+}
+
+#[tokio::test]
+async fn lookup_live_search_sends_the_command_and_parses_the_hits() {
+    let server = FakeRedis::start().await;
+    server.reply(
+        "FT.SEARCH",
+        "*3\r\n:1\r\n$9\r\nidx:entry\r\n*4\r\n$8\r\nresponse\r\n$2\r\n{}\r\n$15\r\nvector_distance\r\n$3\r\n0.1\r\n",
+    );
+    let query = SemanticSearchQuery {
+        vector: vec![1.0_f32, 0.5_f32],
+        distance_threshold: 0.25,
+        cache_key: "scope".to_owned(),
+    };
+    let hits = server
+        .connect()
+        .await
+        .ft_search("idx", &query)
+        .await
+        .expect("hits");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].response.as_deref(), Some("{}"));
+    assert_eq!(hits[0].vector_distance, Some(0.1_f64));
+    assert_eq!(
+        server.commands("FT.SEARCH"),
+        [command_args(&super::live::search_command("idx", &query))]
+    );
+}
+
+#[rstest]
+#[case::with_ttl(Some(30), 1)]
+#[case::without_ttl(None, 0)]
+#[tokio::test]
+async fn store_live_hash_is_written_and_expired_only_with_a_ttl(
+    #[case] ttl: Option<i64>,
+    #[case] expires: usize,
+) {
+    let server = FakeRedis::start().await;
+    let fields = CacheEntryFields {
+        entry_id: "e1".to_owned(),
+        prompt: "hi".to_owned(),
+        response: "{}".to_owned(),
+        prompt_vector: vec![0, 0, 128, 63],
+        inserted_at: TIMESTAMP,
+        updated_at: TIMESTAMP,
+        litellm_cache_key: "scope".to_owned(),
+    };
+    server
+        .connect()
+        .await
+        .store_hash("idx:e1", &fields, ttl)
+        .await
+        .expect("stored");
+    assert_eq!(
+        server.commands("HSET"),
+        [command_args(&super::live::store_command("idx:e1", &fields))]
+    );
+    assert_eq!(server.commands("EXPIRE").len(), expires);
+    if let Some(seconds) = ttl {
+        assert_eq!(
+            server.commands("EXPIRE"),
+            [vec![
+                b"EXPIRE".to_vec(),
+                b"idx:e1".to_vec(),
+                seconds.to_string().into_bytes()
+            ]]
+        );
+    }
 }
