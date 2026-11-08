@@ -1,0 +1,130 @@
+id: B8061
+title: Python model info, max tokens and the model cost map functions
+description: >-
+  Give `betterlite` the model lookup functions users call: `get_model_info`, `get_max_tokens`, `get_provider_info`,
+  `get_model_cost_mutation_generation` and the cost map API of litellm_core_utils/get_model_cost_map.py. The lookup rules
+  (candidate names, provider match, fallbacks, the "This model isn't mapped yet" error) are Rust in B205 and B193, and the
+  reload service is B194 with B257. This task adds the native family `model_info` and the Python layer. Python builds JSON,
+  calls Rust, and returns the `ModelInfo` dict.
+
+
+  Native family `model_info`, as B5659 describes it: `src/model_info.rs` with one `register` function, code in
+  `src/model_info/**`, types in `python/betterlite/_native_model_info.pyi`. B5369 declares the `model_info` family in `lib.rs` and `_native.pyi` with a stub `register` that this task fills. A `#[pyclass] NativeCatalog` is built once from a JSON text and owns B205's resolver over B193's immutable price
+  map and B194's reload service. Its methods are `model_info(request_json)`, `max_tokens(model)`, `provider_info(request_json)`,
+  `set_runtime_entries(json)`, `reload_blocking(request_json)`, `reload_async(request_json)` (an awaitable through
+  `pyo3_async_runtimes::tokio::future_into_py`, as B5659 does), `adopt(json)`, `source_info()` and `generation()`. Pure JSON
+  conversions sit in `src/model_info/convert.rs` with tests named `model_info_request_` and `model_info_result_`.
+
+
+  Python lives in `python/betterlite/_model_info/` with an explicit `__all__`. The user
+  can assign into `betterlite.model_cost` and call `register_model` (B5365), so Python keeps the native catalog in step: each
+  call reads `get_model_cost_mutation_generation()` and, only when it changed since the last call, sends the entries that differ
+  from the bundled map through `set_runtime_entries`. `get_model_info(model, custom_llm_provider=None, api_base=None,
+  api_key=None)` returns the `ModelInfo` TypedDict with every key LiteLLM returns, with `None` for an absent optional key. A
+  miss raises the exception LiteLLM raises, with its message (`This model isn't mapped yet. model=..., custom_llm_provider=...`).
+  It also has the attributes `cache_clear` and `cache_info` (utils.py L6502-L6503), backed by a counter of native lookups.
+  `get_max_tokens(model)` returns `int | None` and raises the same unmapped error. `get_provider_info(model,
+  custom_llm_provider)` returns the provider specific dict or `None`.
+
+
+  Cost map API: `get_model_cost_map(url, timeout=5, max_attempts=..., ...)` returns the dict, `refetch_model_cost_map(url,
+  ...)` is a coroutine that returns `ModelCostMapReloaded` or `ModelCostMapReloadUnavailable` (plain dataclasses with the
+  fields at L212-L224), `adopt_model_cost_map(new_map)` rebinds `betterlite.model_cost`, bumps the generation, and returns the
+  count of entries as in L556-L567, and the three reporters `get_model_cost_map_provenance`, `get_model_cost_map_source_info`
+  and `get_model_cost_map_loaded_at` return the shapes at L431-L478, with `loaded_at` as ISO 8601 text or `None`.
+  `git_blob_id(body)` (L60) is the SHA-1 of `blob <len>\0` plus the bytes. `LITELLM_LOCAL_MODEL_COST_MAP` is read at call
+  time by Rust through B194's config. The injected `client`, `sleep` and `rng` arguments cannot drive the Rust fetch, so a
+  non-default value raises `UnsupportedCallArgument` from `betterlite._completion.errors` (B158), and `mark_litellm_import_complete`
+  is not built (B157).
+
+
+  Tests compare `get_model_info` for a fixed model list (an OpenAI chat model, a prefixed Bedrock id, a Vertex model, a fine
+  tune name, an unmapped name) against LiteLLM with the local map, and run reload against a local HTTP server that serves
+  the bundled file, a 429 first, and a corrupt body.
+scope:
+  paths:
+  - crates/betterlite-python/src/model_info.rs
+  - crates/betterlite-python/src/model_info/**
+  - crates/betterlite-python/python/betterlite/_native_model_info.pyi
+  - crates/betterlite-python/Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-python/python/betterlite/_model_info/**
+  - crates/betterlite-python/tests/test_model_info.py
+  - crates/betterlite-python/tests/model_map_server.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5439-L5498
+  why: get_max_tokens and its unmapped error.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5572-L5576
+  why: The mutation generation counter.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5888-L5904
+  why: get_provider_info.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L6408-L6503
+  why: get_model_info, its api_key cache bypass and the cache_clear attributes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L207-L230
+  why: The reload result classes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L364-L478
+  why: refetch_model_cost_map and the provenance reporters.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L556-L697
+  why: adopt_model_cost_map and the sync entry point.
+dod:
+- text: "`get_model_info` returns LiteLLM's dict for the fixed model list and raises the same error text for an unmapped model."
+  proof: [model-info-lookup]
+- text: "`get_max_tokens` and `get_provider_info` match LiteLLM for mapped and unmapped names."
+  proof: [model-info-lookup]
+- text: A change to `betterlite.model_cost` or a `register_model` call shows in the next `get_model_info`, and no entry is re-sent when the generation is unchanged.
+  proof: [model-info-sync]
+- text: "`get_model_cost_map`, `refetch_model_cost_map` and `adopt_model_cost_map` give LiteLLM's results for a good body, a 429 then a good body, and a corrupt body."
+  proof: [model-info-reload]
+- text: The three reporters and `git_blob_id` return LiteLLM's shapes before and after a reload.
+  proof: [model-info-reload]
+- text: A non-default `client`, `sleep` or `rng` raises `UnsupportedCallArgument`.
+  proof: [model-info-reload]
+- text: JSON conversions for every native method parse without an interpreter, and malformed text gives an error, not a panic.
+  proof: [model-info-native]
+- text: The `_model_info` package passes ruff and strict basedpyright.
+  proof: [python-lint]
+- text: >-
+    This task adds every Cargo.toml dependency it uses and no unused ones.
+  proof: [model-info-lookup]
+checks:
+  optional: []
+  commands:
+  - id: model-info-lookup
+    why: A lookup result or error text differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_model_info.py -k "lookup"
+  - id: model-info-sync
+    why: Runtime changes to the cost map do not reach the native lookup.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_model_info.py -k "sync"
+  - id: model-info-reload
+    why: A reload result or reporter differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_model_info.py -k "reload or reporter or unsupported"
+  - id: model-info-native
+    why: A conversion breaks or panics.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^model_info::/)'
+  - id: python-lint
+    why: A strict type error in the model info package.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`get_model_cost_map` and `refetch_model_cost_map` refuse an injected `client`, `sleep` or `rng`."
+  why: A Python object cannot drive the Rust fetch, and ignoring it would send a request past a caller's own client or proxy.
+- what: "`get_model_info.cache_info()` counts native lookups, not an `lru_cache`."
+  why: Rust caches nothing the way functools does, and the counter only keeps the attribute present.
+- what: This task has no helper oracle cases.
+  why: The pytest file compares both packages, and the lookup cases belong to B205 and B193.
+out_of_scope:
+- "Lookup and fallback rules, `_get_model_info_helper`, `_get_potential_model_names`, the name strip helpers and `_get_model_cost_key` (utils.py L5501-L6407) are Rust (B205, B193)."
+- "`register_model` and `reapply_runtime_model_cost_registrations` are B5365. `supports_*` flags are B5361."
+- "`GetModelCostMap` file loading, `_expand_model_aliases`, the retry classes and background retry thread (get_model_cost_map.py L46-L360, L481-L555, L570-L616) are Rust (B194, B257)."
+- "`mark_litellm_import_complete` (L207) is skipped, as B157 states."
+pitfalls:
+- "`get_model_info` with an `api_key` skips the cache, so send the key through to Rust and do not keep the result."
+- "`loaded_at` is a `datetime` from `get_model_cost_map_loaded_at` and ISO text inside `get_model_cost_map_source_info`."
+- "`adopt_model_cost_map` of an empty dict returns 0, not an error, and still bumps the generation."
+- "Optional `ModelInfo` keys are present with `None` in LiteLLM's result, so a missing key is a test failure."
+- "A `register_model` entry overrides the bundled one only for that key, so send entries that differ, never the whole map."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

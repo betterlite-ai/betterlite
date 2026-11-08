@@ -1,0 +1,30 @@
+id: B7929
+milestone: M12 python
+title: Python types for the small provider files and llms/base.py (types/llms aiml to xai)
+status: todo
+depends_on: [B5657]
+file: tasks/B7929-types-small-provider-types.yaml
+covers:
+  - "litellm/types/llms/aiml.py"
+  - "litellm/types/llms/azure.py"
+  - "litellm/types/llms/azure_ai.py"
+  - "litellm/types/llms/base.py"
+  - "litellm/types/llms/cohere.py"
+  - "litellm/types/llms/custom_http.py"
+  - "litellm/types/llms/databricks.py"
+  - "litellm/types/llms/langgraph.py"
+  - "litellm/types/llms/meta.py"
+  - "litellm/types/llms/mistral.py"
+  - "litellm/types/llms/ollama.py"
+  - "litellm/types/llms/openrouter.py"
+  - "litellm/types/llms/recraft.py"
+  - "litellm/types/llms/rerank.py"
+  - "litellm/types/llms/stability.py"
+  - "litellm/types/llms/triton.py"
+  - "litellm/types/llms/xai.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

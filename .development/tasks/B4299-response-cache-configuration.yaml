@@ -155,7 +155,7 @@ deviations:
   - what: >-
       GCS cache backend initialization.
     why: >-
-      GCSCache (backlog B127) has not yet been split into a task file. B4299 raises CacheTypeNotSupportedError
+      GcsCache is built by B127 (tasks/B127-gcs-response-cache.yaml), which B4299 does not wire. B4299 raises CacheTypeNotSupportedError
       ("cache type 'gcs' is not yet implemented") when that type is selected.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L278-L283
 
@@ -185,7 +185,7 @@ out_of_scope:
   - >-
     Redis cluster mode (not yet owned by any task file), Redis semantic cache backend (owned by B4382),
     Valkey semantic cache backend (backlog B128, not yet split into a task), Qdrant semantic cache backend
-    (owned by B4383), S3 cache backend (owned by B4350), GCS cache backend (backlog B127, not yet split into a task),
+    (owned by B4383), S3 cache backend (owned by B4350), GCS cache backend (owned by B127),
     and Azure Blob cache backend (owned by B4351).
   - Native Rust backend integration (blocker F).
 

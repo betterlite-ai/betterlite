@@ -1,0 +1,72 @@
+id: B7889
+title: Python realtime client secrets, transcription session, calls and websocket
+description: >-
+  This task adds the realtime functions: `acreate_realtime_client_secret`, `acreate_realtime_transcription_session`, `arealtime_calls` and `_arealtime` of litellm/realtime_api/main.py. Rust runs them (B1010 for the three HTTP calls, B1011 for the websocket connector `_arealtime`, its Vertex token resolver and `_build_litellm_metadata`). The health probe `_realtime_health_check` belongs to B1127 and is not built here.
+
+
+  Native side, the family `realtime_calls`: `src/realtime_calls.rs` with `register` that adds `NativeRealtimeSession` and `NativeRealtimeError`, and `src/realtime_calls/convert.rs` with tests `request_*` and `error_*`. For `_arealtime` the session gets two async callables, `receive` and `send`, from the Python side and awaits them from Rust. The architect writes the `lib.rs` line.
+
+
+  Python side, `python/betterlite/realtime_api/main.py` and `__init__.py`. `acreate_realtime_client_secret(model, session, expires_after, timeout, **kwargs)` returns the client secret response, `acreate_realtime_transcription_session(model, transcription_session, timeout, **kwargs)` returns the session response, and `arealtime_calls(openai_ephemeral_key, sdp_body, model, session, timeout, **kwargs)` returns the SDP answer. `_arealtime(model, websocket, api_base, api_key, api_version, azure_ad_token, client, timeout, query_params, **kwargs)` takes a websocket that has async `receive_text()`, `send_text(text)` and `close(code)` (the FastAPI and Starlette shape), and wraps those three methods into the callables for the session. The response types come from B167. Python objects that cannot cross to Rust (`client`, `shared_session`) raise `UnsupportedCallArgument` from B158.
+scope:
+  paths:
+  - crates/betterlite-python/src/realtime_calls.rs
+  - crates/betterlite-python/src/realtime_calls/**
+  - crates/betterlite-python/python/betterlite/_native_realtime_calls.pyi
+  - crates/betterlite-python/python/betterlite/realtime_api/main.py
+  - crates/betterlite-python/python/betterlite/realtime_api/__init__.py
+  - crates/betterlite-python/tests/test_realtime.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L1-L128
+  why: helper functions and the HTTP config lookup
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L128-L348
+  why: client secret, transcription session and realtime calls
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L349-L589
+  why: _arealtime, the websocket connector
+dod:
+- text: Every function keeps LiteLLM's name and parameters, and a keyword LiteLLM refuses is refused here.
+  proof: [realtime-signature]
+- text: "The three HTTP calls return the same results as LiteLLM against one local server, and a websocket session relays text both ways and closes with the code Rust gives."
+  proof: [realtime-calls]
+- text: A provider error keeps its class and cause, and an unsupported Python object raises `UnsupportedCallArgument`.
+  proof: [realtime-errors]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [realtime-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: realtime-signature
+    why: A caller's keyword is accepted or refused wrongly.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_realtime.py -k signature
+  - id: realtime-calls
+    why: A result differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_realtime.py -k calls
+  - id: realtime-errors
+    why: An error class or message changes.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_realtime.py -k 'error or unsupported'
+  - id: realtime-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^realtime_calls::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for these calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The websocket argument must have `receive_text`, `send_text` and `close`.
+  why: Rust cannot hold a Python websocket object, so the three methods are handed over as callables. Any other object raises `UnsupportedCallArgument`.
+- what: This task has no helper oracle cases.
+  why: The functions call a native session, so pytest compares both packages against one local server.
+out_of_scope:
+- "`_realtime_health_check` and its helpers (L590-L742): B1127."
+- "Provider execution belongs to B1010 and B1011."
+pitfalls:
+- "`arealtime_calls` sends `sdp_body` as bytes with content type `application/sdp`, never as JSON."
+- "`client_secret` and `transcription` calls default the model to `gpt-4o-realtime-preview`, decided in Rust."
+- "Cancelling the Python task has to stop the Rust relay and close the socket."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

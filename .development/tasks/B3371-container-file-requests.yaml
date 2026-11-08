@@ -23,6 +23,7 @@ description: >-
   Provider pick (both functions). The provider is the first truthy value of the custom-llm-provider header, then the
   custom_llm_provider query value, then the literal "openai". An empty string is not truthy, so it falls through to the next
   source.
+  The pick is a public function, `pub fn pick_provider(hints: &ProviderHints) -> String`, so B3372 calls the same pick for its JSON routes.
 
   process_file_content_request(request parts, container_id, file_id, caller). Steps, in LiteLLM's order (L164-L268).
   (1) Pick the provider. (2) Call check_access with the path container_id and the provider; it returns the original id and the
@@ -96,6 +97,9 @@ references:
 dod:
   - text: >-
       The provider is the custom-llm-provider header when it is not empty, else the custom_llm_provider query value when it is not empty, else "openai", in both functions. An empty header falls through to the query.
+    proof: [provider-tests]
+  - text: >-
+      `pub fn pick_provider(hints: &ProviderHints) -> String` is public and both request functions use it, so B3372 reuses the same pick.
     proof: [provider-tests]
   - text: >-
       The ownership check runs first with the path container_id and the picked provider, its original id and resolved provider replace the path values for the rest of the call, and a denial returns before the common processing is called, in both functions.

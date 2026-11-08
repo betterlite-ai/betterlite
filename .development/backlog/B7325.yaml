@@ -1,0 +1,14 @@
+id: B7325
+milestone: M3 providers
+title: GigaChat access tokens
+status: todo
+depends_on: []
+file: tasks/B7325-gigachat-access-tokens.yaml
+covers:
+  - "litellm/llms/gigachat/authenticator.py"
+parent: B043
+split_from: B043
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

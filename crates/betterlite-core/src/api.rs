@@ -55,6 +55,7 @@ pub mod container_file_upload;
 pub mod container_ownership;
 pub mod container_resource_http;
 pub mod container_resource_ops;
+pub mod container_router_calls;
 pub mod copilot_chat;
 pub mod copilot_embedding;
 pub mod copilot_messages;

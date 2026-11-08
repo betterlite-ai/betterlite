@@ -1,0 +1,110 @@
+id: B7321
+title: MCP OAuth flows implementation, discovery and gateway token routes
+description: >-
+  Last part of discoverable_endpoints.py that has no other owner. Three things: (1) the discovery documents and the JWKS route, (2) the HTTP routes for the gateway token endpoints, (3) OauthFlowsImpl, the struct that implements B4719's OauthFlows port by calling the flow modules of B7530, B7531 and B7532. This task writes no OAuth logic of its own for (3); it only wires.
+
+
+  Code goes in betterlite-server, module mcp::oauth_root: crates/betterlite-server/src/mcp/oauth_root.rs (the router builder OauthRoot and the shared form structs), oauth_root/discovery.rs, oauth_root/jwks_route.rs, oauth_root/token_routes.rs, oauth_root/flows_impl.rs and a tests.rs beside each file. The struct OauthRoot holds the registry lookup, the master key, B7530's SealCipher, the session guard, the flows and the clock as fields; the composition root builds it. Nothing is global.
+
+
+  1. Discovery (discoverable_endpoints.py L2784-L2870, L2932-L2941). `authorization_server_response(request_base_url, server_name: Option<&str>, issuer_path: Option<&str>, server: Option<&MCPServer>) -> Result<AsMetadata, DiscoveryError>` is `_build_oauth_authorization_server_response` (named differently because of the 30 character rule). The caller resolves the server first: when no name is given it resolves the single OAuth2 server for root endpoints (LiteLLM `_resolve_oauth2_server_for_root_endpoints`, with the client ip) and uses its server_name or name as the name; a name is looked up by name or id (`_resolve_mcp_server_by_name_or_id`, B4731). Both lookups and `_raise_unless_oauth2_discovery_server` (B6760's UPSTREAM_OAUTH_DISCOVERY_AUTH_TYPES; the not-found and not-OAuth answers, see notes) come through the registry port that B4719 and B6760 already use. The document keys in this order: issuer, authorization_endpoint, token_endpoint, response_types_supported ["code"], scopes_supported (the server scopes or an empty list), grant_types_supported ["authorization_code", "refresh_token"], code_challenge_methods_supported ["S256"], token_endpoint_auth_methods_supported ["client_secret_post"], registration_endpoint. With a name the endpoints are "<base>/<name>/authorize", "<base>/<name>/token" and "<base>/<name>/register"; without one they are "<base>/authorize", "<base>/token" and "<base>/register". The issuer is "<base>/<issuer_path>" when issuer_path is given, else "<base>/<name>" when the name was given in the request path, else the bare base (a name resolved from the single server does not enter the issuer). AsMetadata is a typed serde struct, not a Value.
+
+
+  Routes (all GET, JSON, no auth): "/.well-known/oauth-authorization-server<suffix>/{mcp_server_name}" is `oauth_authorization_server_mcp`; "/.well-known/oauth-authorization-server<suffix>/mcp/{mcp_server_name}" passes issuer_path "mcp/<name>"; "/.well-known/oauth-authorization-server<suffix>/{mcp_server_name}/mcp" passes issuer_path "<name>/mcp". The suffix is LiteLLM's well_known_root_suffix (B4654). Do NOT register the bare path "/.well-known/oauth-authorization-server" (no name): B4678 registers it, and axum panics on a duplicate route. The root document without a name is still built by the same function for the openid route below.
+
+
+  `openid_configuration`, GET "/.well-known/openid-configuration": the root authorization server document (no name) and, when an MCP JWT signer is active, two more keys appended after the others: jwks_uri "<base>/.well-known/jwks.json" and id_token_signing_alg_values_supported ["RS256"]. The signer comes in as `Option<&dyn ...>`-free generics: a trait JwtSigner with `fn jwks(&self) -> serde_json::Value` and `fn jwks_max_age(&self) -> u32`, implemented over B3816's get_jwks and jwks_max_age by the composition root.
+
+
+  `jwks_json`, GET "/.well-known/jwks.json": with a signer, 200 with body get_jwks() and header "Cache-Control: public, max-age=<jwks_max_age>"; without one, 200 with {"keys": []} and "Cache-Control: public, max-age=60".
+
+
+  2. Gateway token routes (L2024-L2070 and L2158-L2185), over B4676.
+  - POST "/token" and POST "/{mcp_server_name}/token", form body, fields grant_type and client_id required, the rest optional: code, redirect_uri, client_secret, code_verifier, refresh_token, scope, resource, subject_token, subject_token_type, requested_token_type. A missing required field is 422 (the same JSON shape B4719's token route uses for a missing form field; reuse its form error type). Order: when there is no mcp_server_name and B4674's is_gateway_dcr_client_id(client_id) is true, call B4676's aggregate_token (reads the master key from the SigningSetup the route builds with B4653's resolve_session_signing_keys, the reload-user port B4674, the proxy credential mint port B4663 and the subject token exchange port B4658, all injected as fields) and turn its TokenReply into a response: Json gives its status, body and headers, which already carry TOKEN_NO_CACHE_HEADERS; Error(OauthError) gives the error body and status B4674 defines (it also carries the no-cache headers). Otherwise the lookup name is mcp_server_name or client_id; resolve by name or id with the client ip; with no path name and no hit, use the single OAuth2 server for root endpoints; none is 404 {"detail": "MCP server not found"}; the server goes to the OauthFlows port's exchange_token_with_server with grant_type, code, redirect_uri, client_id, client_secret, code_verifier, refresh_token, scope (no client_token_endpoint_auth_method on this path). A FlowReply or FlowError becomes the response as B4719's routes do (share its function).
+  - POST "/revoke", form client_id and token required: call B4676's revoke_refresh_token with the signing setup, the claim guard, the cipher and the clock. No authentication.
+  - POST "/introspect", form token required, behind the virtual-key dependency: use B4719's RouteAuth port (the one `_user_api_key_auth_builder` sits behind) and run it before the form is read, so a missing key is 401 first. Then call introspect_gateway_token.
+  The bridge success body (B4666) is built inside the flow modules; this task only checks that its response keeps TOKEN_NO_CACHE_HEADERS and the right content type.
+
+
+  3. OauthFlowsImpl (flows_impl.rs). Implements B4719's OauthFlows for the production wiring: resolve_ephemeral_dcr_client calls B7531, register_client_with_server calls B7531, authorize_with_server and exchange_token_with_server call B7532's AuthFlows, redeem_passthrough_code (LiteLLM calls it redeem_passthrough_authorization_code; B4719 names the port method with the short name) calls B7530's redeem_passthrough_code, client_supplied_redirect_uris calls B7530's function of that name, request_base_url calls B4654's get_request_base_url. Each method is one call; do not copy logic. A struct of the five collaborators, generic over their traits.
+
+
+  Fixes needed on the composition root are listed here and not done: it must build the ports of B7530 to B7532 (SealCipher over B1600's StoredCipher, UpstreamForm and UpstreamHttp over the outbound HTTP client, FaultRenderer, UserTokenStore, UserAccess, BridgeMint, IdentityBinding, ClientStore, DiscoveryJoin, Decryptor). The architect handles it with the skeleton.
+
+
+  Tests use synthetic servers (test-oauth-1, https://mcp.example.test/sse), a fake registry, fake signer and fakes for the B4676, B4719 and B7532 ports. Check each route's status, headers and key order. The HTTP oracle cases run the booted proxy with a master key and no database and an MCP server in the config, so the discovery and JWKS routes can be compared with LiteLLM. The token routes are covered with error answers only (422 for a missing field, 404 for no server, 401 for a bad client on revoke, 401 on introspect without a key), since a good exchange needs an IdP. A helper `tools/oracle/helpers/b7321.py` is not needed; the cases are plain HTTP.
+
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/oauth_root.rs
+    - crates/betterlite-server/src/mcp/oauth_root/**
+    - tools/oracle/cases/http/mcp-oauth-root/**
+    - tools/oracle/helpers/b7321.py
+    - tools/oracle/helpers/b7321/**
+    - tools/oracle/src/helpers/server/b7321.rs
+    - tools/oracle/src/helpers/server/b7321/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2784-L2941
+    why: The authorization server document, its three routes, openid_configuration and jwks_json.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2024-L2070
+    why: token_endpoint, the split between the gateway DCR client branch and the server branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2158-L2185
+    why: revoke_endpoint and introspect_endpoint.
+  - url: https://www.rfc-editor.org/rfc/rfc8414
+    why: Authorization server metadata.
+  - url: https://www.rfc-editor.org/rfc/rfc7009
+    why: Token revocation, always 200 for a known client.
+
+dod:
+  - text: The authorization server document has LiteLLM's keys in order, with named and root forms for the endpoints and the three issuer forms, and the bare path is not registered here.
+    proof: [root-tests, oracle]
+  - text: openid_configuration adds jwks_uri and the signing algs only with a signer, and jwks_json returns the key set with max-age from the signer or the empty set with max-age 60.
+    proof: [root-tests, oracle]
+  - text: POST /token sends gateway client ids without a path name to aggregate_token and everything else to the exchange flow, with 404 when no server is found.
+    proof: [root-tests]
+  - text: /revoke and /introspect call B4676's functions and /introspect requires the virtual key first.
+    proof: [root-tests, oracle]
+  - text: OauthFlowsImpl forwards each port method to the flow module that owns it, with no logic of its own.
+    proof: [root-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: root-tests
+      why: the discovery, JWKS, token routes or the flows wiring have no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_root::/)'
+
+oracle_cases:
+  - tools/oracle/cases/http/mcp-oauth-root/discovery-named-server.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/discovery-standard-and-legacy-paths.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/discovery-unknown-server.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/openid-configuration-no-signer.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/jwks-empty.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/token-missing-field.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/token-unknown-server.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/revoke-unknown-client.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/introspect-no-key.yaml
+
+deviations: []
+
+out_of_scope:
+  - "State and sealed codes: B7530. DCR and register flows: B7531. Authorize and token exchange flows: B7532. The OauthFlows trait and the /v1/mcp/server/oauth routes: B4719."
+  - "Gateway token logic (aggregate_token, revoke_refresh_token, introspect_gateway_token): B4676. The bare /.well-known/oauth-authorization-server route: B4678."
+  - "The faults package behind FaultRenderer: B7970. The /callback, /authorize, POST /register, /authorize/flow and /authorize/complete routes: B7971. The protected resource routes, fetch_upstream_oauth_protected_resource and the aggregate authorization server route: B7972."
+
+pitfalls:
+  - A duplicate route panics axum at startup, so check the router builds with every task's routes merged.
+  - The issuer uses the path name only when the request had one; a name resolved from the single server keeps the bare base issuer.
+  - jwks_json returns 200 with an empty key set when no signer exists, never 404.
+  - openid_configuration appends its two keys after the document keys, it does not sort.
+  - /introspect checks the key before reading the form, so a request with no key and no form is 401, not 422.
+  - Success bodies from the flows keep the no-cache headers; a route must not replace the header map.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1100
+  max_new_expects: 0

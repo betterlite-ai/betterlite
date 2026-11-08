@@ -2,8 +2,8 @@ id: B3626
 milestone: M5 api families
 title: Pass-through Fal AssemblyAI and TinyFish routes
 status: todo
-depends_on: [B3600, B3602, B3615, B3618, B002, B052, B1100]
-file: null
+depends_on: [B002, B052, B1100, B1531, B3571, B3602, B3615, B3618, B3647, B3648]
+file: tasks/B3626-passthrough-saas-routes.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"
 parent: B102

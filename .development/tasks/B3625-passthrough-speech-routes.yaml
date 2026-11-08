@@ -1,0 +1,196 @@
+id: B3625
+title: Pass-through Azure Speech and Transcribe routes
+description: >-
+  Register LiteLLM's two speech pass-through families as the module passthrough_speech_routes in crates/betterlite-server: the Azure AI Speech relay under /azure_speech and the Amazon Transcribe relay under /transcribe.
+  Every route needs a valid virtual key (B052's authentication, LiteLLM's user_api_key_auth). Each route ends by building B3615's create_pass_through_route handler, calling it with the request, the response and the authenticated key, and returning its result unchanged.
+  Values come from injected parts, never from globals or the process environment: the secret reader of B002 (LiteLLM's get_secret_str), B3602's get_credentials, the general_settings map, B594's credential resolver, B595's signer, B198's get_aws_dns_suffix, B3645's TranscribeJobLookup and B3615's handler factory. The module declares one small trait, `SpeechRates`, with `cost_per_second() -> Option<Decimal>`; B102's wiring implements it with B3644's transcribe_cost_per_second over the model cost catalog (the same split B3646 uses). Every name below is at most 30 characters; LiteLLM's longer names are renamed on purpose.
+
+  Routes. `/azure_speech/{*endpoint}` takes GET, POST, PUT, DELETE and PATCH, and `/azure_speech/` (empty endpoint) is registered for the same five methods. `/transcribe/{operation}` and `/transcribe` take POST only; any other method is axum's 405. There is no /v1 or other alias. The architect adds the routes to the server route table once. The architect also adds betterlite-transcribe to betterlite-server's dependencies.
+
+  Azure constants (LiteLLM keeps them in constants.py, which no task owns, so define them here as Rust consts): provider "azure_speech", route prefix "/azure_speech", short audio path prefix "/speech/", batch path prefix "/speechtotext/", fast transcription path "/speechtotext/transcriptions:transcribe", STT domain "stt.speech.microsoft.com", cognitive services domain "api.cognitive.microsoft.com", subscription key header "Ocp-Apim-Subscription-Key". `AZURE_SPEECH_FAMILIES` is the ordered pair (short audio prefix, STT domain), (batch prefix, cognitive services domain). The forwarded caller headers are `content-type` and `accept`.
+
+  `azure_speech_clean_path(endpoint)` replaces canonical_azure_speech_endpoint_path. Take the path of the endpoint as httpx does: cut at the first `?` or `#`, then percent-decode. An empty result is "/". Then drop every leading `/`, put exactly one back, and resolve `.` and `..` segments and repeated slashes the way posixpath.normpath does (a `..` at the root stays at the root). When the decoded path ended with `/` and the result is not "/", add one `/` at the end. The result always starts with one `/`, and has no `.` segment, no `..` segment and no `//`. This path decides the endpoint family and the admin guard and is the path sent upstream, so all three agree.
+
+  `resolve_azure_speech_base_url(path, api_base, region)` returns Option<Url>. Pick the first family in AZURE_SPEECH_FAMILIES whose prefix the path starts with; none gives None. With a family: a non-empty api_base is returned as the base (it wins over the region and serves both families); otherwise a non-empty region gives `https://{region}.{domain}`; otherwise None.
+
+  `azure_batch_admin_only(path)` replaces azure_speech_path_manages_shared_resources. True when the path starts with "/speechtotext/" and is not exactly "/speechtotext/transcriptions:transcribe".
+
+  `azure_speech_proxy_route(endpoint, request, response, auth, deps)` replaces azure_speech_proxy_route. Steps in order:
+  1. path = azure_speech_clean_path(endpoint).
+  2. Read AZURE_SPEECH_API_BASE and AZURE_SPEECH_REGION through the secret reader and call resolve_azure_speech_base_url. None gives HTTP 400 with the plain string detail "Unsupported Azure Speech path: {path}. Supported prefixes are /speech/ and /speechtotext/; set AZURE_SPEECH_REGION or AZURE_SPEECH_API_BASE in the proxy environment."
+  3. If azure_batch_admin_only(path) and the key is not a proxy admin (B1018's is_proxy_admin), answer HTTP 403 with detail "{METHOD} {path} manages batch transcription resources that belong to the proxy's Azure Speech subscription and whose cost is unknown at request time, so it is limited to proxy admin keys. Use /speechtotext/transcriptions:transcribe for transcription that is priced per request." METHOD is the request method.
+  4. Read the key with get_credentials(custom_llm_provider "azure_speech", region None). Env fallback is AZURE_SPEECH_API_KEY. None gives HTTP 400 (not 401) with detail "Azure Speech credentials not found. Set AZURE_SPEECH_API_KEY in the proxy environment."
+  5. The target is the base with its path replaced by B3600's join_base_and_endpoint_path(base, path). Call that function directly; do not call B3618's provider_target_url, which would percent-decode the already cleaned path a second time.
+  6. Custom headers: for each of `content-type` and `accept`, in that order, copy it from the caller's headers (B1100's cached header read, names compared lowercase) when present, then add `Ocp-Apim-Subscription-Key: {key}`. The caller's Authorization header is the LiteLLM key and is never copied.
+  7. Read the request body as raw bytes through B1100 (audio and multipart bodies stay opaque and are not parsed).
+  8. Build the handler with create_pass_through_route(endpoint = the original endpoint string, not the cleaned path, target, custom_headers, custom_llm_provider "azure_speech"). The streaming flag is not passed. Set the request-state value under B3600's LITELLM_PASS_THROUGH_RAW_BODY_STATE_KEY to the raw bytes, call the handler and return its result. B3615 clears the key afterwards.
+
+  `transcribe_route(operation, request, response, auth, deps)` replaces transcribe_proxy_route. Every failure is an HTTPException with a plain string detail. Steps in order:
+  1. If operation is not in B3644's transcribe_operations(), answer 400 "Unsupported Amazon Transcribe operation: {operation}. Supported operations: {names sorted in byte order, joined with ', '}". The match is case-sensitive.
+  2. `transcribe_region()` replaces _resolve_aws_passthrough_region. It returns the first non-empty value of AWS_REGION_NAME, AWS_REGION, AWS_DEFAULT_REGION through the secret reader, in that order, else None. None gives 400 "AWS region not found. Set AWS_REGION_NAME in the proxy environment."
+  3. Read the body as JSON through B1100's cached body read, whatever the content type is (the AWS SDK sends application/x-amz-json-1.1). A read failure gives 400 "Request body must be valid JSON: {message}".
+  4. A body that is not a JSON object gives 400 "Request body must be a JSON object".
+  5. A body object with a `stream` key, whatever its value, gives 400 "'stream' is not an Amazon Transcribe request member".
+  6. Call B3644's unpriceable_request_reason(operation, body text, rates.cost_per_second()). A reason gives 400 with that text.
+  7. Call B3644's transcribe_admin_only_refusal(operation, principal). A refusal gives its status_code and detail.
+  8. Only for StartTranscriptionJob: call transcribe_storage_refusal(body text, transcribe_media_buckets(general_settings as JSON text), principal). A refusal gives its status_code and detail.
+  9. Only for StartTranscriptionJob: call transcribe_owned_start_request(body text, principal). An Err refusal gives its status_code and detail; the Ok value is the request body from here on. Every other operation keeps the parsed body unchanged.
+  10. Only for GetTranscriptionJob and DeleteTranscriptionJob: call B3644's transcribe_job_access_refusal with the JSON text of the original body's `TranscriptionJobName` member (the text `null` when the member is missing), the principal and a TranscribeJobLookup built from the region, the signer and the pooled client (B3645). A refusal gives its status_code and detail (404 for a job the caller does not own).
+  11. Target `https://transcribe.{region}.{suffix}/`, with the suffix from B198's get_aws_dns_suffix(region). Serialize the request body to JSON once. Sign it with B595's sign_aws_json_post, run the way B595's run_aws_signing runs it (off the request task): credentials from B594's get_credentials with the region set and nothing else, service name "transcribe", the region, the target, the serialized body, and the headers `Content-Type: application/x-amz-json-1.1` and `X-Amz-Target: Transcribe.{operation}`.
+  12. Build the handler with create_pass_through_route(endpoint = the operation, target = the signed request's URL, custom_headers = the signed request's headers exactly, custom_llm_provider "transcribe"). The streaming flag is not passed. Set B3600's LITELLM_PASS_THROUGH_CUSTOM_BODY_STATE_KEY to the request body (the owner-tagged one for StartTranscriptionJob) and LITELLM_PASS_THROUGH_RAW_BODY_STATE_KEY to the exact signed bytes, call the handler and return its result.
+
+  `transcribe_sdk_route(request, response, auth, deps)` replaces transcribe_sdk_proxy_route. Read the `x-amz-target` request header (name case-insensitive, missing means empty). Split at the first ".": the part before it must equal "Transcribe" and the part after it must be non-empty, otherwise 400 "Expected an X-Amz-Target header of the form Transcribe.<Operation>" (the text ends with the literal characters <Operation>). Then return transcribe_route with that operation. The header "Transcribe.A.B" gives operation "A.B", which fails step 1.
+
+  Fuzz. azure_speech_clean_path takes route text from outside, so add the cargo-fuzz target crates/betterlite-server/fuzz/fuzz_targets/azure_speech_clean_path.rs (register its [[bin]] in the fuzz Cargo.toml like the existing targets). It feeds arbitrary UTF-8 text to the function and asserts the result starts with one `/` and has no `.` segment, no `..` segment and no `//`. Add seed files under crates/betterlite-server/fuzz/corpus/azure_speech_clean_path/ (dot segments, repeated slashes, `%2e%2e`, `%3F`, a trailing slash, the empty string) and the test passthrough_speech_routes::tests::replays_corpus that feeds every seed to the same function and asserts the same property.
+
+  Tests. Rust tests live in tests.rs under passthrough_speech_routes::tests and use fakes: a recording fake for the secret reader, one for get_credentials, one for the handler factory (so a test sees the exact endpoint, target, custom headers, custom_llm_provider, streaming flag and state values it was called with), one for the signer and one for JobLookup. Test groups are route_table, azure_path, azure_base_url, azure_guard, azure_forward, transcribe_checks, transcribe_policy, transcribe_signing and transcribe_sdk. HTTP oracle cases are named below; the cases that reach the Azure forward use the mock upstream through `{{upstream}}`, set as AZURE_SPEECH_API_BASE under `environment_variables` in the case's config text. The oracle master key is a proxy admin, so the admin guard branches are proven by the Rust tests, not by HTTP cases. The Transcribe upstream is the fixed AWS host, so no Transcribe case reaches it; its cases stop at a 400.
+scope:
+  paths:
+    - crates/betterlite-server/src/passthrough_speech_routes.rs
+    - crates/betterlite-server/src/passthrough_speech_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/azure_speech_clean_path.rs
+    - crates/betterlite-server/fuzz/corpus/azure_speech_clean_path/**
+    - tools/oracle/cases/server/passthrough-speech-routes/**
+    - tools/oracle/helpers/b3625.py
+    - tools/oracle/helpers/b3625/**
+    - tools/oracle/src/helpers/server/b3625.rs
+    - tools/oracle/src/helpers/server/b3625/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1472-L1523
+    why: "The forwarded header names, the family table, resolve_azure_speech_base_url, the batch guard predicate and canonical_azure_speech_endpoint_path."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1525-L1608
+    why: "azure_speech_proxy_route from its decorator (five methods), with the 400, 403 and 400 checks in order, the header build and the raw-body state value."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1611-L1732
+    why: "transcribe_proxy_route from its decorator (POST only), with the validation order, the policy calls, the signing and the two request-state values."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1735-L1769
+    why: "transcribe_sdk_proxy_route and its X-Amz-Target split."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1349-L1361
+    why: "_proxy_general_settings and _resolve_aws_passthrough_region; the region fallback order is here."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1634-L1641
+    why: "The Azure Speech provider, prefix, path, domain and header constants the routes use."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L51-L65
+    why: "TRANSCRIBE_TARGET_PREFIX (Transcribe), the custom_llm_provider (transcribe), the priced and owned-job operations; B3644 owns the policy built on them."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L318-L336
+    why: "transcribe_job_access_refusal, which receives the raw TranscriptionJobName value (non-strings give 400); B3644 owns it and this task calls it."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_endpoint_router.py#L53-L70
+    why: "get_credentials and the env fallback name {PROVIDER}_API_KEY (AZURE_SPEECH_API_KEY)."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/aws_partition.py#L38-L39
+    why: "get_aws_dns_suffix (B198)."
+  - url: https://docs.litellm.ai/docs/pass_through/azure_speech
+    why: "User-facing description of the Azure Speech route."
+  - url: https://docs.litellm.ai/docs/pass_through/transcribe
+    why: "User-facing description of the Transcribe route."
+dod:
+  - text: /azure_speech/{endpoint} and /azure_speech/ take GET, POST, PUT, DELETE and PATCH, and /transcribe/{operation} and /transcribe take only POST.
+    proof: [route-table-tests]
+  - text: "azure_speech_clean_path cuts at ? and #, percent-decodes, resolves dot segments and repeated slashes, keeps a trailing slash and always returns one leading slash."
+    proof: [azure-path-tests]
+  - text: resolve_azure_speech_base_url picks the family by prefix, lets api_base win over the region, builds https://{region}.{domain} otherwise, and returns None for an unknown prefix or when neither api_base nor region is set.
+    proof: [azure-base-tests]
+  - text: The Azure route answers 400 for an unsupported path, then 403 for a non-admin key on a batch path (every /speechtotext/ path except the fast transcription path), then 400 for a missing key, in that order, with the exact detail texts.
+    proof: [azure-guard-tests, oracle]
+  - text: The Azure route builds the target from the base and the cleaned path, sends only content-type, accept and Ocp-Apim-Subscription-Key upstream, never the caller's Authorization, passes the original endpoint, provider azure_speech and no streaming flag to the factory, and sets the raw body state value.
+    proof: [azure-forward-tests, oracle]
+  - text: The cleaned path never holds a dot segment, a double slash or a missing leading slash, and the decoder has a fuzz target and a corpus added on this branch.
+    proof: [path-corpus]
+  - text: The Transcribe route checks in order the operation, the region (three env vars in order), the body read, the object shape, the stream key and the unpriceable reason, each with its exact 400 text.
+    proof: [transcribe-checks-tests, oracle]
+  - text: The Transcribe route runs the admin-only, bucket, owner-tag and job-access policies of B3644 in LiteLLM's order and only for the operations LiteLLM names, and turns each refusal into its own status and detail.
+    proof: [transcribe-policy-tests]
+  - text: The Transcribe route signs the serialized body for service transcribe with the Transcribe.{operation} target header, passes only the signed headers and provider transcribe to the factory, uses the operation as the endpoint, and sets both request-state values (owner-tagged body and exact signed bytes).
+    proof: [transcribe-signing-tests]
+  - text: transcribe_sdk_route reads x-amz-target case-insensitively, rejects a wrong prefix or empty operation with the exact 400 text, and forwards the part after the first dot.
+    proof: [transcribe-sdk-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: route-table-tests
+      why: a route path or method is missing, or a Transcribe route accepts a method other than POST
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_speech_routes::tests::route_table(::|$)/)'
+    - id: azure-path-tests
+      why: the path cut, decode, dot-segment or slash rules are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_speech_routes::tests::azure_path(::|$)/)'
+    - id: azure-base-tests
+      why: the family choice, api_base precedence or region host is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_speech_routes::tests::azure_base_url(::|$)/)'
+    - id: azure-guard-tests
+      why: a 400 or 403 check is missing, out of order or has another text
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_speech_routes::tests::azure_guard(::|$)/)'
+    - id: azure-forward-tests
+      why: the target, the forwarded headers, the factory arguments or the raw body state value are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_speech_routes::tests::azure_forward(::|$)/)'
+    - id: path-corpus
+      why: azure_speech_clean_path has no fuzz target, no new seed or a failing replay
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/azure_speech_clean_path)" && test -f crates/betterlite-server/fuzz/fuzz_targets/azure_speech_clean_path.rs && grep -qF "azure_speech_clean_path" crates/betterlite-server/fuzz/fuzz_targets/azure_speech_clean_path.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_speech_routes::tests::replays_corpus$/)'
+    - id: transcribe-checks-tests
+      why: a Transcribe validation step is missing, out of order or has the wrong text
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_speech_routes::tests::transcribe_checks(::|$)/)'
+    - id: transcribe-policy-tests
+      why: a B3644 policy call is missing, runs for the wrong operation or loses its status and detail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_speech_routes::tests::transcribe_policy(::|$)/)'
+    - id: transcribe-signing-tests
+      why: the signing inputs, signed bytes, forwarded headers, provider name or state values are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_speech_routes::tests::transcribe_signing(::|$)/)'
+    - id: transcribe-sdk-tests
+      why: the SDK route reads the wrong header, splits at the wrong dot or has the wrong 400 text
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_speech_routes::tests::transcribe_sdk(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/server/passthrough-speech-routes/azure-unsupported-path.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/azure-no-region.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/azure-no-credentials.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/azure-short-audio-forward.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/azure-batch-admin-forward.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-unsupported-operation.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-no-region.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-body-not-object.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-stream-member.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-unpriced-operation.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-sdk-missing-target.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-sdk-wrong-prefix.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-sdk-empty-operation.yaml
+deviations:
+  - what: "Settings and environment variables arrive through injected parts (the secret reader, the general_settings map, the credential and signer traits), not from proxy globals or os.environ."
+    why: "betterlite wires dependencies through constructors; a client sees the same values."
+  - what: "The Transcribe body is serialized with serde_json (compact), not Python json.dumps with spaced separators and ASCII escapes. The signature covers the bytes actually sent, so AWS accepts either."
+    why: "Reproducing json.dumps spacing buys nothing; the signed bytes and the sent bytes are the same value."
+  - what: "A body that cannot be read on the Transcribe route gives 400 Request body must be valid JSON followed by the message where the message is B1100's wording, not Python's JSONDecodeError text."
+    why: "The decoder is shared B1100 code, and LiteLLM's text is Python's parser message."
+  - what: "azure_speech_clean_path does not parse a scheme or an authority inside the endpoint (`x:y/z`, `//host/z`); the text is treated as a path."
+    why: "httpx would read those as URL parts and drop them; the endpoint is a path segment of the route, and the result is still checked against the same two families and the same base."
+  - what: "A bare `/azure_speech` with no trailing slash is not registered."
+    why: "LiteLLM's router answers it by redirect or 404 depending on FastAPI settings; betterlite's server fallback answers it."
+  - what: "B3644's refusal messages (unpriceable reason, admin-only, bucket, owner tag, job access) keep their status codes but use betterlite's wording."
+    why: "B3644 rewrote them under the errors-match-litellm rule; this route passes them through."
+out_of_scope:
+  - "create_pass_through_route, the state-key cleanup and the upstream send: B3615 and B6510. join_base_and_endpoint_path and the state-key constants: B3600."
+  - "get_credentials: B3602. Header reads and the raw body read: B1100. is_proxy_admin: B1018."
+  - "Transcribe policy functions (operations, cost rate, unpriceable reason, admin-only, buckets, storage, owner tag, job access) and the transcribe_job_lookup contract: B3644 owns the policy and B3645 owns TranscribeJobLookup, the media probe and pricing. Delayed spend logging for Transcribe: B3646."
+  - "The Azure Speech logging handler, the route classifiers and the duration and cost rules (AZURE_SPEECH_SHORT_AUDIO_MODEL, AZURE_SPEECH_PRICING_MODEL, tick constants): B3652. Dispatch to it by custom_llm_provider: B3606."
+  - "is_opaque_audio_pass_through_request and the auth-time body skip for /azure_speech: B1100."
+  - "get_aws_dns_suffix: B198. get_credentials, sign_aws_json_post and run_aws_signing: B594 and B595."
+  - "_proxy_general_settings and _json_request_body: not built; the settings map is injected and B1100 reads the body."
+  - "_resolve_aws_passthrough_region exists once in LiteLLM; B3621 builds its own aws_passthrough_region for the Comprehend route and this task builds transcribe_region, because B3618 keeps single-route readers with the route that uses them."
+  - "The /azure_speech and /transcribe entries in LiteLLMRoutes.llm_api_routes (proxy/_types.py L495-L496) and any route-to-call-type map: the auth route tables, not this module."
+  - "Every other @router route in llm_passthrough_endpoints.py (Azure OpenAI and Milvus: B3624; Bedrock and Comprehend: B3621; the rest: B3619, B3626, B3627, B3628)."
+pitfalls:
+  - "The Azure family and admin guard are decided on the cleaned path, not the raw endpoint, so `speech/../speechtotext/v3.2/transcriptions` is a batch path and needs an admin key."
+  - "The fast transcription path /speechtotext/transcriptions:transcribe starts with the batch prefix but is the one batch-prefix path a non-admin key may call; compare the whole cleaned path, not a prefix."
+  - "An unknown prefix gives 400 even for an admin key, and a missing region and api_base gives the same 400 text as an unknown prefix; the 403 check comes after both."
+  - "A missing Azure key is HTTP 400 here, not 401 as on the Fal route."
+  - "api_base is returned as is (no region, no domain), so a custom domain serves both the short audio and the batch family."
+  - "The factory gets the original endpoint string, not the cleaned path; only the target uses the cleaned path."
+  - "The caller's Authorization header holds the LiteLLM key and must not reach Azure; only content-type and accept are copied, so a caller's x-api-key or cookie never goes upstream either."
+  - "The Azure body is read as raw bytes and put in the raw-body state value; parsing it as JSON or form data would break audio uploads."
+  - "The unsupported-operation check runs before the region and body checks, so an unknown operation is a 400 on a proxy with no AWS settings."
+  - "A Transcribe body with \"stream\": false is still rejected; only the key's presence counts."
+  - "The unpriceable check runs before the admin-only check, so even a non-admin key asking for StartCallAnalyticsJob sees the unpriced 400, not a 403."
+  - "Bucket and owner-tag policies run only for StartTranscriptionJob, and the job-access check only for GetTranscriptionJob and DeleteTranscriptionJob; ListTranscriptionJobs and the other operations reach the signer after the admin-only check alone."
+  - "The job-access check reads TranscriptionJobName from the original body, so a missing or non-string name gives B3644's 400 for a non-admin key, and an admin key skips it."
+  - "The owner-tagged body is what is signed and sent for StartTranscriptionJob; the custom-body state value must hold that same tagged body, not the caller's."
+  - "The SDK route splits X-Amz-Target at the first dot only, and the prefix is \"Transcribe\", not the Comprehend prefix."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

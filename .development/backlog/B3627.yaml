@@ -2,8 +2,8 @@ id: B3627
 milestone: M5 api families
 title: Pass-through VLLM GigaChat and Watsonx routes
 status: todo
-depends_on: [B3600, B3615, B3618, B002, B052, B173, B1100, B1101]
-file: null
+depends_on: [B052, B1100, B1101, B3600, B3602, B3615, B3618, B3620, B5842, B5970, B7324, B7325]
+file: tasks/B3627-passthrough-vllm-gigachat-watsonx.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"
 parent: B102

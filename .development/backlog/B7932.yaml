@@ -1,0 +1,24 @@
+id: B7932
+milestone: M12 python
+title: Python types for guardrail hooks agent_365 to cisco_ai_defense (types/proxy/guardrails/guardrail_hooks)
+status: todo
+depends_on: [B5657, B7930]
+file: tasks/B7932-types-guardrail-hooks-a.yaml
+covers:
+  - "litellm/types/proxy/guardrails/guardrail_hooks/agent_365.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/aim.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/akto.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/alice.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/aporia_ai.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/azure/**"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/base.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/block_code_execution.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/cato_networks.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/cisco_ai_defense.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,62 @@
+id: B7927
+title: Python types for Gemini live and images, Gemini transcription and Vertex speech (types/llms/gemini*, vertex_ai_*)
+description: >-
+  Audio and image calls on Gemini and Vertex use small request and response shapes that users import from
+  `litellm.types.llms.gemini`, `gemini_audio_transcription`, `vertex_ai_gemini_transcription`, `vertex_ai_speech_to_text` and
+  `vertex_ai_text_to_speech`, and `litellm.types.passthrough_endpoints.vertex_ai`. This task ports these six files into
+  `crates/betterlite-python/python/betterlite/types/llms/gemini/` (the first two), `crates/betterlite-python/python/betterlite/types/llms/vertex_ai_audio/` (the next three) and
+  `crates/betterlite-python/python/betterlite/types/passthrough_endpoints/vertex_ai.py`. It is Python only.
+
+
+  `gemini.py` holds `GeminiFilesState` and `GeminiFilesSource` (Enums), the files create response, the Bidi live-API
+  TypedDicts (`BidiGenerateContent*`, `AutomaticActivityDetection`) and the image generation instance, parameters, request,
+  prediction and response classes. `GeminiImageGenerationParameters` and `GeminiImageGenerationRequest` are pydantic models and
+  go on `ResponseObject`. In the transcription files the request side is TypedDicts and the response side is pydantic. The
+  speech-to-text file has the Recognize request TypedDicts, the Recognize response models and the eight streaming models
+  (`VertexSpeechStreaming*`). `VertexPassThroughCredentials` is one pydantic model.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/llms/gemini/**
+  - crates/betterlite-python/python/betterlite/types/llms/vertex_ai_audio/**
+  - crates/betterlite-python/python/betterlite/types/passthrough_endpoints/vertex_ai.py
+  - crates/betterlite-python/tests/test_types_gemini_and_speech.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L1-L358
+  why: Files, live API and image generation types.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini_audio_transcription.py#L1-L81
+  why: Gemini interactions transcription types.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_speech_to_text.py#L1-L105
+  why: Recognize and streaming types.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_text_to_speech.py#L1-L56
+  why: Text to speech request types.
+out_of_scope:
+- >-
+  Vertex request and response shapes for generateContent are in B7925.
+pitfalls:
+- >-
+  The two transcription files use different class prefixes (`GeminiTranscription*` and `VertexGeminiTranscription*`) for nearly the same shapes; keep both sets.
+- >-
+  The `GeminiFilesState` and `GeminiFilesSource` Enums are compared by member name and value in the names test.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_gemini_and_speech.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

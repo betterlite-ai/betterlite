@@ -1,7 +1,12 @@
 pub(crate) mod agent_daily_activity;
+pub(crate) mod assistant_runs;
 pub(crate) mod chat;
 pub(crate) mod completions;
+pub(crate) mod container_files;
+pub(crate) mod containers;
 pub(crate) mod embeddings;
+pub(crate) mod mcp_byok_consent;
+pub(crate) mod mcp_byok_oauth;
 pub(crate) mod moderations;
 pub(crate) mod ocr;
 pub(crate) mod prompts;

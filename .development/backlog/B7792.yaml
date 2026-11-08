@@ -1,0 +1,14 @@
+id: B7792
+milestone: M12 python
+title: Management clients for models, chat completions and teams
+status: todo
+depends_on: [B7790]
+file: tasks/B7792-proxy-client-models-chat-teams.yaml
+covers:
+  - "litellm/proxy/client/{models,chat,teams}.py"
+parent: B169
+split_from: B169
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

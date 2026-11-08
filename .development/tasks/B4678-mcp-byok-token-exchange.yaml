@@ -1,0 +1,189 @@
+id: B4678
+title: MCP BYOK OAuth metadata and authorization-code exchange
+description: >-
+  Build the second half of LiteLLM's BYOK (bring your own key) OAuth flow for MCP servers: the discovery documents that tell an MCP client where to authorize, and the token endpoint that swaps the one-time code from B4677's consent page for a signed session token while saving the user's API key. B4677 owns the authorization-code store and the GET and POST /v1/mcp/oauth/authorize routes. B4655 owns the session cookie. This task never touches either, it only reads and removes codes through a port.
+
+
+  Code goes in two places. betterlite-mcp gets two modules: byok_oauth_metadata (the JSON documents) and byok_token_exchange (everything the token endpoint decides). betterlite-server gets routes/mcp_byok_oauth, a thin axum layer. Nothing reads a global or an environment variable here: the master key, the normalized PROXY_BASE_URL, the root path list and the clock all arrive as arguments or as fields of one state struct built by the composition root.
+
+
+  byok_oauth_metadata (crates/betterlite-mcp/src/byok_oauth_metadata.rs, tests.rs beside it).
+
+  authorization_server_document(base_url: &str, issuer: &str) -> serde_json::Value is LiteLLM's _byok_authorization_server_response. Keys in this order: issuer (the issuer argument), authorization_endpoint ("{base_url}/v1/mcp/oauth/authorize"), token_endpoint ("{base_url}/v1/mcp/oauth/token"), response_types_supported ["code"], grant_types_supported ["authorization_code"], code_challenge_methods_supported ["S256"]. There is no registration_endpoint. protected_resource_document(base_url: &str) -> serde_json::Value parses base_url and answers {"resource": "{scheme}://{netloc}", "authorization_servers": ["{base_url}/v1/mcp/oauth"]}; the resource drops any path of base_url. prefixed_base_url(base_url: &str, prefix: &str) -> String keeps only the scheme and netloc of base_url and appends prefix, which is how a request that arrived under one of the SERVER_ROOT_PATHS prefixes gets its own base. Use the url crate that betterlite-mcp already depends on for the scheme and netloc, and keep the netloc text as it was (host with port, no lowercasing beyond what url does for the host).
+
+
+  byok_token_exchange (crates/betterlite-mcp/src/byok_token_exchange.rs plus the submodules pkce.rs, exchange.rs, session_jwt.rs and ports.rs, each with a tests.rs beside it; the root file holds the shared types and the error enum).
+
+  pkce::verify_pkce(code_verifier: &str, code_challenge: &str) -> bool is _verify_pkce: SHA-256 of the verifier's UTF-8 bytes, base64url with the URL-safe alphabet and no padding, then equal to the challenge text. Compare in constant time with the subtle crate (it is already a workspace dependency; add it to crates/betterlite-mcp/Cargo.toml). The answer is the same as LiteLLM's plain ==.
+
+  ports::AuthCodeLookup is the port to B4677's store. Native async-free methods: purge_expired(&self, now: f64), get(&self, code: &str) -> Option<AuthCodeRecord>, remove(&self, code: &str). AuthCodeRecord has api_key: SecretString, server_id: String, code_challenge: String, redirect_uri: String, client_id: String, user_id: String and expires_at: f64 (Unix seconds, as LiteLLM's time.time()). B4677 is merged before this task starts: read crates/betterlite-mcp/src/byok_consent/** first. B4677 names its store `AuthCodeStore` (byok_consent/store.rs) with a public `AuthCodeRecord` and these three methods. If its store already has its own record type and methods that do these three things, implement AuthCodeLookup for that store type in byok_token_exchange/ports.rs and build AuthCodeRecord from its record; if the store lacks one of the three, say so in your final report (do not edit B4677's files). ports::ByokCredentialSink has `async fn store_credential(&self, user_id: &str, server_id: &str, credential: &SecretString) -> Result<(), SinkError>` (LiteLLM store_user_credential from B4713) and `async fn invalidate_cache(&self, user_id: &str, server_id: &str) -> Result<(), SinkError>` (LiteLLM _invalidate_byok_cred_cache: local BYOK cache delete plus the peer publish). The composition root implements it with B4713, B5121 and B878. Tests use a fake that records calls and can be told to fail either method.
+
+  exchange::exchange_authorization_code is _byok_token's body. Signature: `async fn exchange_authorization_code(form: &TokenForm, codes: &impl AuthCodeLookup, credentials: Option<&impl ByokCredentialSink>, master_key: Option<&SecretString>, now: f64) -> Result<TokenGrant, TokenError>`. TokenForm has grant_type, code, code_verifier (all required) and redirect_uri and client_id (default ""). Order, and every step matters:
+
+  1. codes.purge_expired(now).
+
+  2. grant_type other than "authorization_code": TokenError::UnsupportedGrantType.
+
+  3. codes.get(code) is None: InvalidGrant.
+
+  4. now is greater than expires_at: codes.remove(code) and InvalidGrant.
+
+  5. verify_pkce(code_verifier, record.code_challenge) false: InvalidGrant.
+
+  6. record.redirect_uri non-empty AND form.redirect_uri non-empty AND they differ: InvalidGrant. A token request without redirect_uri passes (OAuth 2.1 clients omit it).
+
+  7. record.client_id non-empty AND form.client_id differs from it (an empty form.client_id differs): InvalidGrant.
+
+  8. record.user_id empty: InvalidGrant.
+
+  9. master_key is None: TokenError::ServerError (status 500). This is before the code is consumed on purpose.
+
+  10. codes.remove(code).
+
+  11. When credentials is Some: call store_credential(user_id, server_id, api_key), then invalidate_cache(user_id, server_id). A failure of either call logs with tracing::error! "byok_token: failed to store user credential for user={user_id} server={server_id}: {error}" and returns ServerError. The code is already gone at that point, and when invalidate_cache fails the credential is stored. When credentials is None, log with tracing::warn! that the credential was not persisted because no database is configured, and carry on.
+
+  12. session_jwt::issue_session_token(user_id, server_id, master_key, iat) signs an HS256 token with the master key text as the secret. Claims in this order: user_id, server_id, type "byok_session", iat (now truncated to a whole number of seconds), exp (iat + 3600). Use the jsonwebtoken crate (not in Cargo.lock yet: pick the current release, enable only the HS256 backend that passes deny.toml, which is aws_lc_rs since betterlite-mcp already uses aws-lc-rs, add it to crates/betterlite-mcp/Cargo.toml and keep the lock change to that crate and its new dependencies; B4719 adds the same crate to betterlite-server, so use the version already in Cargo.lock if it is there by then).
+
+  TokenGrant is access_token, token_type "bearer" and expires_in 3600 (an integer). TokenError has three variants (thiserror): UnsupportedGrantType (400, {"error": "unsupported_grant_type"}), InvalidGrant (400, {"error": "invalid_grant"}) and ServerError (500, {"error": "server_error"}). Each maps to its status and body through one method, and the server layer adds the no-cache headers. A failed check in steps 5 to 8 leaves the code in the store so the client can retry; only an expired code (step 4) and a successful run remove it.
+
+
+  routes/mcp_byok_oauth (crates/betterlite-server/src/routes/mcp_byok_oauth.rs with metadata.rs and token.rs under mcp_byok_oauth/, tests.rs beside each). The state struct ByokOauthRoutes<C, S, B> holds codes: C (AuthCodeLookup), credentials: Option<S> (ByokCredentialSink), master_key: Option<SecretString>, a base-URL port B and root_prefixes: Vec<String>. The base-URL port is `trait RequestBaseUrl { fn base_url(&self, parts: &http::request::Parts) -> String; }` and the composition root implements it with B4654's get_request_base_url, the normalized PROXY_BASE_URL and B743's trusted-proxy decision, so this task never decides trust. LiteLLM mounts these routes with no prefix and no /mcp or /openai/v1 alias, and none is in the OpenAPI document. The router builder takes well_known_suffix (B4654's well_known_root_suffix applied once at startup) because LiteLLM builds the decorator path from it:
+
+  - GET /.well-known/oauth-authorization-server answers authorization_server_document(base, base).
+  - GET /.well-known/oauth-authorization-server{suffix}/v1/mcp/oauth answers authorization_server_document(base, "{base}/v1/mcp/oauth").
+  - For each prefix in root_prefixes (normalized, with a leading slash, from B4200), GET /.well-known/oauth-authorization-server{prefix}/v1/mcp/oauth answers the same document with base = prefixed_base_url(request base, prefix). Skip a prefix whose path equals the suffix route above, since axum panics on a duplicate and LiteLLM's earlier route wins.
+  - GET BYOK_RESOURCE_METADATA_PATH (B4654's constant, "/v1/mcp/oauth/protected-resource") answers protected_resource_document(base).
+  - POST /v1/mcp/oauth/token takes an application/x-www-form-urlencoded body (enable the form feature of axum in crates/betterlite-server/Cargo.toml; B4719 enables it too). A missing grant_type, code or code_verifier is a 422 in FastAPI's shape {"detail": [{"type": "missing", "loc": ["body", "<field>"], "msg": "Field required", "input": ...}]} with one entry per missing field in the order grant_type, code, code_verifier, and the handler body never runs (so nothing is purged). Copy the exact "input" value from the oracle run. The handler calls exchange_authorization_code with the current time from the system clock and answers JSON. Every token response, success or error, carries Cache-Control: no-store and Pragma: no-cache (B4654's TOKEN_NO_CACHE_HEADERS). The metadata responses carry no extra headers.
+
+  The skeleton declares routes/mcp_byok_oauth. The worker only fills the files named here.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/byok_oauth_metadata.rs
+    - crates/betterlite-mcp/src/byok_oauth_metadata/**
+    - crates/betterlite-mcp/src/byok_token_exchange.rs
+    - crates/betterlite-mcp/src/byok_token_exchange/**
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-server/src/routes/mcp_byok_oauth.rs
+    - crates/betterlite-server/src/routes/mcp_byok_oauth/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-byok-pkce/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-byok-pkce-*
+    - tools/oracle/cases/mcp/byok-oauth/**
+    - tools/oracle/helpers/b4678.py
+    - tools/oracle/helpers/b4678/**
+    - tools/oracle/src/helpers/mcp/b4678.rs
+    - tools/oracle/src/helpers/mcp/b4678/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L53-L82
+    why: >-
+      _verify_pkce and _oauth_token_error (the {"error": code} body with TOKEN_NO_CACHE_HEADERS).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L647-L696
+    why: The four discovery routes from their decorators, with the SERVER_ROOT_PATH suffix, the {root_path:path} variant and the 404 "Unknown proxy root path".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L687-L696
+    why: byok_protected_resource_metadata, whose resource drops the path and whose authorization_servers is a one-element tuple.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L829-L953
+    why: byok_token from its decorator, with the check order, the code lifecycle, the credential write and the JWT.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L160-L168
+    why: The mcp_byok_oauth feature loads before mcp_discoverable, so the bare /.well-known/oauth-authorization-server path is served by this file.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2857-L2869
+    why: The second registration of the bare path (oauth_authorization_server_mcp), which this file's route shadows. Not built here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L197-L201
+    why: _invalidate_byok_cred_cache, the call behind ByokCredentialSink::invalidate_cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/per_request_root_path_middleware.py#L84-L89
+    why: get_server_root_paths, the list the prefixed route checks.
+  - url: https://github.com/jsonwebtoken-rs/jsonwebtoken
+    why: The crate for the HS256 session token.
+dod:
+  - text: >-
+      verify_pkce matches LiteLLM for the RFC 7636 example, a wrong verifier, a challenge with padding, an empty verifier and a non-ASCII verifier.
+    proof: [pkce-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      The metadata documents have LiteLLM's keys in order and its values for the bare base, the oauth issuer, a prefixed base and the protected resource (path dropped from resource, authorization_servers as an array).
+    proof: [metadata-tests, oracle]
+  - text: >-
+      exchange_authorization_code runs the twelve steps in the listed order: each failing step gives its exact TokenError, steps 5 to 8 leave the code stored, step 4 removes it, and step 9 fails before the code is removed.
+    proof: [exchange-tests]
+  - text: >-
+      A successful exchange removes the code, stores the credential, invalidates the cache and returns a bearer grant with expires_in 3600. A failing store_credential or invalidate_cache gives ServerError after the code is gone, and a missing database still returns a grant.
+    proof: [exchange-tests]
+  - text: >-
+      issue_session_token signs an HS256 token whose claims are user_id, server_id, type byok_session, iat and exp = iat + 3600, and it verifies with the master key and fails with another key.
+    proof: [session-jwt-tests]
+  - text: >-
+      The routes answer the discovery documents and the token endpoint on the listed paths with the listed status codes and no-cache headers, register each root prefix once, and answer a missing form field with the 422 body.
+    proof: [route-tests, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: pkce-tests
+      why: The PKCE tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_token_exchange::pkce::tests::/)'
+    - id: exchange-tests
+      why: The code exchange step order or credential write tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_token_exchange::exchange::tests::/)'
+    - id: session-jwt-tests
+      why: The session token tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_token_exchange::session_jwt::tests::/)'
+    - id: metadata-tests
+      why: The discovery document tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_oauth_metadata::tests::/)'
+    - id: route-tests
+      why: The route tests for the discovery paths and the token endpoint are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::mcp_byok_oauth::/)'
+    - id: helper-python
+      why: The helper adapter is missing or fails strict Python checks.
+      run: test -f tools/oracle/helpers/b4678.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b4678 operation reaches the shared helper case parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-byok-pkce-*')" && grep -rlq b4678 tools/oracle/fuzz/corpus/helper_case/mcp-byok-pkce-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-byok-pkce/rfc7636-example.yaml
+  - tools/oracle/cases/helpers/mcp-byok-pkce/wrong-verifier.yaml
+  - tools/oracle/cases/helpers/mcp-byok-pkce/padded-challenge.yaml
+  - tools/oracle/cases/helpers/mcp-byok-pkce/empty-verifier.yaml
+  - tools/oracle/cases/helpers/mcp-byok-pkce/non-ascii-verifier.yaml
+  - tools/oracle/cases/mcp/byok-oauth/metadata-bare.yaml
+  - tools/oracle/cases/mcp/byok-oauth/metadata-oauth-issuer.yaml
+  - tools/oracle/cases/mcp/byok-oauth/metadata-proxy-base-url.yaml
+  - tools/oracle/cases/mcp/byok-oauth/metadata-root-prefix.yaml
+  - tools/oracle/cases/mcp/byok-oauth/protected-resource.yaml
+  - tools/oracle/cases/mcp/byok-oauth/token-unsupported-grant.yaml
+  - tools/oracle/cases/mcp/byok-oauth/token-unknown-code.yaml
+  - tools/oracle/cases/mcp/byok-oauth/token-missing-fields.yaml
+deviations:
+  - what: >-
+      A request under /.well-known/oauth-authorization-server/<prefix>/v1/mcp/oauth whose prefix is not in SERVER_ROOT_PATHS gets the router's generic 404 body, not {"detail": "Unknown proxy root path"}. The prefix list is read once at startup.
+    why: axum cannot put a literal segment after a catch-all, so betterlite registers one static route per configured prefix, and LiteLLM's {root_path:path} route and its per-request env read have no equivalent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L677-L684
+  - what: >-
+      The session token's header keys are written in the jsonwebtoken crate's order (typ before alg), so the token text differs from PyJWT's for the same claims.
+    why: Clients treat the token as opaque and the oracle compares decoded header and claims. PyJWT sorts header keys and the crate does not.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L944
+  - what: >-
+      The no-database warning says no database is configured instead of "prisma_client is None".
+    why: betterlite has no Prisma client. It is a log line, not wire output.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L930-L931
+out_of_scope:
+  - "_byok_auth_codes, _AUTH_CODE_TTL_SECONDS, _AUTH_CODES_MAX_SIZE, _purge_expired_codes and the two /v1/mcp/oauth/authorize routes: B4677. This task reaches the store only through AuthCodeLookup."
+  - "_build_authorize_html: B4687."
+  - "_user_id_from_session_cookie, _session_identity_from_cookie, _session_key_is_live and _byok_session_auth: B4655 (its description lists them). Nothing in this task calls them."
+  - "store_user_credential: B4713. _invalidate_byok_cred_cache (operations.py) and the cache removal it calls: B136 and B5121, with the peer publish in B878. The composition root wires them into ByokCredentialSink."
+  - "get_request_base_url, well_known_root_suffix, BYOK_RESOURCE_METADATA_PATH, TOKEN_NO_CACHE_HEADERS: B4654. The trusted-proxy decision: B743. get_server_root_paths: B4200. The composition root passes all three in."
+  - "oauth_authorization_server_mcp and the other well-known routes in discoverable_endpoints.py: B7321. This task never calls them."
+  - "Success-path HTTP oracle cases for POST /v1/mcp/oauth/token: a valid code only exists after a session-cookie POST to /authorize, and one oracle case sends one request, so the success path is covered by the exchange tests."
+pitfalls:
+  - Steps 5 to 8 of the exchange return invalid_grant without removing the code, while an expired code is removed and a good one is removed only after the master key check.
+  - The redirect_uri check runs only when both the stored and the submitted value are non-empty, but the client_id check runs whenever the stored one is non-empty, so a token request with no client_id fails it.
+  - The code is removed before store_credential runs, so a database failure leaves the user with no code and a 500 server_error, and a failing invalidate_cache after a successful write also gives 500 with the credential already saved.
+  - The grant_type test comes before the code lookup, so an unknown code with grant_type=refresh_token answers unsupported_grant_type, not invalid_grant.
+  - A form that omits server_id still succeeds and stores the credential under server_id "", as LiteLLM does.
+  - The session token claim type must be exactly "byok_session", since B4655's cookie decoder rejects that value, and nothing else at the pin verifies this token.
+  - base64url here is the URL-safe alphabet with the "=" padding removed, and an empty verifier is hashed like any other string.
+  - The token endpoint sends Cache-Control no-store and Pragma no-cache on errors too, and the discovery documents send neither.
+  - The prefixed route rebuilds the base from scheme and netloc only, so a base_url that already carries a root path loses it before the prefix is added.
+  - LiteLLM also declares GET /.well-known/oauth-authorization-server in discoverable_endpoints.py, so this task owns that path alone; B7321 must not register it again.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

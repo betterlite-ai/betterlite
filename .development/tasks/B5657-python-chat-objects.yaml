@@ -6,12 +6,21 @@ description: >-
   wheel, under the same module path as LiteLLM: `betterlite.types.utils`.
 
 
-  The wheel depends only on python-dotenv, so these classes don't use pydantic. `ResponseObject` is one small base with typed
+  The wheel has no pydantic dependency, so these classes do not use pydantic. `ResponseObject` is one small base with typed
   plain attributes. It gives attribute and item access, `get`, `__contains__`, `model_dump`, `dict`, `json`,
   `model_dump_json` and `__eq__`, and it keeps extra fields a provider sends as attributes, the way `extra="allow"` does.
   Values are typed with a recursive `JsonValue` alias, since Any is banned. Deleting a missing attribute does nothing, as in
   `SafeAttributeModel.__delattr__` (types/utils.py L131-L146). `model_dump` on a response defaults to `exclude_unset=True`
   unless the caller passes `exclude_unset` or `exclude_none` (L2096-L2100), so the base records which fields were set.
+
+  The typed parts of B167 (B7920 to B7954) build their pydantic models on this base, so it also carries what those models use.
+  B7941 needs `RootModel`, B7932 and B7946 need `Generic` models, B7921 needs validators, and B7941 needs `Base64Str` and
+  `AwareDatetime`. Add: `RootModel[T]`, a subclass that wraps one value in `root`, takes it positionally and dumps to the bare
+  value. `ResponseObject` subclasses may also list `Generic[T]` and `ABC` as bases, and `Box[int]` keeps all base behavior. A
+  field with an annotation and no default is required, and a missing one raises `ValidationError`, a `ValueError` subclass
+  that names the fields. `field_validator(*names, mode)` and `model_validator(mode)` decorators run in `__init__`, and a
+  `ValueError` from one becomes a `ValidationError`. `Base64Str` is a `str` that decodes base64 input and dumps back to base64.
+  `AwareDatetime` accepts a `datetime` or an ISO string and raises `ValidationError` for a value with no timezone.
 
 
   Port the `__init__` logic of each class line by line, because the rules live there. `Function` (L1183) turns dict arguments
@@ -44,7 +53,8 @@ description: >-
 
   Files under `python/betterlite/types/utils/` stay under the 300-line limit, and `__init__.py` there re-exports the names
   with an explicit `__all__`. The tests build the same object from `litellm.types.utils` and `betterlite.types.utils` with
-  the same arguments and compare `model_dump()`.
+  the same arguments and compare `model_dump()`. Tests for the base features are named `base_root_model_dump`, `base_generic_subclass`, `base_required_field_missing`,
+  `base_field_validator_runs`, `base_model_validator_error`, `base_base64str_roundtrip` and `base_aware_datetime_rejects_naive`.
 scope:
   paths:
   - crates/betterlite-python/python/betterlite/types/__init__.py
@@ -76,6 +86,8 @@ dod:
   proof: [model-response]
 - text: "`betterlite.types.completion` exposes the same TypedDict keys as LiteLLM."
   proof: [completion-types]
+- text: "`RootModel`, generic subclasses, required fields, validators, `Base64Str` and `AwareDatetime` behave as described, so the B167 parts can use them."
+  proof: [base-features]
 - text: The chat classes pass ruff and strict basedpyright with no Any.
   proof: [python-lint]
 checks:
@@ -105,6 +117,9 @@ checks:
   - id: completion-types
     why: A typed caller's import fails.
     run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_chat_response_objects.py -k typed_dict
+  - id: base-features
+    why: A B167 part needs a base feature that is missing or wrong.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_chat_response_objects.py -k base_
   - id: python-lint
     why: A loose type in the base class spreads to every response.
     run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
