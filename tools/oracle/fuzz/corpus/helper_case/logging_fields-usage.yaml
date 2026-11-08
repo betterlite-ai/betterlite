@@ -1,0 +1,9 @@
+kind: helper
+name: logging-fields-usage-seed
+call:
+  logging_fields:
+    function: usage_as_dict
+    usage: null
+    combined: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 5, reasoning_tokens: 1}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,104 @@
+id: B8586
+title: Manual cost map and Anthropic beta header reload routes
+description: >-
+  An admin reloads the model cost map or the Anthropic beta headers config from the UI, schedules a periodic reload, cancels
+  it and reads its status. These are nine handlers in proxy_server.py (L19335-L19850), all hidden from the OpenAPI schema
+  (include_in_schema=False) and all behind the normal key check (B052). Build crates/betterlite-server/src/reload_routes.rs
+  (declared by the skeleton) with `pub fn routes()` like the sibling route modules; the architect's skeleton mounts it.
+  They read and write the same per-pod state as the timer checks: B8385's `PeriodicReloads` (cost map applied revision,
+  cost map loaded_at, last beta headers reload time), through its accessors. Never keep a second copy of that state.
+
+  Roles. The five write handlers (both reloads, both schedules, both cancels) require user_role to be exactly proxy_admin;
+  anyone else gets 403 with detail "Access denied. Admin role required. Current role: {user_role}". The three read
+  handlers (the two status routes and /model/cost_map/source) accept any caller B2314's user_api_key_has_admin_view
+  allows, with the same 403 otherwise. The role check runs first, before the hours check and before the database check.
+
+  Cost map. `POST /reload/model_cost_map`: without a database, 500 "Database connection not available". Refetch with B194
+  from the configured cost map URL; an unavailable result is 502 "Failed to reload model cost map: {reason}. Current pricing
+  data was kept.". Otherwise adopt the map the way B8385's check does (its _swap_in_model_cost_map port returns the model
+  count), set loaded_at to now, read B194's provenance, then set the applied revision to what B4145's record_manual_reload
+  returns, so this pod does not reload again on its next poll. Log "Model cost map reloaded successfully in current pod.
+  Models count: {n}" and return {"message": "Price data reloaded successfully! {n} models updated.", "status": "success",
+  "models_count": n, "timestamp": now in ISO form, then every provenance field}. Both HTTP errors pass through unchanged;
+  any other error is 500 "Failed to reload model cost map: {error}". `POST /schedule/model_cost_map_reload?hours=N`: hours
+  is a required integer query parameter (missing or not an integer is the framework 422); hours <= 0 is 400 "Hours must be
+  greater than 0"; then B4145's write_reload_interval and {"message": "Model cost map reload scheduled for every {hours}
+  hours", "status": "success", "interval_hours": hours, "timestamp"}. `DELETE /schedule/model_cost_map_reload`: B4145's
+  clear_reload_interval and {"message": "Model cost map reload schedule cancelled", "status": "success", "timestamp"}.
+  `GET /schedule/model_cost_map_reload/status`: B4145's reload_schedule_status of the stored schedule (of None without a
+  database) merged with B194's provenance fields. `GET /model/cost_map/source`: B194's source info merged with
+  "model_count", the number of models in the loaded map (0 when it is empty).
+
+  Anthropic beta headers. `POST /reload/anthropic_beta_headers`: reload with B959, store now as the last reload time in
+  PeriodicReloads, read the anthropic_beta_headers_reload_config row, upsert it (B725's config repository) with force_reload
+  true and the stored interval_hours (null when there was no row or no value), call B8397's invalidate_config_param for that
+  name, and return {"message": "Anthropic beta headers configuration reloaded successfully! {n} providers updated.",
+  "status": "success", "providers_count": n, "timestamp"} where n counts the top-level keys of the new config other than
+  provider_aliases and description. `POST /schedule/anthropic_beta_headers_reload?hours=N` upserts {"interval_hours":
+  hours, "force_reload": false} and invalidates; `DELETE` deletes the row and invalidates; both answer like the cost map
+  pair with "Anthropic beta headers" in the messages. `GET /schedule/anthropic_beta_headers_reload/status`: without a
+  database, without a row, with a null param_value or with a null interval_hours, return {"scheduled": false,
+  "interval_hours": null, "last_run": null, "next_run": null}. Otherwise next_run is the last reload time plus
+  interval_hours when fewer hours than that have passed, else null (a last reload time that does not parse warns "Error
+  parsing last reload time: {error}" and leaves it null), and the answer is {"scheduled": true, "interval_hours",
+  "last_run": the stored last reload time, "next_run"}.
+
+  Tests run every handler against fake PeriodicReloads, config repository, catalog and beta header sources and a fixed
+  clock. HTTP oracle cases under tools/oracle/cases/reload-routes/ cover the paths a booted proxy without a database can
+  show: a non-admin key on a write route (403), hours=0 (400), the cost map reload and schedule without a database
+  (the 500 texts in the pitfalls), both status routes without a database, and the cost map source route with model_count.
+  Compare status and body, and leave timestamp, loaded_at and the other clock or revision fields out of the comparison.
+scope:
+  paths:
+    - crates/betterlite-server/src/reload_routes.rs
+    - crates/betterlite-server/src/reload_routes/**
+    - tools/oracle/cases/reload-routes/**
+    - tools/oracle/helpers/b8586.py
+    - tools/oracle/helpers/b8586/**
+    - tools/oracle/src/helpers/server/b8586.rs
+    - tools/oracle/src/helpers/server/b8586/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19335-L19584
+    why: The cost map reload, schedule, cancel, status and source handlers with their roles and error texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19587-L19850
+    why: The Anthropic beta headers reload, schedule, cancel and status handlers.
+dod:
+  - text: Write routes refuse every role but proxy_admin and read routes refuse callers without admin view, with LiteLLM's 403 text, before any other check.
+    proof: [reload-route-tests, oracle]
+  - text: A manual cost map reload adopts the map, updates loaded_at and stores the revision from record_manual_reload in PeriodicReloads, and a failed fetch is 502 with the current map kept.
+    proof: [reload-route-tests]
+  - text: Schedule and cancel routes reject hours <= 0 with 400 and write or clear the stored schedule, and their database errors come out wrapped as in LiteLLM.
+    proof: [reload-route-tests, oracle]
+  - text: The beta headers reload sets force_reload with the stored interval kept, and its status route computes next_run from the pod's last reload time.
+    proof: [reload-route-tests]
+  - text: Both status routes and the source route answer LiteLLM's shape without a database.
+    proof: [reload-route-tests, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: reload-route-tests
+      why: A reload, schedule, cancel, status or source route is missing or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^reload_routes::/)'
+oracle_cases:
+  - tools/oracle/cases/reload-routes/non-admin-reload.yaml
+  - tools/oracle/cases/reload-routes/schedule-zero-hours.yaml
+  - tools/oracle/cases/reload-routes/cost-map-reload-no-database.yaml
+  - tools/oracle/cases/reload-routes/cost-map-schedule-no-database.yaml
+  - tools/oracle/cases/reload-routes/cost-map-status-no-database.yaml
+  - tools/oracle/cases/reload-routes/beta-headers-status-no-database.yaml
+  - tools/oracle/cases/reload-routes/cost-map-source.yaml
+deviations: []
+out_of_scope:
+  - "The timer checks and the PeriodicReloads state: B8385. The reload schedule rows and their status shape: B4145. Cost map refetch, adoption, provenance and source info: B194. The beta headers config reload: B959."
+  - "Mounting the routes: the architect's skeleton."
+pitfalls:
+  - "Only the cost map reload re-raises HTTP errors. The schedule and cancel handlers and the beta headers reload catch every exception, their own 500 included, so a missing database reads \"Failed to schedule model cost map reload: 500: Database connection not available\" (and the same for the other wrapped handlers)."
+  - "The beta headers status reads the pod's own last reload time, not a database value, so a pod that never reloaded reports scheduled true with last_run and next_run null."
+  - "The cost map reload sets the applied revision from record_manual_reload last, after the map is adopted, so other pods reload on their next poll and this one does not."
+  - "reload_beta_headers_config (anthropic_beta_headers_manager.py L186) is B959's explicit reload; call it, don't port it again."
+review_level: standard
+budget:
+  max_changed_lines: 1200
+  max_new_expects: 0

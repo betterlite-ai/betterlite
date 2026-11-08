@@ -125,7 +125,7 @@ out_of_scope:
   - B2222 owns the capability lookups and B2221 the supports_* predicates; this task only calls them.
   - B6072 owns validate_environment, message and tool cleanup, request and response transforms, the stream handler and get_models.
   - B159 owns Python class-attribute assignment for the settings constructor.
-  - B041 wires the config into dispatch and the HTTP cases.
+  - B8310 wires the config into dispatch and adds the HTTP cases.
 pitfalls:
   - The tool_choice, response_format, max_completion_tokens and reasoning_effort branches of map_openai_params are not gated on the supported list, so they apply to models that do not list them.
   - A reasoning_effort of "auto" is dropped and False becomes "none", while a map without an "effort" key becomes None and is dropped.

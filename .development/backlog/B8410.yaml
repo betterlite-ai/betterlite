@@ -1,0 +1,14 @@
+id: B8410
+milestone: M8 platform
+title: Proxy exception, error type values and special headers
+status: todo
+depends_on: []
+file: tasks/B8410-proxy-exception-types.yaml
+covers:
+  - "litellm/proxy/_types.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

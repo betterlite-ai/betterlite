@@ -1,0 +1,14 @@
+id: B8411
+milestone: M8 platform
+title: Key, user, customer, cost estimate and coordination Redis request contracts
+status: todo
+depends_on: [B770, B2310, B2314]
+file: tasks/B8411-proxy-request-contracts.yaml
+covers:
+  - "litellm/proxy/_types.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

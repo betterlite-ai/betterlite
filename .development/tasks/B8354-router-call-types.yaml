@@ -1,0 +1,93 @@
+id: B8354
+title: Router call type table and generic branches
+description: >-
+  LiteLLM's `Router.factory_function` (router.py L6592-L7011) turns about 130 `call_type` names into router methods: `amoderation`, `aresponses`, `afile_delete`, `avector_store_search`, `acreate_interaction`, `acreate_agent` and the rest. B6021 built the generic engine and its `anthropic_messages` branch, and B2489 (assistants), B3273 (search), B370 (`aresponses` stream fallback), B7430 (containers) and B6460 (video) own their branches. The table itself, the moderation, vector store, responses, interactions and managed agents branches, and the passthrough route branch are left. Build them here so the Python crate can call any call type by name.
+
+
+  Put the code in the new module `crates/betterlite-sdk/src/router_call_types.rs` and its folder. `RouterCallType` is an enum with one variant per `call_type` literal in the `factory_function` signature (L6594-L6731), with `as_str` and `from_name`; an unknown name answers `GenericError::UnknownCallType` (B6021). `CallRoute` says where a name goes, and `route_for(call_type)` is one `match` with no wildcard arm, so a new call type cannot be forgotten:
+
+  - `SyncGeneric` for the blocking names in L6741-L6758 (`responses`, `generate_content`, `generate_content_stream`, `ocr`, `search`, `decisions`, `systemone`, the five blocking video names and the four blocking container names): B6021's `generic_call_blocking`.
+  - `SyncVectorStore` for `vector_store_search`, `vector_store_create`, `vector_store_retrieve`, `vector_store_list`, `vector_store_update` and `vector_store_delete`; `SyncVectorStoreFile` for the six blocking `vector_store_file_*` names; `SyncManagedAgent` for `create_agent`, `list_agents`, `get_agent`, `delete_agent` and `list_agent_versions`.
+  - For async names, in the order of `async_wrapper` (L6835-L7009): `Assistants` (B2489), `Moderation`, `Search` (B3273, for `asearch` and `search`), `VectorStoreFile` for the six async file names, `ResponsesStream` for `aresponses` (B370), `Generic` for the three realtime secret and session names and for `afile_delete` and `afile_content`, `Dispatch` (B6021's `dispatch_generic_call_type`) for the 28 names in L6883-L6911, `Container` (B7430) for the nine container names, `Passthrough` for `allm_passthrough_route`, `ResponsesById` for `aget_responses`, `acancel_responses`, `acompact_responses`, `adelete_responses` and `alist_input_items`, `VectorStore` for the six async vector store names, `Interactions` for `acreate_interaction`, `create_interaction`, `aget_interaction`, `adelete_interaction` and `acancel_interaction`, and `ManagedAgents` for the five async agent names. A name that matches none of the async lists (for example `aimage_edit` is in the dispatch list, but `aadapter_generate_content` is in none) returns none from the wrapper, as LiteLLM's falls off the end; keep that as `CallRoute::NoRoute`, which answers JSON null.
+
+
+  `RouterCallTypes` holds B6021's `RouterGeneric`, the branch owners' entry points behind small traits (assistants, search, container, video and the `aresponses` stream fallback), and B1058's `RouterVectorStoreEmbeddingExecutor` factory. B310's update-before-fallbacks step, B844's model list, B016's selection and B303's request update come through B6020's ports or small traits defined here, because betterlite-sdk may not depend on betterlite-router; the wave 17 inference wiring part implements them in betterlite-server. `call(call_type, request)` follows the route:
+
+  - `Moderation` is `_pass_through_moderation_endpoint_factory` (L6566-L6590): run B310's update-before-fallbacks with `model` (empty when absent); when `model` is set and B844's model list has it, pick a deployment with B016, set `model` to the deployment's `litellm_params.model`, update the request with the deployment (B303) and merge the params into it; then call the executor once, with no retries.
+  - `VectorStore` and `VectorStoreFile` are `_init_vector_store_api_endpoints` (L7017-L7048): put `custom_llm_provider` in the request only when it is absent; with a `model`, run the generic call; for `avector_store_search` add `router` (a handle to this object) and, before that, `_direct_vector_store_embedding_executor` built from `vector_store_request_metadata` (B1058, L7014-L7015) of the request; otherwise call the executor directly. The blocking `SyncVectorStore` branch does the same with the blocking generic call, and `SyncVectorStoreFile` calls the executor with `custom_llm_provider` and the request.
+  - `ResponsesById` is `_init_responses_api_endpoints` (L7108-L7126): decode the model id from `response_id` with B903's `get_model_id_from_response_id`; when it gives one, set `model` to it; then run the generic call.
+  - `Interactions` is `_init_interactions_api_endpoints` (L7128-L7155): fill `custom_llm_provider` from the argument, else `gemini`; when `agent` is set and equals `model`, set `model` to null; with a `model` run the generic call, otherwise call the executor directly.
+  - `ManagedAgents` and `SyncManagedAgent` are `_init_managed_agents_api_endpoints` (L7157-L7173): fill `custom_llm_provider` the same way and call the executor directly.
+  - `Passthrough` puts `client` back when one was given and runs the generic call with `passthrough_on_no_deployment` true.
+  - `Generic` passes `custom_llm_provider` only for `afile_delete` and `afile_content`, and `client` for those and the realtime names.
+
+  Every wrapper takes `custom_llm_provider` and `client` as named arguments and drops them unless the branch above passes them on.
+
+
+  Tests are in `router_call_types/tests.rs`, with fake executors and fake branch owners; names start with `table_`, `moderation_`, `vector_`, `responses_`, `interactions_`, `agents_` and `passthrough_`. There is no fuzz target.
+scope:
+  paths:
+  - crates/betterlite-sdk/src/router_call_types.rs
+  - crates/betterlite-sdk/src/router_call_types/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6566-L6590
+    why: The moderation pass-through.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6592-L7011
+    why: The call type list, the sync wrappers and every async branch in order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7014-L7048
+    why: Vector store routing with and without a model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7108-L7173
+    why: Responses by id, interactions and managed agents.
+dod:
+  - text: Every call type literal of factory_function maps to one route through a match with no wildcard arm, and an unknown name is refused by name.
+    proof: [call-types-table]
+  - text: Moderation routes only a model the router knows and runs once.
+    proof: [call-types-moderation]
+  - text: Vector store calls route by model, add the router and the embedding executor only for search, and fill the provider only when absent.
+    proof: [call-types-vector]
+  - text: Responses by id take the model from the response id, and interactions and agents default the provider to gemini.
+    proof: [call-types-responses, call-types-interactions, call-types-agents]
+  - text: The passthrough route runs with `passthrough_on_no_deployment` and keeps its client.
+    proof: [call-types-passthrough]
+checks:
+  optional: []
+  commands:
+  - id: call-types-table
+    why: A call type is missing from the table or routed to the wrong branch.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_call_types::tests::table_/)'
+  - id: call-types-moderation
+    why: An unknown moderation model is routed, or a known one keeps the public name.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_call_types::tests::moderation_/)'
+  - id: call-types-vector
+    why: A vector store call with a model skips routing, or a non-search call gets the router handle.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_call_types::tests::vector_/)'
+  - id: call-types-responses
+    why: A response id that names a deployment is routed by the request model instead.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_call_types::tests::responses_/)'
+  - id: call-types-interactions
+    why: An agent call is routed as a model, or the provider default is lost.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_call_types::tests::interactions_/)'
+  - id: call-types-agents
+    why: A managed agent call loses its provider default.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_call_types::tests::agents_/)'
+  - id: call-types-passthrough
+    why: A passthrough route fails when no deployment matches.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_call_types::tests::passthrough_/)'
+oracle_cases: []
+deviations:
+  - what: Branch owners that live outside betterlite-sdk are reached through traits passed to the constructor.
+    why: A provider or server crate cannot be a dependency of the SDK crate without a cycle.
+out_of_scope:
+  - "B6021 owns the generic engine, the dispatch list's engine and the anthropic_messages branch; B2489 assistants; B3273 search; B370 the aresponses stream fallback; B7430 containers; B6460 video."
+  - "B1058 owns the vector store embedding executor and request metadata, B903 the response id decoder."
+  - "B8355 exposes `call` to Python and B8356 gives the Python Router its method names."
+pitfalls:
+  - "`aadapter_generate_content` is accepted by the signature but matches no async branch, so the call returns null instead of failing."
+  - "`aimage_edit`, `aocr` and `ocr` sit in the dispatch list, while blocking `ocr` is also in the sync list; the sync list is checked first."
+  - "`_init_interactions_api_endpoints` clears `model` only when it equals `agent`, so an agent call never selects a deployment."
+  - "Vector store branches add `custom_llm_provider` only when the request has none, and never overwrite it."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

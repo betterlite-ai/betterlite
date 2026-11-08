@@ -197,9 +197,9 @@ out_of_scope:
   - "BoundedPrometheusSeriesTracker and _inc_labeled_counter: B3876."
   - "Writing to token, spend and media collectors (lines 1560-1735, 1987-2040): B3877. Latency, overhead and guardrail observations (2253-2365, 3211-3258): B3878."
   - "Budget gauge projection and the budget initialization and cron job (3617-4535): B3882, B3883 and B3884. Rate-limit gauges (2049-2222, 2938-3065): B3879."
-  - "Failure hooks, deployment outcome and fallback emission, managed batch and cache emitters (lines 2365-3210, 3259-3600): B3880, B3881 and the owners listed in B111."
+  - "Failure hooks, deployment outcome and fallback emission, managed batch and cache emitters (lines 2365-3210, 3259-3600): B3880, B3881 and B8561 for the hooks."
   - "_mount_metrics_endpoint (4565-4594), scrape rendering and its auth: B3886. PROMETHEUS_MULTIPROC_DIR handling is there too."
-  - "Building the logger on first use and caching it in the callback list (litellm_logging.py:4590-4602): the callback layer from B189 decides when to call register. No planned task claims that call yet; see the notes in the report."
+  - "Building the logger on first use and caching it in the callback list (litellm_logging.py:4590-4602): the callback layer from B189 decides when to call register. B8561 builds that first-use construction."
   - "PrometheusServicesLogger and its own service collectors: B3885."
   - "The module-level helpers in lines 91-250 (_bounded_requested_model_label, _get_budget_metrics_per_request_timeout, _get_proxy_llm_router): the emitters that call them own them."
 

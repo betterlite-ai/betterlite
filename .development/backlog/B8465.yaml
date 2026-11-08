@@ -1,0 +1,14 @@
+id: B8465
+milestone: M9 agents and mcp
+title: "MCP upstream tool call dispatch"
+status: todo
+depends_on: [B8460, B8461, B8464, B6590, B4731, B6592, B4680, B4667, B8196, B4654, B6594, B4745]
+file: tasks/B8465-mcp-tool-call.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

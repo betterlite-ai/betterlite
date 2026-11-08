@@ -11,7 +11,7 @@ description: >-
 
   After the no-database check, object-permission preparation may already write its row. Choose B894's
   transaction only when soft_budget is present in model_fields_set, including explicit null; changed_by
-  is the caller user_id or litellm_proxy_admin_name. Otherwise call B124's PrismaClient.update_data key
+  is the caller user_id or litellm_proxy_admin_name. Otherwise call B2362's PrismaClient.update_data key
   branch: hash the token, set settings_updated_at through B770, include object_permission, and retain
   its three-try, ten-second exponential retry behavior. This is not a transaction around the route.
   Invalidate old/new object permission caches (B816), drop the key cache (B734), then synchronize access
@@ -85,8 +85,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/key_update.rs
     - crates/betterlite-server/src/routes/key_update/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-update/**
     - crates/betterlite-server/src/key_update/fixtures.rs
     - crates/betterlite-server/src/key_update/fixtures/**
@@ -101,7 +99,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1441-L1484
     why: UpdateKeyRequest request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5426-L5472
-    why: B124's update_data retry wrapper and ordinary key write, including the returned data row.
+    why: B2362's update_data retry wrapper and ordinary key write, including the returned data row.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6783-L6793
     why: Python custom-key hook installation consumed from B165, not a mocked success in route cases.
 dod:
@@ -148,7 +146,7 @@ oracle_cases:
   - tools/oracle/cases/management/key-update/changed-by-header.yaml
 deviations: []
 out_of_scope:
-  - B124 owns PrismaClient.update_data and _hash_token_if_needed in proxy/utils.py; this handler calls
+  - B2362 owns PrismaClient.update_data's key branch and _hash_token_if_needed in proxy/utils.py; this handler calls
     that ordinary-write implementation, not B1220's bulk-update helper.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'

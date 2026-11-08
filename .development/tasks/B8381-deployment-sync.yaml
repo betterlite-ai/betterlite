@@ -1,0 +1,90 @@
+id: B8381
+title: Database deployment sync, DB callbacks and config sync subscribers
+description: >-
+  With store_model_in_db, LiteLLM's add_deployment job keeps the router in step with the database every reload
+  interval: it reads model rows, adds new deployments, removes ones neither the database nor the config file wants,
+  registers callbacks saved in the database, applies saved router settings and then refreshes everything else. A
+  Redis config sync subscriber triggers the same reconcile on other pods. Build crates/betterlite/src/deployment_sync.rs
+  (declared by the skeleton) with `DeploymentSync`, which B8372 schedules as add_deployment_job and B8374 stops. Error
+  enum DeploymentSyncError.
+
+  `add_deployment(db)`: first re-read the UI settings (B1659's sync, outside the lock), then hold the one model
+  reconcile lock (B836's MODEL_RECONCILE_LOCK; clear_cache calls the locked half directly) and run, catching and logging
+  every error: prefetch the config params general_settings, router_settings, litellm_settings, environment_variables and
+  anthropic_beta_headers_reload_config (B8397); when B8380's should_load_db_object allows models, read rows with
+  B8382's model reader; sync credentials; update the router; apply the general_settings row through B8379; then run
+  B8384's non-LLM object sync. It returns ReconcileOutcome { still_desired, live_after } (live_after only when a
+  reconcile ran) for the model routes.
+
+  Router update (_update_llm_router): re-read config through B8379 (a failure warns and goes on with what it has) and
+  its search tools (B8384's parse_search_tools). Rows of None mean the database read failed: warn and keep every deployment. With no
+  router yet and a master key, build the router from B8382's decrypted rows when there are rows or search tools, async
+  clients only, ignore invalid deployments. Otherwise set the search tools, delete and then add. Delete
+  (_delete_deployment): ids from B8382's model info for each row plus each config model's id (model_info.id or the
+  router's generated id after resolving os.environ/ params); a config read failure skips deletion; a config without
+  model_list keeps every non-database deployment with a warning; remove the rest. Add (_add_deployment): each row's
+  params resolved with B8382, validated, then upserted into the router with its model info; invalid params log an
+  error and skip the row. After the update: DB callbacks and router settings. Callbacks (_add_callbacks_from_db_config):
+  for litellm_settings success_callback, failure_callback and callbacks, register each string once for its events (known
+  custom-logger callbacks per event, others into the success, failure or both lists when missing), remember what each
+  registration added or displaced, and undo registrations whose entry left the settings. Router settings: apply the
+  router_settings row to its store and, when the resolved settings are not empty, update the router; invalid
+  routing_groups log "Ignoring invalid router_settings.routing_groups from config/DB, all other router settings still
+  apply..." and the rest still applies.
+
+  Credentials (get_credentials): read all with the writer, decrypt with B8382, drop in-memory credentials that neither
+  the database nor the config credential_list names, then upsert the rest. Subscribers: start_config_sync (with Redis,
+  once; its resync callback is add_deployment, B4144's subscriber), start_auth_invalidation (with Redis, once; B878's
+  subscriber over the auth cache plus the spend counter and BYOK credential memory caches), and the two stops, which log
+  and swallow errors. DeploymentSync also holds the auto-router catalog (auto_router_db_catalog): every successful row read from B8382 rebuilds it with B379's build_auto_router_catalog, `catalog()` hands it to readers, and `remove_catalog_entries(ids)` drops rows for removed models. DeploymentSync implements B379's AutoRouterCatalog (betterlite-server, router_preview_validation), returning the current catalog.
+
+  Tests use in-memory repositories and a recording router. No oracle case: the reconcile runs on a schedule and its
+  result reaches clients only through the model routes, whose tasks own those cases.
+scope:
+  paths:
+    - crates/betterlite/src/deployment_sync.rs
+    - crates/betterlite/src/deployment_sync/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7279-L7520
+    why: Delete, add and router update.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7520-L7573
+    why: Callback registration from database settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5349-L5390
+    why: Callback registration bookkeeping helpers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7727-L7759
+    why: Router settings from the database and the routing_groups fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8067-L8241
+    why: add_deployment, the locked half and the two subscribers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9094-L9125
+    why: Credential sync.
+dod:
+  - text: add_deployment syncs UI settings, then under one lock prefetches params, reads rows, syncs credentials, updates the router, applies general settings and syncs other objects.
+    proof: [deployment-sync-tests]
+  - text: A failed row read or config read never evicts deployments, and a config without model_list keeps file deployments.
+    proof: [deployment-sync-tests]
+  - text: Database callbacks register once per event and are undone when removed, and router settings apply without invalid routing groups.
+    proof: [deployment-sync-tests]
+  - text: Credentials missing from both database and config are dropped, and the subscribers start once with Redis and stop without failing shutdown.
+    proof: [deployment-sync-tests]
+checks:
+  optional: []
+  commands:
+    - id: deployment-sync-tests
+      why: The deployment reconcile, callback or router settings sync, credential sync or a subscriber is missing or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^deployment_sync::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Row reading, model info and decryption: B8382. Config reload and general settings effects: B8379. Non-LLM objects: B8384."
+  - "The subscriber mechanics: B4144 (config sync) and B878 (auth invalidation)."
+pitfalls:
+  - Rows of None (a failed read) and an empty list (no rows) are different; only the empty list may remove database deployments.
+  - The UI settings sync runs before the reconcile lock so a flag saved on one pod reaches others without waiting for a model reconcile.
+  - Callback undo matches entries by identity and restores entries the registration displaced.
+  - Delete runs before add, and still_desired is the union of database ids, config ids and kept file ids.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

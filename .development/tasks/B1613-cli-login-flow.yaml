@@ -11,7 +11,7 @@ description: >-
   characters from ABCDEFGHJKLMNPQRSTUVWXYZ23456789 displayed four-four. Flow TTL is 600s;
   writes refresh it. Limit starts to 30 per 60s using the hashed client IP from B744 and
   general_settings.use_x_forwarded_for=false. general_settings.allow_cli_sso_verification_uri_complete
-  defaults false; when enabled, B124's URL helper builds the source=litellm-cli link.
+  defaults false; when enabled, B7323's URL helper builds the source=litellm-cli link.
   CLI OAuth state uses litellm-session-token:login_id with an optional strictly valid displayed
   code; existing_key has no effect. Complete requires a ready session, then compares the
   normalized Unicode-alphanumeric code hash and browser token hash in constant time; only

@@ -6,7 +6,7 @@ description: >-
   OpenAI-shaped (a prediction is created, then polled), so it does not go in betterlite-openai. The module builds the
   requests and reads the replies; the HTTP calls go through B173's transport, which the caller passes in through the
   constructor together with a sleeper (a small trait with one async method that waits a given number of seconds, so tests
-  record the delays and never wait). B042 wires the module into dispatch, resolves the key and base, and owns the HTTP cases.
+  record the delays and never wait). B8332 wires the module into dispatch, resolves the key and base, and owns the HTTP cases.
   Credentials come in as plain arguments: `api_key` is a string, and the module reads no environment variable and adds no
   config section.
 
@@ -79,7 +79,7 @@ description: >-
   attempt limit. The two LiteLLM paths differ and both are kept, selected by `OutputPolicy`: `Strict` (the sync path)
   joins `output` and turns a join failure into `ReplicateError` 422 "Unable to parse response. Got=<output>" with the
   response headers, so a null output fails; `Lenient` (the async path) skips a null output, joins a list, and renders any
-  other output with its string form. B042 chooses the policy per path. The stream chunks are read by B5653's replicate
+  other output with its string form. B8332 chooses the policy per path. The stream chunks are read by B5653's replicate
   chunk reader and driven by B5654; neither is built here.
 
 
@@ -113,7 +113,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/handler.py#L124-L305
     why: Create, non-stream retry loop with its delays, and the async twin.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2773-L2825
-    why: Where key, base and the custom prompt table come from (B042 wires it).
+    why: Where key, base and the custom prompt table come from (B8332 wires it).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L97-L98
     why: Polling retries and delay defaults and env names.
   - url: https://replicate.com/docs/reference/http
@@ -176,7 +176,7 @@ deviations:
     why: Two copies would drift. The sync face is B158's, and the visible results (chunks, errors, delays) stay those of each LiteLLM path.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/handler.py#L26-L123
 out_of_scope:
-  - B042 owns the dispatch and operation wiring, key and base resolution (REPLICATE_API_KEY, REPLICATE_API_TOKEN, REPLICATE_API_BASE), the stream post-call log from main.py, and the HTTP cases. No dispatch.rs or operation.rs file is touched here.
+  - B8332 owns the dispatch and operation wiring, key and base resolution (REPLICATE_API_KEY, REPLICATE_API_TOKEN, REPLICATE_API_BASE), the stream post-call log from main.py, and the HTTP cases. No dispatch.rs or operation.rs file is touched here.
   - B5653 owns handle_replicate_chunk in streaming_handler.py and B5654 the stream driver; this task only yields the {output, status} chunks.
   - B238 owns the Replicate branch of the exception mapper, and B1689 owns get_replicate_completion_pricing.
   - B177 owns custom_prompt and prompt_factory, B218 the content-to-string projection and B196 the token counts; only calls into them are here.

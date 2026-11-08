@@ -1,0 +1,74 @@
+id: B8385
+title: Periodic cost map and Anthropic beta header reloads
+description: >-
+  An admin can schedule a model cost map reload and an Anthropic beta headers reload from the UI. LiteLLM checks both
+  on a timer: check_periodic_reloads on its own job (whether or not store_model_in_db is on) for the cost map, and
+  _check_and_reload_anthropic_beta_headers inside the non-LLM object sync. Build
+  crates/betterlite-server/src/periodic_reloads.rs (declared by the skeleton) with `PeriodicReloads`, which holds this
+  pod's reload state: the cost map applied revision (starts at 0), the cost map loaded_at (from B194's catalog
+  provenance, else now) and the last beta headers reload time (none at start). The manual reload and status routes read
+  and write the same state through its accessors. Each check logs and swallows its own error, so nothing here returns
+  one.
+
+  `check_periodic_reloads(db)`: only when B8380's should_load_db_object allows model_cost_map, run the cost map check.
+  Cost map check: read the schedule with B4145's read_reload_schedule for the model cost map param; none does nothing.
+  Ask B4145's pod_reload_is_due with the applied revision, loaded_at and now ("Model cost map"); not due does nothing.
+  Refetch with B194 from the configured cost map URL. An unavailable result logs "Model cost map reload failed
+  ({reason}); keeping current pricing data. The revision stays unapplied so this pod retries on its next poll" and
+  stops. Otherwise adopt the new map through B194 (the count of models comes back), set loaded_at to now, record the
+  run with B4145's record_reload_run, and only then set the applied revision to the schedule's, so a failed fetch or a
+  failed status write retries on the next poll. Log "Model cost map reloaded successfully. Models count: {n}". Any error
+  logs "Error in _check_and_reload_model_cost_map: {error}".
+
+  `check_beta_headers_reload(db)` (_check_and_reload_anthropic_beta_headers): read the anthropic_beta_headers_reload_config
+  param with B8397's get_config_param; none does nothing. Take interval_hours and force_reload (default false); neither
+  set does nothing. force_reload reloads ("Anthropic beta headers reload triggered by force reload flag"). With an
+  interval and a last reload time, reload when the hours since it reach the interval ("Anthropic beta headers reload
+  triggered by interval. Hours since last reload: {h:.2f}, Interval: {interval}"); a last reload time that does not
+  parse warns "Error parsing last reload time: {error}" and reloads; no last reload time reloads ("Anthropic beta
+  headers reload triggered - no previous reload time recorded"). A reload calls B959's reload, stores now as the last
+  reload time, upserts the param back with force_reload false and the same interval_hours, evicts it with B8397, and
+  logs "Anthropic beta headers config reloaded successfully. Providers: {n}" where n counts the top-level keys other
+  than provider_aliases and description. Any error logs "Error in _check_and_reload_anthropic_beta_headers: {error}".
+
+  Tests use an in-memory config repository, a fake clock and fake catalog and beta header sources. No oracle case: both
+  checks run on timers; the reload routes that show this state own the HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/periodic_reloads.rs
+    - crates/betterlite-server/src/periodic_reloads/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8578-L8731
+    why: Both checks, the due test, the adopt order and the force flag reset.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5409-L5419
+    why: Initial pod reload state.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5161-L5164
+    why: _swap_in_model_cost_map, a thin call into the catalog adoption.
+dod:
+  - text: The cost map check runs only behind its gate and schedule, keeps current pricing on a failed fetch, and adopts the revision after the run is recorded.
+    proof: [periodic-reload-tests]
+  - text: The beta headers check reloads on force, on interval or with no recorded time, then clears force_reload and evicts the cached param.
+    proof: [periodic-reload-tests]
+  - text: The pod reload state starts as LiteLLM's and is shared with the manual reload routes.
+    proof: [periodic-reload-tests]
+checks:
+  optional: []
+  commands:
+    - id: periodic-reload-tests
+      why: A periodic reload check is missing, reloads at the wrong time or records its state in a different order than LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^periodic_reloads::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Schedules and their status rows: B4145. Catalog refetch and adoption: B194. Beta header loading: B959."
+  - "The manual reload, schedule and status routes (/reload/model_cost_map, /schedule/model_cost_map_reload, /model/cost_map/source, /reload/anthropic_beta_headers, /schedule/anthropic_beta_headers_reload and their status routes): B8586 builds them over this state."
+  - "When the checks run: B8372 schedules check_periodic_reloads, and B8384 calls the beta headers check."
+pitfalls:
+  - The applied revision moves last; setting it before record_reload_run would report a run that never landed.
+  - The beta headers upsert writes interval_hours back even when it is None, as LiteLLM does.
+review_level: standard
+budget:
+  max_changed_lines: 1200
+  max_new_expects: 0

@@ -44,8 +44,6 @@ scope:
     - crates/betterlite-server/src/debug_routes/**
     - crates/betterlite-server/src/routes/debug_report.rs
     - crates/betterlite-server/src/routes/debug_report/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/debug/report/**
     - tools/oracle/helpers/b4171.py
     - tools/oracle/helpers/b4171/**

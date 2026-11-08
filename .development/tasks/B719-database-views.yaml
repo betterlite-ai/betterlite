@@ -4,7 +4,7 @@ description: >-
   Build betterlite-db::database_views from litellm/proxy/db/create_views.py and the offline
   db_scripts/create_views.py operation. Own SupportsExecuteRaw/SupportsRawQueries contracts,
   create_view_tolerating_race, create_missing_views, should_create_missing_views and the offline
-  check_view_exists. The runtime bootstrap caller in B124 owns its separate required-view repair,
+  check_view_exists. The runtime bootstrap caller in B8396 owns its separate required-view repair,
   DATABASE_SCHEMA selection and missing-usage-view warning; this service has no privilege-warning
   fallback. Database errors not explicitly tolerated below propagate to that caller.
 
@@ -105,7 +105,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/create_views.py#L11-L207
     why: Offline timeout, older verification projection, broad probe catch and stdout behavior.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4642-L4729
-    why: B124's caller owns required-view repair, DATABASE_SCHEMA and usage-tab warnings, not this service.
+    why: B8396's caller owns required-view repair, DATABASE_SCHEMA and usage-tab warnings, not this service.
 dod:
   - text: 'Runtime tests name view_probe_order, empty_existing_relation_is_kept,
       same_named_table_is_not_replaced, missing_message_markers_case_insensitive,
@@ -146,7 +146,7 @@ deviations: []
 out_of_scope:
   - B874 owns parse_csv_value and migrate_verification_tokens in db_scripts/migrate_keys.py and
     apply_db_fixes in db_scripts/update_unassigned_teams.py.
-  - B124 owns PrismaClient.check_view_exists in proxy/utils.py, including its different required-view
+  - B8396 owns PrismaClient.check_view_exists in proxy/utils.py, including its different required-view
     repair projection, DATABASE_SCHEMA default public, health check and missing-usage-view warning.
 pitfalls:
   - Last30dTopEndUsersSpend compares end_user with PostgreSQL's current user because user is unquoted.

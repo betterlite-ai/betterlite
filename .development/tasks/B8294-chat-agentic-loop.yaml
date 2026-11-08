@@ -1,0 +1,167 @@
+id: B8294
+title: Chat completion agentic loop
+description: >-
+  Port litellm/litellm_core_utils/chat_completion_agentic_loop.py (356 lines). After a chat completion returns a
+  ModelResponse, litellm/main.py (L698-L720) calls `maybe_run_chat_completion_agentic_loop`. It asks each registered
+  logger callback whether the answer needs another round (the web search and code interpreter interceptions do), builds a
+  follow-up request from the callback's plan, calls the completion again and returns that answer. The Responses API has
+  the same loop in B2415, and the plan and follow-up kwargs helpers are shared (B4119 owns the plan types, B4110 owns
+  `build_agentic_followup_kwargs` and the max loops validator, B189 owns the callback trait and the interception prefix
+  helpers). This task builds the chat side only.
+
+  Code goes in crates/betterlite-core/src/api/chat_agentic_loop.rs and chat_agentic_loop/. Files: entry.rs
+  (`maybe_run_chat_agentic_loop`), settings.rs, safety.rs, followup.rs (the plan execution), fake_stream.rs and error.rs.
+  Names are shortened from LiteLLM's on purpose (30 characters at most).
+
+  Ports. The module defines two traits so tests use fakes and no global is read.
+  `ChatContinuation`: `async fn complete(&self, model: &str, messages: &[Message], params: &Map, kwargs: &Map) -> Result<ChatLoopResult, ChatCallError>`,
+  the recursive `litellm.acompletion` call. The family composition above this module supplies it, and this module never
+  imports the completion entry point. `FakeStreamPort`: `fn wrap(&self, response: ChatLoopResult, model: &str, provider: &str, logging: &LoggingHandle) -> ChatLoopResult`,
+  LiteLLM's `_wrap_response_as_fake_stream` (a CustomStreamWrapper over a MockResponseIterator). It returns the input unchanged when
+  the input is already a stream, is not a ModelResponse, or the logging handle is not a real logging object. `ChatLoopResult`
+  is an enum `Response(ModelResponse)` or `Stream(ChatStream)`; read the merged type names from the chat response module.
+
+  `maybe_run_chat_agentic_loop(response, model, messages, optional_params, kwargs, logging, custom_llm_provider, stream, callbacks, ports) -> Result<Option<ChatLoopResult>, AgenticLoopError>`.
+  `callbacks` is the global callback list followed by the logging object's dynamic success callbacks, in that order.
+  Entries that are not logger instances are skipped. `tools` is `optional_params["tools"]`, or an empty list.
+  `settings.rs` reads three values from `kwargs`: `depth` is `_agentic_loop_depth` as an integer when it is an integer or a
+  string of digits, else 0 (LiteLLM's `_coerce_int`; a string that is not a number is an error, as `int("x")` raises there);
+  `max_loops` is B4110's validator applied to `max_agentic_loops` with the field name "litellm_params.max_agentic_loops",
+  or its default when the value is absent; `fingerprints` is each element of `_agentic_loop_fingerprints` as text when that
+  value is a list, else empty. For each callback in order:
+  1. Skip it when it does not override `async_should_run_agentic_loop`. Build `hook_kwargs`: a copy of kwargs plus
+     `_agentic_loop_api_surface` = "chat_completions" and `custom_llm_provider`.
+  2. Call the gate with response, model, messages, tools, stream, custom_llm_provider and hook_kwargs. It returns
+     `(should_run, tool_calls)`. An error is logged at error level as "LiteLLM.AgenticHookError: Exception in chat completion
+     agentic gate: <error>" and the loop goes to the next callback. `should_run` false also goes to the next callback.
+  3. `check_loop_safety(tool_calls, fingerprints, depth, max_loops, model)` in safety.rs. The fingerprint is the tool calls as JSON with
+     sorted keys (values that JSON cannot hold become their text), or the plain text of the value if that fails. If the
+     fingerprint is already in `fingerprints`, return `AgenticLoopError::RepeatedFingerprint` with the text "Agentic loop
+     detected repeated tool-call fingerprint; aborting rerun". Else if `depth >= max_loops`, return `MaxLoopsExceeded` with
+     "Exceeded max_agentic_loops=<max_loops> for model=<model>". These two errors are NOT caught by the hook error handler of
+     step 4 and end the whole call. Check the repeat before the depth.
+  4. Inside one error guard (every error is logged "LiteLLM.AgenticHookError: Exception in chat completion agentic hooks: <error>"
+     and the loop goes to the next callback):
+     a. If the callback does not override `async_build_agentic_loop_plan`, call its `async_run_agentic_loop` with tools =
+        tool_calls, model, messages, response, `anthropic_messages_provider_config` = None,
+        `anthropic_messages_optional_request_params` = optional_params, logging, stream and hook_kwargs, and return its result
+        as it is, even when that result is None.
+     b. Otherwise call `async_build_agentic_loop_plan` with the same arguments. If `plan.response_override` is set, return it
+        (an override that is false-like but present still counts; only None means unset). If `plan.terminate`, return the
+        original response. If not `plan.run_agentic_loop`, go to the next callback. Else run the plan (below) and return its result.
+  After the loop: when the converted stream flag is set in kwargs and `depth` is 0, return the original response wrapped
+  by `FakeStreamPort`. Otherwise return None. The flag is true when kwargs holds a truthy
+  `_code_interpreter_interception_converted_stream` or a truthy `_headroom_interception_converted_stream`.
+
+  Plan execution (`followup.rs`, LiteLLM's `_execute_chat_completion_agentic_plan`). `patch` is `plan.request_patch` or an empty patch.
+  1. `patch.messages` None is the error "Agentic loop plan missing patched messages", raised before the cleanup hook region (so the cleanup hook does not run).
+  2. The model is `patch.model` or the original model. When it has no "/", prefix it with "<custom_llm_provider>/".
+  3. Params for the follow-up are the original optional params with the patch's optional params laid over them. A
+     non-None `patch.tools` sets `tools`. When the patch's optional params do not hold `tool_choice`, remove `tool_choice`.
+  4. Follow-up kwargs: filter both `kwargs` and `patch.kwargs` by dropping every key that starts with one of the NON-code-interpreter
+     interception prefixes (B189) or is one of `acompletion`, `litellm_logging_obj`, `custom_llm_provider`, `model_alias_map`,
+     `stream_response`, `custom_prompt_dict`, `_agentic_loop_api_surface`. Pass both to B4110's `build_agentic_followup_kwargs` with
+     `request_params` = the keys of the follow-up params plus "model" and "messages", then depth, max_loops, fingerprints and the
+     new fingerprint. Then set `litellm_metadata` on the result: the old `litellm_metadata` entries when it is a map, plus every
+     entry of the result whose key starts with `_agentic_loop`, equals `max_agentic_loops` or starts with any interception prefix (all
+     prefixes, code interpreter included). A later entry wins on a repeated key.
+  5. Call `ChatContinuation.complete` with the model, `patch.messages`, the follow-up params and the follow-up kwargs. An error
+     from the call goes up (to the guard in step 4 above) after the cleanup hook has run.
+  6. If the callback overrides `async_post_agentic_loop_response_hook`, call it with the follow-up response, the plan and the
+     original `kwargs`. An error is logged "LiteLLM.AgenticHookError: Exception in async_post_agentic_loop_response_hook [call_id=<id> model=<model>]: <error>"
+     (id is the logging object's call id, or "unknown") and the response from before the hook stays.
+  7. When the converted stream flag is set and `depth` is 0, return the response wrapped by `FakeStreamPort`. Else return it.
+  8. Always, after step 5 to 7 end or fail, call `async_agentic_loop_cleanup_hook(plan, kwargs)`. An error is logged "LiteLLM.AgenticHookError:
+     Exception in async_agentic_loop_cleanup_hook [call_id=<id> model=<model>]: <error>" and swallowed.
+
+  The call site in litellm/main.py (the `isinstance(response, ModelResponse)` branch and the optional params it builds: every
+  non-None completion kwarg except model, messages, stream, acompletion and deployment_id) belongs to the completion execution task (B5656).
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/chat_agentic_loop.rs
+    - crates/betterlite-core/src/api/chat_agentic_loop/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/chat_completion_agentic_loop.py#L29-L39
+    why: The seven follow-up internal parameter names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/chat_completion_agentic_loop.py#L60-L100
+    why: Converted stream flag, int coercion, settings and the safety check with its two error texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/chat_completion_agentic_loop.py#L103-L150
+    why: The fake stream wrap, the metadata merge and the kwargs filter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/chat_completion_agentic_loop.py#L153-L234
+    why: Plan execution, post hook and cleanup hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/chat_completion_agentic_loop.py#L237-L356
+    why: The callback loop, the gate, the two paths and the final fake stream.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L698-L720
+    why: The call site and the optional params it passes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/custom_logger.py#L8-L35
+    why: Surface name, prefixes and is_interception_internal_key.
+
+dod:
+  - text: Settings read depth, max_loops and fingerprints from kwargs with the integer, validator and list rules above, and a non-numeric depth string is an error.
+    proof: [settings-tests]
+  - text: The safety check returns RepeatedFingerprint before MaxLoopsExceeded with the exact texts, and the fingerprint is the sorted-key JSON of the tool calls.
+    proof: [safety-tests]
+  - text: The loop skips callbacks that do not override the gate, logs a gate error and moves on, and treats a false should_run as a skip.
+    proof: [entry-tests]
+  - text: A safety error ends the call and is not logged and skipped like a hook error.
+    proof: [entry-tests]
+  - text: Without a plan override the legacy async_run_agentic_loop result is returned as it is, including None.
+    proof: [entry-tests]
+  - text: A plan with response_override returns it, a terminating plan returns the original response, and a plan with run_agentic_loop false moves to the next callback.
+    proof: [entry-tests]
+  - text: Plan execution builds the follow-up model, params, filtered kwargs and litellm_metadata exactly as listed.
+    proof: [followup-tests]
+  - text: The post hook error keeps the earlier response, the cleanup hook always runs and its error is swallowed, and a missing patched messages error skips the cleanup hook.
+    proof: [followup-tests]
+  - text: The final fake stream wrap happens only for the converted stream flag at depth 0, and the port leaves a stream, a non-ModelResponse and a non-logging handle unchanged.
+    proof: [fake-stream-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: settings-tests
+      why: depth, max_loops or fingerprints are read wrongly
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_agentic_loop::settings::tests::/)'
+    - id: safety-tests
+      why: the fingerprint, the check order or an error text is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_agentic_loop::safety::tests::/)'
+    - id: entry-tests
+      why: the callback loop, the gate handling or the plan branches are wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_agentic_loop::entry::tests::/)'
+    - id: followup-tests
+      why: the follow-up request, the hooks or the cleanup order are wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_agentic_loop::followup::tests::/)'
+    - id: fake-stream-tests
+      why: the fake stream wrap condition is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chat_agentic_loop::fake_stream::tests::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The follow-up call and the fake stream wrap are traits the caller supplies. LiteLLM calls litellm.acompletion and builds CustomStreamWrapper directly.
+    why: This module must not import its callers, and the family composition owns the recursion. Python runs the same logic in the oracle.
+  - what: Callbacks arrive as a typed list. LiteLLM skips list entries that are not CustomLogger instances at run time.
+    why: Rust has no such entries, and string callbacks are resolved before this point (B248).
+
+out_of_scope:
+  - "AgenticLoopPlan, AgenticLoopRequestPatch: B4119. build_agentic_followup_kwargs and the max loops validator: B4110."
+  - "The CustomLogger trait and the interception prefix helpers: B189."
+  - "The Responses side of the loop (responses_agentic_execution): B2415 and B2419."
+  - "The web search and code interpreter callbacks that implement the gate and the plan: B4117, B4118, B4122."
+  - "The CustomStreamWrapper (B005) and MockResponseIterator (B010) types and the call site in main.py (B5656). The FakeStreamPort implementation wraps the response in B010's MockResponseIterator inside B005's CustomStreamWrapper, and B5656 passes it in when it calls the loop."
+
+pitfalls:
+  - "The two safety errors are raised outside the try block. Do not catch them with the hook error handler."
+  - "A callback that overrides the plan builder never reaches async_run_agentic_loop. Only a callback without the override does."
+  - "Inherited default hooks must not count as overrides. Compare against the trait's default, as B2419 does."
+  - "The converted stream flag at depth above 0 wraps nothing, so the inner follow-up returns a plain response and the outer call wraps once."
+  - "The metadata merge uses all interception prefixes, but the kwargs filter uses only the non-code-interpreter ones."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

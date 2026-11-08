@@ -5,19 +5,20 @@ description: >-
   organization_endpoints.py L96-L357 (the router license dependency, repository/transaction protocols,
   _table overloads, _verify_org_access and budget transforms), new_organization L366-L557 with its
   L360 decorator, and _set_object_permission L666-L690. POST /organization/new uses B052 authentication
-  and B124's NewOrganizationRequest/NewOrganizationResponse. The router-level premium_user guard
+  and NewOrganizationRequest/NewOrganizationResponse. The router-level premium_user guard
   returns 403 in MIT before authenticated handlers run; omit only that guard per README Decisions.
   Native HTTP tests exercise the resulting handlers, while the MIT equality corpus contains only
   authentication failures that precede the license guard. Do not fake an enterprise installation or
   claim an authorized creation success matches the unmodified MIT router.
+  No other task declares NewOrganizationRequest or NewOrganizationResponse, so this task builds both in betterlite-server's organization_create::records module. The response is B723's organization row with required organization_id, created_at and updated_at.
 
   NewOrganizationRequest requires organization_alias, defaults models=[] and organization_id,
-  budget_id, metadata, model_rpm_limit, model_tpm_limit and object_permission to null. B124/B725 own
-  the request and budget row schemas, including null defaults for max_budget, soft_budget,
+  budget_id, metadata, model_rpm_limit, model_tpm_limit and object_permission to null. B725 owns
+  the budget row schema, including null defaults for max_budget, soft_budget,
   max_parallel_requests, tpm_limit, rpm_limit, tpd_limit, model_max_budget, budget_duration,
   allowed_models, temp_budget_increase and temp_budget_expiry. Cases create_request_defaults and
   inherited_budget_fields_preserved verify those projections. The source's .json() returns a mapping,
-  not serialized JSON text; use B124's jsonify_object conversion when preparing DB records.
+  not serialized JSON text; use B2362's jsonify_object conversion when preparing DB records.
 
   Handler checks are ordered: missing database gives HTTPException 500 detail.error="DB not connected.
   This endpoint needs a database; set DATABASE_URL to a PostgreSQL connection string (postgresql://...)
@@ -58,7 +59,7 @@ description: >-
   default_estimated_output_tokens_per_model, mcp_rpm_limit, tag_rpm_limit, rpm_limit_type, tpm_limit_type,
   enforced_params, allowed_vector_store_indexes, enforced_batch_output_expires_after,
   enforced_file_expires_after, throttle_on_budget_exceeded, enable_prompt_caching and end_user_budget_id.
-  temp_budget_increase/expiry belong to the budget and are excluded from this list. B124's schema decides
+  temp_budget_increase/expiry belong to the budget and are excluded from this list. NewOrganizationRequest's schema decides
   which attributes are representable; unknown inputs do not acquire new fields here. Jsonify, log
   "new_organization_row: %s" with indent=2 JSON, then create the B723 organization with
   include.litellm_budget_table=true and return it. Cases metadata_field_partition, organization_row_defaults,
@@ -100,8 +101,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/organization_create.rs
     - crates/betterlite-server/src/routes/organization_create/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/organization-create/**
     - tools/oracle/helpers/b826.py
     - tools/oracle/helpers/b826/**
@@ -122,6 +121,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5069-L5090
     why: Metadata field iteration after removing budget fields.
 dod:
+  - text: This task builds NewOrganizationRequest and NewOrganizationResponse in organization_create::records, and create_request_defaults proves their required fields and null defaults.
+    proof: [behavior-tests]
   - text: All named creation cases run through native HTTP with real Postgres, proving status/detail,
       null/absent fields, sequential writes, silent user-lookup failure and no new exception translation.
     proof: [behavior-tests]

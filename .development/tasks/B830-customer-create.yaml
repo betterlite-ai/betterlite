@@ -7,10 +7,10 @@ description: >-
   cache helpers L108-L124, response conversion L127-L134, block L137-L190, unblock L193-L249,
   new_budget_request L252-L275, permission-update helper L278-L305 and new L308-L492, plus all four
   response classes in types/proxy/management_endpoints/customer_endpoints.py. Use B052 auth, B732
-  principals, B124 request contracts, B720 row models, B2310 budget rows, B725 budgets,
+  principals, B8411 request contracts, B720 row models, B2310 budget rows, B725 budgets,
   B726 EndUserRepository, B733 cache-key builders,
   B734 evict_and_broadcast, B816 permission helpers, B861 duration validation, B199 duration_in_seconds,
-  B844 get_model_names and B124 handle_exception_on_proxy. Do not call the /budget/new handler:
+  B844 get_model_names and B2400 handle_exception_on_proxy. Do not call the /budget/new handler:
   customer budget creation has different validation and time semantics.
 
   Block upserts each requested id in order with blocked=true for create and update, collects returned
@@ -47,7 +47,7 @@ description: >-
   registry cache keys after insert, then convert to CustomerResponse. No transaction rolls back the
   budget or permission if insertion/eviction fails. A failure containing the exact source substring
   "Unique constraint failed on the fields: (`user_id`)" becomes 400 bad_request param user_id;
-  other exceptions pass to B124 handle_exception_on_proxy (HTTP status retained, otherwise 500;
+  other exceptions pass to B2400 handle_exception_on_proxy (HTTP status retained, otherwise 500;
   type internal_server_error, param from openai_error_param). Record code and param as serialized,
   and ignore only diagnostic text in HTTP comparisons.
 
@@ -70,7 +70,7 @@ description: >-
 
   The owned customer ranges contain 228 nonblank noncomment lines excluding docstrings, including
   route decorators and post-import unblock code; response classes add nine declarations. Allow 250
-  production, 325 tests and 75 wiring lines, 650 within 650. Request decoding remains with B124.
+  production, 325 tests and 75 wiring lines, 650 within 650. Request decoding is B8411's NewCustomerRequest::from_value; this task maps its ContractError to the 422 answer.
   B1100 registers routes/customer_create.rs as a stub, so fill only crates/betterlite-server/src/routes/customer_create.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
@@ -79,8 +79,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/customer_create.rs
     - crates/betterlite-server/src/routes/customer_create/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/customer-create/**
     - tools/oracle/helpers/b830.py
     - tools/oracle/helpers/b830/**
@@ -95,7 +93,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/customer_endpoints.py#L1-L28
     why: Own the customer, block, unblock and deletion response contracts.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2093-L2115
-    why: B732 request defaults and max_budget/budget_id exclusion.
+    why: NewCustomerRequest defaults and the max_budget/budget_id check, built by B8411 (proxy_request_contracts::customer).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8242
     why: Creation delegates most errors to this mapper; block and unblock do not.
 dod:

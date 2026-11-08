@@ -1,0 +1,108 @@
+id: B8375
+title: Proxy CLI root and run_server order
+description: >-
+  LiteLLM's `litellm` command is one click function, run_server in proxy_cli.py, that declares every flag and then runs
+  the diagnostic commands, database URL setup, migrations and the server launch in a fixed order. B4175, B4176, B4177,
+  B710, B712, B717 and B051 build the pieces and leave the flag declarations and the order to this task. Replace the
+  three-flag `Cli` in crates/betterlite/src/main.rs with the full flag set, declared with clap derive in a new module
+  crates/betterlite/src/proxy_cli.rs (declared in lib.rs by the skeleton), and keep main.rs a thin caller.
+
+  Flags: every option at proxy_cli.py L705-L1016, with the same long names (underscores kept, so `--num_workers`, not
+  `--num-workers`), short `-m` for --model, the same defaults and the same env fallbacks (`--host` HOST default 0.0.0.0,
+  `--port` PORT default 4000, `--num_workers` NUM_WORKERS, and the others as declared), plus the positional `cli_args`.
+  `--config` becomes optional as in LiteLLM. Flags that take no value in click are bool flags; `--health` and `--test` keep
+  click's flag_value=True meaning. Help and usage errors use clap's exit code 2, which is click's. `--local` stays a no-op.
+
+  Order in `run_cli(args, env, io) -> ExitCode`, as in run_server: B4175's classify_positional (Unknown command is exit 2,
+  xai-oauth login runs B1401's login service and prints xai_login_lines), `--version`, `--validate_config` (exit 2 without
+  --config, 1 on a bad file), `--health`, `--test`, `--setup` (B8542's run_setup_wizard), then the ollama check when needs_ollama is
+  true. Then decode `--headers`, build the worker config the way save_worker_config does (JSON of the initialize arguments,
+  stored in WORKER_CONFIG for the child workers) and select the server kind. Then the database block: the
+  `--iam_token_db_auth` and `--azure_postgresql_auth` flags and their env vars through B712, USE_AWS_KMS, the config's
+  database_url and connection settings through B710's DatabaseURLSettings, the unsupported-scheme exit 1, and B051's
+  migration and readiness with `--use_prisma_db_push`, `--enforce_prisma_migration_check` and B717's resolver flags
+  (`--use_v2_migration_resolver` is deprecated and prints LiteLLM's yellow notice when passed). Then choose_port (port 4000
+  in use moves to a random port), check_metrics_port, NUM_WORKERS set to the worker count, B4177's Prometheus multiprocess
+  dir preparation, and `--skip_server_startup`: print "LiteLLM: Setup complete. Skipping server startup as requested." and
+  exit 0 after migrations. Otherwise start B4177's metrics process when `--prometheus_metrics_port` is set (printing the green
+  "Serving Prometheus metrics on {host}:{port}/metrics (pid {pid})" line), build B4176's worker options (keepalive,
+  healthcheck timeout, max requests and jitter, limit concurrency, SSL cert and key with the green "Using SSL with certfile"
+  line, reload) and call B8374's run_proxy, or B4177's alternate launchers for `--run_gunicorn`, `--run_hypercorn` and
+  `--run_granian`.
+
+  main.rs keeps the current JSON tracing setup and process_environment, parses with proxy_cli, and returns run_cli's
+  exit code. Every side effect goes through the traits the parts already define (writers, launchers, probes), so tests run
+  the order without a network, a database or a child process.
+
+  Oracle cases are helper cases that drive LiteLLM's run_server with click's CliRunner (operation b8375 with an `operation:`
+  field) and patch the outside world: skip-server-startup without a database prints the setup-complete line and exits 0;
+  metrics-port-equal-to-port is exit 2 with "--prometheus_metrics_port must differ from --port"; unknown-flag is exit 2;
+  num-workers-env records NUM_WORKERS. The worker writes them under tools/oracle/cases/helpers/proxy-cli-root/.
+scope:
+  paths:
+    - crates/betterlite/Cargo.toml
+    - crates/betterlite/src/main.rs
+    - crates/betterlite/src/proxy_cli.rs
+    - crates/betterlite/src/proxy_cli/**
+    - tools/oracle/cases/helpers/proxy-cli-root/**
+    - tools/oracle/helpers/b8375.py
+    - tools/oracle/helpers/b8375/**
+    - tools/oracle/src/helpers/server/b8375.rs
+    - tools/oracle/src/helpers/server/b8375/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L705-L1016
+    why: Every click option with its default, env var and flag form.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1017-L1470
+    why: run_server's order through the diagnostics, worker config, database block and migrations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1470-L1583
+    why: Port checks, NUM_WORKERS, skip_server_startup, the metrics process and the server launch branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9131-L9134
+    why: save_worker_config writes the initialize arguments as JSON into WORKER_CONFIG.
+dod:
+  - text: Every run_server flag parses with LiteLLM's name, default and env fallback, and usage errors exit 2.
+    proof: [cli-tests, oracle, helper-python]
+  - text: The diagnostic commands run before any database or server work, in run_server's order, with their exit codes.
+    proof: [cli-tests]
+  - text: The database block, migrations and skip_server_startup run in LiteLLM's order and skip_server_startup exits 0 with its message.
+    proof: [cli-tests, oracle, helper-python]
+  - text: The port checks, NUM_WORKERS, metrics process and the chosen launcher follow run_server.
+    proof: [cli-tests, oracle, helper-python]
+checks:
+  optional: []
+  commands:
+    - id: cli-tests
+      why: A CLI flag, its default, or a step of run_server's order is missing or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^proxy_cli::/)'
+    - id: helper-python
+      why: The strict oracle adapter for the CLI cases fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8375)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8375 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8375/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/proxy-cli-root/skip-server-startup.yaml
+  - tools/oracle/cases/helpers/proxy-cli-root/metrics-port-equal-to-port.yaml
+  - tools/oracle/cases/helpers/proxy-cli-root/unknown-flag.yaml
+  - tools/oracle/cases/helpers/proxy-cli-root/num-workers-env.yaml
+deviations:
+  - what: "`--log_config`, `--use_queue`, `--test_async` and `--num_requests` are accepted and ignored with a warning naming the flag."
+    why: They configure uvicorn logging or Python test loops that betterlite does not run; refusing them would break existing launch scripts.
+  - what: Flag names keep LiteLLM's underscores, which clap would otherwise turn into dashes.
+    why: Deployments pass these exact names.
+out_of_scope:
+  - "The diagnostic command bodies, banner and input helpers: B4175."
+  - "Worker options and dev reload: B4176. Gunicorn, Hypercorn, Granian and metrics process launch: B4177."
+  - "Database URL settings, TLS, token auth, migrations and recovery: B710, B711, B712, B051, B717."
+  - "The proxy startup and shutdown order after launch: B8374."
+  - "_drop_script_dir_from_sys_path, load_dotenv and json_logs import side effects: Python import machinery; not built."
+pitfalls:
+  - The database block runs before the port fallback, so skip_server_startup still runs migrations and the port and metrics checks.
+  - --skip_server_startup returns after migrations and the multiprocess dir setup but before the metrics process starts.
+  - --use_v2_migration_resolver now has no effect and only prints the deprecation notice, while --use_legacy_migration_resolver switches to v1 and prints its own warning.
+  - The config file is read once here for database settings and again by the lifespan, so both reads must see the same env.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

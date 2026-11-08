@@ -24,7 +24,7 @@ description: >-
   values, while intentional blocks are dropped and technical failures abort the
   scan. B1024 owns later window/rewrite functions. B171 covers only pure helper
   cases; native tests cover the BinaryIO iterator and injected asynchronous hook.
-  B124 supplies the narrow guardrails-only pre-call port, B104 supplies guardrail
+  B8399 supplies the narrow guardrails-only pre-call port, B104 supplies guardrail
   exception classification, B207 supplies route matching and B732 supplies the
   authenticated user record. HTTP integration belongs to B1032.
 scope:
@@ -49,7 +49,7 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L715-L1073
   why: The route table supplies the concrete chat, completion, embedding, responses and Anthropic message aliases and their async call-type values.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L77-L111
-  why: B104 owns is_guardrail_intervention and its deliberate-block statuses and exception classes, which _is_content_block calls after its cause and blocked_content checks.
+  why: B5471 (guardrail_base) owns is_guardrail_intervention and its deliberate-block statuses and exception classes, which _is_content_block calls after its cause and blocked_content checks.
 dod:
 - text: >-
     The constants and record types retain their literal contracts: EMPTY_MAPPING has
@@ -206,8 +206,8 @@ deviations: []
 out_of_scope:
 - B1022 owns the preceding upload validation and its JSON acceptance; B1023 consumes its validated byte stream and does not duplicate validation errors.
 - B1024 owns _scan_window, _spool, _worst, scan_batch_input_file, _read_spooled and rewrite_batch_input_file as whole functions, including their use of _SCAN_WINDOW and _REWRITE_SPOOL_BYTES.
-- B124 owns ProxyLogging.pre_call_hook and its full dispatcher; this task calls only the injected guardrails-only port with the exact keyword contract above.
-- B104 owns is_guardrail_intervention and the GuardrailRaisedException, BlockedPiiEntityError, SensitiveDataRouteException and ModifyResponseException definitions.
+- B8393 owns ProxyLogging.pre_call_hook and its full dispatcher, and B8399 wires the guardrails-only port; this task calls only the injected guardrails-only port with the exact keyword contract above.
+- B5471 owns is_guardrail_intervention and the GuardrailRaisedException, BlockedPiiEntityError, SensitiveDataRouteException and ModifyResponseException definitions (its GuardrailFailure enum).
 - B207 owns get_call_types_for_route and its exact/dynamic path matcher; B732 owns UserAPIKeyAuth and authenticated principal resolution.
 - B1032 owns HTTP file-upload route wiring and the outer error envelope; this task owns only the HTTPException status 400 and detail.error values raised by batch_guardrails.py.
 pitfalls:

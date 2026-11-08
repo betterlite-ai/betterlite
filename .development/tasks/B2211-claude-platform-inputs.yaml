@@ -15,7 +15,7 @@ description: >-
   Named case contracts: workspace_alias_precedence: Evaluate truthy chain optional.workspace_id,litellm.workspace_id,optional.aws_workspace_id,litellm.aws_workspace_id,optional[anthropic-workspace-id],litellm[anthropic-workspace-id].
   Only if resulting value is None evaluate optional.anthropic_workspace_id or litellm.anthropic_workspace_id. Any
   non-None result becomes str, including empty/False/0 at the final position; only None falls back to ANTHROPIC_AWS_WORKSPACE_ID
-  or ANTHROPIC_WORKSPACE_ID through B129. Missing defaultsNone; preserve the difference between falsey and None,
+  or ANTHROPIC_WORKSPACE_ID through B8500. Missing defaultsNone; preserve the difference between falsey and None,
   and optional-before-deployment alias precedence. explicit_region_required: Region chain truthy optional.aws_region_name,AWS_REGION_NAME,AWS_REGION,AWS_DEFAULT_REGION.
   Result None -> AuthenticationError status401,provider bedrock,model empty,message Missing AWS region for Claude
   Platform on AWS. Pass `aws_region_name` or set a standard AWS region environment value. Otherwise stringify then
@@ -50,7 +50,7 @@ description: >-
 
   All six newly owned environment/override fields and all four workspace aliases default None. Keep underscore and
   hyphen aliases distinct in loader rstest names; name the hyphen-key loader loads_anthropic_hyphen_workspace_hyphen_id.
-  api_base and standard AWS environment loaders keep their existing owners B500/B591; B129 supplies get_secret_str.
+  api_base and standard AWS environment loaders keep their existing owners B500/B591; B8500 supplies get_secret_str.
 
 
   Implement crates/betterlite-bedrock/src/claude_platform_inputs.rs with adjacent tests under claude_platform/.
@@ -194,7 +194,7 @@ dod:
 - text: 'workspace_alias_precedence: Evaluate truthy chain optional.workspace_id,litellm.workspace_id,optional.aws_workspace_id,litellm.aws_workspace_id,optional[anthropic-workspace-id],litellm[anthropic-workspace-id].
     Only if resulting value is None evaluate optional.anthropic_workspace_id or litellm.anthropic_workspace_id.
     Any non-None result becomes str, including empty/False/0 at the final position; only None falls back to ANTHROPIC_AWS_WORKSPACE_ID
-    or ANTHROPIC_WORKSPACE_ID through B129. Missing defaultsNone; preserve the difference between falsey and None,
+    or ANTHROPIC_WORKSPACE_ID through B8500. Missing defaultsNone; preserve the difference between falsey and None,
     and optional-before-deployment alias precedence.'
   proof:
   - case-workspace-alias-precedence
@@ -319,7 +319,7 @@ checks:
     why: Evaluate truthy chain optional.workspace_id,litellm.workspace_id,optional.aws_workspace_id,litellm.aws_workspace_id,optional[anthropic-workspace-id],litellm[anthropic-workspace-id].
       Only if resulting value is None evaluate optional.anthropic_workspace_id or litellm.anthropic_workspace_id.
       Any non-None result becomes str, including empty/False/0 at the final position; only None falls back to ANTHROPIC_AWS_WORKSPACE_ID
-      or ANTHROPIC_WORKSPACE_ID through B129. Missing defaultsNone; preserve the difference between falsey and None,
+      or ANTHROPIC_WORKSPACE_ID through B8500. Missing defaultsNone; preserve the difference between falsey and None,
       and optional-before-deployment alias precedence.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::claude_platform_inputs_cases::case_[0-9]+_workspace_alias_precedence$/)'
   - id: case-explicit-region-required

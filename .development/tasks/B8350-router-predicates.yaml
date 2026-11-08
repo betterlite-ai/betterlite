@@ -1,0 +1,102 @@
+id: B8350
+title: Router deployment predicates and mock test errors
+description: >-
+  LiteLLM's `Router` carries a set of small checks on one deployment that other router code calls while it adds, upserts, prices or filters deployments. They were left in B162's list, so no task builds them, and the catalog and strategy tasks need them. Build them as plain functions over a deployment's `litellm_params` and `model_info` JSON maps, plus the three mock-testing switches that make the router raise on purpose so a user can test fallbacks and retries.
+
+
+  Put the code in the new module `crates/betterlite-router/src/router_predicates.rs` and its folder. No static, no global, no I/O. Each function takes the `litellm_params` map, the `model_info` map or a request map as an argument, so the module needs no deployment type from a task above it.
+
+
+  Strategy router kinds. `is_auto_router(params)`, `is_complexity_router(params)` and `is_adaptive_router(params)` take a `classify: fn(&str) -> Option<&'static str>` argument and call it on `litellm_params.model`. The classifier gives LiteLLM's strategy kind name (`semantic`, `complexity`, `adaptive` or `quality`) or none for a plain model. The caller passes a non-capturing closure over B377's `classify_strategy_router_model` that maps its `StrategyRouterKind` to that name. B377 sits above B368 and B401 in the task graph and its `StrategyRouterKind` lives in betterlite-server, so this module can neither depend on B377 nor name that type. Compare the name with `semantic`, `complexity` and `adaptive` (router.py L9078-L9086, L9138-L9144, L9233-L9235). `joins_adaptive_routing(params)` (L9237-L9250) is true for an adaptive router, false for anything that is not a complexity router, and for a complexity router true only when `complexity_router_config` is set, not empty, and its `adaptive` value is truthy under docs/compatibility.md. `deployment_tags(deployment)` (L9089-L9091) gives `litellm_params.tags` in order, empty when unset.
+
+
+  Request params. `as_output_cap(value)` (L751-L760) takes a JSON value and gives an integer cap or none: booleans and anything that is not a number or a string give none, a string is parsed as a float first (so `"12.9"` gives 12), the float is truncated toward zero, a parse error or an overflow gives none, and a negative result gives none. `declared_param_allowlist(params)` (L11946-L11950) reads `allowed_openai_params` and keeps only its string entries; a value that is not a list gives an empty set. `deployment_accepts_param(deployment, group, param, support)` (L11953-L11982) is true when the deployment has no `litellm_params`, when `param` is in the allowlist, or when `support.declared_authenticating_provider(model, custom_llm_provider)` is true. Otherwise it resolves the provider for `litellm_params.model` (the group name when the model is empty) and asks for the supported OpenAI params with `base_model` taken from `model_info.base_model` first, then `litellm_params.base_model`. Any lookup error keeps the param (true), a `None` list keeps it, and otherwise the param must be in the list. `ParamSupport` is a trait this module defines with those three lookups, so the router crate does not import the provider crate; the caller passes B014's and B013's functions behind it.
+
+
+  Deployment lists. `deployment_ids(deployments)` (L11507-L11513) gives the set of `model_info.id` values as strings, skipping a deployment whose `model_info` is missing or whose id is null. `config_deployments(model_list)` (L9146-L9153) yields, in order, every row whose `model_info` is missing, not a map, or has a falsy `db_model`.
+
+
+  Success key. `success_minute_key(call_type, litellm_params, deployment_id_counter)` is `sync_deployment_callback_on_success` (L8205-L8240): a batch retrieve call type gives none; when `metadata` is missing the answer is none; when `metadata.model_group` or `model_info.id` is missing it is none; an integer id becomes its decimal string; otherwise return the id, which the caller passes to B304's `increment_deployment_successes_for_current_minute`.
+
+
+  Mock testing. `MockTestingParams::take_from(request)` is `MockRouterTestingParams.from_kwargs` (types/router.py L1084-L1101): it removes `mock_testing_fallbacks`, `mock_testing_context_fallbacks` and `mock_testing_content_policy_fallbacks` from the request map and reads each as a boolean, where a string goes through the same `str_to_bool` rules as LiteLLM's secret manager helper (`true` and `false` in any case, anything else is none) and a JSON boolean is kept. `raise_mock_fallback_error(request, model_group, fallbacks, context_window_fallbacks, content_policy_fallbacks)` is `_handle_mock_testing_fallbacks` (router.py L7612-L7657): the first switch that is exactly true wins, in the order above, and gives B011's `InternalServerError`, `ContextWindowExceededError` or `ContentPolicyViolationError` with `llm_provider` empty, `model` set to the group, and the message `This is a mock exception for model={model_group}, to trigger a fallback. Fallbacks={fallbacks}` for the first. The other two keep LiteLLM's backslash line join, so the message has the newline-free text followed by the run of spaces from the source, then `Context_Window_Fallbacks={...}` or `Context_Policy_Fallbacks={...}`; copy the exact strings from L7641-L7657. `raise_mock_rate_limit(request, model_group, group_deployments)` is `_handle_mock_testing_rate_limit_error` (L7889-L7913): it removes `mock_testing_rate_limit_error` from the request; when exactly one deployment is in the group its `litellm_params.num_retries` is used; when the removed value is true it gives B011's `RateLimitError` with message `This is a mock exception for model={model_group}, to trigger a rate limit error.`, `llm_provider` empty and that `num_retries`. The caller passes the group's deployments, so this module does not look up the catalog.
+
+
+  Python's `None`, list and dict print forms appear inside the mock messages (`Fallbacks=None`, `Fallbacks=[{'gpt-4': ['gpt-3.5']}]`). Format them with a small writer that prints a JSON value the way Python's `str()` prints the same list or dict, and test it.
+
+
+  Tests are in `router_predicates/tests.rs`; names start with `kind_`, `param_`, `list_`, `success_key_` and `mock_`. There is no fuzz target, because no function here parses bytes.
+scope:
+  paths:
+  - crates/betterlite-router/src/router_predicates.rs
+  - crates/betterlite-router/src/router_predicates/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L751-L760
+    why: The output cap coercion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7612-L7657
+    why: The three fallback mock switches, their order and messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7889-L7913
+    why: The mock rate limit switch and its retry count.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8205-L8240
+    why: The per-minute success key for a deployment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9078-L9153
+    why: Auto and complexity router checks, deployment tags and config rows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9233-L9250
+    why: The adaptive router checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11507-L11513
+    why: Deployment id sets.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11946-L11982
+    why: The param allowlist and the accepts-param check with its error rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L1084-L1101
+    why: MockRouterTestingParams and its string-to-bool rule.
+  - url: https://docs.litellm.ai/docs/proxy/reliability#test---fallbacks
+    why: How users turn the mock switches on.
+dod:
+  - text: The auto, complexity and adaptive checks follow the classifier argument, and the adaptive join needs a truthy `adaptive` in a complexity router config.
+    proof: [predicate-kinds]
+  - text: The output cap refuses booleans and negatives and truncates numeric strings, and the accepts-param check keeps a param on any lookup error.
+    proof: [predicate-params]
+  - text: Id sets skip null ids and config rows skip DB rows.
+    proof: [predicate-lists]
+  - text: The success key skips batch retrieves and rows without a group or id, and turns an integer id into a string.
+    proof: [predicate-success-key]
+  - text: The mock switches are removed from the request, string values follow str_to_bool, the first true switch picks the error class, and the messages match LiteLLM byte for byte.
+    proof: [predicate-mock]
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: predicate-kinds
+    why: A complexity router with the adaptive companion is not counted, or tags lose order.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^router_predicates::tests::kind_/)'
+  - id: predicate-params
+    why: A boolean becomes a cap, or a failed provider lookup drops a param.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^router_predicates::tests::param_/)'
+  - id: predicate-lists
+    why: A null id enters the set or a DB row is treated as config.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^router_predicates::tests::list_/)'
+  - id: predicate-success-key
+    why: A batch retrieve counts as a success or an integer id misses its key.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^router_predicates::tests::success_key_/)'
+  - id: predicate-mock
+    why: A mock switch reaches the provider, or the error class or message differs.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^router_predicates::tests::mock_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B377 owns classify_strategy_router_model, B304 the per-minute success counter and B011 the error classes. Router.deployment_is_active_for_environment is a one-line forward to B364's model_info_is_active_for_environment, so callers use B364."
+  - "Calling these functions is the callers' job: B368 (_add_deployment, upsert_deployment), B400 (strategy registration), B401 (_create_deployment), B323 (tier params), B334 (client ceiling), B310 (fallback mock switch) and B306 (retry mock switch)."
+  - "Router._get_metadata_variable_name_from_kwargs is a one-line forward to litellm_core_utils get_metadata_variable_name_from_kwargs, so callers use that owner's function and it is not built here."
+  - "Router.__init__ registering the success key as a sync success callback is Python wiring; B8356 owns the Python Router class."
+  - "Router._cost_map_backend_model and Router._backend_cost_map_keys are B013's: betterlite-models may not depend on betterlite-router, so B013 builds both in betterlite-models."
+pitfalls:
+  - "`as_output_cap(true)` is none even though Python's `bool` is an `int`, and `\"1e3\"` is 1000 because the string goes through `float` first."
+  - "`deployment_accepts_param` answers true when `litellm_params` is empty, before it looks at the allowlist."
+  - "`MockTestingParams::take_from` removes the three keys even when they are false, so they never reach a provider."
+  - "The mock rate limit switch reads `num_retries` only when the group has exactly one deployment; with two or more it stays none."
+  - "The adaptive companion flag is read from `complexity_router_config.adaptive`, not from a top-level `adaptive` key."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

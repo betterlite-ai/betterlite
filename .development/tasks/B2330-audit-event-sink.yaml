@@ -144,7 +144,7 @@ out_of_scope:
   - B065 owns audit HTTP endpoints and management_helpers/utils.py; all functions in audit_logs.py belong here.
   - B244 owns SensitiveDataMasker, B188 the callback factory, B115 the S3 logger, B726 AuditLogRepository,
     B2314 caller identity and B002 resolved config/secret inputs. No secret-manager transport is deferred into this sink.
-  - B124 owns remaining proxy/_types.py declarations except the existing B720/B721/B770/B2314 contracts;
+  - B8410, B8411 and B8412 own the other proxy/_types.py declarations its callers use, beside the existing B720/B721/B770/B2314 contracts;
     this task only adds the audit records and table enum named above.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as audit_events in the server group. Replace the stub Op in tools/oracle/src/helpers/server/audit_events.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/audit_events.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

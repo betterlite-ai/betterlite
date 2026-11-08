@@ -1,0 +1,170 @@
+id: B8461
+title: MCP upstream client creation and credential resolution
+description: >-
+  Build mcp::upstream_client in betterlite-server. It is the one place where the gateway turns an
+  MCP server record into a connected client: LiteLLM's MCPServerManager._create_mcp_client and the
+  methods it leans on. Listing (B8462, B8463), tool calls (B8465), the connection preview (B4730)
+  and the health probes (B6592) all build their clients through it. Make it a struct
+  UpstreamClients holding the credential provider (B4667), the OAuth discovery slots (B6762), the
+  per-user env var reader (B4714's get_user_env_vars behind a trait so tests use a fake) and a
+  clock, passed in by constructor.
+
+  UpstreamClients also holds B8254's `JwtSignerSlot` and exposes `jwt_signer(&self) -> Option<Arc<McpJwtSigner>>`, the slot's `get` read on every call (LiteLLM's get_mcp_jwt_signer). B8462's tools/list JWT gate in _get_tools_from_server reads the signer there. This task signs nothing itself.
+
+
+  create_client(server, mcp_auth_header, extra_headers, stdio_env, subject_token, auth, raw_headers,
+  client_ip, protocol_override) follows _create_mcp_client step by step. Record AuthResolution
+  unresolved through B8194's record_auth_resolution. Run B6762's ensure_oauth_metadata_discovered
+  and use the returned record from then on. The protocol is the override, else the record's
+  protocol_version. The transport defaults to sse. The spec is None for stdio, else B8460's
+  spec_fail_closed. A spec is dropped (legacy path) when a mcp_auth_header is present and the spec
+  config is not authorization_code, id_jag, passthrough or token_exchange. On the legacy path the
+  auth value comes from B4662's resolve_mcp_auth and the header name from resolved_token_header.
+  Sampling and elicitation callbacks come from B8191's legacy callbacks, only when allow_sampling or
+  allow_elicitation is set on the record; the sampling callback carries the caller auth, raw headers
+  and client ip as its operation context.
+
+
+  stdio: when B4716's stdio policy is disabled, fail with 403 and MCP_STDIO_DISABLED_MESSAGE. The env
+  is stdio_env, else a copy of the record's env; when there is an env without NPM_CONFIG_CACHE,
+  add NPM_CONFIG_CACHE set to MCP_NPM_CACHE_DIR (default "/tmp/.npm_mcp_cache", B4744). The command's
+  base name, lowercased, or the same name with one of .exe, .cmd, .bat, .com removed, must be in
+  MCP_STDIO_ALLOWED_COMMANDS (B4716), else 403 with "MCP stdio command '<command>' is not in the
+  allowlist (<sorted list>). Add it to LITELLM_MCP_STDIO_EXTRA_COMMANDS to allow this command.".
+  A stdio config exists only when command is set and args is not None. Record not_applicable.
+
+
+  HTTP with a spec: for a passthrough config, the inbound token is taken out of extra_headers with
+  B8460's take_forwarded_authorization and replaced by B8460's passthrough_token(mcp_auth_header)
+  when that is Some. Then resolve_v2_auth decides the credential, and B4667's prepare_mcp_client
+  finishes the client. HTTP without a spec: aws_sigv4 servers get B4742's signer from the record's
+  aws_* fields. The recorded source is aws_sigv4, then extra_headers when extra_headers already hold
+  the auth header name (default "Authorization"), then per_request_header when mcp_auth_header is
+  set, then static_token when there is an auth value, then extra_headers when any are present, else
+  no_auth. The timeout is the record's timeout, else LITELLM_MCP_CLIENT_TIMEOUT (default 60.0, B4740).
+
+
+  resolve_v2_auth runs B4667's resolve_credentials_with_source for the subject (caller auth plus
+  subject token). On success, when the credential sets no named header or there are no extra
+  headers, record extra_headers if the source was no_auth and extra headers exist, else the source,
+  and return both. When the extra headers lack that header name, keep both. When they hold it, a
+  token_exchange, authorization_code, id_jag or client_credentials config wins and that header is
+  dropped from the extra headers; any other config yields no credential and keeps the caller's
+  header, recorded as extra_headers. On failure record failed; an unauthorized error on
+  authorization_code raises B4667's raise_user_oauth_challenge, on token_exchange
+  raise_token_exchange_challenge with the error's claims, anything else raise_public.
+
+
+  preflight_token_exchange runs only for oauth2_token_exchange with a bearer in oauth2_headers, or
+  for oauth2_id_jag with no subject token. It resolves the record, needs a token_exchange or id_jag
+  spec, raises the token-exchange challenge when token_exchange has no subject, then resolves the
+  credential once and maps an error like resolve_v2_auth. has_user_oauth_token is false without a
+  spec, else the provider's has_user_token.
+
+
+  Static headers: references_user_env(server) is _references_per_user_env_var. static_headers is
+  _resolve_static_headers_with_env_vars with B6594's parse_admin_env_vars, collect_env_var_references
+  and interpolate_headers. Empty global values are ignored and globals win over user values. Only
+  referenced user names that have no global value are loaded. With raise_on_missing (tool call) a
+  load error propagates, missing names are re-read once with force_refresh, and names still missing
+  raise B6594's MCPMissingUserEnvVarsError with the server id, server_name or name, the sorted names
+  and build_env_var_setup_url. Without it (listing) a load error logs the warning
+  "MCPServerManager: best-effort user env var load failed for server=<id>: <error>" and the
+  available values are used. load_user_env returns empty for no auth record or an empty user_id,
+  serves a cache entry younger than 60 seconds keyed by (user_id, server_id) unless force_refresh,
+  fails with "MCP per-user env vars require a database connection, but none is configured. Connect
+  a database to your proxy to use per-user MCP env vars." without a database, and writes the cache
+  after a read. skip_blocked_stdio(server, listing) is true and logs at debug when the stdio policy
+  blocks the server's transport.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/upstream_client.rs
+    - crates/betterlite-server/src/mcp/upstream_client/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-upstream-client/**
+    - tools/oracle/helpers/b8461.py
+    - tools/oracle/helpers/b8461/**
+    - tools/oracle/src/helpers/server/b8461.rs
+    - tools/oracle/src/helpers/server/b8461/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1077-L1086
+    why: The per-user env var cache write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1666-L1685
+    why: Sampling and elicitation callback creation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3928-L4089
+    why: Per-user env var references, static header interpolation and the user env var load.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L4091-L4214
+    why: resolve_v2_auth and preflight_token_exchange.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L4216-L4424
+    why: _create_mcp_client, the stdio allowlist and the legacy auth source order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L4659-L4665
+    why: The stdio listing skip.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6367-L6377
+    why: has_user_oauth_token.
+
+dod:
+  - text: >-
+      The stdio arm refuses a disabled gate and a command outside the allowlist with the Python's
+      status and text, accepts a base name with a .exe, .cmd, .bat or .com suffix, and adds
+      NPM_CONFIG_CACHE only when it is missing.
+    proof: [upstream-client-tests, oracle]
+  - text: >-
+      resolve_v2_auth keeps or drops the caller's header and records the same AuthResolution as the
+      Python for each config kind, and maps an unauthorized error to the matching challenge.
+    proof: [upstream-client-tests]
+  - text: >-
+      The legacy path records aws_sigv4, extra_headers, per_request_header, static_token or no_auth
+      in the Python's order.
+    proof: [upstream-client-tests, oracle]
+  - text: >-
+      static_headers interpolates globals over user values, re-reads once before raising the
+      missing-variable error on the call path, and stays best-effort on the listing path.
+    proof: [upstream-client-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: upstream-client-tests
+      why: Client creation, credential choice or env var handling differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^mcp::upstream_client::/)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-upstream-client
+
+deviations:
+  - what: >-
+      LiteLLM returns no sampling or elicitation callback when its installed mcp SDK lacks the
+      feature (MCP_SAMPLING_AVAILABLE, MCP_ELICITATION_AVAILABLE). betterlite always has both, so
+      the record's allow_sampling and allow_elicitation flags alone decide.
+    why: The flags only report the Python SDK version; with a current SDK both are true.
+
+out_of_scope:
+  - invalidate_user_env_vars_cache is B4724's; the env var routes call it.
+  - "MCPClient sessions and transports: B4744. prepare_mcp_client and the credential provider: B4667."
+  - "ensure_oauth_metadata_discovered and the discovery slots: B6762. _remember_upstream_initialize_instructions: B6592."
+  - The helper cases cover the pure decisions (stdio command check, legacy source order, v2 header keep or drop); the HTTP cases come with the MCP routes in B136.
+
+pitfalls:
+  - >-
+    The stdio env copy happens only when stdio_env is None; a stdio_env passed in is changed in
+    place by the NPM_CONFIG_CACHE insert, so build_stdio_env's result carries it to the retry.
+  - >-
+    record_auth_resolution is called with the original server id before discovery runs, and the
+    final source is recorded on every return path, including stdio's not_applicable.
+  - >-
+    The allowlist error prints the sorted allowlist as a Python list, for example ['docker', 'npx'],
+    so format it with single quotes and ", ".
+  - >-
+    A per-request mcp_auth_header drops the spec only for client_credentials and other configs
+    outside the four named kinds; for a passthrough spec it becomes the inbound token instead.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

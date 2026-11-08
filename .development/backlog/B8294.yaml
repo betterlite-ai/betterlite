@@ -1,0 +1,14 @@
+id: B8294
+milestone: M5 api families
+title: Chat completion agentic loop
+status: todo
+depends_on: [B189, B247, B4110, B4119]
+file: tasks/B8294-chat-agentic-loop.yaml
+covers:
+  - "litellm/litellm_core_utils/chat_completion_agentic_loop.py"
+parent: B119
+split_from: B119
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

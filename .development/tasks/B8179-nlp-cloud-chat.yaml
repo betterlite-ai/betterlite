@@ -1,0 +1,109 @@
+id: B8179
+title: NLP Cloud chat config and stream cleaner
+description: >-
+  Build nlp_cloud_chat in crates/betterlite-openai. It covers litellm/llms/nlp_cloud/chat/transformation.py,
+  litellm/llms/nlp_cloud/chat/handler.py and litellm/llms/nlp_cloud/common_utils.py. Nothing reads an environment variable.
+  The caller passes the key and base as plain arguments. B2202 supplies BaseLLMException and B2214 the stream iterator
+  primitives.
+
+  Errors. NlpCloudError carries a status, a message and headers (common_utils.py).
+
+  Options. NlpCloudConfig supports max_tokens, stream, temperature, top_p, presence_penalty, frequency_penalty, n and stop.
+  Mapping: max_tokens becomes max_length, n becomes num_return_sequences, stop becomes stop_sequences, and the rest are copied
+  under their own name. The config defaults LiteLLM keeps as class values (max_length, length_no_input, end_sequence,
+  remove_end_sequence, remove_input, bad_words, temperature, top_p, top_k, repetition_penalty, num_beams,
+  num_return_sequences) are passed in by the caller as a map. The handler step merges every default that is set and not
+  already in the options into the request.
+
+  Headers. accept: application/json and content-type: application/json, plus "Authorization: Token {key}" only when a key is
+  given. Caller headers go on top.
+
+  URL (handler.py). The URL is the api_base string followed by the model name and "/generation", with no slash added between
+  them, exactly as LiteLLM concatenates them. The model name is used as given.
+
+  Request. {text, ...optional_params} where text is the content of every message joined with a single space. Message content
+  that is not a plain string is a typed error. The merged defaults come from the Options step.
+
+  Reply. The decoder takes the bytes. A body that is not JSON, a body with an "error" key, or a body with no generated_text
+  gives NlpCloudError (status from the HTTP reply, message from the error text or the raw body). Otherwise the message content
+  is generated_text, the usage is prompt_tokens nb_input_tokens, completion_tokens nb_generated_tokens, and total their sum.
+  created is the current time, from an injected clock, and the model is the requested model. finish_reason is stop. The
+  decoder gets a fuzz target.
+
+  Streaming. clean_and_iterate_chunks(lines) removes every NUL byte (0x00) from each line before it is passed on, and it
+  skips lines that are empty after cleaning. Each remaining line is a JSON event with generated_text, which is the whole
+  delta, and with finish handled by the end of the stream. The cleaner and the event decoder get a fuzz target.
+
+  The embedding() function in handler.py is an empty stub with no caller. It is not ported. Do not add an embedding path.
+
+  Size. About 230 nonblank, non-comment LiteLLM lines. Plan 230 production, 300 tests, 60 adapters, 70 fuzz and 20 wiring
+  lines. No split.
+scope:
+  paths:
+    - crates/betterlite-openai/src/nlp_cloud_chat.rs
+    - crates/betterlite-openai/src/nlp_cloud_chat/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/nlp_cloud_reply.rs
+    - crates/betterlite-openai/fuzz/fuzz_targets/nlp_cloud_stream_lines.rs
+    - crates/betterlite-openai/fuzz/corpus/nlp_cloud_reply/**
+    - crates/betterlite-openai/fuzz/corpus/nlp_cloud_stream_lines/**
+    - tools/oracle/cases/helpers/nlp-cloud/**
+    - tools/oracle/helpers/b8179.py
+    - tools/oracle/helpers/b8179/**
+    - tools/oracle/src/helpers/openai/b8179.rs
+    - tools/oracle/src/helpers/openai/b8179/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nlp_cloud/chat/transformation.py
+    why: Options, headers, request text and reply conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nlp_cloud/chat/handler.py
+    why: URL, config default merge and the NUL-stripping stream cleaner.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nlp_cloud/common_utils.py
+    why: The error class.
+dod:
+  - text: Option list and mapping, headers, URL, request text and default merge match LiteLLM.
+    proof: [nlp-cloud-tests, oracle]
+  - text: The reply decoder handles non-JSON, error, missing generated_text and normal replies with the pinned usage fields.
+    proof: [nlp-cloud-tests, oracle]
+  - text: The stream cleaner removes NUL bytes and skips empty lines.
+    proof: [nlp-cloud-tests, oracle]
+  - text: Malformed replies and stream lines fail with typed errors and do not panic, and both corpora replay.
+    proof: [nlp-cloud-corpus]
+  - text: The new oracle cases exist and call this task's helper.
+    proof: [nlp-cloud-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: nlp-cloud-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^nlp_cloud_chat::/) - test(/replays_the_/)'
+      why: An OpenAI-shaped config would send a messages array and read choices from the reply instead of text and generated_text.
+    - id: nlp-cloud-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/nlp_cloud_reply.rs && test -f crates/betterlite-openai/fuzz/fuzz_targets/nlp_cloud_stream_lines.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/nlp_cloud_reply)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/nlp_cloud_stream_lines)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_nlp_cloud_reply_corpus) + test(replays_the_nlp_cloud_stream_lines_corpus)'
+      why: The reply and stream lines come from the network and need fuzz targets with replayed corpora.
+    - id: nlp-cloud-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/nlp-cloud)" && /usr/bin/grep -rlE '^  b8179:' tools/oracle/cases/helpers/nlp-cloud
+      why: Without cases that call the B8179 helper nothing compares these functions with LiteLLM.
+oracle_cases:
+  - tools/oracle/cases/helpers/nlp-cloud/params-and-headers.yaml
+  - tools/oracle/cases/helpers/nlp-cloud/request-and-defaults.yaml
+  - tools/oracle/cases/helpers/nlp-cloud/reply.yaml
+  - tools/oracle/cases/helpers/nlp-cloud/stream-lines.yaml
+deviations:
+  - what: Message content that is not a string fails with a typed error, status 400.
+    why: LiteLLM raises a raw TypeError when joining a list. 400 fits a bad request body (to be confirmed by the architect, see notes).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nlp_cloud/chat/transformation.py
+  - what: The created time comes from an injected clock.
+    why: Tests and the oracle need a fixed time. The field means the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nlp_cloud/chat/transformation.py
+out_of_scope:
+  - B2202 owns BaseLLMException and B2214 the stream primitives.
+  - The empty embedding() stub in handler.py has no caller and is not ported.
+  - B2230 and B5360 own picking a config from the provider name. B8312 owns wiring and the main.py function _complete_nlp_cloud.
+pitfalls:
+  - The URL is api_base + model + "/generation" with no slash inserted. Do not normalize it.
+  - Only the Authorization header is conditional. accept and content-type are always sent.
+  - Class defaults fill in only keys that the options do not already set.
+  - Usage names are nb_input_tokens and nb_generated_tokens, not prompt_tokens.
+  - NUL bytes are removed inside the line, not only at the ends.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

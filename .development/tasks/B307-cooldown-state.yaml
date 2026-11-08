@@ -3,7 +3,7 @@ title: Cooldown expiry and deployment health snapshots
 description: 'Add typed cooldown records and health snapshots to B304''s store, with injected wall/monotonic
   time and bounded storage reads. Preserve the distinction between a missing health observation and an
   explicit unhealthy state. Connect snapshot reads to the eligibility phase but expose snapshot writes
-  as a reusable interface for later B130 probes. Implement remaining cooldown duration, minimum retry
+  as a reusable interface for B4443''s health cycle. Implement remaining cooldown duration, minimum retry
   delay and local/shared snapshot selection without implementing the error policy in this part. Configuration
   boundary keys introduced or consumed here: enable_health_check_routing, health_check_staleness_threshold,
   health_check_ignore_transient_errors, DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS. DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS
@@ -125,12 +125,12 @@ oracle_cases:
 - tools/oracle/cases/routing/cooldown-state/health-probe-bypass.yaml
 deviations: []
 out_of_scope:
-- Active health routes and probes (B130).
+- Active health probes (B4443) and the health routes (B4444 to B4448, mounted by B8540).
 - Which failures trigger cooldown (B308).
 pitfalls:
 - Health probes must not be filtered out by the state they are meant to repair.
 - A stale local TTL must not extend a shared cooldown.
-- B130 owns active HTTP probes, so do not create a second health scheduler.
+- B4443 runs the active probes and the proxy_server.py background loop (L4265-L4678) schedules them through B4443, B4444 and B7640, so do not create a second health scheduler.
 - Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
   a hard request error.
 - The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules

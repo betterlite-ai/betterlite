@@ -1,0 +1,13 @@
+id: B8593
+milestone: M8 platform
+title: Post-call spend counter increments per budget scope
+status: todo
+depends_on: [B3015, B3003, B2316, B2361, B733]
+file: tasks/B8593-spend-counter-increments.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

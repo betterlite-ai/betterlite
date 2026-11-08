@@ -5,7 +5,7 @@ description: >-
   (add betterlite-prompts to that crate's Cargo.toml, as the watsonx text task does). Predibase serves a Hugging Face
   text-generation-inference API, so the wire format is not OpenAI-shaped. This is PredibaseConfig, PredibaseError and
   the request and error parts of PredibaseChatCompletion. Everything is a pure transform; the HTTP call and the
-  main.py wiring belong to B042. Credentials and the base URL come in as plain arguments, and no config section is added
+  main.py wiring belong to B8332. Credentials and the base URL come in as plain arguments, and no config section is added
   except that max_new_tokens takes the DEFAULT_MAX_TOKENS value (env DEFAULT_MAX_TOKENS, default 4096) as an argument
   that the caller reads through B2202's loader.
 
@@ -49,7 +49,7 @@ description: >-
 
   transform_response takes the reply bytes, status, headers, request body, options, the messages, the model name, a clock
   value for created and a TokenCounter trait object (two methods, count_messages and count_text, each returning None on
-  failure; B042 wires B196's counter). It starts from the usual empty ModelResponse: one choice with finish_reason stop
+  failure; B8332 wires B196's counter). It starts from the usual empty ModelResponse: one choice with finish_reason stop
   and no content. Steps in order. Body that is not JSON: PredibaseError 422 with the raw text as message. A JSON object with
   an error key: PredibaseError with str(error) and the response status (which can be 200). A JSON body that is not an
   object: 422 "'completion_response' is not a dictionary - <body>". No generated_text key: 422 "'generated_text' is not a
@@ -105,7 +105,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/predibase/common_utils.py#L6-L21
     why: PredibaseError.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3936-L3992
-    why: Where tenant id, api base and key are resolved (B042 wires it; read it to see the argument order).
+    why: Where tenant id, api base and key are resolved (B8332 wires it; read it to see the argument order).
   - url: https://docs.predibase.com/user-guide/inference/rest_api
     why: The generate and generate_stream request and reply shape.
 dod:
@@ -149,7 +149,7 @@ deviations:
   - what: An empty PREDIBASE_API_BASE value counts as unset, so the default base URL is used.
     why: Python keeps an empty base from the environment and builds a URL that starts with a slash, which never reaches Predibase. The caller passes the resolved api_base, so this function cannot see the variable.
 out_of_scope:
-  - B042 owns _complete_predibase (main.py L3936-L3992), the tenant id, api base and key lookup order (tenant_id, predibase_tenant_id, PREDIBASE_TENANT_ID; PREDIBASE_API_BASE; predibase_key, PREDIBASE_API_KEY), the dispatch.rs wiring, the HTTP client calls and the HTTP oracle cases.
+  - B8332 owns _complete_predibase (main.py L3936-L3992), the tenant id, api base and key lookup order (tenant_id, predibase_tenant_id, PREDIBASE_TENANT_ID; PREDIBASE_API_BASE; predibase_key, PREDIBASE_API_KEY), the dispatch.rs wiring, the HTTP client calls and the HTTP oracle cases.
   - B5653 owns handle_predibase_chunk and the stream line decoding (streaming_handler.py L515-L550).
   - B177 owns custom_prompt and prompt_factory, B2204 owns map_finish_reason, B196 owns token_counter, and B2202 owns the DEFAULT_MAX_TOKENS loader.
   - get_supported_openai_params is also called from get_supported_openai_params.py L245 and map_openai_params from utils.py L4613; B668 owns those call sites and uses the functions built here.
