@@ -252,6 +252,20 @@ async fn a_submission_listener_sees_every_run_with_its_scheduled_time() {
     scheduler.shutdown();
 }
 
+#[tokio::test(start_paused = true)]
+async fn an_explicitly_paused_job_never_runs() {
+    let mut scheduler = scheduler_with(defaults());
+    let runs = Arc::new(AtomicUsize::new(0));
+    let mut spec = interval_spec("sleeping_job", 10, counting_run(&runs));
+    spec.next_run_time = NextRunTime::Explicit(None);
+    scheduler.add_job(spec).unwrap();
+    scheduler.start();
+    advance(Duration::from_secs(60)).await;
+    settle().await;
+    assert_eq!(runs.load(Ordering::SeqCst), 0);
+    scheduler.shutdown();
+}
+
 struct Once(DateTime<Utc>);
 
 impl Trigger for Once {
