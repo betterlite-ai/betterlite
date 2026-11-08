@@ -33,6 +33,13 @@ fn primitive_value_matches_litellm(#[case] raw: &str, #[case] expected: Value) {
 }
 
 #[test]
+fn numbers_beyond_i64_reach_the_span_as_floats() {
+    let value: OtelModelValue =
+        serde_json::from_str("123456789012345678901234567890").expect("value");
+    assert!(matches!(primitive_value(&value), Value::F64(_)));
+}
+
+#[test]
 fn safe_set_attribute_writes_primitives() {
     let exporter = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()
