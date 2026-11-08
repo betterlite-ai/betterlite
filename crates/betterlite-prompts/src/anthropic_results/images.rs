@@ -130,13 +130,6 @@ where
     Ok(image_param_block(&ImageSource::Base64(&chunk)))
 }
 
-pub(crate) fn image_format(input: &Json) -> Result<Option<String>, ImageError> {
-    match input {
-        Json::Object(fields) => object_format(fields),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Ok(None),
-    }
-}
-
 fn object_format(fields: &Object) -> Result<Option<String>, ImageError> {
     match fields.get(FORMAT) {
         None | Some(Json::Null) => Ok(None),

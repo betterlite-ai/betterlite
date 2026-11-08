@@ -9,7 +9,7 @@ use crate::message_content::{Content, ContentPart, Message, as_fields};
 
 use super::document_uri::is_anthropic_document_data_uri;
 use super::ids::sanitize_anthropic_tool_use_id;
-use super::images::{ImageError, create_anthropic_image_param, image_format};
+use super::images::{ImageError, create_anthropic_image_param};
 
 const TYPE: &str = "type";
 const TEXT: &str = "text";
@@ -146,44 +146,33 @@ where
             let block = string_field_block(part, TEXT, TEXT)?;
             Ok(Some(with_any_cache_control(block, part)))
         }
-        IMAGE_URL => Ok(Some(image_part(part, force_base64, fetcher, blocks).await?)),
+        IMAGE_URL => {
+            let Some(image_url) = part.fields.get(IMAGE_URL) else {
+                return Err(ToolResultError::Image(ImageError::Input));
+            };
+            let url_str = match image_url {
+                Json::Text(url) => Some(url.as_str()),
+                Json::Object(fields) => fields.get(URL).and_then(Json::as_str),
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => None,
+            };
+            if let Some(url) = url_str.filter(|url| is_anthropic_document_data_uri(url)) {
+                let file = Object::from_iter([(FILE_DATA.to_owned(), Json::Text(url.to_owned()))]);
+                let element = Object::from_iter([
+                    (TYPE.to_owned(), Json::Text(FILE.to_owned())),
+                    (FILE.to_owned(), Json::Object(file)),
+                ]);
+                let block = blocks.file_block(&element).map_err(ToolResultError::File)?;
+                return Ok(Some(with_dict_cache_control(block, part)));
+            }
+            // the object's format is read inside create_anthropic_image_param, where LiteLLM falls back to it
+            let block =
+                create_anthropic_image_param(image_url, None, force_base64, fetcher).await?;
+            Ok(Some(with_dict_cache_control(block, part)))
+        }
         TOOL_REFERENCE => Ok(Some(string_field_block(part, TOOL_REFERENCE, TOOL_NAME)?)),
         FILE => Ok(Some(file_part(part, blocks)?)),
         _ => Ok(None),
     }
-}
-
-async fn image_part<Source, Blocks>(
-    part: &ContentPart,
-    force_base64: bool,
-    fetcher: &Source,
-    blocks: &Blocks,
-) -> Result<Object, ToolResultError<Blocks::Failure>>
-where
-    Source: RemoteMediaFetcher + Sync,
-    Blocks: FileBlocks + Sync,
-{
-    let Some(image_url) = part.fields.get(IMAGE_URL) else {
-        return Err(ToolResultError::Image(ImageError::Input));
-    };
-    let format = image_format(image_url).map_err(ToolResultError::Image)?;
-    let url_str = match image_url {
-        Json::Text(url) => Some(url.as_str()),
-        Json::Object(fields) => fields.get(URL).and_then(Json::as_str),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => None,
-    };
-    if let Some(url) = url_str.filter(|url| is_anthropic_document_data_uri(url)) {
-        let file = Object::from_iter([(FILE_DATA.to_owned(), Json::Text(url.to_owned()))]);
-        let element = Object::from_iter([
-            (TYPE.to_owned(), Json::Text(FILE.to_owned())),
-            (FILE.to_owned(), Json::Object(file)),
-        ]);
-        let block = blocks.file_block(&element).map_err(ToolResultError::File)?;
-        return Ok(with_dict_cache_control(block, part));
-    }
-    let block =
-        create_anthropic_image_param(image_url, format.as_deref(), force_base64, fetcher).await?;
-    Ok(with_dict_cache_control(block, part))
 }
 
 fn string_field_block<FileFailure>(
