@@ -124,15 +124,15 @@ fn local_search(cron: &Cron, start: DateTime<Utc>) -> Option<DateTime<Utc>> {
     let first_found = search(cron, &local_start)?;
     let first = resolve_local(first_found.naive_local(), start)
         .unwrap_or_else(|| first_found.with_timezone(&Utc));
-    let LocalResult::Ambiguous(early, late) = Local.from_local_datetime(&local_start.naive_local())
+    let LocalResult::Ambiguous(one, two) = Local.from_local_datetime(&local_start.naive_local())
     else {
         return Some(first);
     };
-    let early_instant = early.with_timezone(&Utc);
+    let early_instant = one.with_timezone(&Utc).min(two.with_timezone(&Utc));
     if start != early_instant {
         return Some(first);
     }
-    let transition = fold_transition(start, late.with_timezone(&Utc))?;
+    let transition = fold_transition(start, one.with_timezone(&Utc).max(two.with_timezone(&Utc)))?;
     let second_found = search(cron, &transition.with_timezone(&Local))?;
     let second = resolve_local(second_found.naive_local(), transition)
         .unwrap_or_else(|| second_found.with_timezone(&Utc));
@@ -142,9 +142,9 @@ fn local_search(cron: &Cron, start: DateTime<Utc>) -> Option<DateTime<Utc>> {
 fn resolve_local(naive: NaiveDateTime, floor: DateTime<Utc>) -> Option<DateTime<Utc>> {
     match Local.from_local_datetime(&naive) {
         LocalResult::Single(value) => Some(value.with_timezone(&Utc)),
-        LocalResult::Ambiguous(early, late) => {
-            let early_instant = early.with_timezone(&Utc);
-            let late_instant = late.with_timezone(&Utc);
+        LocalResult::Ambiguous(one, two) => {
+            let early_instant = one.with_timezone(&Utc).min(two.with_timezone(&Utc));
+            let late_instant = one.with_timezone(&Utc).max(two.with_timezone(&Utc));
             if early_instant >= floor {
                 Some(early_instant)
             } else if late_instant >= floor {

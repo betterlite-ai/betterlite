@@ -36,18 +36,13 @@ pub(crate) fn due_run_times(
         }
         times.push(current);
         if times.len() >= MAX_DUE_RUNS {
-            tracing::warn!(
-                "scheduled job has more than {MAX_DUE_RUNS} due runs; keeping the first {MAX_DUE_RUNS}"
-            );
+            tracing::warn!("scheduled job hit the {MAX_DUE_RUNS} due-run cap; dropping the rest");
             break;
         }
         match trigger.next_fire_time(Some(current), now) {
             Some(next) if next > current => current = next,
             Some(next) => {
-                tracing::warn!(
-                    next = %next,
-                    "scheduled job trigger did not advance; stopping its due runs"
-                );
+                tracing::warn!(next = %next, "trigger did not advance; stopping its due runs");
                 break;
             }
             None => break,

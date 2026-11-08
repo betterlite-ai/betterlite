@@ -45,10 +45,15 @@ impl CronField {
 }
 
 pub(crate) fn normalize_field(field: CronField, text: &str) -> Result<String, SchedulerError> {
-    text.split(',')
+    let terms = text
+        .split(',')
         .map(|term| normalize_term(field, term))
-        .collect::<Result<Vec<_>, _>>()
-        .map(|terms| terms.join(","))
+        .collect::<Result<Vec<_>, _>>()?;
+    // A star matches every value whatever the other terms say, and croner rejects one inside a list.
+    if terms.iter().any(|term| term.as_str() == "*") {
+        return Ok("*".to_owned());
+    }
+    Ok(terms.join(","))
 }
 
 // A name expression matches its prefix, so whatever follows the second name is ignored as APScheduler does.
@@ -62,7 +67,7 @@ fn normalize_term(field: CronField, term: &str) -> Result<String, SchedulerError
     {
         return normalize_name_term(field, names, &lowered);
     }
-    normalize_numeric_term(field, &lowered)
+    normalize_numeric_term(field, term)
 }
 
 fn normalize_name_term(
@@ -84,6 +89,9 @@ fn normalize_name_term(
         .ok_or_else(|| invalid_name(field, last_text))?;
     if first > last {
         return Err(SchedulerError::CronRangeOrder);
+    }
+    if first == last {
+        return Ok(first_text.to_owned());
     }
     Ok(format!("{first_text}-{last_text}"))
 }
@@ -111,42 +119,37 @@ fn split_name(lowered: &str) -> (&str, Option<&str>) {
     }
 }
 
-fn normalize_numeric_term(field: CronField, lowered: &str) -> Result<String, SchedulerError> {
-    let (base, step) = match lowered.split_once('/') {
-        Some((base, text)) => (base, Some(parse_count(field, lowered, text)?)),
-        None => (lowered, None),
+fn normalize_numeric_term(field: CronField, term: &str) -> Result<String, SchedulerError> {
+    let (base, step) = match term.split_once('/') {
+        Some((base, text)) => (base, Some(parse_count(field, term, text)?)),
+        None => (term, None),
     };
     if base == "*" {
         if step == Some(0) {
             return Err(SchedulerError::CronStepZero);
         }
         let (minimum, maximum) = field.bounds();
-        check_step_against(lowered, step, maximum.saturating_sub(minimum))?;
+        check_step_against(term, step, maximum.saturating_sub(minimum))?;
         return match (field, step) {
             (CronField::DayOfWeek, None) => Ok("*".to_owned()),
-            (CronField::DayOfWeek, Some(width)) => weekday_list(0, 6, width, lowered),
-            _ => Ok(base.to_owned()),
+            (CronField::DayOfWeek, Some(width)) => weekday_list(0, 6, width, term),
+            _ => Ok(term.to_owned()),
         };
     }
-    let (first, last) = parse_range(field, lowered, base)?;
-    check_numeric(field, lowered, first, last, step)?;
+    let (first, last) = parse_range(field, term, base)?;
+    check_numeric(field, term, first, last, step)?;
     if field != CronField::DayOfWeek {
-        return Ok(lowered.to_owned());
+        return Ok(term.to_owned());
     }
     match (last, step) {
-        (Some(bound), None) => Ok(format!(
-            "{}-{}",
-            weekday_name(first, lowered)?,
-            weekday_name(bound, lowered)?
+        (Some(bound), _) if bound != first => Ok(format!(
+            "{}-{}{}",
+            weekday_name(first, term)?,
+            weekday_name(bound, term)?,
+            step.map_or_else(String::new, |width| format!("/{width}"))
         )),
-        (Some(bound), Some(width)) => Ok(format!(
-            "{}-{}/{}",
-            weekday_name(first, lowered)?,
-            weekday_name(bound, lowered)?,
-            width
-        )),
-        (None, None) => Ok(weekday_name(first, lowered)?.to_owned()),
-        (None, Some(width)) => weekday_list(first, 6, width, lowered),
+        (None, Some(width)) => weekday_list(first, 6, width, term),
+        _ => Ok(weekday_name(first, term)?.to_owned()),
     }
 }
 

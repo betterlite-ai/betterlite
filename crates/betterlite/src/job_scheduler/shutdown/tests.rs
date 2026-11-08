@@ -130,7 +130,10 @@ async fn stop_in_flight_jobs_counts_only_the_jobs_it_cancels() {
         let future: BoxFuture<'static, ()> = Box::pin(pending());
         future
     });
-    scheduler.add_job(immediate_spec("slow_job", slow)).unwrap();
+    let mut slow_spec = immediate_spec("slow_job", slow);
+    // A 1 second interval would dispatch a second run inside the finish window and change the count.
+    slow_spec.trigger = Box::new(IntervalTrigger { seconds: 3600 });
+    scheduler.add_job(slow_spec).unwrap();
     scheduler
         .add_job(immediate_spec("hanging_job", hanging))
         .unwrap();
@@ -146,6 +149,9 @@ async fn stop_in_flight_jobs_counts_only_the_jobs_it_cancels() {
     let text = logs.contents();
     assert!(text.contains("Waiting up to 2s for 2 in-flight scheduled job(s) to finish"));
     assert!(text.contains("Cancelling 1 in-flight scheduled job(s) for shutdown"));
+    let waiting = text.find("Waiting up to 2s for 2").unwrap();
+    let cancelling = text.find("Cancelling 1").unwrap();
+    assert!(waiting < cancelling);
     assert_eq!(finished.load(Ordering::SeqCst), 1);
 }
 

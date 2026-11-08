@@ -1,7 +1,7 @@
 task: B8370
 deviations:
-  - what: A step on a value above its field's maximum, for example "60/2 * * * *", prints the range as 0 in the rejection message where APScheduler prints -1.
-    why: The step and its range are unsigned here, so a range APScheduler computes as negative saturates at zero in the message. Both reject the crontab; only the message text differs.
+  - what: A step on a value above its field's maximum, for example "60/2 * * * *", prints the range as 0 in the rejection message where APScheduler prints -1, and an unknown month or weekday name prints in lower case.
+    why: The step and its range are unsigned here and names are matched after ASCII lowercasing, so only the message text differs; both reject the crontab.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7806-L7812
   - what: Job runs are tokio tasks tracked in a JoinSet, not asyncio tasks on an executor, and job stores other than memory do not exist.
     why: LiteLLM only ever uses MemoryJobStore and its AwaitableAsyncIOExecutor; the observable rules (grace, coalesce, instances, ids) are kept.

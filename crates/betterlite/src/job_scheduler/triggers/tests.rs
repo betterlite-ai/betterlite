@@ -222,6 +222,41 @@ fn cron_name_terms_keep_apschedulers_prefix(#[case] cron: &str, #[case] expected
     assert_eq!(fires, expected.map(instant));
 }
 
+#[rstest]
+#[case::weekday_list_with_star(
+    "0 0 * * mon,*",
+    ["2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", "2026-01-03T00:00:00Z"]
+)]
+#[case::day_list_with_star(
+    "0 0 *,1 * *",
+    ["2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", "2026-01-03T00:00:00Z"]
+)]
+#[case::minute_list_with_star(
+    "*,5 * * * *",
+    ["2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z", "2026-01-01T00:02:00Z"]
+)]
+fn cron_terms_with_a_bare_star_match_every_value(#[case] cron: &str, #[case] expected: [&str; 3]) {
+    let trigger = CronTrigger::from_crontab(cron, CronZone::Utc).unwrap();
+    let fires = first_fires(&trigger, instant("2026-01-01T00:00:00Z"), 3);
+    assert_eq!(fires, expected.map(instant));
+}
+
+#[rstest]
+#[case::weekday_name_equal_ends("0 0 * * sun-sun")]
+#[case::weekday_number_equal_ends("0 0 * * 6-6")]
+fn cron_weekday_ranges_with_equal_ends_fire_once_a_week(#[case] cron: &str) {
+    let trigger = CronTrigger::from_crontab(cron, CronZone::Utc).unwrap();
+    let fires = first_fires(&trigger, instant("2026-01-01T00:00:00Z"), 3);
+    assert_eq!(
+        fires,
+        [
+            instant("2026-01-04T00:00:00Z"),
+            instant("2026-01-11T00:00:00Z"),
+            instant("2026-01-18T00:00:00Z"),
+        ]
+    );
+}
+
 fn is_us_eastern() -> bool {
     local_offset_seconds(instant("2026-01-15T12:00:00Z")) == -18_000
         && local_offset_seconds(instant("2026-07-15T12:00:00Z")) == -14_400
