@@ -197,9 +197,9 @@ fn fill_expiry(
     if fired < deadline {
         return Ok(());
     }
-    let error = plan.expired(fired);
-    output.expired_status = error.status_code();
-    output.expired_code = error.code().map(str::to_owned);
+    let status = plan.expired(fired).status_code();
+    output.expired_status = status;
+    output.expired_code = status.map(|code| code.to_string());
     Ok(())
 }
 

@@ -31,16 +31,4 @@ impl TimeoutError {
             | Self::NoTimeout => None,
         }
     }
-
-    #[must_use]
-    pub const fn code(&self) -> Option<&'static str> {
-        match self {
-            Self::DeadlineExpired | Self::AttemptExpired => Some("408"),
-            Self::NotFinite { .. }
-            | Self::Negative { .. }
-            | Self::OutOfRange { .. }
-            | Self::Cancelled
-            | Self::NoTimeout => None,
-        }
-    }
 }

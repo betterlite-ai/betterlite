@@ -445,7 +445,6 @@ fn routing_timeouts_boundaries(#[case] name: &str) {
             let error = plan.expired(at(base, 4));
             assert_eq!(error, TimeoutError::AttemptExpired);
             assert_eq!(error.status_code(), Some(408));
-            assert_eq!(error.code(), Some("408"));
         }
         "expired_at_the_deadline_is_deadline" => {
             let mut request = request_settings(false);
