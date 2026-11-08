@@ -140,8 +140,8 @@ async fn a_nil_reply_stays_nil() {
 #[tokio::test]
 async fn a_simple_string_reply_is_kept() {
     let server = FakeServer::start().await;
-    server.script("LPOP", Reply::Simple("OK".to_owned()));
+    server.script("LPOP", Reply::Simple("PONG".to_owned()));
     let client = connected(&server).await;
     let reply = client.lpop("list", None).await.expect("a reply");
-    assert_eq!(reply, Value::SimpleString("OK".to_owned()));
+    assert_eq!(reply, Value::SimpleString("PONG".to_owned()));
 }

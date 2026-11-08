@@ -95,7 +95,11 @@ async fn a_new_token_is_sent_after_the_refresh_interval() {
         .checked_add(Duration::from_secs(2))
         .expect("a deadline");
     let mut auth = server.commands_named("AUTH");
-    while auth.len() < 2 && Instant::now() < deadline {
+    while !auth
+        .iter()
+        .any(|recorded| recorded.args == ["AUTH", "default", "tok-2"])
+        && Instant::now() < deadline
+    {
         sleep(Duration::from_millis(10)).await;
         auth = server.commands_named("AUTH");
     }

@@ -95,8 +95,8 @@ async fn a_cluster_pipeline_runs_commands_across_slots_in_order() {
     assert_eq!(
         values,
         [
-            Value::BulkString(low.as_bytes().to_vec()),
-            Value::BulkString(high.as_bytes().to_vec()),
+            Value::Array(vec![Value::BulkString(low.as_bytes().to_vec())]),
+            Value::Array(vec![Value::BulkString(high.as_bytes().to_vec())]),
         ]
     );
     assert_eq!(first.commands_named("GET").len(), 1);

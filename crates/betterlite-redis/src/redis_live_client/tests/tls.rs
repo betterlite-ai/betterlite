@@ -55,8 +55,8 @@ async fn an_untrusted_certificate_fails() {
     assert!(matches!(error, LiveClientError::Redis(_)));
     let text = error.to_string().to_lowercase();
     assert!(
-        text.contains("unknown issuer") || text.contains("unknownissuer"),
-        "the handshake should fail on the issuer: {text}"
+        text.contains("invalid peer certificate"),
+        "the handshake should reject the certificate: {text}"
     );
 }
 
