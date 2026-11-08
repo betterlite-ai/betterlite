@@ -513,9 +513,16 @@ fn keeps_a_card_that_lacks_required_03_members() {
 #[test]
 fn omits_empty_repeated_fields_from_the_upgraded_card() {
     let card = object(
-        r#"{"name":"agent","description":"d","version":"1","url":"https://a","protocolVersion":"0.3","capabilities":{"streaming":true,"extensions":[]},"defaultInputModes":[],"defaultOutputModes":[],"skills":[],"security":[],"signatures":[]}"#,
+        r#"{"name":"agent","description":"d","version":"1","url":"https://a","capabilities":{"streaming":true,"extensions":[]},"defaultInputModes":[],"defaultOutputModes":[],"skills":[],"security":[],"signatures":[]}"#,
     );
     let converted = normalize_agent_card(card, ProtocolVersion::V1_0);
+    let interfaces = field(&converted, "supportedInterfaces")
+        .as_array()
+        .expect("interfaces");
+    assert_eq!(
+        member(&interfaces[0], "protocolVersion"),
+        &text_value("0.3.0")
+    );
     assert!(!converted.contains_key("defaultInputModes"));
     assert!(!converted.contains_key("defaultOutputModes"));
     assert!(!converted.contains_key("skills"));
