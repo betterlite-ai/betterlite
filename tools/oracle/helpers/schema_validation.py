@@ -35,5 +35,5 @@ def run(input_value: dict[str, Json]) -> Json:
             schema=_object(input_value.get("schema"), "schema"),
             response=_string(input_value.get("response"), "response"),
         )
-        return None
+        return True
     raise ValueError(f"unknown mode {mode}")

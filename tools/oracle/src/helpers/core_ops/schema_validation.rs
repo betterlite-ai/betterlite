@@ -14,9 +14,8 @@ impl crate::helpers::Helper for Op {
         let outcome = match input.mode {
             Mode::Normalize => normalize_json_schema_types(&input.schema, &limits),
             Mode::Tool => normalize_tool_schema(&input.tool, &limits),
-            Mode::Validate => {
-                validate_schema(&input.schema, &input.response, &limits).map(|()| SchemaJson::Null)
-            }
+            Mode::Validate => validate_schema(&input.schema, &input.response, &limits)
+                .map(|()| SchemaJson::Bool(true)),
         };
         outcome.map_err(|error| schema_failure(&error, &input.schema, &input.response))
     }
