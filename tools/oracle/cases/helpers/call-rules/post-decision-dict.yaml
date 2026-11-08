@@ -1,0 +1,14 @@
+kind: helper
+name: post-decision-dict
+call:
+  rule_decision:
+    phase: post
+    model: gpt-4o
+    mock_response: "the model answered"
+    rules:
+      - true
+      - decision: false
+        message: "the answer was refused"
+env: {}
+compare:
+  ignore: []
