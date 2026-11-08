@@ -2303,6 +2303,7 @@ dependencies = [
  "crc16",
  "futures-util",
  "hex",
+ "num-traits",
  "prometheus-client",
  "py_literal",
  "rcgen",

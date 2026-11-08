@@ -1,0 +1,46 @@
+task: B4327
+deviations:
+  - what: >-
+      The sync `set_cache` stores the JSON text of the value. LiteLLM stores
+      `str(value)`, so a dict reaches Redis as `{'a': 1}`.
+    why: >-
+      Python repr text is outside docs/compatibility.md, and `get_cache` reads both
+      forms through B4324's decoder. LiteLLM reads betterlite's text too, since JSON
+      is valid input to `json.loads`.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L830-L849
+  - what: >-
+      `flush_cache_buffer` removes only the entries it sent. LiteLLM empties the
+      whole list after the await, so an entry appended while the pipeline was running
+      is lost.
+    why: >-
+      Keeping those entries loses no write, and the Python outcome is a race, not a
+      promise.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1523-L1526
+  - what: >-
+      `batch_get_cache` returns an empty map when decoding fails. LiteLLM returns the
+      raw, undecoded values it had mapped so far.
+    why: >-
+      A raw bytes value has no place in the typed result. This is an open question for
+      the architect, and the empty map is the choice for now.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1583-L1645
+  - what: >-
+      The service event has no `caller` field, so the stack projection from B4324 is
+      not called here.
+    why: >-
+      Rust has no frame names to walk. The event's `call_type` names the method.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L839-L849
+  - what: >-
+      Entries are serialized to JSON text when they are appended to the buffer, not
+      when it is flushed.
+    why: >-
+      A typed value can't wait in a list of unknown type, and a value that can't be
+      serialized fails at the call that gave it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1390-L1398
+  - what: >-
+      A TTL that does not fit an i64 fails the write instead of being sent, because
+      Redis takes `EX` as a 64-bit integer. LiteLLM sends Python's arbitrary-precision
+      int, and the server rejects it.
+    why: >-
+      The failure lands in the same swallow or raise path the method already has for a
+      rejected command, so no working setup sees a difference below 9.2e18 seconds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L26-L33
