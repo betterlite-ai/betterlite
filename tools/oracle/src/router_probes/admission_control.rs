@@ -23,6 +23,8 @@ pub struct Input {
     pub settings: BTreeMap<String, Value>,
     #[serde(default)]
     pub root_path: String,
+    #[serde(default)]
+    pub scalar_root: bool,
     pub requests: Vec<RequestSpec>,
     pub steps: Vec<Step>,
 }

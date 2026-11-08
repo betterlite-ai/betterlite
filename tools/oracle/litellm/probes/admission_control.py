@@ -365,6 +365,7 @@ class Harness:
 class AdmissionControl(Operation):
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     root_path: str = ""
+    scalar_root: bool = False
     requests: list[RequestSpec]
     steps: list[StepField]
 

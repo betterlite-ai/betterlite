@@ -10,7 +10,7 @@ probes:
           max_queued_requests_per_worker: 1
         root_path: ""
         requests:
-          - {id: 0, path: /a, behavior: hold}
+          - {id: 0, path: /a, behavior: stream}
           - {id: 1, path: /b, behavior: immediate}
         steps:
           - {kind: start, request: 0}

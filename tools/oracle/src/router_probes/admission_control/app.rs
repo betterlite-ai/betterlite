@@ -37,20 +37,25 @@ pub(super) async fn dispatch(
             Response::new(Body::from("ok"))
         }
         Behavior::Stream => {
-            gate.started.notify_one();
             let notifier = Arc::clone(&gate.release);
+            let started = Arc::clone(&gate.started);
             let body = Body::from_stream(stream::unfold(0_u8, move |step| {
-                stream_chunk(step, Arc::clone(&notifier))
+                stream_chunk(step, Arc::clone(&notifier), Arc::clone(&started))
             }));
             Response::new(body)
         }
     }
 }
 
-async fn stream_chunk(step: u8, release: Arc<Notify>) -> Option<(Result<Bytes, axum::Error>, u8)> {
+async fn stream_chunk(
+    step: u8,
+    release: Arc<Notify>,
+    started: Arc<Notify>,
+) -> Option<(Result<Bytes, axum::Error>, u8)> {
     match step {
         0 => Some((Ok(Bytes::from_static(b"first")), 1)),
         1 => {
+            started.notify_one();
             release.notified().await;
             Some((Ok(Bytes::from_static(b"last")), 2))
         }
