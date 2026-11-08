@@ -68,35 +68,31 @@ pub fn normalize_metadata_keys(keys: MetadataKeys<'_>) -> Vec<String> {
 impl OpenTelemetryConfig {
     #[must_use]
     pub fn from_env(env: &BTreeMap<String, String>) -> Self {
-        let mut config = Self::default();
-        config.apply_env(env);
-        config
-    }
-
-    fn apply_env(&mut self, env: &BTreeMap<String, String>) {
         let exporter = first_present(env, &["OTEL_EXPORTER_OTLP_PROTOCOL", "OTEL_EXPORTER"])
             .unwrap_or_else(|| CONSOLE_EXPORTER.to_owned());
+        let mut config = Self::default();
         if exporter == IN_MEMORY_EXPORTER {
-            self.exporter = Exporter::InMemory;
-            return;
+            config.exporter = Exporter::InMemory;
+            return config;
         }
-        self.exporter = if exporter == CONSOLE_EXPORTER {
+        config.exporter = if exporter == CONSOLE_EXPORTER {
             Exporter::Console
         } else {
             Exporter::Named(exporter)
         };
-        self.endpoint = first_present(env, &["OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_ENDPOINT"]);
-        self.headers = first_present(env, &["OTEL_EXPORTER_OTLP_HEADERS", "OTEL_HEADERS"]);
-        self.service_name = first_present(env, &["OTEL_SERVICE_NAME"])
+        config.endpoint = first_present(env, &["OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_ENDPOINT"]);
+        config.headers = first_present(env, &["OTEL_EXPORTER_OTLP_HEADERS", "OTEL_HEADERS"]);
+        config.service_name = first_present(env, &["OTEL_SERVICE_NAME"])
             .unwrap_or_else(|| DEFAULT_SERVICE_NAME.to_owned());
-        self.signals = Signals {
+        config.signals = Signals {
             enable_metrics: enabled(env, "LITELLM_OTEL_INTEGRATION_ENABLE_METRICS"),
             enable_events: enabled(env, "LITELLM_OTEL_INTEGRATION_ENABLE_EVENTS"),
         };
-        self.model_id =
-            first_present(env, &["OTEL_MODEL_ID"]).unwrap_or_else(|| self.service_name.clone());
-        self.deployment_environment = first_present(env, &["OTEL_ENVIRONMENT_NAME"])
+        config.model_id =
+            first_present(env, &["OTEL_MODEL_ID"]).unwrap_or_else(|| config.service_name.clone());
+        config.deployment_environment = first_present(env, &["OTEL_ENVIRONMENT_NAME"])
             .unwrap_or_else(|| DEFAULT_ENVIRONMENT.to_owned());
+        config
     }
 
     pub fn normalize(&mut self, env: &BTreeMap<String, String>) {
