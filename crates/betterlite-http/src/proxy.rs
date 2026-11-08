@@ -6,7 +6,7 @@ use std::time::Duration;
 use betterlite_config::proxy::{ProxyPolicy, ProxyRoute, ProxyServer};
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ModelDeployment};
-use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap};
+use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use reqwest::redirect::Policy;
 use reqwest::retry::never;
 use reqwest::{Client, ClientBuilder, Proxy, Request, Response, Url};
@@ -226,7 +226,7 @@ impl ProxiedClient {
             .await
     }
 
-    pub async fn post_json(&self, post: JsonPost<'_>) -> Result<UpstreamResponse, HttpError> {
+    pub async fn post_json(&self, post: JsonPost) -> Result<UpstreamResponse, HttpError> {
         let _token = self.tracker.token();
         let body_limit = post.body_limit;
         let request = self.json_request(post, "application/json")?;
@@ -251,22 +251,25 @@ impl ProxiedClient {
         })
     }
 
-    pub fn json_request(
-        &self,
-        post: JsonPost<'_>,
-        accept: &'static str,
-    ) -> Result<Request, HttpError> {
+    pub fn json_request(&self, post: JsonPost, accept: &'static str) -> Result<Request, HttpError> {
         let mut builder = self
             .client
             .post(post.url)
             .timeout(post.timeout)
-            .bearer_auth(post.bearer.expose_secret())
+            .header(AUTHORIZATION, post.authorization.expose_secret())
             .header(ACCEPT, accept)
             .header(CONTENT_TYPE, "application/json");
         for (name, value) in post.headers {
             builder = builder.header(name, value);
         }
-        builder.body(post.body).build().map_err(HttpError::Request)
+        let mut request = builder
+            .body(post.body)
+            .build()
+            .map_err(HttpError::Request)?;
+        if let Some(value) = request.headers_mut().get_mut(AUTHORIZATION) {
+            value.set_sensitive(true);
+        }
+        Ok(request)
     }
 }
 
@@ -281,9 +284,10 @@ pub fn timed_out(error: HttpError) -> HttpError {
     }
 }
 
-pub struct JsonPost<'key> {
+pub struct JsonPost {
     pub url: Url,
-    pub bearer: &'key SecretString,
+    // the whole header value, since a Basic header from api_base userinfo replaces the bearer
+    pub authorization: SecretString,
     pub headers: Vec<(&'static str, String)>,
     pub body: Vec<u8>,
     pub timeout: Duration,

@@ -6,7 +6,7 @@ use std::time::Duration;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::ModelDeployment;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use super::{ChatDeployment, DeploymentError, OpenAiDefaults, Provider};
 
@@ -110,6 +110,65 @@ fn refuses_deployments_that_cannot_be_called(#[case] entry: &str) {
 fn derives_the_model_id_like_litellm(#[case] entry: &str, #[case] id: &str) {
     let resolved = ChatDeployment::resolve(&deployment(entry), &OpenAiDefaults::default()).unwrap();
     assert_eq!(resolved.model_id, id);
+}
+
+#[rstest]
+#[case::userinfo_leaves_the_stored_base(
+    "http://other:pass@h/v2",
+    "http://h/v2|http://h/v2/chat/completions|Basic b3RoZXI6cGFzcw=="
+)]
+#[case::a_plain_base_clears_the_basic_header(
+    "http://h/v2",
+    "http://h/v2|http://h/v2/chat/completions|-"
+)]
+fn override_base_replaces_the_url_and_the_credential(#[case] base: &str, #[case] expected: &str) {
+    let entry = "{model_name: g, litellm_params: {model: openai/m, api_base: 'http://user:pass@first/v1', api_key: k}}";
+    let mut resolved = ChatDeployment::resolve(&deployment(entry), &defaults()).unwrap();
+    resolved.override_base(base).unwrap();
+    let observed = format!(
+        "{}|{}|{}",
+        resolved.api_base,
+        resolved.endpoint,
+        resolved
+            .authorization
+            .as_ref()
+            .map_or("-", |header| header.expose_secret()),
+    );
+    assert_eq!(observed, expected);
+}
+
+#[test]
+fn override_base_refuses_another_scheme_by_key() {
+    let entry =
+        "{model_name: g, litellm_params: {model: openai/m, api_base: 'http://h/v1', api_key: k}}";
+    let mut resolved = ChatDeployment::resolve(&deployment(entry), &defaults()).unwrap();
+    let error = resolved.override_base("ftp://h/v2").unwrap_err();
+    assert!(
+        error.to_string().contains("litellm_params.api_base"),
+        "{error}"
+    );
+}
+
+#[rstest]
+#[case::basic_beats_the_api_key("http://user:pass@h/v1", Some("k"), Some("Basic dXNlcjpwYXNz"))]
+#[case::basic_needs_no_api_key("http://user:pass@h/v1", None, Some("Basic dXNlcjpwYXNz"))]
+#[case::the_api_key_becomes_the_bearer("http://h/v1", Some("k"), Some("Bearer k"))]
+#[case::no_credential_is_absent("http://h/v1", None, None)]
+fn credential_prefers_userinfo_over_the_api_key(
+    #[case] api_base: &str,
+    #[case] api_key: Option<&str>,
+    #[case] expected: Option<&str>,
+) {
+    let entry =
+        format!("{{model_name: g, litellm_params: {{model: openai/m, api_base: '{api_base}'}}}}");
+    let mut resolved =
+        ChatDeployment::resolve(&deployment(&entry), &OpenAiDefaults::default()).unwrap();
+    resolved.api_key = api_key.map(SecretString::from);
+    let credential = resolved.credential();
+    assert_eq!(
+        credential.as_ref().map(ExposeSecret::expose_secret),
+        expected
+    );
 }
 
 fn boundary_observation(api_base: &str) -> String {

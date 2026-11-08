@@ -112,6 +112,25 @@ impl ChatDeployment {
         })
     }
 
+    // HTTPX's BasicAuth from URL userinfo overwrites the Authorization header, so it beats the api_key bearer
+    #[must_use]
+    pub fn credential(&self) -> Option<SecretString> {
+        self.authorization.clone().or_else(|| {
+            self.api_key
+                .as_ref()
+                .map(|key| SecretString::from(format!("Bearer {}", key.expose_secret())))
+        })
+    }
+
+    // userinfo belongs to the URL it came with, so a call's own api_base replaces the Basic header too
+    pub fn override_base(&mut self, api_base: &str) -> Result<(), DeploymentError> {
+        let configured = configured_base(api_base, &self.model_group)?;
+        self.api_base = String::from(configured.url.clone());
+        self.endpoint = endpoint(configured.url);
+        self.authorization = configured.authorization;
+        Ok(())
+    }
+
     pub fn endpoint_for(&self, resource: &str) -> Result<Url, DeploymentError> {
         let mut url = endpoint(configured_base(&self.api_base, &self.model_group)?.url);
         let path = format!(

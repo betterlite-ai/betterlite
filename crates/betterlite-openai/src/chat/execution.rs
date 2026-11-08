@@ -8,7 +8,7 @@ use betterlite_http::proxy::{ProxiedClient, StreamResponse, UpstreamResponse};
 use http::header::{ACCEPT, AUTHORIZATION};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use rand::rngs::StdRng;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 use serde_json::{Map, Value};
 use thiserror::Error;
 use uuid::Uuid;
@@ -195,13 +195,7 @@ impl ChatExecutor {
         let body = serde_json::to_vec(&self.body(request, model)?)
             .map_err(|source| ChatError::Encode { source })?;
         let mut headers = HeaderMap::new();
-        let credential = deployment.authorization.clone().or_else(|| {
-            deployment
-                .api_key
-                .as_ref()
-                .map(|key| SecretString::from(format!("Bearer {}", key.expose_secret())))
-        });
-        let authorization = credential.ok_or(ChatError::MissingApiKey)?;
+        let authorization = deployment.credential().ok_or(ChatError::MissingApiKey)?;
         headers.insert(
             AUTHORIZATION,
             header_value(authorization.expose_secret(), "authorization")?,

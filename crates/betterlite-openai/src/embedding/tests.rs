@@ -19,7 +19,7 @@ use betterlite_http::proxy::ProxiedClient;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use std::sync::{Arc, Mutex};
-use tokio::io::AsyncWriteExt as _;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use uuid::Uuid;
@@ -128,7 +128,7 @@ async fn reports_embedding_provider_failures() {
             .await
             .expect("response");
     });
-    let (executor, deployment) = embedding_executor(&base);
+    let (executor, deployment) = embedding_executor(&base, ", api_key: key");
     let request = EmbeddingRequest::parse(br#"{"input":"hello"}"#).expect("request");
     let result = super::send(&executor, &deployment, &request).await;
     assert!(matches!(result, Err(EmbeddingError::Provider { .. })));
@@ -165,12 +165,12 @@ fn fixed_id() -> Uuid {
     Uuid::from_u128(7)
 }
 
-fn embedding_executor(base: &str) -> (ChatExecutor, ChatDeployment) {
+fn embedding_executor(base: &str, api_key: &str) -> (ChatExecutor, ChatDeployment) {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
     .load(&format!(
-        "model_list:\n  - model_name: embed\n    litellm_params: {{model: openai/embed, api_base: {base}, api_key: key}}\n"
+        "model_list:\n  - model_name: embed\n    litellm_params: {{model: openai/embed, api_base: {base}{api_key}}}\n"
     ))
     .expect("config");
     let deployment = ChatDeployment::resolve(
@@ -196,9 +196,78 @@ fn embedding_executor(base: &str) -> (ChatExecutor, ChatDeployment) {
     (executor, deployment)
 }
 
+async fn read_head(listener: TcpListener) -> String {
+    let (mut stream, _) = listener.accept().await.expect("connection");
+    let mut received = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    while !received.windows(4).any(|window| window == b"\r\n\r\n") {
+        let read = stream.read(&mut chunk).await.expect("request");
+        received.extend_from_slice(&chunk[..read]);
+    }
+    stream
+        .write_all(b"HTTP/1.1 400 Bad Request\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
+        .await
+        .expect("response");
+    String::from_utf8(received).expect("head")
+}
+
+#[rstest::rstest]
+#[case::basic_beats_the_api_key("user:pass@", ", api_key: key", None, "Basic dXNlcjpwYXNz")]
+#[case::userinfo_needs_no_api_key("user:pass@", "", None, "Basic dXNlcjpwYXNz")]
+#[case::the_api_key_is_the_bearer_without_userinfo("", ", api_key: key", None, "Bearer key")]
+#[case::a_plain_override_drops_the_basic_header(
+    "user:pass@",
+    ", api_key: key",
+    Some(""),
+    "Bearer key"
+)]
+#[case::an_override_brings_its_own_basic_header(
+    "",
+    ", api_key: key",
+    Some("other:pass@"),
+    "Basic b3RoZXI6cGFzcw=="
+)]
+#[tokio::test]
+async fn http_boundaries_url_boundary_tests_behavior(
+    #[case] userinfo: &str,
+    #[case] api_key: &str,
+    #[case] override_userinfo: Option<&str>,
+    #[case] expected: &str,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let (executor, mut deployment) =
+        embedding_executor(&format!("http://{userinfo}{address}/v1"), api_key);
+    if let Some(prefix) = override_userinfo {
+        deployment
+            .override_base(&format!("http://{prefix}{address}/v2"))
+            .expect("override");
+    }
+    let request = EmbeddingRequest::parse(br#"{"input":"hello"}"#).expect("request");
+    let (head, result) = tokio::join!(
+        read_head(listener),
+        super::send(&executor, &deployment, &request)
+    );
+    assert!(matches!(result, Err(EmbeddingError::Provider { .. })));
+    let path = if override_userinfo.is_some() {
+        "/v2"
+    } else {
+        "/v1"
+    };
+    assert!(
+        head.starts_with(&format!("POST {path}/embeddings HTTP/1.1")),
+        "{head}"
+    );
+    assert_eq!(head.matches("authorization:").count(), 1, "{head}");
+    assert!(
+        head.contains(&format!("authorization: {expected}")),
+        "{head}"
+    );
+}
+
 #[test]
 fn embedding_post_preserves_fields() {
-    let (_, deployment) = embedding_executor("https://provider.test/v1/");
+    let (_, deployment) = embedding_executor("https://provider.test/v1/", ", api_key: key");
     let request = EmbeddingRequest::parse(
         br#"{"model":"alias","input":[1,2],"dimensions":2,"user":"reader","encoding_format":"float"}"#,
     )
