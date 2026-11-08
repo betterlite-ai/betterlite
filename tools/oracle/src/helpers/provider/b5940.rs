@@ -5,9 +5,10 @@ use betterlite_provider::oci_common::base_url::get_oci_base_url;
 use betterlite_provider::oci_common::credentials::{
     OciEnvValues, OciExplicitParams, resolve_oci_credentials,
 };
+use betterlite_provider::oci_common::schema::refs::resolve_oci_schema_refs;
 use betterlite_provider::oci_common::schema::{
     OCI_JSON_TO_PYTHON_TYPES, enrich_cohere_description, resolve_oci_schema_anyof,
-    resolve_oci_schema_refs, sanitize_oci_schema,
+    sanitize_oci_schema,
 };
 use betterlite_provider::oci_common::signing::sign_oci_request;
 use betterlite_provider::oci_common::{Clock, OciError};

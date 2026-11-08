@@ -24,9 +24,10 @@ use crate::oci_common::credentials::{
 use crate::oci_common::environment::{
     DEFAULT_LITELLM_VERSION, OciEnvironment, validate_oci_environment,
 };
+use crate::oci_common::schema::refs::resolve_oci_schema_refs;
 use crate::oci_common::schema::{
     OCI_JSON_TO_PYTHON_TYPES, enrich_cohere_description, resolve_oci_schema_anyof,
-    resolve_oci_schema_refs, sanitize_oci_schema,
+    sanitize_oci_schema,
 };
 use crate::oci_common::signing::sign_oci_request;
 use crate::oci_common::{Clock, OciError, OciServingMode};
