@@ -272,11 +272,6 @@ fn standard_metadata_keeps_a_recorded_requester_metadata_value() {
     Some("anthropic"),
     None
 )]
-#[case::metadata_fallback(
-    r#"{"metadata": {"used_client_oauth_token": true}}"#,
-    Some("anthropic"),
-    Some(true)
-)]
 #[case::nothing_recorded("{}", None, None)]
 fn oauth_resolution_reads_litellm_metadata_first(
     #[case] encoded: &str,
@@ -289,6 +284,17 @@ fn oauth_resolution_reads_litellm_metadata_first(
     request.custom_llm_provider = provider;
     let record = get_standard_logging_metadata(&request).expect("record");
     assert_eq!(record.used_client_oauth_token, expected);
+}
+
+#[test]
+fn oauth_resolution_falls_back_to_the_metadata_argument() {
+    let metadata = metadata(r#"{"used_client_oauth_token": true}"#);
+    let params = params("{}");
+    let mut request = metadata_request(Some(&metadata));
+    request.params = Some(&params);
+    request.custom_llm_provider = Some("anthropic");
+    let record = get_standard_logging_metadata(&request).expect("record");
+    assert_eq!(record.used_client_oauth_token, Some(true));
 }
 
 #[test]
