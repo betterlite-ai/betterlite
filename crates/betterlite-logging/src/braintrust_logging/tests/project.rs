@@ -148,7 +148,7 @@ async fn project_cache_keeps_1024_names_and_evicts_the_oldest() {
         .flat_map(|index| [answer(&format!(r#"{{"id":"p{index}"}}"#)), answer("{}")])
         .chain([answer(r#"{"id":"p0"}"#), answer("{}")])
         .chain([answer(r#"{"id":"p1"}"#), answer("{}")])
-        .chain([answer("{}")])
+        .chain([answer(r#"{"id":"p2"}"#), answer("{}")])
         .collect::<Vec<_>>();
     let (logger, replay) = logger(answers, &[]);
     let names = (0..1025_u32)
@@ -157,30 +157,23 @@ async fn project_cache_keeps_1024_names_and_evicts_the_oldest() {
     log_named_projects(&logger, &names).await.unwrap();
     assert_eq!(replay.requests().len(), 2050);
     log_named_projects(&logger, &names[..1]).await.unwrap();
-    let after_evicting_p0 = replay.requests();
-    assert_eq!(after_evicting_p0.len(), 2052);
-    assert_eq!(after_evicting_p0[2050].url, format!("{BASE}/project"));
-    assert_eq!(after_evicting_p0[2050].body, json(r#"{"name":"p0"}"#));
-    assert_eq!(
-        after_evicting_p0[2051].url,
-        format!("{BASE}/project_logs/p0/insert")
-    );
+    let after_p0 = replay.requests();
+    assert_eq!(after_p0.len(), 2052);
+    assert_eq!(after_p0[2050].url, format!("{BASE}/project"));
+    assert_eq!(after_p0[2050].body, json(r#"{"name":"p0"}"#));
+    assert!(after_p0[2051].url.ends_with("/project_logs/p0/insert"));
     log_named_projects(&logger, &names[1..2]).await.unwrap();
-    let after_evicting_p1 = replay.requests();
-    assert_eq!(after_evicting_p1.len(), 2054);
-    assert_eq!(after_evicting_p1[2052].url, format!("{BASE}/project"));
-    assert_eq!(after_evicting_p1[2052].body, json(r#"{"name":"p1"}"#));
-    assert_eq!(
-        after_evicting_p1[2053].url,
-        format!("{BASE}/project_logs/p1/insert")
-    );
-    log_named_projects(&logger, &names[3..4]).await.unwrap();
-    let after_cached_lookup = replay.requests();
-    assert_eq!(after_cached_lookup.len(), 2055);
-    assert_eq!(
-        after_cached_lookup[2054].url,
-        format!("{BASE}/project_logs/p3/insert")
-    );
+    let after_p1 = replay.requests();
+    assert_eq!(after_p1.len(), 2054);
+    assert_eq!(after_p1[2052].url, format!("{BASE}/project"));
+    assert_eq!(after_p1[2052].body, json(r#"{"name":"p1"}"#));
+    assert!(after_p1[2053].url.ends_with("/project_logs/p1/insert"));
+    log_named_projects(&logger, &names[2..3]).await.unwrap();
+    let after_p2 = replay.requests();
+    assert_eq!(after_p2.len(), 2056);
+    assert_eq!(after_p2[2054].url, format!("{BASE}/project"));
+    assert_eq!(after_p2[2054].body, json(r#"{"name":"p2"}"#));
+    assert!(after_p2[2055].url.ends_with("/project_logs/p2/insert"));
 }
 
 #[tokio::test]

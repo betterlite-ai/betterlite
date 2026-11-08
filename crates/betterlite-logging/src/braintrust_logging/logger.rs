@@ -190,7 +190,7 @@ impl<D: Delivery> BraintrustLogger<D> {
             if projects.names.insert(name.to_owned(), id.clone()).is_none() {
                 projects.order.push_back(name.to_owned());
             }
-            if projects.names.len() > MAX_PROJECT_NAMES {
+            while projects.names.len() > MAX_PROJECT_NAMES {
                 let oldest = projects.order.pop_front().unwrap_or_default();
                 projects.names.remove(&oldest);
             }
@@ -208,9 +208,7 @@ impl<D: Delivery> BraintrustLogger<D> {
     async fn create_default_project(&self) -> Result<String, BraintrustError<D::Error>> {
         let url = self.endpoint(&["project"])?;
         let id = self.request_project(url, DEFAULT_PROJECT_NAME).await?;
-        self.with_projects(|projects| {
-            projects.default_id = Some(id.clone());
-        })?;
+        self.with_projects(|projects| projects.default_id = Some(id.clone()))?;
         Ok(id)
     }
 
@@ -222,12 +220,13 @@ impl<D: Delivery> BraintrustLogger<D> {
         let response = self.send(url, &ProjectRequest { name }).await?;
         let parsed =
             serde_json::from_slice::<Json>(&response).map_err(BraintrustError::Response)?;
-        if let Json::Object(fields) = &parsed
-            && let Some(Json::Text(id)) = fields.get("id")
-        {
-            return Ok(id.clone());
-        }
-        Err(BraintrustError::ProjectField { field: "id" })
+        let Json::Object(fields) = &parsed else {
+            return Err(BraintrustError::ProjectField { field: "id" });
+        };
+        let Some(Json::Text(id)) = fields.get("id") else {
+            return Err(BraintrustError::ProjectField { field: "id" });
+        };
+        Ok(id.clone())
     }
 
     fn with_projects<R, F>(&self, change: F) -> Result<R, BraintrustError<D::Error>>
