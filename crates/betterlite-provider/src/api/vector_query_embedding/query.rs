@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
+use betterlite_openai::embedding::{EmbeddingRecord, EmbeddingVector};
 
 use crate::api::vector_store_contracts::config::{
     Params, PreparedRequest, SearchQuery, SearchRequest, VectorStoreConfig,
@@ -78,25 +79,15 @@ pub fn embedding_configuration(entries: Vec<(Json, Json)>) -> Result<Params, Que
 }
 
 // LiteLLM validates only the first record's vector with TypeAdapter(list[float]), after the call
-pub fn first_embedding_vector(records: &[Json]) -> Result<Vec<f64>, QueryEmbeddingError> {
+pub fn first_embedding_vector(
+    records: &[EmbeddingRecord],
+) -> Result<Vec<f64>, QueryEmbeddingError> {
     let first = records.first().ok_or(QueryEmbeddingError::NoFirstRecord)?;
-    let Json::Object(record) = first else {
-        return Err(QueryEmbeddingError::NoEmbedding);
-    };
-    let Some(embedding) = record.get("embedding") else {
-        return Err(QueryEmbeddingError::NoEmbedding);
-    };
-    let Json::List(values) = embedding else {
+    let EmbeddingVector::Floats(numbers) = &first.embedding else {
         return Err(QueryEmbeddingError::NotAVector);
     };
-    let mut vector = Vec::with_capacity(values.len());
-    for value in values {
-        let number = match value {
-            Json::Number(number) => number.as_f64(),
-            Json::Text(text) => text.parse::<f64>().ok(),
-            Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_) => None,
-        };
-        vector.push(number.ok_or(QueryEmbeddingError::NotAVector)?);
-    }
-    Ok(vector)
+    numbers
+        .iter()
+        .map(|number| number.as_f64().ok_or(QueryEmbeddingError::NotAVector))
+        .collect()
 }

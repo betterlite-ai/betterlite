@@ -11,7 +11,7 @@ use betterlite_models::catalog::BundledCatalog;
 use betterlite_openai::chat::MockSettings;
 use betterlite_openai::chat::deployment::OpenAiDefaults;
 use betterlite_openai::chat::execution::ChatExecutor;
-use betterlite_openai::embedding::EmbeddingResponse;
+use betterlite_openai::embedding::{EmbeddingError, EmbeddingResponse};
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_provider::api::vector_query_embedding::error::QueryEmbeddingError;
 use betterlite_provider::api::vector_store_contracts::config::{
@@ -22,6 +22,7 @@ use betterlite_provider::api::vector_store_contracts::error::{
 };
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
+use rstest::rstest;
 use uuid::Uuid;
 
 use crate::api::vector_store_contracts::executor::DirectEmbeddingExecutor;
@@ -32,10 +33,6 @@ use super::query::{SelectedExecutor, embed_query, query_embedding_executor};
 
 const TWO_RECORDS: &str = r#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.25,0.5]},{"object":"embedding","index":1,"embedding":[9,9]}],"model":"text-embedding-3-small","usage":{"prompt_tokens":1,"total_tokens":1}}"#;
 const NO_RECORDS: &str = r#"{"object":"list","data":[],"model":"text-embedding-3-small","usage":{"prompt_tokens":1,"total_tokens":1}}"#;
-
-fn answer(text: &str) -> EmbeddingResponse {
-    serde_json::from_str(text).expect("embedding response")
-}
 
 fn params(text: &str) -> Params {
     serde_json::from_str(text).expect("params")
@@ -65,8 +62,8 @@ fn direct_executor() -> DirectEmbeddingExecutor {
     }
 }
 
-// an executor that answers with its response, or fails when it holds none
-struct ScriptedExecutor(Option<EmbeddingResponse>);
+// an executor that decodes its body as the real one does, or fails when it holds none
+struct ScriptedExecutor(Option<String>);
 
 #[async_trait]
 impl VectorStoreEmbeddingExecutor for ScriptedExecutor {
@@ -77,11 +74,15 @@ impl VectorStoreEmbeddingExecutor for ScriptedExecutor {
         _query: &str,
         _configuration: &Params,
     ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
-        self.0
-            .clone()
-            .ok_or_else(|| VectorStoreEmbeddingError::DuplicateArgument {
-                name: "input".to_owned(),
-            })
+        let body =
+            self.0
+                .as_deref()
+                .ok_or_else(|| VectorStoreEmbeddingError::DuplicateArgument {
+                    name: "input".to_owned(),
+                })?;
+        serde_json::from_str(body).map_err(|source| VectorStoreEmbeddingError::Embedding {
+            source: EmbeddingError::Decode { source },
+        })
     }
 }
 
@@ -115,7 +116,7 @@ impl VectorStoreRouter for FakeRouter {
 
 #[test]
 fn executor_precedence_prefers_explicit_then_router_then_direct() {
-    let explicit = ScriptedExecutor(Some(answer(TWO_RECORDS)));
+    let explicit = ScriptedExecutor(Some(TWO_RECORDS.to_owned()));
     let metadata = params(r#"{"team": "a"}"#);
     assert!(matches!(
         query_embedding_executor(
@@ -143,7 +144,7 @@ fn executor_precedence_prefers_explicit_then_router_then_direct() {
 
 #[tokio::test]
 async fn embed_query_returns_the_first_vector() {
-    let executor = ScriptedExecutor(Some(answer(TWO_RECORDS)));
+    let executor = ScriptedExecutor(Some(TWO_RECORDS.to_owned()));
     let litellm_params = params(
         r#"{"litellm_embedding_model": "openai/text-embedding-3-small", "litellm_embedding_config": {"dimensions": 2}}"#,
     );
@@ -181,7 +182,7 @@ async fn embed_query_wraps_only_the_executor_failure() {
         QueryEmbeddingError::MissingModel
         | QueryEmbeddingError::ConfigKey
         | QueryEmbeddingError::NoFirstRecord
-        | QueryEmbeddingError::NoEmbedding
+        | QueryEmbeddingError::Answer { .. }
         | QueryEmbeddingError::NotAVector => panic!("unexpected error category"),
     }
     let missing = embed_query(
@@ -198,7 +199,7 @@ async fn embed_query_wraps_only_the_executor_failure() {
 
 #[tokio::test]
 async fn embed_query_validates_the_answer_after_the_call() {
-    let empty = ScriptedExecutor(Some(answer(NO_RECORDS)));
+    let empty = ScriptedExecutor(Some(NO_RECORDS.to_owned()));
     let litellm_params = params(r#"{"litellm_embedding_model": "openai/text-embedding-3-small"}"#);
     let error = embed_query(
         EmbeddingEntry::Embedding,
@@ -210,4 +211,44 @@ async fn embed_query_validates_the_answer_after_the_call() {
     .await
     .expect_err("no record");
     assert!(matches!(error, QueryEmbeddingError::NoFirstRecord));
+}
+
+// the pinned vector validation runs after the call, so a body shape the typed record refuses is no execution failure
+#[rstest]
+#[case::nonnumeric_text(r#"[{"object":"embedding","index":0,"embedding":["bad"]}]"#)]
+#[case::numeric_text(r#"[{"object":"embedding","index":0,"embedding":["0.5","1"]}]"#)]
+#[case::no_embedding("[{}]")]
+#[case::no_index(r#"[{"object":"embedding","embedding":[0.5]}]"#)]
+#[tokio::test]
+async fn embed_query_does_not_wrap_a_refused_body_shape(#[case] data: &str) {
+    let body = format!(
+        r#"{{"object":"list","data":{data},"model":"m","usage":{{"prompt_tokens":1,"total_tokens":1}}}}"#
+    );
+    let litellm_params = params(r#"{"litellm_embedding_model": "openai/text-embedding-3-small"}"#);
+    let error = embed_query(
+        EmbeddingEntry::Embedding,
+        "a b",
+        &litellm_params,
+        Some(&ScriptedExecutor(Some(body))),
+        direct_executor(),
+    )
+    .await
+    .expect_err("refused body");
+    assert!(matches!(error, QueryEmbeddingError::Answer { .. }));
+    assert!(!error.to_string().starts_with("Failed to generate"));
+}
+
+#[tokio::test]
+async fn embed_query_wraps_a_body_that_is_not_json() {
+    let litellm_params = params(r#"{"litellm_embedding_model": "openai/text-embedding-3-small"}"#);
+    let error = embed_query(
+        EmbeddingEntry::Embedding,
+        "a b",
+        &litellm_params,
+        Some(&ScriptedExecutor(Some("<html>".to_owned()))),
+        direct_executor(),
+    )
+    .await
+    .expect_err("not json");
+    assert!(matches!(error, QueryEmbeddingError::Execution { .. }));
 }

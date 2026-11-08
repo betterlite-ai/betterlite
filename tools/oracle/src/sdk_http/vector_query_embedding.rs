@@ -123,8 +123,7 @@ fn failure(error: &QueryEmbeddingError) -> SdkResult {
     let class = match error {
         QueryEmbeddingError::MissingModel | QueryEmbeddingError::ConfigKey => "ValueError",
         QueryEmbeddingError::NoFirstRecord => "IndexError",
-        QueryEmbeddingError::NoEmbedding => "KeyError",
-        QueryEmbeddingError::NotAVector => "ValidationError",
+        QueryEmbeddingError::NotAVector | QueryEmbeddingError::Answer { .. } => "ValidationError",
         QueryEmbeddingError::Execution { .. } => "Exception",
     };
     SdkResult::Failure(Failure {

@@ -7,7 +7,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::{
     VectorStoreCreateResponse, VectorStoreSearchResponse,
 };
-use betterlite_openai::embedding::EmbeddingResponse;
+use betterlite_openai::embedding::{EmbeddingRecord, EmbeddingResponse};
 use rstest::rstest;
 use serde_json::Number;
 use thiserror::Error;
@@ -44,7 +44,7 @@ fn params(text: &str) -> Params {
     serde_json::from_str(text).expect("params")
 }
 
-fn records(text: &str) -> Vec<Json> {
+fn records(text: &str) -> Vec<EmbeddingRecord> {
     serde_json::from_str(text).expect("records")
 }
 
@@ -158,11 +158,10 @@ fn embedding_configuration_writes_an_integer_key_as_decimal() {
 
 #[rstest]
 #[case::first_of_two(
-    r#"[{"embedding": [0.25, 0.5]}, {"embedding": [9, 9]}]"#,
+    r#"[{"object": "embedding", "index": 0, "embedding": [0.25, 0.5]}, {"object": "embedding", "index": 1, "embedding": [9, 9]}]"#,
     vec![0.25_f64, 0.5_f64]
 )]
-#[case::empty_vector(r#"[{"embedding": []}]"#, vec![])]
-#[case::numeric_text(r#"[{"embedding": ["0.5", "1"]}]"#, vec![0.5_f64, 1.0_f64])]
+#[case::empty_vector(r#"[{"object": "embedding", "index": 0, "embedding": []}]"#, vec![])]
 fn first_embedding_vector_reads_only_the_first_record(
     #[case] data: &str,
     #[case] expected: Vec<f64>,
@@ -171,21 +170,15 @@ fn first_embedding_vector_reads_only_the_first_record(
 }
 
 #[rstest]
-#[case::no_data("[]", 0_u8)]
-#[case::no_embedding("[{}]", 1_u8)]
-#[case::not_a_list(r#"[{"embedding": "abc"}]"#, 2_u8)]
-#[case::not_a_number(r#"[{"embedding": ["bad"]}]"#, 2_u8)]
-fn first_embedding_vector_refuses_a_bad_record(#[case] data: &str, #[case] expected: u8) {
+#[case::no_data("[]", true)]
+#[case::base64_text(r#"[{"object": "embedding", "index": 0, "embedding": "abc"}]"#, false)]
+fn first_embedding_vector_refuses_a_bad_record(#[case] data: &str, #[case] no_record: bool) {
     let error = first_embedding_vector(&records(data)).unwrap_err();
-    let kind = match error {
-        QueryEmbeddingError::NoFirstRecord => 0,
-        QueryEmbeddingError::NoEmbedding => 1,
-        QueryEmbeddingError::NotAVector => 2,
-        QueryEmbeddingError::MissingModel
-        | QueryEmbeddingError::ConfigKey
-        | QueryEmbeddingError::Execution { .. } => 3,
-    };
-    assert_eq!(kind, expected);
+    assert_eq!(
+        matches!(error, QueryEmbeddingError::NoFirstRecord),
+        no_record
+    );
+    assert!(no_record || matches!(error, QueryEmbeddingError::NotAVector));
 }
 
 #[test]

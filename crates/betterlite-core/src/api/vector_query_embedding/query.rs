@@ -1,5 +1,4 @@
-use betterlite_models::decisions::Json;
-use betterlite_openai::embedding::{EmbeddingResponse, EmbeddingVector};
+use betterlite_openai::embedding::EmbeddingError;
 use betterlite_provider::api::vector_query_embedding::error::QueryEmbeddingError;
 use betterlite_provider::api::vector_query_embedding::query::{
     first_embedding_vector, query_embedding_configuration, query_embedding_model,
@@ -7,7 +6,8 @@ use betterlite_provider::api::vector_query_embedding::query::{
 use betterlite_provider::api::vector_store_contracts::config::{
     EmbeddingEntry, Params, VectorStoreEmbeddingExecutor,
 };
-use indexmap::IndexMap;
+use betterlite_provider::api::vector_store_contracts::error::VectorStoreEmbeddingError;
+use serde_json::error::Category;
 
 use crate::api::vector_store_contracts::executor::DirectEmbeddingExecutor;
 use crate::api::vector_store_contracts::router::{RouterEmbeddingExecutor, VectorStoreRouter};
@@ -60,30 +60,18 @@ pub async fn embed_query(
         Some(explicit) => explicit,
         None => &direct,
     };
-    let response = selected
+    let response = match selected
         .embed(entry, model, query_text, &configuration)
         .await
-        .map_err(|source| QueryEmbeddingError::Execution { source })?;
-    first_embedding_vector(&embedding_records(&response))
-}
-
-// LiteLLM's data list is untyped, so the typed records go back to the shape its validation reads
-fn embedding_records(response: &EmbeddingResponse) -> Vec<Json> {
-    let mut records = Vec::with_capacity(response.data.len());
-    for record in &response.data {
-        let embedding = match &record.embedding {
-            EmbeddingVector::Base64(text) => Json::Text(text.clone()),
-            EmbeddingVector::Floats(numbers) => Json::List(
-                numbers
-                    .iter()
-                    .map(|number| Json::Number(number.clone()))
-                    .collect(),
-            ),
-        };
-        records.push(Json::Object(IndexMap::from([(
-            "embedding".to_owned(),
-            embedding,
-        )])));
-    }
-    records
+    {
+        Ok(response) => response,
+        // the decoded record is typed, so a body whose shape it refuses is LiteLLM's vector validation failing after the call
+        Err(VectorStoreEmbeddingError::Embedding {
+            source: EmbeddingError::Decode { source },
+        }) if source.classify() == Category::Data => {
+            return Err(QueryEmbeddingError::Answer { source });
+        }
+        Err(source) => return Err(QueryEmbeddingError::Execution { source }),
+    };
+    first_embedding_vector(&response.data)
 }

@@ -13,8 +13,11 @@ pub enum QueryEmbeddingError {
     ConfigKey,
     #[error("the embedding answer has no first record")]
     NoFirstRecord,
-    #[error("the first embedding record has no embedding")]
-    NoEmbedding,
+    #[error("the provider answer does not fit an embeddings response: {source}")]
+    Answer {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("the first embedding is not a list of numbers")]
     NotAVector,
     #[error("Failed to generate embedding for query: {source}")]

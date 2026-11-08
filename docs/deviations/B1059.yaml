@@ -1,0 +1,14 @@
+task: B1059
+deviations:
+  - what: >-
+      An embeddings answer whose data record the typed EmbeddingRecord refuses is a ValidationError
+      outside the "Failed to generate embedding for query: " wrap, for every refused shape. A numeric
+      string vector such as ["0.5","1"] and a record without object or index therefore fail, where
+      LiteLLM returns their vector.
+    why: >-
+      LiteLLM keeps response.data untyped and validates only data[0]["embedding"] after the try block.
+      betterlite decodes the body into the typed EmbeddingResponse inside the B1058 executor, and
+      EmbeddingRecord requires object, embedding and index and takes only a text or a list of numbers.
+      Both live in betterlite-openai, outside this task, so embed_query can classify the refusal
+      (a body-shape failure is not an execution failure) but cannot read the record the body held.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/vector_store/transformation.py#L343
