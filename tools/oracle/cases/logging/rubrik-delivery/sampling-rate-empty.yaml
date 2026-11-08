@@ -1,0 +1,10 @@
+kind: helper
+name: rubrik-delivery-sampling-rate-empty
+call:
+  b3976:
+    environment: {RUBRIK_SAMPLING_RATE: ""}
+    init: {api_base: "https://rubrik.test", api_key: test-key}
+    replies: []
+    actions: []
+env: {}
+compare: {ignore: []}

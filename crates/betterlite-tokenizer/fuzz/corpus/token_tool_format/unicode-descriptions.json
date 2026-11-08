@@ -1,0 +1,1 @@
+[{"type":"function","function":{"name":"grüße","description":"Sagt \"Hallo\" — 世界","parameters":{"type":"object","properties":{"ort":{"type":"string","description":"Stadt oder Region"}}}}}]

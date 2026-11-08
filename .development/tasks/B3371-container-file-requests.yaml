@@ -16,7 +16,7 @@ description: >-
   assert_user_can_access_container and get_container_forwarding_params, written in this module. (2) A RequestProcessing trait
   with process(data, route_type, caller) and handle_exception(error, caller, data). The production implementation is B004's common
   request processing and its exception handling (LiteLLM's ProxyBaseLLMRequestProcessing.base_process_llm_request and
-  _handle_llm_api_exception). B3372 supplies it at wiring time, so this task only declares the trait and tests against a fake.
+  _handle_llm_api_exception). B8635 supplies it at wiring time (ContainerRequests), so this task only declares the trait and tests against a fake.
   (3) A ProviderHints value taken from B2400's accessors, already read from the request: the custom-llm-provider header and the
   custom_llm_provider query value, both Option<String>. The functions never read the JSON body, so B2400's body accessor is not used.
 
@@ -157,7 +157,7 @@ out_of_scope:
   - "_load_endpoints_config, get_all_route_types, _create_handler_for_path_params, _declared_query_params, _process_request and register_container_file_endpoints in handler_factory.py: B3372 owns them, with route registration under /v1/containers... and /containers..., the JSON request processor and the HTTP oracle cases for the content and upload routes."
   - "_get_container_provider_config in handler_factory.py has no caller at the pin (grep for it finds only its definition): B3372 lists it as out of scope with that reason."
   - "assert_user_can_access_container and get_container_forwarding_params: B3362 owns them; this task adapts them behind ContainerAccess."
-  - "ProxyBaseLLMRequestProcessing.base_process_llm_request and _handle_llm_api_exception: B004 owns them."
+  - "common_processing_pre_call_logic: B8801 (take `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state constructor; the part that mounts these routes passes B8802's pre_call_step(state)). ProxyBaseLLMRequestProcessing.base_process_llm_request and _handle_llm_api_exception: B004 owns them."
   - "get_form_data and convert_upload_files_to_file_data: B1101 owns them. The provider accessors: B2400."
   - "The generated container file operations that the route type finally reaches (acontainer_file_call): B3368 owns them."
 

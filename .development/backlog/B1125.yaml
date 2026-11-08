@@ -2,7 +2,7 @@ id: B1125
 milestone: M5 API families
 title: Realtime WebSocket route
 status: todo
-depends_on: [B003, B004, B012, B014, B756, B856, B886, B901, B1004, B1011, B1139, B2400, B3003, B8389]
+depends_on: [B003, B004, B012, B014, B756, B856, B886, B901, B1004, B1011, B1139, B2400, B3003, B8389, B8801]
 file: tasks/B1125-realtime-websocket-route.yaml
 covers:
   - "litellm/proxy/proxy_server.py"

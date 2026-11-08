@@ -4,7 +4,7 @@ description: >-
   A few small proxy_server.py pieces that route and error handler tasks call: the read-only general settings view,
   the close of a server span left open by an error answer, the model access denial log, and the two settings routes
   the admin UI reads to build its model add and alerting pages. Build crates/betterlite-server/src/admin_settings_views.rs
-  (declared by the skeleton) with `pub fn routes()` like the sibling route modules; the architect's skeleton mounts
+  (declared by the skeleton) with `pub fn routes()` like the sibling route modules; B8675 mounts
   it. Error enum AdminSettingsError.
 
   `general_settings_view(state)` returns a read-only snapshot of the resolved general settings from B8380's store (the
@@ -32,13 +32,12 @@ description: >-
   parent mapping has the field, else the unset source (default when a default exists, otherwise unset) when the file
   owns the parent, else db when the row has the field, else the unset source.
 
-  Tests cover each helper and both routes. HTTP oracle cases under tools/oracle/cases/admin-settings/ cover
+  Tests cover each helper and both routes. HTTP oracle cases (B8675 writes and runs them, not this task) under tools/oracle/cases/admin-settings/ cover
   /model/settings with the master key, both routes without a key, and /alerting/settings without a database.
 scope:
   paths:
     - crates/betterlite-server/src/admin_settings_views.rs
     - crates/betterlite-server/src/admin_settings_views/**
-    - tools/oracle/cases/admin-settings/**
     - tools/oracle/helpers/b8389.py
     - tools/oracle/helpers/b8389/**
     - tools/oracle/src/helpers/server/b8389.rs
@@ -54,24 +53,25 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5263-L5266
     why: _get_field_default, used only by /alerting/settings.
 dod:
+  - text: "The handlers are tested with tower's oneshot over the module's own Router and fake ports; B8675 runs the HTTP oracle cases through the booted proxy."
+    proof: [route-oneshot]
   - text: The span close follows LiteLLM's V1 and V2 branches and never fails the error answer; the denial log fires only for model access denials.
     proof: [admin-views-tests]
-  - text: /model/settings lists every provider with its fields in LiteLLM's order.
-    proof: [admin-views-tests, oracle]
-  - text: /alerting/settings refuses without a database or admin view and lists slack_alerting then the allowed alerting args with value, source, stored flag and default.
-    proof: [admin-views-tests, oracle]
+  - text: /model/settings lists every provider with its fields in LiteLLM's order. B8675 proves it over HTTP.
+    proof: [admin-views-tests]
+  - text: /alerting/settings refuses without a database or admin view and lists slack_alerting then the allowed alerting args with value, source, stored flag and default. B8675 proves it over HTTP.
+    proof: [admin-views-tests]
 checks:
   optional: [mutants]
   commands:
+    - id: route-oneshot
+      why: the handlers are not tested with tower's oneshot over the module's own Router and fake ports
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^admin_settings_views::tests::oneshot_/)'
     - id: admin-views-tests
       why: A settings view, the span close, the denial log or a settings route differs from LiteLLM
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^admin_settings_views::/)'
-oracle_cases:
-  - tools/oracle/cases/admin-settings/model-settings.yaml
-  - tools/oracle/cases/admin-settings/model-settings-no-key.yaml
-  - tools/oracle/cases/admin-settings/alerting-settings-no-database.yaml
-  - tools/oracle/cases/admin-settings/alerting-settings-no-key.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - "The exception handlers that call close_error_span and log_model_access_denial, and the admin-view role predicate, belong to their own proxy_server.py tasks."

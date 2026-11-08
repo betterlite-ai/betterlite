@@ -62,7 +62,7 @@ description: >-
   cache_key, api_base, plus response_cost (no default) and the request data. 11. Not streaming: copy those
   headers onto the response and return it as JSON. 12. Streaming: wrap the call in B004's
   `open_sse_before_first_byte` with `ttft_keepalive_interval(data, router)` as the ping interval. Inside it,
-  await `aquery`, then answer with a text/event-stream body made by the shared `select_data_generator` over
+  await `aquery`, then answer with a text/event-stream body made by the shared `select_data_generator` (built with B8632's `app::inference::stream_generator(state, cleanup)`; the router calls come from B8631's `app::inference::router_calls(state)`) over
   the response, with the same custom headers. The query call runs inside the wrapper, so an upstream error
   still reaches the error handler below.
 
