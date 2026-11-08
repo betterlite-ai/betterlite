@@ -1,0 +1,14 @@
+kind: helper
+name: arn-model-path-encoding
+call:
+  bedrock_aws_endpoints:
+    model_id_encoding:
+      model_ids:
+        - ''
+        - 'arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude'
+        - 'ABCxyz019_.-~'
+        - 'a b+c'
+        - '%3A'
+        - 'modèle'
+env: {}
+compare: {ignore: []}

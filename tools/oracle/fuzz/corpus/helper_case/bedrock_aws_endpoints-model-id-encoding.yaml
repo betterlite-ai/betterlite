@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-aws-endpoints-model-id-encoding-seed
+call:
+  bedrock_aws_endpoints:
+    model_id_encoding:
+      model_ids: ['arn:aws:bedrock:us-east-1:1:model/x', '%3A']
+env: {}
+compare: {ignore: []}

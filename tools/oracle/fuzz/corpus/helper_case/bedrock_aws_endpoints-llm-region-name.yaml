@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-aws-endpoints-llm-region-name-seed
+call:
+  bedrock_aws_endpoints:
+    llm_region_name:
+      cases:
+        - optional_params: {aws_region_name: us-east-1}
+        - optional_params: {}
+          environment: {AWS_REGION_NAME: eu-west-1}
+env: {}
+compare: {ignore: []}

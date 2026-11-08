@@ -1,0 +1,31 @@
+kind: helper
+name: llm-region-precedence
+call:
+  bedrock_aws_endpoints:
+    llm_region_name:
+      cases:
+        - optional_params: {}
+          model: 'arn:aws:bedrock:us-east-1:1:model/anthropic.claude'
+          model_id: model-1
+          environment: {AWS_REGION_NAME: ap-south-1}
+        - optional_params: {}
+          model: 'arn:aws:bedrock:us-east-1:1:model/anthropic.claude'
+          environment: {AWS_REGION_NAME: ap-south-1, AWS_REGION: ap-northeast-1}
+        - optional_params: {}
+          environment: {AWS_REGION_NAME: ap-south-1, AWS_REGION: ap-northeast-1}
+        - optional_params: {}
+          environment: {AWS_REGION: ap-northeast-1}
+        - optional_params: {}
+          environment: {AWS_REGION_NAME: ''}
+        - optional_params: {}
+          environment: {AWS_REGION: ''}
+        - optional_params: {}
+          session: {region_name: us-west-1}
+        - optional_params: {}
+          session: {region_name: ''}
+        - optional_params: {aws_region_name: us-east-1}
+          environment: {AWS_REGION_NAME: ''}
+        - optional_params: {aws_region_name: ''}
+          environment: {}
+env: {}
+compare: {ignore: []}

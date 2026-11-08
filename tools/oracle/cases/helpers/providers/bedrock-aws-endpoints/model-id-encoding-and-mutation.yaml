@@ -1,0 +1,62 @@
+kind: helper
+name: model-id-encoding-and-mutation
+call:
+  bedrock_aws_endpoints:
+    bedrock_model_id:
+      cases:
+        - optional_params: {}
+          provider: anthropic
+          model: anthropic.claude-3
+        - optional_params: {}
+          provider: null
+          model: llama/v2/foo
+        - optional_params: {}
+          provider: llama
+          model: llama/v2/foo
+        - optional_params: {}
+          provider: deepseek_r1
+          model: deepseek_r1/model
+        - optional_params: {}
+          provider: openai
+          model: openai.gpt-oss
+        - optional_params: {}
+          provider: qwen2
+          model: qwen2/instruct
+        - optional_params: {}
+          provider: qwen3
+          model: qwen3/coder
+        - optional_params: {}
+          provider: stability
+          model: stability/sdxl
+        - optional_params: {}
+          provider: moonshot
+          model: moonshot/kimi
+        - optional_params: {}
+          provider: null
+          model: nova-2/custom
+        - optional_params: {}
+          provider: null
+          model: nova/custom
+        - optional_params: {}
+          provider: null
+          model: bedrock/converse/nova-2/custom
+        - optional_params: {}
+          provider: llama
+          model: custom/invoke/llama/v2/x
+        - optional_params: {}
+          provider: amazon
+          model: invoke/amazon.titan
+        - optional_params: {model_id: 'arn:aws:bedrock:us-east-1:1:inference-profile/x', keep: 1}
+          provider: null
+          model: ignored
+        - optional_params: {model_id: ''}
+          provider: null
+          model: ignored
+        - optional_params: {model_id: '%3A'}
+          provider: null
+          model: ignored
+        - optional_params: {model_id: null, keep: 1}
+          provider: null
+          model: anthropic.claude-3
+env: {}
+compare: {ignore: []}

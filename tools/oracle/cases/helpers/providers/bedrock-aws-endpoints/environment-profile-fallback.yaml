@@ -1,0 +1,16 @@
+kind: helper
+name: environment-profile-fallback
+call:
+  bedrock_aws_endpoints:
+    llm_region_name:
+      cases:
+        - optional_params: {}
+          session: {region_name: ap-south-1}
+        - optional_params: {}
+          session: {region_name: null}
+        - optional_params: {}
+          session: {error: true}
+        - optional_params: {}
+          session: {}
+env: {}
+compare: {ignore: []}
