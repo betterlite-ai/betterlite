@@ -1,90 +1,123 @@
-use serde::Deserialize;
-use serde_json::value::RawValue;
+use std::ops::Range;
 
 use crate::tools::error::ToolFormatError;
+use crate::tools::json::{self, Field, Scanner};
 use crate::tools::schema::{self, SchemaNode};
 
-#[derive(Debug, Deserialize)]
-pub(super) struct Function<'raw> {
-    #[serde(default)]
-    name: Option<String>,
-    #[serde(default)]
-    description: Option<String>,
-    #[serde(borrow, default)]
-    parameters: Option<&'raw RawValue>,
+#[derive(Debug, Default)]
+pub(super) struct Tool {
+    function: Option<Function>,
+    declarations: Option<Vec<Option<Function>>>,
+    camel_declarations: Option<Vec<Option<Function>>>,
+    input_schema: Option<Field<Box<SchemaNode>>>,
+    parameters: Option<Field<Box<SchemaNode>>>,
+    name: Option<Field<Range<usize>>>,
+    description: Option<Field<Range<usize>>>,
 }
 
-struct Inline<'raw> {
-    name: Option<String>,
-    description: Option<String>,
-    parameters: Option<SchemaNode<'raw>>,
+#[derive(Debug, Default)]
+struct Function {
+    name: Option<Field<Range<usize>>>,
+    description: Option<Field<Range<usize>>>,
+    parameters: Option<Field<Box<SchemaNode>>>,
 }
 
-// step one records each branch field's text; step two parses only the branch LiteLLM takes
-#[derive(Debug, Deserialize)]
-struct ToolFields<'raw> {
-    #[serde(borrow, default)]
-    function: Option<&'raw RawValue>,
-    #[serde(borrow, default)]
-    function_declarations: Option<&'raw RawValue>,
-    #[serde(rename = "functionDeclarations", borrow, default)]
-    camel_declarations: Option<&'raw RawValue>,
-    #[serde(borrow, default)]
-    input_schema: Option<&'raw RawValue>,
-    #[serde(borrow, default)]
-    parameters: Option<&'raw RawValue>,
-    #[serde(borrow, default)]
-    name: Option<&'raw RawValue>,
-    #[serde(borrow, default)]
-    description: Option<&'raw RawValue>,
-}
-
-pub(super) fn format_tool(
-    index: usize,
-    raw: &RawValue,
-    used: usize,
+pub(super) struct Formatter<'json> {
+    source: &'json [u8],
     limit: usize,
-    lines: &mut Vec<String>,
-) -> Result<usize, ToolFormatError> {
-    // LiteLLM skips a tool entry that is not an object
-    if !raw.get().trim_start().starts_with('{') {
-        return Ok(used);
-    }
-    let fields: ToolFields<'_> = serde_json::from_str(raw.get())
-        .map_err(|source| ToolFormatError::Object { index, source })?;
-    if let Some(source) = object_field(fields.function) {
-        let total = charge(used, 1, limit)?;
-        let function = parse_branch(index, "function", source)?;
-        lines.extend(format_function(&function)?);
-        return Ok(total);
-    }
-    let declarations = array_field(fields.function_declarations)
-        .or_else(|| array_field(fields.camel_declarations));
-    if let Some(source) = declarations {
-        let entries: Vec<&RawValue> =
-            serde_json::from_str(source.get()).map_err(|failure| ToolFormatError::Object {
-                index,
-                source: failure,
-            })?;
-        let total = charge(used, entries.len(), limit)?;
-        for entry in entries {
-            // LiteLLM skips a declaration that is not an object
-            if !entry.get().trim_start().starts_with('{') {
-                continue;
-            }
-            let function = parse_branch(index, "functionDeclarations", entry)?;
-            lines.extend(format_function(&function)?);
+    used: usize,
+    pub(super) lines: Vec<String>,
+}
+
+impl<'json> Formatter<'json> {
+    pub(super) const fn new(source: &'json [u8], limit: usize, lines: Vec<String>) -> Self {
+        Self {
+            source,
+            limit,
+            used: 0,
+            lines,
         }
-        return Ok(total);
     }
-    let total = charge(used, 1, limit)?;
-    let inline = inline_function(index, &fields)?;
-    lines.extend(format_definition(
-        inline.name.as_deref(),
-        inline.description.as_deref(),
-        inline.parameters.as_ref(),
-    )?);
-    Ok(total)
+
+    pub(super) fn push_tool(
+        &mut self,
+        index: usize,
+        tool: Option<&Tool>,
+    ) -> Result<(), ToolFormatError> {
+        let Some(selected) = tool else {
+            return Ok(());
+        };
+        self.tool(index, selected)
+    }
+
+    fn tool(&mut self, index: usize, tool: &Tool) -> Result<(), ToolFormatError> {
+        if let Some(function) = &tool.function {
+            self.used = charge(self.used, 1, self.limit)?;
+            let formatted = self.function(index, function)?;
+            self.lines.extend(formatted);
+            return Ok(());
+        }
+        let declarations = tool
+            .declarations
+            .as_ref()
+            .or(tool.camel_declarations.as_ref());
+        if let Some(entries) = declarations {
+            self.used = charge(self.used, entries.len(), self.limit)?;
+            for function in entries.iter().flatten() {
+                let formatted = self.function(index, function)?;
+                self.lines.extend(formatted);
+            }
+            return Ok(());
+        }
+        self.used = charge(self.used, 1, self.limit)?;
+        let formatted = self.inline(index, tool)?;
+        self.lines.extend(formatted);
+        Ok(())
+    }
+
+    fn function(&self, index: usize, function: &Function) -> Result<Vec<String>, ToolFormatError> {
+        let name = text_field(self.source, index, function.name.as_ref(), "name")?;
+        let description = text_field(
+            self.source,
+            index,
+            function.description.as_ref(),
+            "description",
+        )?;
+        let parameters = function
+            .parameters
+            .as_ref()
+            .map(|field| field.value("parameters", "a JSON object"))
+            .transpose()?
+            .map(Box::as_ref);
+        format_definition(self.source, name, description, parameters)
+    }
+
+    fn inline(&self, index: usize, tool: &Tool) -> Result<Vec<String>, ToolFormatError> {
+        let (field, selected) = tool.input_schema.as_ref().map_or_else(
+            || ("parameters", tool.parameters.as_ref()),
+            |schema| ("input_schema", Some(schema)),
+        );
+        let parameters = selected
+            .map(|value| value.value(field, "a JSON object"))
+            .transpose()?
+            .map(Box::as_ref);
+        let name = text_field(self.source, index, tool.name.as_ref(), "name")?;
+        let description = text_field(self.source, index, tool.description.as_ref(), "description")?;
+        format_definition(self.source, name, description, parameters)
+    }
+}
+
+fn text_field(
+    source: &[u8],
+    index: usize,
+    value: Option<&Field<Range<usize>>>,
+    name: &'static str,
+) -> Result<Option<String>, ToolFormatError> {
+    let Some(field) = value else {
+        return Ok(None);
+    };
+    let range = field.shape(index, name)?;
+    json::text(source, range, name).map(Some)
 }
 
 const fn charge(used: usize, count: usize, limit: usize) -> Result<usize, ToolFormatError> {
@@ -98,83 +131,11 @@ const fn charge(used: usize, count: usize, limit: usize) -> Result<usize, ToolFo
     Ok(total)
 }
 
-fn object_field(field: Option<&RawValue>) -> Option<&RawValue> {
-    let raw = field?;
-    if !raw.get().trim_start().starts_with('{') {
-        return None;
-    }
-    Some(raw)
-}
-
-fn array_field(field: Option<&RawValue>) -> Option<&RawValue> {
-    let raw = field?;
-    if !raw.get().trim_start().starts_with('[') {
-        return None;
-    }
-    Some(raw)
-}
-
-fn inline_function<'raw>(
-    index: usize,
-    fields: &ToolFields<'raw>,
-) -> Result<Inline<'raw>, ToolFormatError> {
-    let (field, source) = fields.input_schema.map_or_else(
-        || ("parameters", fields.parameters),
-        |raw| ("input_schema", Some(raw)),
-    );
-    let parameters = source
-        .map(|raw| schema::parse_schema(raw, field))
-        .transpose()?;
-    Ok(Inline {
-        name: text_field(index, fields.name, "name")?,
-        description: text_field(index, fields.description, "description")?,
-        parameters,
-    })
-}
-
-fn text_field(
-    index: usize,
-    value: Option<&RawValue>,
-    field: &'static str,
-) -> Result<Option<String>, ToolFormatError> {
-    let Some(raw) = value else {
-        return Ok(None);
-    };
-    Ok(Some(parse_branch(index, field, raw)?))
-}
-
-fn parse_branch<'de, T>(
-    index: usize,
-    field: &'static str,
-    raw: &'de RawValue,
-) -> Result<T, ToolFormatError>
-where
-    T: Deserialize<'de>,
-{
-    let mut deserializer = serde_json::Deserializer::from_str(raw.get());
-    serde_path_to_error::deserialize(&mut deserializer).map_err(|source| ToolFormatError::Shape {
-        index,
-        field,
-        source,
-    })
-}
-
-fn format_function(function: &Function<'_>) -> Result<Vec<String>, ToolFormatError> {
-    let parameters = function
-        .parameters
-        .map(|raw| schema::parse_schema(raw, "parameters"))
-        .transpose()?;
-    format_definition(
-        function.name.as_deref(),
-        function.description.as_deref(),
-        parameters.as_ref(),
-    )
-}
-
 fn format_definition(
-    function_name: Option<&str>,
-    description: Option<&str>,
-    parameters: Option<&SchemaNode<'_>>,
+    source: &[u8],
+    function_name: Option<String>,
+    description: Option<String>,
+    parameters: Option<&SchemaNode>,
 ) -> Result<Vec<String>, ToolFormatError> {
     // a function with no name has no type declaration to emit, as in LiteLLM
     let Some(name) = function_name.filter(|candidate| !candidate.is_empty()) else {
@@ -184,12 +145,12 @@ fn format_definition(
     if let Some(text) = description {
         lines.push(format!("// {text}"));
     }
-    let Some(node) = parameters else {
-        return Ok(single_parameter_list(lines, name));
+    let Some(parameter_object) = parameters else {
+        return Ok(single_parameter_list(lines, &name));
     };
-    let rendered = schema::object_parameters(node, 0, 0)?;
+    let rendered = schema::object_parameters(source, parameter_object, 0, 0)?;
     if rendered.is_empty() {
-        return Ok(single_parameter_list(lines, name));
+        return Ok(single_parameter_list(lines, &name));
     }
     lines.push(format!("type {name} = (_: {{"));
     lines.push(rendered);
@@ -202,4 +163,157 @@ fn single_parameter_list(mut lines: Vec<String>, name: &str) -> Vec<String> {
     lines.push(format!("type {name} = () => any;"));
     lines.push(String::new());
     lines
+}
+
+pub(super) fn parse_tool(scanner: &mut Scanner<'_>) -> Result<Option<Tool>, ToolFormatError> {
+    if scanner.peek() != Some(b'{') {
+        scanner.skip_value()?;
+        return Ok(None);
+    }
+    let mut tool = Tool::default();
+    scanner.take_byte(b'{')?;
+    if scanner.peek() == Some(b'}') {
+        scanner.take_byte(b'}')?;
+        return Ok(Some(tool));
+    }
+    loop {
+        if scanner.peek() != Some(b'"') {
+            return Err(json::broken());
+        }
+        let key = scanner.parse_string("function")?;
+        scanner.take_byte(b':')?;
+        assign(&mut tool, scanner, &key)?;
+        match scanner.peek() {
+            Some(b',') => scanner.take_byte(b',')?,
+            Some(b'}') => {
+                scanner.take_byte(b'}')?;
+                return Ok(Some(tool));
+            }
+            Some(_) | None => return Err(json::broken()),
+        }
+    }
+}
+
+fn assign(tool: &mut Tool, scanner: &mut Scanner<'_>, key: &str) -> Result<(), ToolFormatError> {
+    match key {
+        "function" => tool.function = parse_function_member(scanner)?,
+        "function_declarations" => tool.declarations = parse_declarations(scanner)?,
+        "functionDeclarations" => tool.camel_declarations = parse_declarations(scanner)?,
+        "input_schema" => tool.input_schema = parse_schema_member(scanner)?,
+        "parameters" => tool.parameters = parse_schema_member(scanner)?,
+        "name" => tool.name = parse_text_member(scanner)?,
+        "description" => tool.description = parse_text_member(scanner)?,
+        _ => {
+            scanner.skip_value()?;
+        }
+    }
+    Ok(())
+}
+
+fn parse_function_member(scanner: &mut Scanner<'_>) -> Result<Option<Function>, ToolFormatError> {
+    if scanner.peek() != Some(b'{') {
+        scanner.skip_value()?;
+        return Ok(None);
+    }
+    parse_function(scanner).map(Some)
+}
+
+fn parse_function(scanner: &mut Scanner<'_>) -> Result<Function, ToolFormatError> {
+    let mut function = Function::default();
+    scanner.take_byte(b'{')?;
+    if scanner.peek() == Some(b'}') {
+        scanner.take_byte(b'}')?;
+        return Ok(function);
+    }
+    loop {
+        if scanner.peek() != Some(b'"') {
+            return Err(json::broken());
+        }
+        let key = scanner.parse_string("function")?;
+        scanner.take_byte(b':')?;
+        match key.as_str() {
+            "name" => function.name = parse_text_member(scanner)?,
+            "description" => function.description = parse_text_member(scanner)?,
+            "parameters" => function.parameters = parse_schema_member(scanner)?,
+            _ => {
+                scanner.skip_value()?;
+            }
+        }
+        match scanner.peek() {
+            Some(b',') => scanner.take_byte(b',')?,
+            Some(b'}') => {
+                scanner.take_byte(b'}')?;
+                return Ok(function);
+            }
+            Some(_) | None => return Err(json::broken()),
+        }
+    }
+}
+
+fn parse_declarations(
+    scanner: &mut Scanner<'_>,
+) -> Result<Option<Vec<Option<Function>>>, ToolFormatError> {
+    if scanner.peek() != Some(b'[') {
+        scanner.skip_value()?;
+        return Ok(None);
+    }
+    let mut entries = Vec::new();
+    scanner.take_byte(b'[')?;
+    if scanner.peek() == Some(b']') {
+        scanner.take_byte(b']')?;
+        return Ok(Some(entries));
+    }
+    loop {
+        if scanner.peek() == Some(b'{') {
+            entries.push(parse_function(scanner).map(Some)?);
+        } else {
+            scanner.skip_value()?;
+            entries.push(None);
+        }
+        match scanner.peek() {
+            Some(b',') => scanner.take_byte(b',')?,
+            Some(b']') => {
+                scanner.take_byte(b']')?;
+                return Ok(Some(entries));
+            }
+            Some(_) | None => return Err(json::broken()),
+        }
+    }
+}
+
+fn parse_schema_member(
+    scanner: &mut Scanner<'_>,
+) -> Result<Option<Field<Box<SchemaNode>>>, ToolFormatError> {
+    match scanner.peek() {
+        Some(b'{') => {
+            let node = schema::parse_node(scanner, 0)?;
+            Ok(Some(Field::Value(Box::new(node))))
+        }
+        Some(b'n') => {
+            scanner.skip_value()?;
+            Ok(None)
+        }
+        Some(byte) => {
+            scanner.skip_value()?;
+            Ok(Some(Field::Wrong(json::kind_name(byte))))
+        }
+        None => Err(json::broken()),
+    }
+}
+
+fn parse_text_member(
+    scanner: &mut Scanner<'_>,
+) -> Result<Option<Field<Range<usize>>>, ToolFormatError> {
+    match scanner.peek() {
+        Some(b'"') => Ok(Some(Field::Value(scanner.skip_value()?))),
+        Some(b'n') => {
+            scanner.skip_value()?;
+            Ok(None)
+        }
+        Some(byte) => {
+            scanner.skip_value()?;
+            Ok(Some(Field::Wrong(json::kind_name(byte))))
+        }
+        None => Err(json::broken()),
+    }
 }

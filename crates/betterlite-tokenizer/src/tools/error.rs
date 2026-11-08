@@ -11,24 +11,18 @@ pub enum ToolFormatError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("tool definition {index} is not a valid JSON object: {source}")]
-    Object {
-        index: usize,
-        #[source]
-        source: serde_json::Error,
-    },
     #[error("tool definition {index} has an unsupported {field} shape: {source}")]
     Shape {
         index: usize,
         field: &'static str,
         #[source]
-        source: serde_path_to_error::Error<serde_json::Error>,
+        source: serde_json::Error,
     },
     #[error("{field} does not match the expected shape: {source}")]
     Nested {
         field: &'static str,
         #[source]
-        source: serde_path_to_error::Error<serde_json::Error>,
+        source: serde_json::Error,
     },
     #[error("the tool schema nests deeper than {limit} levels")]
     TooDeep { limit: usize },

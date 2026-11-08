@@ -1,7 +1,7 @@
 task: B259
 deviations:
-  - what: Tool definitions over 16 MiB, 1024 entries, 1024 functions across the list, or schemas nested deeper than 64 levels are rejected with a typed error before formatting, where LiteLLM formats any size.
-    why: The parser reads an inbound tool list, so it needs bounds; 1024 entries and functions are eight times what OpenAI accepts, 16 MiB is above any request body a gateway forwards, and a 64-level schema is far deeper than any provider accepts.
+  - what: Tool definitions over 16 MiB, 1024 entries, 1024 functions across the list, JSON nested deeper than 127 levels, or schemas nested deeper than 64 levels are rejected with a typed error before formatting, where LiteLLM formats any size. An object schema level costs two JSON levels, so the JSON bound caps object nesting near 61 levels.
+    why: The parser reads an inbound tool list, so it needs bounds; 1024 entries and functions are eight times what OpenAI accepts, 16 MiB is above any request body a gateway forwards, the JSON bound is serde_json's own and keeps a hostile payload off the stack, and a 64-level schema is far deeper than any provider accepts.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L954-L967
   - what: An enum value that is an object or an array is rejected with a typed error naming the enum field, where LiteLLM interpolates Python's str() of the value into the quoted alternative.
     why: Python's dict and list text is not JSON and has no faithful rendering in the typed formatter; scalar enum values (strings, numbers, booleans and nulls) still render as quoted alternatives.
