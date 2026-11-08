@@ -10,6 +10,7 @@ use betterlite_logging::argilla_logging::transport::{
     ArgillaMethod, ArgillaRequest, ArgillaResponse, Transport,
 };
 use betterlite_logging::http_analytics_loggers::delivery::DELIVERY_DEADLINE;
+use betterlite_models::decisions::Json;
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -102,6 +103,7 @@ impl RandomSource for ScriptedRandom {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum HookEffect {
     Identity,
+    Rewrite,
     Filter,
     NotImplemented,
     Failed,
@@ -129,6 +131,13 @@ impl DatasetHook for ScriptedHook {
             .push(item.clone());
         match self.effect {
             HookEffect::Identity => Ok(Some(item)),
+            HookEffect::Rewrite => {
+                let mut rewritten = item;
+                rewritten
+                    .fields
+                    .insert("input".to_owned(), Json::Text("rewritten".to_owned()));
+                Ok(Some(rewritten))
+            }
             HookEffect::Filter => Ok(None),
             HookEffect::NotImplemented => Err(DatasetHookError::NotImplemented),
             HookEffect::Failed => Err(DatasetHookError::Failed),

@@ -16,6 +16,8 @@ from litellm.types.utils import StandardLoggingPayload
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Fields: TypeAlias = dict[str, Json]
+SyncEvent: TypeAlias = Callable[[Fields, object, object, object], None]
+AsyncEvent: TypeAlias = Callable[[Fields, object, object, object], Awaitable[None]]
 
 
 class _Calls:
@@ -106,6 +108,8 @@ class _ScriptedHook(CustomLogger):
     ) -> ArgillaItem | None:
         self.payload_present = standard_logging_payload is not None
         self.seen.append(cast(Json, logged_item))
+        if self.effect == "rewrite":
+            return {"fields": {**logged_item["fields"], "input": "rewritten"}}
         if self.effect == "not_implemented":
             raise NotImplementedError
         if self.effect == "failed":
@@ -163,23 +167,14 @@ def _response_kind(error: Exception) -> str:
 async def _log_event(step: str, action: Fields, logger: ArgillaLogger) -> None:
     kwargs = _kwargs(action)
     if step == "sync_success":
-        log_success = cast(
-            Callable[[Fields, object, object, object], None],
-            logger.log_success_event,
-        )
+        log_success = cast(SyncEvent, logger.log_success_event)
         log_success(kwargs, None, None, None)
         return
     if step == "async_success":
-        log_success_async = cast(
-            Callable[[Fields, object, object, object], Awaitable[None]],
-            logger.async_log_success_event,
-        )
+        log_success_async = cast(AsyncEvent, logger.async_log_success_event)
         await log_success_async(kwargs, None, None, None)
         return
-    log_failure = cast(
-        Callable[[Fields, object, object, object], Awaitable[None]],
-        logger.async_log_failure_event,
-    )
+    log_failure = cast(AsyncEvent, logger.async_log_failure_event)
     await log_failure(kwargs, None, None, None)
 
 

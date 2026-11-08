@@ -155,8 +155,7 @@ impl<T: Transport, R: RandomSource> ArgillaLogger<T, R> {
         if report.cancelled {
             tracing::warn!(
                 batch = report.batch,
-                requeued = report.requeued,
-                "the Argilla flush was cancelled; its records stay queued"
+                "Argilla flush cancelled; records stay queued"
             );
         }
         report

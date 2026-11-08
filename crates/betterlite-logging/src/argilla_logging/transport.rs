@@ -79,10 +79,7 @@ impl Transport for PooledTransport {
             body,
             timeout,
         } = request;
-        let parsed = match Url::parse(&url) {
-            Ok(parsed) => parsed,
-            Err(source) => return Err(HttpError::Url { source }),
-        };
+        let parsed = Url::parse(&url).map_err(|source| HttpError::Url { source })?;
         let mut value = HeaderValue::try_from(api_key.expose_secret())
             .map_err(|source| HttpError::ApiKeyHeader { source })?;
         value.set_sensitive(true);

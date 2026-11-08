@@ -157,6 +157,7 @@ impl RandomSource for ScriptedRandom {
 #[derive(Clone, Copy)]
 pub(crate) enum HookEffect {
     Pass,
+    Rewrite,
     Filter,
     NotImplemented,
     Fail,
@@ -197,6 +198,13 @@ impl DatasetHook for RecordingHook {
             .push(item.clone());
         match self.effect {
             HookEffect::Pass => Ok(Some(item)),
+            HookEffect::Rewrite => {
+                let mut rewritten = item;
+                rewritten
+                    .fields
+                    .insert("input".to_owned(), Json::Text("rewritten".to_owned()));
+                Ok(Some(rewritten))
+            }
             HookEffect::Filter => Ok(None),
             HookEffect::NotImplemented => Err(DatasetHookError::NotImplemented),
             HookEffect::Fail => Err(DatasetHookError::Failed),

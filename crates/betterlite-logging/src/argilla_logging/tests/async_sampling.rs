@@ -1,3 +1,4 @@
+use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use super::support::{
@@ -35,13 +36,22 @@ async fn chains_every_hook_before_queueing() {
         ScriptedRandom::new(&[0.0_f64]),
     )
     .await;
-    let first = RecordingHook::new(HookEffect::Pass);
+    let first = RecordingHook::new(HookEffect::Rewrite);
     let second = RecordingHook::new(HookEffect::Pass);
     let hooks: [&dyn DatasetHook; 2] = [&first, &second];
     built.async_log_success_event(&valid_kwargs(), &hooks).await;
-    assert_eq!(built.queue.pending().len(), 1);
+    let queued = built.queue.pending();
+    assert_eq!(queued.len(), 1);
+    assert_eq!(
+        queued[0].fields["input"],
+        Json::Text("rewritten".to_owned())
+    );
     assert_eq!(first.seen().len(), 1);
-    assert_eq!(second.seen().len(), 1);
+    assert_eq!(
+        second.seen()[0].fields["input"],
+        Json::Text("rewritten".to_owned())
+    );
+    assert_eq!(queued[0], second.seen()[0]);
 }
 
 #[tokio::test]

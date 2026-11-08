@@ -15,6 +15,14 @@ call:
       - environment: {ARGILLA_API_KEY: key}
         transformation_object: {input: messages}
         random: [0.0]
+        hooks: [rewrite, identity]
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: async_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        random: [0.0]
         hooks: [identity, filter, identity]
         replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
         actions:
