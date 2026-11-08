@@ -1,0 +1,19 @@
+kind: helper
+name: caller-metadata-order
+call:
+  b4114:
+    operation: caller_from_kwargs
+    kwargs:
+      metadata:
+        user_api_key_auth:
+          team_id: metadata
+          parent_otel_span: metadata-span
+      litellm_metadata:
+        user_api_key_auth:
+          team_id: litellm-metadata
+      litellm_params:
+        metadata:
+          user_api_key_auth:
+            team_id: params-metadata
+env: {}
+compare: {ignore: []}
