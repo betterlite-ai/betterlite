@@ -222,7 +222,7 @@ fn finish_reason_unknown_value_warns_and_falls_back_to_stop() {
     let subscriber = tracing_subscriber::registry().with(CapturedEvents(Arc::clone(&events)));
     let mapped = with_default(subscriber, || mapped_finish_reason("weird"));
     assert_eq!(mapped, "stop");
-    let captured = events.lock().expect("the capture lock is free");
+    let captured = events.lock().expect("the capture lock is free").clone();
     assert_eq!(captured.len(), 1);
     assert!(captured[0].contains("Unmapped finish_reason 'weird', defaulting to 'stop'"));
 }
