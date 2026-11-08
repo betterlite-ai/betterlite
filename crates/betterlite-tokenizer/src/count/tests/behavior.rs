@@ -200,8 +200,8 @@ enum Expected {
     Expected::Tokens(7)
 )]
 #[case::messages_name_modern(r#"{"model":"gpt-3.5-turbo","messages":[{"role":"user","content":"hello world","name":"bob"}]}"#, 4_000_000, 1024, Expected::Tokens(11))]
-#[case::messages_name_legacy(r#"{"model":"gpt-3.5-turbo-0301","messages":[{"role":"user","content":"hello world","name":"bob"}]}"#, 4_000_000, 1024, Expected::Tokens(11))]
-#[case::messages_legacy_names_are_cheaper(r#"{"model":"gpt-3.5-turbo-0301","messages":[{"role":"user","content":"hi","name":"bob"},{"role":"user","content":"hi","name":"ann"}]}"#, 4_000_000, 1024, Expected::Tokens(17))]
+#[case::messages_name_on_turbo_0301(r#"{"model":"gpt-3.5-turbo-0301","messages":[{"role":"user","content":"hello world","name":"bob"}]}"#, 4_000_000, 1024, Expected::Tokens(11))]
+#[case::messages_two_named_messages(r#"{"model":"gpt-3.5-turbo-0301","messages":[{"role":"user","content":"hi","name":"bob"},{"role":"user","content":"hi","name":"ann"}]}"#, 4_000_000, 1024, Expected::Tokens(17))]
 #[case::messages_response_count_skips_the_extra(r#"{"model":"gpt-3.5-turbo","messages":[{"role":"user","content":"hello world"}],"count_response_tokens":true}"#, 4_000_000, 1024, Expected::Tokens(6))]
 #[case::messages_tool_calls(r#"{"model":"gpt-3.5-turbo","messages":[{"role":"assistant","tool_calls":[{"id":"1","type":"function","function":{"name":"f","arguments":"{\"x\": 1}"}}]}]}"#, 4_000_000, 1024, Expected::Tokens(13))]
 #[case::messages_function_call(r#"{"model":"gpt-3.5-turbo","messages":[{"role":"assistant","function_call":{"name":"f","arguments":"{\"y\": 2}"}}]}"#, 4_000_000, 1024, Expected::Tokens(13))]
