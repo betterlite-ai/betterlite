@@ -1,4 +1,4 @@
-use betterlite_server::stream_keepalive::is_explicit_keepalive_disable;
+use betterlite_server::stream_keepalive::interval::is_explicit_keepalive_disable;
 use serde::Deserialize;
 use serde_json::Value;
 

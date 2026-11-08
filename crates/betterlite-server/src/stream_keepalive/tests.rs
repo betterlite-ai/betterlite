@@ -13,10 +13,11 @@ use tempfile::NamedTempFile;
 use tokio::time::{Duration, Instant, advance, sleep, timeout};
 use tracing::subscriber::set_default;
 
-use super::{
-    Beat, DeploymentKeepalive, JsonObject, KeepaliveResolver, KeepaliveRouter, KeepaliveSource,
-    deployment_keepalive, is_explicit_keepalive_disable, with_keepalive,
-};
+use super::deployment::{DeploymentKeepalive, deployment_keepalive};
+use super::interval::is_explicit_keepalive_disable;
+use super::resolver::KeepaliveResolver;
+use super::wrapper::{Beat, KeepaliveSource, with_keepalive};
+use super::{JsonObject, KeepaliveRouter};
 use crate::keepalive_interval::PingSetting;
 
 fn map(text: &str) -> JsonObject {
