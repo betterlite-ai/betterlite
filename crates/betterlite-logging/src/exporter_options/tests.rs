@@ -166,6 +166,12 @@ fn truncate_keeps_a_short_list_and_object_with_their_types() {
     assert_eq!(truncated_response.response, Some(response));
 }
 
+fn cut_text(text: &str) -> String {
+    let mut cut: String = text.chars().take(MAX_LOGGED_TEXT_CHARS).collect();
+    cut.push_str(TRUNCATION_SUFFIX);
+    cut
+}
+
 #[test]
 fn truncate_cuts_a_long_list_to_its_json_text() {
     let long = Json::List(
@@ -173,15 +179,27 @@ fn truncate_cuts_a_long_list_to_its_json_text() {
             .map(|index| Json::Number(serde_json::Number::from(index)))
             .collect(),
     );
+    let expected = cut_text(&serde_json::to_string(&long).expect("the list encodes"));
     let truncated = truncate_standard_logging_payload_content(&payload_with("messages", long));
-    let Some(Json::Text(text)) = truncated.messages else {
-        panic!("a long list becomes a string");
+    assert_eq!(truncated.messages, Some(Json::Text(expected.clone())));
+    assert!(expected.starts_with("[0,1,2,"));
+}
+
+#[rstest]
+#[case::string(Json::Text("x".repeat(MAX_LOGGED_TEXT_CHARS + 1)))]
+#[case::object(Json::Object(IndexMap::from([(
+    "content".to_owned(),
+    Json::Text("y".repeat(MAX_LOGGED_TEXT_CHARS + 1)),
+)])))]
+fn truncate_cuts_a_long_response_to_a_string(#[case] response: Json) {
+    let source = match &response {
+        Json::Text(text) => text.clone(),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            serde_json::to_string(&response).expect("the response encodes")
+        }
     };
-    assert_eq!(
-        text.chars().count(),
-        MAX_LOGGED_TEXT_CHARS + TRUNCATION_SUFFIX.len()
-    );
-    assert!(text.ends_with(TRUNCATION_SUFFIX));
+    let truncated = truncate_standard_logging_payload_content(&payload_with("response", response));
+    assert_eq!(truncated.response, Some(Json::Text(cut_text(&source))));
 }
 
 #[test]
@@ -589,12 +607,19 @@ fn base64_walks_a_value_at_the_max_depth_and_stops_past_it() {
     assert_eq!(MAX_DEPTH_REACHED, "[MAX_DEPTH_REACHED]");
 }
 
-#[test]
-fn base64_rejects_every_value_at_a_negative_depth() {
-    let payload = with_messages(r#"[{"role": "user", "content": "hi"}]"#);
+#[rstest]
+#[case::string_content(
+    r#"[{"role": "user", "content": "hi"}]"#,
+    r#"[{"role": "[MAX_DEPTH_REACHED]", "content": "[MAX_DEPTH_REACHED]"}]"#
+)]
+#[case::list_content(
+    r#"[{"role": "user", "content": [1]}]"#,
+    r#"[{"role": "[MAX_DEPTH_REACHED]", "content": ["[MAX_DEPTH_REACHED]"]}]"#
+)]
+fn base64_rejects_every_value_at_a_negative_depth(#[case] messages: &str, #[case] expected: &str) {
+    let payload = with_messages(messages);
     let stripped = stripper().strip_base64_from_messages(&payload, -1);
-    let expected = json(r#"[{"role": "[MAX_DEPTH_REACHED]", "content": ["[MAX_DEPTH_REACHED]"]}]"#);
-    assert_eq!(stripped.messages, Some(expected));
+    assert_eq!(stripped.messages, Some(json(expected)));
 }
 
 #[rstest]
