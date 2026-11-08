@@ -1,0 +1,70 @@
+id: B7892
+title: Milvus vector store provider config for the pass-through route
+description: >-
+  B3624 builds the `/milvus/{endpoint}` pass-through route and reaches the vector store provider configs through a port,
+  `VectorProviderPort`, with `auth_headers(provider, litellm_params)`, `complete_url(provider, litellm_params)` and
+  `has_config(provider)` over the `VectorProvider` enum `{ Milvus, AzureAi }`. Read B3624's task file for the exact trait and
+  its module, which is `passthrough_azure_milvus` in betterlite-server. B558 owns the Azure AI side. This task is the server
+  adapter for the Milvus side, and it implements B3624's `VectorProviderPort` for `VectorProvider::Milvus`.
+
+
+  The Milvus logic lives in B7810 (module `milvus_vector_store` in betterlite-openai). This task rebuilds none of it. B7810
+  owns `get_auth_credentials` (params only, the Bearer header, the "MILVUS_API_KEY is not set..." error) and
+  `get_complete_url` (params base, then the env base, trailing slashes removed, the "Milvus API base URL is required..."
+  error). Read B7810's task file for their exact names and signatures and call them.
+
+
+  Build a module `milvus_vector_config` in betterlite-server (crates/betterlite-server/src/milvus_vector_config.rs and the
+  folder beside it) with a type `MilvusProviderPorts` that holds the environment reader (the B129 `get_secret_str` seam) and
+  implements the Milvus arms of the port. `auth_headers` passes the store params' `api_key` to B7810's `get_auth_credentials`.
+  `complete_url` reads `MILVUS_API_BASE` through the reader, builds B7810's `MilvusEnv`, and calls B7810's `get_complete_url`
+  with the store params' `api_base` string (or none).
+
+
+  `has_config(Milvus)` is true, and it stands for `ProviderConfigManager.get_provider_vector_stores_config` returning
+  `MilvusVectorStoreConfig()` for provider `milvus` (utils.py L9525-L9530). That Milvus branch and the wiring of
+  `MilvusProviderPorts` into B3624's route are all this task adds. The port's error type carries B7810's two messages, and
+  B3624 turns them into its HTTP 500. The rest of `MilvusVectorStoreConfig` is not called by the route and belongs to B7810
+  and the vector store provider tasks of B049.
+scope:
+  paths:
+  - crates/betterlite-server/src/milvus_vector_config.rs
+  - crates/betterlite-server/src/milvus_vector_config/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9525-L9530
+  why: The Milvus branch of get_provider_vector_stores_config.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L675-L804
+  why: milvus_proxy_route, the only caller of the two functions.
+dod:
+- text: "`MilvusProviderPorts` implements B3624's `VectorProviderPort` for Milvus by calling B7810's functions, and reports `has_config(Milvus)` as true."
+  proof: [milvus-port]
+- text: The base URL port reads `MILVUS_API_BASE` through the injected reader and passes it to B7810's function.
+  proof: [milvus-url]
+checks:
+  optional: []
+  commands:
+  - id: milvus-url
+    why: The port does not pass the reader's base to B7810.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^milvus_vector_config::.*url_/)'
+  - id: milvus-port
+    why: The port is not implemented for Milvus.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^milvus_vector_config::.*port_/)'
+oracle_cases: []
+deviations:
+- what: The base is read through an injected environment reader and not from process globals.
+  why: Tests need a controlled environment. A user sees the same values and messages.
+- what: This task has no oracle cases.
+  why: B7810 carries the helper cases for the functions. B3624's HTTP cases reach this adapter through the booted proxy once the real adapter is wired.
+out_of_scope:
+- "The Milvus route itself and `VectorProviderPort`'s definition: B3624."
+- "The Azure AI half of the port: B558."
+- "`get_auth_credentials`, `get_complete_url`, the search transforms and the rest of `MilvusVectorStoreConfig`: B7810."
+pitfalls:
+- "The credential and URL logic lives in B7810. Call it and do not copy it here."
+- "`get_auth_credentials` reads only the params, so `auth_headers` must not add the environment fallback."
+- "An `api_base` of an empty string counts as missing, as Python's `or` treats it. B7810 handles it, so pass the string through unchanged."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,74 @@
+task: B3783
+deviations:
+  - what: >-
+      A configured or environment timeout that a Duration cannot represent (negative, NaN,
+      infinite or too large) is rejected while the guardrail is built. LiteLLM passes the
+      value into httpx.Timeout and every evaluation then fails and is returned unchanged.
+    why: >-
+      betterlite's timeout is a std Duration, which cannot hold a negative or non-finite
+      duration; the invalid configuration is reported where it enters instead of turning
+      every evaluation into a silent fail-open.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L44-L48
+  - what: >-
+      A guardrail built without a timeout reads ONYX_TIMEOUT. LiteLLM's Python constructor
+      defaults the argument to 10.0, so it only reads the variable when the caller passes
+      None or 0; initialize_guardrail passes litellm_params.timeout, which is None when the
+      config omits it, so the proxy path reads the variable in both.
+    why: >-
+      betterlite's constructor takes the configured timeout as an Option and has no
+      separate omitted-argument state; the config model's default of None matches the
+      initialize_guardrail call LiteLLM makes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L40-L48
+  - what: >-
+      The Onyx Guard response body is read up to 1 MiB; a larger reply is treated as a
+      backend error and fails open. LiteLLM parses a reply of any size.
+    why: >-
+      Every outbound call in betterlite has a bounded read, so a misbehaving guard server
+      cannot make the gateway allocate without limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L85
+  - what: >-
+      A transport error is stripped of its URL before it is logged. LiteLLM logs the httpx
+      error, whose message contains the full request URL.
+    why: >-
+      The Onyx endpoint carries the API key in its path, so keeping the URL would write the
+      key into the error log that the fail-open path emits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L130-L141
+  - what: >-
+      A denial whose violated_rules is null blocks with the "Unknown violation" message and
+      status 400. LiteLLM's ", ".join(result["violated_rules"]) raises TypeError and the
+      outer handler returns the inputs, so the denial turns into an allow.
+    why: >-
+      A null list is outside the response type LiteLLM declares, and a fail-open on a
+      server that denied the request is a bug no working setup relies on. Rules that are
+      absent still use the same "Unknown violation" text LiteLLM uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L86-L94
+  - what: >-
+      httpx gives connect a 5-second timeout and lets read, write and pool each use the phase
+      timeout. The HTTP client exposes connect, read and total timeouts only, so betterlite
+      sets the 5-second connect timeout and the phase timeout as the read timeout, and bounds
+      the whole request by the sum of the four phases (connect plus read, write and pool). A
+      stalled write or pool wait is held to that summed deadline instead of a per-phase
+      timeout.
+    why: >-
+      Summing the phases keeps a slow connect from eating the read budget, which would turn a
+      late denial into a fail-open, while still bounding a write or pool wait that the
+      transport cannot time on its own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L51
+  - what: >-
+      OnyxGuardrailConfigModel carries api_base, api_key and timeout plus the inherited
+      optional_params map, but not the description text LiteLLM publishes on each field.
+    why: >-
+      betterlite config models keep no description metadata and comments-say-why bans doc
+      comments; the field names, the config model's defaults and the tested env-var fallbacks
+      carry the same information in code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/onyx.py#L6-L20
+  - what: >-
+      The ModelResponse conversion check looks at the top-level id, created, model and
+      system_fingerprint only. A malformed choices entry or usage token type that makes
+      LiteLLM's ModelResponse raise is not detected, so on those inputs betterlite sends
+      request_data.response while LiteLLM sends request_data itself.
+    why: >-
+      Choices, Message and Usage conversion is the message/response type conversion the task
+      marks out of scope; mirroring pydantic's coercion rules would duplicate the model layer
+      inside the guardrail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L116-L128

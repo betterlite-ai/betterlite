@@ -1,0 +1,170 @@
+id: B7740
+title: Swagger UI, ReDoc and OAuth2 redirect pages with the bundled swagger assets
+description: >-
+  Serve LiteLLM's interactive API docs from betterlite. Today the proxy builds a FastAPI app with
+  `docs_url=_get_docs_url()`, `redoc_url=_get_redoc_url()` and `openapi_url=_get_openapi_url()`, mounts the folder
+  `litellm/proxy/swagger` at `/swagger`, and replaces FastAPI's `get_swagger_ui_html` so the page loads the bundled
+  `swagger-ui-bundle.js`, `swagger-ui.css` and `favicon.png` from `<server_root_path>/swagger/` instead of a CDN.
+  This task builds the same pages and the same static mount. It does not build the schema that `/openapi.json` returns
+  (B123 does) and it does not register `/openapi.json`.
+
+
+  Part 1, library code in the existing crate betterlite-openapi, two new modules. Module `docs_settings`: a plain struct
+  `DocsEnv { docs_url, redoc_url, openapi_url, no_docs, no_redoc, no_openapi, root_redirect_url }`, all `Option<String>`,
+  which the server wiring fills from the process environment (`DOCS_URL`, `REDOC_URL`, `OPENAPI_URL`, `NO_DOCS`,
+  `NO_REDOC`, `NO_OPENAPI`, `ROOT_REDIRECT_URL`), and `DocsEnv::resolve(&self) -> DocsUrls` with `DocsUrls { docs_url,
+  redoc_url, openapi_url, root_redirect_url }` (all `Option<String>`). The rule for each of the three urls is the one in
+  `_get_docs_url`, `_get_redoc_url` and `_get_openapi_url`: a non-empty explicit value wins (an empty string counts as
+  unset, because the source uses `if value := os.getenv(...)`); otherwise, if the matching `NO_*` value is a true boolean
+  string, the url is None; otherwise the default (`/` for docs, `/redoc`, `/openapi.json`). The boolean string follows
+  `str_to_bool`: trim, lowercase, and only `true` or `false` are recognized, anything else counts as false here.
+  Module `docs_pages`: pure functions that return the page bodies as `String`, and the embedded assets. `swagger_ui_page(
+  &SwaggerPageInputs) -> String` renders the page FastAPI's `get_swagger_ui_html` renders (read it in the FastAPI
+  version pinned by the oracle environment, tools/oracle/litellm/.venv/lib/python3.13/site-packages/fastapi/openapi/docs.py)
+  with `swagger_js_url`, `swagger_css_url` and `swagger_favicon_url` set to `<swagger_base>/swagger-ui-bundle.js`,
+  `<swagger_base>/swagger-ui.css` and `<swagger_base>/favicon.png`, then applies LiteLLM's one text edit: the first
+  occurrence of `const ui = SwaggerUIBundle({` becomes `const ui = SwaggerUIBundle({tagsSorter:"alpha",`. `SwaggerPageInputs
+  { title, openapi_url, oauth2_redirect_url: Option<String>, swagger_base }`, where openapi_url is already prefixed with the
+  root path by the caller. `redoc_page(title, openapi_url) -> String` renders `get_redoc_html` with its default CDN urls
+  and Google Fonts on. `oauth2_redirect_page() -> &'static str` is the fixed body of
+  `get_swagger_ui_oauth2_redirect_html`. `swagger_asset(name: &str) -> Option<SwaggerAsset>` returns the embedded bytes
+  and content type for exactly the four names `swagger-ui-bundle.js`, `swagger-ui.css`, `favicon.png` and `favicon.ico`;
+  any other name, including paths with `/` or `..`, returns None. The four files are copied byte for byte from LiteLLM
+  into crates/betterlite-openapi/assets/swagger/ and embedded with `include_bytes!`. Content types are what Python's
+  `mimetypes` gives Starlette's StaticFiles: `text/javascript`, `text/css`, `image/png`, `image/vnd.microsoft.icon`.
+
+
+  Part 2, routes, in betterlite-server: module `docs_routes` with `docs_router(config: DocsRouteConfig) -> axum::Router`.
+  `DocsRouteConfig { urls: DocsUrls, title: String, server_root_path: String }`. The router follows FastAPI's rules for
+  `FastAPI.setup()`: the swagger page is a GET at `docs_url` only when both `openapi_url` and `docs_url` are Some; the
+  OAuth2 redirect page is a GET at `/docs/oauth2-redirect` only when the swagger page is registered (that is FastAPI's
+  default `swagger_ui_oauth2_redirect_url`); the ReDoc page is a GET at `redoc_url` only when both `openapi_url` and
+  `redoc_url` are Some. The swagger page title is `<title> - Swagger UI`, the ReDoc title is `<title> - ReDoc`, and the
+  page's `openapi_url` is `<server_root_path with trailing / removed><openapi_url>`; the OAuth2 redirect url handed to the
+  page is `<same prefix>/docs/oauth2-redirect`. `swagger_base` is `<server_root_path>/swagger` where the root path gets a
+  trailing `/` first when it lacks one (`mount_swagger_ui`: an empty root path gives `/swagger`, `/api` gives `/api/swagger`).
+  The static mount serves GET and HEAD at `/swagger/<name>` from `swagger_asset`, and a miss is a 404 in Starlette's plain-text shape (see pitfalls). Last, proxy_server.py L2563-L2569: when `docs_url` is not `/` and `root_redirect_url` is Some, `GET /` redirects to it with
+  status 307. None of these routes asks for authentication. This task registers all of them, so it owns their HTTP
+  oracle cases. The server's Cargo.toml needs `betterlite-openapi` as a path dependency; the architect adds that line in
+  the skeleton, so it is not in the scope below.
+scope:
+  paths:
+    - crates/betterlite-openapi/src/docs_settings.rs
+    - crates/betterlite-openapi/src/docs_settings/**
+    - crates/betterlite-openapi/src/docs_pages.rs
+    - crates/betterlite-openapi/src/docs_pages/**
+    - crates/betterlite-openapi/assets/swagger/**
+    - crates/betterlite-server/src/docs_routes.rs
+    - crates/betterlite-server/src/docs_routes/**
+    - tools/oracle/cases/docs/**
+    - tools/oracle/cases/helpers/docs-pages/**
+    - tools/oracle/helpers/b7740.py
+    - tools/oracle/helpers/b7740/**
+    - tools/oracle/src/helpers/openapi/b7740.rs
+    - tools/oracle/src/helpers/openapi/b7740/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2477-L2561
+    why: "mount_swagger_ui: the /swagger static mount, the root-path join for the asset urls, and swagger_monkey_patch with the one tagsSorter edit (the LazyLoadPlugin part of the edit is not built)."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2563-L2569
+    why: "ROOT_REDIRECT_URL redirect from / when the docs page is not at /."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1731-L1742
+    why: "The FastAPI constructor call that wires docs_url, redoc_url and openapi_url."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8148-L8196
+    why: "_get_redoc_url, _get_docs_url and _get_openapi_url with their env var order and defaults."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L115-L136
+    why: "str_to_bool, the exact true and false strings behind the NO_* flags."
+  - url: https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/swagger
+    why: "The four static files to copy byte for byte."
+  - url: https://github.com/fastapi/fastapi/blob/master/fastapi/openapi/docs.py
+    why: "get_swagger_ui_html, get_redoc_html and get_swagger_ui_oauth2_redirect_html templates and the default Swagger UI parameters; compare with the pinned copy in the oracle venv."
+dod:
+  - text: >-
+      The four swagger files under crates/betterlite-openapi/assets/swagger/ are byte-identical to LiteLLM's
+      (sha256 of swagger-ui-bundle.js bd2c846c71b05d9147f51a5b42a51e300ea7319be5c6709e95b6d04094ada51f, swagger-ui.css
+      8f33d996025317049d4a9864f421eab2b2a247872f388026fa94c654913259e7, favicon.png
+      dfffbe29386e7b1d3c4f01706c835236b815d5b3aeb00d32e1a15eb51d697646, favicon.ico
+      1ca8443fd2c22c0b250857cbc29907cb39fe39589b36280a08f4ff386b9299ac).
+    proof: [swagger-asset-hashes]
+  - text: >-
+      DocsEnv::resolve picks an explicit non-empty DOCS_URL, REDOC_URL or OPENAPI_URL first, then None for a true NO_DOCS,
+      NO_REDOC or NO_OPENAPI ("True", " true " count; "yes", "1" and "" do not), then the defaults "/", "/redoc" and
+      "/openapi.json". An empty DOCS_URL with NO_DOCS=true gives None.
+    proof: [docs-settings-tests]
+  - text: >-
+      swagger_ui_page output equals FastAPI's get_swagger_ui_html output with the three asset urls under the swagger base
+      and the tagsSorter edit applied once, for an empty root path and for root path /api (assets under /api/swagger,
+      openapi url /api/openapi.json, oauth2 redirect url window.location.origin + '/api/docs/oauth2-redirect').
+    proof: [docs-pages-tests, oracle]
+  - text: >-
+      redoc_page and oauth2_redirect_page match FastAPI's bodies, and swagger_asset returns None for any name other than
+      the four files (including "../x", "a/b", "" and "SWAGGER-UI.CSS").
+    proof: [docs-pages-tests, oracle]
+  - text: >-
+      The booted gateway answers GET / with the swagger page (200, text/html; charset=utf-8), GET /redoc with the ReDoc
+      page, GET /docs/oauth2-redirect with the redirect page, and GET /swagger/swagger-ui.css with the CSS bytes and
+      content type text/css; a missing /swagger file is a 404, a POST to a docs page is 405.
+    proof: [docs-routes-tests, oracle]
+  - text: >-
+      With NO_DOCS=true the swagger and OAuth2 redirect routes are absent (404), with NO_REDOC=true the ReDoc route is
+      absent, with NO_OPENAPI=true none of the three pages exist, and with DOCS_URL=/docs plus ROOT_REDIRECT_URL set,
+      GET / answers 307 with that location while /docs serves the page.
+    proof: [docs-routes-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: swagger-asset-hashes
+      why: the embedded assets must be LiteLLM's files, byte for byte
+      run: >-
+        printf '%s\n'
+        'bd2c846c71b05d9147f51a5b42a51e300ea7319be5c6709e95b6d04094ada51f  crates/betterlite-openapi/assets/swagger/swagger-ui-bundle.js'
+        '8f33d996025317049d4a9864f421eab2b2a247872f388026fa94c654913259e7  crates/betterlite-openapi/assets/swagger/swagger-ui.css'
+        'dfffbe29386e7b1d3c4f01706c835236b815d5b3aeb00d32e1a15eb51d697646  crates/betterlite-openapi/assets/swagger/favicon.png'
+        '1ca8443fd2c22c0b250857cbc29907cb39fe39589b36280a08f4ff386b9299ac  crates/betterlite-openapi/assets/swagger/favicon.ico'
+        | sha256sum -c -
+    - id: docs-settings-tests
+      why: url resolution tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-openapi --no-tests=fail -E 'test(/^docs_settings::/)'
+    - id: docs-pages-tests
+      why: page rendering and asset lookup tests fail or are missing
+      run: cargo nextest run --locked -p betterlite-openapi --no-tests=fail -E 'test(/^docs_pages::/)'
+    - id: docs-routes-tests
+      why: route registration rules (which routes exist under which settings) fail or are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^docs_routes::/)'
+oracle_cases:
+  - tools/oracle/cases/docs/swagger-at-root.yaml
+  - tools/oracle/cases/docs/redoc-page.yaml
+  - tools/oracle/cases/docs/oauth2-redirect-page.yaml
+  - tools/oracle/cases/docs/swagger-asset-css.yaml
+  - tools/oracle/cases/docs/swagger-asset-missing.yaml
+  - tools/oracle/cases/docs/swagger-post-method.yaml
+  - tools/oracle/cases/docs/no-docs-flag.yaml
+  - tools/oracle/cases/docs/docs-url-with-root-redirect.yaml
+  - tools/oracle/cases/helpers/docs-pages/swagger-page-root-path.yaml
+  - tools/oracle/cases/helpers/docs-pages/docs-url-resolution.yaml
+deviations:
+  - what: The Swagger page has no LazyLoadPlugin and POST /lazy/warm/<tag> does not exist. The page keeps only the `tagsSorter:"alpha"` edit.
+    why: LiteLLM loads some route groups on first use and the plugin warms them from the browser. betterlite registers every route at startup, so there is nothing to warm and no "(expand to load routes)" hint to show.
+  - what: Responses for /swagger files carry content-type and content-length but no last-modified, etag or accept-ranges headers, and a conditional request always gets the full body.
+    why: The files are embedded in the binary, so there is no file time to report. The oracle cases ignore those three headers.
+  - what: The OpenAPI url, asset urls and OAuth2 redirect url use the scalar SERVER_ROOT_PATH, not the per-request prefix that SERVER_ROOT_PATHS picks.
+    why: FastAPI reads scope root_path, which the per-request middleware rewrites. This task has no access to that value; the open question is in the planner notes and for now the scalar value is used.
+out_of_scope:
+  - "B123 owns the schema document served at openapi_url, its route and the root-path `servers` entry. This task never registers openapi_url."
+  - "The filesystem mount in mount_swagger_ui (os.path.join(current_dir, \"swagger\") and StaticFiles) becomes the embedded swagger_asset lookup."
+  - "DOCS_TITLE and DOCS_DESCRIPTION branding in proxy_server.py L1044-L1051 apply only when premium_user is true (enterprise license); betterlite has no license check, so the title is the fixed LiteLLM API title B123 passes in."
+  - "_get_docs_url, _get_redoc_url and _get_openapi_url have no Rust owner at the pin of this plan (no crate on main has them); this task builds them in docs_settings, so a later task must not build them again."
+pitfalls:
+  - An empty DOCS_URL, REDOC_URL or OPENAPI_URL is unset, because the source tests the walrus value for truth. DOCS_URL="" with NO_DOCS=true still gives None.
+  - NO_DOCS, NO_REDOC and NO_OPENAPI go through str_to_bool, which only knows "true" and "false" after trim and lowercase. NO_DOCS=1 or NO_DOCS=yes does not disable the page.
+  - The default docs_url is "/", not "/docs". The OAuth2 redirect page is still at "/docs/oauth2-redirect" because FastAPI's swagger_ui_oauth2_redirect_url defaults to that.
+  - FastAPI registers the OAuth2 redirect route only when the swagger route exists, and the ReDoc route needs openapi_url too, so NO_OPENAPI=true removes all three pages.
+  - The asset urls inside the page get a trailing-slash join (`/` + `swagger`, or `/api` becomes `/api/` + `swagger`), while the openapi url strips the trailing slash of the root path before adding `/openapi.json`. A root path of `/api/` must give `/api/swagger` and `/api/openapi.json`.
+  - The replace edit hits only the first `const ui = SwaggerUIBundle({`, and a page with that text missing is returned unchanged, not an error.
+  - Starlette's mount answers `/swagger` (no slash) with a 307 redirect to `/swagger/`, `/swagger/` itself with 404, and a path with `..` or a nested `/` with 404; mirror those with oracle cases, not guesses.
+  - A missing static file is Starlette's plain 404 with body `Not Found` and content-type text/plain, not the proxy's JSON error shape. A POST to a file is 405 with `Method Not Allowed` and an allow header of GET, HEAD.
+  - favicon.ico is in the swagger folder but the page links only favicon.png; both are still served.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

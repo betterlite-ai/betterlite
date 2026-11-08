@@ -1,0 +1,109 @@
+id: B8024
+title: Map Google PSE and SearchAPI.io GET searches with keys in the URL
+description: >-
+  Add api::search_providers::google_pse and api::search_providers::searchapi to betterlite-core on the B3270
+  base hooks. Both are GET and both put the API key into the query string, so the key must never be logged or
+  put in an error message. betterlite-config gets google_pse_search_settings (GOOGLE_PSE_API_KEY unset,
+  GOOGLE_PSE_ENGINE_ID unset, GOOGLE_PSE_API_BASE default https://www.googleapis.com/customsearch/v1) and
+  searchapi_search_settings (SEARCHAPI_API_KEY unset, SEARCHAPI_API_BASE default
+  https://www.searchapi.io/api/v1/search). Display names are "Google PSE" and "SearchAPI.io (Google Search)".
+
+  Google PSE validate_environment resolves the key with the shared policy, fails with "GOOGLE_PSE_API_KEY is not
+  set. Set `GOOGLE_PSE_API_KEY` environment variable." when empty, then takes the engine id from the
+  search_engine_id keyword or GOOGLE_PSE_ENGINE_ID and fails with the matching GOOGLE_PSE_ENGINE_ID message
+  when empty. It sets only Content-Type. transform_search_request resolves the key again with its own api_key
+  and api_base arguments (so the host check runs a second time), and fails with "GOOGLE_PSE_API_KEY is
+  required" or "GOOGLE_PSE_ENGINE_ID is required". The record is q, cx, key, then num (max_results capped at 10
+  above, no lower clamp), then siteSearch plus siteSearchFilter "i" (the first entry of a nonempty list, or a
+  string as given; an empty list adds nothing), then gl (country uppercased). Other options copy in unless
+  unified or already present. The record is returned as _google_pse_params and get_complete_url appends it
+  with urlencode (no doseq) to the caller base, else GOOGLE_PSE_API_BASE, else the default, with no path
+  handling. Reply: items with title, link (as url), snippet; dates null; a missing items gives none.
+
+  SearchAPI validate_environment resolves the key (fail text "SEARCHAPI_API_KEY is not set. Set
+  `SEARCHAPI_API_KEY` environment variable.") and sets Content-Type only. transform_search_request resolves it
+  again and builds: engine "google", q, api_key, then num (max_results capped at 10), then q rewritten as (q)
+  AND (site:a OR site:b) for a nonempty domain list, then gl (country lowercased), then other options unless
+  unified or present. The search_engine_id argument is accepted and unused. The record is _searchapi_params and
+  get_complete_url encodes it with doseq true onto the base, which already holds the full path. Reply:
+  organic_results with title, link, snippet and date. transform_search_response accepts a missing logging
+  object.
+
+  Add fuzz targets google_pse_reply and searchapi_reply with replays_the_google_pse_corpus and
+  replays_the_searchapi_corpus. The source holds 406 nonblank lines; plan 310 production and config lines, 240
+  test lines and 170 oracle and fuzz lines. Encode with the form encoder from the url crate and correct it to
+  Python quote_plus (keep `~`, encode `*`).
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/api/search_providers/google_pse.rs
+    - crates/betterlite-core/src/api/search_providers/google_pse/**
+    - crates/betterlite-core/src/api/search_providers/searchapi.rs
+    - crates/betterlite-core/src/api/search_providers/searchapi/**
+    - crates/betterlite-config/src/providers/google_pse.rs
+    - crates/betterlite-config/src/providers/google_pse/**
+    - crates/betterlite-config/src/providers/searchapi.rs
+    - crates/betterlite-config/src/providers/searchapi/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/google_pse_reply.rs
+    - crates/betterlite-core/fuzz/fuzz_targets/searchapi_reply.rs
+    - crates/betterlite-core/fuzz/corpus/google_pse_reply/**
+    - crates/betterlite-core/fuzz/corpus/searchapi_reply/**
+    - tools/oracle/cases/helpers/google-searchapi-search/**
+    - tools/oracle/helpers/b8024.py
+    - tools/oracle/helpers/b8024/**
+    - tools/oracle/src/helpers/core_ops/b8024.rs
+    - tools/oracle/src/helpers/core_ops/b8024/**
+  lint_tables: false
+review_level: security
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/google_pse/search/transformation.py#L58-L259
+    why: Engine id rule, double key resolution, num cap, siteSearch handling, gl uppercasing and the params record.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/searchapi/search/transformation.py#L54-L241
+    why: Key in the query string, site clause with AND, num cap, doseq encoding and organic_results reply.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L137-L189
+    why: The shared host check that keeps a server key away from a caller-chosen host.
+  - url: https://docs.python.org/3/library/urllib.parse.html#urllib.parse.urlencode
+    why: urlencode quoting that the query string must match.
+dod:
+  - text: Google PSE key and engine id checks, parameter mapping and URL match the source, and a server key is refused for an untrusted caller base.
+    proof: [google-searchapi-tests, oracle]
+  - text: SearchAPI key check, parameter mapping, AND-joined site clause and doseq URL match the source, with the same refusal.
+    proof: [google-searchapi-tests, oracle]
+  - text: Neither key appears in logs or error text, and both replies project the pinned fields.
+    proof: [google-searchapi-tests, google-searchapi-corpus, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: google-searchapi-tests
+      why: Google PSE or SearchAPI mapping, URL building, key handling or settings loading is missing
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::search_providers::(google_pse|searchapi)::/) - test(replays_the_google_pse_corpus) - test(replays_the_searchapi_corpus) | test(google_pse_search_settings) | test(searchapi_search_settings)'
+    - id: google-searchapi-corpus
+      why: The Google PSE or SearchAPI reply decoder has no new corpus inputs
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/google_pse_reply)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/searchapi_reply)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_google_pse_corpus) | test(replays_the_searchapi_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/google-searchapi-search/google-record-order.yaml
+  - tools/oracle/cases/helpers/google-searchapi-search/google-first-domain-only.yaml
+  - tools/oracle/cases/helpers/google-searchapi-search/google-missing-engine-id.yaml
+  - tools/oracle/cases/helpers/google-searchapi-search/google-untrusted-base-with-env-key.yaml
+  - tools/oracle/cases/helpers/google-searchapi-search/searchapi-and-site-clause.yaml
+  - tools/oracle/cases/helpers/google-searchapi-search/searchapi-num-cap.yaml
+  - tools/oracle/cases/helpers/google-searchapi-search/searchapi-doseq-url.yaml
+  - tools/oracle/cases/helpers/google-searchapi-search/searchapi-untrusted-base-with-env-key.yaml
+deviations: []
+out_of_scope:
+  - B3270 owns the shared records and the host check.
+  - Both package initializers only re-export the config class.
+  - B048 registers both configs, and B3272 runs the request.
+pitfalls:
+  - Both keys sit in the GET URL, so any log line or error text that shows the URL has to hide the key and api_key values.
+  - Google PSE uppercases country into gl, while SearchAPI lowercases it, and Google also caps num at 10 with no floor.
+  - Google PSE joins nothing with AND. Only the first listed domain is sent as siteSearch and the rest are dropped.
+  - Google PSE checks the host twice, once in validate_environment and once in transform_search_request, and the second call only sees the api_base argument.
+  - SearchAPI's default base already ends in /api/v1/search, so get_complete_url never appends a path.
+  - SearchAPI joins its site clause with AND inside the parentheses pair, which is not the shape Serper uses.
+  - The unified max_tokens_per_page is dropped by both, and neither forwards a caller num or gl option once the body has it.
+  - "The url crate (form_urlencoded) is needed in crates/betterlite-core/Cargo.toml by B8023, B8024 and B048. The first part to merge adds the line and the others keep it."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

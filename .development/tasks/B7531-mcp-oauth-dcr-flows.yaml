@@ -1,0 +1,99 @@
+id: B7531
+title: MCP OAuth client registration flows and ephemeral clients
+description: >-
+  Build the register half of the MCP gateway's upstream OAuth flows: `register_client_with_server`, the ephemeral client minting that authorize uses, the persisted client lookups and writes behind both, and the small checks that authorize and token share. They are functions of discoverable_endpoints.py. The authorize and token flows are B7532; the helpers they share with this task live here.
+
+
+  Code goes in betterlite-server, new module mcp::dcr_flows: crates/betterlite-server/src/mcp/dcr_flows.rs (the DcrFlows struct, the error enum and the ports) and the submodules shared, persisted, mint and register, each with a tests.rs beside it. `FlowError` and `FlowReply` are B4719's types (mcp::oauth_routes::ports); this module returns them. The sealed-state helpers are B7530, the record is B6590's MCPServer, the endpoint rules and UPSTREAM_OAUTH_DISCOVERY_AUTH_TYPES are B6760, and B6595 owns PersistedDcrCredentials, parse_persisted_credentials and decrypt_credential, which this task imports and never copies. Nothing is global: the clock, the mint cache and the mint locks are fields of one DcrFlows value that the composition root creates.
+
+
+  Ports (traits in dcr_flows.rs, native async fn, taken as generics).
+  - DiscoveryJoin: `async fn ensure_endpoints(&self, server: &MCPServer) -> Result<MCPServer, FlowError>` is `global_mcp_server_manager.ensure_oauth_metadata_discovered` (B6762 owns it).
+  - UpstreamHttp: `async fn post_json(&self, url: &str, body: &serde_json::Value) -> Result<UpstreamReply, TransportFailure>` with UpstreamReply { status: u16, body: String, content_type: Option<String> }. It sends headers Content-Type and Accept both application/json. The composition root implements it with the shared HTTP client (the Oauth2Register special provider).
+  - FaultRenderer: `fn dcr_rejection(&self, reply: &UpstreamReply, log_context: &str) -> (u16, serde_json::Value)` is `dcr_fault_detail(classify_upstream_dcr_rejection(...))` from LiteLLM's mcp_server/faults package, which B7970 owns. The status and detail are returned to the client as is.
+  - ClientStore: `async fn server_row(&self, server_id: &str) -> Result<Option<ServerRow>, StoreFailure>` (db.get_mcp_server; ServerRow has the credentials blob and the row so the registry can reload it), `async fn store_client(&self, server_id: &str) -> Result<Option<serde_json::Value>, StoreFailure>` (get_mcp_server_oauth_client_credentials), `async fn update_server_credentials(&self, data: DcrUpdate) -> Result<DcrUpdateOutcome, StoreFailure>` (update_mcp_server with touched_by "mcp_oauth_dcr"; the outcome is Updated(row), NotFound or IdentifierConflict), `async fn upsert_store_client(&self, server_id: &str, credentials: &serde_json::Value) -> Result<(), StoreFailure>`, `async fn refresh_registry(&self, row: ServerRow) -> Result<(), StoreFailure>` (update_server) and `fn is_config_declared(&self, server_id: &str) -> bool`. B4711 and B4712 own the real reads and writes, B4731 the registry; the architect writes the adapter.
+  - Decryptor from B6763 for the stored credential fields.
+
+
+  Build, in this order.
+
+  A. shared (the helpers authorize, token and register all call). `endpoint_not_configured_detail(server, label, manual_remedy, issuer_remedy) -> String` (L727-L753) has three shapes: anchored issuer ("MCP server <label> is not configured. Endpoint discovery anchored on the configured Issuer (RFC 8414) failed or its metadata did not include this endpoint; check the proxy logs for 'MCP OAuth' warnings from server load, verify the Issuer, or <manual_remedy>."), a server url ("... OAuth endpoint discovery against the configured server url did not resolve it; the url may be misconfigured. Check the proxy logs for 'MCP OAuth' warnings from server load, verify the server url, or <manual_remedy>, or <issuer_remedy>.") and no url ("... Servers with no url (OpenAPI spec or stdio) run no resource discovery, so <manual_remedy>, or <issuer_remedy>."). Copy the exact LiteLLM text from L727-L753. `register_needed_endpoint(server) -> Option<String>` and `token_needed_endpoint(server)` (L1818-L1838): both return None when the server is a DCR bridge, has no client_id and has no effective registration url, else the effective authorization url (register) or token url (token). `server_with_endpoints(join, server, needed)` (L756-L773) returns the server unchanged when `needed(server)` is Some, else the DiscoveryJoin result. `bridge_relays_registration(server) -> bool` (L802-L810): is_dcr_bridge and a non-empty effective registration url and no client_id. `require_s256(code_challenge, code_challenge_method) -> Result<(String, String), FlowError>` (L813-L829): Ok only for a non-empty challenge and method exactly "S256", else 400 with the string detail "This server requires PKCE: send code_challenge with code_challenge_method=S256 on the authorization request". The call to ensure_oauth2 is B4719's gate; call it first in each flow (B4719 oauth2_gate.rs).
+
+  B. persisted (L1357-L1672 minus what B6595 owns). `redirect_uri_not_registered(credentials, current) -> bool` (L1373-L1385): false when redirect_uris is None or empty, else true when current is not in the list. `apply_persisted(server: &mut MCPServer, credentials, decryptor) -> bool` (L1412-L1419): decrypt client_id (field "client_id"), false when empty, else set client_id, the decrypted client_secret and the token_endpoint_auth_method. `load_store_credentials(server)` (L1422-L1447): reads ClientStore.store_client, returns None on a store failure (logged at debug) and when parse_persisted_credentials gives None or no client_id. `resolve_persisted_client(server)` (L1464-L1500): first server_row; a failure gives (None, None) with a debug log; a row gives (row, credentials of its blob when it has a client_id else None) and never consults the store; with no row and is_config_declared true it gives (None, load_store_credentials), else (None, None). `reuse_persisted_client(server, current_redirect_uri: Option<&str>) -> bool` (L1503-L1535): no credentials is false; when current is Some and redirect_uri_not_registered it is false (debug log); apply_persisted false gives false; when a row exists refresh_registry is called and a failure is logged at warn and ignored; the result is whether server.client_id is non-empty. `redirect_uri_is_stale(server, current) -> bool` (L1538-L1562): true only when credentials exist and redirect_uri_not_registered, with the warn log text of LiteLLM. `persist_registration(server, registration_response, current) -> PersistOutcome` (L1565-L1672, outcomes persisted, reused, skipped, failed): skipped for is_client_forwarded_token; failed when the response has no usable client_id (a JSON object with a string client_id; client_secret and token_endpoint_auth_method optional); reused when reuse_persisted_client(server, Some(current)) is true; otherwise it builds credentials { client_id, client_secret, token_endpoint_auth_method: "client_secret_basic" only when the registration said exactly that, else null, redirect_uris: [current] } and calls update_server_credentials with oauth2_flow "authorization_code" and token_url only when the server has one. Updated(row) gives refresh_registry and persisted. For NotFound or IdentifierConflict: when is_config_declared, upsert_store_client; then set client_id, client_secret and token_endpoint_auth_method on the in-memory server and give persisted. Any store failure inside is logged at warn and gives failed (the register still answers).
+
+  C. mint (L1687-L1815). `EphemeralDcrClient { client_id (non-empty), client_secret: Option<SecretString>, token_endpoint_auth_method: Option<..> }`. `post_registration(url, body, server_id)` (`_post_dcr_registration`) sends through UpstreamHttp; a 2xx returns the reply; any other status goes through FaultRenderer.dcr_rejection and becomes FlowError with that status and detail. `mint_ephemeral_client(request_base_url, server)` (L1725-L1784): None when there is no effective registration url. The cache key is "mcp_ephemeral_dcr_client:<server_id>:<request_base_url>" with a 600 second TTL; a hit returns the cached client. Otherwise take the per-server lock (keyed by server_id alone), check the cache again, then post {"client_name": server_name or server_id, "redirect_uris": ["<base>/callback"], "grant_types": ["authorization_code","refresh_token"], "response_types": ["code"], "token_endpoint_auth_method": "none"}. A body that is not JSON with a non-empty string client_id is 502 with the string detail "MCP upstream registration endpoint returned no usable client_id". The auth method is normalized with B4650's normalize_token_auth_method (unknown text becomes None). Store and return the client. `resolve_ephemeral_client(request_base_url, server, code_challenge, code_challenge_method, redirect_uri)` (L1787-L1815) in this order: None unless the server is true_passthrough or (oauth_delegate and not dcr_bridge); no effective authorization url is 400 "MCP server authorization url is not set"; require_s256; B4655's validate_trusted_redirect_uri (a rejection passes through); then mint.
+
+  D. register. `register_client_with_server(args)` (L1841-L1923): the exact order is ensure_oauth2; current_redirect_uri is "<base>/callback"; client_facing is client_redirect_uris or [current]; the dummy reply is JSON {"client_id": fallback_client_id or server_name, "client_secret": "dummy", "redirect_uris": client_facing} with status 200. Then: a server with a client_id returns the dummy, unless persist_credentials and the server has a registration_url (the stored field, not the effective one) and redirect_uri_is_stale; reuse_persisted_client(server, current only when persist_credentials) true returns the dummy; resolve endpoints with register_needed_endpoint; no effective authorization url is 400 with endpoint_not_configured_detail(server, "authorization url", "set Authorization URL and Token URL manually", "set Issuer to discover them from the identity provider (RFC 8414)"); no effective registration url returns the dummy; bridge_relays and no client_redirect_uris is 400 "redirect_uris is required to register a client with this server"; post {"client_name", "redirect_uris": client_redirect_uris if bridge_relay else [current], "grant_types": given or (the two defaults if bridge_relay else []), "response_types": given or (["code"] if bridge_relay else []), "token_endpoint_auth_method": given or ("none" if bridge_relay else "")} ; parse the reply body as JSON; when persist_credentials and not bridge_relay, persist_registration and a "reused" outcome returns the dummy; when client_redirect_uris and not bridge_relay and the body is an object, its redirect_uris is replaced by client_facing; the reply is the body as JSON with status 200 (a non-JSON upstream body is 502 with the string detail "MCP upstream registration endpoint returned an invalid response").
+
+  Tests use synthetic servers (ids test-oauth-1, urls https://mcp.example.test/sse, registration url https://idp.example.test/register), fakes for every port that record their arguments, and a fixed clock. The flows are not reachable over HTTP before B7321 wires them, so this task has no HTTP oracle cases.
+
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/dcr_flows.rs
+    - crates/betterlite-server/src/mcp/dcr_flows/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L727-L829
+    why: The endpoint-not-configured text, the discovery join, bridge relay and S256 checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1357-L1672
+    why: Persisted client resolution, reuse, stale check and persistence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1687-L1815
+    why: Upstream registration post, ephemeral client mint and its policy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1818-L1923
+    why: The needed-endpoint gates and register_client_with_server.
+  - url: https://www.rfc-editor.org/rfc/rfc7591
+    why: The registration request and response shapes.
+
+dod:
+  - text: endpoint_not_configured_detail, the two needed-endpoint gates, server_with_endpoints, bridge_relays_registration and require_s256 give LiteLLM's results, texts included.
+    proof: [dcr-tests]
+  - text: Persisted client resolution never reads the store for a server with a row, reads it for a rowless config-declared server only, and treats a store failure as no client.
+    proof: [dcr-tests]
+  - text: persist_registration skips client-forwarded servers, fails on a response without client_id, reuses a stored client, stores only client_secret_basic as the method, and falls back to the store upsert and in-memory overlay when no row updates.
+    proof: [dcr-tests]
+  - text: The ephemeral client is minted once per server and base url within 600 seconds, single-flight per server, normalizes the auth method and answers 502 for an unusable response.
+    proof: [dcr-tests]
+  - text: resolve_ephemeral_client returns None for modes that do not mint and fails before any upstream call for a missing authorization url, a non-S256 pair or an untrusted redirect.
+    proof: [dcr-tests]
+  - text: register_client_with_server follows the dummy, reuse, stale, relay, persist and redirect_uris rewrite rules in LiteLLM's order.
+    proof: [dcr-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: dcr-tests
+      why: the shared checks, persisted client logic, ephemeral mint or register flow have no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::dcr_flows::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: A registration reply whose body is not JSON answers 502 with a string detail.
+    why: LiteLLM's response.json() raises and the proxy answers 500; a typed 502 is the honest status and the case cannot be reached with a working IdP.
+  - what: The ephemeral client cache and mint locks live in one DcrFlows value, not in module globals.
+    why: Repository rule says no module-level state. Behavior for one process is the same.
+
+out_of_scope:
+  - "authorize_with_server and exchange_token_with_server: B7532."
+  - "State, sealed codes, client_supplied_redirect_uris and redeem_passthrough_code: B7530. The route layer and the OauthFlows implementation: B7321."
+  - "ensure_oauth2: B4719 (oauth2_gate.rs)."
+  - "hydrate_config_server_dcr_client, PersistedDcrCredentials, parse_persisted_credentials, decrypt_credential: B6595."
+  - "The faults package (classify_upstream_dcr_rejection, dcr_fault_detail): B7970, which implements the FaultRenderer port; this task only uses the port."
+  - "The POST /register route (register_client): B7971."
+
+pitfalls:
+  - The stale check in register uses the stored registration_url field, while the relay and registration decisions use the effective url, so they differ for a discovered server.
+  - A server that has a row is never matched against the config store, even when its row has no client_id, so a colliding server id cannot inherit a config server's client.
+  - Only the exact text client_secret_basic is stored as the auth method; client_secret_post and every other value are stored as null.
+  - The mint lock is keyed by server_id but the cache key also has the base url, so two origins mint twice yet never race on one server.
+  - The reused outcome from persist_registration returns the dummy reply, not the upstream body.
+  - grant_types, response_types and the auth method default differently for a relay bridge ("authorization_code" and "refresh_token", "code", "none") and for every other server (empty).
+  - fallback_client_id is used before server_name for the dummy client_id, and server_name can be empty.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

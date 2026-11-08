@@ -1,0 +1,207 @@
+id: B3464
+title: Persist RAG ingestion store rows and file metadata
+description: >-
+  Add the module `rag_ingest_store` to betterlite-server (crates/betterlite-server/src/rag_ingest_store.rs and
+  the folder beside it). It is what LiteLLM does after a successful `/v1/rag/ingest` call: it records the
+  vector store in the database, or appends the new file to the metadata of a store that is already there. It
+  owns `_build_file_metadata_entry` (endpoints.py:205-254) and `_save_vector_store_to_db_from_rag_ingest`
+  (endpoints.py:257-388). It lives in the top crate because the row creation, `create_vector_store_in_db`, is
+  B1069's code in betterlite-server and no lower crate may call it. B3465 calls this module from the ingest
+  route after the ingest call returns, and only when a database is attached and the ingest call returned a
+  response. That outer condition is B3465's, not this task's.
+
+  Types. `IngestedFile` holds `file_id: Option<String>` and `vector_store_id: Option<String>`, the two fields
+  LiteLLM reads from the ingest response. B3465 builds it from B3460's response, so this task depends on no
+  B3460 type. `UploadedFileInfo` holds `filename: String`, `size: u64` (the byte length of the content) and
+  `content_type: String`. `FileMetadataEntry` is serde-serializable with `file_id: Option<String>`,
+  `filename: Option<String>`, `file_url: Option<String>`, `ingested_at: String` and, only when present,
+  `file_size: u64` and `content_type: String` (skipped when None, never written as null). The four first
+  fields are always present in the JSON, null when empty, in that order.
+
+  `build_file_metadata_entry(file_id: Option<&str>, file: Option<&UploadedFileInfo>, file_url: Option<&str>, now:
+  DateTime<Utc>) -> FileMetadataEntry` is pure. The time is passed in; read it from the clock B198 provides,
+  never call `Utc::now()` in this module. `ingested_at` copies Python's `datetime.isoformat()` for a UTC
+  datetime: `YYYY-MM-DDTHH:MM:SS.ffffff+00:00`, and the `.ffffff` part is left out when the microsecond is zero.
+  An empty `filename` or `content_type` string is still written (Python tests the tuple, not the strings).
+
+  Persistence. `RagIngestStore` is built with its dependencies: a `VectorStoreRows` trait object (the database
+  port) and the clock. `VectorStoreRows` has three async methods: `find(vector_store_id) -> Result<Option<
+  StoredVectorStore>, RowError>`, `create(NewVectorStoreRow) -> Result<(), RowError>` and
+  `replace_metadata(vector_store_id, metadata_json: String) -> Result<(), RowError>`. `StoredVectorStore`
+  carries `vector_store_metadata: Option<StoredMetadata>`, where `StoredMetadata` is `Text(String)` or
+  `Object(serde_json::Map)`, because the column can hold either (B858's row type decides how it arrives; map
+  it into these two). The real implementation, `PostgresVectorStoreRows`, uses B726's managed-vector-store
+  repository for `find` (find_unique by vector_store_id) and `replace_metadata` (update of only
+  `vector_store_metadata`), and B1069's `create_vector_store_in_db` for `create`, public at `betterlite_server::api::vector_management_write::create_vector_store_in_db`. Read the merged code of both
+  to get the exact names; if `create_vector_store_in_db` is private to its module, stop and say so.
+
+  `RagIngestStore::save(&self, ingested: &IngestedFile, options: &RAGIngestOptions, auth: &AuthIdentity, file:
+  Option<&UploadedFileInfo>, file_url: Option<&str>, store_is_managed: bool)` follows this order, which is
+  LiteLLM's:
+  1. `vector_store_id` None: log warning "Vector store ID is None or not a string, skipping database save" and
+  return. (Python's second warning, "Unable to extract vector_store_id from response type", is for objects with
+  no such attribute; the typed input makes that case impossible.)
+  2. Read `custom_llm_provider`, and `vector_store_name` and `vector_store_description` from
+  `litellm_vector_store_params`, from the options (B3450 and B5134 own that type; a record without a provider
+  is the openai variant).
+  3. Build `provider_specific_params`: every field of the vector_store record except `custom_llm_provider` and
+  `vector_store_id` whose value is not null, as a JSON object. The api_key is a SecretString elsewhere; here
+  it must be written out as the real value, because LiteLLM stores it in litellm_params and redacts it only
+  when it returns rows. Use an explicit expose call and never log the params.
+  4. Build the file entry with `build_file_metadata_entry`.
+  5. `find` the row. Row absent and `store_is_managed`: log info "Vector store %s is config-registered,
+  skipping database save" and return. Row absent otherwise: `create` with metadata `{"ingested_files":
+  [entry]}`, name `vector_store_name` or, when that is None or empty, "RAG Vector Store - " plus the first 8
+  characters of the id; description likewise or "Created via RAG ingest endpoint"; provider `custom_llm_provider`
+  or "openai" when None or empty; `litellm_params` the params object, or None when it is empty; team_id and
+  user_id from the auth identity. `create` goes through B1069's function, which does the safe_dumps of the
+  metadata.
+  6. Row present: stored metadata is `Text` -> parse as a JSON object; `Object` -> use it; None or an empty text
+  or empty object -> an empty object (Python's `or {}`). Take `ingested_files`: when it is an array, the new
+  array is its items plus the entry; any other value, or no key, gives a one-item array. Set it back, keep every
+  other metadata key, serialize with B192's safe_dumps rule (NUL removal, depth 100) and call
+  `replace_metadata`. Log info "Added file %s to vector store %s metadata" with the filename, else the file_url,
+  else "Unknown" (a null filename falls to the url; an empty filename also falls through, as Python's `or` does).
+  7. Any error from `find`, `create`, `replace_metadata`, the metadata parse or the serializer is logged at error
+  level with "Failed to save vector store %s to database: %s" and swallowed. The ingest already succeeded, so
+  `save` returns `()`. This includes a duplicate-id 400 or a config-owned 400 coming out of
+  `create_vector_store_in_db`. Do not swallow task cancellation.
+
+  The info logs keep LiteLLM's texts: "Saving newly created vector store %s to database", "Vector store %s saved
+  to database successfully", "Vector store %s already exists, appending file to metadata".
+
+  Do not claim atomicity: find, then create or update, is a read-modify-write with no lock, so two concurrent
+  ingests into one store can lose a file entry, exactly as in LiteLLM. Keep that order of writes.
+
+  Tests. Native tests in `rag_ingest_store::tests` use an in-memory `VectorStoreRows` fake that records calls
+  and can be told to fail. One named test per DoD item. `PostgresVectorStoreRows` gets tests under
+  `rag_ingest_store::postgres_tests` that use POSTGRES_TEST_URL or testcontainers, like B726's, and fail when
+  the database is unavailable. Oracle helper cases cover only `build_file_metadata_entry`; they strip
+  `ingested_at` from both sides after checking it matches the isoformat pattern, since the two sides read
+  different clocks. Size: about 110 LiteLLM lines, 170 implementation, 260 test, 80 adapters.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/rag_ingest_store.rs
+    - crates/betterlite-server/src/rag_ingest_store/**
+    - tools/oracle/cases/helpers/rag-ingest-store/**
+    - tools/oracle/helpers/b3464.py
+    - tools/oracle/helpers/b3464/**
+    - tools/oracle/src/helpers/server/b3464.rs
+    - tools/oracle/src/helpers/server/b3464/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L205-L254
+    why: _build_file_metadata_entry, the four always-present keys, the optional file_size and content_type, and the isoformat timestamp.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L257-L330
+    why: Id extraction, provider and name defaults, provider_specific_params and the entry build.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L326-L388
+    why: The lookup, the config-registered skip, the create branch, the append branch and the swallow-and-log handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L736-L750
+    why: The call site passes store_is_managed=managed_store is not None; the surrounding condition is B3465's.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L179-L260
+    why: create_vector_store_in_db, which serializes the metadata with safe_dumps and rejects duplicates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py#L87-L93
+    why: safe_dumps, used for the replaced metadata text.
+
+dod:
+  - text: >-
+      file_entry_for_upload: a file named a.pdf with 12 bytes and type application/pdf, response file_id "f1", no
+      url, gives file_id "f1", filename "a.pdf", file_url null, an ingested_at in isoformat with +00:00,
+      file_size 12 and content_type "application/pdf". The same helper case runs through LiteLLM and matches
+      once ingested_at is removed.
+    proof: [store-tests, oracle, helper-python]
+  - text: >-
+      file_entry_for_url: no file and a url gives filename null, file_url set, and no file_size or
+      content_type key at all. A response without a string file_id gives file_id null. Both match LiteLLM in
+      the oracle helper cases.
+    proof: [store-tests, oracle, helper-python]
+  - text: >-
+      isoformat_matches_python: a time with zero microseconds prints without a fraction, one with 5
+      microseconds prints ".000005", and both end in +00:00.
+    proof: [store-tests]
+  - text: >-
+      skip_without_store_id: an IngestedFile without vector_store_id makes no database call and logs the
+      warning.
+    proof: [store-tests]
+  - text: >-
+      create_new_store: a missing row with store_is_managed false is created with metadata
+      {"ingested_files":[entry]}, the default name "RAG Vector Store - " plus 8 characters and the default
+      description, provider "openai" when none is set, the auth team_id and user_id, and litellm_params None
+      when the record had only the provider and the id.
+    proof: [store-tests]
+  - text: >-
+      create_uses_custom_names: litellm_vector_store_params vector_store_name and vector_store_description
+      replace the defaults, and empty strings fall back to the defaults. Non-null fields of the vector_store
+      record other than custom_llm_provider and vector_store_id, including the real api_key, land in
+      litellm_params.
+    proof: [store-tests]
+  - text: >-
+      skip_config_registered_store: a missing row with store_is_managed true creates nothing and updates
+      nothing.
+    proof: [store-tests]
+  - text: >-
+      append_to_existing_store: a row whose metadata is a JSON text with two ingested_files gets a third entry
+      and keeps its other keys. A row with an object value, with null or empty metadata, and with a
+      non-array ingested_files each end with the right array (items plus entry, or one item).
+    proof: [store-tests]
+  - text: >-
+      database_errors_are_swallowed: a failing find, create, replace_metadata or unparsable stored text makes
+      `save` return normally and log the error message with the store id. A duplicate-id error from create
+      is swallowed the same way.
+    proof: [store-tests]
+  - text: >-
+      postgres_roundtrip: against a real Postgres with the managed vector store table, a create followed by
+      two appends stores a metadata text that parses to three ingested_files in order, and the stored
+      litellm_params and team_id match the input.
+    proof: [postgres-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: store-tests
+      why: Entry building, the create branch, the append branch or error swallowing is missing or differs from the pin.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_ingest_store::tests::/)'
+    - id: postgres-tests
+      why: The Postgres port does not read and write the managed vector store row.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_ingest_store::postgres_tests::/)'
+    - id: helper-python
+      why: The Python adapter is missing or fails strict lint and type checks.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/helpers/b3464.py)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/helpers/rag-ingest-store
+
+deviations:
+  - what: Persistence and the clock sit behind injected ports, and the ingest response is a typed IngestedFile, not a dict or any object with attributes.
+    why: Rules require constructor wiring and real types. Duck typing of the response follows docs/compatibility.md and is not a deviation for declared inputs.
+  - what: The stored `ingested_at` comes from the injected clock.
+    why: A clock passed in lets tests fix the time. Output format is unchanged.
+
+out_of_scope:
+  - The `/v1/rag/ingest` route, the `prisma_client is not None and response is not None` condition, the "Skipping database save" warning and the 500 wrapper; B3465 owns them.
+  - create_vector_store_in_db itself and the /vector_store/* routes; B1069 owns them. The managed vector store repository and table binding; B726 owns them.
+  - _as_string_keyed_mapping and _response_attr (endpoints.py:63-70). They only turn an untyped response into fields; the typed IngestedFile replaces them here and no other function needs them.
+  - _upstream_status_code (endpoints.py:73-75) is called only by rag_query (endpoints.py:901); B3465 or the rag_query owner builds it. No planned task names it.
+  - _raise_vector_store_scan_depth_exceeded through _managed_store_overrides (endpoints.py:78-202); B3463 owns them.
+  - _secure_uploaded_file and parse_rag_ingest_request (endpoints.py:391-525); B3462 owns them.
+  - rag_ingest and rag_query (endpoints.py:528-903); B3465 and B3461 own them.
+
+pitfalls:
+  - 'A row found with `store_is_managed` true still gets its metadata appended; only a missing row plus a managed store skips the save.'
+  - 'The create branch passes the metadata as a dict and create_vector_store_in_db serializes it; the append branch serializes itself with safe_dumps and writes only the `vector_store_metadata` column.'
+  - 'In Python, `custom_vector_store_name or default` treats an empty string like None, and so does `custom_llm_provider or "openai"`; a plain Option check would store an empty name.'
+  - 'The default store name uses the first 8 characters of the id, not bytes, so a multibyte id must not be cut inside a character.'
+  - '`provider_specific_params` drops None values only; false, 0 and empty strings stay. `litellm_params` is None, not `{}`, when nothing is left.'
+  - 'The stored metadata column can hold JSON text or an object, and `ingested_files` may be absent or not an array; both shapes appear in rows written by older versions.'
+  - 'The handler catches everything, so a failed save never changes the HTTP status of an ingest that already worked; do not turn these errors into a returned Result.'
+  - 'The file entry field `file_size` is the byte length of the content, set even when it is 0.'
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

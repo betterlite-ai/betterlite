@@ -1,0 +1,57 @@
+id: B160
+title: Python Responses, Anthropic Messages, Google GenAI and Interactions surface check
+description: >-
+  B7840 to B7845 add the Python functions for the Responses API, the Anthropic Messages API, Google GenAI and Interactions.
+  This task adds one test that checks the parts fit together on the `betterlite` package. It writes no source file.
+
+
+  The test is `crates/betterlite-python/tests/test_responses_surface.py`. It imports `betterlite` and `litellm` and checks, for
+  each name in the list below, that the name exists in both and that `inspect.signature` matches: `responses`, `aresponses`,
+  `aresponses_api_with_mcp`, `responses_with_retries`, `aresponses_with_retries`, `get_responses`, `aget_responses`,
+  `delete_responses`, `adelete_responses`, `cancel_responses`, `acancel_responses`, `list_input_items`, `alist_input_items`,
+  `compact_responses`, `acompact_responses`, `mock_responses_api_response`, `betterlite.messages.anthropic_messages`,
+  `betterlite.messages.anthropic_messages_handler`, `betterlite.anthropic_interface.messages.create`, `acreate`, the four
+  functions of `betterlite.google_genai` and the eight of `betterlite.interactions`. For parameter defaults, the test compares
+  names, kinds and defaults and skips the annotations, since the wheel has no pydantic.
+
+
+  It also checks that `from betterlite.responses.main import responses` works, that `betterlite.responses` as an attribute of
+  `betterlite` still points to the function, and that importing `betterlite` does not import `pydantic`, `openai` or `httpx`
+  (read `sys.modules` in a fresh subprocess run through `uv run`). If a name fails, fix it in the part that owns it and say
+  which part in the task notes. Do not patch around it in this task.
+scope:
+  paths:
+  - crates/betterlite-python/tests/test_responses_surface.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py
+  why: Where the public names come from in LiteLLM.
+dod:
+- text: Every public name of the four families exists in `betterlite` and has LiteLLM's signature.
+  proof: [surface-signatures]
+- text: The package imports without pydantic, openai or httpx.
+  proof: [surface-imports]
+- text: The new Python file passes ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: surface-signatures
+    why: A part drifts from LiteLLM's signature and no single part test sees it.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_responses_surface.py -k signatures
+  - id: surface-imports
+    why: A part pulls in a package the wheel does not depend on.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_responses_surface.py -k imports
+  - id: python-lint
+    why: The test file must pass the same gates as the parts.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Every function, class and native session is in B7840 to B7845.
+pitfalls:
+- 'The pydantic check must run in a fresh process. The LiteLLM side of the test environment imports pydantic in the test process.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

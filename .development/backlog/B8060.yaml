@@ -1,0 +1,14 @@
+id: B8060
+milestone: M12 python
+title: Python token counting, encode, decode and image token helpers
+status: todo
+depends_on: [B5369, B157, B158, B195, B196, B197, B258, B259]
+file: tasks/B8060-python-tokens.yaml
+covers:
+  - "litellm/litellm_core_utils/token_counter.py"
+parent: B166
+split_from: B166
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

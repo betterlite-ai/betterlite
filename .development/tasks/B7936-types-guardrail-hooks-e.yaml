@@ -1,0 +1,58 @@
+id: B7936
+title: Python types for guardrail hooks tool_permission to zscaler_ai_guard and guardrail_base_init
+description: >-
+  This task ports `proxy/guardrails/guardrail_hooks/` entries `tool_permission`, `typesafe`, `vigil_guard`, `xecguard` and
+  `zscaler_ai_guard`, plus `litellm/types/guardrail_base_init.py`, into `crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/` and
+  `crates/betterlite-python/python/betterlite/types/guardrail_base_init.py`. It is Python only.
+
+
+  `tool_permission.py` has `ToolPermissionRule`, `ToolResult`, a pydantic class named `PermissionError` (it shadows the builtin
+  name in LiteLLM) and `ToolPermissionGuardrailConfigModel`, which derives from `GuardrailConfigModel`. `zscaler_ai_guard.py` is one
+  config model class with 118 lines, deriving from the same base. `guardrail_base_init.py` has one TypedDict, `GuardrailBaseInitKwargs`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/tool_permission.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/typesafe.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/vigil_guard.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/xecguard.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/zscaler_ai_guard.py
+  - crates/betterlite-python/python/betterlite/types/guardrail_base_init.py
+  - crates/betterlite-python/tests/test_types_guardrail_hooks_e.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/tool_permission.py#L1-L110
+  why: Permission rule and result models.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/zscaler_ai_guard.py#L1-L142
+  why: The Zscaler config model.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrail_base_init.py#L1-L24
+  why: GuardrailBaseInitKwargs.
+out_of_scope:
+- >-
+  The generic config base class is in B7932.
+pitfalls:
+- >-
+  `zscaler_ai_guard.py` imports `verbose_proxy_logger` from `litellm._logging`. Use the logger the wheel already has, or drop the import if the type code never calls it.
+- >-
+  `PermissionError` in `tool_permission.py` is a pydantic model, not the builtin exception. Name it the same and do not raise it.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_guardrail_hooks_e.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

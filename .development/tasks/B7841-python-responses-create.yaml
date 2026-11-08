@@ -1,0 +1,180 @@
+id: B7841
+title: Python responses, aresponses, the streaming iterator and the retry wrappers
+description: >-
+  Add `betterlite.responses(...)` and `betterlite.aresponses(...)` so they work where LiteLLM's do, with the native side that
+  runs them. Python collects arguments and builds a `ResponsesAPIResponse` (B7840) or a stream from the JSON that comes back.
+  The create state machine, prompt management, the chat bridge, MCP and file-search interception live in Rust, in B1078 (the
+  whole sync `responses` function), B932 (`aresponses`) and B955 (`aresponses_api_with_mcp` and the interception port). This
+  task wires them to Python and adds nothing of their logic.
+
+
+  Native side, the family `responses`, in `crates/betterlite-python`. It follows B5659's shape: `src/responses.rs` has
+  `pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()>` that adds the class `NativeResponsesSession`, the class
+  `NativeResponsesStream` and the exception `NativeResponsesError` (made with `pyo3::create_exception!`). The architect writes
+  the `mod responses;` and `responses::register(module)?;` lines in `src/lib.rs` and the import line in the `.pyi` package, so
+  never edit `lib.rs`. The session is built from a JSON settings text. Its methods `responses(payload_text, blobs)`,
+  `aresponses(payload_text, blobs)` and `aresponses_api_with_mcp(payload_text, blobs)` take the payload B6040's
+  `to_call_payload` produces. The blocking one runs on the tokio runtime inside `py.detach`, and the others return awaitables
+  through `future_into_py`. Each method returns a tuple `(kind, value)`: kind "response" with the response as JSON text, or
+  kind "stream" with a `NativeResponsesStream`. The stream has `next_chunk()`, `anext_chunk()`, `close()` and `aclose()`, and a
+  chunk is one event as JSON text, or None at the end. The error JSON keys are the ones B5659 lists. Build the interception
+  port that B1078 defines from B955's dispatchers, the way B080 does, and read B1078's `responses_create` and B932's
+  `aresponses` for the exact entry names. Conversions sit in `src/responses/convert.rs` and need no interpreter, with tests
+  that start with `request_` and `error_`.
+
+
+  Python side, the package `python/betterlite/_responses/` with files under 300 lines and an explicit `__all__`:
+  `responses`, `aresponses`, `aresponses_api_with_mcp`, `responses_with_retries`, `aresponses_with_retries`,
+  `mock_responses_api_response` (re-exported from B7840) and `BaseResponsesAPIStreamingIterator`. The architect writes one star
+  line in `python/betterlite/__init__.py`. Never edit that file. The package `python/betterlite/responses/` has `main.py`
+  that re-exports the same names, as litellm/responses/main.py does for `from litellm.responses.main import responses`. Use
+  `to_call_payload`, `call_native`, `acall_native`, `read_settings` and `proxy_headers` from B6040's `_endpoints` package and do
+  not write a second copy.
+
+
+  `responses` and `aresponses` keep the parameter names, order and defaults of litellm/responses/main.py L1128-L1163 and
+  L576-L612 (`input`, `model`, then `include` to `safety_identifier`, the three `extra_*` arguments, `timeout`,
+  `allowed_openai_params`, `custom_llm_provider`, `**kwargs`). A test compares `inspect.signature`. `aresponses` is a coroutine
+  function that reads nothing before the call. `responses(..., aresponses=True)` returns a coroutine, since the source pops
+  `aresponses` and tests it with `is True` (L1171). Three more flags come out of `kwargs` the same way and go to Rust in a
+  `trusted` object of the payload and never in the public parameters: `_skip_mcp_handler` (plain truthiness),
+  `_require_encrypted_task_support` (`is True`) and `use_chat_completions_api` (the source's `_pop_use_chat_completions_api_kw`,
+  L894-L900, reads it as `is True`). A `text_format` that is a class goes through B7840's `type_to_response_format_param`
+  first and is sent as the dict, because B905 converts the dict form (litellm/responses/utils.py L1050-L1067). A `litellm_logging_obj`
+  in `kwargs` is dropped and does not fail. `client` and `shared_session` raise B158's `UnsupportedCallArgument`, through
+  `to_call_payload`. `read_settings` supplies `api_key`, `api_base`, `openai_key`, `drop_params` and `modify_params`, read at
+  call time.
+
+
+  A "stream" result becomes a `BaseResponsesAPIStreamingIterator`. It has `__iter__`, `__next__`, `__aiter__`, `__anext__`,
+  `close` and `aclose`, builds each event as a B5657 `ResponseObject` from the chunk JSON, and ends with `StopIteration` or
+  `StopAsyncIteration`. A "response" result becomes `ResponsesAPIResponse` and sets `_hidden_params["custom_llm_provider"]`
+  from the JSON the way L1442-L1449 does. `aresponses_api_with_mcp` (L157-L186) keeps its signature, which has no
+  `text_format` and no `allowed_openai_params`, and calls the native method of that name.
+
+
+  `responses_with_retries` and `aresponses_with_retries` (litellm/main.py L6139-L6192) are plain loops, since
+  `original_function` is a Python callable. `num_retries` pops with default 3, then `max_retries` and `num_retries` are set to
+  0 in kwargs. `retry_strategy` pops with default `constant_retry`, and `original_function` pops with default `responses`
+  (`aresponses` for the async one, awaited). Under `exponential_backoff_retry` the wait after attempt n is `min(2**(n-1), 10)`
+  seconds, and otherwise there is no wait. The loop makes at least one call, even for `num_retries` 0, and raises the last
+  error unchanged.
+
+
+  `tests/responses_server.py` is a local `http.server` with a thread. It answers POST `/v1/responses` with fixed JSON, or with
+  server-sent events (`response.created`, `response.output_text.delta`, `response.completed`) when the body has `"stream":
+  true`. It also answers the lifecycle routes B7842 tests: GET and DELETE `/v1/responses/{id}`, POST
+  `/v1/responses/{id}/cancel`, POST `/v1/responses/compact`, GET `/v1/responses/{id}/input_items`. It records each request, counts calls per path, and
+  gives a 401 body in the OpenAI error shape when the bearer key is "bad-key". Tests call `litellm` and `betterlite` with the
+  same arguments against it and compare `model_dump()` of the results.
+scope:
+  paths:
+  - crates/betterlite-python/Cargo.toml
+  - crates/betterlite-python/src/responses.rs
+  - crates/betterlite-python/src/responses/**
+  - crates/betterlite-python/python/betterlite/_native_responses.pyi
+  - crates/betterlite-python/python/betterlite/_responses/**
+  - crates/betterlite-python/python/betterlite/responses/**
+  - crates/betterlite-python/tests/responses_server.py
+  - crates/betterlite-python/tests/test_responses_create.py
+  - crates/betterlite-python/tests/test_responses_stream.py
+  - crates/betterlite-python/tests/test_responses_retries.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1127-L1460
+  why: The responses signature, the flags it pops and the final id and provider stamp.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L575-L763
+  why: The aresponses signature and the way it hands over to the sync function.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L157-L186
+  why: The signature of aresponses_api_with_mcp.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L894-L900
+  why: How use_chat_completions_api comes out of kwargs.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6139-L6192
+  why: Both retry wrappers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/dispatch.py#L1-L118
+  why: The rust_bridge selector that wraps responses and aresponses in LiteLLM; the signature comes from main.py behind it.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1036-L1067
+  why: How a text_format class becomes the text parameter.
+- url: https://github.com/PyO3/pyo3-async-runtimes
+  why: The future_into_py bridge and the runtime it owns.
+dod:
+- text: "`responses` and `aresponses` keep LiteLLM's signatures."
+  proof: [responses-signature]
+- text: A plain call and a call with many optional arguments reach the local server and give the same `model_dump()` as LiteLLM.
+  proof: [responses-call]
+- text: "`aresponses` runs on the event loop without blocking it, and `responses(aresponses=True)` returns a coroutine."
+  proof: [responses-async]
+- text: "A pydantic class in `text_format`, an `httpx.Timeout`, and the three trusted flags are sent as LiteLLM sends them, and `client` is refused."
+  proof: [responses-values]
+- text: A stream gives the same events as LiteLLM on both iteration paths, ends cleanly and closes.
+  proof: [responses-stream]
+- text: A provider 401 raises the authentication class with the native error as cause.
+  proof: [responses-error]
+- text: "`aresponses_api_with_mcp` without MCP tools returns what `aresponses` returns."
+  proof: [responses-mcp]
+- text: Both retry wrappers make the same number of calls and raise the same last error as LiteLLM.
+  proof: [responses-retries]
+- text: The native register function adds the session, the stream and the error class, and conversion has tests without an interpreter.
+  proof: [responses-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: responses-signature
+    why: A renamed or reordered parameter breaks callers who pass arguments by position.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_responses_create.py -k signature
+  - id: responses-call
+    why: The wiring stops at the Python layer and never reaches the provider.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_responses_create.py -k "plain or optional"
+  - id: responses-async
+    why: An async call blocks the loop or a sync flag returns the wrong type.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_responses_create.py -k "async or coroutine"
+  - id: responses-values
+    why: A Python object fails in JSON, or a client is dropped silently and skips a caller's proxy.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_responses_create.py -k "text_format or timeout or trusted or client"
+  - id: responses-stream
+    why: Iteration differs from LiteLLM or never ends.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_responses_stream.py
+  - id: responses-error
+    why: A provider error shows up as a generic exception.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_responses_create.py -k error
+  - id: responses-mcp
+    why: The MCP entry point is missing or breaks a plain call.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_responses_create.py -k mcp
+  - id: responses-retries
+    why: Retries run too often or change the error.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_responses_retries.py
+  - id: responses-native
+    why: The native conversion drops a field of the request or the error.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^responses::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Untyped dicts and ignores creep in at the native boundary.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`client` and `shared_session` raise `UnsupportedCallArgument`."
+  why: A Python HTTP client can't drive the Rust call, and ignoring it could send a request past a caller's proxy or custom TLS.
+- what: A stream is one `BaseResponsesAPIStreamingIterator` for both paths, and its events are `ResponseObject` values, not the per-event pydantic classes.
+  why: The wheel has no pydantic, and the event classes belong to B167. The dumped dict of each event is the same.
+- what: The retry wrappers run without tenacity, so "tenacity import failed please run `pip install tenacity`" never appears.
+  why: A plain loop needs no optional package.
+- what: "`litellm.responses.dispatch` and its rust_bridge selector do not exist."
+  why: Every call already goes through the native session.
+out_of_scope:
+- The create state machine, prompt management, the chat bridge, MCP and file-search dispatch run in Rust (B1078, B932, B955, B931), and so do the private helpers in litellm/responses/main.py around them.
+- "`_aresponses_websocket` (L2343-L2445) and the websocket helpers L2287-L2340 serve the proxy only. No Python user code calls them at the pin, and B943 owns the relay."
+- The retrieve, delete, cancel, compact and input-items functions are B7842.
+- The mock response and the result classes are B7840.
+- The error table and `UnsupportedCallArgument` are B158, and the payload, runner and settings helpers are B6040.
+pitfalls:
+- 'The `responses` attribute of `betterlite` is the function, and the `betterlite.responses` package must still import, so `main.py` is reached by `import betterlite.responses.main` and the star line must come last.'
+- '`aresponses=True` in kwargs must be popped before the payload is built, or it reaches Rust as a request field.'
+- 'For `_require_encrypted_task_support` and `use_chat_completions_api` only the exact value True counts, but `_skip_mcp_handler` counts by truthiness.'
+- '`reasoning_effort` is not a named parameter. It arrives in `**kwargs` and Rust maps it (B1078), so Python must not turn it into `reasoning`.'
+- 'The async retry wrapper defaults `original_function` to `aresponses` and awaits it, and the sync one calls `responses` and may get a coroutine back when `aresponses=True`, which the loop returns as it is.'
+- 'A stream must be closed once: `close` after the end of the stream does nothing and does not raise.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

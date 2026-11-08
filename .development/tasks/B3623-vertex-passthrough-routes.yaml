@@ -1,0 +1,141 @@
+id: B3623
+title: Pass-through Vertex HTTP and discovery routes
+description: >-
+  Build the three Vertex AI pass-through HTTP routes and the shared function behind them, as the module vertex_passthrough_routes in crates/betterlite-server.
+  The shared function is LiteLLM's _base_vertex_proxy_route. It authenticates the caller, works out the Vertex project, location and model, picks the credentials, builds the Google target URL and hands the request to B3615's create_pass_through_route handler.
+  This task registers routes, so it adds HTTP oracle cases. The Live WebSocket route at /vertex_ai/live belongs to B3629 and is not built here.
+  Every name below is at most 30 characters; LiteLLM's longer names are renamed on purpose.
+
+  Registration. `vertex_routes_router(deps: VertexRouteDeps)` returns the axum router with these paths, each for GET, POST, PUT, DELETE and PATCH, where `endpoint` is the rest of the path without a leading slash: `/vertex_ai/discovery/{endpoint}`, `/vertex_ai/{endpoint}` and `/vertex-ai/{endpoint}`. The hyphen path is an alias of the underscore one and is left out of the OpenAPI schema. The architect adds the router to the app once and merges it with B3629's WebSocket route.
+  `VertexRouteDeps` holds the ports below, built once by the architect. This task declares each port as a small trait with one async method, so tests use recording fakes and nothing global is read:
+  - `VertexKeyAuth`: B052's key authentication with an explicit api key string, returns the authenticated key or the auth error unchanged.
+  - `VertexStoreAccess`: `managed_store(vector_store_id)` and `assert_access(store, key)`, backed by B1061 (get_litellm_managed_vector_store and assert_user_can_access_vector_store in betterlite-core::api::vector_endpoint_access; read the merged names). A lookup failure is B1061's own 500 "Unable to validate vector store access"; a denied caller is its 403.
+  - `VertexCredentialLookup`: `credentials(project, location) -> Option<VertexPassThroughCredentials>`, backed by B3602's get_vertex_credentials (record at `crate::pass_through_credentials::VertexPassThroughCredentials`).
+  - B3622's `VertexDeploymentLookup`, as an Option (no router means no model resolution).
+  - `VertexRelay`: one method `relay(endpoint, target, custom_headers, is_streaming, request, response, key) -> Result<Response, RelayError>`, backed by B3615's create_pass_through_route handler. `RelayError` has the variant `Proxy(ProxyException)`, where ProxyException is the error type of B3613 PassThroughHandler::handle and the error B3615 names for its relay (read the merged name from the exception module; stop and report if it is not there), and `Other`.
+  - Request state is not a port. Step 5 calls B3615 set_passthrough_state on the request extensions with a PassThroughState that carries the deployment model info (stored under B3600 MODEL_INFO_STATE_KEY). B3615 relay cleans it up with take_passthrough_state after the call. If B3615 has not merged these two functions, stop and report.
+
+  The two route handlers.
+  `vertex_discovery_route` (LiteLLM vertex_discovery_proxy_route) has no auth dependency. It searches the endpoint for the regex `dataStores/([^/]+)` (first match, anywhere in the text). With a match it asks VertexStoreAccess for the managed store of that id; None is not an error (an unknown id keeps the direct pass-through). It then calls the shared function with the discovery base handler and the store as router credentials.
+  `vertex_aiplatform_route` (vertex_proxy_route) authenticates through the normal dependency first, like every proxy route, then calls the shared function with the aiplatform base handler and no router credentials. The shared function authenticates again, as LiteLLM does, so a failure of either gives the auth error.
+  The base URL handlers: discovery always gives `https://discoveryengine.googleapis.com/` and ignores the location. aiplatform with no location is HTTP 400 with the detail "No Vertex AI location for this request. Include /projects/<project>/locations/<location>/ in the route, set vertex_location in default_vertex_config (or DEFAULT_VERTEXAI_LOCATION), or add the model to model_list with use_in_pass_through: true." (one line, no line break). Otherwise it calls B3622's passthrough_vertex_base_url; its InvalidFormat error is an internal error (HTTP 500), as the unhandled ValueError is in LiteLLM. Model the two handlers as one enum `VertexBaseKind { Discovery, AiPlatform }`.
+
+  The shared function `vertex_proxy_core(kind, endpoint, request, response, router_credentials)`, in order:
+  1. `encoded_endpoint` is the path of the endpoint as httpx parses it (B3618's provider_target_url takes the path the same way): query and fragment dropped. Debug-log the requested endpoint.
+  2. Authenticate with VertexKeyAuth using the string from B3603's get_litellm_virtual_key(request): `Bearer {x-litellm-api-key}` when that header is non-empty, otherwise the Authorization header, otherwise an empty string.
+  3. When router credentials exist, call assert_access on them with the authenticated key.
+  4. vertex_project = B1304's get_vertex_project_id_from_url(endpoint), vertex_location = get_vertex_location_from_url(endpoint). Then B3622's override_vertex_params with the router credentials.
+  5. model_id = B1304's get_vertex_model_id_from_url(endpoint). When it is non-empty and a router exists, call B3622's resolve_vertex_router_model and take back the new encoded endpoint, endpoint, project and location. When its model info is a non-empty map, store it with B3615 set_passthrough_state. An empty map is not stored.
+  6. vertex_credentials = VertexCredentialLookup(project, location) on the values from steps 4 and 5.
+  7. B3622's prepare_vertex_auth_headers with the request, those credentials, the router credentials, the project, the location and the key. Take its headers, headers_passed_through, project and location.
+  8. The base target URL from the base handler and the location from step 7.
+  9. When encoded_endpoint does not start with `/`, add one. Build the target with B1304's construct_target_url(base, encoded_endpoint, location, project) as a string.
+  10. Streaming. When the target text contains `:rawPredict` or `:streamRawPredict`, ask B3618's request_is_streaming(request). Otherwise streaming is true when the text `stream` is anywhere in the target string. When streaming, append `?alt=sse` to the target text.
+  11. Call VertexRelay with the endpoint from step 5 (not the encoded one), the target, B3622's vertex_upstream_headers(endpoint, headers) as the custom headers, the streaming flag, the request, the response and the key.
+  12. On a RelayError::Proxy whose headers_passed_through is true, change its message to "No credentials found on proxy for project_name={project} + location={location}, check `/model/info` for allowed project + region combinations with `use_in_pass_through: true`. Headers were passed through directly but request failed with error: {original message}" and return it with every other field unchanged. Project and location are the values from step 7, printed as Python would: a None shows as the word None. Any other error goes up unchanged. The relay result is the route's result.
+  This task adds no new setting. DEFAULT_VERTEXAI_LOCATION and default_vertex_config are read by B3602.
+scope:
+  paths:
+    - crates/betterlite-server/src/vertex_passthrough_routes.rs
+    - crates/betterlite-server/src/vertex_passthrough_routes/**
+    - tools/oracle/cases/server/vertex-passthrough-routes/**
+    - tools/oracle/helpers/b3623.py
+    - tools/oracle/helpers/b3623/**
+    - tools/oracle/src/helpers/server/b3623.rs
+    - tools/oracle/src/helpers/server/b3623/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2308-L2339
+    why: The location-required detail text and the two base handler classes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2389-L2397
+    why: get_vertex_pass_through_handler, the two call types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2686-L2837
+    why: _base_vertex_proxy_route, every step in order, the streaming test and the ProxyException rewrite.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2840-L2920
+    why: Both route decorators (discovery, /vertex-ai and /vertex_ai), the dataStores regex and the two handlers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L1067-L1166
+    why: The three URL readers and construct_target_url, which B1304 owns and this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L807-L815
+    why: is_streaming_request_fn, which B3618 owns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/common_utils.py#L6-L18
+    why: get_litellm_virtual_key, which B3603 owns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/pass_through_endpoints.py#L15
+    why: The request-state key under which the deployment model info is stored.
+  - url: https://docs.litellm.ai/docs/pass_through/vertex_ai
+    why: How clients call the route, including the x-litellm-api-key header.
+dod:
+  - text: vertex_routes_router serves /vertex_ai/discovery/{endpoint}, /vertex_ai/{endpoint} and /vertex-ai/{endpoint} for GET, POST, PUT, DELETE and PATCH, builds without an axum path conflict, and the discovery path is not captured by the generic one.
+    proof: [router-tests, oracle]
+  - text: The discovery route looks up a managed store only for an endpoint with dataStores/<id>, treats an unknown id as no credentials, and checks the caller's access to a found store before anything else happens.
+    proof: [discovery-tests]
+  - text: The aiplatform base handler answers 400 with the exact location-required detail for no location, gives B3622's host otherwise and turns an invalid location into a 500, and the discovery handler always gives the discoveryengine host.
+    proof: [base-handler-tests, oracle]
+  - text: vertex_proxy_core authenticates with the string from get_litellm_virtual_key, applies the vector store override, then the router model resolution, and stores the model info only when it is a non-empty map.
+    proof: [core-order-tests]
+  - text: The target is built from the base, the slash-prefixed encoded endpoint and the final project and location, with the version and project segments B1304 adds, and the relay gets the resolved endpoint and B3622's upstream headers.
+    proof: [target-tests]
+  - text: Streaming is decided by the request body for rawPredict and streamRawPredict, by the text stream in the target for every other route, and a streaming target ends in ?alt=sse.
+    proof: [streaming-tests]
+  - text: A ProxyException from the relay gets the "No credentials found on proxy" text only when the headers were passed through, with project and location as printed by Python, and keeps its other fields.
+    proof: [proxy-error-tests]
+  - text: A request with no valid proxy key is refused, a request with no location gets the 400 detail, and a request with no Google credential and no configured credentials gets B3603's 401, each over the booted proxy.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: router-tests
+      why: a path or method is missing or two routes clash
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vertex_passthrough_routes::tests::router(::|$)/)'
+    - id: discovery-tests
+      why: the dataStores lookup or the access check is missing or runs in the wrong order
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vertex_passthrough_routes::tests::discovery(::|$)/)'
+    - id: base-handler-tests
+      why: the missing-location 400, the host or the invalid-location 500 is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vertex_passthrough_routes::tests::base_handler(::|$)/)'
+    - id: core-order-tests
+      why: the steps of the shared function run in another order or with other inputs
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vertex_passthrough_routes::tests::core_order(::|$)/)'
+    - id: target-tests
+      why: the target URL, the relayed endpoint or the upstream headers are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vertex_passthrough_routes::tests::target(::|$)/)'
+    - id: streaming-tests
+      why: the streaming decision or the alt=sse suffix is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vertex_passthrough_routes::tests::streaming(::|$)/)'
+    - id: proxy-error-tests
+      why: the passed-through-headers text is added when it should not be, or is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vertex_passthrough_routes::tests::proxy_error(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/server/vertex-passthrough-routes/invalid-key-aiplatform.yaml
+  - tools/oracle/cases/server/vertex-passthrough-routes/invalid-key-hyphen-alias.yaml
+  - tools/oracle/cases/server/vertex-passthrough-routes/invalid-key-discovery.yaml
+  - tools/oracle/cases/server/vertex-passthrough-routes/no-location-400.yaml
+  - tools/oracle/cases/server/vertex-passthrough-routes/bad-location-500.yaml
+  - tools/oracle/cases/server/vertex-passthrough-routes/no-google-credential-401.yaml
+  - tools/oracle/cases/server/vertex-passthrough-routes/discovery-no-credential-401.yaml
+deviations:
+  - what: An invalid location in the URL answers with the plain body "Internal Server Error", the same as LiteLLM's unhandled ValueError.
+    why: Kept as is so a client sees no difference; the notes ask whether to return a typed 400 instead.
+  - what: The OpenAPI schema entries and tags ("Vertex AI Pass-through", "pass-through") are not reproduced.
+    why: betterlite builds its schema from the typed routes; no client behavior depends on the tags.
+out_of_scope:
+  - "get_vertex_base_url, get_vertex_ai_allowed_incoming_headers, _is_vertex_anthropic_count_tokens_route, _upstream_headers_for_vertex_route, _override_vertex_params_from_router_credentials, _resolve_vertex_model_from_router and _prepare_vertex_auth_headers: B3622 owns them and this task calls them."
+  - "The credential-filter helpers (_normalize_credential_value to _forwarded_headers_for_credentialless_vertex_passthrough) and get_litellm_virtual_key: B3603 owns them."
+  - "get_vertex_credentials and VertexPassThroughCredentials: B3602. get_vertex_project_id_from_url, get_vertex_location_from_url, get_vertex_model_id_from_url, construct_target_url: B1304."
+  - "is_streaming_request_fn: B3618. create_pass_through_route and the request-state cleanup: B3615."
+  - "_vertex_publisher_model_suffix, _resolve_vertex_live_credentials, _build_vertex_live_setup_model_rewriter, _resolve_alias_to_upstream_model, vertex_ai_live_websocket_passthrough and create_vertex_ai_live_websocket_endpoint: B3629 owns the Live WebSocket route."
+  - "get_vertex_pass_through_handler as a function: replaced by the VertexBaseKind enum, its only two values are the two route kinds."
+pitfalls:
+  - "The URL readers search the endpoint text for `/projects/`, `/locations/` and `/models/` with a leading slash, and the endpoint has none at its start, so `projects/p/locations/l/...` without a `v1/` prefix reads no project; keep that."
+  - "Step 5 uses the endpoint with the model replaced for the relay and the headers, but the encoded endpoint for the target; replacing only one of them sends the original model name to Google."
+  - "The check `if deployment_model_info` is false for an empty map, so an empty model info is not stored on the request state."
+  - "The streaming test `stream` in the target string also matches a project or model whose name contains stream, and the host aiplatform.googleapis.com does not match; do not narrow it to streamGenerateContent."
+  - "For :rawPredict and :streamRawPredict the body decides, so a POST with stream false to :streamRawPredict is not streaming and gets no ?alt=sse."
+  - "Location is checked after the credentials are prepared, so a credential-less request with no location gets B3603's 401 before the 400."
+  - "The vertex route authenticates twice (dependency, then the explicit api key from get_litellm_virtual_key); the discovery route only once. Do not drop the second call from the vertex route, since its api key string differs (x-litellm-api-key wins over Authorization)."
+  - "A 4xx or 5xx from Google reaches the client as the relay's ProxyException; the passed-through-headers sentence is prepended only for that error type, never for the 401 and 400 that this module raises itself."
+  - "The discovery route builds its store lookup from the first dataStores/<id> in the whole endpoint text; an id with a dot or a dash is part of the match, only a slash ends it."
+  - "B3629 owns the registration of /vertex_ai/live: a WebSocket upgrade there goes to its live handler and every other request on that path comes to vertex_aiplatform_route, so do not register /vertex_ai/live here."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

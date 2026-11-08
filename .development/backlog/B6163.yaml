@@ -7,6 +7,7 @@ file: tasks/B6163-a2a-guardrail-translation.yaml
 covers:
   - "litellm/llms/a2a/chat/guardrail_translation/handler.py"
   - "litellm/llms/a2a/chat/guardrail_translation/__init__.py"
+  - "litellm/llms/a2a/chat/guardrail_translation/README.md"
 parent: B104
 split_from: B3680
 resolution: null

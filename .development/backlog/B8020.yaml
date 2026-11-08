@@ -1,0 +1,14 @@
+id: B8020
+milestone: M3 providers
+title: Map Exa AI and Serper search requests and replies
+status: todo
+depends_on: [B002, B3270, B171]
+file: tasks/B8020-exa-serper-search.yaml
+covers:
+  - "litellm/llms/{exa_ai,serper}/**"
+parent: B048
+split_from: B048
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
