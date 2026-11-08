@@ -118,6 +118,14 @@ struct Case {
     expected: Some(serde_json::json!({"anyOf": [{"type": "integer"}], "additionalProperties": {"type": "string"}})),
     failure: Failure::None,
 })]
+#[case::property_names_are_not_keywords(Case {
+    operation: Operation::Normalize,
+    schema: serde_json::json!({"properties": {"type": "STRING"}}),
+    response: "",
+    limits: None,
+    expected: Some(serde_json::json!({"properties": {"type": "STRING"}})),
+    failure: Failure::None,
+})]
 #[case::normalization_stops_at_the_depth_limit(Case {
     operation: Operation::Normalize,
     schema: serde_json::json!({

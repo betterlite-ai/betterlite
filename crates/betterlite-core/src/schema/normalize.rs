@@ -45,43 +45,38 @@ fn normalize(value: &SchemaJson, depth: usize, max_depth: usize) -> SchemaJson {
                 .map(|item| normalize(item, depth.saturating_add(1), max_depth))
                 .collect(),
         ),
-        SchemaJson::Object(object) => normalize_object(object, depth, max_depth),
+        SchemaJson::Object(object) => normalize_map(object, |key, child| {
+            if key == "type"
+                && let SchemaJson::String(name) = child
+                && let Some(lower) = normalize_type(name)
+            {
+                return SchemaJson::String(lower.to_owned());
+            }
+            // every property value is a schema on its own, and the property names are never read as keywords
+            if key == "properties"
+                && let SchemaJson::Object(properties) = child
+            {
+                return normalize_map(properties, |_name, property| {
+                    normalize(property, depth.saturating_add(1), max_depth)
+                });
+            }
+            normalize(child, depth.saturating_add(1), max_depth)
+        }),
         SchemaJson::Null | SchemaJson::Bool(_) | SchemaJson::Number(_) | SchemaJson::String(_) => {
             value.clone()
         }
     }
 }
 
-fn normalize_object(
-    object: &serde_json::Map<String, SchemaJson>,
-    depth: usize,
-    max_depth: usize,
-) -> SchemaJson {
-    let mut normalized = object.clone();
+fn normalize_map<F>(object: &serde_json::Map<String, SchemaJson>, map_child: F) -> SchemaJson
+where
+    F: Fn(&str, &SchemaJson) -> SchemaJson,
+{
+    let mut normalized = serde_json::Map::with_capacity(object.len());
     for (key, child) in object {
-        let mapped = normalize_typed_entry(key, child, depth, max_depth)
-            .unwrap_or_else(|| normalize(child, depth.saturating_add(1), max_depth));
-        drop(normalized.insert(key.clone(), mapped));
+        drop(normalized.insert(key.clone(), map_child(key, child)));
     }
     SchemaJson::Object(normalized)
-}
-
-fn normalize_typed_entry(
-    key: &str,
-    value: &SchemaJson,
-    depth: usize,
-    max_depth: usize,
-) -> Option<SchemaJson> {
-    match (key, value) {
-        ("type", SchemaJson::String(name)) => {
-            normalize_type(name).map(|mapped| SchemaJson::String(mapped.to_owned()))
-        }
-        // a property value sits one level under its schema, not two, as LiteLLM recurses into it directly
-        ("properties", SchemaJson::Object(properties)) => {
-            Some(normalize_object(properties, depth, max_depth))
-        }
-        _ => None,
-    }
 }
 
 fn normalize_type(name: &str) -> Option<&'static str> {
