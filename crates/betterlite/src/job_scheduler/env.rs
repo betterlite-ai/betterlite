@@ -13,10 +13,25 @@ pub struct JobDefaults {
 
 impl JobDefaults {
     pub fn from_env(env: &BTreeMap<String, String>) -> Result<Self, SchedulerError> {
+        let coalesce = match env.get("APSCHEDULER_COALESCE") {
+            Some(text) => {
+                let value =
+                    betterlite_env::flag("APSCHEDULER_COALESCE", text).map_err(|_source| {
+                        SchedulerError::InvalidEnv {
+                            name: "APSCHEDULER_COALESCE".to_owned(),
+                        }
+                    })?;
+                value.unwrap_or(true)
+            }
+            None => true,
+        };
+        let misfire_grace_seconds =
+            env_number::<u64>(env, "APSCHEDULER_MISFIRE_GRACE_TIME")?.unwrap_or(3600);
+        let max_instances = env_number::<u32>(env, "APSCHEDULER_MAX_INSTANCES")?.unwrap_or(1);
         Ok(Self {
-            coalesce: env_flag(env, "APSCHEDULER_COALESCE", true)?,
-            misfire_grace_seconds: env_number(env, "APSCHEDULER_MISFIRE_GRACE_TIME", 3600_u64)?,
-            max_instances: env_number(env, "APSCHEDULER_MAX_INSTANCES", 1_u32)?,
+            coalesce,
+            misfire_grace_seconds,
+            max_instances,
         })
     }
 }
@@ -30,50 +45,30 @@ pub struct ShutdownTimeouts {
 impl ShutdownTimeouts {
     pub fn from_env(env: &BTreeMap<String, String>) -> Result<Self, SchedulerError> {
         Ok(Self {
-            finish: env_seconds(env, "SCHEDULED_JOB_SHUTDOWN_FINISH_TIMEOUT_SECONDS", 5.0)?,
-            cancel: env_seconds(env, "SCHEDULED_JOB_SHUTDOWN_CANCEL_TIMEOUT_SECONDS", 5.0)?,
+            finish: env_duration(env, "SCHEDULED_JOB_SHUTDOWN_FINISH_TIMEOUT_SECONDS", 5.0)?,
+            cancel: env_duration(env, "SCHEDULED_JOB_SHUTDOWN_CANCEL_TIMEOUT_SECONDS", 5.0)?,
         })
     }
 }
 
-fn env_flag(
-    env: &BTreeMap<String, String>,
-    name: &str,
-    default: bool,
-) -> Result<bool, SchedulerError> {
-    let Some(text) = env.get(name) else {
-        return Ok(default);
-    };
-    let value = betterlite_env::flag(name, text).map_err(|_source| SchedulerError::InvalidEnv {
-        name: name.to_owned(),
-    })?;
-    Ok(value.unwrap_or(default))
-}
-
-fn env_number<T>(
-    env: &BTreeMap<String, String>,
-    name: &str,
-    default: T,
-) -> Result<T, SchedulerError>
+fn env_number<T>(env: &BTreeMap<String, String>, name: &str) -> Result<Option<T>, SchedulerError>
 where
     T: FromStr,
 {
     let Some(text) = env.get(name) else {
-        return Ok(default);
+        return Ok(None);
     };
-    let value =
-        betterlite_env::number::<T>(name, text).map_err(|_source| SchedulerError::InvalidEnv {
-            name: name.to_owned(),
-        })?;
-    Ok(value.unwrap_or(default))
+    betterlite_env::number::<T>(name, text).map_err(|_source| SchedulerError::InvalidEnv {
+        name: name.to_owned(),
+    })
 }
 
-fn env_seconds(
+fn env_duration(
     env: &BTreeMap<String, String>,
     name: &str,
     default: f64,
 ) -> Result<Duration, SchedulerError> {
-    let seconds = env_number::<f64>(env, name, default)?;
+    let seconds = env_number::<f64>(env, name)?.unwrap_or(default);
     Duration::try_from_secs_f64(seconds).map_err(|_source| SchedulerError::InvalidEnv {
         name: name.to_owned(),
     })

@@ -5,9 +5,21 @@ use crate::scheduled_job_stagger::Trigger;
 
 use super::SchedulerError;
 
+const WEEKDAY_NAMES: [&str; 7] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IntervalTrigger {
     pub seconds: u64,
+}
+
+impl IntervalTrigger {
+    // APScheduler turns a zero-length interval into one second.
+    fn interval(self) -> Option<TimeDelta> {
+        match i64::try_from(self.seconds.max(1)) {
+            Ok(seconds) => TimeDelta::try_seconds(seconds),
+            Err(_source) => None,
+        }
+    }
 }
 
 impl Trigger for IntervalTrigger {
@@ -16,13 +28,9 @@ impl Trigger for IntervalTrigger {
         previous_fire_time: Option<DateTime<Utc>>,
         now: DateTime<Utc>,
     ) -> Option<DateTime<Utc>> {
-        // APScheduler turns a zero-length interval into one second.
-        let seconds = if self.seconds == 0 { 1 } else { self.seconds };
-        let interval = TimeDelta::try_seconds(i64::try_from(seconds).ok()?)?;
-        previous_fire_time.map_or_else(
-            || now.checked_add_signed(interval),
-            |previous| previous.checked_add_signed(interval),
-        )
+        previous_fire_time
+            .unwrap_or(now)
+            .checked_add_signed(self.interval()?)
     }
 }
 
@@ -62,9 +70,21 @@ impl Trigger for CronTrigger {
         previous_fire_time: Option<DateTime<Utc>>,
         now: DateTime<Utc>,
     ) -> Option<DateTime<Utc>> {
-        let start = ceil_to_second(search_start(previous_fire_time, now)?)?;
+        // APScheduler searches from one microsecond past the previous fire, or from now when that is later.
+        let start = match previous_fire_time {
+            Some(previous) => {
+                let bumped = previous.checked_add_signed(TimeDelta::microseconds(1))?;
+                if now < bumped && now != previous {
+                    now
+                } else {
+                    bumped
+                }
+            }
+            None => now,
+        };
+        let rounded = ceil_to_second(start)?;
         match self.zone {
-            CronZone::Utc => match self.cron.find_next_occurrence(&start, true) {
+            CronZone::Utc => match self.cron.find_next_occurrence(&rounded, true) {
                 Ok(next) => Some(next),
                 Err(error) => {
                     tracing::debug!(%error, "cron trigger has no next fire time");
@@ -72,7 +92,7 @@ impl Trigger for CronTrigger {
                 }
             },
             CronZone::Local => {
-                let local = start.with_timezone(&Local);
+                let local = rounded.with_timezone(&Local);
                 match self.cron.find_next_occurrence(&local, true) {
                     Ok(next) => Some(next.with_timezone(&Utc)),
                     Err(error) => {
@@ -82,26 +102,6 @@ impl Trigger for CronTrigger {
                 }
             }
         }
-    }
-}
-
-// APScheduler searches from one microsecond past the previous fire, or from now when that is later.
-fn search_start(
-    previous_fire_time: Option<DateTime<Utc>>,
-    now: DateTime<Utc>,
-) -> Option<DateTime<Utc>> {
-    let Some(previous) = previous_fire_time else {
-        return Some(now);
-    };
-    let bumped = previous.checked_add_signed(TimeDelta::microseconds(1))?;
-    if now < bumped {
-        if now == previous {
-            Some(bumped)
-        } else {
-            Some(now)
-        }
-    } else {
-        Some(bumped)
     }
 }
 
@@ -196,18 +196,15 @@ fn weekday_number(text: &str) -> Result<Option<u32>, SchedulerError> {
 }
 
 fn weekday_name(value: u32) -> Result<&'static str, SchedulerError> {
-    match value {
-        0 => Ok("mon"),
-        1 => Ok("tue"),
-        2 => Ok("wed"),
-        3 => Ok("thu"),
-        4 => Ok("fri"),
-        5 => Ok("sat"),
-        6 => Ok("sun"),
-        other => Err(SchedulerError::DayOfWeek {
-            value: u64::from(other),
-        }),
-    }
+    let index = usize::try_from(value).map_err(|_source| SchedulerError::DayOfWeek {
+        value: u64::from(value),
+    })?;
+    WEEKDAY_NAMES
+        .get(index)
+        .copied()
+        .ok_or_else(|| SchedulerError::DayOfWeek {
+            value: u64::from(value),
+        })
 }
 
 fn weekday_list(start: u32, end: u32, step: u32) -> Result<String, SchedulerError> {

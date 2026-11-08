@@ -205,12 +205,11 @@ impl ProxyScheduler {
 
     pub fn resume(&mut self) {
         let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        if inner.state != SchedulerState::Paused {
-            return;
+        if inner.state == SchedulerState::Paused {
+            inner.state = SchedulerState::Running;
+            drop(inner);
+            self.wake.notify_one();
         }
-        inner.state = SchedulerState::Running;
-        drop(inner);
-        self.wake.notify_one();
     }
 
     #[must_use]
