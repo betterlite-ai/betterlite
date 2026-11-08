@@ -1,0 +1,32 @@
+task: B4654
+deviations:
+  - what: Header values are not written to the debug log when a server auth header is found. LiteLLM logs the first 10 characters of the value.
+    why: Ten characters of a bearer token or API key is a secret leak in a log line; the alias and header name are enough to debug.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1437-L1442
+  - what: The invalid PROXY_BASE_URL warning is logged each time normalize_proxy_base_url runs, not once per distinct value. The caller resolves it once at startup.
+    why: LiteLLM keeps a module global to deduplicate the warning; betterlite keeps no module state, and one startup call gives the same single line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L110-L127
+  - what: LITELLM_MCP_CLIENT_SIDE_AUTH_HEADER_NAME is read from the process environment only, not from a configured secret manager.
+    why: The secret manager lookup (get_secret_str) belongs to the secret manager task; the header name is not a credential, and the env var is the documented way to set it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1458-L1478
+  - what: A path that ends in a newline character is not treated as ending at the newline. LiteLLM's regex $ also matches just before a final newline.
+    why: An HTTP request target cannot carry a raw newline, so no request reaches this case; the oracle cases send none.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L717-L737
+  - what: The fallback to empty headers when an ASGI header entry is malformed (the AttributeError and TypeError branch) does not exist. RawHeaders takes typed name and value byte pairs.
+    why: The server layer hands over bytes from the HTTP parser, so a malformed entry cannot occur.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1519-L1529
+  - what: A PROXY_BASE_URL that urlparse rejects (for example an unmatched IPv6 bracket) is treated like any other invalid value, warned about once and ignored. LiteLLM raises the ValueError out of the request.
+    why: A typo in an operator setting surfaces at every OAuth discovery request as an unhandled 500 in LiteLLM; warning and falling back to the request origin is what a working setup needs. No working configuration relies on the crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L110-L127
+  - what: get_request_base_url returns a typed error for a base URL that urlparse rejects, including when the caller is not a trusted proxy. LiteLLM raises an unhandled ValueError for the same input.
+    why: The base URL comes from the inbound Host header, so an attacker can reach that ValueError; a typed error lets the caller answer 4xx instead of 500. Well-formed requests behave identically.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L138-L177
+  - what: resolve_upstream_resource warns and omits the resource when upstream_resource=auto and the server URL is unparsable. LiteLLM lets the ValueError escape.
+    why: The URL comes from the MCP server row; a bad row should not turn every token request for that server into an unhandled 500. Omitting resource is the same outcome LiteLLM already documents for a URL that is not absolute.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L688-L729
+  - what: A URL with leading C0 controls or spaces, or with tab, CR or LF inside it, is not normalized. Python's urlsplit strips and removes those bytes before parsing.
+    why: An HTTP request target cannot carry raw controls, config scalars are trimmed, and a URL stored in a server row with a stray tab is malformed rather than a behavior a working setup relies on.
+    link: https://github.com/python/cpython/blob/3.13/Lib/urllib/parse.py#L494-L501
+  - what: An IPvFuture bracketed host such as http://[v1.fe80]/ is rejected as an invalid IPv6 URL. Python's urlsplit accepts an IPvFuture literal.
+    why: No browser or MCP client resolves an IPvFuture literal, and accepting it would only carry the address into a URL a client cannot use.
+    link: https://github.com/python/cpython/blob/3.13/Lib/urllib/parse.py#L458-L467

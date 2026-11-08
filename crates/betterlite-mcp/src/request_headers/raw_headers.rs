@@ -1,0 +1,91 @@
+mod tests;
+
+use std::fmt;
+
+use http::StatusCode;
+use thiserror::Error;
+
+pub const DUPLICATE_AUTHORIZATION_DETAIL: &str = "Multiple Authorization headers are not allowed";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[error("Multiple Authorization headers are not allowed")]
+pub struct DuplicateAuthorization;
+
+impl DuplicateAuthorization {
+    pub const STATUS: StatusCode = StatusCode::BAD_REQUEST;
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct RawHeaders {
+    entries: Vec<(String, String)>,
+}
+
+// names only: a header value can carry a bearer token or an API key.
+impl fmt::Debug for RawHeaders {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let names: Vec<&str> = self
+            .entries
+            .iter()
+            .map(|(name, _value)| name.as_str())
+            .collect();
+        f.debug_struct("RawHeaders").field("names", &names).finish()
+    }
+}
+
+impl RawHeaders {
+    pub fn from_pairs(pairs: &[(&[u8], &[u8])]) -> Result<Self, DuplicateAuthorization> {
+        let mut seen_authorization = false;
+        for (name, _value) in pairs {
+            if !name.eq_ignore_ascii_case(b"authorization") {
+                continue;
+            }
+            if seen_authorization {
+                return Err(DuplicateAuthorization);
+            }
+            seen_authorization = true;
+        }
+        let mut collapsed: Vec<(String, String)> = Vec::with_capacity(pairs.len());
+        for (raw_name, raw_value) in pairs {
+            let name = latin1(raw_name);
+            let value = latin1(raw_value);
+            match collapsed
+                .iter_mut()
+                .find(|(existing, _value)| *existing == name)
+            {
+                Some(entry) => entry.1 = value,
+                None => collapsed.push((name, value)),
+            }
+        }
+        let entries = collapsed
+            .into_iter()
+            .map(|(name, value)| (name.to_lowercase(), value))
+            .collect();
+        Ok(Self { entries })
+    }
+
+    #[must_use]
+    pub fn lookup(&self, name: &str) -> Option<&str> {
+        let lowered = name.to_lowercase();
+        self.entries
+            .iter()
+            .find(|(existing, _value)| *existing == lowered)
+            .map(|(_name, value)| value.as_str())
+    }
+
+    #[must_use]
+    pub fn items(&self) -> Vec<(&str, &str)> {
+        let mut items = Vec::with_capacity(self.entries.len());
+        for (name, value) in &self.entries {
+            items.push((name.as_str(), value.as_str()));
+        }
+        items
+    }
+}
+
+fn latin1(bytes: &[u8]) -> String {
+    let mut text = String::with_capacity(bytes.len());
+    for byte in bytes {
+        text.push(char::from(*byte));
+    }
+    text
+}

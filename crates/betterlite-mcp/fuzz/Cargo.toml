@@ -31,3 +31,11 @@ path = "fuzz_targets/envelope.rs"
 test = false
 doc = false
 bench = false
+
+
+[[bin]]
+name = "request_path_targets"
+path = "fuzz_targets/request_path_targets.rs"
+test = false
+doc = false
+bench = false
