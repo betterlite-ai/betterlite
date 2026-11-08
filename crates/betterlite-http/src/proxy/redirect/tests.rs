@@ -120,9 +120,10 @@ fn post(url: Url) -> OutboundRequest {
 }
 
 fn header(head: &str, name: &str) -> Option<String> {
-    head.to_ascii_lowercase()
-        .lines()
-        .find_map(|line| line.strip_prefix(&format!("{name}: ")).map(str::to_owned))
+    head.lines().find_map(|line| {
+        let (found, value) = line.split_once(": ")?;
+        (found.to_ascii_lowercase() == name).then(|| value.to_owned())
+    })
 }
 
 fn body(head: &str) -> &str {
@@ -144,37 +145,28 @@ fn described(head: &str) -> String {
     )
 }
 
-async fn rewritten(status: u16) -> String {
+async fn chain(status: u16) -> String {
     let server = scripted(vec![moved(status, "/next"), done("ok")]).await;
-    let _answer = client().send_buffered(post(server.base.clone())).await;
-    let heads = server.heads.lock().unwrap().clone();
-    heads
-        .iter()
-        .map(|head| described(head))
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-async fn replayed(status: u16) -> String {
-    let server = scripted(vec![moved(status, "/next"), done("ok")]).await;
-    let _answer = client().send_buffered(post(server.base.clone())).await;
-    let heads = server.heads.lock().unwrap().clone();
-    heads
-        .iter()
-        .map(|head| described(head))
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-async fn relative() -> String {
-    let server = scripted(vec![moved(302, "../next?x=1"), done("ok")]).await;
     let _answer = client()
-        .send_buffered(post(server.base.join("a/b/start").unwrap()))
+        .send_buffered(post(server.base.join("start").unwrap()))
+        .await;
+    let heads = server.heads.lock().unwrap().clone();
+    heads
+        .iter()
+        .map(|head| described(head))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+async fn second_hop(location: &str, path: &str) -> String {
+    let server = scripted(vec![moved(302, location), done("ok")]).await;
+    let _answer = client()
+        .send_buffered(post(server.base.join(path).unwrap()))
         .await;
     let heads = server.heads.lock().unwrap().clone();
     heads
         .get(1)
-        .map_or_else(String::new, |head| line(head).to_owned())
+        .map_or_else(String::new, |head| described(head))
 }
 
 async fn hop_bound() -> String {
@@ -225,15 +217,6 @@ async fn cross_origin() -> String {
     )
 }
 
-async fn same_origin() -> String {
-    let server = scripted(vec![moved(302, "/next"), done("ok")]).await;
-    let _answer = client().send_buffered(post(server.base.clone())).await;
-    let heads = server.heads.lock().unwrap().clone();
-    heads
-        .get(1)
-        .map_or_else(String::new, |head| described(head))
-}
-
 async fn streamed_answer() -> String {
     let server = scripted(vec![
         reply(302, &[String::from("location: /next")], "redirect-body"),
@@ -267,17 +250,9 @@ async fn unrepeatable_body() -> String {
     }
 }
 
-fn downgrade() -> String {
+fn refusal(location: &str) -> String {
     let current = HttpxUrl::parse("https://api.example.com/v1/jobs").unwrap();
-    match next_target(&current, "http://api.example.com/v1/jobs/1") {
-        Ok(target) => format!("followed to {}", target.href()),
-        Err(error) => error.to_string(),
-    }
-}
-
-fn userinfo() -> String {
-    let current = HttpxUrl::parse("https://api.example.com/v1/jobs").unwrap();
-    match next_target(&current, "https://user:pass@api.example.com/v1/jobs/1") {
+    match next_target(&current, location) {
         Ok(target) => format!("followed to {}", target.href()),
         Err(error) => error.to_string(),
     }
@@ -285,19 +260,19 @@ fn userinfo() -> String {
 
 async fn observe(case: Case) -> String {
     match case {
-        Case::Post301 => rewritten(301).await,
-        Case::Post302 => rewritten(302).await,
-        Case::Post303 => rewritten(303).await,
-        Case::Post307 => replayed(307).await,
-        Case::Post308 => replayed(308).await,
-        Case::Relative => relative().await,
+        Case::Post301 => chain(301).await,
+        Case::Post302 => chain(302).await,
+        Case::Post303 => chain(303).await,
+        Case::Post307 => chain(307).await,
+        Case::Post308 => chain(308).await,
+        Case::Relative => second_hop("../next?x=1", "a/b/start").await,
         Case::HopBound => hop_bound().await,
         Case::CrossOrigin => cross_origin().await,
-        Case::SameOrigin => same_origin().await,
+        Case::SameOrigin => second_hop("/next", "").await,
         Case::StreamedAnswer => streamed_answer().await,
         Case::UnrepeatableBody => unrepeatable_body().await,
-        Case::HttpsDowngrade => downgrade(),
-        Case::RedirectUserinfo => userinfo(),
+        Case::HttpsDowngrade => refusal("http://api.example.com/v1/jobs/1"),
+        Case::RedirectUserinfo => refusal("https://user:pass@api.example.com/v1/jobs/1"),
     }
 }
 
@@ -326,7 +301,10 @@ const GONE: &str = "POST /start|auth=Bearer key|cookie=sid=1|length=7|body={\"a\
 #[case::a_303_turns_a_post_into_a_get(Case::Post303, &format!("{GONE} GET /next|auth=Bearer key|cookie=sid=1|length=-|body="))]
 #[case::a_307_replays_the_post_body(Case::Post307, &format!("{GONE} POST /next|auth=Bearer key|cookie=sid=1|length=7|body={{\"a\":1}}"))]
 #[case::a_308_replays_the_post_body(Case::Post308, &format!("{GONE} POST /next|auth=Bearer key|cookie=sid=1|length=7|body={{\"a\":1}}"))]
-#[case::relative_location_joins_against_the_request(Case::Relative, "GET /a/next?x=1 HTTP/1.1")]
+#[case::relative_location_joins_against_the_request(
+    Case::Relative,
+    "GET /a/next?x=1 HTTP/1.1|auth=Bearer key|cookie=sid=1|length=-|body="
+)]
 #[case::the_hop_bound_stops_the_chain(
     Case::HopBound,
     "redirected the request more than 10 times requests=11"

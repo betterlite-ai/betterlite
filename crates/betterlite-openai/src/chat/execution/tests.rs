@@ -591,9 +591,12 @@ enum Base {
 }
 
 fn authorization(sent: &str) -> String {
-    sent.to_ascii_lowercase()
-        .lines()
-        .find_map(|line| line.strip_prefix("authorization: ").map(str::to_owned))
+    sent.lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(": ")?;
+            name.eq_ignore_ascii_case("authorization")
+                .then(|| value.to_owned())
+        })
         .unwrap_or_else(|| "-".to_owned())
 }
 
