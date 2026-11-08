@@ -42,10 +42,7 @@ pub fn int_value(text: &str) -> Option<i128> {
     let mut value: i128 = 0;
     let mut after_digit = false;
     for character in digits.chars() {
-        if character == '_' {
-            if !after_digit {
-                return None;
-            }
+        if character == '_' && after_digit {
             after_digit = false;
             continue;
         }
@@ -78,27 +75,25 @@ fn hostinfo(netloc: &str) -> (&str, Option<&str>) {
 
 pub(super) fn validate_netloc(netloc: &str) -> Result<(), UrlParseError> {
     let open = netloc.contains('[');
-    if open != netloc.contains(']') {
+    if open != netloc.contains(']') || (open && !valid_bracketed(netloc)) {
         return Err(UrlParseError::InvalidIpv6);
     }
-    if !open {
-        return Ok(());
-    }
+    Ok(())
+}
+
+fn valid_bracketed(netloc: &str) -> bool {
     let hostinfo = netloc.rsplit_once('@').map_or(netloc, |(_user, rest)| rest);
     let Some((before, bracketed)) = hostinfo.split_once('[') else {
-        return Err(UrlParseError::InvalidIpv6);
+        return false;
     };
     let Some((host, after)) = bracketed.split_once(']') else {
-        return Err(UrlParseError::InvalidIpv6);
+        return false;
     };
     if !before.is_empty() || (!after.is_empty() && !after.starts_with(':')) {
-        return Err(UrlParseError::InvalidIpv6);
+        return false;
     }
     let address = host
         .split_once('%')
         .map_or(host, |(address, _zone)| address);
-    if address.is_empty() || Ipv6Addr::from_str(address).is_err() {
-        return Err(UrlParseError::InvalidIpv6);
-    }
-    Ok(())
+    !address.is_empty() && Ipv6Addr::from_str(address).is_ok()
 }

@@ -139,34 +139,22 @@ def _route_relative_path(data: dict[str, Json]) -> object:
     return {"value": oauth_utils.get_route_relative_request_path(_scope(data, "path"))}
 
 
-def _metadata_for(data: dict[str, Json]) -> str:
+def _challenge(data: dict[str, Json]) -> object:
     base_url = _string(data, "base_url")
+    invalid = data.get("invalid_token")
     with patch.object(
         oauth_utils,
         "get_request_base_url",
         lambda _request: base_url,  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     ):
-        return oauth_utils.get_passthrough_resource_metadata_url(
-            _scope(data, "route_path"), _string(data, "server_name")
-        )
-
-
-def _metadata_url(data: dict[str, Json]) -> object:
-    return {"value": _metadata_for(data)}
-
-
-def _www_authenticate(data: dict[str, Json]) -> object:
-    base_url = _string(data, "base_url")
-    with patch.object(
-        oauth_utils,
-        "get_request_base_url",
-        lambda _request: base_url,  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
-    ):
-        value = oauth_utils.get_passthrough_www_authenticate(
-            _scope(data, "route_path"),
-            _string(data, "server_name"),
-            _boolean(data, "invalid_token"),
-        )
+        scope = _scope(data, "route_path")
+        name = _string(data, "server_name")
+        if invalid is None:
+            value = oauth_utils.get_passthrough_resource_metadata_url(scope, name)
+        else:
+            value = oauth_utils.get_passthrough_www_authenticate(
+                scope, name, _boolean(data, "invalid_token")
+            )
     return {"value": value}
 
 
@@ -283,8 +271,8 @@ _HANDLERS: dict[str, Callable[[dict[str, Json]], object]] = {
     "request_base_url": _request_base_url,
     "well_known_root_suffix": _well_known_root_suffix,
     "route_relative_path": _route_relative_path,
-    "metadata_url": _metadata_url,
-    "www_authenticate": _www_authenticate,
+    "metadata_url": _challenge,
+    "www_authenticate": _challenge,
     "byok_authenticate": _byok_authenticate,
     "canonicalize": _canonicalize,
     "redact_url": _redact_url,

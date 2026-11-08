@@ -63,24 +63,15 @@ pub fn resolve_upstream_resource(server: &UpstreamServer<'_>) -> Option<String> 
         );
         return None;
     };
-    match canonical_resource_uri(server_url) {
-        Ok(Some(resource)) => Some(resource),
-        Ok(None) => {
-            warn!(
-                server_id = server.server_id,
-                "the server url is not an absolute URI, so upstream_resource=auto derives nothing; omitting it"
-            );
-            None
-        }
-        Err(error) => {
-            warn!(
-                server_id = server.server_id,
-                %error,
-                "the server url could not be parsed, so upstream_resource=auto derives nothing; omitting it"
-            );
-            None
-        }
+    let resolved = canonical_resource_uri(server_url);
+    if let Ok(Some(resource)) = resolved {
+        return Some(resource);
     }
+    warn!(
+        server_id = server.server_id,
+        "the server url yields no RFC 8707 resource for upstream_resource=auto; omitting it"
+    );
+    None
 }
 
 pub fn build_upstream_token_request(

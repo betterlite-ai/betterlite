@@ -9,29 +9,24 @@ use serde_json::Value;
 
 use crate::helpers::HelperError;
 
-impl From<UrlParseError> for Box<HelperError> {
-    fn from(error: UrlParseError) -> Self {
-        invalid("ValueError", None, error.to_string())
-    }
+macro_rules! helper_error {
+    ($error:ty, $class:literal, $status:expr) => {
+        impl From<$error> for Box<HelperError> {
+            fn from(error: $error) -> Self {
+                invalid($class, $status, error.to_string())
+            }
+        }
+    };
 }
 
-impl From<UrlIdentityError> for Box<HelperError> {
-    fn from(error: UrlIdentityError) -> Self {
-        invalid("ValueError", None, error.to_string())
-    }
-}
-
-impl From<DuplicateAuthorization> for Box<HelperError> {
-    fn from(error: DuplicateAuthorization) -> Self {
-        invalid("HTTPException", Some(400), error.to_string())
-    }
-}
-
-impl From<TokenEndpointAuthConfigError> for Box<HelperError> {
-    fn from(error: TokenEndpointAuthConfigError) -> Self {
-        invalid("TokenEndpointAuthConfigError", None, error.to_string())
-    }
-}
+helper_error!(UrlParseError, "ValueError", None);
+helper_error!(UrlIdentityError, "ValueError", None);
+helper_error!(DuplicateAuthorization, "HTTPException", Some(400));
+helper_error!(
+    TokenEndpointAuthConfigError,
+    "TokenEndpointAuthConfigError",
+    None
+);
 
 pub(super) fn invalid(class: &str, status: Option<u16>, message: String) -> Box<HelperError> {
     Box::new(HelperError {
@@ -76,23 +71,15 @@ pub(super) fn boolean(input: &Value, name: &str) -> Result<bool, Box<HelperError
         .ok_or_else(|| invalid("InvalidInput", None, format!("{name} must be a boolean")))
 }
 
-pub(super) fn strings<'input>(input: &'input Value, name: &str) -> Vec<&'input str> {
-    input
-        .get(name)
-        .and_then(Value::as_array)
-        .map_or_else(Vec::new, |items| {
-            items.iter().filter_map(Value::as_str).collect()
-        })
-}
-
-pub(super) fn optional_strings<'input>(
-    input: &'input Value,
-    name: &str,
-) -> Option<Vec<&'input str>> {
-    input
-        .get(name)
-        .and_then(Value::as_array)
-        .map(|items| items.iter().filter_map(Value::as_str).collect())
+pub(super) fn strings<'input>(input: &'input Value, name: &str) -> Option<Vec<&'input str>> {
+    let items = input.get(name)?.as_array()?;
+    let mut strings = Vec::with_capacity(items.len());
+    for item in items {
+        if let Some(text) = item.as_str() {
+            strings.push(text);
+        }
+    }
+    Some(strings)
 }
 
 pub(super) fn pairs(input: &Value) -> Result<Vec<(String, String)>, Box<HelperError>> {
