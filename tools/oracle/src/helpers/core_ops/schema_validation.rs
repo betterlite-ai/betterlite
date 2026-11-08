@@ -1,6 +1,7 @@
 use betterlite_core::schema::normalize::{normalize_json_schema_types, normalize_tool_schema};
 use betterlite_core::schema::validate::validate_schema;
 use betterlite_core::schema::{SchemaError, SchemaJson, SchemaLimits};
+use betterlite_error::error::ErrorClass;
 use serde::Deserialize;
 
 pub(crate) struct Op;
@@ -17,7 +18,7 @@ impl crate::helpers::Helper for Op {
                 validate_schema(&input.schema, &input.response, &limits).map(|()| SchemaJson::Null)
             }
         };
-        outcome.map_err(|error| schema_failure(&error))
+        outcome.map_err(|error| schema_failure(&error, &input.schema, &input.response))
     }
 }
 
@@ -41,20 +42,22 @@ enum Mode {
     Validate,
 }
 
-// LiteLLM raises JSONSchemaValidationError with status 500 for a bad response and an uncaught SchemaError otherwise
-fn schema_failure(error: &SchemaError) -> Box<crate::helpers::HelperError> {
-    let status = match error {
-        SchemaError::InvalidJson { .. } | SchemaError::Mismatch { .. } => Some(500),
-        SchemaError::SchemaTooLarge { .. }
-        | SchemaError::TooManyNodes { .. }
-        | SchemaError::SchemaTooDeep { .. }
-        | SchemaError::ExternalReference { .. }
-        | SchemaError::ResponseTooLarge { .. }
-        | SchemaError::InvalidSchema { .. } => None,
+// LiteLLM raises JSONSchemaValidationError for a bad response and an uncaught jsonschema.SchemaError otherwise
+fn schema_failure(
+    error: &SchemaError,
+    schema: &SchemaJson,
+    response: &str,
+) -> Box<crate::helpers::HelperError> {
+    let class = error.classify(schema, response);
+    let class_name = if matches!(&class, ErrorClass::JsonSchemaValidation(_)) {
+        "JSONSchemaValidationError"
+    } else {
+        "SchemaError"
     };
+    let status = class.metadata().status_code;
     Box::new(crate::helpers::HelperError {
-        class: String::from("JSONSchemaValidationError"),
-        status,
+        class: String::from(class_name),
+        status: Some(status),
         error_type: None,
         param: None,
         code: None,
