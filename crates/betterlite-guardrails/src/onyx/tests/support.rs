@@ -117,19 +117,8 @@ pub(crate) enum Script {
         tail: Duration,
         reply: String,
     },
-    IncompleteThenDeny {
-        reply: String,
-    },
-    TruncatedChunkedThenDeny {
-        reply: String,
-    },
-    IllegalChunkThenDeny {
-        reply: String,
-    },
-    TruncatedServerErrorThenDeny {
-        reply: String,
-    },
-    ResetThenDeny {
+    FailThenDeny {
+        first: FirstFailure,
         reply: String,
     },
 }
@@ -166,26 +155,8 @@ async fn run_script(
         Script::Split { head, tail, reply } => {
             split_reply(&listener, &accepted, head, tail, &reply).await
         }
-        Script::IncompleteThenDeny { reply } => {
-            misbehave_then_deny(&listener, &accepted, &reply, FirstFailure::Incomplete).await
-        }
-        Script::TruncatedChunkedThenDeny { reply } => {
-            misbehave_then_deny(&listener, &accepted, &reply, FirstFailure::TruncatedChunked).await
-        }
-        Script::IllegalChunkThenDeny { reply } => {
-            misbehave_then_deny(&listener, &accepted, &reply, FirstFailure::IllegalChunk).await
-        }
-        Script::TruncatedServerErrorThenDeny { reply } => {
-            misbehave_then_deny(
-                &listener,
-                &accepted,
-                &reply,
-                FirstFailure::TruncatedServerError,
-            )
-            .await
-        }
-        Script::ResetThenDeny { reply } => {
-            misbehave_then_deny(&listener, &accepted, &reply, FirstFailure::Reset).await
+        Script::FailThenDeny { first, reply } => {
+            misbehave_then_deny(&listener, &accepted, &reply, first).await
         }
     }
 }
@@ -216,11 +187,14 @@ async fn split_reply(
     stream.shutdown().await
 }
 
-enum FirstFailure {
+pub(crate) enum FirstFailure {
     Incomplete,
     TruncatedChunked,
     IllegalChunk,
     TruncatedServerError,
+    GarbageGzip,
+    TruncatedGzip,
+    OverflowingChunk,
     Reset,
 }
 
@@ -235,6 +209,9 @@ async fn misbehave_then_deny(
         FirstFailure::TruncatedChunked => truncated_chunked_body(listener, accepted).await?,
         FirstFailure::IllegalChunk => illegal_chunk_header(listener, accepted).await?,
         FirstFailure::TruncatedServerError => truncated_server_error(listener, accepted).await?,
+        FirstFailure::GarbageGzip => garbage_gzip(listener, accepted).await?,
+        FirstFailure::TruncatedGzip => truncated_gzip(listener, accepted).await?,
+        FirstFailure::OverflowingChunk => overflowing_chunk(listener, accepted).await?,
         FirstFailure::Reset => reset_connection(listener, accepted).await?,
     }
     let mut second = accept_one(listener, accepted).await?;
@@ -267,6 +244,37 @@ async fn truncated_server_error(listener: &TcpListener, accepted: &AtomicUsize) 
     write_head(&mut stream, 500, 100).await?;
     stream.write_all(b"{\"all").await?;
     stream.shutdown().await
+}
+
+async fn garbage_gzip(listener: &TcpListener, accepted: &AtomicUsize) -> io::Result<()> {
+    let mut stream = accept_one(listener, accepted).await?;
+    write_gzip_head(&mut stream, 8).await?;
+    stream.write_all(b"not gzip").await?;
+    stream.shutdown().await
+}
+
+async fn truncated_gzip(listener: &TcpListener, accepted: &AtomicUsize) -> io::Result<()> {
+    let mut stream = accept_one(listener, accepted).await?;
+    let header = [
+        0x1f_u8, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03,
+    ];
+    write_gzip_head(&mut stream, header.len()).await?;
+    stream.write_all(&header).await?;
+    stream.shutdown().await
+}
+
+async fn overflowing_chunk(listener: &TcpListener, accepted: &AtomicUsize) -> io::Result<()> {
+    let mut stream = accept_one(listener, accepted).await?;
+    write_chunked_head(&mut stream).await?;
+    stream.write_all(b"FFFFFFFFFFFFFFFFF\r\n").await?;
+    stream.shutdown().await
+}
+
+async fn write_gzip_head(stream: &mut TcpStream, body_length: usize) -> io::Result<()> {
+    let head = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-encoding: gzip\r\ncontent-length: {body_length}\r\nconnection: close\r\n\r\n"
+    );
+    stream.write_all(head.as_bytes()).await
 }
 
 async fn reset_connection(listener: &TcpListener, accepted: &AtomicUsize) -> io::Result<()> {

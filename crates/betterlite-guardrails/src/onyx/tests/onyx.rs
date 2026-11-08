@@ -17,8 +17,8 @@ use tracing::subscriber::with_default;
 use uuid::Uuid;
 
 use crate::support::{
-    CapturedLog, Script, captured, captured_content_type, captured_path, guardrail, inputs,
-    mock_onyx, object, scripted_mock, silent_onyx, timed_guardrail, value,
+    CapturedLog, FirstFailure, Script, captured, captured_content_type, captured_path, guardrail,
+    inputs, mock_onyx, object, scripted_mock, silent_onyx, timed_guardrail, value,
 };
 
 fn lookup(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -390,6 +390,7 @@ async fn block_raises_a_400_with_the_violated_rules_message() {
         "Request blocked by Onyx Guard. Violations: pii, jailbreak."
     );
     assert!(matches!(error, OnyxGuardrailError::Blocked { .. }));
+    assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -543,7 +544,8 @@ fn fail_open_logs_the_transport_error_without_the_api_key() {
 
 #[tokio::test]
 async fn retries_once_when_the_first_response_body_is_incomplete() {
-    let mock = scripted_mock(Script::IncompleteThenDeny {
+    let mock = scripted_mock(Script::FailThenDeny {
+        first: FirstFailure::Incomplete,
         reply: String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
     })
     .await;
@@ -565,7 +567,8 @@ async fn retries_once_when_the_first_response_body_is_incomplete() {
 
 #[tokio::test]
 async fn retries_a_truncated_chunked_body() {
-    let mock = scripted_mock(Script::TruncatedChunkedThenDeny {
+    let mock = scripted_mock(Script::FailThenDeny {
+        first: FirstFailure::TruncatedChunked,
         reply: String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
     })
     .await;
@@ -584,7 +587,8 @@ async fn retries_a_truncated_chunked_body() {
 
 #[tokio::test]
 async fn retries_an_illegal_chunk_header() {
-    let mock = scripted_mock(Script::IllegalChunkThenDeny {
+    let mock = scripted_mock(Script::FailThenDeny {
+        first: FirstFailure::IllegalChunk,
         reply: String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
     })
     .await;
@@ -603,7 +607,8 @@ async fn retries_an_illegal_chunk_header() {
 
 #[tokio::test]
 async fn retries_a_truncated_server_error_body() {
-    let mock = scripted_mock(Script::TruncatedServerErrorThenDeny {
+    let mock = scripted_mock(Script::FailThenDeny {
+        first: FirstFailure::TruncatedServerError,
         reply: String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
     })
     .await;
@@ -621,8 +626,69 @@ async fn retries_a_truncated_server_error_body() {
 }
 
 #[tokio::test]
+async fn retries_an_overflowing_chunk_size() {
+    let mock = scripted_mock(Script::FailThenDeny {
+        first: FirstFailure::OverflowingChunk,
+        reply: String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
+    })
+    .await;
+    let error = guardrail(&mock.base)
+        .apply_guardrail(
+            inputs(r#"{"texts": ["hello"]}"#),
+            &object("{}"),
+            GuardrailInputType::Request,
+            Some("call-1"),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, OnyxGuardrailError::Blocked { .. }));
+    assert_eq!(mock.accepted.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn a_garbage_gzip_reply_is_not_retried() {
+    let mock = scripted_mock(Script::FailThenDeny {
+        first: FirstFailure::GarbageGzip,
+        reply: String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
+    })
+    .await;
+    let returned = guardrail(&mock.base)
+        .apply_guardrail(
+            inputs(r#"{"texts": ["hello"]}"#),
+            &object("{}"),
+            GuardrailInputType::Request,
+            Some("call-1"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(returned, inputs(r#"{"texts": ["hello"]}"#));
+    assert_eq!(mock.accepted.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn a_truncated_gzip_reply_is_not_retried() {
+    let mock = scripted_mock(Script::FailThenDeny {
+        first: FirstFailure::TruncatedGzip,
+        reply: String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
+    })
+    .await;
+    let returned = guardrail(&mock.base)
+        .apply_guardrail(
+            inputs(r#"{"texts": ["hello"]}"#),
+            &object("{}"),
+            GuardrailInputType::Request,
+            Some("call-1"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(returned, inputs(r#"{"texts": ["hello"]}"#));
+    assert_eq!(mock.accepted.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn a_reset_connection_is_not_retried() {
-    let mock = scripted_mock(Script::ResetThenDeny {
+    let mock = scripted_mock(Script::FailThenDeny {
+        first: FirstFailure::Reset,
         reply: String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
     })
     .await;

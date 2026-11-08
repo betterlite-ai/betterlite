@@ -70,9 +70,9 @@ fn call(input: &OnyxCall) -> HelperResult {
             "content_type": content_type,
             "inputs": inputs,
         })),
-        Err(OnyxGuardrailError::Blocked { .. }) => Ok(json!({
+        Err(error @ OnyxGuardrailError::Blocked { .. }) => Ok(json!({
             "blocked": true,
-            "status": 400,
+            "status": error.status_code().as_u16(),
             "path": path,
             "request": request,
             "content_type": content_type,
@@ -132,13 +132,13 @@ fn onyx_failure(error: &OnyxGuardrailError) -> Box<HelperError> {
         | OnyxGuardrailError::TimeoutNotInteger(..)
         | OnyxGuardrailError::TimeoutNegative(..)
         | OnyxGuardrailError::UnrepresentableTimeout { .. } => "ValueError",
-        OnyxGuardrailError::Client { .. }
-        | OnyxGuardrailError::Transport { .. }
+        OnyxGuardrailError::Transport { .. }
         | OnyxGuardrailError::HttpStatus { .. }
         | OnyxGuardrailError::ResponseTooLarge { .. }
         | OnyxGuardrailError::ResponseJson { .. } => "OnyxGuardrailAPIError",
     };
-    let status = matches!(error, OnyxGuardrailError::Blocked { .. }).then_some(400);
+    let status =
+        matches!(error, OnyxGuardrailError::Blocked { .. }).then(|| error.status_code().as_u16());
     failure(class, status, error.to_string())
 }
 
