@@ -25,6 +25,7 @@ pub mod mock;
 pub mod multipart;
 pub mod outbound;
 pub mod pool;
+mod redirect;
 pub mod stream;
 pub mod transport_error;
 
@@ -169,13 +170,7 @@ impl ProxiedClient {
         let response = if self.network_mock {
             mock::respond(&built).map_err(TransportError::Mock)?
         } else {
-            if let Some(rejection) = self.rejected(built.url()) {
-                return Err(TransportError::Rejected(rejection));
-            }
-            self.client
-                .execute(built)
-                .await
-                .map_err(TransportError::sending)?
+            redirect::send(self, built).await?
         };
         check_headers(response.headers(), self.limits.header_bytes)?;
         Ok(StreamResponse {

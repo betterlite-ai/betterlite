@@ -4,6 +4,8 @@ use thiserror::Error;
 use crate::error::HttpError;
 use crate::proxy::limits::{HeadersTooLarge, ReadError};
 use crate::proxy::mock::MockError;
+use crate::url_policy::error::UrlPolicyError;
+use crate::user_url::error::UserUrlError;
 
 #[derive(Debug, Error)]
 pub enum TransportError {
@@ -47,6 +49,31 @@ pub enum TransportError {
     Closed,
     #[error("{remaining} requests were still running at the drain deadline")]
     DrainTimeout { remaining: usize },
+    #[error("the configured api_base cannot be used: {source}")]
+    ConfiguredUrl {
+        #[source]
+        source: Box<UrlPolicyError>,
+    },
+    #[error("the provider redirected the request more than {limit} times")]
+    TooManyRedirects { limit: usize },
+    #[error("the redirect target cannot be followed")]
+    RedirectTarget {
+        #[source]
+        source: Box<UserUrlError>,
+    },
+    #[error("the redirect target is not a URL the request can be sent to")]
+    RedirectUrl {
+        #[source]
+        source: url::ParseError,
+    },
+    #[error("the redirect target carries a user name or password")]
+    RedirectUserinfo,
+    #[error("the redirect target scheme {scheme:?} is not http or https")]
+    RedirectScheme { scheme: String },
+    #[error("the provider redirected an HTTPS request to HTTP")]
+    InsecureRedirect,
+    #[error("the redirect cannot replay a request body that streams")]
+    RedirectBody,
 }
 
 impl TransportError {
