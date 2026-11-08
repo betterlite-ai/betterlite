@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-model-urls-gemini-seed
+call:
+  vertex_model_urls:
+    gemini_url:
+      cases:
+        - {mode: chat, model: gemini-3-pro-preview, stream: true}
+        - {mode: image_generation, model: gemini-2.5-flash}
+env: {}
+compare: {ignore: []}

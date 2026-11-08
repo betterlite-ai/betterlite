@@ -1,0 +1,22 @@
+kind: helper
+name: gemini-version-aliases
+call:
+  vertex_model_urls:
+    gemini_url:
+      cases:
+        - {mode: chat, model: gemini-2.5-flash}
+        - {mode: chat, model: gemini-3-pro-preview, stream: true}
+        - {mode: chat, model: gemini-flash-latest}
+        - {mode: chat, model: gemini-flash}
+        - {mode: chat, model: gemini-pro-latest}
+        - {mode: chat, model: gemini-pro}
+        - {mode: chat, model: 'gemini/1234'}
+        - {mode: chat, model: 'gemini/GEMINI-3-pro'}
+        - {mode: chat, model: gemini-2x}
+        - {mode: chat, model: gemini-10-pro}
+        - {mode: chat, model: gemma-3-12b-it}
+        - {mode: embedding, model: gemini-3-pro-preview}
+        - {mode: batch_embedding, model: gemini-2.5-flash}
+        - {mode: count_tokens, model: gemini-3-pro-preview}
+env: {}
+compare: {ignore: []}

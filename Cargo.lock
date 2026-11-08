@@ -2004,6 +2004,7 @@ dependencies = [
  "betterlite-server",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "betterlite-vertex",
  "betterlite-websearch",
  "bytes",
  "chrono",

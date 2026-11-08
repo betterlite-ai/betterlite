@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-model-urls-embedding-seed
+call:
+  vertex_model_urls:
+    embedding_url:
+      cases:
+        - {model: gemini-embedding-2, project: proj, location: us, api_version: v1}
+        - {model: 'bge/123456', location: us-central1, api_version: v1beta1}
+env: {}
+compare: {ignore: []}

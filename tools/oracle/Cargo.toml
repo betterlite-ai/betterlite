@@ -55,6 +55,7 @@ betterlite-secrets = { path = "../../crates/betterlite-secrets" }
 betterlite-server = { path = "../../crates/betterlite-server" }
 betterlite-streaming = { path = "../../crates/betterlite-streaming" }
 betterlite-tokenizer = { path = "../../crates/betterlite-tokenizer" }
+betterlite-vertex = { path = "../../crates/betterlite-vertex" }
 betterlite-websearch = { path = "../../crates/betterlite-websearch" }
 bytes = "1.12.1"
 chrono.workspace = true

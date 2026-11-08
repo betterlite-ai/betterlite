@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-model-urls-vertex-chat-seed
+call:
+  vertex_model_urls:
+    vertex_url:
+      cases:
+        - {mode: chat, model: gemini-2.5-flash, stream: true, project: proj, location: us-central1, api_version: v1beta1}
+        - {mode: image_generation, model: '1234567890', project: proj, location: global, api_version: v1}
+        - {mode: batch_embedding, model: gemini-embedding-2, project: proj, location: us, api_version: v1}
+env: {}
+compare: {ignore: []}

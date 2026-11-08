@@ -1,0 +1,12 @@
+kind: helper
+name: embed-content-catalog
+call:
+  vertex_model_urls:
+    embedding_url:
+      cases:
+        - {model: gemini-embedding-2, project: proj, location: us-central1, api_version: v1}
+        - {model: gemini-embedding-2-preview, project: proj, location: us, api_version: v1}
+        - {model: 'vertex_ai/gemini-embedding-2', project: proj, location: europe-west1, api_version: v1beta1}
+        - {model: text-embedding-005, project: proj, location: us-central1, api_version: v1}
+env: {}
+compare: {ignore: []}
