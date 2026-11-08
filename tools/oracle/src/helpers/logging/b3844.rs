@@ -17,7 +17,7 @@ use opentelemetry::Value as OtelValue;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 pub(crate) struct Op;
 
@@ -78,8 +78,14 @@ impl crate::helpers::Helper for Op {
             Input::McpToolCall {
                 payload,
                 capture_content,
-            } => tool_call(payload, *capture_content)?,
-            Input::McpListTools { payload } => list_tools(payload)?,
+            } => tool_call_record(
+                &MCPToolCallSpanData::from_standard_logging_payload(payload, *capture_content)
+                    .map_err(|error| metadata_error(&error))?,
+            ),
+            Input::McpListTools { payload } => list_tools_record(
+                &MCPListToolsSpanData::from_standard_logging_payload(payload)
+                    .map_err(|error| metadata_error(&error))?,
+            ),
             Input::PayloadKind { payload } => kind_record(payload),
         };
         Ok(json!({"result": value}))
@@ -105,21 +111,6 @@ fn llm_call(
     )
     .map_err(|error| metadata_error(&error))?;
     Ok(llm_call_record(&span))
-}
-
-fn tool_call(
-    payload: &Payload,
-    capture_content: bool,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let span = MCPToolCallSpanData::from_standard_logging_payload(payload, capture_content)
-        .map_err(|error| metadata_error(&error))?;
-    Ok(tool_call_record(&span))
-}
-
-fn list_tools(payload: &Payload) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let span = MCPListToolsSpanData::from_standard_logging_payload(payload)
-        .map_err(|error| metadata_error(&error))?;
-    Ok(list_tools_record(&span))
 }
 
 fn metadata_error(error: &MetadataError) -> Box<crate::helpers::HelperError> {
@@ -173,20 +164,23 @@ fn llm_call_record(span: &LLMCallSpanData) -> Value {
 }
 
 fn tool_call_record(span: &MCPToolCallSpanData) -> Value {
-    json!({
-        "operation": span.operation.to_string(),
-        "method": span.method.to_string(),
-        "tool_name": span.tool_name,
-        "server_name": span.server_name,
-        "server_address": span.server_address,
-        "server_port": span.server_port,
-        "session_id": span.session_id,
-        "arguments_json": span.arguments_json,
-        "result_json": span.result_json,
-        "error": span.error,
-        "response_cost": decimal_value(span.response_cost),
-        "identity": identity_record(&span.identity),
-    })
+    let mut record = Map::new();
+    record.insert("operation".to_owned(), json!(span.operation.to_string()));
+    record.insert("method".to_owned(), json!(span.method.to_string()));
+    record.insert("tool_name".to_owned(), json!(span.tool_name));
+    record.insert("server_name".to_owned(), json!(span.server_name));
+    record.insert("server_address".to_owned(), json!(span.server_address));
+    record.insert("server_port".to_owned(), json!(span.server_port));
+    record.insert("session_id".to_owned(), json!(span.session_id));
+    record.insert("arguments_json".to_owned(), json!(span.arguments_json));
+    record.insert("result_json".to_owned(), json!(span.result_json));
+    record.insert("error".to_owned(), json!(span.error));
+    record.insert(
+        "response_cost".to_owned(),
+        decimal_value(span.response_cost),
+    );
+    record.insert("identity".to_owned(), identity_record(&span.identity));
+    Value::Object(record)
 }
 
 fn list_tools_record(span: &MCPListToolsSpanData) -> Value {
