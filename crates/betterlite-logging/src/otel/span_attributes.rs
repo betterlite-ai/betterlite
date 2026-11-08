@@ -9,13 +9,10 @@ pub fn primitive_value(value: &OtelModelValue) -> Value {
         OtelModelValue::Null(()) => Value::from(""),
         OtelModelValue::String(text) => Value::from(text.clone()),
         OtelModelValue::Bool(flag) => Value::Bool(*flag),
-        OtelModelValue::Number(number) => match number.as_i64() {
-            Some(integer) => Value::I64(integer),
-            None => match number.as_f64() {
-                Some(float) => Value::F64(float),
-                None => Value::from(""),
-            },
-        },
+        OtelModelValue::Number(number) => number.as_i64().map_or_else(
+            || number.as_f64().map_or_else(|| Value::from(""), Value::F64),
+            Value::I64,
+        ),
         // LiteLLM stringifies containers, and Python's repr text is outside the JSON contract
         OtelModelValue::Array(_) | OtelModelValue::Object(_) => {
             serde_json::to_string(value).map_or_else(|_| Value::from(""), Value::from)
@@ -34,9 +31,17 @@ impl<S: Span> SafeSetAttribute for S {
 }
 
 pub trait LLMObsAttributes {
-    fn set_messages<S: Span>(_span: &mut S, _kwargs: &MetadataMap) {}
+    fn set_messages<S>(_span: &mut S, _kwargs: &MetadataMap)
+    where
+        S: Span,
+    {
+    }
 
-    fn set_response_output_messages<S: Span>(_span: &mut S, _response: &OtelModelValue) {}
+    fn set_response_output_messages<S>(_span: &mut S, _response: &OtelModelValue)
+    where
+        S: Span,
+    {
+    }
 }
 
 #[path = "span_attributes/tests.rs"]

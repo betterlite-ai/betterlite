@@ -4,7 +4,7 @@ use super::*;
 use opentelemetry::trace::{Span as _, Tracer as _, TracerProvider as _};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 
-fn exported_attributes(exporter: &InMemorySpanExporter) -> Vec<(String, opentelemetry::Value)> {
+fn exported_attributes(exporter: &InMemorySpanExporter) -> Vec<(String, Value)> {
     let spans = exporter.get_finished_spans().expect("spans");
     spans
         .first()

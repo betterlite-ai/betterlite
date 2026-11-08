@@ -274,5 +274,5 @@ fn text_response_contributes_no_response_fields() {
     let span = LLMCallSpanData::from_standard_logging_payload(&raw, options(true)).expect("span");
     assert_eq!(span.response_id, None);
     assert_eq!(span.system_fingerprint, None);
-    assert_eq!(span.choices_out, Vec::<MetadataMap>::new());
+    assert!(span.choices_out.is_empty());
 }

@@ -127,16 +127,20 @@ fn a_failed_tool_call_carries_the_span_error() {
 #[case::empty_host("https://:8080", None, None)]
 #[case::no_scheme("weather.example:443", None, None)]
 #[case::empty("", None, None)]
-#[case::absent(None, None, None)]
 fn upstream_origin_splits_like_urlsplit(
-    #[case] resource: Option<&str>,
+    #[case] resource: &str,
     #[case] address: Option<&str>,
     #[case] port: Option<u16>,
 ) {
     assert_eq!(
-        upstream_address_port(resource),
+        upstream_address_port(Some(resource)),
         (address.map(str::to_owned), port)
     );
+}
+
+#[test]
+fn an_absent_origin_gives_no_address_or_port() {
+    assert_eq!(upstream_address_port(None), (None, None));
 }
 
 #[test]

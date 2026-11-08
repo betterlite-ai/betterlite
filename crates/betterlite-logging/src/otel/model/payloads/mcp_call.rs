@@ -105,10 +105,10 @@ fn upstream_address_port(resource: Option<&str>) -> (Option<String>, Option<u16>
     if host.is_empty() {
         return (None, None);
     }
-    let port = match port_text.filter(|text| !text.is_empty()) {
+    let port = match port_text.filter(|digits| !digits.is_empty()) {
         None => default_port(scheme),
-        Some(text) if !text.bytes().all(|byte| byte.is_ascii_digit()) => return (None, None),
-        Some(text) => match text.parse::<u16>() {
+        Some(digits) if !digits.bytes().all(|byte| byte.is_ascii_digit()) => return (None, None),
+        Some(digits) => match digits.parse::<u16>() {
             // LiteLLM writes `port or default_port`, so an explicit 0 also takes the default
             Ok(0) => default_port(scheme),
             Ok(port) => Some(port),
