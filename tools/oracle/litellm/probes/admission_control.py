@@ -20,7 +20,6 @@ from probes.protocol import Operation, ProbeError, Strict
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false, reportUnusedCallResult=false
 
 WAIT_SECONDS: Final = 5.0
-POLL_SECONDS: Final = 0.001
 REAL_TIME: Final = (time_module.time, time_module.monotonic)
 _JSON: Final = TypeAdapter(JsonValue)
 
@@ -174,20 +173,18 @@ class Harness:
     gates: dict[str, Gate]
     tasks: dict[int, asyncio.Task[None]]
     answers: dict[int, Answer]
+    limits_output: LimitsOutput | None
     stack: AdmissionControlMiddleware
 
     def __init__(self, settings: dict[str, JsonValue], root_path: str, requests: list[RequestSpec]) -> None:
         self.parsed = get_admission_control_settings(settings)
+        self.limits_output = self.limit_values(self.parsed)
         self.state = ObservedState()
         self.root_path = root_path
         self.specs = {}
         self.by_path = {}
         self.gates = {}
         for spec in requests:
-            if spec.id in self.specs:
-                raise ProbeError("invalid_request", "a request id is used twice")
-            if spec.path in self.gates:
-                raise ProbeError("invalid_request", "a request path is used twice")
             self.specs[spec.id] = spec
             self.by_path[spec.path] = spec.id
             self.gates[spec.path] = Gate(spec.behavior)
@@ -198,6 +195,15 @@ class Harness:
 
     def get_settings(self) -> AdmissionControlSettings | None:
         return self.parsed
+
+    def limit_values(self, settings: AdmissionControlSettings | None) -> LimitsOutput | None:
+        if settings is None:
+            return None
+        return LimitsOutput(
+            max_in_flight_requests=settings.max_in_flight_requests,
+            max_queued_requests=settings.max_queued_requests,
+            queue_timeout_seconds=settings.queue_timeout_seconds,
+        )
 
     def spec(self, request_id: int) -> RequestSpec:
         spec = self.specs.get(request_id)
@@ -268,7 +274,7 @@ class Harness:
                     observations.append(await self.await_queued(step.queued))
                 case StatsStep():
                     observations.append(self.stats())
-        return Output(limits=self.limits(), observations=observations)
+        return Output(limits=self.limits_output, observations=observations)
 
     async def request_step(self, step: RequestStep, observations: list[ObservationField]) -> None:
         match step.kind:
@@ -305,7 +311,7 @@ class Harness:
                 return TimedOutObservation(wait="queued")
             self.state.changed.clear()
             with suppress(TimeoutError):
-                await asyncio.wait_for(self.state.changed.wait(), timeout=POLL_SECONDS)
+                await asyncio.wait_for(self.state.changed.wait(), timeout=0.001)
         return QueuedObservation(queued=queued)
 
     async def cancel(self, request_id: int) -> None:
@@ -353,16 +359,6 @@ class Harness:
             queued=stats.queued,
             rejected_total=stats.rejected_total,
             in_flight=InFlightRequestsMiddleware.get_count(),
-        )
-
-    def limits(self) -> LimitsOutput | None:
-        settings = self.parsed
-        if settings is None:
-            return None
-        return LimitsOutput(
-            max_in_flight_requests=settings.max_in_flight_requests,
-            max_queued_requests=settings.max_queued_requests,
-            queue_timeout_seconds=settings.queue_timeout_seconds,
         )
 
 
