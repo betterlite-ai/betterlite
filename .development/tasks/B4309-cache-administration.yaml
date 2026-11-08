@@ -233,6 +233,7 @@ pitfalls:
   - /cache/ping catches HTTPException and re-raises it to skip the generic exception
     handler (lines 105-106 in LiteLLM); ensure exception typing and re-raise logic
     matches this pattern.
+  - "Call B4326's blocking methods (client_list, info, flushall, flush_cache, delete_cache, sync_ping) inside spawn_blocking."
 
 review_level: security
 

@@ -1,0 +1,191 @@
+id: B3884
+title: Prometheus paginated budget refresh
+description: >-
+  Build the background job that re-reads every team, key, user, organization and customer budget from the
+  database page by page and writes the budget gauges, then sets the three count gauges. LiteLLM runs it
+  every few minutes so gauges stay right for budgets nobody has spent against recently. It ports
+  litellm/integrations/prometheus.py lines 3617-3891 and 4537-4563 plus the startup condition at
+  litellm/proxy/proxy_server.py lines 11062-11067. Put the code in crates/betterlite-server/src/prometheus_budget_refresh.rs
+  and prometheus_budget_refresh/** (betterlite-server is the only crate that sees the team list, key list,
+  Postgres and pod lock code at once, and betterlite-logging cannot depend on it). The gauge setters are B3882's
+  and the collectors are B3875's PrometheusCollectors; this task only fetches pages and calls them.
+
+  Page walk. Write it once, as a generic function over a small trait with two methods, fetch(page_size, page)
+  and apply(rows). It is LiteLLM's _initialize_budget_metrics. The page size is the constant 50. If no database
+  is configured it returns at once. Otherwise fetch page 1; a missing total (None) becomes the number of rows
+  fetched; total_pages is ceil(total / 50) using integer arithmetic; apply page 1 (even when total_pages is 0);
+  then for page 2 up to and including total_pages fetch and apply each page, ignoring the total those later
+  fetches return. Any error from a fetch or an apply stops the walk for that entity, is logged at error level
+  as "Error initializing <teams|keys|users|orgs|customers> budget metrics: <error>", and is not returned to
+  the caller, so the next entity still runs. Build five implementations of the trait, one per entity, in
+  their own files (teams, keys, users, orgs, customers). Each turns its rows into B3882's plain input records
+  and calls B3882's list setter (set_team_list_budget_metrics, set_key_list_budget_metrics,
+  set_user_list_budget_metrics, set_org_list_budget_metrics, set_customer_budget_metrics_from_row for each
+  customer). The database access sits behind a trait BudgetPageSource that this module defines (one method per
+  entity returning a Page { rows, total_count: Option<u64> } or this module's error), so the page walk and the
+  entity code are tested with a fake source. PostgresBudgetPageSource is the real implementation.
+
+  Per-entity fetches. Teams: when no database is configured log at debug "Prometheus: skipping team metrics
+  initialization, DB not initialized" and return. Call B813's get_paginated_teams (page_size, page) which
+  counts first, reads the page sorted by team_alias ascending, and on any error logs and returns (empty, 0),
+  so a team failure never reaches the walk's error log. Keys: skip with the debug text "Prometheus: skipping key
+  metrics initialization, DB not initialized" without a database. Call B897's key list query (the _list_key_helper
+  port) with page, size 50, user_id None, team_id None, key_alias None, key_hash None, organization_id None,
+  exclude_team_id "litellm-dashboard" (UI_SESSION_TOKEN_TEAM_ID) and return_full_object true; its result gives
+  keys and an optional total_count (None becomes the number of keys). Users: B723's UserRepository raw table,
+  find_many with skip (page - 1) * 50 and take 50, order created_at descending; the total is a fresh
+  count() of the same table on every page. Orgs: B723's OrganizationRepository raw table, the same skip, take and
+  order, plus the joined litellm_budget_table row; the total is again a count() on every page. Customers:
+  first return if no database is configured (debug "Prometheus: skipping customer metrics initialization, DB
+  not initialized"); then return if B3882's customer_budget_gauges_are_noop is true; then return if B3882's
+  customer_budget_metrics_enabled is false (debug "Prometheus: skipping customer metrics initialization,
+  end_user tracking disabled"). Check in exactly that order. Then call B3883's get_default_customer_budget once.
+  Read the end user table (B726's endusertable binding) in pages ordered by user_id ascending with the joined
+  budget table; the filter is "has a budget_id" only when there is no default budget, and no filter when there
+  is one (every customer then gets the default). The count is made only on page 1 and uses the same filter;
+  later pages return no total. Each row goes to B3882's set_customer_budget_metrics_from_row with the default budget.
+  Rows with a spend of None are passed as None to the user, team and key setters (the remaining budget is then the whole limit).
+
+  Count gauges. After the five entities, set litellm_total_users to the count of the user table, then
+  litellm_active_users to B723's count_billable_users, then litellm_teams_count to the count of the team table
+  (B726's teamtable binding). These are three reads in that order; the first error stops the rest, is logged
+  at error level as "Error initializing user/team count metrics: <error>" and is not returned. Without a database
+  log at debug "Prometheus: skipping user/team count metrics initialization, DB not initialized".
+
+  Whole refresh. initialize_remaining_budget_metrics (the public entry the job calls) takes the pod lock first
+  when it can. If the pod lock manager exists and has a Redis cache (B1690 PodLockManager), acquire the lock for the
+  job name prometheus_emit_budget_metrics (PROMETHEUS_EMIT_BUDGET_METRICS_JOB_NAME); when the answer is not
+  true, do nothing and return; when it is true, run the refresh and release the lock afterwards on every exit.
+  Without a manager or without a Redis cache just run the refresh. The
+  refresh logs "Emitting key, team, user, org, customer budget metrics...." at debug and runs teams, keys,
+  users, orgs, customers and the count gauges in that order.
+
+  Job registration. Config section prometheus_budget_refresh (crates/betterlite-config/src/sections/prometheus_budget_refresh.rs)
+  holds litellm_settings.prometheus_initialize_budget_metrics (default false; the job is only wanted when it is
+  exactly true) and the environment variable PROMETHEUS_BUDGET_METRICS_REFRESH_INTERVAL_MINUTES, an integer
+  with default 5. Expose budget_refresh_job(settings, loggers) -> Option<BudgetRefreshJob>. It returns None when the
+  setting is not exactly true, and also None, with debug "found 0 prometheus loggers", when B189's registry holds
+  no PrometheusLogger. With one or more loggers it uses the first (debug "found N prometheus loggers") and
+  returns BudgetRefreshJob { id: "prometheus_budget_metrics_job", interval_minutes, logger }, with the
+  semantics "run every interval_minutes, first run one interval after startup, replace any job with the same id".
+  B124's startup scheduler registers the handle; this task does not own a scheduler and nothing runs the
+  refresh at startup. Do not add a second route or a startup call.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/prometheus_budget_refresh.rs
+    - crates/betterlite-server/src/prometheus_budget_refresh/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-config/src/sections/prometheus_budget_refresh.rs
+    - crates/betterlite-config/src/sections/prometheus_budget_refresh/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/prometheus-budget-refresh-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3617-L3656
+    why: The generic page walk, page size 50, total_pages arithmetic, and the catch that logs and ends one entity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3658-L3725
+    why: Team and key fetchers, including the UI session team exclusion and return_full_object=True.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3727-L3778
+    why: User and organization fetchers, with the count repeated on every page and the budget table join for orgs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3780-L3821
+    why: Customer fetcher, the check order, the default budget filter and the page-1-only count.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3823-L3891
+    why: Pod lock wrapper, the order of the six steps and the user, billable user and team count gauges.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4536-L4563
+    why: initialize_budget_metrics_cron_job, the first logger, the job id and the interval trigger.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11062-L11067
+    why: The job is registered only when litellm.prometheus_initialize_budget_metrics is True.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1546-L1548
+    why: PROMETHEUS_BUDGET_METRICS_REFRESH_INTERVAL_MINUTES, int(os.getenv(..., 5)) read at import.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1766-L1766
+    why: PROMETHEUS_EMIT_BUDGET_METRICS_JOB_NAME, the lock job name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5934-L5965
+    why: get_paginated_teams, the team page reader B813 builds; it swallows its own errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L189-L189
+    why: prometheus_initialize_budget_metrics default.
+
+dod:
+  - text: The page walk fetches page 1, treats a missing total as the page's row count, applies page 1 even when the total is 0, then fetches and applies pages 2 to ceil(total / 50), and an error ends only that entity after an error log.
+    proof: [page-walk-tests]
+  - text: Teams, keys, users and orgs are fetched with the page size, order, exclusions and joins listed above, and a missing database skips each with its debug text.
+    proof: [source-tests, postgres-tests]
+  - text: The customer refresh checks database, no-op gauges and the enabled gate in that order, uses the default budget when there is one, and counts only on page 1.
+    proof: [customer-refresh-tests]
+  - text: The count gauges are set in the order total users, billable users, teams, and the first failing read stops the rest without an error to the caller.
+    proof: [count-gauge-tests]
+  - text: The whole refresh takes the prometheus_emit_budget_metrics lock only with a manager that has Redis, skips when the lock is not granted, releases after every run, and runs the six steps in order.
+    proof: [refresh-lock-tests]
+  - text: budget_refresh_job returns a job only when the setting is exactly true and a PrometheusLogger exists, with id prometheus_budget_metrics_job and the configured interval.
+    proof: [job-tests]
+  - text: The config section loads prometheus_initialize_budget_metrics (default false) and PROMETHEUS_BUDGET_METRICS_REFRESH_INTERVAL_MINUTES (default 5) and refuses a malformed or non-positive interval at startup.
+    proof: [config-tests, config-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: page-walk-tests
+      why: the generic page walk is missing or paginates wrongly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_budget_refresh::page_walk::/)'
+    - id: source-tests
+      why: an entity reads the wrong page size, order, exclusion or join, or skips without the debug text
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_budget_refresh::teams::/) | test(/^prometheus_budget_refresh::keys::/) | test(/^prometheus_budget_refresh::users::/) | test(/^prometheus_budget_refresh::orgs::/)'
+    - id: postgres-tests
+      why: the real queries are unproved against Postgres rows
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_budget_refresh::postgres_source::/)'
+    - id: customer-refresh-tests
+      why: the customer refresh order, filter or page-1 count is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_budget_refresh::customers::/)'
+    - id: count-gauge-tests
+      why: the user and team count gauges are missing or set in the wrong order
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_budget_refresh::counts::/)'
+    - id: refresh-lock-tests
+      why: the pod lock handling or the step order is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_budget_refresh::refresh::/)'
+    - id: job-tests
+      why: the job handle is missing or built under the wrong condition
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_budget_refresh::job::/)'
+    - id: config-tests
+      why: the section does not load or validate its two settings
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::prometheus_budget_refresh::/) - test(/replays_the_/)'
+    - id: config-corpus
+      why: no seed for the new keys exercises the config decoder
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/prometheus-budget-refresh-*')" && grep -rlq PROMETHEUS_BUDGET_METRICS_REFRESH_INTERVAL_MINUTES crates/betterlite-config/fuzz/corpus/config_yaml/prometheus-budget-refresh-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+
+oracle_cases: []
+
+deviations:
+  - what: The refresh reads rows through a BudgetPageSource trait and hands B3882 plain input records, not prisma models.
+    why: betterlite-logging cannot depend on the table crates, and the walk is tested with a fake source.
+  - what: The interval from PROMETHEUS_BUDGET_METRICS_REFRESH_INTERVAL_MINUTES must be at least 1 and a bad value stops startup with a config error naming the variable.
+    why: LiteLLM passes any int to its scheduler without a check, and a zero or negative interval has no useful meaning.
+  - what: The job is a BudgetRefreshJob handle that B124's scheduler registers, not a call to AsyncIOScheduler.add_job.
+    why: betterlite has no APScheduler; the scheduler belongs to the startup task.
+  - what: Money values stay Decimal from the row to B3882's input records.
+    why: money is never a float in betterlite.
+
+out_of_scope:
+  - "The gauge setters, the list setters, _customer_budget_metrics_enabled and _customer_budget_gauges_are_noop: B3882."
+  - "_get_default_customer_budget: B3883 (this task calls it)."
+  - "Collector creation and registration, including the litellm_total_users, litellm_active_users and litellm_teams_count gauges: B3875."
+  - "get_paginated_teams (team_endpoints.py:5934-5965): B813. _list_key_helper: B897. UserRepository, OrganizationRepository and count_billable_users: B723. The teamtable and endusertable bindings: B726. PodLockManager: B1690."
+  - "Scheduler startup, the scheduler itself and the call site at proxy_server.py:11062-11067 beyond the condition: B124. The type-specific loggers' lookup in the callback list (get_custom_loggers_for_type): B189."
+  - "_increment_remaining_budget_metrics and the per-request budget updates: B3883 and the per-request owner."
+  - "_mount_metrics_endpoint (prometheus.py:4565-4592): B3886."
+
+pitfalls:
+  - Nothing runs the refresh at startup; the docstring says so but the only caller is the interval job, so the first gauge write happens one interval after boot.
+  - The users and orgs total is a new count() on every page, so the number of pages can change while the walk runs; the customers total is counted on page 1 only and the later pages' totals are ignored.
+  - When a default customer budget exists the customer filter is dropped, so customers with no budget_id are also written; with no default budget only rows with a budget_id are read.
+  - The customer path checks gauges-are-noop before the enabled gate, and both before the default budget lookup.
+  - get_paginated_teams already turns a failure into (empty, 0), so a broken team table logs the "[Non-Blocking]" message and the walk sees an empty page, not an error.
+  - A key page may hold plain token strings next to full records, and B3882's list setter skips the strings; pass return_full_object true and do not count skipped strings as failures.
+  - The lock is acquired only when the manager has a Redis cache, and None, false and a denied acquire all mean skip; the lock job name is prometheus_emit_budget_metrics, not the job id prometheus_budget_metrics_job.
+  - Release the lock on every exit of the refresh, since an early error in one entity must not keep the lock for the 60 second default TTL.
+  - total_pages is 0 for an empty table, and page 1 is still applied, so a count that reports 0 while the page holds rows still writes those rows.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

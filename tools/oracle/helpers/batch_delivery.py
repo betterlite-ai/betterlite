@@ -193,7 +193,9 @@ class WarningRecorder(logging.Handler):
 
 
 class ScriptedLogger(CustomBatchLogger):
-    def __init__(self, settings: dict[str, Json], *, preserve: bool) -> None:
+    preserve_events_added_during_flush = True
+
+    def __init__(self, settings: dict[str, Json]) -> None:
         super().__init__(  # pyright: ignore[reportUnknownMemberType]
             flush_lock=asyncio.Lock(),
             batch_size=optional_integer(settings.get("batch_size"), "flush.settings.batch_size"),
@@ -204,7 +206,6 @@ class ScriptedLogger(CustomBatchLogger):
                 settings.get("max_queue_size"), "flush.settings.max_queue_size"
             ),
         )
-        self.preserve_events_added_during_flush = preserve
         self.script: list[FlushReply] = []
         self.attempts: list[list[str]] = []
         self.outcomes: list[FlushReply] = []
@@ -245,8 +246,7 @@ def flush_dropped(
 async def flush_section(value: Json) -> Json:
     scenario = object_value(value, "flush")
     settings = object_value(scenario.get("settings", {}), "flush.settings")
-    preserve = scenario.get("preserve_events_added_during_flush") is True
-    logger = ScriptedLogger(settings, preserve=preserve)
+    logger = ScriptedLogger(settings)
     recorder = WarningRecorder()
     verbose_logger.addHandler(recorder)
     flushes: list[Json] = []

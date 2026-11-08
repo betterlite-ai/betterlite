@@ -1,0 +1,149 @@
+id: B157
+title: The betterlite Python package over the Rust core, with LiteLLM's module-level settings
+description: >-
+  A LiteLLM user sets things like `litellm.drop_params = True` or reads `litellm.model_cost` at module level. After
+  `import betterlite as litellm`, those same names must exist with the same defaults. B5369 gave us a wheel and a native
+  module, and this task fills in the settings. It's Python only: no Rust file changes.
+
+
+  The source is litellm/__init__.py up to L2314, 408 module-level assignments. Put them in plain modules under
+  `python/betterlite/_settings/` grouped as the source groups them (callbacks, keys, params, model sets, provider lists), and
+  import each name in `python/betterlite/__init__.py` by name. Names stay rebindable, since users assign to them. Python
+  files follow the 300-line limit, so several settings modules are expected.
+
+
+  Import order matters. litellm/__init__.py loads `.env` first: when `LITELLM_MODE` (default "DEV") equals "DEV" it calls
+  `dotenv.load_dotenv(override=_dev_env_hot_reload_enabled())`, and `_dev_env_hot_reload_enabled` is true when
+  `LITELLM_DEV_ENV_HOT_RELOAD` equals "True". Settings with env defaults read the environment after that load. They include
+  the `drop_params` flag, `LITELLM_MODIFY_PARAMS`, `LITELLM_USE_CHAT_COMPLETIONS_URL_FOR_ANTHROPIC_MESSAGES`,
+  `LITELLM_ROUTE_ALL_CHAT_OPENAI_TO_RESPONSES`, `LITELLM_GEMINI_LIVE_DEFER_SETUP`,
+  `LITELLM_ENABLE_ANTHROPIC_PROMPT_CACHING`, `LITELLM_ANTHROPIC_PROMPT_CACHING_TTL`, `LITELLM_MODEL_COST_MAP_URL`,
+  `LITELLM_BLOG_POSTS_URL`, `LITELLM_ANTHROPIC_BETA_HEADERS_URL` and `LITELLM_AUTOROUTER_PRESETS_URL`.
+
+
+  `model_cost` comes from `_native.bundled_model_cost_json()` and the provider model sets from
+  `_native.provider_model_sets()`. Lists that start empty, like `callbacks`, are new list objects so one module's change
+  doesn't reach another's. Plain constants keep their value: `AZURE_DEFAULT_API_VERSION` is "2025-02-01-preview",
+  `WATSONX_DEFAULT_API_VERSION` is "2024-03-13", `COHERE_DEFAULT_EMBEDDING_INPUT_TYPE` is "search_document",
+  `budget_exceeded_status_code` is 422 and `allowed_fails` is 3.
+
+
+  Also bring over `MyLocal` (a `threading.local` whose `user` starts as "Hello World"), `_thread_context`, `identify`
+  (stores `event_details["user"]` when present), `set_global_bitbucket_config` and `set_global_gitlab_config`. Skip
+  `mark_litellm_import_complete()`: it sits next to the cost map fetch in litellm_core_utils/get_model_cost_map.py L207, and
+  betterlite fetches nothing at import.
+
+
+  The test file holds an explicit tuple of names. Each is compared with `vars(betterlite)[name] == vars(litellm)[name]`, so
+  no reflection or lazy lookup is involved. Env-default cases use `monkeypatch.setenv` and `importlib.reload(betterlite)` over
+  their own explicit list. `LITELLM_LOCAL_MODEL_COST_MAP=True` keeps LiteLLM on its bundled map, so both sides load the same
+  data. The check commands set it.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/__init__.py
+  - crates/betterlite-python/python/betterlite/_settings/**
+  - crates/betterlite-python/tests/test_module_settings.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L14-L30
+  why: The .env load comes before any setting.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L577-L590
+  why: Thread local user and identify.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1545-L1560
+  why: The two global config setters.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1-L2314
+  why: All settings. Work through this file from the top.
+dod:
+- text: >-
+    Every name in the explicit tuple exists in betterlite and equals LiteLLM's default, and the tuple covers every module
+    level assignment in litellm/__init__.py L1-L2314 not listed in `out_of_scope`.
+  proof: [setting-defaults]
+- text: >-
+    Each env-default setting follows its env value after a reload, the same way LiteLLM parses it, including an unset value.
+  proof: [env-defaults]
+- text: A `.env` file in the working folder is read in DEV mode, is skipped in another mode, and overrides only under the hot reload flag.
+  proof: [env-defaults]
+- text: '`model_cost` and each provider model set equal LiteLLM''s, and assigning to one in a test leaves the native data alone.'
+  proof: [model-data]
+- text: '`identify` stores the user per thread, and the two config setters change the matching global.'
+  proof: [module-helpers]
+- text: After `import betterlite as litellm`, `litellm.drop_params = True` holds on the next read.
+  proof: [module-helpers]
+- text: Python files pass ruff and basedpyright in strict mode.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: setting-defaults
+    why: A setting is missing or its default differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm
+      --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_module_settings.py -k setting_default
+  - id: env-defaults
+    why: An env name or its parsing differs after a reload.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm
+      --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_module_settings.py -k env_default
+  - id: model-data
+    why: The cost map or a provider set doesn't match the pin.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm
+      --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_module_settings.py -k model_data
+  - id: module-helpers
+    why: A helper leaks across threads or a setter misses its global.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm
+      --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_module_settings.py -k module_helper
+  - id: python-lint
+    why: Strict typing has to hold for every settings module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests
+      && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The cost map is the pinned text in the wheel. Nothing is fetched at import, whatever `LITELLM_LOCAL_MODEL_COST_MAP` says.
+  why: A network call during import is slow and breaks offline use, and `register_model` covers runtime changes.
+- what: Settings that hold a LiteLLM class instance or type alias keep the name and hold a plain value or `None`.
+  why: Those classes arrive with the tasks that build them. The test file lists each such name with its reason.
+- what: This task has no helper oracle cases.
+  why: The test imports both packages and compares them, and that covers more than a helper call would.
+out_of_scope:
+- >-
+  Function ownership inventory litellm/utils.py, Python only and not built: `_get_cached_custom_logger` L103-L114;
+  `_get_cached_custom_guardrail` L154-L165; `_get_cached_caching_handler_response` L168-L179;
+  `_get_cached_llm_caching_handler` L182-L193; `_get_cached_audio_utils` L201-L212, all lazy import caches;
+  `_accepts_fallback_depth_kwarg_for_class` L117-L126, signature reflection; `_snapshot_exception_for_hook` L129-L151;
+  `check_coroutine` L1470-L1472; Protocol classes L910-L951; `__getattr__` L10427-L10439;
+  `get_utc_datetime` L5435-L5436, one line over the caller's clock.
+- >-
+  Function ownership inventory litellm/utils.py, no caller at the pin and not built: `get_supported_regions` L3081-L3121;
+  `load_test_model` L6625-L6665; `create_proxy_transport_and_mounts` L6684-L6706; `_is_region_eu` L5313-L5324;
+  `_is_region_us` L5327-L5338; `get_model_region` L5350-L5371; `CustomModelResponseIterator` L8051-L8052;
+  `json_schema_type` L6504-L6527, recursive only.
+- >-
+  Function ownership inventory litellm/utils.py, sibling parts: provider config selection for media and resources belong
+  to B5360; capability flags belong to B5361; non-default params and `filter_out_litellm_params` belong to B5362; embedding
+  optional params belong to B5363; `validate_environment` L6709-L7128, `get_provider_fields` L6668-L6681, `valid_model`
+  L7135-L7144, `check_valid_key` L7147-L7165, retry helpers L7168-L7254 and `read_config_args` L7477-L7488 belong to B5364;
+  registration L3136-L3479 and deployment and region helpers L5188-L5347 belong to B5365; the message helpers listed in that
+  file belong to B5366; the setup functions and hooks listed in that file belong to B5367; `client` L1674-L2315 and the
+  wrapper helpers listed in that file belong to B5368.
+- >-
+  Function ownership inventory litellm/utils.py, other owners: L2376-L2469 belong to B195; L2589-L2598 belong to B2464 and
+  B2487; L9410-L9445 belong to B2464; `calculate_max_parallel_requests` L5145-L5185 belong to B303; L7403-L7473 belong to
+  B255; L7725-L7906 belong to B2328; L7960-L7983 belong to B1717; L5383-L5432 belong to B1688; L4148-L4178 belong to B1408;
+  L8767-L8908 and L10099-L10105 belong to B037; L8979-L9010 and L9112-L9148 belong to B1440; L8910-L8928 belong to B3513;
+  L9690-L9725 belong to B3332; L9727-L9743 belong to B3361; L9918-L9934 belong to B3519; L10035-L10067 belong to B3483;
+  L10070-L10096 belong to B1716; `get_optional_params` L4434-L5043 belong to B175; `acreate` L7131-L7132 belong to B158.
+- >-
+  litellm/__init__.py `__getattr__` L2342-L2545 and `_AGENT_EXPORTS` are not built: litellm.yaml excludes the lazy import
+  registry, and the functions they reach arrive under their own names with B158 and B166.
+pitfalls:
+- >-
+  Read each env default as written. Some settings test `== "True"`, others lower-case the value or fall back to another
+  name, and a shared helper would flatten those differences.
+- >-
+  A mutable default shared between two names stays shared only where LiteLLM shares it. Don't make two names point to one
+  list by accident.
+- '`importlib.reload` rebinds the module, so read values through `vars(betterlite)` after the reload, not through a name imported earlier.'
+- >-
+  Dict order can differ in the model sets, and sets hold no order. Compare as sets or sorted lists, not by text.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

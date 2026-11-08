@@ -1,0 +1,274 @@
+id: B3103
+title: Fetch and summarize role-specific usage chat tools
+description: >-
+  Build the engine behind LiteLLM's `/usage/ai/chat` in a new module of betterlite-server,
+  `crates/betterlite-server/src/usage_ai_chat.rs` and its folder. The route itself is not in this task. This task
+  is `ai_usage_chat.py`: the tool list for each role, the system prompt, the three data fetchers, the two text
+  summarisers, the tool dispatch, and the event stream that talks to a language model. A later task registers the
+  route and hands this module its collaborators.
+
+
+  The module has no globals. Everything outside it comes in through a parts struct, `UsageChatParts`, built by the
+  caller: a model client, a data source, and a clock that returns the server's local calendar date. Use native
+  `async fn` in traits and generics, not `dyn`, and add no dependency (futures-util, tokio, serde_json and indexmap
+  are already in betterlite-server).
+  `UsageChatModel` has two methods. `complete(&self, request: &ModelRequest) -> Result<ModelReply, ModelError>` is
+  one non-streaming call with `model`, `messages`, optional `tools` and `temperature`. `ModelReply` holds
+  `content: Option<String>` and `tool_calls: Vec<ModelToolCall>`, where `ModelToolCall` is `id`, `name` and the raw
+  `arguments` string. `stream(&self, request: &ModelRequest) -> Result<impl Stream<Item = Result<String, ModelError>>, ModelError>`
+  yields only the non-empty content deltas of a streaming call. `UsageDataSource` has three async methods,
+  `global(start_date, end_date, user_id: Option<&str>)`, `teams(start_date, end_date, team_ids: Option<&[String]>)`
+  and `tags(start_date, end_date, tags: Option<&[String]>)`, each returning B3090's paginated response type
+  (the alias for `SpendAnalyticsPaginatedResponse`). Messages are a small typed enum, not a JSON map: system, user,
+  assistant text, assistant with tool calls, and tool result (`tool_call_id`, `content`).
+
+
+  The real data source is `DailyActivityUsageData`, built from a B729 `DailyActivityRepository` handle that may be
+  absent. Read the exact signatures from B3091, B3092 and B3093 in `crates/betterlite-server/src/daily_activity/`.
+  Constants (all from LiteLLM): `USAGE_AI_TEMPERATURE` 0.2, `PAGINATED_PAGE_SIZE` 200, `MAX_CHAT_MESSAGES` 20,
+  `TOP_N_MODELS` 15, `TOP_N_PROVIDERS` 10, table names `litellm_dailyuserspend`, `litellm_dailyteamspend`,
+  `litellm_dailytagspend`, id fields `user_id`, `team_id`, `tag`. The default chat model is `gpt-4o-mini`
+  (`DEFAULT_COMPETITOR_DISCOVERY_MODEL` in litellm/constants.py L2055); no task owns that constant, so define it here.
+  `TOP_N_KEYS` (10) has no caller at the pin and is not built.
+
+
+  The fetchers differ and the difference must stay. `global` (tool `get_usage_data`) goes through the aggregated path:
+  with no repository it fails with the database-not-connected error (HTTP 500 shape, text from
+  `CommonProxyErrors.db_not_connected_error`), otherwise it builds a scope with B3092's `daily_activity_scope`
+  (table `litellm_dailyuserspend`, field `user_id`, the user id or none, no exclusions, no api key, the two date strings
+  as given, no model, no timezone) and calls B3093's `get_daily_activity_aggregated` with defaults. It does not
+  parse the dates itself. `teams` and `tags` go through B3091's paginated `get_daily_activity` with page 1, page size
+  200, no model, no api key and no entity metadata, so they see at most the first 200 daily rows and B3091 parses
+  and rejects bad dates. A comma list goes through `parse_csv_ids`: none or empty text gives none, otherwise split on
+  commas, trim each part, drop empty parts. So `" , "` gives an empty list, not none.
+
+
+  Tools are the three OpenAI function definitions, `get_usage_data` (properties `start_date`, `end_date`, `user_id`),
+  `get_team_usage_data` (`start_date`, `end_date`, `team_ids`) and `get_tag_usage_data` (`start_date`, `end_date`,
+  `tags`). All three require only the two dates. `tools_for_role(is_admin)` gives all three for an admin and only
+  `get_usage_data` for anyone else. Copy every description string, the system prompt base and both tool-description
+  blocks character for character from the LiteLLM lines in the references. The system prompt is the base text, a blank
+  line, the role's tool block, then `Today's date: ` and the clock's date as YYYY-MM-DD.
+
+
+  `resolve_fetch_kwargs(fn_name, args, user_id, is_admin)` is the security gate and returns the typed fetch arguments.
+  Missing or empty `start_date` or `end_date` is an error. For `get_usage_data` a non-admin always gets the caller's own
+  `user_id` and whatever `user_id` the model sent is ignored; a non-admin with no caller id is an error ("refusing to
+  issue an unscoped query"), never a global query. An admin passes the model's `user_id` only when it is non-empty.
+  `get_team_usage_data` passes `team_ids` and `get_tag_usage_data` passes `tags` only when non-empty. Decode the
+  model's tool arguments with `decode_tool_arguments(&str) -> Result<IndexMap<String, String>, UsageChatError>`: a JSON
+  object of string values, key order kept. Anything else is an error.
+
+
+  `summarise_usage_data` builds the text for the global tool and `summarise_entity_data(page, label)` the text for
+  teams (`Team`) and tags (`Tag`). Both read the typed page, not JSON. The usage summary prints a four-line header from
+  the page metadata (`Total Spend: $x.xxxx`, `Total Requests: n`, `Successful: n | Failed: n`, `Total Tokens: n`),
+  then models and providers summed over all days, ranked by spend descending (stable on ties, first-seen order), cut
+  to 15 and 10 lines, with `  (no data)` when a list is empty. Request and token counts are cut toward zero with
+  `int()` semantics. The entity summary returns `No {label} usage data found for the given date range.` when the page
+  has no days. Otherwise it sums `entities` across days, ranked by spend descending, and prints
+  `{label} Usage ({n} {label lowercased}s):`, a blank line, and `- {alias} (ID: {id}): $x.xxxx | n reqs | n tokens`.
+  The alias is the one from the first day the entity appears, falling back to the id.
+
+
+  `stream_usage_ai_chat(parts, messages, model, user_id, is_admin, sink)` writes SSE frames in order to a
+  `tokio::sync::mpsc::Sender<String>`; a failed send means the client left, so return quietly. The order is: status
+  `Thinking...`, one non-streaming model call with the role's tools, then either the plain answer (a `chunk` event if the
+  content is non-empty, then `done`) or the tool path. The model is the trimmed `model` or the default when empty or
+  absent. Only the last 20 messages are kept. On the tool path append the assistant message with its tool calls once,
+  then run each call in order. A call whose name is not in the role's tool list gets the tool message
+  `Tool not available: {name}` and no events. Otherwise send `tool_call` `running`, run resolve, fetch and summarise, and
+  send `complete`; on any failure log "Tool {name} failed: {error}" at error level, answer the tool message
+  `Error fetching {label}. Please try again.` and send `error` status. Labels: `global usage data`, `team usage data`,
+  `tag usage data`. Then status `Analyzing results...`, a second call with `stream` on, temperature 0.2 and no tools,
+  one `chunk` per delta, and `done`. Any failure outside the per-tool handler (bad tool-argument JSON, a model error,
+  a mid-stream error) logs "AI usage chat failed: {error}" and sends one `error` event with the message
+  `An internal error occurred. Please try again.`, with no `done`.
+
+
+  A frame is `data: ` plus the event as JSON plus a blank line, with Python's `json.dumps` default separators and key
+  order (docs/compatibility.md covers the formatting rules). `tool_call` events carry `type`, `tool_name`, `tool_label`,
+  `arguments` (the model's map as sent), `status`; `error` status events do not carry the optional `error` field.
+
+
+  Tests live under `usage_ai_chat::tests`, with names starting `tools_`, `prompt_`, `fetch_args_`, `parse_ids_`,
+  `summary_usage_`, `summary_entity_`, `sse_`, `source_` and `flow_`. `flow_` tests drive `stream_usage_ai_chat` with a fake
+  model and a fake data source and assert the exact frames. `source_` tests drive `DailyActivityUsageData` against a
+  recording repository and assert the scope each tool builds.
+scope:
+  paths:
+    - crates/betterlite-server/src/usage_ai_chat.rs
+    - crates/betterlite-server/src/usage_ai_chat/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/usage_tool_arguments.rs
+    - crates/betterlite-server/fuzz/corpus/usage_tool_arguments/**
+    - tools/oracle/cases/helpers/usage-ai-chat/**
+    - "tools/oracle/fuzz/corpus/helper_case/usage_ai_chat-*"
+    - tools/oracle/helpers/b3103.py
+    - tools/oracle/helpers/b3103/**
+    - tools/oracle/src/helpers/server/b3103.rs
+    - tools/oracle/src/helpers/server/b3103/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L27-L119
+    why: Constants, the SSE event shapes and the response-dump protocol the summarisers read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L125-L240
+    why: The three tool definitions, the two role lists, the system prompt text and `_build_system_prompt` with its date line.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L247-L339
+    why: "`_parse_csv_ids`, `_query_activity` with its aggregated and paginated branches, and the three fetchers."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L347-L448
+    why: Breakdown accumulation, ranking, both summarisers and the tool handler registry with labels.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L456-L545
+    why: "`_sse`, the argument gate `_resolve_fetch_kwargs` with its non-admin scoping, `_execute_tool_call` and the first half of `_process_tool_call`."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L545-L610
+    why: Tool error handling, the final streamed answer and the outer event loop with its error event.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/endpoints.py#L18-L72
+    why: The only caller of `stream_usage_ai_chat`; shows what the route passes for `user_id` and `is_admin`. The route is not built here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L556-L586
+    why: "`daily_activity_scope` as the global fetcher calls it."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/common_daily_activity.py#L59-L126
+    why: Breakdown and metadata fields the summarisers read (models, providers, entities, total_* counters).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2055
+    why: Default chat model constant.
+dod:
+  - text: An admin gets get_usage_data, get_team_usage_data and get_tag_usage_data with LiteLLM's schemas and descriptions; any other caller gets get_usage_data only.
+    proof: [tools-prompt-tests, oracle, helper-python]
+  - text: The system prompt equals LiteLLM's base text plus the role's tool block and the clock's date line, for admin and non-admin.
+    proof: [tools-prompt-tests, oracle, helper-python]
+  - text: parse_csv_ids returns none for none or empty text and otherwise trims and drops empty parts, so a text of only commas and spaces gives an empty list.
+    proof: [parse-ids-tests, oracle, helper-python]
+  - text: A non-admin get_usage_data call always uses the caller's own id and ignores a user_id the model sent; a non-admin with no caller id is refused instead of querying globally.
+    proof: [fetch-args-tests, oracle, helper-python]
+  - text: An admin forwards user_id, team_ids and tags only when non-empty, and missing or empty start_date or end_date is an error for every tool.
+    proof: [fetch-args-tests, oracle, helper-python]
+  - text: The usage summary prints the metadata header, models cut to 15 and providers cut to 10 by descending spend, truncated counts, and "(no data)" for an empty list.
+    proof: [summary-usage-tests, oracle, helper-python]
+  - text: The entity summary returns the no-data sentence for an empty page, sums entities across days, keeps the first-seen alias, ranks by spend and prints the count with the lowercase plural label.
+    proof: [summary-entity-tests, oracle, helper-python]
+  - text: Frames are the text `data:`, a space, then Python-style JSON plus a blank line, with the key order type, tool_name, tool_label, arguments, status for tool events.
+    proof: [sse-tests, oracle, helper-python]
+  - text: The global fetcher uses the aggregated path and the missing-database error, and the team and tag fetchers use page 1 with page size 200 and the right table and id field.
+    proof: [source-tests]
+  - text: A plain answer streams status, one chunk and done; a tool answer streams status, tool_call running, tool_call complete, status, chunks and done, in that order.
+    proof: [flow-tests]
+  - text: A failing tool or an unknown tool name becomes a tool message and the stream continues; a failure outside the tool handler ends with one generic error event and no done.
+    proof: [flow-tests]
+  - text: Only the last 20 messages reach the model and an empty or blank model name falls back to gpt-4o-mini.
+    proof: [flow-tests]
+  - text: Tool-argument text that is not a JSON object of strings is rejected without a panic, and the fuzz corpus replays.
+    proof: [fetch-args-tests, arguments-corpus]
+  - text: Newly added helper corpus cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: tools-prompt-tests
+      why: the role tool lists or the system prompt text are missing or differ from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^usage_ai_chat::tests::(tools|prompt)_/)'
+    - id: parse-ids-tests
+      why: comma-list parsing is missing or treats blank parts differently from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^usage_ai_chat::tests::parse_ids_/)'
+    - id: fetch-args-tests
+      why: the argument gate or the tool-argument decoder is missing or lets a non-admin widen the query
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^usage_ai_chat::tests::fetch_args_/) - test(replays_the_usage_tool_arguments_corpus)'
+    - id: summary-usage-tests
+      why: the usage summary text, ranking, limits or number formatting is missing or wrong
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^usage_ai_chat::tests::summary_usage_/)'
+    - id: summary-entity-tests
+      why: the team and tag summary text, aggregation or alias rule is missing or wrong
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^usage_ai_chat::tests::summary_entity_/)'
+    - id: sse-tests
+      why: SSE framing or event key order is missing or wrong
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^usage_ai_chat::tests::sse_/)'
+    - id: source-tests
+      why: the real data source builds the wrong scope, path or page size for a tool
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^usage_ai_chat::tests::source_/)'
+    - id: flow-tests
+      why: the event order, tool error handling, truncation or model fallback is missing or wrong
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^usage_ai_chat::tests::flow_/)'
+    - id: arguments-corpus
+      why: the tool-argument fuzz target or its fresh replay corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-server/fuzz/fuzz_targets/usage_tool_arguments.rs &&
+        grep -q 'name = "usage_tool_arguments"' crates/betterlite-server/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/usage_tool_arguments)" &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_usage_tool_arguments_corpus)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3103)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3103 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3103/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added usage chat helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/usage_ai_chat-*")" &&
+        grep -lE '^[[:space:]]+b3103:' tools/oracle/fuzz/corpus/helper_case/usage_ai_chat-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/usage-ai-chat/tools-admin.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/tools-user.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/prompt-admin.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/prompt-user.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/csv-ids-trimmed.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/csv-ids-only-commas.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/csv-ids-empty.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/fetch-args-user-forced-id.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/fetch-args-user-no-id.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/fetch-args-admin-user-id.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/fetch-args-missing-date.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/fetch-args-team-ids.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/summary-usage-two-days.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/summary-usage-empty.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/summary-entity-two-days.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/summary-entity-empty.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/sse-tool-call.yaml
+  - tools/oracle/cases/helpers/usage-ai-chat/sse-non-ascii-chunk.yaml
+deviations:
+  - what: The module does not call a language model itself. It takes a model client and a data source from its caller, and the caller owns the route, auth and keep-alive pings.
+    why: B3103 covers ai_usage_chat.py only, and litellm.acompletion belongs to the router tasks, so the module gets them through traits.
+  - what: The assistant message that carries the tool calls is sent back to the model with role, content and tool_calls only.
+    why: LiteLLM sends `Message.model_dump()` with its null extras (function_call, audio, provider_specific_fields); they carry no meaning for the follow-up call.
+  - what: Tool-argument text that is not a JSON object of string values ends the stream with the generic error event.
+    why: LiteLLM declares the arguments as a string map and a wrong shape is outside docs/compatibility.md; the result is the same error event LiteLLM sends for unparseable JSON.
+  - what: Summaries read the typed paginated response, with no JSON dump in between.
+    why: Same numbers and text, one less conversion; the oracle cases feed the dump shape and compare the text.
+out_of_scope:
+  - "The `/usage/ai/chat` route, its request body (ChatMessage, UsageAIChatRequest), admin detection, `require_caller_user_id_for_non_admin` and the SSE keep-alive wrapper are in endpoints.py and sse_keepalive.py. No entry covers endpoints.py at the pin of this planning pass; see the notes."
+  - "The default model name `gpt-4o-mini` is defined here only because no task owns litellm/constants.py's constant."
+  - "`litellm.acompletion` and the router are B158 and B6020; the model client trait is wired to them by the route task."
+  - "`get_daily_activity`, `get_daily_activity_aggregated`, `daily_activity_scope` and `daily_activity_repository` are B3091, B3093 and B3092. This task calls them."
+  - "`TOP_N_KEYS` and the `_UsageDump` overload protocol have no caller at the pin and no Rust meaning."
+pitfalls:
+  - A non-admin model call can send any `user_id` to get_usage_data; the gate replaces it with the caller's id, and the tool list alone is not the defense, so dispatch also refuses team and tag tools for a non-admin by name.
+  - The global fetcher passes the model's date strings to the scope untouched, while the team and tag fetchers go through the canonical date parser in B3091, so a bad date fails in different places for the two.
+  - The team and tag fetchers read only page 1 with 200 rows, so a long range silently truncates; do not page.
+  - "`_parse_csv_ids(\" , \")` is an empty list and not none, and an empty list is a different scope from no filter."
+  - The entity alias comes from the first day that has the entity, and ties in spend keep first-seen order, so use an order-preserving map and a stable sort.
+  - "`int()` on the request and token sums cuts toward zero, and money is always `{:.4f}` with a leading `$`, including `$0.0000` for missing totals."
+  - The usage summary has no "no data" shortcut for an empty page; it prints the zero header and two "(no data)" lists.
+  - When the model answers with tool calls, any text in that same reply is dropped and never sent as a chunk.
+  - After tools run, the second model call is streaming and carries no `tools` argument, so the model cannot chain tool rounds.
+  - The error event after a tool or model failure is followed by no `done` event, and the tool-level `error` status is not the same event type.
+  - A tool argument key order is part of the `tool_call` event, so decode into an ordered map.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

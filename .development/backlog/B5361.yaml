@@ -1,0 +1,15 @@
+id: B5361
+milestone: M12 python
+title: Provider model sets and the remaining capability flags
+status: todo
+depends_on: [B171, B193, B2221]
+file: tasks/B5361-provider-model-sets.yaml
+covers:
+  - "litellm/utils.py"
+  - "litellm/__init__.py"
+parent: B157
+split_from: B157
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

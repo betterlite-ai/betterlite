@@ -2,8 +2,8 @@ id: B4787
 milestone: M9 agents and mcp
 title: Scope agent daily activity to the caller's grants
 status: todo
-depends_on: [B4770, B4776, B4780, B700, B732, B864]
-file: null
+depends_on: [B003, B052, B700, B726, B864, B2314, B3090, B3091, B4778, B4780]
+file: tasks/B4787-agent-daily-activity-scope.yaml
 covers:
   - "litellm/proxy/agent_endpoints/endpoints.py"
 parent: B141

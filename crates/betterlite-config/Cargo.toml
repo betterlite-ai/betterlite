@@ -12,7 +12,6 @@ aws-smithy-runtime-api = "1.19.1"
 betterlite-db = { path = "../betterlite-db" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-models = { path = "../betterlite-models" }
-betterlite-rate-limit = { path = "../betterlite-rate-limit" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 chrono.workspace = true

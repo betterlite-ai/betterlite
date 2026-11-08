@@ -127,6 +127,7 @@ pitfalls:
   - One inner catch surrounds every success effect; an alert error prevents cache eviction.
   - These deletes use raw ids and synchronous UserApiKeyCache routing, not broadcast invalidation keys.
   - The wrapper docstring mentions audit logging, but its executable code makes no audit persistence call.
+  - "send_virtual_key_event_slack swallows its errors."
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

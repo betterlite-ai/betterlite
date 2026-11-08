@@ -1,0 +1,15 @@
+id: B5961
+milestone: M3 providers
+title: SageMaker embedding configs and the response-stream decoder
+status: todo
+depends_on: [B004, B005, B006, B599, B627, B1418, B1420, B5960]
+file: tasks/B5961-sagemaker-embedding-stream.yaml
+covers:
+  - "litellm/llms/sagemaker/embedding/**"
+  - "litellm/llms/sagemaker/common_utils.py"
+parent: B042
+split_from: B5840
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

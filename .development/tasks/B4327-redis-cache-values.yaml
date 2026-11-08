@@ -1,0 +1,374 @@
+id: B4327
+title: Write Redis cache values, sets and buffered pipelines
+description: >-
+  B4325 gives a `RedisTransport` with a sync and an async client. This task puts
+  the value reads and writes of `RedisCache` on top of it: single SET, pipelined
+  SET, SET with a TTL per entry, SADD with EXPIRE, the write buffer, and the sync
+  reads `get_cache` and `batch_get_cache`. It adds the module `redis_cache_values`
+  to betterlite-redis. B4330 calls `async_set_cache_pipeline_with_ttls` from here,
+  and B4293 and B4294 reach the rest through the cache wrapper.
+
+  Type. `RedisCacheValues::new(settings: RedisCacheValuesSettings, transport:
+  Arc<RedisTransport>, hooks: Arc<dyn ServiceHooks>, gate: Arc<dyn BreakerGate>)`,
+  with no global. `RedisCacheValuesSettings` has `namespace: Option<String>`,
+  `default_ttl: Option<i64>` and `redis_flush_size: Option<usize>`. A missing flush
+  size means 100. B5630 reads `litellm.default_redis_ttl` and the flush size from
+  config and passes them in, so this task reads no config key and no env var. The
+  struct also holds the write buffer, `Mutex<Vec<(String, String)>>` of namespaced
+  key and JSON text. Key namespacing is B4324's `check_and_fix_namespace`.
+
+  Hooks and gate. `ServiceHooks`, `ServiceEvent`, `BreakerGate`, `BreakerAdmission`
+  and `BreakerOpen` come from B4325's module `redis_client_reuse`, and this task
+  declares none of them. The hook gets the event and, on failure, the error as `&(dyn
+  Error + Send + Sync)`. The gate's `enter` returns `BreakerOpen`, which this
+  module's error wraps as `RedisCacheValuesError::BreakerOpen`. The gate stands in
+  for `_enter_circuit_breaker`, `_exit_circuit_breaker`, the health-failure check in
+  `_run_under_circuit_breaker` and `_record_swallowed_redis_failure` (B393), and the
+  hooks for B012's `ServiceLogging`. B5630 implements both. `swallowed` takes the
+  admission so the gate can count the failure per call. A test gate in
+  `redis_cache_values/tests/` records the calls.
+
+  Guard rule, used by every method below marked guarded. Call `gate.enter(name)`
+  first, and an open breaker returns its error with nothing sent. Run the body. If
+  the body returns `Err`, call `gate.record_failure(&error)` and return the error. If it
+  returns `Ok`, call `gate.exit(admission)` once. A failure the body swallows goes
+  to `gate.swallowed(&admission, &error)`, and `exit` then does not count a success.
+  The two guarded sync methods use the same order. The guarded methods are
+  `async_set_cache`, `async_set_cache_pipeline`,
+  `async_set_cache_pipeline_with_ttls`, `async_set_cache_sadd`, `batch_cache_write`
+  and `get_cache`. `batch_get_cache` enters and exits by hand and `set_cache` is not
+  guarded at all.
+
+  TTL. Every write resolves its TTL the way `BaseCache.get_ttl` does (B4290 owns
+  that class): a given `ttl: Option<f64>` is cut to an integer toward zero, and no
+  `ttl` means `default_ttl`. The result goes to the server as `EX` seconds. With
+  neither, no `EX` is sent. A zero or negative TTL is sent as it is and the server's
+  error follows the usual path for that method.
+
+  `fn set_cache<V: Serialize + ?Sized>(&self, key: &str, value: &V, ttl:
+  Option<f64>)`. Blocking, for sync call sites only. It namespaces the key, sends
+  `SET key text [EX ttl]` through `transport.sync_client.query`, and fires the
+  success hook with `call_type` `set_cache`. Any error is swallowed and returns `()`,
+  with no failure hook and no gate call. LiteLLM stores `str(value)`, a Python repr.
+  betterlite stores the JSON text, and `get_cache` decodes both (see deviations).
+
+  `async fn async_set_cache<V: Serialize + ?Sized>(&self, key: Option<&str>, value:
+  &V, ttl: Option<f64>, nx: bool) -> Result<Option<bool>, RedisCacheValuesError>`,
+  guarded. A `None` key returns `Ok(None)` with nothing sent. Getting the async client
+  comes first and its failure fires the failure hook and is returned, so the guard
+  counts it. After that, `SET namespaced_key json [NX] [EX ttl]` through
+  `transport.async_client()` and `LiveAsyncClient::query`. A reply of OK gives
+  `Some(true)`. A nil reply (what `nx` gets when the key exists) gives
+  `None`. The success hook gets `key` set to the namespaced key. An error from the
+  SET fires the failure hook, is swallowed through `gate.swallowed`, and returns
+  `Ok(None)`.
+
+  `async fn async_set_cache_pipeline<V: Serialize>(&self, cache_list: &[(String, V)],
+  ttl: Option<f64>) -> Result<(), RedisCacheValuesError>`, guarded. An empty list
+  returns at once and opens no client. Getting the async client is outside the try,
+  so its error is returned. Then one non-transactional pipeline (`client.pipeline(false)`
+  from B5220's `AsyncRedisCommands`, commands added to `LivePipeline.commands`) holds one
+  `SET namespaced_key json [EX ttl]` per entry in order, all with the one resolved
+  TTL, and `execute()` runs it. Any command error fails the whole execute, as
+  redis-py's `raise_on_error` does. An execute error fires the failure hook, goes to
+  `gate.swallowed` and returns `Ok(())`. Success fires the success hook.
+
+  `async fn async_set_cache_pipeline_with_ttls<V: Serialize>(&self, cache_list:
+  &[(String, V, Option<f64>)]) -> Result<(), RedisCacheValuesError>`, guarded. Same
+  shape, but each entry resolves its own TTL and a `None` falls back to
+  `default_ttl`. Unlike the plain pipeline, getting the async client is inside the try,
+  so its error is swallowed like an execute error.
+
+  `async fn async_set_cache_sadd(&self, key: &str, value: &[String], ttl:
+  Option<f64>) -> Result<(), RedisCacheValuesError>`, guarded. Client failure fires the
+  failure hook and is returned. Then `SADD key member...`, and when the resolved
+  TTL exists, a second command `EXPIRE key ttl`. These are two round trips with no
+  MULTI, and a failure of the second leaves the set written. A failure of either
+  fires the failure hook and is swallowed. An empty `value` sends `SADD key` with
+  no member, the server rejects it, and that is swallowed too.
+
+  Buffer. `async fn batch_cache_write<V: Serialize + ?Sized>(&self, key: &str, value:
+  &V) -> Result<(), RedisCacheValuesError>`, guarded. It namespaces the key, appends
+  the key and the JSON text to the buffer, and when the buffer length reaches
+  `redis_flush_size` it calls `flush_cache_buffer`. `async fn flush_cache_buffer(&self)
+  -> Result<(), RedisCacheValuesError>` sends the buffered entries through
+  `async_set_cache_pipeline` with no TTL, so the default TTL applies and the keys are
+  namespaced a second time, and that changes nothing. It then removes exactly the
+  entries it sent, from the front. The pipeline call is itself guarded, so a flush
+  inside `batch_cache_write` enters the gate twice, as LiteLLM does. A returned error
+  keeps the buffer. A swallowed pipeline error does not: the entries are removed and
+  lost.
+
+  Sync reads. `fn get_cache(&self, key: &str) -> Result<Option<CachedValue>,
+  RedisCacheValuesError>`, guarded, blocking. It sends `GET` through
+  `transport.sync_client.query`, fires the success hook with `call_type`
+  `get_cache` before decoding, then decodes with B4324's `decode_cached_value`
+  (JSON first, then a Python literal). Every error, a decode error included, is
+  logged, goes to `gate.swallowed` and returns `Ok(None)`. Only an open breaker
+  returns `Err`.
+
+  `fn batch_get_cache(&self, key_list: &[Option<&str>]) ->
+  Result<HashMap<String, Option<CachedValue>>, RedisCacheValuesError>`, blocking. It
+  drops `None` keys, calls `gate.enter("batch_get_cache")` and returns its error
+  unswallowed, namespaces the rest, and calls `transport.mget` (B4325, the
+  sync `_run_redis_mget_operation` for both families). It calls `gate.exit` right
+  after the read, before decoding, then fires the success hook. The result maps each
+  original, not namespaced, key to its decoded value, and a miss is present with
+  `None`. Convert each `redis::Value` reply with `FromRedisValue` into
+  `Option<Vec<u8>>` and pass it to `decode_cached_value`. A duplicate key keeps the
+  last value. Any error fires the failure hook, goes to `gate.swallowed` and gives an
+  empty map (see deviations for a decode error).
+
+  `RedisCacheValuesError` is a `thiserror` enum owned by this module. It wraps
+  `ClientReuseError`, `LiveClientError`, `DecodeError` and `serde_json::Error` with
+  `#[from]`, and wraps B4325's `BreakerOpen` the same way. Its text is "Redis circuit
+  breaker is open, skipping" followed by the method name.
+
+  Tests reuse the fake server at `crate::redis_live_client::tests::fake_server`. Each
+  group is a file under `redis_cache_values/tests/`. The oracle helper op `b4327` has
+  two functions. `write_commands` builds a `RedisCache` without connecting (an
+  instance made with `object.__new__` and the attributes the methods read set by
+  hand: `namespace`, `redis_flush_size`, `redis_batch_writing_buffer`, `default_ttl`,
+  a breaker and a no-op service logger), replaces `init_async_client` with a recording
+  fake whose `pipeline` and `set`, `sadd` and `expire` write each command to a list, runs the
+  named method, and returns `{commands: [[str]], buffered: int}`. Its input has
+  `operation`, `namespace`, `default_ttl`, `flush_size`, `entries` and `nx`.
+  `read_values` does the same for `get_cache` and `batch_get_cache`, with the fake
+  `get` and `mget` answering the given raw `replies`, and returns `{values, keys_sent}`.
+  Each case file is `kind: helper` with `call: {b4327: {function: ..., ...}}`.
+
+scope:
+  paths:
+    - crates/betterlite-redis/src/redis_cache_values.rs
+    - crates/betterlite-redis/src/redis_cache_values/**
+    - tools/oracle/cases/helpers/redis-cache-values/**
+    - "tools/oracle/fuzz/corpus/helper_case/redis_cache_values-*"
+    - tools/oracle/helpers/b4327.py
+    - tools/oracle/helpers/b4327/**
+    - tools/oracle/src/helpers/redis/b4327.rs
+    - tools/oracle/src/helpers/redis/b4327/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L830-L849
+    why: Sync set_cache stores str(value), swallows every error and calls no guard.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1084-L1167
+    why: async_set_cache, the None key return, nx, and which failures are raised and which swallowed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1169-L1256
+    why: The pipeline helper and async_set_cache_pipeline, with the client lookup outside the try.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1258-L1301
+    why: Per-entry TTLs, and the client lookup inside the try this time.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1303-L1388
+    why: SADD then EXPIRE as two calls, and the raise on client failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1390-L1398
+    why: batch_cache_write appends a namespaced key and flushes at redis_flush_size.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1523-L1526
+    why: flush_cache_buffer clears the whole list after the awaited pipeline.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1540-L1564
+    why: Sync get_cache under the sync guard, with decode errors swallowed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1583-L1645
+    why: batch_get_cache admission order, key mapping and the error return.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L26-L33
+    why: get_ttl, the rule every write here uses to pick its EX seconds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L507-L533
+    why: What the gate's enter and exit must do around a call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L227-L245
+    why: A caller of the sync batch read that expects a key present with None on a miss.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L222-L235
+    why: A caller of async_set_cache_sadd, passing a list of strings as the set members.
+
+dod:
+  - text: >-
+      `async_set_cache` sends `SET` with the namespaced key and JSON text, adds `NX`
+      only when asked, adds `EX` from the given TTL or the default, returns
+      `Some(true)` on OK and `None` on an `NX` miss, and sends nothing for a `None` key.
+    proof: [async-set-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      `async_set_cache` returns an error from getting the client, and swallows an
+      error from the SET through `gate.swallowed` after the failure hook.
+    proof: [async-set-failure-tests]
+  - text: >-
+      `async_set_cache_pipeline` sends one non-transactional pipeline of namespaced
+      `SET` commands in order with one TTL, sends nothing for an empty list, returns a
+      client error, and swallows an execute error.
+    proof: [pipeline-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      `async_set_cache_pipeline_with_ttls` gives each entry its own TTL, uses the
+      default for a `None`, sends no `EX` when neither exists, and swallows a client
+      error as well as an execute error.
+    proof: [pipeline-ttls-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      `async_set_cache_sadd` sends `SADD` then `EXPIRE` only when a TTL resolves, fires
+      the failure hook on a failure of either, returns a client error, and swallows the rest.
+    proof: [sadd-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      `batch_cache_write` buffers namespaced entries, flushes once the buffer reaches
+      the flush size, keeps entries added during the flush, keeps the buffer on a
+      returned error and drops it on a swallowed one.
+    proof: [buffer-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      `set_cache` stores the JSON text with the TTL, swallows an error, and never calls
+      the gate.
+    proof: [sync-set-tests]
+  - text: >-
+      `get_cache` decodes JSON and Python literal replies, returns `None` for a miss,
+      and returns `None` and records a swallowed failure for an undecodable reply.
+    proof: [get-cache-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      `batch_get_cache` drops `None` keys, reads namespaced keys with one `MGET`, maps
+      original keys to decoded values with `None` for a miss, and exits the gate before
+      decoding. A read error gives an empty map.
+    proof: [batch-get-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      An open breaker returns `BreakerOpen` from every guarded method and from
+      `batch_get_cache`, with the fake server recording no command. A success exits the
+      gate once and a swallowed failure does not count as a success.
+    proof: [gate-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: async-set-tests
+      why: The single async SET with NX and TTL rules is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_values::tests::async_set::/)'
+    - id: async-set-failure-tests
+      why: The raise on client failure or the swallow on SET failure is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_values::tests::async_set_failure::/)'
+    - id: pipeline-tests
+      why: The pipelined SET write is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_values::tests::pipeline::/)'
+    - id: pipeline-ttls-tests
+      why: Per-entry TTLs or the client failure swallow is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_values::tests::pipeline_ttls::/)'
+    - id: sadd-tests
+      why: SADD with EXPIRE is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_values::tests::sadd::/)'
+    - id: buffer-tests
+      why: The write buffer or its flush rules are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_values::tests::buffer::/)'
+    - id: sync-set-tests
+      why: The sync set_cache is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_values::tests::sync_set::/)'
+    - id: get-cache-tests
+      why: The sync get_cache decode or swallow rule is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_values::tests::get_cache::/)'
+    - id: batch-get-tests
+      why: The sync batch read mapping or error return is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_values::tests::batch_get::/)'
+    - id: gate-tests
+      why: The breaker admission order is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_values::tests::gate::/)'
+    - id: helper-python
+      why: The strict oracle adapter fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4327)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4327 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4327/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new cache value cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/redis_cache_values-*")" &&
+        grep -lE '^[[:space:]]+b4327:' tools/oracle/fuzz/corpus/helper_case/redis_cache_values-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/redis-cache-values/set-nx-with-default-ttl.yaml
+  - tools/oracle/cases/helpers/redis-cache-values/pipeline-namespaces-each-key.yaml
+  - tools/oracle/cases/helpers/redis-cache-values/pipeline-ttls-mixed.yaml
+  - tools/oracle/cases/helpers/redis-cache-values/sadd-then-expire.yaml
+  - tools/oracle/cases/helpers/redis-cache-values/buffer-flushes-at-size.yaml
+  - tools/oracle/cases/helpers/redis-cache-values/get-cache-python-literal.yaml
+  - tools/oracle/cases/helpers/redis-cache-values/batch-get-miss-is-null.yaml
+  - tools/oracle/cases/helpers/redis-cache-values/batch-get-skips-null-keys.yaml
+
+deviations:
+  - what: >-
+      The sync `set_cache` stores the JSON text of the value. LiteLLM stores
+      `str(value)`, so a dict reaches Redis as `{'a': 1}`.
+    why: Python repr text is outside docs/compatibility.md, and `get_cache` reads both forms through B4324's decoder. LiteLLM reads betterlite's text too, since JSON is valid input to `json.loads`.
+  - what: >-
+      `flush_cache_buffer` removes only the entries it sent. LiteLLM empties the
+      whole list after the await, so an entry appended while the pipeline was running
+      is lost.
+    why: Keeping those entries loses no write, and the Python outcome is a race, not a promise.
+  - what: >-
+      `batch_get_cache` returns an empty map when decoding fails. LiteLLM returns the
+      raw, undecoded values it had mapped so far.
+    why: A raw bytes value has no place in the typed result. This is an open question for the architect, and the empty map is the choice for now.
+  - what: >-
+      The service event has no `caller` field, so the stack projection from B4324 is
+      not called here.
+    why: Rust has no frame names to walk. The event's `call_type` names the method.
+  - what: >-
+      Entries are serialized to JSON text when they are appended to the buffer, not
+      when it is flushed.
+    why: A typed value can't wait in a list of unknown type, and a value that can't be serialized fails at the call that gave it.
+
+out_of_scope:
+  - "`RedisCache.__init__`, `async_increment`, `async_get_cache`, `async_batch_get_cache`, `async_increment_pipeline`, `async_get_ttl` and `async_refresh_ttl`; B360 owns them."
+  - "`_get_cache_logic`, `check_and_fix_namespace`, `_get_call_stack_info`, `_incrbyfloat_with_ttl` and `_pipeline_increment_helper`; B4324 owns them. The code here calls the first two."
+  - "`init_async_client`, `_async_commands`, `_run_redis_mget_operation` and `_async_run_redis_mget_operation`; B4325 owns them as `RedisTransport::async_client` and `mget`."
+  - "The circuit breaker, `_enter_circuit_breaker`, `_exit_circuit_breaker`, the guard decorators, `log_redis_failure` and `_record_swallowed_redis_failure`; B393 owns them and B5630 fills in `BreakerGate` over them."
+  - "`async_delete_cache`, `delete_cache`, `ping`, `sync_ping`, `disconnect`, `flush_cache`, `flushall` and the other administration methods; B4326 owns them."
+  - "`increment_cache`, `increment_with_floor`, `batch_get_counts`, `async_scan_iter`, `async_register_script`, `async_set_max` and `async_increment_with_floor`; B4328 owns them. `get_cache` and `batch_get_cache` are here because B4328 is about counters and Lua and neither one uses either."
+  - "The list operations at L2053-L2420 of `litellm/caching/redis_cache.py`; B4329 owns them."
+  - "`BaseCache.get_ttl` in `litellm/caching/base_cache.py`; B4290 owns it. The same integer cut is done inline here."
+  - "`ServiceLogging` in `litellm/_service_logger.py`; B012 owns it and B5630 implements `ServiceHooks` over it."
+  - "`async_set_cache_sadd` on `InMemoryCache` and `DualCache`; B4290 and B4293 own them."
+
+pitfalls:
+  - >-
+      `batch_get_cache` returns the original keys, not the namespaced ones, and a miss
+      is `key: None` in the map. A caller such as `DualCache` tells a miss from an
+      absent key by that.
+  - >-
+      `async_set_cache_pipeline` looks up the async client outside its try and
+      `async_set_cache_pipeline_with_ttls` inside it, so the first returns a connection
+      error and the second swallows it. Don't make the two alike.
+  - >-
+      `async_set_cache` and `async_set_cache_sadd` return a client error but swallow
+      the command error, so a test that only breaks the command sees `Ok`.
+  - >-
+      `batch_cache_write` already namespaced the key, and the pipeline namespaces it
+      again. `check_and_fix_namespace` skips a key that already has the prefix, so
+      don't strip the prefix or call it a second time by hand.
+  - >-
+      `async_set_cache` sends `NX` only when the caller passes `nx`, and a nil reply
+      means the key existed. Treat a nil reply as `None`, not as an error.
+  - >-
+      `SADD` with an empty member list is sent as it is. The server's error is
+      swallowed, and the `EXPIRE` that follows is not sent.
+  - >-
+      `batch_get_cache` leaves the gate before decoding, so a bad cached value is
+      recorded as a swallowed failure but the admission was already exited.
+  - >-
+      `set_cache`, `get_cache` and `batch_get_cache` block on the sync client. They are
+      for sync call sites only, and async code must call them through `spawn_blocking`.
+  - "A pipeline with a TTL of 0 sends `EX 0` and the server rejects it. The whole pipeline fails and nothing is written."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

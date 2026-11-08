@@ -1,0 +1,14 @@
+id: B5360
+milestone: M12 python
+title: Config selection for media and resource APIs
+status: todo
+depends_on: [B171, B193]
+file: tasks/B5360-media-resource-config-selection.yaml
+covers:
+  - "litellm/utils.py"
+parent: B157
+split_from: B157
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

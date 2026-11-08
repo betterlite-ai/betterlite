@@ -1,0 +1,193 @@
+id: B158
+title: Python completion and acompletion, streaming iterators and response objects
+description: >-
+  This is the last part of the entry. With the Rust call (B5656), the native bridge (B5659) and the response classes (B5657,
+  B5658) in place, build the public Python functions so `betterlite.completion(...)` works where `litellm.completion(...)`
+  worked. It is a thin layer: Python collects arguments and settings into JSON, calls `NativeSession`, and builds response
+  objects from the JSON that comes back. Logic that isn't about Python objects stays in Rust.
+
+
+  Everything lives in the package `python/betterlite/_completion/`, in files under the 300-line limit, and
+  `python/betterlite/main.py` re-exports the same names so `from betterlite.main import completion` works. `_completion/__init__.py`
+  has the explicit `__all__`. `python/betterlite/__init__.py` picks those names up through one line, `from
+  betterlite._completion import *`. That line is written once by the architect, the same way as the `completion` lines in
+  `src/lib.rs` that B5659 describes. Never edit that file, and add a new public name by adding it to `__all__`. Each new Python
+  family works the same way: its own `_<family>` package, its own `__all__`, one star line.
+
+
+  `completion` and `acompletion` keep LiteLLM's parameter names, order and defaults (a test compares `inspect.signature`).
+  `acreate` (litellm/utils.py L7131-L7132) returns `acompletion(*args, **kwargs)`, so it is a plain function that returns a
+  coroutine. `completion` with `acompletion=True` returns a coroutine as well.
+
+
+  A small number of values can't be JSON, and each has one rule. `client` and `shared_session` raise a named
+  `UnsupportedCallArgument` with the parameter name, since a Python HTTP client can't drive the Rust one. `logger_fn` is
+  accepted, not called, and logs one warning. `timeout` may be an `httpx.Timeout`: read `connect`, `read`, `write` and `pool`
+  through a `typing.Protocol`, because httpx is no dependency of the wheel. A pydantic class in `response_format` goes through
+  `model_json_schema()` and takes the shape from `type_to_response_format_param` (llms/base_llm/base_utils.py L179-L212).
+  A `Message` in `messages` and a `ModelResponse` in `mock_response` go through `model_dump()`. An Exception in `mock_response`
+  follows `_handle_mock_potential_exceptions`: an `openai.APIError` is raised as is, and anything else becomes `MockException`
+  with `status_code`, `text` and `llm_provider` read from it, or 500, `str(e)` and the provider or `openai` when missing.
+
+
+  `litellm.proxy_auth` is a Python object too. `_ProxyAuthHeadersProvider` and `_proxy_auth_headers` (main.py L1232) live here:
+  call `get_auth_headers()` before the native call, log "Failed to get proxy auth headers: %s" as a warning on failure, and
+  pass the map as `proxy_headers`. The settings snapshot reads only the names `CompletionSettings` lists from `_settings`, at
+  call time, so a user's later assignment to `betterlite.drop_params` takes effect.
+
+
+  `_completion/errors.py` holds one explicit `dict` from the `type` in B5659's `NativeError` JSON to B163's exception classes.
+  Each class is built with its own fields, and `raise ... from` keeps the native error as the cause. A `type` missing from
+  the table raises a named `UnknownNativeError` with the payload. It never becomes a generic error silently.
+
+
+  `CustomStreamWrapper` is the Python face of `NativeChatStream`. `__iter__`, `__next__`, `__aiter__`, `__anext__`, `close` and
+  `aclose` turn each chunk's JSON into `ModelResponseStream` and raise `StopIteration` or `StopAsyncIteration` at the end. A
+  stream result from `completion` is one of these, and `isinstance(response, CustomStreamWrapper)` holds as it does in
+  LiteLLM.
+
+
+  `LiteLLM`, `Chat`, `Completions` and `AsyncCompletions` (L364-L417) follow LiteLLM: `timeout` 600, `max_retries` from
+  `num_retries`, `Chat` picks `AsyncCompletions` when `acompletion` is true in params and pops it. `create` merges its kwargs
+  into `self.params`, takes `model or self.params.get("model")`, and calls `router_obj.completion` when a router is set.
+
+
+  `completion_with_retries` and `acompletion_with_retries` (L6087-L6136) are plain loops here, because `original_function` is a
+  Python callable. Their rules match the Rust retry entry in B5656: `num_retries` pops with default 3, inner `num_retries` and
+  `max_retries` are 0, `constant_retry` is the default strategy, `exponential_backoff_retry` waits `2^(attempt-1)` capped
+  at 10 seconds, and the last error is raised unchanged.
+
+
+  `config_completion` (L8845-L8853) calls `completion(**kwargs, **config)` with the JSON read from `betterlite.config_path`, and
+  otherwise raises the same `ValueError`. `adapter_completion` and `aadapter_completion` (L7698-L7761) search
+  `betterlite.adapters` by id, raise "No matching adapter given. Received 'adapter_id'={adapter_id}, litellm.adapters={...}"
+  when none matches, call `translate_completion_input_params`, then `translate_completion_output_params` or
+  `translate_completion_output_params_streaming` on the adapter. `acount_tokens` (L9277-L9372), `check_valid_key` and
+  `valid_model` send their arguments to `NativeSession` and build `TokenCountResponse` or a bool. That last pair is how B5364's
+  `ModelProbe` reaches a real completion from Python.
+
+
+  The tests call `litellm` and `betterlite` with the same arguments against one local HTTP server speaking the OpenAI chat
+  API (`tests/completion_server.py`) and compare results, with `id` and `created` removed. `check_valid_key` uses the same
+  server through `OPENAI_API_BASE`, with a 401 for a bad key.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/_completion/**
+  - crates/betterlite-python/python/betterlite/main.py
+  - crates/betterlite-python/tests/completion_server.py
+  - crates/betterlite-python/tests/test_completion.py
+  - crates/betterlite-python/tests/test_completion_stream.py
+  - crates/betterlite-python/tests/test_completion_classes.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L360-L417
+  why: The LiteLLM, Chat and Completions classes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L774-L1057
+  why: The mock exception rule and the mock arguments.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6087-L6136
+  why: Both retry functions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7698-L7761
+  why: The adapter functions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8845-L8853
+  why: config_completion.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7131-L7165
+  why: acreate, valid_model and check_valid_key.
+dod:
+- text: "`completion` and `acompletion` keep LiteLLM's signature, and a plain call gives the same `model_dump()` as LiteLLM against one server."
+  proof: [completion-plain, completion-signature]
+- text: "`acreate` and `completion(acompletion=True)` return a coroutine that gives the same response."
+  proof: [completion-async]
+- text: "`client` and `shared_session` raise `UnsupportedCallArgument`, `logger_fn` warns, and `httpx.Timeout`, a pydantic `response_format`, `Message` objects and a `ModelResponse` mock work."
+  proof: [completion-values]
+- text: Exception and text mocks raise what LiteLLM raises.
+  proof: [completion-mock]
+- text: Proxy auth headers reach the request, a failing provider logs the warning, and a later assignment to a setting takes effect.
+  proof: [completion-settings]
+- text: Each native error type raises the matching class with its fields and the native error as cause, and an unknown type raises `UnknownNativeError`.
+  proof: [completion-errors]
+- text: A stream gives the same chunks as LiteLLM on both iteration paths, stops cleanly and closes.
+  proof: [stream-iteration]
+- text: The client classes pass their params and route to a router as LiteLLM does.
+  proof: [completion-classes]
+- text: Both retry functions make the same calls and raise the same last error as LiteLLM.
+  proof: [completion-retries]
+- text: "`config_completion` and the adapter functions behave as in LiteLLM, including their `ValueError` messages."
+  proof: [completion-config]
+- text: "`check_valid_key` gives True and False by the server's answer, `valid_model` raises for a bad model, and `acount_tokens` gives LiteLLM's count, so `ModelProbe` runs a real completion."
+  proof: [completion-probe]
+- text: The `_completion` package and `main.py` pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: completion-plain
+    why: The main call differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_completion.py -k plain
+  - id: completion-signature
+    why: A caller's keyword is refused.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_completion.py -k signature
+  - id: completion-async
+    why: "`acreate` is missing or doesn't return a coroutine."
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_completion.py -k coroutine
+  - id: completion-values
+    why: A Python object fails in JSON, or a client is dropped silently and skips a proxy.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_completion.py -k python_values
+  - id: completion-mock
+    why: A test suite that mocks errors stops working.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_completion.py -k mock
+  - id: completion-settings
+    why: A setting is read once and goes stale, or auth headers are lost.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_completion.py -k settings
+  - id: completion-errors
+    why: "`except betterlite.RateLimitError` stops matching."
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_completion.py -k errors
+  - id: stream-iteration
+    why: Iteration differs from LiteLLM or never ends.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_completion_stream.py
+  - id: completion-classes
+    why: "`LiteLLM().chat.completions.create` stops working."
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_completion_classes.py -k client
+  - id: completion-retries
+    why: Retries run too often or change the error.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_completion_classes.py -k retries
+  - id: completion-config
+    why: A config or adapter call fails where LiteLLM's works.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_completion_classes.py -k "config or adapter"
+  - id: completion-probe
+    why: A key check doesn't reach the server, so a bad key looks good.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_completion.py -k probe
+  - id: python-lint
+    why: The public layer is where an untyped dict would creep back in.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Passing `client` or `shared_session` raises `UnsupportedCallArgument`.
+  why: A Python HTTP client can't drive the Rust call, and ignoring it could send a request past a caller's proxy or custom TLS.
+- what: "`logger_fn` is accepted and never called, and a warning is logged once per call."
+  why: The call runs in Rust and has no point to call back into Python at each step.
+- what: "`LiteLLM.params` doesn't hold `self`, where LiteLLM's `locals()` does."
+  why: The key is an accident of `locals()`, and it would pass the client into `create` as an argument.
+- what: "`betterlite.main.encoding` raises AttributeError, where LiteLLM's `__getattr__` (L9400-L9411) gives a tiktoken encoding."
+  why: Token counting is Rust and no tiktoken object exists in the wheel.
+- what: The retry functions run without tenacity, so "tenacity import failed please run `pip install tenacity`" never appears.
+  why: A plain loop needs no optional package.
+out_of_scope:
+- Wrappers in litellm/chat_completions/** go through `litellm.rust_bridge`, excluded in litellm.yaml, so they are not built.
+- '`aadapter_generate_content` (L7729-L7738) calls the google_genai adapter handler and belongs to B160.'
+- '`ahealth_check` is B4449.'
+- '`embedding`, `aembedding`, `text_completion`, `atext_completion`, `moderation`, `amoderation` and `_resolve_dispatched_text_completion_response` are B159.'
+- '`responses_with_retries` and `aresponses_with_retries` are B160.'
+- '`transcription`, `atranscription`, `speech`, `aspeech` and `_transcription_response_from_cached_dict` are B1082, B1083 and B1084.'
+- '`batch_completion`, `batch_completion_models` and `batch_completion_models_all_responses` are B201.'
+- '`stream_chunk_builder` is B2227, and `mock_completion` is B255.'
+- Everything else in litellm/main.py belongs to the parts B5650 to B5659, and everything else in litellm/utils.py belongs to the other entries that cover it.
+pitfalls:
+- '`__all__` drives the star line, so a name missing there is missing from `betterlite` with no error at import.'
+- Both retry functions default `original_function` to `completion`, so a test has to show what the async one does with a result it can't await, and the loop keeps that outcome.
+- '`Completions.create` merges into `self.params` and keeps the change for the next call, so a later call sees earlier kwargs.'
+- '`LiteLLM.__init__` reads `num_retries` when the object is built, not at each call.'
+- 'A caller who sets `litellm_logging_obj` passes an object, so leave it out of the JSON and do not fail on it.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

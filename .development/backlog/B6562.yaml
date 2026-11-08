@@ -1,0 +1,14 @@
+id: B6562
+milestone: M6 guardrails
+title: Guardrail provider form tables, second group
+status: todo
+depends_on: [B6560, B3662]
+file: tasks/B6562-guardrail-form-tables-b.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_endpoints.py"
+parent: B104
+split_from: B3684
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

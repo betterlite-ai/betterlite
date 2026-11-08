@@ -2,8 +2,8 @@ id: B3844
 milestone: M7 observability
 title: OTel inference and MCP payload projections
 status: todo
-depends_on: [B3840, B3841, B3843]
-file: null
+depends_on: [B3840, B3841, B3843, B3892, B5240]
+file: tasks/B3844-otel-span-payloads.yaml
 covers:
   - "litellm/integrations/otel/model/payloads.py"
   - "litellm/integrations/opentelemetry.py"

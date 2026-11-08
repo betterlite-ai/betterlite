@@ -1,0 +1,17 @@
+id: B5980
+milestone: M3 providers
+title: Databricks credentials, endpoint URLs, embeddings, Responses and pricing
+status: todo
+depends_on: [B1425, B507, B1672, B171]
+file: tasks/B5980-databricks-auth-embedding-responses.yaml
+covers:
+  - "litellm/llms/databricks/common_utils.py"
+  - "litellm/llms/databricks/cost_calculator.py"
+  - "litellm/llms/databricks/embed/**"
+  - "litellm/llms/databricks/responses/transformation.py"
+parent: B042
+split_from: B5841
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -12,7 +12,7 @@ description: >-
   Production ownership, including trust policy and cookie session handling: litellm/proxy/_experimental/mcp_server/oauth_utils.py:
   validate_loopback_redirect_uri (L239-275; 37 source lines), validate_redirect_uri_shape (L454-493; 40 source
   lines), validate_trusted_redirect_uri (L615-646; 32 source lines), and supporting helpers _parse_redirect_uri_for_validation
-  (L428-436; 9 source lines), _strip_default_port (L277-307; 31 source lines), _parse_trusted_redirect_origins
+  (L428-436; 9 source lines), _parse_trusted_redirect_origins
   (L309-337; 29 source lines), _matches_trusted_origin_entry (L339-355; 17 source lines), is_loopback_redirect_host
   (L438-452; 15 source lines), _trusted_redirect_uri_is_allowed (L507-527; 21 source lines), _origin_label (L82-85;
   4 source lines). litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py: _user_id_from_session_cookie
@@ -54,8 +54,7 @@ description: >-
 
   B2316 owns password validation and credentials handling. B738 supplies the session key liveness check via
   get_key_object. B743 owns request header parsing that calls these redirect validators. B1223 owns the
-  separate UI session token generation flow (the builder side), not cookie admission here. This task creates
-  the betterlite-mcp/fuzz workspace since no other task owns it.
+  separate UI session token generation flow (the builder side), not cookie admission here.
 
 
   The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT fallback.
@@ -67,7 +66,7 @@ description: >-
   that same function. Seed valid tokens (signed with master key, with and without optional ``key`` claim),
   truncated tokens, wrong-algorithm tokens, missing-exp tokens, missing-claim tokens, tampered payloads,
   non-JWT input and invalid base64. Add decode_session_cookie::tests::replays_the_decode_session_cookie_corpus.
-  Create crates/betterlite-mcp/fuzz with a workspace Cargo.toml and register the decode_session_cookie target.
+  Register the decode_session_cookie target in the existing crates/betterlite-mcp/fuzz workspace (Cargo.toml, corpus, and fuzz_targets with envelope.rs and session_token.rs already exist).
 
 
   Sizing: session identity functions own 98 source lines, redirect validators own 243 source lines.
@@ -107,7 +106,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L239-L275
     why: Own validate_loopback_redirect_uri; native MCP clients must redirect to loopback only.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L277-L307
-    why: Own _strip_default_port; normalize netloc for same-origin comparison and allowlist matching.
+    why: B4654 owns _strip_default_port and this task calls it.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L309-L337
     why: Own _parse_trusted_redirect_origins; parse MCP_TRUSTED_REDIRECT_ORIGINS env var.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L339-L355
@@ -213,9 +212,7 @@ deviations:
 out_of_scope:
   - 'litellm/proxy/_experimental/mcp_server/oauth_utils.py: B4654 owns resolve_upstream_resource (L688-729),
     build_upstream_oauth2_token_request (L731-750+), and all RFC 8707 resource identifier logic.'
-  - 'litellm/proxy/_experimental/mcp_server/oauth_utils.py: B4654 owns validate_redirect_uri_shape for
-    native-callback matching and validate_trusted_redirect_uri when called from user_api_key_auth_mcp.'
-  - 'litellm/proxy/_experimental/mcp_server/oauth_utils.py: B4650 owns get_request_base_url (L138-178; 41 source lines),
+  - 'litellm/proxy/_experimental/mcp_server/oauth_utils.py: B4654 owns get_request_base_url (L138-178; 41 source lines),
     well_known_root_suffix (L180-190; 11 source lines), TOKEN_NO_CACHE_HEADERS constant, and PROXY_BASE_URL resolution.
     These are owned separately for credential carrier setup, not redirect validation.'
   - 'litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py: Multiple route handlers and stores
@@ -240,6 +237,7 @@ pitfalls:
   - 'PROXY_BASE_URL takes precedence over X-Forwarded-* headers for origin determination in redirect validation.
     Untrusted proxies never use X-Forwarded-* even when set, preserving the loopback + allowlist fallback.
     Mixing these two rules in one function creates TOCTOU bugs.'
+  - 'This task adds the redirect helpers. B4654 owns get_request_base_url and strip_default_port, and this task calls them. B4655 owns validate_redirect_uri_shape.'
 
 budget:
   max_changed_lines: 1500

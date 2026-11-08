@@ -1,0 +1,88 @@
+id: B5790
+title: Anthropic error format in the Python wheel
+description: >-
+  Code that serves the Anthropic Messages API from Python builds error bodies and stream error frames with
+  `litellm.anthropic_interface.exceptions`. Build the same package as `betterlite.anthropic_interface.exceptions` in the wheel. It
+  is plain data and string handling, so it needs nothing from the native side.
+
+
+  Files under `python/betterlite/anthropic_interface/exceptions/`: `__init__.py` with the explicit `__all__` of the seven names in
+  LiteLLM's `__init__.py`, `exceptions.py` with the `AnthropicErrorType` Literal (eight values) and the two TypedDicts
+  `AnthropicErrorDetail` and `AnthropicErrorResponse`, and `exception_mapping_utils.py` with `ANTHROPIC_ERROR_TYPE_MAP`,
+  `AnthropicExceptionMapping`, `AnthropicErrorSseFrame` and `anthropic_error_sse_frame`. The wheel supports Python 3.10 and has no `typing_extensions`, so use `typing.TypedDict` only. Declare each optional key in a
+  second class with `total=False` that the required class extends, and leave the read-only marks out. `safe_json_loads` is LiteLLM's helper for
+  `json.loads` that gives None on any failure; inline the one `try/except json.JSONDecodeError` where
+  `AnthropicExceptionMapping` needs it, in a single private static method, since no other module in the wheel owns the helper.
+
+
+  `AnthropicExceptionMapping` keeps its static methods `get_error_type` (unknown status gives "api_error"), `create_error_response`
+  (adds `request_id` only when truthy), `extract_error_message`, `_is_anthropic_error_dict`, `_extract_message_from_dict` and
+  `transform_to_anthropic_error`. A message already in Anthropic format passes through, with `request_id` added only when it is
+  absent. `AnthropicErrorSseFrame` is a `str` subclass whose text is `event: error\ndata: <json>\n\n` and which carries
+  `status_code` and `error_response`. `json_body(call_id)` adds `litellm_call_id` to the inner error when a call id is given.
+  `anthropic_error_sse_frame` builds one from a status and a raw message.
+
+
+  The package does not edit `python/betterlite/anthropic_interface/__init__.py`. That file imports `messages` and belongs to the
+  Messages API work (B160). Tests are `tests/test_anthropic_errors.py`: they feed LiteLLM and betterlite the same statuses and raw
+  messages (Bedrock `detail`, AWS `Message`, generic `message`, plain text, non-dict JSON, JSON already in Anthropic format) and compare the
+  returned dicts, the frame text, `json_body` with and without a call id, and the frame's attributes.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/anthropic_interface/exceptions/**
+  - crates/betterlite-python/tests/test_anthropic_errors.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/exceptions.py#L1-L45
+  why: The error type Literal and the two TypedDicts.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/exception_mapping_utils.py#L1-L202
+  why: The status map, the mapping class and the SSE frame.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/exceptions/__init__.py#L1-L23
+  why: The public names.
+- url: https://docs.anthropic.com/en/api/errors
+  why: The error types and the status each one answers.
+dod:
+- text: >-
+    `get_error_type`, `create_error_response`, `extract_error_message` and `transform_to_anthropic_error` return what LiteLLM
+    returns for every status in the map, an unmapped status, and each raw message shape.
+  proof: [anthropic-errors]
+- text: >-
+    `anthropic_error_sse_frame` gives the same frame text, `status_code`, `error_response` and `json_body` result (with and without a call id).
+  proof: [anthropic-errors]
+- text: The package exports the seven names of LiteLLM's `__all__` and passes ruff and basedpyright in strict mode.
+  proof: [anthropic-errors, anthropic-errors-lint]
+checks:
+  optional: []
+  commands:
+  - id: anthropic-errors
+    why: An error body or stream frame differs from LiteLLM, so an Anthropic client misreads the failure.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm
+      --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_anthropic_errors.py
+  - id: anthropic-errors-lint
+    why: The other-languages rule needs clean strict checks.
+    run: test -d crates/betterlite-python/python/betterlite/anthropic_interface/exceptions && uv run --locked --project tools/oracle/litellm ruff check
+      crates/betterlite-python/python/betterlite/anthropic_interface/exceptions crates/betterlite-python/tests/test_anthropic_errors.py
+      && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The package has no `typing_extensions` imports and does not mark the TypedDict keys read-only.
+  why: The wheel depends only on python-dotenv, and `ReadOnly` is a type-checker hint with no effect at runtime.
+- what: This task has no helper oracle cases.
+  why: The pytest file compares the two packages directly, and the helper oracle speaks to Rust functions, not to a wheel.
+out_of_scope:
+- '`litellm/anthropic_interface/messages/**` and the package `__init__.py` are B160.'
+- The Anthropic error handling of the Rust gateway lives in the server crates, not in this wheel.
+pitfalls:
+- >-
+  `create_error_response` drops an empty `request_id` ("" is falsy), while `transform_to_anthropic_error` adds the id to a passthrough body
+  only when the key is missing.
+- >-
+  `extract_error_message` returns `parsed["detail"].get("message", raw_message)` for a Bedrock body, which can be a non-string. Do not coerce it.
+- >-
+  The frame is built with `str.__new__` and the attributes are set after, so `AnthropicErrorSseFrame(...)` must work through `__new__`
+  alone; do not add an `__init__`.
+- '`json_body(None)` returns the stored dict itself, not a copy, while a call id builds a new dict with `litellm_call_id` inside `error`.'
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

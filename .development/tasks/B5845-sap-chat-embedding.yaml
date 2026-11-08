@@ -1,0 +1,171 @@
+id: B5845
+title: SAP chat and embedding request and response transforms
+description: >-
+  Add `sap_chat` and `sap_embedding` to betterlite-provider. They port litellm/llms/sap/chat/transformation.py
+  (`GenAIHubOrchestrationConfig`) and litellm/llms/sap/embed/transformation.py (`GenAIHubEmbeddingConfig`) as pure
+  transforms. Credentials, the token and the deployment URL come from B5950 (`sap_auth`), the wire validation from B5951
+  (`sap_models`), and the error type and stream iterators from B5952 (`sap_stream`). Inputs from the running
+  config (token, base URL, resource group, deployment URL) are plain arguments. Nothing here sends a request.
+
+  Chat, supported parameters. `get_supported_openai_params(model)` returns, in this order, frequency_penalty, logit_bias,
+  logprobs, top_logprobs, max_tokens, max_completion_tokens, prediction, n, presence_penalty, seed, stop, stream,
+  stream_options, temperature, top_p, tools, tool_choice, function_call, functions, extra_headers, parallel_tool_calls,
+  response_format, timeout. `response_format` is removed for models starting with `amazon`, `cohere` or `alephalpha` and for
+  the exact name `gpt-4`. `tool_choice` is removed for models starting with `gemini` or `amazon`. The inherited
+  `map_openai_params` (B668 owns it) takes this list as its allowlist.
+
+  Chat, environment and URL. `validate_environment(api_key)` sets up credentials with the api_key as a service key when it
+  is truthy (`run_env_setup(service_key)`), and returns exactly the four headers from B5950's `orchestration_headers`.
+  The caller's `headers` argument is ignored. A credentials `ValueError` becomes `SapOrchestrationError` with status 400 and the first
+  message arg; other failures are not wrapped. `get_complete_url` is `<deployment_url>/v2/completion` with no trailing slash trimming.
+
+  Chat, request. `transform_request(model, messages, optional_params)` works on a copy. Drop `deployment_url`. Convert each
+  message with `_messages_to_sap_template`: role user, assistant and tool use SAPUserMessage, SAPAssistantMessage and
+  SAPToolChatMessage, every other role uses SAPMessage, each through B5951's validators. Pop `placeholder_values` (kept
+  only when not null), `fallback_sap_modules` (default empty), `stream` and `tool_choice` (dropped, never sent). Pop
+  `stream_options` and keep only `chunk_size` and `delimiters` for `config.stream`. Build the main module with
+  `_build_prompt_module(model, template, copy of the remaining params)`, then one more module per fallback entry: copy the entry,
+  pop `model` (missing or null is the error "Each entry in `fallback_sap_modules` must include a 'model' key."), remove a
+  leading `sap/`, pop `messages` (default empty, passed unvalidated to this step), and use the rest as that module's params.
+  `config.modules` is the single module when there is one and the list otherwise; `config.stream` is added only when
+  `stream_options` supplied a key. The body is `{"config": ..., "placeholder_values": ...}` run through
+  `validate_orchestration_request`.
+
+  `_build_prompt_module`: for model names starting with `gpt`, drop `strict`. Pop `model_version` (default `latest`).
+  Pop `tools` (default empty) and validate each as ChatCompletionTool (full dump); write `tools` only when non-empty. Pop
+  `response_format` (default empty); when its `type` is truthy, `json_schema` goes through ResponseFormatJSONSchema and any
+  other type through ResponseFormat, and it is written only then. Pop `placeholder_defaults` and write it as `defaults` only
+  when non-empty. Move `grounding`, `masking`, `filtering` and `translation` out of the params to the module level when they are
+  not null. What is left is `model.params`, with `model.name` and `model.version`. The module shape is
+  `{"prompt_templating": {"prompt": {template, defaults?, tools?, response_format?}, "model": {name, params, version}}, grounding?, masking?, filtering?, translation?}`.
+
+  Chat, response. `transform_response` calls the post-call logging sink with the messages, api key, raw response text and
+  request body (the injected sink pattern B668 uses), parses the body's `final_result` with B004's chat response record, and
+  when the request's `response_format.type` is `json_object` or `json_schema` and the model starts with `anthropic`
+  strips a surrounding Markdown fence from every non-empty choice message content: trim the content, and when it
+  matches ``^```(?:json)?\s*\n?(.*?)\n?```$`` with dot-matches-newline, replace the content with the trimmed capture.
+  `get_model_response_iterator` returns B5952's Sync or Async iterator by the `sync_stream` flag.
+
+  Embedding. `get_supported_openai_params(model)` is `encoding_format` and `dimensions` when the model contains
+  `text-embedding-3`, else `encoding_format`. `map_openai_params` returns `optional_params` unchanged and ignores the
+  mapped parameters. `validate_environment` returns the four headers and ignores its arguments. `get_complete_url` is the
+  deployment URL with trailing slashes trimmed plus `/v2/embeddings`. `get_error_class` returns `SapOrchestrationError` with the status and
+  message; headers are ignored. `transform_embedding_request(model, input, optional_params)` builds
+  `config.modules.embeddings.model` with `name`, `version` (optional_params `version`, default `latest`), `params`
+  (optional_params `parameters`, default empty) and, when not null, `timeout` and `max_retries`; adds `masking` when
+  not null; sets `input.text` to the input and `input.type` when not null; then validates with the embedding models
+  below. `timeout` is 1 to 600 and `max_retries` is 0 to 5. `type` is `text`, `document` or `query`. `text` is a string or
+  a list of strings, so token-id inputs fail validation. `masking` validates with B5951's masking validator. The response is
+  `EmbeddingResponse` parsed from the body's `final_result` (B006's embedding response record).
+
+  Port the embedding request models (EmbeddingModel, EmbeddingsModelConfig, EmbeddingsModules, EmbeddingInput,
+  EmbeddingConfig, EmbeddingRequest) with the same unset-key dump rule as B5951: only keys present in the input are
+  written. The constructor of the embedding config resolves credentials at creation, so a missing credential fails when the config is built.
+  Helper cases call the real configs with token creation and `deployment_url` replaced by fixtures. About 330 nonblank,
+  noncomment lines in transformation.py and 130 in embed/transformation.py.
+scope:
+  paths:
+    - crates/betterlite-provider/src/sap_chat.rs
+    - crates/betterlite-provider/src/sap_chat/**
+    - crates/betterlite-provider/src/sap_embedding.rs
+    - crates/betterlite-provider/src/sap_embedding/**
+    - tools/oracle/cases/helpers/sap-chat/**
+    - "tools/oracle/fuzz/corpus/helper_case/sap_chat-*"
+    - tools/oracle/helpers/b5845.py
+    - tools/oracle/helpers/b5845/**
+    - tools/oracle/src/helpers/provider/b5845.rs
+    - tools/oracle/src/helpers/provider/b5845/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/transformation.py#L55-L70
+    why: validate_dict and the role to message model switch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/transformation.py#L99-L167
+    why: Config class attributes, lazy credential setup and the 400 conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/transformation.py#L191-L253
+    why: Supported parameters, validate_environment and get_complete_url.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/transformation.py#L255-L373
+    why: Prompt module building, fallback modules and the request body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/transformation.py#L375-L436
+    why: Response parsing, the Markdown fence strip for Anthropic JSON replies and the iterator choice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/embed/transformation.py#L23-L84
+    why: Embedding request models and the config constructor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/embed/transformation.py#L114-L190
+    why: Embedding parameters, URL, error class, request and response.
+dod:
+  - text: The supported parameter list follows the model prefix rules for response_format and tool_choice.
+    proof: [sap-chat-tests, sap-chat-python, oracle]
+  - text: Chat requests build the orchestration body with the dropped keys, the module layout, stream options and placeholder values.
+    proof: [sap-chat-tests, oracle]
+  - text: Fallback modules are built from their own params and the missing model error matches LiteLLM.
+    proof: [sap-chat-tests, oracle]
+  - text: Tool, response format, grounding, masking, filtering and translation parameters land in the right module position.
+    proof: [sap-chat-tests, oracle]
+  - text: Chat responses parse final_result and strip Markdown fences only for Anthropic JSON replies.
+    proof: [sap-chat-tests, oracle]
+  - text: Environment setup turns credential errors into status 400 and returns only the four SAP headers.
+    proof: [sap-chat-tests, oracle]
+  - text: Embedding requests, limits, parameters, URL and response match LiteLLM.
+    proof: [sap-embedding-tests, oracle]
+  - text: New chat and embedding seeds replay through the helper case parser.
+    proof: [sap-chat-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: sap-chat-tests
+      why: the supported list, request layout, fallback handling, response parsing or header rules are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-provider --no-tests=fail
+        -E 'test(/^sap_chat::/)'
+    - id: sap-embedding-tests
+      why: embedding parameters, request limits, URL or response parsing are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-provider --no-tests=fail
+        -E 'test(/^sap_embedding::/)'
+    - id: sap-chat-python
+      why: the strict oracle adapter fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5845)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5845 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5845/pyrightconfig.json
+    - id: sap-chat-seeds
+      why: new helper seeds are missing or do not select this helper operation
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/sap_chat-*")" &&
+        grep -lE '^[[:space:]]+b5845:' tools/oracle/fuzz/corpus/helper_case/sap_chat-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sap-chat/supported-params-by-model.yaml
+  - tools/oracle/cases/helpers/sap-chat/request-basic-and-dropped-keys.yaml
+  - tools/oracle/cases/helpers/sap-chat/request-stream-options-and-placeholders.yaml
+  - tools/oracle/cases/helpers/sap-chat/request-tools-and-response-format.yaml
+  - tools/oracle/cases/helpers/sap-chat/request-optional-modules.yaml
+  - tools/oracle/cases/helpers/sap-chat/request-fallback-modules.yaml
+  - tools/oracle/cases/helpers/sap-chat/response-anthropic-json-fence.yaml
+  - tools/oracle/cases/helpers/sap-chat/environment-api-key-and-400.yaml
+  - tools/oracle/cases/helpers/sap-chat/embedding-request-and-limits.yaml
+  - tools/oracle/cases/helpers/sap-chat/embedding-params-url-response.yaml
+deviations:
+  - what: Config objects are built from plain arguments (token, base URL, resource group, deployment URL). LiteLLM's lazy `run_env_setup` and `cached_property` caching belong to the caller that holds the config.
+    why: These modules are pure. B042 builds the config per deployment and caches the deployment URL.
+  - what: The Markdown fence strip uses the Rust regex crate with the same pattern.
+    why: Rust and Python regex engines agree on this pattern. Cases with a fence, no fence and a `json` tag confirm it.
+out_of_scope:
+  - OpenAIGPTConfig members the SAP config inherits and does not override (map_openai_params, the error class for chat, `_transform_messages`); B668 owns them.
+  - '`_SAP_MODEL_PARAMS_EXCLUDED_KEYS` and `_tools_response_format_and_stream` in transformation.py have no caller at the pin.'
+  - EmbeddingsResponse, FinalResult, EmbeddingItem and Usage in embed/transformation.py have no caller at the pin (the response is read straight from `final_result`).
+  - The class-level settings of `GenAIHubOrchestrationConfig.__init__` and `get_config`, which main.py:2363 merges into optional_params for keys not already set; B042 owns `_complete_sap` and that merge. `model_version = "latest"` is always part of that merge.
+  - Provider selection for `sap/`, ProviderConfigManager entries and utils.py:3990 embedding mapping; B2230 and B042 own them.
+  - Real HTTP, the dispatch wiring, the route cases through the booted proxy and `sap_gen_ai_hub_emb`; B042 owns them.
+pitfalls:
+  - '`tool_choice` is in the supported list for most models but `transform_request` pops it, so it never reaches SAP.'
+  - '`validate_environment` returns SAP''s headers and drops the caller''s headers, so `extra_headers` do not reach SAP.'
+  - The `api_key` argument is a service key (a JSON string), not a bearer token.
+  - '`get_complete_url` keeps a trailing slash on the deployment URL, while the embedding URL trims it.'
+  - The embedding `map_openai_params` ignores `encoding_format` and `dimensions`, so they are never sent. Only `parameters`, `version`, `timeout`, `max_retries`, `type` and `masking` reach the body.
+  - Fallback `messages` are passed as given and are only checked by the final request validation, not by the role switch.
+  - 'An assistant message with `content: null` and tool calls fails B5951''s content check. Do not special-case it.'
+  - Only `strict` is dropped for `gpt` models, and only from the model params, not from tool definitions.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -138,7 +138,8 @@ pitfalls:
   - Weave's _handle_success must never call span.end() on parent_span or parent spans from kwargs; only child spans created by _start_primary_span are ended.
   - Logfire must handle missing response_obj (default to empty dict), missing usage and missing choices gracefully; line 95 guards response_obj with default empty dict before calling get().
   - Traceloop's actual behavior silently fails if response_obj.get("choices") returns None (TypeError caught by outer except on line 138-139), leaving the span unclosed; betterlite reproduces this without adding defensive defaults.
-
+  - "Call get_arize_config and get_arize_phoenix_config; do not build them. Pass redact_messages, computed with B188's PrivacyRequest::decide (Decision.content), to B3861's set_attributes."
+  - "The Weave callback calls B3861's set_weave_otel_attributes."
 review_level: security
 
 budget:

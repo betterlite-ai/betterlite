@@ -1,0 +1,254 @@
+id: B4671
+title: MCP admitted subject server access and source attribution
+description: >-
+  Build the part of MCPRequestHandler that answers "which MCP servers may this caller reach" by combining the levels the other tasks supply, and the part that treats a keyless admitted user as several independent grant sources (the user's own grants plus one source per team they are a live member of) with billing and rate-limit attribution on top. In LiteLLM that is get_mcp_server_access, get_allowed_mcp_servers, the admitted-subject source functions and the first two functions of managed_agent_access.py. B4672 calls this code for tools, B4673 calls it from request admission, so every name below is public and spelled as written.
+
+
+  The code goes in three crates and none of them gains a dependency on a crate above it. UserAPIKeyAuth keeps its fields pub(crate) in betterlite-auth, so everything that builds or reads one field-by-field lives there, in the new module source_auth. The orchestration is pure over ports and goes in betterlite-mcp, in the new module access. The production implementation of the database-backed port goes in betterlite-server, in the new module mcp::source_reads. The new config section goes in betterlite-config. The crates already depend on each other in that direction (betterlite-mcp on betterlite-auth and betterlite-config, betterlite-server on betterlite-mcp), so no Cargo.toml changes.
+
+
+  source_auth, in crates/betterlite-auth/src/source_auth.rs with a tests.rs beside it. scoped_source_auth(auth: &UserAPIKeyAuth, team_id: Option<&str>, org_id: Option<&str>, carry_user_grants: bool) -> UserAPIKeyAuth is LiteLLM's _scoped_source_auth: a plain auth for one grant source. It carries only user_id, the parent trace span handle, requires_fresh_policy and mcp_explicit_grants_only from the original, plus the given team_id and org_id. When carry_user_grants is true it also carries object_permission, object_permission_id and access_group_ids (the user's own grants); a team source carries none of them, because the resolver loads the team's own permission from team_id. Everything else stays at its default: no api_key or token, no budgets or limits, no user_role (an admin role would grant every server at the server manager), and mcp_admitted_user_subject false so the source cannot re-enter the admitted path. billed_auth(auth: &UserAPIKeyAuth, team_id: &str, org_id: Option<&str>) -> UserAPIKeyAuth is the copy billing_auth_for_tool_call returns: the original with only team_id and org_id replaced. source_identity(auth: &UserAPIKeyAuth) -> SourceIdentity<'_> gives the read-only view the orchestration needs: user_id, team_id, org_id, end_user_id, agent_id, requires_fresh_policy, mcp_toolset_id (Option<&str>), mcp_explicit_grants_only and has_managed_agent_policy (B4772's managed_agent_policy is present). managed_context(auth: &UserAPIKeyAuth) -> Option<ManagedContextView<'_>> returns the managed agent context as ManagedContextView { autonomous: bool, user_id: Option<&str> }, where autonomous is true when LiteLLM's context.mode equals "autonomous", read from the managed_agent_context B2313 and B4772 define. Do not add setters. The marker is read through B4679's key_identity(auth).mcp_admitted_user_subject.
+
+
+  access, in crates/betterlite-mcp/src/access.rs and access/**, with its own AccessError enum. The root file holds the types and the ports. ServerAccess { server_ids: Vec<String>, scope: AccessScope } is LiteLLM's MCPServerAccess, and AccessScope is Unscoped, Scoped or Unresolved (LiteLLM's "unscoped", "scoped", "unresolved"; the default is Unscoped). Lists LiteLLM builds with tuple(set(...)) come back de-duplicated in first-seen order. AccessSettings { require_key_mcp_access_defined: bool, require_end_user_mcp_access_defined: bool } comes from the config section below. McpAccess<R: AccessReads, V: RegistryReads, G: GrantReads, C: CeilingReads, H: DelegatedHuman> holds settings, reads, registry, grants: ServerGrants<G> (B4669), ceilings: Ceilings<C> (B4670) and human: H, all passed in a struct literal (generic, no trait object, no global). GrantReads and CeilingReads are B4669's and B4670's traits.
+
+
+  AccessReads is the async port to the stores, all methods returning Result<_, AccessReadError> (an enum with Failed(String)): has_database() -> bool (sync); team(team_id, fresh) -> Option<SourceTeam> over B737's team read, with SourceTeam { team_id, organization_id: Option<String>, member_user_ids: Vec<String> (the user_id of each members_with_roles entry that has one), metadata_mcp_rpm_limit: Option<BTreeMap<String, i64>> (the metadata entry mcp_rpm_limit when it is a non-empty JSON object, else None) }; team_budget_state(team_id, org_id, auth) -> BudgetState, where BudgetState is Ok, Exceeded or Failed(String) and the production code runs B887's team max budget check then B752's organization max budget check against the team's org, in that order, and maps a budget-exceeded error to Exceeded and any other error to Failed; key_declares_mcp_scope(auth) -> bool (B4668's key object permission has mcp_servers set, empty list included); key_or_team_declares_toolsets(auth) -> bool (B4668's check, which already catches its own read errors). RegistryReads is the sync/async port to the server registry, which has no owner at the pin (see notes): expand_permission_list(names) -> Vec<String>; resolve_toolset_scope(toolset_ids, fresh) -> BTreeMap<String, Vec<String>> (resolve_toolset_tool_permissions, which turns a read fault into an empty map unless fresh); server_id_for_tool(tool_name) -> Option<String> (_get_mcp_server_from_tool_name); registry_server_ids() is not needed here. DelegatedHuman has one async method, reload_admitted_user(user_id, requires_fresh_policy) -> Result<UserAPIKeyAuth, AccessError>, because reload_admitted_user is B4673 and B4673 depends on this task; the composition root implements it. Tests use in-memory fakes of all these.
+
+
+  Functions to build (LiteLLM name in backticks, each a method on McpAccess unless said otherwise):
+
+  1. `allowed_servers` (`get_allowed_mcp_servers`): get_mcp_server_access and return its server ids.
+
+  2. `server_access` (`get_mcp_server_access`), inputs: the optional auth and keyless_source (default false). It returns Result<ServerAccess, AccessError>; only step a can fail. First, if the auth has a managed agent policy, return ServerAccess { managed_agent_servers(auth)?, Scoped }. Everything after that runs inside one guard: any error in steps b to j (including B4668's Unloadable error, which is logged as a warning "Denying MCP access, entitlement unreadable") returns an empty list with scope Scoped when key_declares_mcp_scope is true and Unresolved otherwise. Steps:
+
+  b. A keyless admitted subject (key_identity(auth).mcp_admitted_user_subject true) returns `resolve_admitted_subject_servers(auth)` with the default scope Unscoped, before any key or team step.
+
+  c. key = grants.key_servers(auth). If it contains the literal `no-mcp-servers`, return an empty list with scope Scoped. team = grants.team_servers(auth). grants_extra = grants.key_access_group_servers(auth). has_lower = any of the three is non-empty, or key_or_team_declares_toolsets(auth).
+
+  d. Key and team: team empty gives base = key; team set and key empty gives the team list unless settings.require_key_mcp_access_defined is true and keyless_source is false, in which case base is empty; both set gives the intersection. The list is base plus the key's access group servers.
+
+  e. If the auth has an end_user_id: end = ceilings.end_user_servers(auth). Non-empty end sets has_lower and filters the list to members of end, keeping order. Empty end with settings.require_end_user_mcp_access_defined true returns an empty list with scope Scoped at once.
+
+  f. If the auth has an agent_id: ceilings.agent_capped_servers(list, agent_servers, agent_access_group_ceiling) (B4670). A non-None result becomes the list and sets has_lower.
+
+  g. ceilings.apply_agent_caller_ceiling(list, auth) gives (list, caller_restricts).
+
+  h. ceilings.apply_user_server_ceiling(list, auth, keyless_source) gives (list, user_restricts). has_lower |= caller_restricts | user_restricts.
+
+  i. ceilings.apply_primary_org_ceiling(list, auth, has_lower, keyless_source) gives (list, org_restricts).
+
+  j. The result is the de-duplicated list with scope Scoped when has_lower, org_restricts or key_declares_mcp_scope is true, else Unscoped.
+
+  3. `managed_agent_servers` (`managed_agent_servers` in managed_agent_access.py): not a managed agent gives an empty list. Otherwise: base = ceilings.agent_servers(auth) as a set; ceilings come from the port method AccessReads::managed_agent_ceilings(auth) -> Vec<Vec<String>> (B4778's resolve_managed_agent_ceilings, the mcp_server_ids of each ceiling), each expanded with expand_permission_list(sorted ids); grouped = base servers that are in every expanded ceiling (no ceilings means all of base); (own, _) = ceilings.apply_agent_caller_ceiling(sorted grouped, auth). Autonomous (or no managed context) returns sorted own. Delegated with no context user_id returns an empty list. Otherwise human = delegated_resource_subject(user_id), allowed = resolve_admitted_subject_servers_for(human, allowed_team_ids = {auth.team_id} when it has one, else the empty set), and the result is sorted(own intersect allowed). ANY error in this function, not only the identity ones, becomes AccessError::Identity wrapping B4772's AgentIdentityFailure with code "policy_unavailable" and message "Agent MCP policy is unavailable", which B4772's failure conversion renders as HTTP 503. Add managed_agent_ceilings(auth) to AccessReads for this.
+
+  4. `delegated_resource_subject` (`_delegated_resource_subject`): human = human.reload_admitted_user(user_id, requires_fresh_policy = true); return that auth with mcp_explicit_grants_only set to true. Setting the flag goes through source_auth (add `with_explicit_grants_only(auth) -> UserAPIKeyAuth` there; it is the only extra source_auth function). B4672's managed_agent_tools calls this method.
+
+  5. `admitted_subject_sources` (`admitted_subject_sources`), inputs: auth and allowed_team_ids: Option<&BTreeSet<String>> (None means every team). The first source is scoped_source_auth(auth, None, auth org_id, carry_user_grants = true). With no user_id or no database (has_database false) return just that. Otherwise for each team id in grants.user_team_ids(user_id) (B4669, in its order): skip it when allowed_team_ids is Some and does not contain it; skip it when roster_team(team_id, auth) is None; else add scoped_source_auth(auth, Some(team_id), team.organization_id or the auth's org_id, false).
+
+  6. `roster_team` (`_roster_team_object`): the team row only when the auth's user is a live member and the team is within budget. No database or no user_id gives None. reads.team(team_id, fresh = requires_fresh_policy); a read error is warned ("MCP admitted-subject source team ... unresolvable, skipping") and gives None, as does a missing row. The user_id must be in member_user_ids, else None. Then team_budget_state(team_id, team org or the auth's org_id, auth): Exceeded is logged at info and gives None, Failed is warned and gives None, Ok returns the team. Only these four outcomes; this function never returns an error.
+
+  7. `admitted_source_grants` (`admitted_source_grants`): for every source from step 5, granted = the set allowed_servers(source, keyless_source = true), kept as a (source, set) pair in source order. Then scope = toolset_scope(auth); None returns the pairs, Some(map) intersects each set with the map's keys. An error reading a source's servers propagates out of this function.
+
+  8. `toolset_scope` (`_toolset_scope`): no mcp_toolset_id gives None; else Some(registry.resolve_toolset_scope([id], requires_fresh_policy)). B4672's narrowing calls this method.
+
+  9. `resolve_admitted_subject_servers` (`resolve_admitted_subject_servers`), with allowed_team_ids: the union of the sets from step 7. Step 2b calls it without a team filter.
+
+  10. `billing_auth_for_tool_call` (`billing_auth_for_tool_call`): not an admitted subject returns the auth unchanged. Otherwise server_id_for_tool(tool_name) None returns the auth; else attributing_source_for_server(auth, server_id, None); None, or a source without team_id, returns the auth; else billed_auth(auth, source team_id, source org_id). Any error in this function is warned ("MCP billing attribution failed for ..., billing the user") and returns the auth unchanged.
+
+  11. `attributing_source_for_server` (`attributing_source_for_server`), inputs: auth, server_id, optional source_grants. The grants are the given list unless it is missing or empty, in which case step 7 runs. Keep the pairs whose set holds the server. None left gives None. If any kept source has no team_id (the user's own grant) return None. Otherwise return the kept source with the lowest team_id by string order. The choice is made by the free function `attributing_source(source_grants: &[SourceGrant], server_id: &str) -> Option<&SourceGrant>` in access::attribution, which is pure and has helper oracle cases; SourceGrant { source: UserAPIKeyAuth, servers: BTreeSet<String> }.
+
+  12. `admitted_subject_team_rpm_limits` (`_admitted_subject_team_rpm_limits`) -> Option<BTreeMap<String, BTreeMap<String, i64>>>, the map B4673 stamps on the admitted auth. source_grants = step 7 once. For each pair with a team_id: team = roster_team(team_id, auth) (read again on purpose) and its metadata_mcp_rpm_limit; None or empty skips the source. For each (server_name, rpm) in it, for each server_id in expand_permission_list([server_name]): skip when the id is not in that source's granted set; otherwise call attributing_source_for_server(auth, server_id, Some(the same source_grants)) and, when its team_id equals this source's team_id, record applicable[server_name] = rpm and stop looking at further ids for that name. A non-empty applicable map goes in limits[team_id]. Return None for an empty result. Any error anywhere is warned ("Failed to resolve per-team MCP rpm limits for admitted subject") and gives None, because rate limiting must not deny a request that authorization allowed.
+
+  Config. The section crates/betterlite-config/src/sections/mcp_access_requirements.rs reads general_settings.require_key_mcp_access_defined and general_settings.require_end_user_mcp_access_defined, both booleans defaulting to false, and exposes them as config.sections.mcp_access_requirements. A name outside the file's own tests.rs must not be added to the shared loader. B4672 reads the first key too, through this section.
+
+
+  Production reads. LiveAccessReads, in crates/betterlite-server/src/mcp/source_reads.rs with a tests.rs beside it, is the production AccessReads. Its fields (struct literal) are B737's team lookup, B887's team budget check, B752's organization budget check, B4668's key permission reads and B4778's managed ceilings read. Keep the mapping from those error values to AccessReadError and BudgetState in plain functions so their tests need no Postgres.
+
+
+  Tests use fakes that record calls, synthetic keys and teams, and names with the prefixes the checks name. No route reaches this code yet (B4673 admits requests and B137 registers the MCP routes), so the helper operation b4671 covers scoped_source_auth and the attributing_source choice, and the HTTP cases come with the umbrella.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/access.rs
+    - crates/betterlite-mcp/src/access/**
+    - crates/betterlite-auth/src/source_auth.rs
+    - crates/betterlite-auth/src/source_auth/**
+    - crates/betterlite-server/src/mcp/source_reads.rs
+    - crates/betterlite-server/src/mcp/source_reads/**
+    - crates/betterlite-config/src/sections/mcp_access_requirements.rs
+    - crates/betterlite-config/src/sections/mcp_access_requirements/**
+    - tools/oracle/cases/helpers/mcp-access/**
+    - "tools/oracle/fuzz/corpus/helper_case/mcp-access-*"
+    - tools/oracle/helpers/b4671.py
+    - tools/oracle/helpers/b4671/**
+    - tools/oracle/src/helpers/mcp/b4671.rs
+    - tools/oracle/src/helpers/mcp/b4671/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1554-L1761
+    why: get_allowed_mcp_servers and get_mcp_server_access, the order of the key, team, end user, agent, caller, user and org steps and the guard that turns any fault into a deny.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L364-L368
+    why: MCPServerAccess and its default scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L223-L230
+    why: _is_mcp_admitted_user_subject, owned by B4679 as key_identity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1803-L1868
+    why: _scoped_source_auth and admitted_subject_sources, which fields a source carries and how teams are filtered.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1870-L1938
+    why: _roster_team_object, the roster and budget checks with per-source fault isolation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1940-L1995
+    why: admitted_source_grants, _toolset_scope and resolve_admitted_subject_servers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1997-L2048
+    why: billing_auth_for_tool_call and attributing_source_for_server.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1150-L1195
+    why: _admitted_subject_team_rpm_limits, the per-team throttle map (reload_admitted_user in B4673 stamps it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/managed_agent_access.py#L11-L51
+    why: _delegated_resource_subject and managed_agent_servers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/ui_session_utils.py#L260-L290
+    why: The second reader of require_key_mcp_access_defined (B4672 owns that file).
+
+dod:
+  - text: >-
+      server_access for a managed agent returns managed_agent_servers with scope Scoped and does not enter the guard, so its error is returned and not turned into a deny;
+      a keyless admitted subject returns the source union with scope Unscoped before the key and team steps.
+    proof: [server-access-tests]
+  - text: >-
+      The key and team step returns an empty Scoped list for no-mcp-servers in the key list, the team list for a key with no servers, the intersection when both restrict, and an empty base for a key with no servers
+      when require_key_mcp_access_defined is true unless keyless_source is true; the key's access group servers are added on top.
+    proof: [server-access-tests]
+  - text: >-
+      The end user, agent, agent caller, user and org steps run in that order on the list; an end user with no servers is ignored unless require_end_user_mcp_access_defined is true, which returns an empty Scoped list,
+      and the scope is Scoped when any lower level restricted, the org restricted or the key declares mcp_servers.
+    proof: [server-access-tests]
+  - text: >-
+      Any error after the managed agent check returns an empty list with scope Scoped when the key declares mcp_servers and Unresolved otherwise, an Unloadable error included.
+    proof: [server-access-tests]
+  - text: >-
+      scoped_source_auth carries user_id, the trace span handle, requires_fresh_policy and mcp_explicit_grants_only, carries the user's own object_permission, object_permission_id and access_group_ids only when asked,
+      and never carries a key, a role, a budget or the admitted marker; billed_auth changes only team_id and org_id.
+    proof: [source-auth-tests, helper-tests, oracle]
+  - text: >-
+      The sources are the user's own first, then each roster team in the order B4669 returns them, with the team's own organization or the user's as the source org; a user with no id, no database or an
+      allowed_team_ids set that excludes a team gets no source for it, and an empty allowed set leaves only the user's own source.
+    proof: [sources-tests]
+  - text: >-
+      A team counts only when the read succeeds, the user is in its member list and the team and its org are within budget; a read fault, a missing row, a non-member, an exceeded budget and a budget check fault each give no team without an error.
+    proof: [roster-tests]
+  - text: >-
+      The source grants are each source's keyless server set intersected with the keys of the toolset scope when mcp_toolset_id is set, and the admitted union is the union of those sets.
+    proof: [sources-tests]
+  - text: >-
+      Attribution keeps the sources that grant the server, bills nobody-team (None) when the user's own source is among them, else picks the lowest team_id, and recomputes the grants only when none are given;
+      billing_auth_for_tool_call returns the auth unchanged for a non-admitted caller, an unknown tool, no attributing team or any error, else a copy with the team and its org.
+    proof: [attribution-tests, helper-tests, oracle]
+  - text: >-
+      The team rpm limits map holds, per team, only the limit entries whose expanded server ids that team's own grant reaches and for which that team is the attributed source; an empty or missing limit, an unattributed
+      server and any error give no entry or None.
+    proof: [rpm-tests]
+  - text: >-
+      managed_agent_servers intersects the agent's servers with every expanded ceiling and the caller ceiling, returns them sorted for an autonomous agent, nothing for a delegated agent with no user, and the
+      human's servers (limited to the agent's team, or to no team when it has none) for a delegated agent; any failure is the 503 policy_unavailable identity failure.
+    proof: [managed-tests]
+  - text: The access requirement settings default to false and load from general_settings.require_key_mcp_access_defined and general_settings.require_end_user_mcp_access_defined.
+    proof: [config-tests]
+  - text: The production reads map a team row, a budget outcome and a read error to SourceTeam, BudgetState and AccessReadError.
+    proof: [reads-tests]
+  - text: Helper cases for scoped_source_auth and the attribution choice are present, replay through the shared parser and agree with LiteLLM.
+    proof: [helper-case-corpus, helper-python, helper-tests, oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: server-access-tests
+      why: the combination of key, team and ceilings, its scope value or its deny-on-fault guard is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^access::server_access::tests::/)'
+    - id: sources-tests
+      why: the admitted subject sources, source grants or the admitted union are missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^access::sources::tests::/)'
+    - id: roster-tests
+      why: the roster and budget gate on a team source is missing or lets a non-member or over-budget team grant servers
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^access::roster::tests::/)'
+    - id: attribution-tests
+      why: the billing source choice or billing_auth_for_tool_call is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^access::attribution::tests::/)'
+    - id: rpm-tests
+      why: the per-team rpm limit map is missing or charges a team that did not provide the access
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^access::rpm_limits::tests::/)'
+    - id: managed-tests
+      why: the managed agent server list, the delegated human subject or the policy_unavailable conversion is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^access::managed_agents::tests::/)'
+    - id: source-auth-tests
+      why: scoped_source_auth, billed_auth or the identity views are missing or carry the wrong fields
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^source_auth::tests::/)'
+    - id: config-tests
+      why: the access requirement settings do not load or have the wrong defaults
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_access_requirements::/)'
+    - id: reads-tests
+      why: the production reads map a store result to the wrong port value
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::source_reads::tests::/)'
+    - id: helper-tests
+      why: the helper adapter does not reach the production functions
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mcp::b4671::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: the Python helper adapter is missing or fails the strict checks
+      run: test -f tools/oracle/helpers/b4671.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no newly added mcp-access helper case reaches the shared parser
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-access-*')" && grep -rlq b4671 tools/oracle/fuzz/corpus/helper_case/mcp-access-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-access/source-user-own-grants.yaml
+  - tools/oracle/cases/helpers/mcp-access/source-team-no-user-grants.yaml
+  - tools/oracle/cases/helpers/mcp-access/source-carries-fresh-and-explicit-flags.yaml
+  - tools/oracle/cases/helpers/mcp-access/attribution-user-own-grant-wins.yaml
+  - tools/oracle/cases/helpers/mcp-access/attribution-lowest-team-id.yaml
+  - tools/oracle/cases/helpers/mcp-access/attribution-nobody-grants.yaml
+
+deviations:
+  - what: Reads go through typed ports (AccessReads, RegistryReads, GrantReads, CeilingReads, DelegatedHuman) instead of importing proxy_server globals (prisma_client, user_api_key_cache, proxy_logging_obj, global_mcp_server_manager).
+    why: betterlite has no module-level state; the observable results are the same.
+  - what: Server lists LiteLLM builds from a Python set come back de-duplicated in first-seen order, and sources and grants are lists with the user's own source first.
+    why: Python's set order is not stable, so no client can rely on it; tests compare as sets where order is not part of the contract.
+  - what: The reload of the delegated human goes through the DelegatedHuman port, not a direct call.
+    why: reload_admitted_user is in B4673, which depends on this task, so a direct call would be a cycle.
+  - what: The two general_settings flags are read once into typed booleans at config load, not from the live dict on every call.
+    why: betterlite config is immutable after load; a changed setting needs a reload, like every other section.
+  - what: Only scoped_source_auth and the attribution choice have oracle cases; every other function is covered by Rust tests with fakes.
+    why: the rest read proxy_server globals, and a helper adapter cannot drive them; the HTTP cases come with the umbrella that wires the MCP routes.
+
+out_of_scope:
+  - "get_allowed_tools_for_server, resolve_admitted_subject_tools, _narrow_tools_to_toolset, tool_is_granted, is_tool_allowed_for_server, is_tool_allowed and managed_agent_tools: B4672. B4672 calls toolset_scope, admitted_source_grants, delegated_resource_subject and attributing_source_for_server from here."
+  - "reload_admitted_user and _reload_admitted_principal: B4673, which calls admitted_subject_team_rpm_limits from here and implements DelegatedHuman. The stamping of mcp_source_team_rpm_limits on the admitted auth is B4673's."
+  - "_get_allowed_mcp_servers_for_key, _get_allowed_mcp_servers_for_team, _team_ids_for_mcp_grant, _resolve_user_team_ids, _get_key_access_group_mcp_server_extras and the access group lookups: B4669. This task calls them."
+  - "_apply_primary_org_ceiling, _apply_user_server_ceiling, apply_agent_caller_ceiling, _get_allowed_mcp_servers_for_end_user, get_allowed_mcp_servers_for_agent and _get_agent_access_group_server_ceiling: B4670. _agent_capped_servers is B4670 too."
+  - "Object permission reads, _get_key_object_permission, _key_or_team_declares_toolsets and UnloadableEntitlementError: B4668."
+  - "_is_mcp_admitted_user_subject: B4679 as key_identity.mcp_admitted_user_subject."
+  - "managed_agent_policy and the identity failure conversion: B4772. resolve_managed_agent_ceilings and agent_caller_auth: B4778."
+  - "MCPServerManager.expand_permission_list, resolve_toolset_tool_permissions, _get_mcp_server_from_tool_name and operator_open_server_ids bodies: the server manager task that covers mcp_server_manager.py."
+  - "get_team_object (B737), _team_max_budget_check (B887) and _organization_max_budget_check (B752)."
+  - "Calling billing_auth_for_tool_call from the tool call path (operations.py L2804) and wiring McpAccess, LiveAccessReads and the ports into the application state: B137."
+
+pitfalls:
+  - "A keyless admitted subject returns its source union with the default scope Unscoped, while the no-mcp-servers opt-out and every managed agent result are Scoped, so the same empty list can carry different scopes."
+  - "The managed agent check sits outside the guard, so its failure is a 503 identity error and the other steps' failures are a quiet empty deny; do not wrap the first in the second."
+  - "The deny on a fault is Scoped only when the key itself declares mcp_servers, and Unresolved otherwise, which tells the caller the answer is unknown rather than empty."
+  - "require_key_mcp_access_defined zeroes only a real key's inherited team grants; a source of an admitted subject passes keyless_source = true so team membership still grants, and the flag is never checked on the admitted branch at all."
+  - "An end user with servers filters the list by membership in order, but an end user with none is ignored, and only require_end_user_mcp_access_defined turns that into a deny."
+  - "The agent step sets has_lower only when agent_capped_servers returns something, so an agent that names no servers and has no access group ceiling leaves the org free to substitute its own list."
+  - "Delegated managed agents pass an EMPTY team set, not None, when the agent has no team_id: None means every team the human belongs to, an empty set means only the human's own grants."
+  - "Every error inside managed_agent_servers, including a plain bug, becomes the 503 policy_unavailable identity failure; do not let it escape as another error."
+  - "admitted_subject_sources returns only the user's own source when the user has no id or there is no database, and the team list is read live, so a team in a cached user record that no longer lists the user as a member is dropped here and nowhere else."
+  - "The roster check, not the user's teams array, decides which teams count; one team's read fault or over-budget state removes only that source, never the others, and never raises."
+  - "toolset_scope returns an empty map, not None, when a pinned toolset resolves to nothing (the registry swallows read faults unless fresh policy is set), and an empty scope empties every source's grants; only a missing mcp_toolset_id means no scope."
+  - "attributing_source_for_server recomputes the grants when it is handed an EMPTY list as well as when it is handed none, so the rpm limit code must pass the one list it already built."
+  - "A server the user's own source reaches never bills a team, even when a team grants it too, and among several granting teams the lowest team_id string wins so billing does not follow map order."
+  - "The rpm map reads each team again through roster_team (a second set of reads and budget checks), and a limit key is a server name or alias that expands to ids before the grant check; stop at the first id that attributes to the team."
+  - "billing_auth_for_tool_call swallows every error and bills the user, since attribution must never fail a call that was already authorized."
+  - "scoped_source_auth must not copy user_role: an admin role would make the server manager grant every server to a team source."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
