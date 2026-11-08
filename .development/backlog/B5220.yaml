@@ -1,0 +1,14 @@
+id: B5220
+milestone: M8 platform
+title: Open live Redis, Sentinel and Cluster connections
+status: todo
+depends_on: [B4323, B4324]
+file: tasks/B5220-redis-live-client.yaml
+covers:
+  - "litellm/_redis.py"
+parent: B126
+split_from: B4325
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

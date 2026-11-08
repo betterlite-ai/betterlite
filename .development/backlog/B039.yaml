@@ -2,12 +2,9 @@ id: B039
 milestone: M3 providers
 title: JSON-configured OpenAI-compatible providers, M to Z
 status: todo
-depends_on: [B038]
-file: null
+depends_on: [B038, B6410, B6411, B6412, B6413, B6414, B004, B005, B006, B010, B249, B500, B678, B1139, B1424, B1428, B2230]
+file: tasks/B039-compatible-providers-m-z.yaml
 covers:
-  - "litellm/llms/maritalk.py"
-  - "litellm/llms/{meta,meta_llama,moonshot,morph,nadir,nebius,novita,nscale,ovhcloud,sail,sambanova,scaleway,v0,wandb,zai}/**"
-  - "litellm/types/llms/meta.py"
   - "litellm/main.py"
 parent: null
 split_from: null

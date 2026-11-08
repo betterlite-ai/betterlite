@@ -1,0 +1,9 @@
+kind: helper
+name: image-null-url
+call:
+  b5240:
+    function: "output_choices"
+    response: {"data": [{"url": null, "b64_json": "aGVsbG8=", "revised_prompt": null}]}
+env: {}
+compare:
+  ignore: []

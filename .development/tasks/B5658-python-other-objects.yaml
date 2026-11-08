@@ -1,0 +1,93 @@
+id: B5658
+title: Python response objects for other endpoints and small types
+description: >-
+  B5657 built the chat objects on `ResponseObject`. This task adds the rest of the classes in litellm/types/utils.py that
+  belong to this entry, so the next Python entries for embeddings, images and speech have their return types ready. They go
+  into new files under `python/betterlite/types/utils/` and the names join `__all__` in that package's `__init__.py`.
+
+
+  `Embedding` (L2280) and `EmbeddingResponse` (L2298): the response object is `list`, `data` is `[]` when falsy and `usage`
+  defaults to `Usage()`. `Logprobs` (L2373), `TextChoices` (L2380) and `TextCompletionResponse` (L2424): `stream` true gives
+  `text_completion.chunk` and `[TextChoices()]`. `ImageObject` (L2534), `ImageUsage` (L2596) and `ImageResponse` (L2613):
+  `_serialize_image_data` (L2625) uses `_nested_selector` (L94-L111) to pick the fields. `TranscriptionResponse` (L2744).
+
+
+  `AdapterCompletionStreamWrapper` (L2810-L2840) wraps an adapter's stream. A chunk of "None" or None ends the stream. The
+  blocking path catches the failure, logs it and returns None, and the async path turns `StopIteration` into
+  `StopAsyncIteration`. `CustomStreamingDecoder` (L3622-L3630) is an abstract class with `iter_bytes` and `aiter_bytes`.
+
+
+  `BudgetConfig` (L3992-L4007) maps its aliases `time_period` to `budget_duration` and `budget_limit` to `max_budget`.
+  `LiteLLMLoggingBaseClass` (L4251-L4255) is an abstract base with `pre_call` and `post_call`. `LiteLLMFineTuningJob`
+  (L4311-L4317) turns an error whose fields are all None into None and carries `_hidden_params`.
+  `LiteLLMRealtimeStreamLoggingObject` (L4354-L4375) holds the results and usage of a realtime stream.
+  `DynamicPromptManagementParamLiteral.list_all_params` (L4477-L4479) gives `cache_control_injection_points`,
+  `knowledge_bases` and `vector_store_ids`.
+
+
+  As in B5657, a test builds each class from both packages with the same arguments and compares `model_dump()`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/utils/__init__.py
+  - crates/betterlite-python/python/betterlite/types/utils/embedding.py
+  - crates/betterlite-python/python/betterlite/types/utils/text_completion.py
+  - crates/betterlite-python/python/betterlite/types/utils/media.py
+  - crates/betterlite-python/python/betterlite/types/utils/adapter_stream.py
+  - crates/betterlite-python/python/betterlite/types/utils/small_types.py
+  - crates/betterlite-python/tests/test_other_response_objects.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2280-L2840
+  why: Embedding, text, image and transcription classes and the adapter stream.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3992-L4007
+  why: BudgetConfig aliases.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4251-L4479
+  why: The logging base, fine tuning job, realtime object and prompt params.
+dod:
+- text: Embedding classes default and dump as in LiteLLM.
+  proof: [embedding-objects]
+- text: Text completion classes default and dump as in LiteLLM, for streaming too.
+  proof: [text-objects]
+- text: Image classes pick fields through the same selector and dump as in LiteLLM, and the transcription response carries its text and extra fields.
+  proof: [media-objects]
+- text: The adapter stream ends on None or "None" on both paths and turns StopIteration into StopAsyncIteration.
+  proof: [adapter-stream]
+- text: BudgetConfig aliases, the fine tuning job error rule, the realtime object, the prompt param list and the abstract classes match LiteLLM.
+  proof: [small-types]
+- text: The new type files stay clean under ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: embedding-objects
+    why: The embedding reply differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_other_response_objects.py -k embedding
+  - id: text-objects
+    why: The text completion chunk name differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_other_response_objects.py -k text_completion
+  - id: media-objects
+    why: Image output loses its selected fields.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_other_response_objects.py -k "image or transcription"
+  - id: adapter-stream
+    why: An adapter stream hangs or raises at its end.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_other_response_objects.py -k adapter_stream
+  - id: small-types
+    why: A budget alias or list entry is missing.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_other_response_objects.py -k small_types
+  - id: python-lint
+    why: An abstract class with loose types hides a wrong override.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The functions that return these objects are B159, B160 and B161.
+- All other classes in litellm/types/** are B167.
+pitfalls:
+- '`_nested_selector` works on dicts and lists, so a selector for a missing key must not add one.'
+- '`AdapterCompletionStreamWrapper` compares with the text "None" as well as the None value.'
+- '`EmbeddingResponse` sets `data` to `[]` for any falsy value, so an empty tuple gives a list.'
+- '`LiteLLMFineTuningJob` checks every field of `error`, so one non-None field keeps the object.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

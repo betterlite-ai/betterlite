@@ -1,0 +1,180 @@
+id: B4304
+title: Finish response cache writes across stream completion and cancellation
+description: >-
+  Add the module `write_completion` to betterlite-cache. It holds the write side of LiteLLM's
+  LLMCachingHandler: how a finished response becomes a background cache write, how a streamed
+  response becomes one write after its last chunk, and how a write that is cancelled still finishes.
+  B4300 owns the handler state (request kwargs, original function name, preset key, dual cache),
+  `should_store_result_in_cache`, `is_call_type_supported_by_cache` and `convert_args_to_kwargs`; call
+  them, do not copy them. B4297 owns `add_cache` and `async_add_cache`, and B4298 owns
+  `async_add_cache_pipeline`; call them as they are.
+
+  Build `CacheWriteTracker`, a struct created once by the cache runtime and passed in through
+  constructors (no static, no global set). `CacheWriteTracker::spawn(write: impl Fn() -> BoxFuture<'static,
+  Result<(), CacheError>>) -> CacheWriteHandle` starts the write on the tokio runtime inside the
+  post-response phase from B198 (`Phase::PostResponse` in betterlite-context call_context), so work the
+  write spawns is also post-response. The tracker keeps every unfinished task and drops it when it ends,
+  so a task is never lost before it completes. Python's `_complete_cache_write_despite_cancellation` runs
+  the write, and if the task is cancelled it runs the write once more under
+  `asyncio.wait_for(..., CACHE_WRITE_SHUTDOWN_FLUSH_TIMEOUT_SECONDS)` (5.0 seconds), logs a failure of that
+  second run at warning level ("LiteLLM Cache: pending cache write failed during event loop shutdown: ..."),
+  and then re-raises the cancellation. Rust has no implicit cancel, so the tracker takes a
+  `tokio_util::sync::CancellationToken` in its constructor and `spawn` selects the write against it. When
+  the token fires, the task runs the write factory once more with a 5 second `tokio::time::timeout`, logs
+  a failed or timed-out second run at warn level with the same text, and ends as cancelled.
+  `CacheWriteTracker::wait_idle` waits for all tracked tasks and is what shutdown calls after it fires the
+  token. A write that returns `Err` on a normal run is the write's own business: the writers in B4297 and
+  B4298 already log through `_log_add_cache_failure`, so the tracker does not retry and does not log again.
+
+  Build `store_response(result: &CacheableResult, original_function: &str, kwargs, args)` for
+  `async_set_cache` and `store_response_sync` for `sync_set_cache`. Both do nothing when no cache is
+  configured. Both copy the kwargs, merge in the positional arguments with B4300's argument projection (the
+  merge overwrites kwargs of the same name), and check `should_store_result_in_cache`. The async version
+  then adds `parent_otel_span` from the kwargs (B110's helper) and picks one of three writes. A chat,
+  embedding, transcription, rerank or Responses result that is an embedding response and whose cache
+  backend is not S3 goes to `async_add_cache_pipeline` with the handler's dual cache and the kwargs (S3 has
+  no bulk write, so embeddings go the single-write way there). Any other typed result is serialized to its
+  JSON string first (`model_dump_json`) and goes to `async_add_cache` with the dual cache. Any other result
+  value goes to `async_add_cache` as it is, without the dual cache. Each write is started with
+  `CacheWriteTracker::spawn`, and `store_response` returns once the task is started, not when it ends. The
+  sync version calls B4297's `add_cache` directly with the result and kwargs and has no tracker and no
+  pipeline. `CacheableResult` is a closed enum of the five typed responses plus `Other(Json)`; a caller
+  that has none of these passes `Other`.
+
+  Build `add_streaming_response_to_cache` and its sync twin. Each takes the processed chunk, calls B252's
+  `assemble_complete_response_from_streaming_chunks` with the handler's start time, now, the request
+  kwargs, its own chunk buffer (`async_streaming_chunks` or `sync_streaming_chunks`) and the async flag, and
+  writes the assembled complete response through `store_response` or `store_response_sync` only when the
+  assembly returns one. The assembled response is built on the last chunk (finish reason set); earlier
+  chunks only grow the buffer. The streaming wrapper calls these only when the stream is not itself a cache
+  hit, and only when the logging object has a caching handler; that guard lives in B252's wrapper and is
+  not rebuilt here.
+
+  Build `wrap_streaming_result_for_cache(result_kind, call_type, handler)` as a decision, returning
+  `StreamCacheWrap::Wrap` or `StreamCacheWrap::PassThrough`. It wraps only for call types
+  `anthropic_messages` and `aanthropic_messages`, only when a cache is configured, only when
+  `should_store_result_in_cache` is true for the handler's own function and request kwargs, and only when
+  the result is an async stream (`ResultKind::AsyncStream`). The wrapper type `AnthropicMessagesStreamCacheWriter`
+  and its use of `CacheWriteTracker::spawn` belong to B980; this task only exports `spawn` and the decision.
+
+  Name independent native tests under `write_completion::tests`: `tracker_runs_write_once_when_not_cancelled`,
+  `tracker_reruns_write_after_cancel`, `tracker_logs_failed_flush_and_ends_cancelled`,
+  `tracker_flush_times_out_after_five_seconds` (use tokio's paused clock), `tracker_forgets_finished_tasks`,
+  `tracker_runs_write_in_post_response_phase`, `store_skips_without_cache`, `store_skips_unsupported_call_type`,
+  `store_skips_no_store_control`, `store_merges_positional_args_over_kwargs`, `store_embedding_uses_pipeline`,
+  `store_embedding_on_s3_uses_single_write`, `store_typed_result_writes_json_string_with_dual_cache`,
+  `store_other_result_writes_raw_without_dual_cache`, `sync_store_writes_directly`, `stream_chunks_wait_for_final_chunk`,
+  `stream_writes_assembled_response_once`, `stream_without_assembly_writes_nothing`, `stream_wrap_decision_cases`.
+  Cancellation tests use a fake write that counts calls and a fake cache that records which method got the call.
+scope:
+  paths:
+    - crates/betterlite-cache/src/write_completion.rs
+    - crates/betterlite-cache/src/write_completion/**
+    - tools/oracle/cases/helpers/response-cache-writes/**
+    - "tools/oracle/fuzz/corpus/helper_case/response_cache_writes-*"
+    - tools/oracle/helpers/b4304.py
+    - tools/oracle/helpers/b4304/**
+    - tools/oracle/src/helpers/cache/b4304.rs
+    - tools/oracle/src/helpers/cache/b4304/**
+    - crates/betterlite-cache/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L145-L166
+    why: The pending-task set, the cancellation flush with a 5 second timeout, and create_cache_write_task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L509
+    why: CACHE_WRITE_SHUTDOWN_FLUSH_TIMEOUT_SECONDS default of 5.0.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_internal_context.py#L26-L35
+    why: post_response_phase marks a write and the tasks it spawns as work the caller no longer waits for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L1032-L1098
+    why: async_set_cache; result-type routing between the pipeline, the JSON-string write and the raw write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L1100-L1123
+    why: sync_set_cache; direct add_cache with no tracker.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L1136-L1154
+    why: wrap_streaming_result_for_cache; the Anthropic Messages wrap decision.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L1176-L1224
+    why: Async and sync stream completion writes through the chunk assembler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1866-L1872
+    why: Sync call site of sync_set_cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2160-L2167
+    why: Async call site of async_set_cache after post-call rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1672-L1686
+    why: The stream wrapper calls the two stream-completion writes when the chunk is not a cache hit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/response_cache.py#L112-L125
+    why: B980's only use of create_cache_write_task, so the spawn signature must fit it.
+dod:
+  - text: A spawned write runs once on a normal finish, runs inside the post-response phase and leaves the tracker when it ends.
+    proof: [tracker-tests]
+  - text: When the cancellation token fires, the write runs once more with a 5 second limit, a failed or timed-out second run is logged at warn level, and the task ends as cancelled.
+    proof: [tracker-tests]
+  - text: Async store skips when no cache is set, the call type is unsupported or the no-store control is true, and merges positional arguments over kwargs first.
+    proof: [store-tests, oracle, helper-python]
+  - text: Async store picks the pipeline for non-S3 embedding responses, the JSON-string write with the dual cache for other typed responses, and the raw write without the dual cache for anything else.
+    proof: [store-tests, oracle, helper-python]
+  - text: Sync store calls add_cache directly, with no tracker and no pipeline.
+    proof: [store-tests]
+  - text: A stream writes one assembled response after the final chunk, none before it, and none when assembly returns nothing.
+    proof: [stream-tests]
+  - text: The Anthropic Messages wrap decision matches LiteLLM for call type, cache presence, store eligibility and async-stream results.
+    proof: [stream-tests, oracle, helper-python]
+  - text: Newly added helper corpus cases replay through the shared helper-case parser independently of the native behavior tests.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: tracker-tests
+      why: write completion, cancellation flush, flush logging or task bookkeeping is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-cache --no-tests=fail
+        -E 'test(/^write_completion::tests::tracker_/)'
+    - id: store-tests
+      why: store eligibility, argument merge or result routing is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-cache --no-tests=fail
+        -E 'test(/^write_completion::tests::(store_|sync_store_)/)'
+    - id: stream-tests
+      why: stream completion writes or the wrap decision are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-cache --no-tests=fail
+        -E 'test(/^write_completion::tests::stream_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4304)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4304 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4304/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added response-cache-write cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/response_cache_writes-*")" &&
+        grep -lE '^[[:space:]]+b4304:' tools/oracle/fuzz/corpus/helper_case/response_cache_writes-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/response-cache-writes/store-eligibility.yaml
+  - tools/oracle/cases/helpers/response-cache-writes/store-routing.yaml
+  - tools/oracle/cases/helpers/response-cache-writes/stream-wrap-decision.yaml
+deviations:
+  - what: The cancellation flush is driven by a CancellationToken that shutdown fires, not by asyncio task cancellation.
+    why: Tokio tasks are not cancelled implicitly, so the tracker needs an explicit signal to keep the "run the write once more, 5 seconds at most" behavior.
+  - what: Serialization of typed results to a JSON string happens in the caller's typed response, not through a Python model_dump_json call.
+    why: Rust responses are typed records with their own serde output; the stored text is the same JSON the helper cases compare.
+out_of_scope:
+  - "handler state, should_store_result_in_cache, is_call_type_supported_by_cache, convert_args_to_kwargs: B4300 owns them and this task calls them."
+  - "add_cache, async_add_cache and the timestamp envelope: B4297. async_add_cache_pipeline: B4298."
+  - "AnthropicMessagesStreamCacheWriter and the cached-stream iterator in response_cache.py: B980. It calls CacheWriteTracker::spawn from this task."
+  - "_assemble_complete_response_from_streaming_chunks and stream_chunk_builder use: B252."
+  - "Cache hit reads, replay and callbacks (_async_get_cache, _sync_get_cache, _convert_cached_result_to_model_response): B4305, B4302, B4301."
+  - "The sleep-free shutdown hook that fires the token: the runtime wiring task for cache lifecycle; this task only exposes wait_idle."
+pitfalls:
+  - The streaming path assembles on the final chunk only; a chunk with `finish_reason` null just grows the buffer, so an early write would store a partial response.
+  - "`async_set_cache` copies the kwargs before merging positional arguments, so the caller's request kwargs must stay unchanged after the call."
+  - The embedding branch skips the pipeline only for an S3 cache (`S3Cache` has no bulk write); Redis, memory and disk caches all use `async_add_cache_pipeline`.
+  - Typed results are stored as a JSON string, but the pipeline and the raw branch receive the result object itself, so the three branches do not share one serialization step.
+  - The second run after cancellation re-calls the write factory, so a write must be safe to run twice; B4297's envelope write overwrites the same key.
+  - The sync path never uses the dual cache and never reads `parent_otel_span`; only the async path adds it.
+  - The wrap decision reads the handler's own `original_function` and `request_kwargs`, not the call's, so it can differ from the store check made later with merged kwargs.
+  - "Add tokio-util 0.7.20 (other crates already use that version) to betterlite-cache with the rt and sync features."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

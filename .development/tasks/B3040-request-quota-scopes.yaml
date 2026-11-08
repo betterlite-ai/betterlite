@@ -1,0 +1,243 @@
+id: B3040
+title: Request quota scopes and deployment health policy
+description: >-
+  Build the part of the v3 limiter that turns one request into its ordered list of RateLimitDescriptor records
+  (B3031). It owns the api_key, user, team, team_member and end_user descriptors, the dynamic-limit policy that
+  decides whether the api_key limits are enforced, the deployment health check behind that policy, and the one
+  function that calls every other descriptor builder in LiteLLM's order. Nothing here reads Redis, counts or
+  raises a rate-limit error. The result goes to should_rate_limit (B3036).
+
+  Three places: a Rust module request_scopes in betterlite-rate-limit, a small read-only view module in
+  betterlite-auth, and one config section in betterlite-config.
+
+  Why a view module. The fields of UserAPIKeyAuth are pub(crate) in betterlite-auth and betterlite-rate-limit
+  is another crate. B745 adds public readers for api_key, org_id, team_id, project_id, organization_rpm_limit and
+  organization_tpm_limit, and this task uses those. It needs more: rpm_limit, tpm_limit, max_parallel_requests,
+  budget_throttle_pct, user_id, user_rpm_limit, user_tpm_limit, team_rpm_limit, team_tpm_limit,
+  team_member_rpm_limit, team_member_tpm_limit, end_user_id, end_user_rpm_limit, end_user_tpm_limit, the key's
+  agent_id, invoked_agent_id, managed_agent_policy, invoked_agent_policy and the two metadata strings
+  rpm_limit_type and tpm_limit_type. So the module request_quota_view in betterlite-auth adds one method
+  UserAPIKeyAuth::request_quota_view(&self) -> RequestQuotaView<'_>. RequestQuotaView is a plain struct of
+  borrowed Option<&str>, Option<i64>, Option<&AgentResponse> and the throttle percentage in the type B2325's
+  throttled_limit takes. It holds no logic. rpm_limit_type and tpm_limit_type are read from the key's metadata
+  map and are some only when the value is a JSON string (a number, bool or null gives none, as in
+  _build_request_rate_limit_descriptors). The method lives in the auth crate so it can reach the pub(crate)
+  fields. Do not edit B745's readers or any other file of resolved_key.
+
+  Module request_scopes, in four submodules that each own their error type if they can fail.
+
+  limit_policy holds the three small policy functions. is_dynamic_rate_limiting_enabled(rpm_limit_type,
+  tpm_limit_type) is true when either is exactly "dynamic". should_enforce_rate_limit(limit_type,
+  model_has_failures) returns model_has_failures when limit_type is "dynamic" and true for every other value,
+  including none and "guaranteed_throughput" and "best_effort_throughput". get_enforced_limit(limit_value,
+  limit_type, model_has_failures) returns none when limit_value is none, the value when should_enforce is true,
+  and none otherwise.
+
+  deployment_health holds _check_model_has_recent_failures. LiteLLM imports proxy_server.llm_router inside the
+  function, and the rules forbid that, so the module defines an async trait DeploymentHealthSource with two
+  methods. deployments_for_model(model) returns Result<Option<Vec<DeploymentRef>>, DeploymentHealthError>:
+  none means there is no router, and DeploymentRef carries an Option<String> deployment id (the router's
+  get_model_list(model_name=model) and each entry's model_info.id). failures_this_minute(deployment_id) returns
+  Result<i64, DeploymentHealthError> (B304's get_deployment_failures_for_current_minute, 0 when nothing is
+  stored). B3055 builds the production source over the router and B304's counter. DeploymentHealthPolicy is a
+  struct made with the source and the threshold i64 and has the async method model_has_recent_failures(model) ->
+  bool. It never returns an error. Behavior, in order: no router gives false; an empty or missing deployment list
+  gives false; each deployment is checked in list order, a deployment with a missing or empty id is skipped, and
+  the first one whose failure count is strictly greater than the threshold gives true and logs at DEBUG
+  "[Dynamic Rate Limit] Deployment <id> has <count> failures in current minute - enforcing rate limits for model
+  <model>"; when none is over, log at DEBUG "[Dynamic Rate Limit] No failures detected for model <model> -
+  allowing dynamic exceeding" and give false; any DeploymentHealthError from either source method logs at DEBUG
+  "Error checking model failure status: <error>, defaulting to enforce limits" and gives true (fail safe).
+
+  key_scopes holds create_rate_limit_descriptors, the port of _create_rate_limit_descriptors. It is a method of
+  a struct RequestScopeBuilder that is made with the window size (rate_limiter_settings.window_size from B3031,
+  default 60), B3038's ModelDescriptorBuilder and B3039's identity descriptor builders, and takes the caller's
+  UserAPIKeyAuth, the request body, rpm_limit_type, tpm_limit_type, model_has_failures and call_type (an
+  Option<&str>). It returns a Vec<RateLimitDescriptor> and appends in exactly this order, each only when its
+  condition holds. Every descriptor carries rate_limit.window_size equal to the builder's window size.
+  1. "api_key": api_key is set and not empty, and at least one of rpm_limit, tpm_limit and max_parallel_requests
+     is not none. Value is the api_key. throttle = budget_throttle_pct. requests_per_unit is get_enforced_limit
+     over throttled_limit(rpm_limit, throttle) with rpm_limit_type; tokens_per_unit is get_enforced_limit over
+     throttled_limit(tpm_limit, throttle) with tpm_limit_type; max_parallel_requests is copied unchanged and is
+     never throttled or made dynamic. throttled_limit is B2325's function in betterlite-auth.
+  2. "user": user_id is set and not empty, and user_rpm_limit or user_tpm_limit is not none. Value user_id.
+  3. "team": team_id is set and not empty, and team_rpm_limit or team_tpm_limit is not none. Value team_id.
+  4. "team_member": user_id is set and not empty, and team_member_rpm_limit or team_member_tpm_limit is not
+     none. Value is the text "<team_id>:<user_id>", and an absent team_id prints as the text "None".
+  5. "end_user": end_user_id is set and not empty, and end_user_rpm_limit or end_user_tpm_limit is not none.
+  6. The model_per_key descriptor: B3038's key_model_descriptor with the request's "model" when it is a string.
+  7. The tag_per_key descriptors: B3039's port of _add_tag_per_key_rate_limit_descriptor with the request body.
+  8. The MCP pair, only when call_type is exactly "call_mcp_tool" and the body has no "server_id" key: B3039's
+     mcp_per_key builder, then its mcp_per_team builder, both with the body's "mcp_server_name" (a string or none).
+  9. The model_per_team descriptor: B3038's team_model_descriptor with the request model when it is a string.
+  10. Agents. The resolved agent id is B3039's _get_resolved_agent_id port (the key's agent_id first, then the
+     body's metadata.agent_id). Walk the list (resolved id, invoked_agent_id) with duplicates removed and
+     entries that are none skipped (an empty string is not skipped). For each id call B3039's
+     _create_agent_rate_limit_descriptors with the body, and with managed_agent_policy when the id equals the
+     key's agent_id, otherwise invoked_agent_policy. Append the descriptors it returns.
+  The data this function reads from the body is only "model", "mcp_server_name" and the key "server_id". It does
+  not call the project, organization or tag-resolver builders, and it does not reorder anything.
+
+  request_assembly holds build_request_rate_limit_descriptors, the port of _build_request_rate_limit_descriptors,
+  and is the one place that fixes the final order. It is an async method of RequestScopeBuilder taking the
+  caller, the body and call_type, and returns Vec<RateLimitDescriptor>. Steps: read rpm_limit_type and
+  tpm_limit_type from the view; take the model only when the body's "model" is a string; compute
+  model_has_failures as DeploymentHealthPolicy::model_has_recent_failures(model) only when a model exists
+  (non-empty) and is_dynamic_rate_limiting_enabled is true, otherwise false; call create_rate_limit_descriptors;
+  then append, in this order, B3038's project_model_descriptor and project_io_descriptors (the latter takes the
+  &mut Vec<RateLimitDescriptor> that B3042 also passes); then append B3038's organization_descriptors, then
+  B3039's tag descriptors (_create_tag_rate_limit_descriptors, which awaits the tag resolver). The final order
+  is therefore api_key, user, team, team_member, end_user, model_per_key, tag_per_key, mcp_per_key, mcp_per_team,
+  model_per_team, agent and agent_session descriptors, model_per_project, model_per_project_itpm,
+  model_per_project_otpm, organization, model_per_organization, then tag. A test asserts this full order with
+  every scope present.
+
+  Config section dynamic_rate_limit_health (crates/betterlite-config/src/sections/dynamic_rate_limit_health.rs)
+  reads env DYNAMIC_RATE_LIMIT_ERROR_THRESHOLD_PER_MINUTE as a base-10 integer, default 1, and exposes it as
+  config.sections.dynamic_rate_limit_health. A value that is not an integer is a typed load error. The section
+  is a stub that the architect declares in sections.rs.
+
+  The module name is request_scopes, not a task id. Direct dependencies: B304 (the failure counter the
+  production health source reads), B732 and B2314 (UserAPIKeyAuth), B745 (readers and key limit lookups),
+  B2325 (throttled_limit), B3031 (records, window size, ModelGroupResolver), B3038 (model, project and
+  organization builders), B3039 (tag, MCP and agent builders, the tag resolver).
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/request_scopes.rs
+    - crates/betterlite-rate-limit/src/request_scopes/**
+    - crates/betterlite-auth/src/request_quota_view.rs
+    - crates/betterlite-auth/src/request_quota_view/**
+    - crates/betterlite-config/src/sections/dynamic_rate_limit_health.rs
+    - crates/betterlite-config/src/sections/dynamic_rate_limit_health/**
+    - tools/oracle/cases/helpers/rate-limit-request-scopes/**
+    - "tools/oracle/fuzz/corpus/helper_case/rate_limit_request_scopes-*"
+    - tools/oracle/helpers/b3040.py
+    - tools/oracle/helpers/b3040/**
+    - tools/oracle/src/helpers/rate_limit/b3040.rs
+    - tools/oracle/src/helpers/rate_limit/b3040/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2957-L3021
+    why: should_enforce_rate_limit, get_enforced_limit and is_dynamic_rate_limiting_enabled.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3118-L3280
+    why: _create_rate_limit_descriptors, the five key-owned descriptors and the call order of the other builders.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3282-L3336
+    why: _check_model_has_recent_failures, the fail-safe true on any error and the strict greater-than threshold.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3865-L3910
+    why: _build_request_rate_limit_descriptors, limit types from key metadata, the health check guard and the final order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3029-L3038
+    why: _get_resolved_agent_id, the key's agent_id wins over the body (B3039 builds it, this task calls it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3997-L4009
+    why: the caller of the assembly, which reads tpm_limited_tags from the finished list (B3055 owns the caller).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/budget_throttle.py#L48-L56
+    why: throttled_limit, floor of limit times pct with a minimum of 1 (B2325 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L77
+    why: DYNAMIC_RATE_LIMIT_ERROR_THRESHOLD_PER_MINUTE env name and default 1.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/router_callbacks/track_deployment_metrics.py#L97-L113
+    why: get_deployment_failures_for_current_minute reads "<deployment_id>:fails" from the local cache and returns 0 when absent (B304 owns it).
+dod:
+  - text: is_dynamic_rate_limiting_enabled is true when either type is exactly "dynamic"; should_enforce_rate_limit gives model_has_failures for "dynamic" and true for none and every other string; get_enforced_limit gives none for a none limit.
+    proof: [limit-policy-tests, rate-limit-request-scopes-oracle, helper-python, helper-case-corpus]
+  - text: The api_key descriptor needs a non-empty api_key and one of rpm_limit, tpm_limit and max_parallel_requests, throttles rpm and tpm with budget_throttle_pct before the dynamic policy, and copies max_parallel_requests unchanged.
+    proof: [key-scope-tests, rate-limit-request-scopes-oracle, helper-python, helper-case-corpus]
+  - text: With rpm_limit_type "dynamic" and no recent failures the api_key descriptor is still emitted, with requests_per_unit none.
+    proof: [key-scope-tests, rate-limit-request-scopes-oracle, helper-python, helper-case-corpus]
+  - text: The user, team and end_user descriptors each need a non-empty id and at least one of their two limits, and carry the window size.
+    proof: [key-scope-tests, rate-limit-request-scopes-oracle, helper-python, helper-case-corpus]
+  - text: The team_member descriptor needs user_id, not team_id, and its value is "<team_id>:<user_id>" with the text "None" for an absent team_id.
+    proof: [key-scope-tests, rate-limit-request-scopes-oracle, helper-python, helper-case-corpus]
+  - text: The MCP builders run only for call_type "call_mcp_tool" without a "server_id" key in the body, and the agent loop removes duplicate ids, skips none and picks managed_agent_policy only for the key's own agent_id.
+    proof: [key-scope-tests, rate-limit-request-scopes-oracle, helper-python, helper-case-corpus]
+  - text: create_rate_limit_descriptors appends in the order api_key, user, team, team_member, end_user, model_per_key, tag_per_key, MCP, model_per_team, agents.
+    proof: [key-scope-tests, rate-limit-request-scopes-oracle, helper-python, helper-case-corpus]
+  - text: The health policy returns false for no router and for no deployments, skips deployments without an id, returns true only when a count is strictly above the threshold, and returns true when either source method fails.
+    proof: [deployment-health-tests]
+  - text: The assembly reads rpm_limit_type and tpm_limit_type only from string values in the key metadata, asks the health policy only for a non-empty string model with a dynamic type, and never asks it otherwise.
+    proof: [request-assembly-tests]
+  - text: The assembled list ends with the project, project input, project output, organization and tag descriptors after the key-scope list, in that order, and a test with every scope present asserts the full order.
+    proof: [request-assembly-tests]
+  - text: RequestQuotaView returns the listed fields of UserAPIKeyAuth and none for rpm_limit_type and tpm_limit_type unless the metadata value is a string.
+    proof: [quota-view-tests]
+  - text: DYNAMIC_RATE_LIMIT_ERROR_THRESHOLD_PER_MINUTE defaults to 1, loads an integer from the env and rejects text that is not an integer.
+    proof: [config-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: limit-policy-tests
+      why: the dynamic policy tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^request_scopes::limit_policy::/)'
+    - id: key-scope-tests
+      why: the key, user, team, team member, end user, MCP or agent ordering tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^request_scopes::key_scopes::/)'
+    - id: deployment-health-tests
+      why: the deployment health policy tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^request_scopes::deployment_health::/)'
+    - id: request-assembly-tests
+      why: the final descriptor order or the health guard tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^request_scopes::request_assembly::/)'
+    - id: quota-view-tests
+      why: the auth view tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^request_quota_view::/)'
+    - id: config-tests
+      why: the dynamic_rate_limit_health section does not load its threshold from a named test
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::dynamic_rate_limit_health::/)'
+    - id: rate-limit-request-scopes-oracle
+      why: the oracle cases for the key descriptors and the dynamic policy are missing or differ from LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/rate-limit-request-scopes)" &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/rate-limit-request-scopes
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3040)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3040 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3040/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added request-scope cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/rate_limit_request_scopes-*")" &&
+        grep -lE '^[[:space:]]+b3040:' tools/oracle/fuzz/corpus/helper_case/rate_limit_request_scopes-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/rate-limit-request-scopes/dynamic-policy.yaml
+  - tools/oracle/cases/helpers/rate-limit-request-scopes/api-key-throttled.yaml
+  - tools/oracle/cases/helpers/rate-limit-request-scopes/api-key-dynamic-no-failures.yaml
+  - tools/oracle/cases/helpers/rate-limit-request-scopes/user-team-end-user.yaml
+  - tools/oracle/cases/helpers/rate-limit-request-scopes/team-member-no-team.yaml
+  - tools/oracle/cases/helpers/rate-limit-request-scopes/mcp-call-type-gate.yaml
+  - tools/oracle/cases/helpers/rate-limit-request-scopes/agent-ids-and-policy.yaml
+  - tools/oracle/cases/helpers/rate-limit-request-scopes/descriptor-order.yaml
+deviations:
+  - what: The deployment health check reads the router through the DeploymentHealthSource trait that B3055 builds, not through an import of the proxy's global router.
+    why: The rules forbid module-level state, and betterlite-rate-limit must not depend on the router crate. The behavior, including false for no router and true on any error, is the same.
+  - what: A DYNAMIC_RATE_LIMIT_ERROR_THRESHOLD_PER_MINUTE that is not a plain base-10 integer (Python also takes underscores such as "1_0") fails config loading with a typed error.
+    why: LiteLLM fails at import with a ValueError; betterlite reports it when the config loads. Surrounding whitespace and a leading sign are accepted.
+  - what: The oracle compares the descriptor builders with the deployment health result passed in as model_has_failures, not with a live router.
+    why: A helper adapter cannot reach proxy_server globals, so the health policy itself is covered by Rust tests that inject a source. The assembly guard is covered by Rust tests too.
+out_of_scope:
+  - "Model, model_per_key, model_per_team, project and organization builders and key_owns_tpm_from_request_metadata: B3038."
+  - "Tag, MCP, agent and session descriptor builders, _get_resolved_agent_id, _get_session_id_from_data and the tag resolver: B3039. This task only calls them."
+  - "throttled_limit and budget_throttle_percentage: B2325. get_deployment_failures_for_current_minute and the router's failure counters: B304."
+  - "The production DeploymentHealthSource, the pre-call hook that calls build_request_rate_limit_descriptors, the stash.tpm_limited_tags line and get_rate_limiter_for_call_type: B3055."
+  - "Counting, windows, gauges and admission over the finished list: B3036 and B3035. Token reservation over the list: B3042 and B3043."
+  - "The unused parent_otel_span argument of _check_model_has_recent_failures and the unused parent span in _build_request_rate_limit_descriptors: no caller reads it at the pin."
+  - "_handle_rate_limit_error: B3030."
+pitfalls:
+  - Only the api_key descriptor goes through get_enforced_limit and throttled_limit; the user, team, team_member and end_user limits are copied as they are, so a dynamic type never relaxes them.
+  - throttled_limit runs before get_enforced_limit, so a throttled key under a dynamic type with no failures still ends with requests_per_unit none.
+  - A dynamic key with no recent failures still gets an api_key descriptor with both limits none, and it is not dropped, so max_parallel_requests alone can still bind.
+  - team_member is gated on user_id and not on team_id, and its value is built by formatting, so a key without a team gives "None:<user_id>" and all such users share the same text prefix.
+  - The api_key, user, team and end_user ids are checked for truthiness, so an empty string adds nothing, while the limits are checked with "is not None", so a limit of 0 does add a descriptor.
+  - The MCP builders are skipped when the body has a "server_id" key, because the REST MCP path passes the raw body here before the server is resolved; only the later synthetic payload carries it.
+  - The agent loop removes duplicate ids with dict.fromkeys, so a key whose agent_id equals invoked_agent_id is processed once and uses managed_agent_policy, not the invoked policy.
+  - An empty-string agent id is not none, so it is not skipped by the loop; B3039 decides what an empty id yields.
+  - The health check runs only when the model is a non-empty string and a type is "dynamic", so a key without a dynamic type never triggers a router lookup, and a missing model never does either.
+  - The failure comparison is strictly greater than the threshold, so with the default 1 a deployment needs 2 failures in the current minute to turn enforcement on.
+  - Any error while reading deployments or counters means "has failures", the safe direction that enforces limits; it must never become a false.
+  - model_per_team sits after the MCP builders and before the agents inside create_rate_limit_descriptors, while model_per_project, the project input and output descriptors and the organization ones are appended later by the assembly, so do not move any of them into the other function.
+  - tpm_limited_tags in the caller is computed from the final list by key "tag", so the tag descriptors must stay last and keep their tokens_per_unit.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

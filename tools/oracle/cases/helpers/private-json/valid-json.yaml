@@ -1,0 +1,1 @@
+{kind: helper, name: valid-json, call: {private_json: {function: load, text: '{"model": "gpt", "count": 2, "ok": true, "none": null}'}}, env: {}, compare: {ignore: []}}

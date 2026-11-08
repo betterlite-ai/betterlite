@@ -1,0 +1,172 @@
+id: B4674
+title: "MCP gateway DCR contracts, registration and replay guards"
+description: >-
+  Build the foundation of the MCP gateway's own OAuth front door (LiteLLM's gateway_dcr_flow.py) in crates/betterlite-mcp, module gateway_dcr. This task owns the shared constants, the wire models, the injected-port traits, the sealed-value helpers, POST /register as a pure function, and the single-use claim guard. B4675 (authorize, connect flow, consent) and B4676 (token grants, revocation, introspection) call everything here, so every name below is public inside the crate. Nothing in this task touches HTTP, a cookie or a clock: callers pass the parsed JSON body, the current time and the cipher in.
+
+
+  Submodules, each with a tests.rs beside it. The test modules are named in the checks.
+
+
+  contracts. Constants, exactly as LiteLLM spells them: GATEWAY_DCR_CLIENT_ID_PREFIX "llm_dcrc_", GATEWAY_AUTH_CODE_PREFIX "llm_gcode_", CONNECT_FLOW_COOKIE_PREFIX "mcp_connect_flow_", CONNECT_FLOW_TTL_SECONDS 600, GATEWAY_AUTH_CODE_TTL_SECONDS 120, MANUAL_DELIVERY_AUTH_CODE_TTL_SECONDS 300, CLAIM_TTL_BUFFER_SECONDS 60, the three claim key prefixes "mcp_gateway_dcr_code_used:", "mcp_gateway_dcr_flow_used:" and "mcp_gateway_dcr_refresh_used:", MAX_REDIRECT_URIS 4, MAX_REDIRECT_URI_LENGTH 256, MAX_CLIENT_ID_LENGTH 2048, MAX_STATE_LENGTH 1024, MIN_CODE_VERIFIER_LENGTH 43, MAX_CODE_VERIFIER_LENGTH 128, the three debug keys "gateway_dcr_client", "gateway_connect_flow" and "gateway_authorization_code", the two database-failure descriptions (DB_UNAVAILABLE_DESCRIPTION "the gateway database is unavailable; retry", and DB_FAULTED_DESCRIPTION, copied word for word from LiteLLM), and PROXY_API_AUDIENCE, which is SessionAudience::ProxyApi from B4652's types.rs. TOKEN_EXCHANGE_GRANT_TYPE is "urn:ietf:params:oauth:grant-type:token-exchange". ACCESS_TOKEN_TOKEN_TYPE is "urn:ietf:params:oauth:token-type:access_token" and SUBJECT_TOKEN_TYPES is that plus the jwt and id_token types of the same family. supported_grant_types(token_exchange_available) returns ["authorization_code", "refresh_token"] and appends the token-exchange grant only when the flag is true.
+
+
+  Models, all serde with deny_unknown_fields so a sealed value of another type can never open as this one. GatewayDcrClient { redirect_uris: Vec<String> (1 to 4 items, checked on open), iat: i64 }. ConnectFlow { user_id, client_id, redirect_uri, state (may be empty), code_challenge, jti (all non-empty except state), exp: i64, resource_server_id: Option<String>, audience: Option<SessionAudience> }. GatewayAuthCode { user_id, client_id, redirect_uri, code_challenge, jti (non-empty), iat, exp, resource_server_id, audience, team_id (the three optional) }. Optional fields serialize only when set (skip_serializing_if), because LiteLLM seals with exclude_none and an older replica must still open a blob from a newer one. Opening checks the non-empty and 1-to-4 rules and fails like any other bad input. is_gateway_dcr_client_id(Option<&str>) is a prefix test.
+
+
+  Port types for the callers, with no behavior beyond a refusing default. ReloadUserFailure is the enum unresolvable, unavailable, faulted, no_active_key. ReloadUser is a trait with one async method taking a user id and returning Option<ReloadUserFailure>. VendorCredentialState is present, absent, unavailable. MintedProxyCredential { key, expires_in (greater than 0), user_id, team_id } and ProxyCredentialMintFailure (ReloadUserFailure plus not_a_member and team_required) with the trait MintProxyCredential taking (user_id, team_id). SubjectIdentity { user_id, team_id }, SubjectTokenRefusal { error: unsupported_grant_type | invalid_request | temporarily_unavailable, description } and the trait ExchangeSubjectToken taking the subject token text and a caller-chosen request context type. ConsentTeam { team_id, team_alias }, and the traits LookupVendorCredential, LookupServerReachability and LookupConsentTeams with LiteLLM's argument lists. Four refusing defaults exist because LiteLLM uses them as default arguments: RefuseProxyCredential returns unresolvable, RefuseSubjectToken returns unsupported_grant_type with the description "this gateway is not configured to exchange IdP tokens", UnavailableVendorCredential returns unavailable, UnreachableServer returns false. Use native async fn in traits and generic parameters at the call sites, not boxed dyn objects.
+
+
+  oauth_error. OauthError { status: u16, error: OauthErrorCode, description: String } for RFC 6749 section 5.2 and RFC 7591 section 3.2.2 bodies. OauthErrorCode lists every code the three tasks use: invalid_request, invalid_client, invalid_grant, invalid_target, invalid_redirect_uri, invalid_client_metadata, unsupported_response_type, unsupported_grant_type, access_denied, login_required, temporarily_unavailable, server_error, each rendering as its snake_case text. body() gives {"error": ..., "error_description": ...}. headers() gives B4654's TOKEN_NO_CACHE_HEADERS, which every error response carries. Descriptions never contain token, code or URL material.
+
+
+  sealed. seal(prefix, payload) serializes with the optional fields omitted, encrypts with B1600's StoredCipher::encrypt_value and returns prefix plus the ciphertext. open_sealed(value, prefix, cipher, debug_key) is total: no prefix match, a failed decrypt (DecryptPolicy with log Error and value Nothing, the same as decrypt_value_helper(..., return_original_value=False)) or a JSON or model failure all return None, never an error. A prefix of "" means unprefixed (the connect-flow cookie). open_gateway_dcr_client(client_id, cipher) opens with GATEWAY_DCR_CLIENT_ID_PREFIX and the client debug key. seal returns a typed error when the cipher refuses (for example no salt key); LiteLLM would raise there, so the route answers 500.
+
+
+  registration. register_aggregate_client(body, token_exchange_available, now, cipher) returns Registered(response) or Refused(OauthError). body is the already parsed JSON object. Only redirect_uris matters; every other key is ignored and every client is registered as a public client with token_endpoint_auth_method "none". Steps in order. (1) redirect_uris must be a JSON array with 1 to 4 items, else 400 invalid_redirect_uri "redirect_uris must be a list of 1 to 4 URIs". (2) every item must be a string of at most 256 characters (count Unicode code points, as Python len does), else 400 invalid_redirect_uri "each redirect URI must be a string of at most 256 characters". (3) each URI, in order, is parsed with B4654's python_url urlparse equivalent and passed to B4655's validate_redirect_uri_shape: true means an allowlisted native callback (cursor://) and the URI is accepted; an error becomes 400 invalid_redirect_uri with the validator's detail text; false falls through to the next rule; the rule is https, or http on a loopback host (B4655's is_loopback_redirect_host), else 400 invalid_redirect_uri "each redirect URI must be https, http on a loopback host, or a registered native callback". (4) seal GatewayDcrClient { redirect_uris, iat: now seconds }; a client_id longer than 2048 characters gives 400 invalid_client_metadata "registered metadata is too large". Success is status 201 with client_id, client_id_issued_at (now seconds), redirect_uris (the strings as sent), token_endpoint_auth_method "none", grant_types from supported_grant_types and response_types ["code"]. The success response carries no cache headers, unlike errors. Nothing is stored.
+
+
+  single_use. The replay guard. ClaimOutcome is first, replayed, unavailable. PeekOutcome is unclaimed, claimed, unavailable. ClaimAuthority is an enum of two cases that the composition root picks, not the guard: Shared(S) where S is a trait ClaimBackend with async increment(key, ttl_seconds) returning Result<u64, ClaimBackendError> and async read(key) returning Result<Option<u64>, ClaimBackendError>, and Local(L) where L is an in-process MemoryClaimStore. SingleUseGuard<S> is built with a ClaimAuthority. claim(key, ttl_seconds): with a Shared authority, call only the shared backend; count 1 is first, anything else is replayed, and any backend error is unavailable with a warning logged ("mcp gateway single-use claim: shared cache backend unavailable, failing closed"). It never falls back to the local store. With a Local authority, the in-memory increment decides the same way. peek(key) is the read-only twin: shared read, None is unclaimed, a value is claimed, an error is unavailable; local read the same way. claim_refusal(outcome, replayed_error) returns None for first, the given replayed error for replayed, and 503 temporarily_unavailable "the single-use record is unavailable right now; try again shortly" (CLAIM_UNAVAILABLE_DESCRIPTION) for unavailable. MemoryClaimStore keeps (count, expiry) per key with an injected clock: increment on a missing or expired key starts at 1 and sets the expiry to now plus the ttl; increment on a live key adds 1 and keeps the original expiry, so a replay never extends the window. read returns None for a missing or expired key. The Redis-backed ClaimBackend implementation and the choice between Shared and Local (LiteLLM prefers redis_usage_cache, then the cache's redis_cache) belong to the composition root, not to this task.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/gateway_dcr.rs
+    - crates/betterlite-mcp/src/gateway_dcr/**
+    - crates/betterlite-mcp/fuzz/Cargo.toml
+    - crates/betterlite-mcp/fuzz/fuzz_targets/gateway_dcr_open_sealed.rs
+    - crates/betterlite-mcp/fuzz/corpus/gateway_dcr_open_sealed/**
+    - tools/oracle/cases/helpers/mcp-gateway-dcr/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-gateway-dcr-*
+    - tools/oracle/helpers/b4674.py
+    - tools/oracle/helpers/b4674/**
+    - tools/oracle/src/helpers/mcp/b4674.rs
+    - tools/oracle/src/helpers/mcp/b4674/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L1-L36
+    why: The flow's own description of what is sealed, what is stored (only the single-use marker) and why every open is total.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L96-L169
+    why: Prefixes, TTLs, claim key prefixes, registration bounds, PKCE bounds, debug keys, failure descriptions and PROXY_API_AUDIENCE.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L169-L274
+    why: Minted credential, subject token, consent team and lookup ports, supported_grant_types and the four refusing defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L276-L329
+    why: GatewayDcrClient, _ConnectFlow and _GatewayAuthCode with extra forbid, and is_gateway_dcr_client_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L332-L370
+    why: _oauth_error, _seal with exclude_none, _open_sealed and open_gateway_dcr_client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L373-L442
+    why: register_aggregate_client, every check in order and the 201 body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L976-L1063
+    why: ClaimOutcome, _claim_refusal and _SingleUseGuard.claim and peek, with the shared-authority and fail-closed rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L158-L177
+    why: In-memory set_cache keeps an unexpired key's original expiry, which makes the local claim window fixed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L126-L172
+    why: encrypt_value_helper and decrypt_value_helper, the two calls _seal and _open_sealed lean on (B1600 owns them).
+  - url: https://www.rfc-editor.org/rfc/rfc7591#section-3.2.2
+    why: Client registration error codes invalid_redirect_uri and invalid_client_metadata.
+dod:
+  - text: Every constant, prefix, TTL, bound and claim key prefix matches LiteLLM, and supported_grant_types lists the token-exchange grant only when the flag is true.
+    proof: [contracts-tests]
+  - text: The refusing defaults return unresolvable, unsupported_grant_type with the fixed description, unavailable and false.
+    proof: [contracts-tests]
+  - text: OauthError renders the snake_case code and error_description body and carries the no-cache headers; every code the three tasks use is present.
+    proof: [error-tests]
+  - text: A sealed client_id opens to the same redirect URIs; a tampered, truncated, wrong-prefix or non-string value opens to None without an error.
+    proof: [sealed-tests, oracle]
+  - text: A sealed auth code or connect flow presented as a client_id opens to None, and a record with an extra field, an empty required string, zero or more than four redirect URIs is refused (cross-type confusion).
+    proof: [sealed-tests, oracle]
+  - text: Unset optional fields are absent from the sealed JSON, and a blob without them opens with those fields None.
+    proof: [sealed-tests]
+  - text: The decoder for client_id text never panics on arbitrary input, and its added corpus replays.
+    proof: [sealed-corpus]
+  - text: Registration rejects a missing, non-array, empty or over-four redirect_uris, a non-string item and an item over 256 characters, each with its own 400 and description.
+    proof: [registration-tests, oracle]
+  - text: Registration accepts https, loopback http and an allowlisted native callback, and rejects plain http on a non-loopback host, fragments, userinfo and backslash hosts, with the shape validator's detail text.
+    proof: [registration-tests, oracle]
+  - text: A successful registration answers 201 with the public-client body, the redirect URIs as sent and no cache headers, and registers as "none" whatever auth method the request asked for.
+    proof: [registration-tests, oracle]
+  - text: A registration whose sealed client_id would exceed 2048 characters answers 400 invalid_client_metadata.
+    proof: [registration-tests]
+  - text: The first claim of a key is first and every later claim is replayed, on the local store and on a shared backend.
+    proof: [single-use-tests, oracle]
+  - text: A shared backend error makes claim and peek answer unavailable and never reaches the local store, even when the local store already holds the key.
+    proof: [single-use-tests, oracle]
+  - text: The local store keeps the original expiry across increments, restarts the count after expiry, and peek reads without incrementing.
+    proof: [single-use-tests]
+  - text: claim_refusal passes first, returns the given replayed error for replayed and 503 temporarily_unavailable for unavailable.
+    proof: [single-use-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: contracts-tests
+      why: The constants, port defaults or grant list tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_dcr::contracts::tests::/)'
+    - id: error-tests
+      why: The OAuth error body or header tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_dcr::oauth_error::tests::/)'
+    - id: sealed-tests
+      why: The sealed value, cross-type confusion or total-open tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_dcr::sealed::tests::/) - test(/replays_the_/)'
+    - id: sealed-corpus
+      why: The gateway_dcr_open_sealed fuzz target, its added corpus or its replay test is missing or fails.
+      run: test -f crates/betterlite-mcp/fuzz/fuzz_targets/gateway_dcr_open_sealed.rs && grep -q gateway_dcr_open_sealed crates/betterlite-mcp/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-mcp/fuzz/corpus/gateway_dcr_open_sealed)" && cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(replays_the_gateway_dcr_open_sealed_corpus)'
+    - id: registration-tests
+      why: The registration validation or response tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_dcr::registration::tests::/)'
+    - id: single-use-tests
+      why: The claim guard, memory store or claim refusal tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_dcr::single_use::tests::/)'
+    - id: helper-python
+      why: The helper adapter is missing or fails strict Python checks.
+      run: test -f tools/oracle/helpers/b4674.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b4674 operation reaches the shared helper case parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-gateway-dcr-*')" && grep -rlq b4674 tools/oracle/fuzz/corpus/helper_case/mcp-gateway-dcr-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-gateway-dcr/register-valid.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-dcr/register-ignores-client-metadata.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-dcr/register-native-callback.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-dcr/register-list-bounds.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-dcr/register-uri-length-and-type.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-dcr/register-bad-shapes.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-dcr/register-http-non-loopback.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-dcr/register-token-exchange-grant.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-dcr/open-client-roundtrip.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-dcr/open-client-hostile.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-dcr/open-client-cross-type.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-dcr/claim-local.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-dcr/claim-shared.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-dcr/claim-shared-fault.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-dcr/peek-local-and-shared.yaml
+deviations:
+  - what: A redirect URI that Python's urlparse cannot parse (an unmatched bracket in the host, for example) is answered with 400 invalid_redirect_uri "each redirect URI must be a valid URL". LiteLLM's urlparse call sits outside its try block, so the ValueError escapes and the route answers 500.
+    why: A malformed client request should be a client error, and the registration endpoint is public.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L410-L418
+  - what: The sealed values are encrypted with B1600's StoredCipher, so a sealed value written by LiteLLM opens in betterlite and the reverse, but the ciphertext bytes differ run to run (random nonce), as they do in LiteLLM.
+    why: Cases compare what a sealed value opens to, never its text.
+  - what: The shared-or-local choice and the Redis ClaimBackend are not made inside the guard. LiteLLM looks up the module global redis_usage_cache on every claim.
+    why: betterlite keeps no module state; the composition root picks the authority once and the guard behaves the same for each choice.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L1024-L1046
+out_of_scope:
+  - "resolve_scoped_resource_server, aggregate_authorize, native_client_authorize, relative_request_url, _append_query_params, _cookie_path_and_secure, _flow_cookie_name, _rejected_authorize_request, _login_redirect, _new_connect_flow, _set_flow_cookie, _consent_lookup_failure_response, _origin_only, _open_flow_for, _flow_target, ConnectFlowDescription, describe_connect_flow, complete_connect_flow, the denied and approved flow responses, the manual delivery page, NativeClientAuthContract, native_client_auth_contract and is_proxy_api_resource: B4675. They use the models and ports built here."
+  - "aggregate_token, _GrantIssuer, the three grant functions, _pkce_verifier_matches, _session_token_pair, _proxy_credential_response, _reload_failure_response, _subject_token_refusal_response, _mint_failure_response, _resource_conflicts_with_scope, revoke_refresh_token and introspect_gateway_token with its two response builders: B4676."
+  - "SessionPrincipal, session token minting and opening, and the session signing keys: B4652. SessionAudience is imported from its types.rs."
+  - "validate_redirect_uri_shape and is_loopback_redirect_host: B4655. TOKEN_NO_CACHE_HEADERS, canonical_resource_uri and python_url urlparse: B4654."
+  - "encrypt_value_helper and decrypt_value_helper (the StoredCipher): B1600."
+  - "The Redis ClaimBackend implementation and the choice of Shared or Local authority: the composition root that wires the routes (B137), over the dual-tier cache (B4293)."
+  - "The HTTP routes POST /register and its parsing of a non-object body: the umbrella B137 and B4675 register routes; this task has no route yet, so its cases are helper cases."
+pitfalls:
+  - "Registration validates redirect_uris in two passes: the list shape and count first, then every item's type and length, and only then each URI's shape one by one, so [\"https://a.example/cb\", 5] fails on the type pass before the first URI is looked at."
+  - "The length cap counts Python characters, so a 256-character string of multi-byte letters passes; count chars, not bytes."
+  - "validate_redirect_uri_shape returning true means an allowlisted native callback and skips the https and loopback test, so cursor://anysegment is accepted without being https; returning false is not a rejection, it only falls through to the scheme rule."
+  - "http is accepted only on a loopback host, so http://localhost/cb passes and http://localhost.evil.example/cb does not; https is accepted on any host."
+  - "The success body echoes redirect_uris as the client sent them and drops everything else the client sent (client_name, grant_types, token_endpoint_auth_method); a client asking for client_secret_basic still gets \"none\"."
+  - "The 2048-character client_id cap is checked after sealing, so the same four 256-character URIs may fit with ASCII and fail with long escapes; the check is on the sealed text, prefix included."
+  - "extra=forbid is what stops a sealed _GatewayAuthCode (user_id, client_id, redirect_uri, code_challenge, jti, iat, exp) from opening as a GatewayDcrClient; keep deny_unknown_fields on all three models and test the cross-type direction with a real sealed code."
+  - "open_sealed must map a decrypt failure to None even though decrypt_value_helper logs an error line for it; the caller turns None into an OAuth error and the log line is not a failure of the request."
+  - "A guard count is compared with ==1, so a Redis value of 2.0 is replayed and 0 or a missing key is never first; the shared backend reports an unsigned count and the guard never inspects its type."
+  - "On a Shared authority the local store is not consulted at all, not even to read; a test must seed the local store with the key and still see unavailable after a backend error."
+  - "peek on a Local authority reads the in-process store for the exact key; it never creates the key, so peek followed by claim still returns first."
+  - "MemoryClaimStore keeps the first increment's expiry: three claims inside the ttl leave the original deadline, and the first claim after that deadline starts again at 1."
+  - "The claim key prefixes differ per grant (code, flow, refresh), and the same jti under two prefixes is two separate claims."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

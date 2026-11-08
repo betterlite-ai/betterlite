@@ -1,0 +1,27 @@
+litellm_settings:
+  allowed_fails: 4
+model_list:
+  - model_name: corpus-model
+    litellm_params:
+      model: openai/gpt-4o
+      cooldown_time: 3.5
+    model_info:
+      id: corpus-model-id
+      allowed_fails: 2
+      cooldown_time: 6.5
+      allowed_fails_policy:
+        RateLimitErrorAllowedFails: 1
+router_settings:
+  allowed_fails: 2
+  cooldown_time: 7.5
+  disable_cooldowns: false
+  allowed_fails_policy:
+    ContentPolicyViolationErrorAllowedFails: 1
+    BadRequestErrorAllowedFails: 2
+    AuthenticationErrorAllowedFails: 3
+    TimeoutErrorAllowedFails: 4
+    RateLimitErrorAllowedFails: 5
+    InternalServerErrorAllowedFails: 6
+    ServiceUnavailableErrorAllowedFails: 7
+    BadGatewayErrorAllowedFails: 8
+    NotFoundErrorAllowedFails: 9

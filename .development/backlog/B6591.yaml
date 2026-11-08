@@ -1,0 +1,13 @@
+id: B6591
+milestone: M9 agents and mcp
+title: MCP allowed server union and open channels
+status: todo
+depends_on: [B6590, B4731, B4670, B4671, B4679, B4772, B4681, B4711]
+file: tasks/B6591-mcp-allowed-server-union.yaml
+covers: []
+parent: B139
+split_from: B4731
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

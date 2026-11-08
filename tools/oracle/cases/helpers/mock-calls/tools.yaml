@@ -1,0 +1,19 @@
+kind: helper
+name: mock-calls-tools
+call:
+  mock_calls:
+    model: gpt-4o
+    mode: chat
+    clock: 1700000000
+    uuid: "12345678-1234-4234-8234-123456789012"
+    operator_mock_response: tool answer
+    allow_client_mock_response: true
+    client_mock_tool_calls:
+      - id: call-1
+        type: function
+        function:
+          name: lookup
+          arguments: "{}"
+env: {}
+compare:
+  ignore: []
