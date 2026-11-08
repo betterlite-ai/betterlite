@@ -39,7 +39,8 @@ pub fn destination_allowed(url: &str, allowed: &[AllowedDestination]) -> bool {
     let Some(hostname) = parsed.hostname() else {
         return false;
     };
-    let host = hostname.trim_end_matches('.');
+    let folded = hostname.to_lowercase();
+    let host = folded.trim_end_matches('.');
     let Ok(explicit_port) = parsed.port() else {
         return false;
     };

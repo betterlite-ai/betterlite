@@ -83,6 +83,10 @@ fn observe(behavior: Behavior) -> String {
     Behavior::Origin("https://[::1]/v1/jobs", "https://[::1]:443/v1/jobs"),
     "ok|https|::1|443"
 )]
+#[case::an_ipv6_zone_folds_like_the_host(
+    Behavior::Origin("https://[fe80::1%Eth0]/v1/jobs", "https://[fe80::1%eth0]/v1/jobs"),
+    "ok|https|fe80::1%eth0|443"
+)]
 #[case::userinfo_does_not_change_the_origin(
     Behavior::Origin(
         "https://user:pass@api.example.com/v1/jobs",
@@ -138,6 +142,7 @@ fn observe(behavior: Behavior) -> String {
 #[case::an_https_url_uses_port_443(Behavior::Destination("https://api.example.com/v1", &["api.example.com:443"]), "true")]
 #[case::entry_case_and_dots_fold(Behavior::Destination("https://API.EXAMPLE.COM./v1", &["api.example.com"]), "true")]
 #[case::ipv6_entries_match(Behavior::Destination("https://[::1]:8080/v1", &["[::1]:8080"]), "true")]
+#[case::an_ipv6_zone_folds_in_the_allowlist(Behavior::Destination("https://[fe80::1%Eth0]/v1", &["[FE80::1%eth0]"]), "true")]
 #[case::a_host_suffix_is_not_allowlisted(Behavior::Destination("https://api.example.com.evil.test/v1", &["api.example.com"]), "false")]
 #[case::a_credential_url_is_refused(Behavior::Destination("https://user:pass@api.example.com/v1", &["api.example.com"]), "false")]
 #[case::a_relative_url_is_refused(Behavior::Destination("/v1/models", &["api.example.com"]), "false")]

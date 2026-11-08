@@ -25,6 +25,7 @@ fn parse_target(url: &str) -> Result<Target, UrlPolicyError> {
     let host = parsed
         .hostname()
         .unwrap_or_default()
+        .to_lowercase()
         .trim_end_matches('.')
         .to_owned();
     Ok(Target { parsed, host })
