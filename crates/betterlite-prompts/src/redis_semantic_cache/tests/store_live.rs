@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use rstest::rstest;
 
 use super::fake_redis::FakeRedis;
@@ -7,8 +9,16 @@ use crate::redis_semantic_cache::ports::{CacheEntryFields, SemanticClock as _, S
 
 #[test]
 fn store_system_clock_reports_seconds_since_the_epoch() {
+    let before = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("a clock after the epoch")
+        .as_secs_f64();
     let now = SystemClock.now_seconds().expect("a clock after the epoch");
-    assert!(now > 1_700_000_000.0_f64);
+    let after = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("a clock after the epoch")
+        .as_secs_f64();
+    assert!(before <= now && now <= after);
 }
 
 #[rstest]
@@ -40,6 +50,8 @@ async fn hash_is_written_and_expired_only_with_a_ttl(
         [command_args(&live::store_command("idx:e1", &fields))]
     );
     assert_eq!(server.commands("EXPIRE").len(), expires);
+    let order = server.arrival_order(&["HSET", "EXPIRE"]);
+    assert_eq!(order, ["HSET", "EXPIRE"][..=expires]);
     if let Some(seconds) = ttl {
         assert_eq!(
             server.commands("EXPIRE"),

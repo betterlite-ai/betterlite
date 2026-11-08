@@ -67,6 +67,17 @@ impl FakeRedis {
             .collect()
     }
 
+    pub(crate) fn arrival_order(&self, names: &[&str]) -> Vec<String> {
+        self.log
+            .lock()
+            .expect("the command log")
+            .iter()
+            .filter_map(|command| str::from_utf8(command.first()?).ok())
+            .filter(|name| names.contains(name))
+            .map(str::to_owned)
+            .collect()
+    }
+
     pub(crate) async fn connect(&self) -> Arc<dyn SemanticRedisIndex> {
         LiveSemanticIndexConnector
             .connect(&format!("redis://:pw@{}", self.addr))
