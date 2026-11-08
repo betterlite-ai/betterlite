@@ -27,7 +27,7 @@ pub(crate) struct Input {
     #[serde(default)]
     pub(crate) attempt: u32,
     #[serde(default)]
-    pub(crate) max_attempts: u32,
+    pub(crate) max_attempts: Option<u32>,
     #[serde(default)]
     pub(crate) jitter: Vec<String>,
     #[serde(default)]

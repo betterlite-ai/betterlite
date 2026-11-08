@@ -140,7 +140,7 @@ fn retry_step(input: &Input) -> Result<NextStep, Box<HelperError>> {
     Ok(next_retry_step(
         outcome,
         input.attempt,
-        input.max_attempts,
+        input.max_attempts.unwrap_or(3),
         &mut jitter,
     ))
 }
@@ -213,7 +213,7 @@ pub(super) fn fetch(input: &Input) -> HelperResult {
         .map_err(|error| invalid(error.to_string()))?;
     let result = runtime.block_on(fetch_with_retry(
         &request,
-        input.max_attempts,
+        input.max_attempts.unwrap_or(3),
         &client,
         &sleeper,
         &mut jitter,
