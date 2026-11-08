@@ -9,6 +9,8 @@ use serde_json::Value;
 
 use crate::helpers::HelperError;
 
+type FieldResult<T> = Result<T, Box<HelperError>>;
+
 macro_rules! helper_error {
     ($error:ty, $class:literal, $status:expr) => {
         impl From<$error> for Box<HelperError> {
@@ -54,13 +56,8 @@ pub(super) fn function_name(input: &Value) -> Result<&str, Box<HelperError>> {
     Ok(function)
 }
 
-pub(super) fn string<'input>(
-    input: &'input Value,
-    name: &str,
-) -> Result<&'input str, Box<HelperError>> {
-    input
-        .get(name)
-        .and_then(Value::as_str)
+pub(super) fn string<'input>(input: &'input Value, name: &str) -> FieldResult<&'input str> {
+    optional(input, name)?
         .ok_or_else(|| invalid("InvalidInput", None, format!("{name} must be a string")))
 }
 
@@ -80,14 +77,10 @@ pub(super) fn optional<'input>(
 }
 
 pub(super) fn boolean(input: &Value, name: &str) -> Result<bool, Box<HelperError>> {
-    let Some(value) = input.get(name).and_then(Value::as_bool) else {
-        return Err(invalid(
-            "InvalidInput",
-            None,
-            format!("{name} must be a boolean"),
-        ));
-    };
-    Ok(value)
+    input
+        .get(name)
+        .and_then(Value::as_bool)
+        .ok_or_else(|| invalid("InvalidInput", None, format!("{name} must be a boolean")))
 }
 
 pub(super) fn parse_headers(input: &Value) -> Result<RawHeaders, Box<HelperError>> {

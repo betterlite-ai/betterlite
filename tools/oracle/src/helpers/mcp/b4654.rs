@@ -30,7 +30,7 @@ impl Helper for Op {
                 json!({"value": challenge::well_known_root_suffix(support::optional(input, "server_root_path")?.unwrap_or_default())}),
             ),
             "www_authenticate" => Ok(
-                json!({"value": challenge::passthrough_www_authenticate(&metadata(input)?, support::boolean(input, "invalid_token")?)}),
+                json!({"value": challenge::passthrough_www_authenticate(&url_value(input, UrlKind::Metadata)?, support::boolean(input, "invalid_token")?)}),
             ),
             "byok_authenticate" => Ok(
                 json!({"value": challenge::byok_www_authenticate(support::optional(input, "proxy_base_url")?.unwrap_or_default(), support::optional(input, "request_root_path")?.unwrap_or_default())}),
@@ -57,9 +57,9 @@ impl Helper for Op {
 
 fn late_operations(function: &str, input: &Value) -> HelperResult {
     match function {
-        "request_base_url" => Ok(json!({"base_url": request_base(input)?})),
-        "route_relative_path" => Ok(json!({"value": route_value(input)?})),
-        "metadata_url" => Ok(json!({"value": metadata(input)?})),
+        "request_base_url" => Ok(json!({"base_url": url_value(input, UrlKind::Base)?})),
+        "route_relative_path" => Ok(json!({"value": url_value(input, UrlKind::Route)?})),
+        "metadata_url" => Ok(json!({"value": url_value(input, UrlKind::Metadata)?})),
         "token_request" => {
             let auth = token_client_auth(input)?;
             Ok(
@@ -80,41 +80,49 @@ fn late_operations(function: &str, input: &Value) -> HelperResult {
     }
 }
 
-fn route_value(input: &Value) -> Result<String, Box<HelperError>> {
-    let Some(path) = support::optional(input, "path")? else {
-        return Ok(String::new());
-    };
-    Ok(challenge::route_relative_request_path(
-        support::optional(input, "original_path")?,
-        path,
-        support::optional(input, "app_root_path")?,
-        support::optional(input, "root_path")?,
-    ))
+#[derive(Clone, Copy)]
+enum UrlKind {
+    Route,
+    Base,
+    Metadata,
 }
 
-fn request_base(input: &Value) -> Result<String, Box<HelperError>> {
-    let origin = base_url::RequestOrigin {
-        base_url: support::string(input, "base_url")?,
-        x_forwarded_proto: support::optional(input, "x_forwarded_proto")?,
-        x_forwarded_host: support::optional(input, "x_forwarded_host")?,
-        x_forwarded_port: support::optional(input, "x_forwarded_port")?,
-        from_trusted_proxy: support::boolean(input, "from_trusted_proxy")?,
-    };
-    let configured = support::optional(input, "proxy_base_url")?.unwrap_or_default();
-    Ok(base_url::get_request_base_url(configured, &origin)?)
-}
-
-fn metadata(input: &Value) -> Result<String, Box<HelperError>> {
-    let base = support::optional(input, "base_url")?.unwrap_or_default();
-    let route = support::optional(input, "route_path")?.unwrap_or_default();
-    let name = support::optional(input, "server_name")?.unwrap_or_default();
-    let root = support::optional(input, "server_root_path")?.unwrap_or_default();
-    Ok(challenge::passthrough_metadata_url(
-        base,
-        route,
-        name,
-        challenge::well_known_root_suffix(root),
-    ))
+fn url_value(input: &Value, kind: UrlKind) -> Result<String, Box<HelperError>> {
+    match kind {
+        UrlKind::Route => {
+            let original = support::optional(input, "original_path")?;
+            let path = support::optional(input, "path")?.unwrap_or_default();
+            Ok(challenge::route_relative_request_path(
+                original,
+                path,
+                support::optional(input, "app_root_path")?,
+                support::optional(input, "root_path")?,
+            ))
+        }
+        UrlKind::Base => {
+            let origin = base_url::RequestOrigin {
+                base_url: support::string(input, "base_url")?,
+                x_forwarded_proto: support::optional(input, "x_forwarded_proto")?,
+                x_forwarded_host: support::optional(input, "x_forwarded_host")?,
+                x_forwarded_port: support::optional(input, "x_forwarded_port")?,
+                from_trusted_proxy: support::boolean(input, "from_trusted_proxy")?,
+            };
+            let configured = support::optional(input, "proxy_base_url")?.unwrap_or_default();
+            Ok(base_url::get_request_base_url(configured, &origin)?)
+        }
+        UrlKind::Metadata => {
+            let base = support::string(input, "base_url")?;
+            let route = support::string(input, "route_path")?;
+            let name = support::string(input, "server_name")?;
+            let root = support::optional(input, "server_root_path")?.unwrap_or_default();
+            Ok(challenge::passthrough_metadata_url(
+                base,
+                route,
+                name,
+                challenge::well_known_root_suffix(root),
+            ))
+        }
+    }
 }
 
 fn upstream(input: &Value) -> Result<resource_identity::UpstreamServer<'_>, Box<HelperError>> {
