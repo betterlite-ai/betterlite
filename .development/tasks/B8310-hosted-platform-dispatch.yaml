@@ -1,0 +1,110 @@
+id: B8310
+title: Fireworks, Together, Groq, Cloudflare, Perplexity and NVIDIA NIM dispatch
+description: >-
+  The provider parts of the aggregator group build pure configs and leave the call sites to the umbrella: B6070 to B6072 and B5832 (Fireworks), B5831 (Together), B5833 (Groq), B5836 (Cloudflare), B5834 and B6120 (Perplexity) and B5837 (NVIDIA NIM). This task owns those call sites. Put them in the module hosted_platform_dispatch of betterlite-provider and plug each arm into the dispatch table through B2230's chat selection and B5360's media and resource selection, the same way B8157 does for the self-hosted providers. Unknown providers still fail as before.
+
+
+  Settings. Add the config section hosted_platform_keys. It reads the litellm_settings globals api_key, api_base, headers, groq_key and cloudflare_api_key, and the env vars GROQ_API_KEY, GROQ_API_BASE, CLOUDFLARE_API_KEY, CLOUDFLARE_API_BASE, CLOUDFLARE_ACCOUNT_ID, and FIREWORKS_AI_API_KEY. Every value defaults to None, and an empty string counts as unset, since LiteLLM chains them with `or`. The dispatch functions take the section as config.sections.hosted_platform_keys and never read the environment themselves.
+
+
+  _complete_fireworks_ai (main.py L1853-L1907). Take the context fields as B050 lists them. When the provider config is the Fireworks chat config, replace optional_params with that config's map_extra_body_params(optional_params, model) from B6071; with any other config keep them as they are. Call the shared HTTP completion handler with provider_config. No key or base is resolved here: get_llm_provider already filled them (B211's fireworks_ai branch). When the handler fails, log post_call with the error text as original_response and additional_args {"headers": headers}, then return the same error unchanged.
+
+
+  _complete_together_ai (L1910-L1957). Pass every context field to the shared HTTP completion handler with provider_config, and log post_call on failure in the same way as Fireworks.
+
+
+  _complete_groq (L2111-L2170). api_base is api_base, else the global api_base, else GROQ_API_BASE, else "https://api.groq.com/openai/v1". api_key is api_key, else the global api_key, else the groq_key global, else GROQ_API_KEY. headers is headers, else the global headers. Then merge GroqChatConfig.get_config() (B5833) into optional_params: a key from the config is added only when optional_params lacks it, so a request value wins. Call the handler without provider_config, so it picks the Groq config from the provider name. There is no post_call and no error catch here.
+
+
+  _complete_cloudflare (L4576-L4612). api_key is api_key, else cloudflare_api_key, else the global api_key, else CLOUDFLARE_API_KEY. api_base is api_base, else the global api_base, else CLOUDFLARE_API_BASE, with no default; pass it and CLOUDFLARE_ACCOUNT_ID to B5836's URL rule, which builds the URL when the base is missing. headers are passed as they came, with no global fallback. The function sends custom_llm_provider "cloudflare", no provider_config and no client, so the handler uses its own client. LiteLLM also computes custom_prompt_dict here and never passes it on, so nothing is done with it.
+
+
+  Arms in the completion dispatch: fireworks_ai and together_ai (L5889-L5893), groq (L5903-L5904) and cloudflare (L6038-L6039). Keep the order: the text completion arm at L5881-L5888 (B024's) comes first, so a fireworks_ai or together_ai call with text_completion true goes there.
+
+
+  Embedding arms in main.py embedding(). fireworks_ai (L6986-L6999): api_key is api_key, else the global api_key, else FIREWORKS_AI_API_KEY; api_base is passed as it came; the call is the OpenAI client embedding with no headers. perplexity (L7335-L7348): the shared HTTP embedding handler with api_base and api_key as they came and empty litellm_params. The together_ai and nvidia_nim embeddings go through the OpenAI branch at L6504-L6555, which B044 builds, so nothing is added for them.
+
+
+  Config wiring. Where B2230 or B5360 returns a tag for these providers, build the config from its part: Fireworks chat, completion, Responses, embedding and rerank (B6070, B6071, B6072, B5832), Together chat, completion and rerank (B5831), Groq chat and transcription (B5833), Cloudflare chat and decisions (B5836), Perplexity chat, embedding, Responses, search and decisions (B5834, B6120), and NVIDIA NIM chat, embedding, rerank and passthrough (B5837). Chat for perplexity and nvidia_nim reaches B024's OpenAI-compatible arm (L5930-L5956), which takes the config this wiring builds.
+
+
+  HTTP oracle cases through the booted proxy prove the parts end to end, since this is the first place a route reaches them: POST /v1/chat/completions for fireworks_ai, together_ai, groq (non-streaming and streaming) and cloudflare models with api_base set to the mock upstream, and POST /v1/embeddings for a fireworks_ai model. Use model names LiteLLM's model map lists at the pin, for example fireworks_ai/accounts/fireworks/models/llama-v3p1-8b-instruct, together_ai/meta-llama/Llama-3.3-70B-Instruct-Turbo, groq/llama-3.1-8b-instant and cloudflare/@cf/meta/llama-3.1-8b-instruct. Helper cases cover the key and base chains (groq, cloudflare, fireworks embedding).
+scope:
+  paths:
+    - crates/betterlite-provider/src/hosted_platform_dispatch.rs
+    - crates/betterlite-provider/src/hosted_platform_dispatch/**
+    - crates/betterlite-config/src/sections/hosted_platform_keys.rs
+    - crates/betterlite-config/src/sections/hosted_platform_keys/**
+    - Cargo.lock
+    - tools/oracle/cases/hosted-platforms/**
+    - tools/oracle/cases/helpers/hosted-platform-dispatch/**
+    - tools/oracle/helpers/b8310.py
+    - tools/oracle/helpers/b8310/**
+    - tools/oracle/src/helpers/provider/b8310.rs
+    - tools/oracle/src/helpers/provider/b8310/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1853-L1957
+    why: _complete_fireworks_ai with its map_extra_body_params step and _complete_together_ai.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2111-L2170
+    why: _complete_groq, its base and key chains and the GroqChatConfig.get_config merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4576-L4612
+    why: _complete_cloudflare; note the key chain order and the missing client argument.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5881-L5904
+    why: The text completion, fireworks_ai, together_ai and groq arms and their order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6038-L6039
+    why: The cloudflare arm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6986-L6999
+    why: The fireworks_ai embedding arm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7335-L7348
+    why: The perplexity embedding arm.
+dod:
+  - text: The Fireworks, Together, Groq and Cloudflare dispatch functions resolve key, base and headers as LiteLLM does and pass or omit provider_config the same way.
+    proof: [hosted-dispatch-tests, oracle]
+  - text: Fireworks and Together log post_call on a handler error and return the error unchanged; Groq and Cloudflare do not catch it.
+    proof: [hosted-dispatch-tests]
+  - text: The fireworks_ai and perplexity embedding arms match LiteLLM.
+    proof: [hosted-dispatch-tests, oracle]
+  - text: The hosted_platform_keys section loads every listed global and env var, with None defaults.
+    proof: [hosted-keys-tests]
+  - text: Chat and embedding calls for these providers through the proxy return the same status, body and upstream headers as LiteLLM.
+    proof: [hosted-cases, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: hosted-dispatch-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^hosted_platform_dispatch::/)'
+      why: Without the dispatch functions there are no such tests, so the check fails on the base branch.
+    - id: hosted-keys-tests
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::hosted_platform_keys::/)'
+      why: Without the section its loader tests are missing.
+    - id: hosted-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/hosted-platforms tools/oracle/cases/helpers/hosted-platform-dispatch)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/hosted-platforms/fireworks-chat.yaml
+  - tools/oracle/cases/hosted-platforms/together-chat.yaml
+  - tools/oracle/cases/hosted-platforms/groq-env-key.yaml
+  - tools/oracle/cases/hosted-platforms/groq-stream.yaml
+  - tools/oracle/cases/hosted-platforms/cloudflare-chat.yaml
+  - tools/oracle/cases/hosted-platforms/fireworks-embedding.yaml
+  - tools/oracle/cases/helpers/hosted-platform-dispatch/groq-key-order.yaml
+  - tools/oracle/cases/helpers/hosted-platform-dispatch/cloudflare-key-order.yaml
+deviations:
+  - what: Reply ids LiteLLM generates and token usage estimates are compared as present, not equal, in the HTTP cases.
+    why: The ids are random and usage comes from each side's tokenizer.
+out_of_scope:
+  - "The provider configs and transforms belong to B5831, B5832, B5833, B5834, B5836, B5837, B6070, B6071, B6072 and B6120; picking a config from the provider name is B2230 and B5360."
+  - "The OpenAI embedding branch that together_ai and nvidia_nim share (main.py L6504-L6555) is B044's, and the OpenAI-compatible chat arm is B024's."
+  - "The provider defaults filled by get_llm_provider (get_llm_provider_logic.py) are B210 and B211."
+  - "The Cloudflare branch of validate_environment (utils.py L6957) belongs to B5364 with the rest of that function."
+  - "Rerank routes and the shared rerank handler are B1014's; this task adds no route."
+  - "The NVIDIA NIM branch of rerank() (rerank_api/main.py L334-L360) with its key error, base chain and case rerank-together-jina-nvidia.yaml: B1079 owns the whole rerank function."
+pitfalls:
+  - "Groq puts the global api_key before groq_key, while Cloudflare puts cloudflare_api_key before the global api_key; keep each order."
+  - "_complete_groq and _complete_cloudflare pass no provider_config; add a test that the handler gets None."
+  - "_complete_cloudflare passes no client argument, unlike every other function here."
+  - "map_extra_body_params runs only when the provider config is the Fireworks chat config, not for any other config a caller passed."
+  - "The GroqChatConfig merge never overwrites a key the request already set."
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

@@ -1,0 +1,143 @@
+id: B3629
+title: Pass-through Vertex Live WebSocket route
+description: >-
+  Build the Vertex AI Live WebSocket pass-through of llm_passthrough_endpoints.py as the module passthrough_vertex_live in crates/betterlite-server. The route serves `/vertex_ai/live`: it picks the Vertex project, location and credentials, gets an access token, builds the upstream `wss://` URL and headers, and hands the socket to B3612's WebSocketRelay with a rewriter for the `setup` frame's model.
+  This task owns the route function and its helpers only. The relay loops come from B3612, the setup-frame rewrite and model read from B3611, the credential store from B3602, the base URL from B3622 and the token calls from B1303 and B1304. Call them; do not copy them.
+  Reuse the names B3628 declares in passthrough_openai_routes: `WebSocketRelayPort` (the port B3612's WebSocketRelay implements). The route reads the socket through B3612's `ClientSocket` only, because Vertex Live accepts without a subprotocol and needs no path or query read, so B3628's `RouteSocket` is not needed here.
+  The three query values and the authenticated key arrive as arguments. The wrapper that binds them is the `@app.websocket("/vertex_ai/live")` function in proxy_server.py (L12813-L12842). It reads the query parameters `model`, `vertex_project` and `vertex_location` (all optional) and authenticates with B756's user_api_key_auth_websocket. This task also registers the path: `/vertex_ai/live` sends a WebSocket upgrade request to the live handler and every other request on that path (a POST, or a plain GET) to B3623's `vertex_aiplatform_route`, because axum lets a static path win over the `/vertex_ai/{endpoint}` capture and LiteLLM falls through to the HTTP route there. The upgrade branch calls B3628's `SocketServePort` with `SocketAuth::Key` and a route closure that builds VertexLiveArgs from the query, calls vertex_live_route and closes the socket with 1011 and no reason on a VertexLiveError; B8640 supplies the port.
+  Every name below is at most 30 characters; LiteLLM's longer names are renamed on purpose.
+
+  Entry point. `vertex_live_route(args: &VertexLiveArgs, socket: &dyn ClientSocket, auth: &UserApiKeyAuth) -> Result<(), VertexLiveError>` replaces vertex_ai_live_websocket_passthrough. `VertexLiveArgs` holds `model`, `vertex_project` and `vertex_location` (each `Option<String>`). `VertexLiveDeps` is built once by B8608 and holds the credential router (B3602's PassthroughEndpointRouter), one shared B1302 token state, the B1304 region helpers, `WebSocketRelayPort`, an optional `LiveModelPort` and a `LiveFailurePort`.
+  Both ports are declared in this module so tests use fakes. `LiveModelPort` has one method, `model_list() -> Vec<Deployment>`, backed by B844's router.get_model_list() with no arguments; no router means no `LiveModelPort`. `LiveFailurePort` has one async method, `post_call_failure(auth, error_text)`, backed by ProxyLogging.post_call_failure_hook (B8395 builds it and B8641 backs this port with it (LiveFailureAdapter)), called with an empty request data object.
+  `VertexLiveError` is a thiserror enum for the one error the route can return, an invalid location in the host (see step 6). Each failure that LiteLLM handles inside the route is a socket close, not an error value.
+
+  Steps of vertex_live_route, in this order:
+  1. Accept the socket with ClientSocket::accept (no subprotocol). Read the client headers once into a map.
+  2. `resolve_live_credentials(vertex_project, vertex_location, model)` replaces _resolve_vertex_live_credentials and returns `Option<VertexPassThroughCredentials>` (B3602's record at `crate::pass_through_credentials::VertexPassThroughCredentials`). Order: (a) B3602's get_vertex_credentials(project_id, location) with the query values; when it returns a record that has a vertex_project, use it. (b) Otherwise get_vertex_credentials_from_router_deployments(model); when it returns a record, use it. (c) Otherwise, when (a) returned a record without a project, use that one. (d) Otherwise call set_default_vertex_config() with no argument and return get_vertex_credentials(project_id, location) again.
+  3. Merge. `configured_project` is the query vertex_project when it is non-empty, else the record's vertex_project, else none. `configured_location` follows the same rule with vertex_location. The credential value is the record's vertex_credentials, or none without a record. An empty query string counts as missing, as Python's `or` does.
+  4. Region and token, inside one failure scope. `resolved_location` is B1304's get_vertex_region(configured_location or `us-central1`, model) when `model` is non-empty, else `configured_location` or `us-central1` (B1304's get_default_vertex_location). Then call B1303's `_ensure_access_token_async` with the credential value, `configured_project` and custom_llm_provider `vertex_ai_beta`; it returns the token and `resolved_project`. Use the one shared token state, not a fresh one per call: LiteLLM keeps one module-level VertexBase here, so tokens are cached across calls.
+  5. Failure scope. Any error from step 4 is logged with the error text (never the token or the credential value) and then: call LiveFailurePort.post_call_failure with the key and the error text; when the client side of the socket is not disconnected (B3612's client state read), close with code 1011 and reason `Vertex AI auth failed: set a use_in_pass_through vertex model, default_vertex_config, or DEFAULT_VERTEXAI_* env`; return Ok. Steps 2 and 3 are outside the scope: their errors are not turned into a close.
+  6. Upstream URL. `host_location` is resolved_location, or `us-central1` when empty. The host is B3622's passthrough_vertex_base_url(host_location) with the leading `https://` and the trailing `/` removed. The URL is `wss://{host}/ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent`. A host_location that fails B3622's check (for example an uppercase client location with no model that supplies a region) gives VertexLiveError, which the route closure of the registration turns into a 1011 close with no reason, as an uncaught exception does in Starlette. The socket is already accepted, so no HTTP status exists.
+  7. Upstream headers, as an insertion-ordered map: `Authorization: Bearer <token>` and `Content-Type: application/json`, then `x-goog-user-project: <resolved_project>` when resolved_project is non-empty. Then walk the client headers in order: a header whose lower-cased name starts with `x-goog-` is added under its own name when that exact name is not already a key of the map. The token is a secret value and never appears in a log or an error text.
+  8. Call WebSocketRelayPort.relay with `WebSocketArgs { target: <url>, custom_headers, forward_headers: false, endpoint: Some("/vertex_ai/live"), cost_per_request: None, accept_websocket: false, setup_model_rewriter }` and the same socket and key. The endpoint text is what B3612 tests for the Vertex Live setup handling, so it must be exactly `/vertex_ai/live`, not the request path.
+
+  Setup rewriter. `build_setup_rewriter(project, location, router)` replaces _build_vertex_live_setup_model_rewriter and returns the rewriter type that B3611 takes (read its merged name). LiteLLM returns none when the project or location is None; both are always set here (the token call returns a string project, possibly empty), so the rewriter is always built. It maps the `setup.model` string of the client's first frame:
+  - A model that starts with `projects/` is returned unchanged.
+  - Otherwise resolve the alias with `alias_to_upstream`, take its suffix with `publisher_model_suffix`, and return `projects/{project}/locations/{location}/{suffix}`.
+  `alias_to_upstream(setup_model, router)` replaces _resolve_alias_to_upstream_model. No router returns the input. The candidates are the input and the part after its last `/`. Walk the router's model list in order and take the `litellm_params.model` of the first deployment whose `model_name` equals a candidate; the first match decides, even when its model is missing, which gives none. None returns the input. Otherwise run B174's get_llm_provider on the upstream model; its bad-request error returns the upstream model unchanged, and success returns the upstream model with a leading `{provider}/` removed (once, only as a prefix).
+  `publisher_model_suffix(model)` replaces _vertex_publisher_model_suffix. When the text `publishers/` occurs anywhere, return the substring from its first occurrence to the end. Otherwise return `publishers/google/models/` followed by the part after the last `/` (the whole text when it has no `/`).
+  Examples: `gemini-live-2.5-flash` gives `publishers/google/models/gemini-live-2.5-flash`; `models/gemini-live-2.5-flash` and `vertex_ai/gemini-live-2.5-flash` give the same; `projects/p/locations/l/publishers/acme/models/m` keeps `publishers/acme/models/m`.
+scope:
+  paths:
+    - crates/betterlite-server/src/passthrough_vertex_live.rs
+    - crates/betterlite-server/src/passthrough_vertex_live/**
+    - tools/oracle/cases/server/passthrough-vertex-live/**
+    - tools/oracle/helpers/b3629.py
+    - tools/oracle/helpers/b3629/**
+    - tools/oracle/src/helpers/server/b3629.rs
+    - tools/oracle/src/helpers/server/b3629/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3529-L3560
+    why: The unconfigured close reason, the publisher prefix constants and publisher_model_suffix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3557-L3586
+    why: The credential resolution order (explicit key, router deployments, projectless record, default config).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3588-L3633
+    why: The setup model rewriter and the alias lookup through the router's model list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3635-L3740
+    why: The route body, from accept to the relay call, with the failure close and the header forwarding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2341-L2354
+    why: get_vertex_base_url, which B3622 owns and the route calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12813-L12842
+    why: The /vertex_ai/live registration and its query parameters, to keep the argument shape (not covered by this task).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L96-L121
+    why: get_vertex_region, which B1304 owns and the route calls for a named model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L1119-L1131
+    why: _ensure_access_token_async, which B1303 owns and the route calls.
+  - url: https://cloud.google.com/vertex-ai/generative-ai/docs/live-api
+    why: The Live API WebSocket service and the full model resource path its setup message needs.
+dod:
+  - text: publisher_model_suffix keeps everything from the first `publishers/`, and otherwise prefixes `publishers/google/models/` to the part after the last slash.
+    proof: [suffix-tests, oracle]
+  - text: The setup rewriter leaves a `projects/` model alone, resolves a gateway alias through the first matching deployment, strips only a leading provider prefix, and keeps the upstream model when provider resolution fails.
+    proof: [rewriter-tests, oracle]
+  - text: resolve_live_credentials follows the order explicit key with project, router deployments, projectless record, default config, and calls set_default_vertex_config only in the last case.
+    proof: [credential-order-tests]
+  - text: vertex_live_route merges query values over the record, treats empty strings as missing, derives the region with get_vertex_region only when a model is named, and calls the token function with `vertex_ai_beta`.
+    proof: [route-merge-tests]
+  - text: A region or token error runs the failure hook once, closes with 1011 and the exact auth reason only while the client is connected, and never reaches the relay; no token appears in a log line.
+    proof: [auth-failure-tests]
+  - text: The upstream URL is `wss://` plus the B3622 host plus the BidiGenerateContent path, and the headers hold the Bearer token, Content-Type, x-goog-user-project when a project exists, and caller x-goog-* headers whose exact name is not taken.
+    proof: [upstream-tests, oracle]
+  - text: The relay call carries forward_headers false, accept_websocket false, endpoint exactly `/vertex_ai/live`, no cost and the rewriter, and the socket is accepted once before any credential work.
+    proof: [relay-call-tests]
+  - text: A WebSocket upgrade request to /vertex_ai/live reaches vertex_live_route, and a POST or a plain GET to the same path reaches B3623's vertex_aiplatform_route.
+    proof: [registration-tests]
+checks:
+  optional: []
+  commands:
+    - id: suffix-tests
+      why: the publisher path suffix is built wrongly for a bare, prefixed or full model name
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_vertex_live::tests::suffix(::|$)/)'
+    - id: rewriter-tests
+      why: the setup model rewrite or the alias lookup picks the wrong model or path
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_vertex_live::tests::rewriter(::|$)/)'
+    - id: credential-order-tests
+      why: the credential sources are tried in the wrong order or the default config is set too early
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_vertex_live::tests::credential_order(::|$)/)'
+    - id: route-merge-tests
+      why: project, location or region come out wrong, or the token call gets wrong arguments
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_vertex_live::tests::route_merge(::|$)/)'
+    - id: auth-failure-tests
+      why: an auth failure skips the hook, closes with a wrong code or reason, or leaks the token
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_vertex_live::tests::auth_failure(::|$)/)'
+    - id: upstream-tests
+      why: the upstream URL or headers are wrong, or a caller header overrides a gateway one
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_vertex_live::tests::upstream(::|$)/)'
+    - id: relay-call-tests
+      why: the relay is called with wrong arguments or the socket is accepted at the wrong time
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_vertex_live::tests::relay_call(::|$)/)'
+    - id: registration-tests
+      why: a request to /vertex_ai/live reaches the wrong handler or the route panics beside B3623's catch-all
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_vertex_live::tests::registration(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/server/passthrough-vertex-live/suffix-bare-model.yaml
+  - tools/oracle/cases/server/passthrough-vertex-live/suffix-models-prefix.yaml
+  - tools/oracle/cases/server/passthrough-vertex-live/suffix-publishers-kept.yaml
+  - tools/oracle/cases/server/passthrough-vertex-live/rewriter-projects-unchanged.yaml
+  - tools/oracle/cases/server/passthrough-vertex-live/rewriter-no-router-bare.yaml
+  - tools/oracle/cases/server/passthrough-vertex-live/rewriter-empty-project-token.yaml
+  - tools/oracle/cases/server/passthrough-vertex-live/upstream-url-regional.yaml
+  - tools/oracle/cases/server/passthrough-vertex-live/upstream-url-global.yaml
+deviations:
+  - what: The route takes the authenticated key as a required argument. LiteLLM's `user_api_key_dict=None` default and its `ValueError("user_api_key_dict is required ...")` after the credential work are not built.
+    why: The key is always present because the wrapper authenticates first. The Rust type cannot express the missing case.
+  - what: The route reads the socket through B3612's ClientSocket, the relay through WebSocketRelayPort, the router model list through LiveModelPort and the failure hook through LiveFailurePort.
+    why: Python reads proxy_server globals (llm_router, proxy_logging_obj) with local imports. Rust needs seams for tests, and B8640 and B8641 wire the real values. What a client sees is the same.
+  - what: An invalid host location after accept ends the socket with 1011 and no reason through the adapter.
+    why: LiteLLM raises ValueError from get_vertex_base_url outside its try block, and Starlette closes with 1011 for an uncaught exception. B3622 also rejects a trailing newline, which Python accepts (see its deviations).
+out_of_scope:
+  - "user_api_key_auth_websocket: B756. The proxy_server.py app object and the mount of this route: B8608."
+  - "create_vertex_ai_live_websocket_endpoint (L3742-L3756): no caller at the pin. No cases."
+  - "create_websocket_passthrough_route and the generic websocket helpers: B3612 and B3628 own them; this task only calls the relay port."
+  - "get_vertex_region, get_default_vertex_location: B1304. _ensure_access_token_async: B1303. get_vertex_base_url: B3622 (passthrough_vertex_base_url). get_vertex_credentials, get_vertex_credentials_from_router_deployments, set_default_vertex_config and VertexPassThroughCredentials: B3602."
+  - "_rewrite_vertex_live_setup_model, _resolved_vertex_live_setup and extract_model_from_vertex_ai_setup, which apply the rewriter to frames: B3611. The relay loops, the logging of the model and the cost: B3612."
+  - "Vertex Live usage logging (vertex_ai_live_passthrough_handler in success_handler.py and its logging handler): the pass-through logging tasks own it, not the route."
+  - "The production axum ClientSocket and tokio-tungstenite connector adapters, and the real LiveModelPort and LiveFailurePort: not built here; B8642 builds the socket adapters and B8641 the two ports."
+pitfalls:
+  - "The relay endpoint must be the fixed text `/vertex_ai/live`; B3612 tests it as a substring to turn on the setup rewrite, so passing the request path breaks the model read."
+  - "The socket is accepted before the credentials are looked up, so an auth failure is a 1011 close after the handshake, not a failed handshake."
+  - "get_vertex_credentials with a project-less record is kept only as a third choice: router deployments are tried before it, and the default config only after it."
+  - "set_default_vertex_config() runs only in the last branch, and it changes the shared credential router, so later calls see the defaults too."
+  - "Empty query strings count as missing for project and location because LiteLLM uses `or`; `?vertex_project=` falls through to the record."
+  - "get_vertex_region runs only when `model` is non-empty. Without a model the region is the configured one or us-central1, with no supported_regions check."
+  - "The token state is shared across calls here, unlike the per-call VertexBase in B3622's HTTP auth; do not create a fresh state per socket."
+  - "A caller `x-goog-user-project` is dropped only when the gateway also sends that header: the exact-name check compares the lower-case client name with the lower-case gateway name, so the client copy goes through when resolved_project is empty."
+  - "The auth failure scope covers the region lookup and the token call only. The credential resolution before it and the base URL after it are outside it."
+  - "The rewriter needs the router's model list on each setup frame; a first deployment with a matching model_name but no `model` stops the search and leaves the alias unchanged."
+  - "The prefix strip uses the provider that get_llm_provider returns, so `vertex_ai/gemini-x` loses `vertex_ai/` but a model that merely contains it later is untouched."
+  - "A POST or a plain GET to /vertex_ai/live must reach B3623's catch-all, so register the path with a method router that handles the upgrade and falls through for everything else; a GET-only static route would answer 405 or 400."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

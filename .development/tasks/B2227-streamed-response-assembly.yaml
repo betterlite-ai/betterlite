@@ -314,21 +314,24 @@ out_of_scope:
 - 'Function ownership inventory litellm/main.py: _complete_cohere_chat L3047-L3109 belong to B037.'
 - 'Function ownership inventory litellm/main.py: _complete_deepseek L1566-L1614; _complete_text_completion_inception
   L4045-L4106 belong to B038.'
-- 'Function ownership inventory litellm/main.py: _complete_minimax L2500-L2543 belong to B039.'
+- 'Function ownership inventory litellm/main.py: _complete_minimax L2500-L2543 belong to B8312.'
 - 'Function ownership inventory litellm/main.py: _complete_hosted_vllm L2546-L2587; _complete_oobabooga L3301-L3332;
   _complete_vllm L4421-L4455; _complete_ollama L4458-L4495; _complete_ollama_chat L4498-L4537; _complete_triton
-  L4540-L4573; _complete_petals L4615-L4652; _complete_lemonade L4822-L4859 belong to B040.'
+  L4540-L4573; _complete_petals L4615-L4652; _complete_lemonade L4822-L4859 belong to B8157.'
 - 'Function ownership inventory litellm/main.py: _complete_fireworks_ai L1853-L1907; _complete_together_ai L1910-L1957;
-  _complete_groq L2111-L2170; _complete_cometapi L2451-L2497; _complete_replicate L2773-L2824; _complete_huggingface
-  L3181-L3221; _complete_openrouter L3444-L3518; _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649;
-  _complete_predibase L3936-L3992; _complete_cloudflare L4576-L4612; _complete_bytez L4782-L4819 belong to B041.'
-- 'Function ownership inventory litellm/main.py: _complete_heroku L1960-L2007; _complete_sap L2344-L2387; _complete_oci
-  L3224-L3256; _complete_databricks L3335-L3404; _complete_datarobot L3407-L3441; _complete_sagemaker_chat L4109-L4143;
-  _complete_sagemaker L4146-L4171; _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418; _complete_snowflake
-  L4655-L4705; _complete_gdc L4743-L4779; _complete_ovhcloud L4862-L4906 belong to B042.'
-- 'Function ownership inventory litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995;
-  _complete_aleph_alpha L2998-L3044; _complete_maritalk L3112-L3142; _complete_compactifai L3259-L3298; _complete_nadir
-  L3521-L3545; _complete_gradient_ai L4708-L4740 belong to B043.'
+  _complete_groq L2111-L2170; _complete_cloudflare L4576-L4612 belong to B8310. _complete_openrouter L3444-L3518;
+  _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649 belong to B8311. _complete_replicate L2773-L2824;
+  _complete_huggingface L3181-L3221; _complete_predibase L3936-L3992 belong to B8332. _complete_cometapi L2451-L2497;
+  _complete_bytez L4782-L4819 belong to B038.'
+- 'Function ownership inventory litellm/main.py: _complete_oci L3224-L3256; _complete_databricks L3335-L3404; _complete_snowflake
+  L4655-L4705 belong to B8330. _complete_sap L2344-L2387; _complete_sagemaker_chat L4109-L4143; _complete_sagemaker
+  L4146-L4171; _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418 belong to B8331. _complete_heroku
+  L1960-L2007; _complete_datarobot L3407-L3441; _complete_gdc L4743-L4779 belong to B038. _complete_ovhcloud L4862-L4906
+  belongs to B039.'
+- 'Function ownership inventory litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995 belong
+  to B8312. _complete_compactifai L3259-L3298; _complete_gradient_ai L4708-L4740 belong to B038. _complete_maritalk
+  L3112-L3142; _complete_nadir L3521-L3545 belong to B039. _complete_aleph_alpha L2998-L3044 belongs to B044.'
+
 - 'Function ownership inventory litellm/main.py: _complete_aiohttp_openai L2390-L2448; _complete_custom L4913-L4979;
   _complete_custom_providers L4982-L5042 belong to B044.'
 - 'Function ownership inventory litellm/main.py: _complete_fal_ai L3652-L3680 belong to B046.'

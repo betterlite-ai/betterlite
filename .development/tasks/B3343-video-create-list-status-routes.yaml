@@ -1,0 +1,171 @@
+id: B3343
+title: Video creation listing and status routes
+description: >-
+  Register the three video routes that need no content or character logic, in betterlite-server::api::video_routes. Each route is registered at both prefixes and
+  sits behind B756 authentication: POST /v1/videos and POST /videos (create), GET /v1/videos and GET /videos (list),
+  GET /v1/videos/{video_id} and GET /videos/{video_id} (status). Mount them once, from the route stub video_create.
+  The routes /videos/{video_id}/content and /videos/{video_id}/remix (B3344) and /videos/characters, /videos/edits and
+  /videos/extensions (B3345 and B6360) are not registered here. axum matches the literal
+  /videos/characters path before /videos/{video_id}, so the order of the merges does not matter.
+
+  Every handler builds a data map, runs B8801's PreCall step on it (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step) and hands it to B004's common request processor with a fixed route_type and passes the
+  server's user_model, user_temperature, user_request_timeout, user_max_tokens, user_api_base and version. Failures go
+  through B004's handle-exception step, so the error envelope, status, x-litellm-call-id and the other x-litellm-*
+  headers are B004's. model is always passed as None to the processor.
+
+  Create (route_type "avideo_generation"). Read the body with B1100's body reader. If the request carried an
+  input_reference file part, convert it with B082's upload-to-named-buffer helper (batch_to_bytesio, called with a
+  one-item list) and, only when that returns a nonempty list, store its first buffer under data["input_reference"]. A
+  string input_reference in a JSON or form body stays as the reader decoded it. Create looks for no custom_llm_provider
+  hint itself: a body value reaches the call only because the body is the data map. B3338's call picks the provider.
+
+  List (route_type "avideo_list"). data starts as {"query_params": <all query parameters as a map of strings>}. The
+  query map is nested under that one key; it is not spread into data, so after, limit and order in the query string
+  never reach the list call (LiteLLM reads no query_params key anywhere below the route). Then the provider hint:
+  B2400's header getter (custom-llm-provider), else its query getter, else its body getter, each used only when
+  truthy. A non-empty hint is stored as data["custom_llm_provider"]. The body getter reads the body even for a GET.
+  No provider hint means no key, and B3340's async list call then infers the provider itself.
+
+  Status (route_type "avideo_status"). data starts as {"video_id": <path value>}. Call B672's decode_video_id_with_provider
+  on the path value. The provider is the first truthy of: B2400's header getter, query getter, body getter, the decoded
+  custom_llm_provider, and the literal "openai". It is always stored as data["custom_llm_provider"], so a status call
+  always has one. If the decoded model_id is truthy and a router exists, ask B844's resolve_model_name_from_model_id
+  for a public name and, when that is truthy, store it as data["model"]; otherwise leave model unset. With no router
+  the lookup is skipped. The processor then calls B3339's video_status_call with these values.
+
+  Dispatch. Fill the three core entries B014 registers for these calls: operation/video_generation.rs with
+  dispatch/video_generation.rs, operation/video_list.rs with dispatch/video_list.rs and operation/video_status.rs with
+  dispatch/video_status.rs (VideoGeneration, VideoList and VideoStatus). Each execute replaces its NotBuilt stub and stub test. Leave operation.rs and
+  dispatch.rs as they are. All three LiteLLM handlers go through route_request, so each entry first calls B6460's plan_video_route
+  with its VideoCallKind (Generation, List or Status), the data map's model, the team id and the other VideoRouteInput fields. A Direct plan calls B3338 avideo_generation, B3340 avideo_list
+  or B3339 avideo_status. A Router plan calls the matching method of B6460's VideoRouterCalls (avideo_generation, avideo_list or avideo_status) with the model and a VideoCallArgs built from
+  data. A NotFound plan returns the model-not-found error. The entry gets VideoRouterCalls and VideoRouteView as injected trait objects, because betterlite-core cannot import betterlite-sdk or the
+  router. At the pin a status call with a model gets no SDK fallback: Router.avideo_status comes from factory_function's async_wrapper, so route_llm_request.py L700-L706 gets an unawaited coroutine and
+  a router error surfaces at the caller's await, outside the try. The router error therefore reaches the client, and the entry never retries the SDK function.
+
+  Route tests are in api::video_routes::tests of betterlite-server and the router error test in
+  dispatch::video_status::tests of betterlite-core, with HTTP cases through both proxies
+  in tools/oracle/cases/api/video-create-routes. Fixtures boot both gateways with master_key=sk-test and the OpenAI
+  mock provider for videos from B3333, B3334 and B3337. The owned source is about 230 non-blank, non-comment lines
+  (three handlers, the status provider rule and the dispatch). Budget 300 implementation, 260 tests and 220 oracle
+  fixtures, 780 in all. B1100 registers the route stub video_create. Fill only
+  crates/betterlite-server/src/routes/video_create.rs and leave routes.rs and state.rs as they are.
+scope:
+  paths:
+    - crates/betterlite-server/src/api/video_routes.rs
+    - crates/betterlite-server/src/api/video_routes/**
+    - crates/betterlite-server/src/routes/video_create.rs
+    - crates/betterlite-server/src/routes/video_create/**
+    - crates/betterlite-core/src/operation/video_generation.rs
+    - crates/betterlite-core/src/operation/video_generation/**
+    - crates/betterlite-core/src/dispatch/video_generation.rs
+    - crates/betterlite-core/src/dispatch/video_generation/**
+    - crates/betterlite-core/src/operation/video_list.rs
+    - crates/betterlite-core/src/operation/video_list/**
+    - crates/betterlite-core/src/dispatch/video_list.rs
+    - crates/betterlite-core/src/dispatch/video_list/**
+    - crates/betterlite-core/src/operation/video_status.rs
+    - crates/betterlite-core/src/operation/video_status/**
+    - crates/betterlite-core/src/dispatch/video_status.rs
+    - crates/betterlite-core/src/dispatch/video_status/**
+    - tools/oracle/cases/api/video-create-routes/**
+    - tools/oracle/fixtures/video-create-routes/**
+    - tools/oracle/helpers/b3343.py
+    - tools/oracle/helpers/b3343/**
+    - tools/oracle/src/helpers/server/b3343.rs
+    - tools/oracle/src/helpers/server/b3343/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L33-L119
+    why: video_generation with both POST decorators, the input_reference upload conversion and the avideo_generation call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L121-L205
+    why: video_list with both GET decorators, the nested query_params map and the provider hint order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L208-L305
+    why: video_status with both GET decorators, the id decode, the provider order ending in "openai" and the model lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L52-L81
+    why: The three provider hint getters; each returns its own value, even an empty string, and the body getter reads the body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L611-L636
+    why: avideo_list and avideo_status with an empty model go straight to the SDK function.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L682-L700
+    why: A video status call with a model calls the router. The except branch never runs for a router error, see pitfalls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L93-L98
+    why: The route-to-path map entries for avideo_generation, avideo_list and avideo_status.
+dod:
+  - text: POST /v1/videos and /videos, GET /v1/videos and /videos, and GET /v1/videos/{video_id} and /videos/{video_id} each answer with the mock provider's result under a valid key; each path is registered once; POST on a GET-only path and GET on /videos with a different method give 405.
+    proof: [route-aliases, oracle]
+  - text: A create request with a multipart input_reference file reaches the provider as a named file, and an empty upload leaves input_reference unset; a JSON create body reaches the call unchanged.
+    proof: [create-upload, oracle]
+  - text: The list route nests all query parameters under query_params, so limit, after and order in the query string do not reach the provider request, and the provider hint comes from header, then query, then body.
+    proof: [list-query-params, oracle]
+  - text: The status provider is the first truthy of header, query, body, the id's embedded provider and "openai", and is always set; an empty header falls through to the next source.
+    proof: [status-provider-order, oracle]
+  - text: A status id with an embedded model_id sets model to the router's public name for it, and sets nothing when the id has no model_id or the lookup finds no name.
+    proof: [status-model-lookup, oracle]
+  - text: A status call with a model plans Router and calls VideoRouterCalls, and a router error reaches the client with no SDK retry; list and status with no model plan Direct and call the SDK function; create, list and status all go through plan_video_route.
+    proof: [status-router-error]
+  - text: Provider failures, malformed bodies and unsupported-provider errors reach the client as B004's error envelope with x-litellm-call-id.
+    proof: [error-envelopes, oracle]
+  - text: A missing or wrong key gives 401 auth_error from B756 with zero provider requests, on every alias.
+    proof: [auth-failures, oracle]
+  - text: The branch adds HTTP oracle cases for these routes.
+    proof: [new-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: route-aliases
+      why: one of the six paths is missing, registered twice, or answers the wrong method
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_routes::tests::route_aliases($|::)/)'
+    - id: create-upload
+      why: the input_reference upload is not converted, or an empty upload sets the key
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_routes::tests::create_upload($|::)/)'
+    - id: list-query-params
+      why: query parameters are spread into data or the list provider hint order is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_routes::tests::list_query_params($|::)/)'
+    - id: status-provider-order
+      why: the status provider order differs from header, query, body, id, "openai" or an empty value stops the fall-through
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_routes::tests::status_provider_order($|::)/)'
+    - id: status-model-lookup
+      why: the model_id lookup is skipped, runs without a router, or sets model from an empty name
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_routes::tests::status_model_lookup($|::)/)'
+    - id: status-router-error
+      why: a router error on a status call is swallowed or retried on the SDK function, or a modelless call uses the router
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^dispatch::video_status::tests::status_router_error($|::)/)'
+    - id: error-envelopes
+      why: a failure skips B004's error handling or loses x-litellm-call-id
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_routes::tests::error_envelopes($|::)/)'
+    - id: auth-failures
+      why: a route is reachable without a valid key or reaches the provider first
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_routes::tests::auth_failures($|::)/)'
+    - id: new-cases
+      why: the branch adds no HTTP oracle cases for the video routes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/video-create-routes)"
+oracle_cases:
+  - tools/oracle/cases/api/video-create-routes/video-route-aliases.yaml
+  - tools/oracle/cases/api/video-create-routes/video-create-upload.yaml
+  - tools/oracle/cases/api/video-create-routes/video-list-query.yaml
+  - tools/oracle/cases/api/video-create-routes/video-status-provider.yaml
+  - tools/oracle/cases/api/video-create-routes/video-status-model.yaml
+  - tools/oracle/cases/api/video-create-routes/video-route-errors.yaml
+  - tools/oracle/cases/api/video-create-routes/video-route-auth.yaml
+deviations: []
+out_of_scope:
+  - "video_content, video_remix (endpoints.py 308-514) and their HTTP cases, including the /videos/{video_id}/content cases B3339 left for later: B3344."
+  - "video_create_character and video_get_character (endpoints.py 516-723) and encode_character_id_in_response: B3345."
+  - "video_edit and video_extension (endpoints.py 725-923): B6360."
+  - "get_custom_provider_from_data, extract_model_from_target_model_names and video_reference_to_id in video_endpoints/utils.py: B3330. No handler in this task calls them."
+  - "batch_to_bytesio (image_endpoints/endpoints.py): B082. This task calls it."
+  - "common_processing_pre_call_logic: B8801. The rest of ProxyBaseLLMRequestProcessing and its exception handler: B004. The provider hint getters and is_known_model: B2400. Body reading: B1100. Model-id lookup: B844."
+  - "route_llm_request itself: B6460 owns the video route choice (plan_video_route) and the router wrappers. This task calls them from its three dispatch entries."
+pitfalls:
+  - "List builds data as {query_params: {...}} and never spreads it, so GET /v1/videos?limit=2 sends no limit upstream. Do not 'fix' this by unpacking the query."
+  - "The list route's body getter reads the request body on a GET, and a body custom_llm_provider of an empty string is falsy and drops out of the or-chain."
+  - "Status always sets custom_llm_provider, with 'openai' as the last choice. List sets it only when a hint is truthy. Create never sets it."
+  - "Status looks up the router only when the decoded model_id is truthy and a router exists. A decoded id with model_id '' (an empty string B672 keeps) does no lookup."
+  - "A status call with a model gets no SDK fallback: the router wrapper is an async_wrapper, so route_llm_request.py gets an unawaited coroutine and the router error surfaces at the caller's await, outside the try. Do not add a retry on the SDK function."
+  - "The status 'video_id' in data is the raw path string, not the decoded original id; the decode happens again inside B3339's call."
+  - "input_reference as a plain string in a form is not an upload and is stored by the body reader; only a real file part goes through batch_to_bytesio."
+  - "create, list and status call B6460's plan_video_route before any SDK call. Generation with no model plans NotFound, and List with an unknown model plans NotFound, as in LiteLLM."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

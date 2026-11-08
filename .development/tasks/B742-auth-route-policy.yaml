@@ -101,6 +101,8 @@ description: >-
   stage; the failure test asserts its public error translation and that the downstream handler was not
   called. These tests are part of the behavior-test allowance already budgeted above.
   B1100 registers state/auth_route_policy.rs as a stub slot, so fill only crates/betterlite-server/src/state/auth_route_policy.rs and leave state.rs as it is.
+
+  Route lists. Read them from the merged betterlite-auth management_routes module (B867, `internal_user_routes()`), do not copy them again. At the pin that list already holds `/search_tools/list` and `/search_tools/ui/available_providers` (_types.py L907-L908), so an internal user passes the internal_user branch for both, and B3275 relies on that. Worker routes: LiteLLM does not run key auth on `/lens/worker/*`. Those routes use their own bearer dependency (`worker_auth`, endpoints.py L52-L54 and L89-L96, no `user_api_key_auth`), and `/lens/worker/*` is not in `litellm_native_routes` (_types.py L534-L543 lists only the admin lens paths). So this policy is never asked about them, and it must not list or special-case them. The key layer must let them through to B4505's own credential check.
 scope:
   paths:
     - crates/betterlite-auth/src/auth_route_policy.rs
@@ -117,8 +119,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/auth_route_policy.rs
     - crates/betterlite-server/src/state/auth_route_policy/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-route-policy/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-route-policy-*

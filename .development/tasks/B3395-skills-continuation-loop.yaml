@@ -1,0 +1,222 @@
+id: B3395
+title: Skill tool detection and Messages continuation loop
+description: >-
+  Build the post-call half of LiteLLM's SkillsInjectionHook in betterlite-core: decide whether a finished model response
+  needs the skill code loop, and if so run the loop that executes the model's tool calls in the sandbox, feeds the
+  results back to the model through the Messages API, and returns the last response with the generated files attached.
+  B3394 already built the hook struct, settings, tool-call extraction, execute_code, execute_skill_tool and
+  attach_files_to_response under crates/betterlite-core/src/api/skills/hook/. Read those files first and reuse them as they
+  are. This task adds a sibling module, crates/betterlite-core/src/api/skills/continuation.rs with its folder. The
+  architect's skeleton creates the empty file and declares it in skills.rs, so do not touch skills.rs. Write
+  `impl<PromptHandler: Sync, Sandbox: SkillsSandbox + Sync> SkillsInjectionHook<PromptHandler, Sandbox>` blocks in the new
+  module. Use tracing for the log lines below with LiteLLM's wording and the "SkillsInjectionHook: " prefix.
+
+  Request data. The loop reads the request dict that the pre-call hook (B095) built. Model it as a typed record in
+  continuation/request.rs: `SkillsRequestData { model: String, messages: Vec<Value>, tools: Vec<Value>, max_tokens:
+  Option<u64>, litellm_metadata: Option<RequestMetadata>, metadata: Option<RequestMetadata> }` and `RequestMetadata {
+  code_execution_enabled: bool, skill_files: IndexMap<String, SkillFiles> }` (the keys `_litellm_code_execution_enabled` and
+  `_skill_files`, keyed by skill id). Derive Debug, Clone, Default. A missing model is "", missing messages and tools are
+  empty, and a missing max_tokens means 4096 (LiteLLM's literal default in the loop; it does not read DEFAULT_MAX_TOKENS).
+  `Value` is allowed here for message and tool bodies: the module opens with one `#![expect(clippy::disallowed_types, reason =
+  "...")]` like hook.rs.
+
+  Detection: `pub async fn post_call_success<C: MessagesContinuation + Sync>(&self, request_data: &SkillsRequestData,
+  response: HookResponse, continuation: &C) -> Result<Option<HookResponse>, SkillsLoopError>` mirrors
+  async_post_call_success_deployment_hook. In order:
+  1. Enabled means litellm_metadata.code_execution_enabled is true, else metadata.code_execution_enabled is true. Not enabled
+  returns Ok(None).
+  2. Skill files come from litellm_metadata.skill_files, and when that map is absent or empty from metadata.skill_files
+  (LiteLLM's `a or b` on dicts). Merge the inner maps of the chosen outer map, in order, into one SkillFiles; a later path
+  replaces an earlier one with the same path. An empty merge logs the warning "SkillsInjectionHook: No skill files found,
+  cannot execute code" and returns Ok(None).
+  3. Call B3394's extract_tool_calls on the response. Its ToolCallError (malformed OpenAI arguments JSON) is not caught:
+  return it as SkillsLoopError::ToolCalls. An empty list returns Ok(None).
+  4. A tool call is executable when its name equals "litellm_code_execution" (LiteLLMInternalTools.CODE_EXECUTION) or starts
+  with LITELLM_SKILL_ID_PREFIX ("litellm_skill_", already a constant in hook/settings.rs). If no call is executable, return
+  Ok(None). Otherwise log the debug line "SkillsInjectionHook: Detected tool call, starting execution loop" and return
+  Ok(Some(...)) from the loop.
+
+  Loop: `pub async fn execute_messages_loop<C: MessagesContinuation + Sync>(&self, data: &SkillsRequestData, response:
+  HookResponse, skill_files: &SkillFiles, continuation: &C) -> Result<HookResponse, SkillsLoopError>` mirrors
+  _execute_code_loop_messages_api. Setup: messages is a copy of data.messages, tools is data.tools, max_tokens is
+  data.max_tokens or 4096, generated_files starts empty, current_response starts as the response. The sandbox is
+  `self.executor` (the composing code builds it from settings.sandbox_timeout; the loop never reads that field). Repeat up to
+  `self.settings.max_iterations` times (a value of 0 skips straight to the max-iterations exit); `iteration` counts from 0:
+  1. extract_tool_calls(current_response) (errors propagate). Read stop_reason: the "stop_reason" string of a Dict response,
+  the stop_reason field of an Object response.
+  2. Build the assistant message {"role": "assistant", "content": [blocks]} and push it to messages. Blocks come from the
+  response content: a Dict response uses its "content" array (absent or null means empty); an Object response uses
+  ObjectResponse.content. A JSON object block in a Dict is kept as it is. A non-object value in a Dict array becomes
+  {"type": "text", "text": <the value as JSON text>}. An Object block becomes the JSON object model_dump gives: "type" (kind),
+  "id" and "name" when present, "input", and "text" when present.
+  3. Finished test: stop_reason is not exactly "tool_use", or the tool-call list is empty. Then log "SkillsInjectionHook: Loop
+  completed after {iteration + 1} iterations, {file count} files generated" at debug and return attach_files_to_response(
+  current_response, generated_files).
+  4. For each tool call in order, with name = its name or "" and id = its id (an absent id is sent as JSON null): name equal to
+  "litellm_code_execution" runs `self.execute_code(code, skill_files, &mut generated_files)` where code is the string at
+  input["code"], else ""; a name starting with the skill prefix runs `self.execute_skill_tool(name, input, skill_files, &mut
+  generated_files)`; any other name gives the text "Tool '{name}' not handled". Each result becomes {"type": "tool_result",
+  "tool_use_id": id, "content": result_text}.
+  5. Push {"role": "user", "content": [tool results]} to messages. Log "SkillsInjectionHook: Making LLM call iteration
+  {iteration + 2}" at debug. Call `continuation.create` with ContinuationRequest { model: data.model, messages: a clone of
+  messages, tools: data.tools, max_tokens }. Ok(Some(next)) becomes current_response. Ok(None) logs the error "SkillsInjectionHook:
+  LLM call returned None" and returns attach_files_to_response of the ORIGINAL response (the one passed in, not
+  current_response) with all files so far. Err(e) logs "SkillsInjectionHook: LLM call failed: {e}" and does the same. The
+  continuation error is never raised.
+  After the last iteration, log the warning "SkillsInjectionHook: Max iterations ({n}) reached" and return
+  attach_files_to_response(current_response, generated_files).
+
+  The continuation seam. LiteLLM calls `litellm.anthropic.acreate(model=, messages=, tools=, max_tokens=)`, which is
+  B1134's Messages dispatch. Define the trait in continuation/messages.rs instead of depending on B1134:
+
+      pub trait MessagesContinuation {
+          type Error: Display;
+          fn create(&self, request: &ContinuationRequest) -> impl Future<Output = Result<Option<HookResponse>, Self::Error>> + Send;
+      }
+
+  ContinuationRequest holds model: String, messages: Vec<Value>, tools: Vec<Value>, max_tokens: u64. Follow the style of
+  the SkillsSandbox trait in hook/execution.rs (impl Future, no async-trait). Only these four fields reach the Messages
+  call: system, temperature, tool_choice and every other request field are dropped on continuation, as in LiteLLM. Tests
+  use a scripted fake that records each ContinuationRequest and returns queued results.
+
+  Changes to B3394's files, kept small. LiteLLM reads `stop_reason` and the full content of typed responses, and B3394's
+  ObjectResponse has no stop_reason and ContentBlock has no text. Add `pub stop_reason: Option<String>` to ObjectResponse and
+  `pub text: Option<String>` to ContentBlock in hook/response.rs, and add the missing field to every struct literal in
+  crates/betterlite-core/src/api/skills/tests/** (None). Change nothing else there. SkillsLoopError lives in
+  continuation/error.rs as a thiserror enum with the one variant ToolCalls(#[from] ToolCallError).
+
+  Size. The two owned Python spans are about 145 non-blank, non-comment lines, so this is one task. Estimated 330 lines of
+  Rust, 360 of tests, and the oracle adapters the skeleton adds. No byte parser is involved (the tool-call JSON parse is
+  B3394's), so there is no fuzz target; the helper seed corpus only replays the oracle case shape.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/skills/continuation.rs
+    - crates/betterlite-core/src/api/skills/continuation/**
+    - crates/betterlite-core/src/api/skills/hook/response.rs
+    - crates/betterlite-core/src/api/skills/tests/**
+    - tools/oracle/cases/helpers/skills-continuation/**
+    - "tools/oracle/fuzz/corpus/helper_case/skills_continuation-*"
+    - tools/oracle/helpers/b3395.py
+    - tools/oracle/helpers/b3395/**
+    - tools/oracle/src/helpers/core_ops/b3395.rs
+    - tools/oracle/src/helpers/core_ops/b3395/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L371-L438
+    why: async_post_call_success_deployment_hook, the enabled flag, skill file merge and executable tool test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L486-L604
+    why: _execute_code_loop_messages_api, the whole continuation loop with its three exits.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/code_execution.py#L121-L130
+    why: LiteLLMInternalTools.CODE_EXECUTION is the string "litellm_code_execution".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/constants.py#L9-L23
+    why: LITELLM_SKILL_ID_PREFIX and the default iteration and timeout constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/messages/__init__.py#L27-L83
+    why: acreate, the call the loop makes for each continuation (B1134 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1498-L1535
+    why: the dispatcher that calls the hook for each callback and turns a raised error into a log line (not built here).
+dod:
+  - text: post_call_success returns None when neither litellm_metadata nor metadata enables code execution, and reads the flag from metadata when litellm_metadata has it false or unset.
+    proof: [detection-gate]
+  - text: Skill files are taken from litellm_metadata unless that map is absent or empty, then from metadata; inner maps are merged in order with later paths winning; an empty merge returns None.
+    proof: [detection-gate]
+  - text: No tool calls, or only tool calls whose names are neither "litellm_code_execution" nor start with "litellm_skill_", returns None and never calls the continuation.
+    proof: [detection-tools]
+  - text: Malformed OpenAI tool-call arguments JSON comes back as SkillsLoopError::ToolCalls, not as None.
+    proof: [detection-tools]
+  - text: A litellm_code_execution call runs execute_code with input["code"] (empty when missing), a litellm_skill_ call runs execute_skill_tool, and any other name gets the result text "Tool '<name>' not handled".
+    proof: [loop-dispatch]
+  - text: Each round appends the assistant message with converted content blocks, then a user message of tool_result blocks with tool_use_id and content, and the continuation receives the model, the whole message list so far, the unchanged tools and max_tokens (4096 when the request has none).
+    proof: [loop-messages]
+  - text: Content blocks convert as specified for Dict responses (objects kept, other values become text blocks) and Object responses (type, id, name, input, text), and ObjectResponse carries stop_reason.
+    proof: [loop-messages]
+  - text: The loop returns the current response with generated files attached when stop_reason is not "tool_use" or there are no tool calls, and returns after exactly max_iterations rounds with the max-iterations warning (0 rounds when max_iterations is 0).
+    proof: [loop-termination]
+  - text: A continuation that returns None or an error ends the loop with the original first response plus the generated files, and the error is not raised.
+    proof: [loop-failure]
+  - text: B3394's hook tests still pass after the two added fields.
+    proof: [skills-regression]
+  - text: The loop and detection match the pinned hook on scripted responses, sandbox outcomes and continuation results.
+    proof: [oracle, helper-python, helper-case-corpus, new-oracle-cases]
+  - text: Every mutant in the continuation module is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: detection-gate
+      why: the enabled flag, the metadata fallback or the skill file merge is wrong or untested
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::continuation::tests::detection_gate/)'
+    - id: detection-tools
+      why: executable tool names, the no-tool-calls exit or the argument error path is wrong or untested
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::continuation::tests::detection_tools/)'
+    - id: loop-dispatch
+      why: tool calls are not routed to execute_code, execute_skill_tool or the not-handled text
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::continuation::tests::loop_dispatch/)'
+    - id: loop-messages
+      why: the assistant and tool_result messages, the content block conversion or the continuation request are wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::continuation::tests::loop_messages/)'
+    - id: loop-termination
+      why: the finished exit, the iteration cap or the file attachment at exit is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::continuation::tests::loop_termination/)'
+    - id: loop-failure
+      why: a failed or empty continuation does not return the original response with the files
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::continuation::tests::loop_failure/)'
+    - id: skills-regression
+      why: the added ObjectResponse and ContentBlock fields broke B3394's tests
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::skills::/) - test(/^api::skills::continuation::/)'
+    - id: helper-python
+      why: the strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3395)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3395 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3395/pyrightconfig.json
+    - id: helper-case-corpus
+      why: the added helper cases have no seed in the helper corpus or the shared parser rejects them
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/skills_continuation-*")" &&
+        grep -lE '^[[:space:]]+b3395:' tools/oracle/fuzz/corpus/helper_case/skills_continuation-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: new-oracle-cases
+      why: no new oracle case exists on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/skills-continuation)"
+oracle_cases:
+  - tools/oracle/cases/helpers/skills-continuation/code-execution-then-final.yaml
+  - tools/oracle/cases/helpers/skills-continuation/skill-tool-dispatch.yaml
+  - tools/oracle/cases/helpers/skills-continuation/unhandled-tool.yaml
+  - tools/oracle/cases/helpers/skills-continuation/flag-in-metadata.yaml
+  - tools/oracle/cases/helpers/skills-continuation/disabled-returns-none.yaml
+  - tools/oracle/cases/helpers/skills-continuation/no-skill-files.yaml
+  - tools/oracle/cases/helpers/skills-continuation/non-executable-tool.yaml
+  - tools/oracle/cases/helpers/skills-continuation/max-iterations.yaml
+  - tools/oracle/cases/helpers/skills-continuation/continuation-error.yaml
+  - tools/oracle/cases/helpers/skills-continuation/continuation-none.yaml
+deviations:
+  - what: A tool call with no name is treated as the name "" (not executable in detection, "Tool '' not handled" in the loop).
+    why: LiteLLM calls .startswith on None and raises AttributeError; a typed Option<String> has no such crash and the request would only fail on a model that sent a nameless tool_use.
+  - what: A non-object entry in a Dict response's content array becomes a text block holding the entry as JSON text.
+    why: LiteLLM writes Python's str(entry), which is repr text that docs/compatibility.md excludes; real Messages responses only hold objects here.
+  - what: input["code"] that is not a JSON string is treated as "".
+    why: LiteLLM would pass the raw value to the sandbox; the typed executor takes a string, and the model's tool schema declares code as a string.
+  - what: The loop takes a typed response, so LiteLLM's "response is None" early return has no counterpart.
+    why: A missing response cannot be built in Rust; the caller decides whether a hook runs at all.
+  - what: The Messages call is the injected MessagesContinuation trait, not a direct call into B1134's dispatch.
+    why: It keeps this task independent of B1134's types and lets tests script the model; the composing task supplies the real adapter.
+out_of_scope:
+  - "async_pre_call_hook, _process_for_messages_api and _fetch_skill_from_db (main.py L118-L254, L325-L348) stay with B095, the umbrella that wires the hook."
+  - "_process_non_anthropic_model, _is_anthropic_model, _execute_code_loop, _execute_code_tool, _first_choice and the _Chat* protocols (main.py L47-L86, L256-L323, L350-L369, L715-L876) have no caller at the pin: only async_post_call_success_deployment_hook runs, and it calls the Messages loop. Their cases are dropped too."
+  - "_extract_tool_calls, _execute_code, _execute_skill_tool and _attach_files_to_response are B3394's; call them, do not copy them."
+  - "SkillsSandboxExecutor (the real sandbox) is B1506; this task only uses the SkillsSandbox trait that B3394 defined."
+  - "The Messages API call itself, acreate, is B1134. The adapter that implements MessagesContinuation over it, and the registration of the hook in the callback list, belong to B095."
+  - "litellm.utils.async_post_call_success_deployment_hook, the loop over callbacks that logs a failing hook and moves on, belongs to the callback registry tasks."
+pitfalls:
+  - The enabled flag and the skill files each fall back from litellm_metadata to metadata on a falsy value, so an empty `_skill_files` map in litellm_metadata still reads metadata's.
+  - Both the stop test and the empty-tool-call test end the loop, but only the exact string "tool_use" continues it; "max_tokens" with tool calls present also stops.
+  - On a failed or empty continuation the loop returns the first response passed in, not the latest one, so tool results the model already saw are dropped from what the client gets.
+  - Each continuation call gets only model, messages, tools and max_tokens; system, temperature, tool_choice and the injected container are not forwarded.
+  - The assistant message is pushed before the stop test, so a final round also adds one message that no continuation ever sees.
+  - A skill tool name such as "litellm_skill_abc" matches by prefix, while the code tool matches by equality; "litellm_code_execution_x" is neither.
+  - Generated files accumulate across all rounds and are attached once, at whichever exit is taken; the attach function leaves the response alone when the list is empty.
+  - max_tokens defaults to the literal 4096 in this loop, independent of the DEFAULT_MAX_TOKENS setting.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

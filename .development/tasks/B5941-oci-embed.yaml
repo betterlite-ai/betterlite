@@ -3,7 +3,7 @@ title: OCI embedText request and response
 description: >-
   Add oci_embed in betterlite-provider for litellm/llms/oci/embed/transformation.py. Own every
   method of OCIEmbedConfig and the OCIEmbeddingConfig alias (no separate Rust item for the alias).
-  B042 owns the pydantic types in litellm/types/llms/oci.py, so define the Rust equivalents in
+  No task ports litellm/types/llms/oci.py on its own, so define the Rust equivalents in
   this module: OciEmbedRequest (compartmentId, servingMode, inputs, inputType, truncate,
   outputDimensions, with None fields skipped) and OciEmbedResponse (optional id, embeddings, modelId and modelVersion both required,
   inputTextTokenCounts, usage with promptTokens and totalTokens). OciServingMode and OciError
@@ -106,7 +106,7 @@ deviations:
     why: The Python exception text comes from json and pydantic and has no Rust equivalent.
 out_of_scope:
   - B5940 owns signing, the base URL, credential merging and OciServingMode used here.
-  - B042 owns wiring the embedding route to this module, the OCI_* environment reads and the HTTP oracle cases.
+  - B8330 owns wiring the embedding route to this module, the OCI_* environment reads and the HTTP oracle cases.
 pitfalls:
   - Serving mode is upper-cased here (oci_serving_mode "dedicated" works) while the chat config compares it exactly, so do not share one parser.
   - A non-string, non-list input is stringified, and non-string list items are stringified too; only a nested list is an error.

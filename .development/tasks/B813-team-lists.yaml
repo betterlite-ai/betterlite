@@ -70,8 +70,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/team_lists.rs
     - crates/betterlite-server/src/routes/team_lists/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-lists/**
     - tools/oracle/helpers/b813.py
     - tools/oracle/helpers/b813/**

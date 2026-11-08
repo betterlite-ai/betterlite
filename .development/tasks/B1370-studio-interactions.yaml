@@ -3,7 +3,7 @@ title: Studio interactions revision migration and lifecycle records
 description: >-
   Implement studio_interactions for the complete 319 nonblank noncomment source lines.
   Define provider-facing native interaction records with typed known fields and explicit
-  extension payloads for the source's open native content fields; B098 will project its API
+  extension payloads for the source's open native content fields; B3481 will project its API
   DTOs into these records. Default api_version is v1beta. Header validation forces JSON and
   Api-Revision 2026-05-20, resolving x-goog-api-key only when litellm_params is present; URL
   construction always requires a resolved key and appends ?alt=sse for truthy stream. Keep
@@ -46,7 +46,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/interactions/transformation.py#L44-L389
     why: Native revision migration, sparse interaction responses and lifecycle URLs.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py#L1057-L1142
-    why: Consumed response defaults and open native content fields; generic API types remain B098's ownership.
+    why: Consumed response defaults and open native content fields; generic API types remain B3481's ownership.
 dod:
   - text: Interactions revision migration preserves optional-value presence and caller data while constructing lifecycle targets.
     proof: [studio-interactions-tests, studio-interactions-python, oracle]
@@ -81,7 +81,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - All Studio interactions functions and local protocol declarations are owned here; B1369 replaces identity and URL methods for Vertex.
-  - B098 owns SSE framing, HTTP methods and public native routes; B034/B035 inject B206 response-header processing into this leaf adapter.
+  - B3491 owns SSE decoding, B3492 to B3494 the HTTP methods and B3507 the public native routes; B034/B035 inject B206 response-header processing into this leaf adapter.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as studio_interactions in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/studio_interactions.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/studio_interactions.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - response_format lists suppress response_mime_type wrapping even when they contain no MIME entry.

@@ -1,0 +1,160 @@
+id: B8290
+title: Guardrail hook initializer arguments
+description: >-
+  Port the six initializers that sit in the __init__.py of the Agent 365, Azure Content Safety, IBM, Microsoft Purview,
+  Model Armor and OpenAI moderation guardrail folders. Each LiteLLM function takes the configured guardrail
+  (`LitellmParams` plus the guardrail dict), checks the settings the vendor needs, builds the callback class and adds it
+  to `litellm.logging_callback_manager`. The six callback classes are other tasks' work and the registry that calls the
+  initializers is B3682's, so this task follows B3681: it builds only the pure part, one argument struct and one function
+  per initializer. B3682 builds each class from the struct and registers it.
+
+  Code goes in crates/betterlite-guardrails/src/hook_initializers.rs and hook_initializers/. Files: agent_365.rs,
+  azure.rs, ibm.rs, purview.rs, model_armor.rs, openai.rs, secret_lookup.rs and error.rs. `error.rs` holds
+  `HookInitError`, built with thiserror, one variant for each "is required" message below, each carrying the vendor name
+  and the setting name and never a value. `LitellmParams` and its base fields come from B3662 (betterlite-config,
+  sections::guardrail_params); read its params.rs and base.rs for exact field names. Secrets stay `SecretString`.
+  Every function takes `params: &LitellmParams` and `guardrail_name: Option<&str>` and returns
+  `Result<XArgs, HookInitError>`.
+
+  `secret_lookup.rs` holds the trait `SecretLookup` with `fn get_secret_str(&self, name: &str) -> Option<SecretString>`.
+  LiteLLM calls `get_secret_str` straight from the initializer. Here the caller passes the lookup in, so the secret
+  manager code (B129 and its parts) is not a dependency. A test double returns values from a map.
+
+  `initialize_agent_365` (agent_365.rs). `tenant_id` is `params.tenant_id` or `AGENT365_TENANT_ID` from the lookup.
+  `client_id` is `params.client_id` or `AGENT365_CLIENT_ID`. `client_secret` is `params.client_secret`, else
+  `params.api_key`, else `AGENT365_CLIENT_SECRET`. Checks in this order: tenant_id, client_id, client_secret, then
+  guardrail_name (an empty or absent name is an error, not the empty string). Messages: "Microsoft Agent 365: tenant_id
+  is required", "client_id is required", "client secret is required. Set client_secret, api_key, or
+  AGENT365_CLIENT_SECRET", "guardrail_name is required". `Agent365Args` holds guardrail_name, tenant_id, client_id,
+  client_secret, `request_timeout` (`params.timeout`, or 10.0 when it is None), `unreachable_fallback`, `event_hook`
+  (the mode) and `default_on`. The function also returns the list `ignored_overrides`: the names among `api_base`,
+  `resource_app_id` and `agent_id` (the last two read from the extras map) that are set, in that order. The caller logs
+  the warning "ignoring <names>; evaluations always go to the production Agent 365 endpoint and the agent identity is
+  the caller's key alias" at warn level when the list is not empty. The function itself logs nothing.
+
+  `initialize_azure` (azure.rs). It needs `api_key` and `api_base` (messages "Azure Content Safety: api_key is
+  required", "api_base is required"), then takes the part of `params.guardrail` after the first "/" (`prompt_shield` or
+  `text_moderations`), then needs the guardrail name. Any other part is "Azure Content Safety: <part> is not a valid
+  guardrail". The result is the enum `AzureArgs` with the variants `PromptShield(AzureCommon)` and
+  `TextModerations(AzureCommon)`. `AzureCommon` holds guardrail_name, api_key, api_base, default_on, event_hook and a
+  copy of every non-null field of the params as the extras map LiteLLM spreads with `model_dump(exclude_none=True)`; the
+  four explicit fields win over the same keys in that map.
+
+  `initialize_ibm` (ibm.rs). Needs `auth_token`, `base_url` and `detector_id` in that order, then the name. Messages
+  start with "IBM Guardrails: " and end with "<field> is required". `IbmArgs` holds guardrail_name, auth_token, base_url,
+  detector_id, `is_detector_server` (true when None), `detector_params` (empty map when absent), `extra_headers` (empty
+  map), `score_threshold` (None), `block_on_detection` (true), `verify_ssl` (true), default_on, event_hook and timeout.
+  `detector_params`, `extra_headers`, `score_threshold` and `block_on_detection` come from `params.optional_params` when it is set, else the defaults shown. `verify_ssl` is read from the params themselves.
+
+  `initialize_purview` (purview.rs). `tenant_id` and `client_id` come from the params only, no env lookup.
+  `client_secret` is `params.api_key` or `params.client_secret`. Checks: tenant_id, client_id, client_secret
+  ("Microsoft Purview: client_secret (or api_key) is required"), name. `PurviewArgs` adds `purview_app_name` (default
+  "LiteLLM", also used when the value is an empty string) and `user_id_field` (default "user_id", same rule), plus
+  event_hook, default_on and timeout.
+
+  `initialize_model_armor` (model_armor.rs). It has no checks and never fails. The name is the empty string when
+  absent. `ModelArmorArgs` copies template_id, project_id, location, credentials, api_endpoint, default_on,
+  mask_request_content, mask_response_content, fail_on_error, skip_unscannable_attachments, sanitize_error_detail,
+  timeout and event_hook unchanged.
+
+  `initialize_openai` (openai.rs). Needs the guardrail name ("OpenAI Moderation: guardrail_name is required").
+  `OpenAiArgs` holds guardrail_name, api_key, api_base, default_on, event_hook, model, the non-null params as the extras
+  map (same rule as Azure) and the two streaming fields `streaming_end_of_stream_only` and `streaming_sampling_rate`.
+  Each streaming field is read from `params.optional_params` first; when that is absent or the field is None it is read
+  from the params themselves. It may also be None. That is LiteLLM's `_get_config_value`; keep it as a private
+  function in openai.rs.
+
+  Only the tables above are in scope. The class registries at the bottom of each LiteLLM file are B3682's.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/hook_initializers.rs
+    - crates/betterlite-guardrails/src/hook_initializers/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/__init__.py#L13-L71
+    why: initialize_guardrail for Agent 365, with the secret lookups, the checks and the ignored override warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/__init__.py#L12-L54
+    why: initialize_guardrail for Azure, the guardrail name split and the two class branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/__init__.py#L12-L56
+    why: initialize_guardrail for IBM and the optional_params defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/__init__.py#L11-L45
+    why: initialize_guardrail for Purview, with the client_secret fallback and the two defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/__init__.py#L11-L35
+    why: initialize_guardrail for Model Armor, a plain copy of the params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/__init__.py#L13-L46
+    why: initialize_guardrail for OpenAI moderation and _get_config_value.
+
+dod:
+  - text: initialize_agent_365 resolves tenant_id, client_id and client_secret in LiteLLM's order from the params and then the lookup, fails with the four messages in order, and defaults request_timeout to 10.0.
+    proof: [agent-365-tests]
+  - text: initialize_agent_365 lists the set override names in the order api_base, resource_app_id, agent_id and logs nothing.
+    proof: [agent-365-tests]
+  - text: initialize_azure picks the PromptShield or TextModerations variant from the text after the first slash and refuses a missing key, a missing base, a missing name and an unknown part with LiteLLM's messages.
+    proof: [azure-tests]
+  - text: AzureArgs keeps the non-null params as the extras map and lets api_key, api_base, default_on and event_hook override the same keys.
+    proof: [azure-tests]
+  - text: initialize_ibm checks auth_token, base_url, detector_id and the name in order and applies the five defaults when optional_params is absent.
+    proof: [ibm-tests]
+  - text: initialize_purview reads tenant_id and client_id from the params only, falls back from api_key to client_secret, and defaults the app name to LiteLLM and the user field to user_id.
+    proof: [purview-tests]
+  - text: initialize_model_armor copies all thirteen fields and uses the empty string for an absent name.
+    proof: [model-armor-tests]
+  - text: initialize_openai reads each streaming field from optional_params first and from the params second, and refuses an empty name.
+    proof: [openai-tests]
+  - text: No error text or Debug output of an args struct shows a secret value.
+    proof: [secret-redaction-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: agent-365-tests
+      why: the Agent 365 lookup order, the checks, the timeout default or the override list is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hook_initializers::agent_365::tests::/)'
+    - id: azure-tests
+      why: the Azure variant choice, the checks or the extras merge is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hook_initializers::azure::tests::/)'
+    - id: ibm-tests
+      why: the IBM checks or optional_params defaults are wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hook_initializers::ibm::tests::/)'
+    - id: purview-tests
+      why: the Purview secret fallback or defaults are wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hook_initializers::purview::tests::/)'
+    - id: model-armor-tests
+      why: a Model Armor field is dropped or renamed
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hook_initializers::model_armor::tests::/)'
+    - id: openai-tests
+      why: the OpenAI streaming field fallback or the name check is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hook_initializers::openai::tests::/)'
+    - id: secret-redaction-tests
+      why: an error or Debug output shows a secret
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hook_initializers::error::tests::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The initializers return argument structs and register nothing with a callback manager. LiteLLM builds the class and adds it to litellm.logging_callback_manager.
+    why: The six classes are other tasks' work and registration belongs to B3682. The structs hold the same data.
+  - what: The secret lookup is a trait the caller passes in. LiteLLM calls get_secret_str directly.
+    why: It keeps the secret manager out of this task, and a test can fill it from a map.
+  - what: The Agent 365 override warning is returned as a list and logged by the caller.
+    why: A pure function stays testable, and the log text is the same.
+
+out_of_scope:
+  - "The six callback classes (Agent365Guardrail, the two Azure classes, IBMGuardrailDetector, MicrosoftPurviewDLPGuardrail, ModelArmorGuardrail, OpenAIModerationGuardrail): B3742, B3729, B3730, B3737, B3740, B3734 and B3731."
+  - "The guardrail_initializer_registry and guardrail_class_registry dicts, and registration with the callback manager: B3682."
+  - "get_secret_str itself: the secret manager parts of B8500."
+
+pitfalls:
+  - "Agent 365 takes client_secret from three places in the order client_secret, api_key, then AGENT365_CLIENT_SECRET, but Purview takes api_key first and client_secret second."
+  - "Agent 365 and Purview refuse an empty guardrail_name, Model Armor accepts it as an empty string, and OpenAI and Azure refuse it."
+  - "Azure splits params.guardrail at the first slash and uses the second part, so azure/prompt_shield gives prompt_shield and the text_moderations spelling has an s."
+  - "Purview str() turns the app name and user field into text, but an empty string still takes the default because LiteLLM uses or."
+  - "IBM is_detector_server is true when the value is None, and false stays false."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

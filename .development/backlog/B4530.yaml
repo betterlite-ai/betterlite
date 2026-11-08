@@ -7,6 +7,7 @@ file: tasks/B4530-memory-records-and-access.yaml
 covers:
   - "litellm/proxy/memory/memory_endpoints.py"
   - "litellm/types/memory_management.py"
+  - "litellm/proxy/memory/__init__.py"
 parent: B133
 split_from: B133
 resolution: null

@@ -1,0 +1,140 @@
+id: B6460
+title: Router video call wrappers and router-first route choice
+description: >-
+  Give the nine async video calls a router path, and decide when a video request takes it. LiteLLM builds avideo_generation, avideo_list, avideo_status, avideo_content,
+  avideo_remix, avideo_create_character, avideo_get_character, avideo_edit and avideo_extension on the Router with factory_function (router.py L2122-L2141), and
+  route_llm_request.py picks router or SDK for each. No other task owns either part, so the four route tasks (B3343, B3344, B3345, B6360) call the SDK functions directly today. This task
+  builds the wrappers and the choice, in two places that do not form a cycle. betterlite-core cannot import betterlite-sdk (the sdk crate depends on core), so the core side
+  holds only plain types and traits, and the sdk side implements them.
+
+  Core side, module `api::video_router_calls` in betterlite-core. (1) `VideoCallKind`, an enum with the nine calls, and one method `name` that returns the LiteLLM call type text
+  ("avideo_generation", "avideo_status" and so on). (2) `VideoCallArgs`, a struct with `fields: serde_json::Map<String, Value>` (every key the SDK call would get as an argument or loose keyword,
+  including `model`, `video_id`, `prompt`, `extra_headers`), `uploads: Vec<VideoUpload>` and `specific_deployment: bool` (default false). `VideoUpload` has `field` (the key it belongs to, such as
+  "input_reference" or "video"), `filename`, `content_type: Option<String>` and `bytes: Vec<u8>`. (3) `VideoReply`, an enum: `Json(Value)` for a video object, a list page or a character, and `Bytes(Vec<u8>)` for avideo_content.
+  (4) `VideoRouterCalls`, an async trait with nine methods named exactly like the LiteLLM calls, each `async fn avideo_status(&self, model: &str, args: VideoCallArgs) -> Result<VideoReply, VideoRouterError>`.
+  The route dispatch entries call these. `VideoRouterError` wraps the router error and the SDK error as two cases, each by `#[from]`, and reports `NotFound` for an unmatched model.
+
+  Route choice, the same module. `VideoRouteView` is a trait the server implements over B8351's `CatalogQueries` and B302's catalog (`is_recognized_model` and `map_team_model` forward to `CatalogQueries::is_recognized_model` and `CatalogQueries::map_team_model`); its methods are `is_recognized_model(&self, model: &str) -> bool`,
+  `map_team_model(&self, model: &str, team_id: &str) -> Option<String>`, `team_public_model_names_has(&self, model: &str) -> bool`, `model_names_has(&self, model: &str) -> bool`,
+  `pass_through_all_models(&self) -> bool`, `has_default_or_pattern(&self) -> bool` and `deployment_names_has(&self, model: &str) -> bool`.
+  `plan_video_route(input: &VideoRouteInput, view: Option<&dyn VideoRouteView>) -> VideoRoute` copies the video part of `_route_request_single_attempt` (route_llm_request.py L493-L723). `VideoRouteInput` holds
+  the `VideoCallKind`, `model: Option<&str>`, `team_id: Option<&str>`, `is_proxy_admin_without_team: bool`, `has_api_key_or_base: bool` (data has `api_key` or `api_base`) and `user_model: Option<&str>`.
+  `VideoRoute` is `Direct`, `Router { model: String, specific_deployment: bool }` or `NotFound { model: String }`. The caller runs `Direct` through the B3338-B3342 SDK function and `Router` through `VideoRouterCalls`.
+  Rules, in LiteLLM's order. (1) `has_api_key_or_base`: with a router the plan is `Router` with the given model, without one it is `Direct`. (2) No router (view is none): `Direct` when `user_model` is set, else `NotFound`.
+  (3) With a router, every kind except Generation goes `Direct` when the model is none or "". Generation has no such shortcut. (4) A team id that `map_team_model` answers with a name gives `Router` with that name.
+  (5) `is_recognized_model(model)` is true, or the request is a proxy admin without a team and the model is not in `model_names` but is in the team public names: `Router`. (6) Otherwise, if the model is not in `model_names`:
+  `pass_through_all_models` gives `Direct`; a default deployment or any wildcard pattern gives `Router`; a model in `deployment_names` gives `Router` with `specific_deployment` true; and for the seven kinds Status, Content, Remix, CreateCharacter,
+  GetCharacter, Edit and Extension the plan is `Router` (LiteLLM wraps this call in a try/except that falls back to the SDK function; see pitfalls for why that fallback never runs). Anything left, including Generation and List, is `NotFound`.
+  A model in `model_names` that step 5 did not take (an admin with a team) falls to `NotFound` too, as in LiteLLM. A missing model on Generation is `NotFound` with an empty name (see deviations).
+
+  Sdk side, module `router_video` in betterlite-sdk. It plugs the nine calls into B6021's `RouterGeneric`: one `GenericCallExecutor` per call kind (a small struct holding the matching B3338-B3342 entry point by constructor), named
+  `VideoCallExecutor`, plus `RouterVideo`, which implements `VideoRouterCalls` by building a B6021 generic request and running the dispatch for that call type name. B6021's `GenericRequest` is a JSON map, so `RouterVideo` turns each `VideoUpload`
+  into a JSON object `{"filename", "content_type", "data_base64"}` under its `field` key, and the executor turns it back into the named buffer the SDK call takes (add `base64` to betterlite-sdk's Cargo.toml). An executor reads its arguments from the
+  map by the same names the route tasks use for the SDK call (B3338 for generation, B3339 for status and content, B3340 for remix and list, B3341 for the two character calls, B3342 for edit and extension), passes every other key as a loose keyword, and
+  returns `VideoReply::Json` of the result, or `VideoReply::Bytes` for avideo_content. `RouterVideo::new` takes the `RouterGeneric` handle and returns the nine executors through `video_executors(...)`, a function that returns `Vec<(String, Arc<dyn GenericCallExecutor>)>`
+  for the caller that builds `RouterGeneric` (see notes). `RouterVideo` removes `custom_llm_provider` and `client` from the arguments before it hands them to the generic call, because the router wrapper swallows both as named
+  parameters; the deployment's own provider (B014's `provider_for_generic_call`) is put back by B6021's attempt.
+
+  Counts: about 40 non-blank LiteLLM lines in factory wiring and about 110 in the route branches. Budget 330 implementation, 330 tests, 60 for the base64 upload round trip. No oracle cases: the choice sits inside an async proxy function that reads proxy_server
+  globals, and the route tasks own the HTTP cases. No fuzz target: nothing here parses bytes. Tests are rstest functions with fakes for the view, the generic dispatch and the SDK calls. Core tests are in `api::video_router_calls::tests` with prefixes `plan_` and `types_`;
+  sdk tests are in `router_video::tests` with prefixes `wrapper_`, `executor_` and `upload_`.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/video_router_calls.rs
+    - crates/betterlite-core/src/api/video_router_calls/**
+    - crates/betterlite-sdk/src/router_video.rs
+    - crates/betterlite-sdk/src/router_video/**
+    - crates/betterlite-sdk/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2099-L2141
+    why: _initialize_video_endpoints builds the nine async and nine sync video functions with factory_function and the call type names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6835-L6935
+    why: async_wrapper takes custom_llm_provider and client as named parameters and sends the nine video call types to _dispatch_generic_call_type without them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5272-L5414
+    why: The generic call with fallbacks and its attempt, which B6021 builds; the video wrappers run on it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1598-L1611
+    why: is_recognized_model, the predicate behind step 5 of the route choice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L493-L498
+    why: A request with api_key or api_base in data goes to the router when one exists, else to the SDK function.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L611-L660
+    why: Eight video kinds with no model go straight to the SDK function; then the team, recognized-model, pass-through, default-deployment and deployment-name branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L682-L723
+    why: The video try/except around the router call, the A2A branch, the user_model branch and the final ProxyModelNotFoundError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L93-L103
+    why: The route type to path map for the nine video call types.
+dod:
+  - text: VideoCallKind names the nine calls with LiteLLM's call type text, and VideoRouterCalls has one method per call with the signature in the description.
+    proof: [plan-types]
+  - text: With no model (none or empty) and a router, every kind except Generation plans Direct, and Generation plans NotFound with an empty model when the model is missing.
+    proof: [plan-no-model]
+  - text: A recognized model, a team-mapped model and an admin-without-team public model plan Router with the right model name, and a request carrying api_key or api_base plans Router with a router and Direct without one.
+    proof: [plan-known-model]
+  - text: For an unknown model, pass_through_all_models plans Direct, a default deployment or wildcard plans Router, a deployment name plans Router with specific_deployment true, and the seven fallback kinds plan Router while Generation and List plan NotFound.
+    proof: [plan-unknown-model]
+  - text: With no router, user_model set plans Direct and user_model unset plans NotFound.
+    proof: [plan-no-router]
+  - text: The nine executors are returned by video_executors under the nine call type names, and a call type that is not a video call is not among them.
+    proof: [executor-names]
+  - text: Each executor reads its arguments by the names the SDK call uses, passes other keys as loose keywords, and returns Bytes for avideo_content and Json for the rest.
+    proof: [executor-calls]
+  - text: custom_llm_provider and client are removed from the arguments before the generic call, and an upload survives the JSON round trip with filename, content type and bytes unchanged.
+    proof: [wrapper-args]
+  - text: A wrapper error from the router or the SDK call comes back as VideoRouterError with the original error inside.
+    proof: [wrapper-errors]
+checks:
+  optional: [mutants]
+  commands:
+    - id: plan-types
+      why: a call kind, its name text or a trait method is missing
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_router_calls::tests::types_/)'
+    - id: plan-no-model
+      why: a modelless call does not go direct, or Generation takes the shortcut
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_router_calls::tests::plan_no_model/)'
+    - id: plan-known-model
+      why: a recognized, team or admin model, or an api_key request, plans the wrong path
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_router_calls::tests::plan_known_model/)'
+    - id: plan-unknown-model
+      why: the pass-through, default deployment, deployment name or fallback-kind branch is missing or out of order
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_router_calls::tests::plan_unknown_model/)'
+    - id: plan-no-router
+      why: a request with no router ignores user_model
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_router_calls::tests::plan_no_router/)'
+    - id: executor-names
+      why: a video call has no executor, or a foreign call type is registered
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_video::tests::executor_names/)'
+    - id: executor-calls
+      why: an executor reads the wrong argument names or returns the wrong reply form
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_video::tests::executor_calls/)'
+    - id: wrapper-args
+      why: custom_llm_provider or client reaches the generic call, or an upload changes in the round trip
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_video::tests::(wrapper_args|upload_)/)'
+    - id: wrapper-errors
+      why: a router or SDK error is swallowed or replaced
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_video::tests::wrapper_errors/)'
+oracle_cases: []
+deviations:
+  - what: A Generation request with no model key gets the model-not-found error with an empty model name.
+    why: LiteLLM reads data["model"] directly and raises a KeyError (a 500) at that point; betterlite reports the same error as every other unmatched model.
+  - what: Uploads cross the generic call as base64 inside the JSON argument map.
+    why: B6021's GenericRequest is a JSON map and cannot hold raw buffers. The provider sees the same filename and bytes, so no client can tell.
+  - what: The nine synchronous Router.video_* methods are not built.
+    why: Nothing calls them at the pin and the gateway has no blocking SDK surface; see out_of_scope.
+out_of_scope:
+  - "Router.video_generation, video_list, video_status, video_content, video_remix, video_create_character, video_get_character, video_edit and video_extension (router.py L2123-L2141, built by the sync branch of factory_function): no caller at the pin. The proxy only calls the a-prefixed names."
+  - "The generic engine (_ageneric_api_call_with_fallbacks, its helper and _dispatch_generic_call_type) is B6021; selection, retries, slots and the refusal check are B016, B017, B303 and B310. This task only plugs executors into it."
+  - "The branches of _route_request_single_attempt that are not video-specific (user_config, router_settings_override, batch completion, the blocked-model check, the A2A branch) belong to B014 and B004."
+  - "The SDK functions the executors call: B3338 (generation), B3339 (status, content), B3340 (remix, list), B3341 (characters) and B3342 (edit, extension). Route handlers, provider and model lookup from the video id: B3343, B3344, B3345 and B6360."
+  - "The server implementation of VideoRouteView over B016 and B302 and the construction of RouterGeneric with video_executors: B8631 builds RouterGeneric with video_executors; VideoRouteView stays with the architect, see notes."
+pitfalls:
+  - "The proxy's try/except around the router call for the seven fallback kinds never catches a router failure: async_wrapper is an async def, so the call returns an unawaited coroutine and the error surfaces at the caller's await, outside the try. plan_video_route therefore returns Router with no fallback."
+  - "async_wrapper takes custom_llm_provider and client as named parameters and does not pass them on, so a status call that the route set to custom_llm_provider=openai reaches the provider with the deployment's provider instead."
+  - "avideo_list is in the factory and in the router branch for a known model, but it is left out of the try/except list, so an unknown model on a list call ends in ProxyModelNotFoundError rather than a router attempt."
+  - "avideo_generation is missing from the no-model shortcut list (route_llm_request.py L616-L636); with a router it always needs a model."
+  - "Step 5 uses is_recognized_model, which also matches a deployment id and a model_group_alias; a model in model_names that an admin with a team does not match falls through to NotFound."
+  - "specific_deployment=True is added only for the deployment_names branch, and the generic attempt pops it before selection, so it never reaches the SDK call."
+  - "The api_key or api_base check runs before the model checks, so a status call with api_base in data goes to the router even when the model is empty."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

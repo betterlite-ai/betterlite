@@ -1,0 +1,63 @@
+id: B7952
+title: Python types for files, rerank, embedding, fine tuning, containers, google_genai, images and realtime
+description: >-
+  This task ports `files.py` (277 lines), `rerank.py`, `embedding.py`, `fine_tuning.py`, `containers/main.py`, `google_genai/` (`adapters.py`,
+  `main.py`), `images/main.py` and `realtime.py` into `crates/betterlite-python/python/betterlite/types/` with the same module paths. It is Python only.
+
+
+  `files.py` has the `FileType` Enum and five functions that map MIME types and extensions (`get_file_extension_from_mime_type`,
+  `get_file_type_from_extension`, `get_file_extension_for_file_type`, `get_file_mime_type_for_file_type`,
+  `get_file_mime_type_from_extension`); each keeps its output for every input, so a test runs every known MIME type and extension
+  and a few unknown ones. `fine_tuning.py` is one class, `OpenAIFineTuningHyperparameters`, which extends `Hyperparameters` from B7921.
+  `containers/main.py` has the container models and request param TypedDicts, where the request params TypedDict extends the optional one with
+  `total=False`. `realtime.py` has TypedDicts and pydantic session and client secret models. `rerank.py` has the request model and
+  four TypedDicts.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/files.py
+  - crates/betterlite-python/python/betterlite/types/rerank.py
+  - crates/betterlite-python/python/betterlite/types/embedding.py
+  - crates/betterlite-python/python/betterlite/types/fine_tuning.py
+  - crates/betterlite-python/python/betterlite/types/containers/**
+  - crates/betterlite-python/python/betterlite/types/google_genai/**
+  - crates/betterlite-python/python/betterlite/types/images/**
+  - crates/betterlite-python/python/betterlite/types/realtime.py
+  - crates/betterlite-python/tests/test_types_request_option_types.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/files.py#L1-L277
+  why: FileType and the MIME mapping functions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/realtime.py#L1-L135
+  why: Realtime TypedDicts and session models.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/containers/main.py#L1-L144
+  why: Container models and params.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rerank.py#L1-L65
+  why: Rerank request and response parts.
+out_of_scope:
+- >-
+  `google_genai/main.py` has 39 lines and no classes; port only what it defines, and `google_genai/__init__.py` (12 lines) is the architect's.
+pitfalls:
+- >-
+  `rerank.py` names `RerankRequest` and `HostedVLLMRerankTruncationParams` as pydantic models and `OptionalRerankParams` as a TypedDict; keep each kind, since callers pass a dict to one and a model to the other.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_request_option_types.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

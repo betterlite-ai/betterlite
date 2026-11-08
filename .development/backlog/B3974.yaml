@@ -1,14 +1,14 @@
 id: B3974
 milestone: M7 observability
 title: Opik callback delivery and native client selection
-status: todo
+status: done
 depends_on: [B3973, B173, B256, B5093]
 file: tasks/B3974-opik-delivery.yaml
 covers:
   - "litellm/integrations/opik/opik.py"
 parent: B114
 split_from: B114
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 862

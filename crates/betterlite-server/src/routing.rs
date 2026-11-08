@@ -13,6 +13,7 @@ pub mod auto_router_rollups;
 pub mod automatic_router_pipeline;
 pub mod benchmark_aggregates;
 pub mod budget_windows;
+pub mod cache_alternatives;
 pub mod cache_cost_routing;
 pub mod capability_classifier;
 pub mod capability_forecast;

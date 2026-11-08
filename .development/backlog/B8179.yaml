@@ -1,0 +1,16 @@
+id: B8179
+milestone: M3 providers
+title: NLP Cloud chat config and stream cleaner
+status: todo
+depends_on: [B2202, B2214]
+file: tasks/B8179-nlp-cloud-chat.yaml
+covers:
+  - "litellm/llms/nlp_cloud/chat/handler.py"
+  - "litellm/llms/nlp_cloud/chat/transformation.py"
+  - "litellm/llms/nlp_cloud/common_utils.py"
+parent: B043
+split_from: B043
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

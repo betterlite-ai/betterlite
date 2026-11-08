@@ -1,0 +1,80 @@
+id: B7939
+title: Python types for logger integrations argilla to zerobus (types/integrations, observability and storage)
+description: >-
+  This task ports the small logger integration type files into `crates/betterlite-python/python/betterlite/types/integrations/`: `argilla`, `arize`, `arize_phoenix`,
+  `azure_sentinel`, `base_health_check`, `cloudzero`, `custom_logger`, `datadog`, `datadog_cost_management`, `datadog_llm_obs`,
+  `datadog_metrics`, `gcs_bucket`, `langfuse`, `langfuse_otel`, `langsmith`, `newrelic`, `pagerduty`, `pointfive`, `posthog`, `s3_v2`,
+  `weave_otel` and `zerobus`. It is Python only.
+
+
+  `custom_logger.py` is the base for the others: `StandardCustomLoggerInitParams` (pydantic), which `AzureSentinelInitParams`,
+  `DatadogInitParams`, `DatadogCostManagementInitParams`, `NewRelicInitParams`, `PointFiveInitParams` and `ZerobusInitParams` extend.
+  It also has `AgenticLoopSafetyError(ValueError)`, `AgenticLoopRequestPatch`, `AgenticLoopPlan` and two functions,
+  `is_interception_internal_key` and `converted_stream_requested`. `CBFRecord` in `cloudzero.py` subclasses `dict[str, Any]`. Some files
+  use `NamedTuple` (`CredentialsKey` in langsmith.py) or plain classes (`BatchGroup`, `NewRelicMetricRecord`, `PointFiveUploadTarget`,
+  `PointFiveUploadFailure`, `ZerobusConnection`, `ZerobusAccessToken`, `ZerobusIngestFailure`). `StandardLoggingUserAPIKeyMetadata`, used by
+  `PagerDutyInternalEvent`, comes from `types/utils.py` (B5657's area). The OTEL files each define a pydantic config and a `str` Enum of span
+  attribute names.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/integrations/argilla.py
+  - crates/betterlite-python/python/betterlite/types/integrations/arize.py
+  - crates/betterlite-python/python/betterlite/types/integrations/arize_phoenix.py
+  - crates/betterlite-python/python/betterlite/types/integrations/azure_sentinel.py
+  - crates/betterlite-python/python/betterlite/types/integrations/base_health_check.py
+  - crates/betterlite-python/python/betterlite/types/integrations/cloudzero.py
+  - crates/betterlite-python/python/betterlite/types/integrations/custom_logger.py
+  - crates/betterlite-python/python/betterlite/types/integrations/datadog.py
+  - crates/betterlite-python/python/betterlite/types/integrations/datadog_cost_management.py
+  - crates/betterlite-python/python/betterlite/types/integrations/datadog_llm_obs.py
+  - crates/betterlite-python/python/betterlite/types/integrations/datadog_metrics.py
+  - crates/betterlite-python/python/betterlite/types/integrations/gcs_bucket.py
+  - crates/betterlite-python/python/betterlite/types/integrations/langfuse.py
+  - crates/betterlite-python/python/betterlite/types/integrations/langfuse_otel.py
+  - crates/betterlite-python/python/betterlite/types/integrations/langsmith.py
+  - crates/betterlite-python/python/betterlite/types/integrations/newrelic.py
+  - crates/betterlite-python/python/betterlite/types/integrations/pagerduty.py
+  - crates/betterlite-python/python/betterlite/types/integrations/pointfive.py
+  - crates/betterlite-python/python/betterlite/types/integrations/posthog.py
+  - crates/betterlite-python/python/betterlite/types/integrations/s3_v2.py
+  - crates/betterlite-python/python/betterlite/types/integrations/weave_otel.py
+  - crates/betterlite-python/python/betterlite/types/integrations/zerobus.py
+  - crates/betterlite-python/tests/test_types_integration_loggers.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/custom_logger.py#L1-L88
+  why: The shared init params and agentic loop classes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/newrelic.py#L1-L132
+  why: The largest of the metric payload files.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/datadog_llm_obs.py#L1-L134
+  why: Datadog LLM observability TypedDicts.
+out_of_scope:
+- >-
+  slack_alerting, the interception configs and the Bedrock knowledge base types are in B7940. Prometheus is in B7937 and B7938.
+pitfalls:
+- >-
+  `DDLLMObsError` and `Message` in `datadog_llm_obs.py` are TypedDicts with short names; keep the names, since callers import them by module.
+- >-
+  `langfuse_otel.py` and `weave_otel.py` each define a span attribute Enum (`LangfuseSpanAttributes`, `WeaveSpanAttributes`). Compare every value, since the strings are the attribute keys sent to the backend.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_integration_loggers.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

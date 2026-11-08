@@ -1,0 +1,15 @@
+id: B8150
+milestone: M3 providers
+title: hosted_vllm chat and embedding configs
+status: todo
+depends_on: [B668, B2202, B212, B504]
+file: tasks/B8150-hosted-vllm-chat-embedding.yaml
+covers:
+  - "litellm/llms/hosted_vllm/chat/transformation.py"
+  - "litellm/llms/hosted_vllm/embedding/transformation.py"
+parent: B040
+split_from: B040
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

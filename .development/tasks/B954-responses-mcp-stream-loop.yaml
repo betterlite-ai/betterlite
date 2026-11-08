@@ -49,7 +49,7 @@ description: >-
 
   Direct inputs come from B171 (Direct helper oracle and URL path encoding), B932 (Responses create call), B950
   (Responses mcp execute), B951 (Responses mcp followup), B953 (Responses mcp stream round), B1087 (Api boundaries),
-  B952 (Responses mcp events), B948 (Responses mcp selection), B949 (Responses mcp discovery). These are callable/type/config
+  B952 (Responses mcp events), B948 (Responses mcp selection). These are callable/type/config
   owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
   branches.
 scope:

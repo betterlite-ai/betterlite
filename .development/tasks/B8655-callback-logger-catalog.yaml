@@ -1,0 +1,149 @@
+id: B8655
+title: Callback logger catalog for prometheus, team loggers, litellm_agent and generic_api
+description: >-
+  Several finished or planned loggers wait for the code that turns a configured callback name into a logger object.
+  In LiteLLM that code is `_init_custom_logger_compatible_class` (litellm_logging.py L4502-L5180) and
+  `LoggingCallbackManager._add_custom_callback_generic_api_str` (logging_callback_manager.py L165-L244). No task owns
+  either function. This part builds the arms for the names wave 17 has to wire: `prometheus`, the team arms of
+  `datadog` and `newrelic`, `litellm_agent` and every `generic_api` name. It also lets the config load accept those
+  names. The other arms of the function (lago, langsmith, otel and the rest) stay with their own logger tasks.
+
+
+  Code goes in crates/betterlite-server/src/app/callbacks/catalog.rs and catalog/ (prometheus.rs, team.rs,
+  generic_api.rs, prompt_factory.rs, tests.rs). The skeleton declares the module in app/callbacks.rs; do not edit that
+  file, B8656 owns it.
+
+
+  `CallbackLoggers::new(config: &Config, shared: &Shared)` builds the catalog once; B8742's callback_loggers slot (state/callback_loggers.rs) calls it in its Slot::new and asks it before B8741's catalog.
+  It holds one value per process for each name below and the two per-request caches. It reads `shared.http` (the
+  ProxiedClient for the generic_api posts and the server TaskTracker for the flush timers), `shared.router_views`,
+  `shared.auth_cache` and `shared.db`. Its main method is `resolve(name: &str, params: &BTreeMap<String, String>) ->
+  Option<ResolvedLogger>`, where params are the request's dynamic callback params (B3851's shape) and an empty map at
+  startup. `ResolvedLogger` is an enum with one variant per logger type: `Prometheus(Arc<PrometheusHooks>)`,
+  `Datadog(Arc<DatadogLogger>)`, `NewRelicMetrics(Arc<NewRelicMetricsLogger>)`, `LitellmAgent(Arc<LitellmAgentResolver>)`
+  and `GenericApi(Arc<GenericApiLogger>)`. Use the type names B8561, B3933, B3944, B8253 and B8252 define. A name with
+  no arm here gives None, as LiteLLM's function falls through to `return None`.
+
+
+  prometheus.rs. The `prometheus` arm returns B8561's `PrometheusHooks::shared(build)` value, so every call gives the same
+  Arc (L4590-L4598). build registers B3875's `PrometheusCollectors` into `shared.prometheus_registry` (B8610's one Arc<CollectorRegistry>, the registry B3886's metrics_router renders) and makes the hooks from them, the `prometheus_emit_stream_label` flag from the
+  section B8561 reads, and the ports B8561's constructor takes. Read that constructor first. A router port it takes at
+  construction gets `LiveRouterPorts`, a struct here that holds `Arc<RouterViews>` and calls `current()` once per method
+  call. With no router installed it answers what LiteLLM answers with `llm_router` None: not recognized, not public, no
+  pattern match, no remaining limits. B8611's view implements B3880's `RequestedModelCatalog`, so a hook that takes the
+  catalog per call gets `router_views.current()` from its caller. Budget lookups (B3883) get `shared.auth_cache` and
+  `shared.db`.
+
+
+  team.rs. The `datadog` arm (L4600-L4625). When `dd_api_key`, `dd_site` or `dd_agent_host` is present and not empty
+  (Python truthiness: an empty string counts as absent here), call B8251's `get_datadog_logger_for_request(params,
+  &self.datadog_cache, env)` and return its logger. Otherwise return the one process DataDogLogger built with B3933's
+  constructor and env credentials on first use. The `newrelic` arm (L5161-L5175): when `newrelic_api_key` is present and
+  not empty, call B8251's `get_newrelic_logger_for_request(params, &self.newrelic_cache)` and return the metrics logger.
+  Otherwise return None: the global New Relic logger goes through `_maybe_construct_otel_v2`, which belongs to the OTel
+  tasks. The two caches are B3945's `DynamicLoggerCache`, built here with B5120's removal effect: on eviction it calls
+  the evicted logger's stop (B3943 for Datadog, B3944 for New Relic) on the server TaskTracker, since stop is async and
+  the effect is a plain Fn. The clock is the system time in seconds. env is B3933's injected environment lookup over the
+  process environment, built here once.
+
+
+  prompt_factory.rs. The `litellm_agent` arm returns one process `LitellmAgentResolver` (B8253), built on first use.
+  `PromptLoggerFactory` implements B8560's `CompatibleLoggerFactory` over the same catalog: `init("litellm_agent")`
+  returns that resolver as an `Arc<dyn PromptManagementBackend>` (B4058's trait; add the impl here if B8253 does not
+  have it, a forwarder to its get_chat_completion_prompt that keeps messages and params). Every other name gives None.
+  The known names list is B8466's const slice of `_custom_logger_compatible_callbacks_literal`, in its order.
+
+
+  generic_api.rs. `resolve` checks generic_api first for any name, before the arms above, as `_safe_add_callback_to_list`
+  does. (1) When `callback_settings.<name>` from the config section has `callback_type: generic_api`, read endpoint,
+  headers, event_types, log_format, max_retries (`max(0, int(value or 0))`), retry_delay (`max(0.0, value)`, absent is
+  0.0) and timeout. With endpoint or headers missing, log the warning "generic_api callback '<name>' is missing endpoint
+  or headers, skipping." and give None. When the cache holds a logger for the name whose seven values all equal the new
+  ones, return it. Otherwise build a new one with B8252's `GenericApiSettings::resolve` and those args, store it under
+  the name (replacing the old one) and return it. (2) Else when B8252's `is_callback_compatible(name)` is true, return
+  the cached logger for the name or build one with only `callback_name` set and cache it. The cache is a
+  `Mutex<BTreeMap<String, Arc<GenericApiLogger>>>` inside CallbackLoggers, LiteLLM's `_generic_api_logger_cache`. A
+  settings error from resolve (no endpoint, bad log_format) is logged at error level with its text and gives None.
+  `global_headers` is LiteLLM's `litellm.generic_logger_headers`; when no config section reads that key, pass an empty
+  map and say so in the report.
+
+
+  Flush timer. LiteLLM's CustomBatchLogger starts `periodic_flush` when the logger is made. Every generic_api logger
+  built here gets one task on the server TaskTracker that waits B256's flush interval (5 seconds), calls the logger's
+  flush, and repeats until the server shuts down (the shutting_down signal B8610 passes to application()).
+  A replaced logger's timer stops when its logger is replaced. Datadog and New Relic loggers keep the timers their own
+  tasks start.
+
+
+  Config. B8741 already accepts every LiteLLM callback name through `CallbackName` in
+  crates/betterlite-config/src/sections/callback_settings/names.rs, so `callbacks: ["prometheus"]` loads; add no name to
+  any list. What it still rejects is a free name such as `my_webhook` that only a callback_settings entry declares, so
+  in callback_settings.rs a name that has a `callback_settings` entry with `callback_type:
+  generic_api` is accepted too. Add tests in sections::callback_settings::tests for such a
+  callback_settings generic_api name, and for an unknown name without such an entry that still fails.
+
+
+  Tests in catalog/tests.rs use in-memory fakes and the real types: prometheus resolves to the same Arc twice; datadog
+  with `dd_site` set returns a team logger from the cache and the same one for the same params, with an empty `dd_site`
+  returns the global logger; newrelic with a key returns the metrics logger and without one gives None; litellm_agent
+  resolves and the factory's init gives the resolver and None for `langfuse`; a callback_settings generic_api name builds
+  once, returns the cached logger for equal settings and a new one when the endpoint changes; a name missing headers
+  gives None; `rubrik` builds from the json; an eviction calls stop once. The flush timer is tested with tokio's paused
+  clock: two intervals give two flushes. No oracle case: nothing delivers a call's events to these loggers yet, so no
+  client sees a difference (see the report notes).
+scope:
+  paths:
+    - crates/betterlite-server/src/app/callbacks/catalog.rs
+    - crates/betterlite-server/src/app/callbacks/catalog/**
+    - crates/betterlite-config/src/sections/callback_settings.rs
+    - crates/betterlite-config/src/sections/callback_settings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4502-L4625
+    why: The init function, the litellm_agent, prometheus and datadog arms, and the team credential test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5161-L5180
+    why: The newrelic arm, its team branch and the final return None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L165-L270
+    why: generic_api resolution from callback_settings and the compatible json, the name cache and where it runs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6283-L6285
+    why: callback_settings is read from the top level of config.yaml.
+dod:
+  - text: prometheus resolves to one shared hooks value, and its router ports read the live router once per call.
+    proof: [catalog-tests]
+  - text: datadog and newrelic pick the team logger only for truthy team credentials, reuse it per credential set, and stop an evicted logger.
+    proof: [catalog-tests]
+  - text: litellm_agent resolves to one resolver and the prompt factory gives it for that name and None for others.
+    proof: [catalog-tests]
+  - text: generic_api names from callback_settings and from the compatible json build one cached logger each, rebuild on changed settings, skip a missing endpoint or headers, and flush every 5 seconds.
+    proof: [catalog-tests]
+  - text: The config load accepts a free name whose callback_settings entry has callback_type generic_api, and still rejects an unknown name.
+    proof: [config-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: catalog-tests
+      why: an arm is missing, builds a second logger, ignores the team credentials or never flushes
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::catalog::/)'
+    - id: config-tests
+      why: the config load still rejects a wired callback name or accepts an unknown one
+      run: grep -q 'generic_api' crates/betterlite-config/src/sections/callback_settings.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::callback_settings::/)'
+oracle_cases: []
+deviations:
+  - what: generic_api and its compatible names build a real GenericApiLogger. LiteLLM without litellm_enterprise binds the bare generic_api arm to the do nothing CustomLogger (litellm_logging.py L240-L272), and the oracle venv excludes litellm-enterprise (tools/oracle/litellm/pyproject.toml line 18), so no oracle case can show the real logger.
+    why: The GenericAPILogger code is MIT in litellm/integrations/generic_api; only its import sits in the enterprise try block.
+  - what: Each generic_api logger's flush timer stops on server shutdown or when the logger is replaced.
+    why: LiteLLM's periodic_flush task runs until the event loop ends and an orphaned one keeps flushing an unused queue; betterlite tracks its tasks.
+out_of_scope:
+  - "Delivering a call's success and failure events to a resolved logger: no task owns it yet (see the report notes)."
+  - "The other arms of _init_custom_logger_compatible_class and get_custom_logger_compatible_class: the logger tasks under B110 to B118."
+  - "The logger types and their delivery: B8561, B3933, B3944, B8251, B8252 and B8253."
+  - "Registering resolved string callbacks into the success and failure lists at startup: B8399 init_callbacks."
+pitfalls:
+  - The datadog and newrelic arms test truthiness, so an empty dd_site means the global logger, while B8251's own credentials check counts an empty string as present.
+  - generic_api runs before the named arms, so a callback_settings entry called prometheus with callback_type generic_api is a generic_api logger.
+  - The generic_api cache compares all seven settings and replaces the stored logger on any change; it never holds two loggers for one name.
+  - The eviction effect is a plain Fn, so it spawns the async stop on the tracker and never blocks or awaits inside the cache lock.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

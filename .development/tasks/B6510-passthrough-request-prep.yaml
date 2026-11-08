@@ -1,0 +1,162 @@
+id: B6510
+title: Pass-through request preparation and upstream send
+description: >-
+  Build the first half of LiteLLM's pass_through_request in betterlite-server, in the new module request_prep
+  (crates/betterlite-server/src/pass_through_lifecycle/request_prep.rs and its folder; add `pub mod pass_through_lifecycle;` with
+  `pub mod request_prep;` if the folder does not exist yet). It takes the route's fixed arguments and the incoming request, and
+  returns a `PreparedRequest` plus the live upstream response. It never builds the client's response. B3613 does that. There is no HTTP
+  route for it yet, so every test is a native test with fake collaborators. No oracle cases are needed: the work is wiring over pieces that
+  have their own cases (see out_of_scope).
+
+  Inputs. `PassThroughArgs` holds what create_pass_through_route (B3615) fixes per route: target (String), custom_headers (`http::HeaderMap`),
+  custom_body (Option of serde_json::Map), forward_headers (Option<bool>), merge_query_params (Option<bool>), query_params (Option of
+  an ordered string map), default_query_params (Option, same type as B3571's merge function takes), stream (Option<bool>), cost_per_request
+  (Option<f64>), custom_llm_provider (Option<String>), guardrails_config (the type B3601's collect_guardrails takes) and timeout
+  (Option<f64>). `IncomingRequest` holds method (`http::Method`), headers (`http::HeaderMap`), query_params (the request's own query as an
+  ordered map where a repeated key keeps its last value, as Starlette's dict does), a typed `body: IncomingBody` (the type B1100 and B3611
+  read from; read the merged names and use them) and `signed_raw_body: Option<bytes::Bytes>` (LiteLLM's request.state value under
+  LITELLM_PASS_THROUGH_RAW_BODY_STATE_KEY, the exact bytes a SigV4 caller signed; B3615 fills it, and None means there is none).
+  If B3615's merged code has no such field, add it to IncomingRequest here and report it in the PR text.
+
+  Collaborators. `ProxyHooks` is a trait with four methods, all declared here. `pre_call_hook(&self, input: PreCallInput<'_>) -> Result<serde_json::Map,
+  PassThroughError>` is the one prepare() calls. PreCallInput holds the auth key record, the body map, the logging object handle, call_type "pass_through_endpoint" and the
+  endpoint type. LiteLLM puts the logging object into the body under "litellm_logging_obj" so guardrails can reach it; here it is a separate
+  field, and nothing of it may reach the upstream body. The other three are for B3613, which only calls them: `post_call_response_headers_hook(&self, data: &serde_json::Map, auth: &UserApiKeyAuth, response: &ResponseView, request_headers: &HeaderMap) -> Result<Option<IndexMap<String,String>>, PassThroughError>`; `post_call_success_hook(&self, data: serde_json::Map, auth: &UserApiKeyAuth, response: serde_json::Value) -> Result<serde_json::Value, PassThroughError>` (the hook may return a non-object, and the caller must handle that); and `post_call_failure_hook(&self, auth: &UserApiKeyAuth, original_exception: &FailureCause, request_data: serde_json::Map, traceback: Option<String>) -> Result<(), PassThroughError>`. `ResponseView` holds the status and response headers only. `FailureCause` is an enum of ModifyResponse(ModifyResponseException), Http(HttpError), Proxy(ProxyException) and Other(String); use the merged exception types and define only the enum. Both types live here so the trait compiles. Read the merged ProxyLogging code first; if
+  `pre_call_hook` already exists, write a thin adapter over it and do not copy its logic. If it does not exist, define the trait only,
+  add a recording fake for tests, and B8641 writes the production adapter (HooksAdapter) over ProxyLogging. `PassThroughDeps { hooks: Arc<dyn ProxyHooks>,
+  client_pool: the B173 pool handle, config: the settings handle B3571's timeout function reads, logs: the logging object factory
+  B247 provides }` is passed to `RequestPrep::new(deps)`.
+
+  `RequestPrep::prepare(&self, args: &PassThroughArgs, req: &IncomingRequest, auth: &UserApiKeyAuth) -> Result<PreparedRequest, PassThroughError>`
+  runs these steps in this order. The order matters because later steps read what earlier ones wrote.
+  (1) Make a fresh call id (uuid v4 string) and parse `target` as a URL. (2) Header build: `forward_headers_from_request` of B3571 over a copy of the
+  request headers and custom_headers, then add trace context with B3610's with_trace_context from the auth record's parent span. (3) requested
+  query = args.query_params when it is not empty, else the request's query when it is not empty, else None (an empty map is falsy, so it falls through).
+  (4) endpoint_type = B3600's get_endpoint_type of the URL text and custom_llm_provider. (5) is_multipart = B3611's is_multipart(request) and
+  custom_body is empty or missing. (6) Body: a non-empty custom_body is used; else a multipart request gives an empty map; else read the JSON body with B1100.
+  (7) Guardrails: B3601's collect_guardrails with the auth record and args.guardrails_config. When the list is not empty, write it at body["metadata"]["guardrails"]
+  (create body.metadata as an empty object when missing). (8) model = body["model"] when it is a non-empty string, else "unknown". start_time is now.
+  (9) Team callbacks with B3610's resolve_team_callback_wiring (route description "pass_through_endpoint"). (10) Create the logging object with B247: model, messages
+  one user message holding B192's safe_dumps of the body, stream false, call_type "pass_through_endpoint", start_time, the call id, function_id "1245", and the team
+  callbacks' success, failure and kwargs. Set its passthrough_guardrails_config to args.guardrails_config. (11) Run pre_call_hook; its returned map is the body from now on.
+  (12) Resolve the timeout with B3571's resolve_pass_through_request_timeout and take the client from B173's pool for the PassThroughEndpoint special provider with that timeout.
+  (13) Build B3600's PassthroughStandardLoggingPayload (url text, request_body the hooked body, request_method, cost_per_request) and B3605's default PassThroughCallState,
+  and join them as B3607's PassThroughRequestState. (14) kwargs = B3610's init_kwargs_for_pass_through_endpoint with the auth record, the body, the payload, the call id, the request
+  and the logging object. (15) When custom_llm_provider is set, write it into the logging object's model_call_details under "custom_llm_provider" and the kwargs' litellm_params under
+  "litellm_params". (16) Call the logging object's update_environment_variables with model, user "unknown", optional_params empty, the kwargs' litellm_params and call_type
+  "pass_through_endpoint"; then set model_call_details["litellm_call_id"]. (17) Query merge: when default_query_params is set (not empty) or merge_query_params is true, replace the
+  URL query with the form-urlencoded result of B3571's get_merged_query_parameters(existing url, requested query or empty, defaults), and set the requested query to None.
+  (18) logging_url = the URL text, plus the requested query joined as `k=v` pairs with `&` (no encoding), using `&` when the URL text already holds `?` and `?` otherwise.
+  (19) Call the logging object's pre_call (B249) with input one user message holding safe_dumps of the body, api_key "", and additional_args complete_input_dict (the body),
+  api_base (logging_url) and headers (the upstream headers). (20) stream = `resolve_stream_flag(body, args.stream)`: when the body has a "stream" key its value wins (even null
+  or false), else args.stream. This replaces LiteLLM's _update_stream_param_based_on_request_body (L735-L745). The body here is the hooked body, an empty map when missing.
+
+  `PreparedRequest` holds: call_id, url (`url::Url`), logging_url (String), upstream_headers, requested_query, body (the hooked map), endpoint_type, is_multipart, signed_raw_body, stream (Option<bool>),
+  start_time, logging_obj, kwargs (B3605's typed kwargs map), state (PassThroughRequestState), client (the pooled handle), custom_llm_provider, guardrails_to_run (Vec<String>)
+  and auth (cloned key record). The URL text used later as url_route is `url.as_str()` after the query merge. It is not logging_url.
+
+  Upstream send. `UpstreamSender::send(&self, prepared: &PreparedRequest, req: &IncomingRequest) -> Result<UpstreamResponse, PassThroughError>` picks the call by this table, the same as
+  the Python branches. stream is Some(true) and multipart: B3611's make_multipart_http_request with stream true. stream true and not multipart: build one request with the signed raw body as
+  content when it is present, else the JSON body, with the requested query and upstream headers, and send it as a stream. stream not true and a signed raw body is present: build the same
+  raw-content request and send it as a stream. stream not true and no raw body: B3611's non_streaming_http_request_handler with forward_multipart set to is_multipart. `UpstreamResponse` is the live
+  response type those helpers return. Do not read the body here. The send is a method on a small struct `UpstreamSender` built from the client handle, so tests inject a fake client through the
+  seam B3611 and B173 already provide. Read their merged signatures first.
+
+  What is not built, on purpose. LiteLLM's managed-id steps (resolve_passthrough_managed_id_provider, the path, query and body rewrites, the list served from the database, L1227-L1355) run only
+  when proxy_logging_obj.get_proxy_hook("managed_files") returns a hook. That hook is an enterprise feature and open-source LiteLLM never registers it, so those branches never run at the pin.
+  They are not built, and prepare() has no managed-id parameter. The one visible effect is that the `passthrough_managed_object_ids` setting is ignored.
+
+  Errors. Every failure in steps 1 to 20 and in send returns `PassThroughError` (an enum with one variant per source: Url, Hook, Body, Upstream, Logging).
+  Write the type here with `thiserror`, keep the source error inside each variant, and give each variant a message that says which step failed.
+  LiteLLM's failure path reads whatever the steps had set before the failure (the URL, the body, kwargs and the logging object may each still be None), so
+  prepare() returns `Result<PreparedRequest, PrepareFailure>` where `PrepareFailure { error: PassThroughError, context: FailureContext }` and
+  `FailureContext { call_id: String, url: Option<url::Url>, body: Option<serde_json::Map>, kwargs: Option<the typed kwargs map>, logging_obj: Option<the handle> }`.
+  Each field is filled at the step that sets it (call id in step 1, url in step 1, body after step 6 and again after step 11, logging_obj in step 10, kwargs in step 14),
+  and the body field in step 7 holds the body with the guardrails metadata. B3613 builds the same record from a PreparedRequest for errors after prepare, so define
+  it `pub` with public fields. `UpstreamSender::send` returns plain PassThroughError, since the caller still holds the PreparedRequest.
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_lifecycle.rs
+    - crates/betterlite-server/src/pass_through_lifecycle/request_prep.rs
+    - crates/betterlite-server/src/pass_through_lifecycle/request_prep/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1075-L1225
+    why: Steps 1 to 16, from the call id to the logging object environment. Read the order of the writes and which value each later step reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1299-L1381
+    why: Steps 17 to 20, the query merge, logging_url, the pre_call log and the stream flag. The managed-id blocks around them are not built.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1382-L1416
+    why: The streaming send, with the multipart, signed raw body and JSON branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1483-L1503
+    why: The non-streaming send, with the signed raw body branch and B3611's handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L735-L745
+    why: _update_stream_param_based_on_request_body, the rule that the body's stream key beats the route's.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/utils.py#L33-L56
+    why: get_merged_query_parameters (B3571 owns it), to see what the merge hands to urlencode.
+dod:
+  - text: ProxyHooks declares pre_call_hook and the three post-call hooks with the signatures in the description, and the recording fake implements all four.
+    proof: [prep-tests]
+  - text: prepare() runs the 20 steps in order, and a hook sees the logging object, the body with guardrails in metadata and the endpoint type, never the signed raw body.
+    proof: [prep-tests]
+  - text: The requested query falls through from the route's map to the request's map to None, the merge replaces the URL query and clears the requested query, and logging_url joins with ? or & as LiteLLM does.
+    proof: [query-tests]
+  - text: A non-empty custom_body wins, a multipart request gets an empty body without reading it, and any other request reads the JSON body; the model is "unknown" when missing or empty.
+    proof: [body-tests]
+  - text: The logging object is built with function_id "1245", the safe_dumps message and the team callbacks, gets custom_llm_provider and litellm_call_id, and has its pre_call logged with logging_url and the upstream headers.
+    proof: [logobj-tests]
+  - text: The stream flag follows the body's stream key first, and the four send branches pick the right helper with the right body and stream setting.
+    proof: [stream-tests, send-tests]
+  - text: Every step failure returns the PassThroughError variant for that step, a hook error is passed on unchanged, and the FailureContext holds exactly what the earlier steps had set (no logging object when the failure is at step 9, no kwargs when it is at step 13).
+    proof: [error-tests]
+checks:
+  optional: []
+  commands:
+    - id: prep-tests
+      why: a prepare step is missing, out of order or leaks the logging object or raw body into the upstream body
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::request_prep::tests::prep_/)'
+    - id: query-tests
+      why: the query fall-through, the merge or logging_url is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::request_prep::tests::query_/)'
+    - id: body-tests
+      why: the custom body, multipart or JSON body choice or the model default is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::request_prep::tests::body_/)'
+    - id: logobj-tests
+      why: the logging object set-up, provider fields or pre_call log is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::request_prep::tests::logobj_/)'
+    - id: stream-tests
+      why: the stream flag does not follow the body first
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::request_prep::tests::stream_/)'
+    - id: send-tests
+      why: one of the four upstream send branches picks the wrong helper, body or stream setting
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::request_prep::tests::send_/)'
+    - id: error-tests
+      why: a step failure maps to the wrong PassThroughError variant or a hook error is changed
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::request_prep::tests::error_/)'
+oracle_cases: []
+deviations:
+  - what: The logging object is a separate field of PreCallInput, not a "litellm_logging_obj" key inside the body map.
+    why: A Rust body is plain JSON and must stay serializable. The guardrails and hooks still reach the object, and it never gets near the upstream request.
+  - what: When a default or merged query holds a repeated value, it is written as repeated key=value pairs.
+    why: Python's urlencode without doseq writes the list's repr text (for example a=%5B%27x%27%5D), which no upstream can read, and nobody relies on it.
+  - what: The enterprise-only managed-id input rewrite and the database list shortcut are not built.
+    why: At the pin they only run when an enterprise hook is registered, and open-source LiteLLM never registers one.
+out_of_scope:
+  - "The forward-headers rule, the query merge function and the timeout resolution belong to B3571; this task calls them."
+  - "collect_guardrails belongs to B3601, the endpoint type rules and PassthroughStandardLoggingPayload to B3600, and PassThroughCallState to B3605."
+  - "init_kwargs_for_pass_through_endpoint, resolve_team_callback_wiring and with_trace_context belong to B3610."
+  - "make_multipart_http_request, non_streaming_http_request_handler and is_multipart belong to B3611."
+  - "The logging object, its update_environment_variables and its pre_call belong to B247 and B249; the JSON body reader to B1100; the pooled client to B173; safe_dumps to B192."
+  - "Everything after the response is in hand (apply_upstream_reported_usage, streaming and buffered replies, post-call hooks, headers, the failure path) belongs to B3613."
+  - "ProxyLogging.pre_call_hook itself has no owner in the merged code that was found. This task only declares the trait and an adapter if the code exists."
+pitfalls:
+  - "url_route for later logging is the URL text after the query merge. logging_url only goes into pre_call. Mixing them changes every logged route."
+  - "Truthiness decides three things: an empty custom_body is ignored, an empty query_params map falls through to the request's query, and an empty model string becomes \"unknown\". Follow docs/compatibility.md for these."
+  - "The pre-call hook can replace the whole body. Build the payload record, kwargs and pre_call log from the returned map, never from the map before the hook."
+  - "Guardrails are written to body.metadata.guardrails before the hook, so the hook and the guardrails can see them. Later code strips metadata from the body before it goes upstream (B3610's kwargs step does that). Do not strip it here."
+  - "The stream flag is Some(false) when the body says stream false, even if the route says true. Only a missing key falls back to the route."
+  - "A signed raw body must go upstream byte for byte. Never re-encode the JSON body when signed_raw_body is Some, and never log it."
+  - "The client handle is requested with the resolved timeout, so two routes with different timeouts must not share one client unless B173's pool keys on the timeout. Read B173 before you assume."
+review_level: security
+budget:
+  max_changed_lines: 1400
+  max_new_expects: 0

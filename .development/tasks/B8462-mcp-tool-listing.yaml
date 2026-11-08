@@ -1,0 +1,142 @@
+id: B8462
+title: MCP upstream tool listing and catalog alerts
+description: >-
+  Build mcp::tool_listing in betterlite-server: how the gateway fetches one MCP server's tool list,
+  guards it and names it. These are MCPServerManager._get_tools_from_server, list_tools,
+  get_tools_for_server, _fetch_tools_with_timeout, _guard_tool_catalog, _report_catalog_alert,
+  _forget_catalog_alert and _create_prefixed_tools. B8197's _get_tools_from_mcp_servers, the REST
+  listing (B4727) and the semantic filter (B4685) call them.
+
+
+  server_tools(server, mcp_auth_header, extra_headers, add_prefix (default true), raw_headers, auth,
+  oauth2_headers, client_ip, logging) is _get_tools_from_server. A server blocked by the stdio gate
+  returns an empty list (B8461's skip_blocked_stdio with "tool"). Otherwise: merge B8461's
+  static_headers(server, auth, raise_on_missing false) over the extra headers. When there is an
+  auth record, the server has no spec_path, a JWT signer is configured (B8461's
+  UpstreamClients::jwt_signer() returns the signer held in B8254's JwtSignerSlot), the static
+  headers hold no Authorization (any case), there is no mcp_auth_header and the extra headers hold no
+  Authorization, replace the extra headers with B3816's inject_mcp_jwt_headers_for_upstream with
+  for_list_tools true. Build the stdio env with B8460's build_stdio_env, the subject token with
+  B8460's extract_subject_token only for oauth2_token_exchange, and the client with B8461's
+  create_client. The client is built for a spec_path server too, so its errors apply there.
+
+
+  A spec_path (OpenAPI) server lists from B4680's local tool registry: the registry prefix is
+  normalize_server_name(get_server_prefix(server)) plus MCP_TOOL_PREFIX_SEPARATOR (B6594, default
+  "-"). The tools are guarded with that prefix removed from each name. With add_prefix false the
+  guarded tools are returned as they are; otherwise each name maps back to its registered full
+  name. Any other server lists through fetch_tools: the client's list_tools (B4745) with
+  raise_on_error, under LITELLM_MCP_TOOL_LISTING_TIMEOUT (default 30.0 seconds, B4740). A timeout
+  is MCPServerListError with fault timeout, a cancellation is fault internal, a connection error is
+  fault unreachable, anything else goes through B7970's raise_classified_list_failure. After a
+  fetch, B6592's remember_instructions keeps the server's initialize instructions. Then the tools
+  are guarded and prefixed.
+
+
+  Error mapping around the whole body: an MCPUpstreamAuthError from a DCR bridge server
+  (is_dcr_bridge) is raised again without its WWW-Authenticate, otherwise unchanged. An HTTP error
+  with status 401 or 403 becomes MCPUpstreamAuthError with that status, the WWW-Authenticate header
+  (either spelling, None for a DCR bridge) and the server name. Any other HTTP error logs "Failed to
+  get tools from server <name>: <error>" and becomes MCPServerListError with fault internal and
+  that status. MCPServerListError passes through. Anything else logs a warning with the error type
+  and B8460's upstream_failure_suffix, then goes through raise_classified_list_failure with
+  suppress_challenge set for a DCR bridge.
+
+
+  guard_catalog is _guard_tool_catalog: B4682's pin_tool_catalog when pinned_tools is set, then
+  apply_description_overrides. Without a logging handle that is the result. With one, report the
+  pin drift alert (mcp_pinned_tools_changed), run B4682's scan_tool_descriptions, report its alert
+  (mcp_tool_description_blocked) and return the served tools. CatalogAlerts keeps one signature per
+  (server_id, alert type). No alert forgets the key. The same signature again sends nothing. A new
+  one is stored, logged as a warning and sent through an injected alert sender at level "Medium"
+  with empty metadata; a send failure logs "Failed to send <alert type> alert for MCP server <name>:
+  <error>" and forgets the key only when the stored signature is still that one.
+
+
+  prefix_tools is _create_prefixed_tools: each tool becomes B8190's to_gateway_tool with the
+  prefixed name (B6594's add_server_prefix_to_name with get_server_prefix) or the original name,
+  and every spelling from B6594's iter_known_tool_name_spellings is written to the tool-name map
+  that B4731's registry reads, pointing at the prefix. list_tools takes B6591's allowed servers,
+  lists each one at the same time (a missing server logs "MCP Server <id> not found"; a failure
+  logs "Failed to list tools from server <name>: <error>. Continuing with other servers." and gives
+  no tools), picks the per-server header with B6594's lookup_mcp_server_auth_in_headers before the
+  global header, and flattens the results in allowed-server order. get_tools_for_server returns an
+  empty list with a warning for a missing server or any error.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/tool_listing.rs
+    - crates/betterlite-server/src/mcp/tool_listing/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-tool-listing/**
+    - tools/oracle/helpers/b8462.py
+    - tools/oracle/helpers/b8462/**
+    - tools/oracle/src/helpers/server/b8462.rs
+    - tools/oracle/src/helpers/server/b8462/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3763-L3845
+    why: get_tools_for_server and list_tools.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L4426-L4609
+    why: _get_tools_from_server, the JWT injection gate, the OpenAPI branch and the error mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5376-L5424
+    why: _fetch_tools_with_timeout and its faults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5488-L5569
+    why: Catalog guard, alert signatures and tool prefixing.
+
+dod:
+  - text: >-
+      A 401 or 403 HTTP error, an upstream auth error from a DCR bridge, a timeout, a connection
+      error and an other error each become the Python's listing error with the same status, fault
+      and challenge.
+    proof: [tool-listing-tests, oracle]
+  - text: >-
+      prefix_tools gives the Python's names for add_prefix true and false and writes every known
+      spelling into the tool-name map.
+    proof: [tool-listing-tests, oracle]
+  - text: >-
+      An alert is sent once per new signature, not again for the same one, and a failed send lets
+      the next listing send it again.
+    proof: [tool-listing-tests]
+  - text: >-
+      list_tools keeps listing when one server fails or is missing, and returns tools in allowed
+      server order.
+    proof: [tool-listing-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: tool-listing-tests
+      why: A listing branch, error mapping or alert rule differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^mcp::tool_listing::/)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-tool-listing
+
+deviations: []
+
+out_of_scope:
+  - "_get_tools_from_mcp_servers and the aggregate listing outcome: B8197. REST tool listing: B4727."
+  - "pin_tool_catalog, apply_description_overrides and scan_tool_descriptions: B4682. Tool registry list_tools: B4680."
+  - "MCPServerListError, ServerListFault and raise_classified_list_failure: B7970."
+  - The HTTP cases for tools/list come with the MCP routes in B136; this task has helper cases for the error mapping and the names.
+
+pitfalls:
+  - >-
+    The stdio gate's 403 from create_client is an HTTP error, so the listing reports it as
+    MCPUpstreamAuthError with status 403, not as a list fault.
+  - >-
+    The OpenAPI branch guards names without the registry prefix and then maps them back through
+    the registered names, so a pinned list compares against bare names.
+  - >-
+    The alert signature map is replaced as a whole on each change; a failed send forgets the key
+    only when the stored signature is still the one that failed.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

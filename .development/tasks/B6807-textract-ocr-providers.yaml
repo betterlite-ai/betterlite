@@ -1,0 +1,77 @@
+id: B6807
+title: AWS Textract OCR providers
+description: >-
+  Add module `textract_ocr` to betterlite-ocr with `TextractDetectTextConfig` and
+  `TextractAnalyzeDocumentConfig`, ported from litellm-rust aws_textract/ocr (transformation.rs,
+  analyze_transformation.rs, common_utils.rs). The model name picks the operation:
+  detect-document-text or analyze-document (case-insensitive), any other model fails with InvalidModel.
+  Export `TextractOperation::from_model` for B6808. Calls go to https://textract.{region}.amazonaws.com/
+  (or api_base) with POST, Content-Type application/x-amz-json-1.1 and X-Amz-Target
+  Textract.DetectDocumentText or Textract.AnalyzeDocument, signed with AWS Signature V4 for service
+  "textract" through B6800's `AwsRequestSigner`. The region and the option names aws_access_key_id,
+  aws_secret_access_key, aws_session_token, aws_region_name, aws_session_name, aws_profile_name,
+  aws_role_name, aws_web_identity_token, aws_sts_endpoint and aws_external_id come from the request and
+  the environment, as common_utils.rs reads them. The document must be a data URI of at most 10 MiB
+  (a larger or non-inline one fails with InvalidDataUri or InlineDocumentTooLarge), sent as
+  {"Document":{"Bytes": base64}}. Analyze also sends FeatureTypes from the option feature_types
+  (default LAYOUT and TABLES) and supports only that option. A provider error body with __type and
+  Message becomes a Provider error, and UnsupportedDocumentException is classed as the invalid
+  request error that get_error_class gives it.
+  Detect responses become pages of text lines. Analyze responses are rebuilt as markdown per page
+  from layout blocks: Title as "# text", SectionHeader as "## text", list items as "- text" with the
+  bullet removed, tables as markdown tables with a header row and a divider row of " --- |" cells,
+  and the other layout types as plain text, in reading order. Port both functions as written. The
+  health check document is the 1x1 PNG data URI from the Rust file.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-ocr/Cargo.toml
+    - crates/betterlite-ocr/src/textract_ocr.rs
+    - crates/betterlite-ocr/src/textract_ocr/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/aws_textract/ocr/common_utils.rs#L1-L678
+    why: Operation names, region and credential inputs, signing, size cap and error mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/aws_textract/ocr/transformation.rs#L1-L249
+    why: DetectDocumentText request and response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/aws_textract/ocr/analyze_transformation.rs#L1-L488
+    why: AnalyzeDocument request, FeatureTypes and the markdown rebuild.
+
+dod:
+  - text: The model name picks the operation and the X-Amz-Target value, and an unknown model fails with InvalidModel.
+    proof: [textract-tests]
+  - text: The request is a signed POST to the regional endpoint with the JSON content type, a base64 Document.Bytes body, and Analyze adds FeatureTypes with the LAYOUT and TABLES default.
+    proof: [textract-tests]
+  - text: A document over 10 MiB or a non-inline document fails before any request.
+    proof: [textract-tests]
+  - text: Detect output pages and Analyze markdown (title, section header, list, table) match the Rust file's output for the same Textract JSON.
+    proof: [textract-tests]
+  - text: A Textract error body is mapped to a Provider error, and UnsupportedDocumentException gets its own class.
+    proof: [textract-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: textract-tests
+      why: Textract operation choice, request, signing call, size cap, markdown rebuild or error mapping is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^textract_ocr::tests::/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - AWS credential resolution and the SigV4 implementation are B594 and B595. This task calls the injected AwsRequestSigner.
+
+pitfalls:
+  - The signature covers the headers and body bytes. Build the final body first, then sign, then send those same bytes.
+  - Region comes from aws_region_name, then the environment. Do not guess a default the Rust file lacks.
+  - Table cells and lines can be missing. Port the empty-cell handling in table_markdown instead of skipping rows.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

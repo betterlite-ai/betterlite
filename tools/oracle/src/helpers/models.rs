@@ -1,7 +1,7 @@
 helper_group! {
     "anthropic_pricing" => anthropic_pricing, "available_models" => available_models,
     "b3516" => b3516, "b3571" => b3571, "b4080" => b4080, "b5361" => b5361, "b5365" => b5365,
-    "baseline_history" => baseline_history, "billed_tokens" => billed_tokens,
+    "b7320" => b7320, "baseline_history" => baseline_history, "billed_tokens" => billed_tokens,
     "call_helpers" => call_helpers, "catalog_fetch_policy" => catalog_fetch_policy,
     "catalog_generalizations" => catalog_generalizations, "catalog_refresh" => catalog_refresh,
     "compatible_api_selection" => compatible_api_selection, "cost_usage" => cost_usage,

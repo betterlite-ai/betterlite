@@ -1,0 +1,14 @@
+id: B8192
+milestone: M9 agents and mcp
+title: MCP sampling message and tool conversion
+status: todo
+depends_on: []
+file: tasks/B8192-mcp-sampling-convert.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/sampling_handler.py"
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

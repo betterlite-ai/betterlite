@@ -1,0 +1,13 @@
+id: B8591
+milestone: M8 platform
+title: Proxy exception handlers, CORS settings and UI folder setup
+status: todo
+depends_on: [B8410, B8389, B3867, B011, B4171, B872]
+file: tasks/B8591-app-errors-cors-ui.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

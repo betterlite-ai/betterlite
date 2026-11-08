@@ -23,7 +23,6 @@ scope:
   paths:
     - crates/betterlite-server/src/roi_settings.rs
     - crates/betterlite-server/src/roi_settings/tests.rs
-    - tools/oracle/cases/management/roi_settings/**
     - tools/oracle/helpers/b3158.py
     - tools/oracle/helpers/b3158/**
     - tools/oracle/src/helpers/server/b3158.rs
@@ -62,6 +61,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L332-388
     why: PUT /roi-calculator/settings route with ROISettingsUpdate patch, write-admin dependency, null-URL 422, URL-change token clearing, validation 422, returns ROISettingsResponse.
 dod:
+  - text: "The handlers are tested with tower's oneshot over the module's own Router and fake ports; B8677 runs the HTTP oracle cases through the booted proxy."
+    proof: [route-oneshot]
   - text: Data classes _RouterEstimatorParams, _RouterEstimatorModelInfo and _RouterEstimatorDeployment parse router deployment objects with ConfigDict(extra="ignore", from_attributes=True).
     proof: [deployment-class-cases]
   - text: _estimator_models_from_deployments parses deployment objects via TypeAdapter and returns a tuple of EstimatorModel (model name, custom_llm_provider), skipping entries without a model.
@@ -105,6 +106,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: route-oneshot
+      why: the handlers are not tested with tower's oneshot over the module's own Router and fake ports
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::tests::oneshot_/)'
     - id: deployment-class-cases
       why: Deployment data class tests are missing or fail
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::deployment_/)'
@@ -165,17 +169,7 @@ checks:
     - id: put-db-error-cases
       why: PUT database error handling tests are missing or fail
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_settings::put_db_error/)'
-oracle_cases:
-  - tools/oracle/cases/management/roi_settings/get-settings-read-admin-200.yaml
-  - tools/oracle/cases/management/roi_settings/get-settings-non-admin-403.yaml
-  - tools/oracle/cases/management/roi_settings/put-settings-write-admin-200.yaml
-  - tools/oracle/cases/management/roi_settings/put-settings-view-only-403.yaml
-  - tools/oracle/cases/management/roi_settings/put-settings-null-url-422.yaml
-  - tools/oracle/cases/management/roi_settings/put-settings-db-not-connected-500.yaml
-  - tools/oracle/cases/management/roi_settings/put-settings-validation-error-422.yaml
-  - tools/oracle/cases/management/roi_settings/get-settings-db-not-connected-500.yaml
-  - tools/oracle/cases/management/roi_settings/get-settings-invalid-stored-500.yaml
-  - tools/oracle/cases/management/roi_settings/put-settings-invalid-stored-500.yaml
+oracle_cases: []
 deviations:
   - what: Decryption failures for github_token or estimator_key do not log a warning and return the result of decrypt_value_helper unchanged.
     why: LiteLLM decrypts secrets silently without logging; betterlite preserves this behavior to avoid logging partial or corrupted secrets.
@@ -212,8 +206,8 @@ out_of_scope:
     `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:391-416` (`get_roi_calculator_repositories`) — owned by B3161,
     lists repositories via the GitHub client.
   - >-
-    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:419-596` and L620-652 (`reset_roi_calculator_setup`) — owned by B076,
-    the sync/report/identity-map/reset routes and setup-reset handler.
+    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:419-596` and L620-652 (`reset_roi_calculator_setup`): owned by B8588,
+    which builds the sync, report, identity map and reset routes and the setup reset handler.
   - >-
     `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:599-617` (`test_roi_calculator_connections`) — owned by B3161,
     tests GitHub and estimator connections.

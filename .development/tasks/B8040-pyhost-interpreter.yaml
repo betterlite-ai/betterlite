@@ -1,0 +1,113 @@
+id: B8040
+title: Embedded interpreter host, tracked blocking work and owned temporary files
+description: >-
+  The proxy runs Python that config.yaml names (callbacks, auth hooks, custom providers). Nothing in the workspace embeds
+  an interpreter yet. This task creates the leaf crate `crates/betterlite-pyhost` and builds the base the other parts and
+  their callers stand on: one process-wide interpreter, a way to run Python work off the Tokio runtime and wait for it
+  with a deadline, and temporary files that get removed. LiteLLM has no code for this, since it is itself Python, so the
+  task owns no LiteLLM lines. The crate depends on no other betterlite crate, so router, guardrails, logging and server can
+  all use it without a cycle.
+
+
+  Cargo.toml: pyo3 0.30.1 with the features `auto-initialize` and `abi3-py310` (the same version and ABI as B5369),, plus only the crates this task uses: `tokio` (rt, sync, time; `macros` for the tests), `thiserror`, `tracing` and `tempfile`. cargo shear refuses an unused dependency, so `serde_json` and anything else the later parts need is added by B8041, B8042 or B8043 in the same change that uses it. The `auto-initialize` feature is for this crate only, and the `extension-module` feature is never enabled here (see the pitfalls). Keep `unsafe_code = "forbid"` from the workspace lints, and report a blocker
+  if a pyo3 macro fails under it. `lib.rs` declares `pub mod host; pub mod blocking_work; pub mod owned_temp;`. The architect's skeleton creates the crate with an empty dependency list and adds the `pub mod` lines for B8041 to B8043. Only the crate's own `Cargo.toml`, `lib.rs` and these
+  three modules are written here.
+
+
+  `host`: `PythonHost` is a cheap clone (an `Arc`) that proves the interpreter is up. `PythonHost::start(config:
+  &HostConfig) -> Result<PythonHost, HostError>` initializes the interpreter once per process (a second call returns a
+  host over the same interpreter) and puts `HostConfig.module_dirs` at the front of `sys.path`, in order. The proxy passes
+  the folder that holds config.yaml, so the user's helper modules import next to it. `HostConfig` has `module_dirs:
+  Vec<PathBuf>` and `shutdown_grace: Duration` (default 10 seconds). The interpreter finds its standard library and
+  site-packages the standard CPython way (PYTHONHOME, PYTHONPATH, the venv of the interpreter pyo3 linked), and this task
+  adds no setting for it. `PythonHost::attach(&self, f)` runs a closure with the GIL held and is the only way later parts
+  touch Python objects. `PythonHost::version()` returns the `sys.version_info` triple, and `HostError::BadPythonVersion`
+  rejects anything below 3.10. `PythonHost::import_check(module)` imports a module and reports the import error text, so
+  the startup path can tell the user that `betterlite` is not installed in the interpreter.
+
+
+  `blocking_work`: Python code can block, so it never runs on a Tokio worker. `WorkTracker` owns a bounded
+  pool: `WorkTracker::new(max_threads: usize)` (default 16) wraps `tokio::task::spawn_blocking` behind a semaphore.
+  `run(&self, host, deadline: Duration, job: F) -> Result<T, WorkError>` takes a permit, runs `job` with the GIL held on a
+  blocking thread and waits at most `deadline`. On timeout it returns `WorkError::TimedOut { after }` at once and keeps the
+  still-running job counted as `abandoned`, because a Python thread cannot be killed from outside. When the job ends later
+  it releases its permit and lowers the count. `stats()` returns `{ running, abandoned, completed }`. A Rust panic inside the
+  job becomes `WorkError::Panicked(String)` and never crosses the call. `shutdown(&self)` stops new work, waits up to
+  `shutdown_grace` for running jobs and logs one warning with the count of jobs still running.
+
+
+  `owned_temp`: `OwnedTempDir` wraps `tempfile::TempDir` under the system temp folder with the prefix `betterlite-py-`. It
+  is created through `PythonHost`-independent code, hands out `path()` and `file(name)`, rejects a `name` with a separator
+  or `..` as `TempError::BadName`, and removes everything on drop. Later parts (the instance loader for remote modules, the
+  Riva audio decoder, the skill sandbox) write their files only through it.
+scope:
+  paths:
+  - crates/betterlite-pyhost/Cargo.toml
+  - crates/betterlite-pyhost/src/host.rs
+  - crates/betterlite-pyhost/src/host/**
+  - crates/betterlite-pyhost/src/blocking_work.rs
+  - crates/betterlite-pyhost/src/blocking_work/**
+  - crates/betterlite-pyhost/src/owned_temp.rs
+  - crates/betterlite-pyhost/src/owned_temp/**
+  - crates/betterlite-pyhost/tests/**
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/PyO3/pyo3/blob/v0.30.1/guide/src/python-from-rust.md
+  why: Embedding rules for `auto-initialize` and attaching to the interpreter.
+- url: https://docs.python.org/3/using/cmdline.html#envvar-PYTHONHOME
+  why: How the embedded interpreter finds the standard library.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L9-L66
+  why: The caller shape these primitives serve; B8042 ports this function on top of them.
+dod:
+- text: The crate builds with `unsafe_code = "forbid"` and depends on no betterlite crate.
+  proof: [pyhost-build]
+- text: PythonHost starts once per process, puts module_dirs first in sys.path in the given order, and a second start shares the interpreter.
+  proof: [host-tests]
+- text: attach runs a closure with the interpreter and import_check reports an import error text for a missing module.
+  proof: [host-tests]
+- text: WorkTracker.run returns the job result, returns TimedOut at the deadline while the job still runs, and counts that job as abandoned until it ends.
+  proof: [work-tests]
+- text: The pool never runs more than max_threads jobs at once, a panicking job gives Panicked, and shutdown waits for running jobs up to the grace period.
+  proof: [work-tests]
+- text: OwnedTempDir removes its folder on drop and refuses names with a separator or "..".
+  proof: [temp-tests]
+checks:
+  optional: []
+  commands:
+  - id: pyhost-build
+    why: The crate is missing, pulls in a betterlite crate, or fails the workspace lints.
+    run: >-
+      test -f crates/betterlite-pyhost/Cargo.toml &&
+      ! grep -E '^betterlite-' crates/betterlite-pyhost/Cargo.toml &&
+      cargo clippy --locked -p betterlite-pyhost --all-targets -- -D warnings
+  - id: host-tests
+    why: Interpreter start, sys.path order or attach tests are missing.
+    run: cargo nextest run --locked -p betterlite-pyhost --no-tests=fail -E 'test(/^host::/)'
+  - id: work-tests
+    why: Deadline, abandoned count, pool bound or panic tests are missing.
+    run: cargo nextest run --locked -p betterlite-pyhost --no-tests=fail -E 'test(/^blocking_work::/)'
+  - id: temp-tests
+    why: Temp folder cleanup or name tests are missing.
+    run: cargo nextest run --locked -p betterlite-pyhost --no-tests=fail -E 'test(/^owned_temp::/)'
+oracle_cases: []
+deviations:
+- what: A Python job that passes its deadline keeps running on its thread, and the caller gets a timeout.
+  why: Python cannot stop a thread from outside. LiteLLM sets no deadline on these hooks, so this only bounds the wait, and the abandoned count and a warning make it visible.
+- what: Packages are found the standard CPython way. There is no betterlite setting that installs or locates them.
+  why: The operator installs the `betterlite` wheel and any libraries the hooks import into the interpreter pyo3 linked, as with any embedded CPython.
+out_of_scope:
+- Values, callables and coroutines are B8041. Loading a dotted path or file is B8042. Hook objects and optional libraries are B8043.
+- Wiring to config keys and the s3 or gcs download is B165.
+- No oracle cases. The interpreter has no LiteLLM counterpart to compare with.
+pitfalls:
+- Tests that start an interpreter share one process per test binary under nextest's process-per-test model, so each `host::` test starts its own. Do not assume state from another test.
+- Dropping a `PythonHost` must not finalize the interpreter. Other tests and the proxy keep using it.
+- '`spawn_blocking` threads are not Python threads. Take the GIL inside the closure with `attach`, never before `spawn_blocking`.'
+- A semaphore permit has to move into the blocking closure, so a timed-out caller does not free a slot a still-running job holds.
+- '`tempfile::TempDir` removes its folder only on drop, so a leaked `OwnedTempDir` leaves files. Do not call `keep()`.'
+- "pyo3 `auto-initialize` here and the wheel crate B5369 share one workspace, so `cargo clippy --workspace --all-targets` builds both. That works because neither enables the deprecated `extension-module` feature: maturin 1.16.0 sets `PYO3_BUILD_EXTENSION_MODULE` for the wheel build only, and every other target links libpython. Do not add `extension-module` to either Cargo.toml. See https://pyo3.rs/v0.30.1/building-and-distribution.html and https://pyo3.rs/v0.30.1/features.html."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

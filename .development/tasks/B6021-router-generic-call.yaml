@@ -4,13 +4,13 @@ description: >-
   Build the Rust side of `Router.aanthropic_messages` and the generic call path it runs on. LiteLLM sends every non-chat call type (messages, realtime, fine tuning, files, video and more) through `_ageneric_api_call_with_fallbacks`, so this task builds that one engine and plugs `anthropic_messages` into it. Other call types plug in later through the same trait, with no change here.
 
 
-  The code is the new module `crates/betterlite-sdk/src/router_generic.rs` and its folder. It uses the `RouterCompletionParts` services from B6020 (catalog, selection, retries, fallbacks, slots, counters, compaction) and does not read the chat request types. Use public items of betterlite-router and betterlite-core only; a service that exists only as a betterlite-server adapter is a blocker to report.
+  The code is the new module `crates/betterlite-sdk/src/router_generic.rs` and its folder. It uses the `RouterCompletionParts` services from B6020 (catalog, selection, retries, fallbacks, slots, counters, compaction) and does not read the chat request types. betterlite-sdk may not depend on betterlite-router or betterlite-server (deny.toml), so use B6020's ports for those services and public items of betterlite-core. B312's anthropic messages attempt and entry, B398's fallback controls and B401's endpoint step are ports too: small traits this module defines with only the calls it makes. B8631 implements them in betterlite-server.
 
 
-  `GenericCallExecutor` is a trait with one async method that takes a `GenericRequest` (the call type name and a `serde_json::Map` of arguments, with `model` set to the deployment's model) and returns a `GenericOutcome`, either a finished JSON body or a byte stream. `RouterGeneric` holds the executors in a `Vec` of (call type name, executor) built by its constructor, so there is no registry and no discovery. This task registers one executor, `anthropic_messages`, that calls B982's `anthropic_messages_handler`. A call type with no executor answers `GenericError::UnknownCallType` with the name.
+  `GenericCallExecutor` is a trait with one async method that takes a `GenericRequest` (the call type name and a `serde_json::Map` of arguments, with `model` set to the deployment's model) and returns a `GenericOutcome`: a finished JSON body, a byte stream, or `Http { status, headers, body }` with the body as full bytes or a byte stream (B8691's passthrough executor returns it). `RouterGeneric` holds the executors in a `Vec` of (call type name, executor) built by its constructor, so there is no registry and no discovery. This task registers one executor, `anthropic_messages`, that calls B982's `anthropic_messages_handler`. A call type with no executor answers `GenericError::UnknownCallType` with the name.
 
 
-  `generic_call_with_fallbacks` is `_ageneric_api_call_with_fallbacks` (L5272-L5303). It sets `model`, puts the executor under `original_generic_function`, and puts the attempt under `original_function`: the plain attempt below, or B312's anthropic messages attempt when the caller asked for stream fallback (`attempt_function`). With an attempt function it also stores `per_request_fallback_controls` (B398) under the mid-stream controls key, so every hop sees them. It then calls B310's update-before-fallbacks step with the metadata key `litellm_metadata`, and runs B017/B310's fallback-with-retries executor. On error it sends the alert through the optional sink and returns the error unchanged.
+  `generic_call_with_fallbacks` is `_ageneric_api_call_with_fallbacks` (L5272-L5303). It sets `model`, puts the executor under `original_generic_function`, and puts the attempt under `original_function`: the plain attempt below, or B312's anthropic messages attempt when the caller asked for stream fallback (`attempt_function`). With an attempt function it also stores `per_request_fallback_controls` (B398) under the mid-stream controls key, so every hop sees them. It then calls B310's update-before-fallbacks step with the metadata key `litellm_metadata`, and runs B017/B310's fallback-with-retries executor. On error it returns the error unchanged.
 
 
   `dispatch_generic_call_type` is `_dispatch_generic_call_type` (L5780-L5797). The call type `anthropic_messages` goes to B312's `_aanthropic_messages_with_streaming_fallbacks` entry with the executor. Every other call type goes to `generic_call_with_fallbacks` with no attempt function. `anthropic_messages` and `aanthropic_messages` are the same async function: LiteLLM's `factory_function` builds both from `call_type="anthropic_messages"` (L1912-L1914, L6835-L7009), and neither has a blocking form. Expose one method, `anthropic_messages`, and let the Python layer give it both names.
@@ -56,6 +56,8 @@ dod:
     proof: [generic-fallbacks]
   - text: "`generic_attempt` builds the call arguments in LiteLLM's order and sets the provider only when it is not none."
     proof: [generic-attempt]
+  - text: "`GenericOutcome` has an `Http { status, headers, body }` variant whose body is full bytes or a byte stream, and an executor's Http outcome comes back from `generic_attempt` unchanged."
+    proof: [generic-attempt]
   - text: "With `passthrough_on_no_deployment` set, a failed selection calls the executor with the request as it came, and without it the selection error is returned."
     proof: [generic-passthrough]
   - text: "An Anthropic refusal raises the safeguard refusal error, and counters and failure stamps follow the success and error paths."
@@ -99,8 +101,6 @@ deviations:
     why: Each call type belongs to its own family task, and a shared table would be edited by many tasks at once.
   - what: "`anthropic_messages` and `aanthropic_messages` are one method."
     why: LiteLLM builds both from the same async wrapper, so they behave alike.
-  - what: The exception alert is sent through an optional injected sink and is skipped when none is set.
-    why: LiteLLM's `send_llm_exception_alert` is owned by the alerting tasks, so only the call point is here.
 out_of_scope:
   - "B312 owns the messages stream fallback loop, `_aanthropic_messages_with_streaming_fallbacks`, the attempt function and the stream class methods; B311 owns the chat stream twin."
   - "B016 owns the refusal check and selection, B017 the attempt loop and stamps, B310 the fallback executor, B303 the slot and request update, B336 compaction and B401 the passthrough endpoint rewrite."
@@ -116,6 +116,7 @@ pitfalls:
   - "The refusal check runs after the call but before `success_calls` is incremented."
   - "The blocking generic call replaces the group name inside `endpoint` with a plain text replace, while the async path uses B401's segment-aware rewrite."
   - "The messages stream reads `has_buffered_provider_output` as true only for an exact true, so a truthy non-boolean means false."
+  - "There is no exception alert sink: `router_settings.alerting_config` is refused at config load with an error naming the key, so LiteLLM's `send_llm_exception_alert` call point is left out."
 review_level: standard
 budget:
   max_changed_lines: 1500

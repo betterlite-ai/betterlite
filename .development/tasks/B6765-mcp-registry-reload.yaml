@@ -1,0 +1,112 @@
+id: B6765
+title: MCP registry reload from the database, add, update, remove
+description: >-
+  Build the mutations of the database half of the MCP server registry: the full reload from the database table, and add, update and remove for one server. In LiteLLM these are `reload_servers_from_database`, `add_server`, `update_server`, `remove_server` and `_cleanup_server_tool_routing_artifacts` in mcp_server_manager.py. They write into `ServerRegistry::db_servers` (B4731) behind the SharedRegistry alias of B4731, and build records with the ServerBuilder of B6763.
+
+
+  Code goes in the new betterlite-mcp module registry_reload: crates/betterlite-mcp/src/registry_reload.rs, registry_reload/** and tests beside each file. A RegistryMutator struct takes in its constructor: SharedRegistry (B4731), ServerBuilder (B6763), DiscoverySlots (B6762), a ServerRows trait (find_active() -> Vec<LiteLLM_MCPServerTable>, implemented by B4711's MCPServerRepository, it returns the rows whose approval_status is NULL, "active" or "approved"), an OpenApiToolSink (from B6764, with unregister_prefix), the tool name mapping owner from B4682/B4731 the InstructionsCache trait from B6764 (clear() is called at the start of a reload) and a CacheInvalidator trait (invalidate_server(server_id), implemented by B8614 over the prompt, resource and template discovery caches and the OAuth metadata cache).
+
+
+  Items to build, as methods of RegistryMutator.
+
+  1. `reload` (`reload_servers_from_database`). Clear the instructions caches. Load rows from ServerRows. Log "Found N MCP servers in database" at info. Stage one, per row: if the previous registry has the same server_id with equal updated_at (both present) and (a discovery slot exists for the id or not endpoints_unresolved(existing)), reuse the existing record. Otherwise run warn_on_server_name_fields, warn_if_newly_blocked_stdio, build with env_vars_are_encrypted true (rows come straight from the database), copy short_prefix from the previous record when it has one, and carry_forward_endpoints (B6760). A failing row is logged with its server id and alias and skipped, and never stops the reload. Stage two, over the staged set: assign_unique_short_prefix against the full staged set, then register OpenAPI tools without rebuilding the mapping, skipping the server (and logging) on error. Then, for ids that were in the previous registry and are missing now, drop the discovery state; for every id whose record changed (previous != new, needs PartialEq on MCPServer from B6590) invalidate the caches; swap db_servers in one write-lock section; warn_on_shared_identifier_prefixes; reconcile the discovery slots and prime discovery for the new records; rebuild the tool name mapping only when some server has a spec_path. Finish with the two warnings of item 4 and DCR hydration for config servers (B6764 hydrate_dcr_clients).
+
+  2. `add` (`add_server`), input: a table record that is already env-decrypted. Return without doing anything when approval_status is not None, "active" or "approved". When the id is not in the registry: warn_if_newly_blocked_stdio with no previous, build with env_vars_are_encrypted false, assign_unique_short_prefix, invalidate caches, insert, register OpenAPI tools (with mapping rebuild), prime discovery for the one record. A server that is already registered is left untouched. Errors are logged at debug and returned.
+
+  3. `update` (`update_server`). For a non-eligible approval_status evict the entry by server_id, else by server_name, run cleanup (item 5) and drop the discovery state, then return. Otherwise, when the id is registered: build with env_vars_are_encrypted false, keep the previous short_prefix when the new one is empty, carry_forward_endpoints, assign_unique_short_prefix, invalidate caches, replace, register OpenAPI tools, prime discovery. An id that is not registered is ignored. `remove` (`remove_server`): pop by server_id, else by server_name; if found log at debug, run cleanup and drop the discovery state; if not found log a warning "Server ID <id> not found in registry".
+
+  4. Reload warnings, with state held in RegistryMutator fields (warned_shadowed and warned_capturing, each a BTreeSet<String>): shadowed ids are the config server ids that are also in the new db registry, and the capturing ids come from config_ids_capturing_db_identifiers (B6764). Log the warning (exact text at L6879-6896) only when the set is non-empty and differs from the stored set, then store the new set, also when it is empty.
+
+  5. `cleanup_tool_routing_artifacts` (`_cleanup_server_tool_routing_artifacts`): invalidate the caches for the id; when the server has a spec_path and its normalized prefix is non-empty, unregister every tool whose key starts with prefix + the tool prefix separator (MCP_TOOL_PREFIX_SEPARATOR); delete every tool name mapping entry whose normalized mapped server is in the owned set (normalized known prefixes of the server plus its name). `owned_mapping_values` (`_owned_mapping_values`) builds that set. The other methods next to it in Python (server_exposes_tool, known_prefix_to_server, server_owning_tool_name_prefix) are B4731's.
+
+  Tests use fakes for every trait and a SharedRegistry in a tokio::test. Cover: reuse of an unchanged row, skip of a bad row, prefix dedupe across the set, dropped ids, the shadow and capture warnings firing once per change, add of an unapproved record, update evicting, remove by name, and cleanup of OpenAPI tools and mapping rows.
+
+  6. `initialize_tool_owners` (`initialize_tool_name_to_mcp_server_name_mapping` and its private async part, L6671-L6714). It fills the `tool_name_to_mcp_server_name_mapping` field, here the ToolOwners map of B4731. For each registry server in order, skip it when it has a discovery slot (B6762) or needs a user OAuth token, then list its tools through a ToolLister trait the caller supplies. An upstream auth error is logged at debug and skipped, any other error is logged at warning and skipped. For each tool, strip_known_server_prefix (B4682) gives the original name, and both the original and the listed name map to server.name. reload calls it only when OpenAPI tools were registered (L6869) and add calls it after registering them (L3275). LiteLLM runs it as a background task, so spawn it and do not wait. Tests cover a skipped slot server, a skipped token server and a failing server not stopping the rest.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/src/registry_reload.rs
+    - crates/betterlite-mcp/src/registry_reload/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6753-L6901
+    why: reload_servers_from_database.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3277-L3340
+    why: add_server and update_server.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6671-L6714
+    why: initialize_tool_name_to_mcp_server_name_mapping and the tool_name_to_mcp_server_name_mapping fill loop.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2873-L2942
+    why: cleanup of routing artifacts and remove_server.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L4611-L4622
+    why: the cache invalidation that every mutation calls.
+
+dod:
+  - text: reload reuses an unchanged record only when updated_at is equal and a slot exists or the endpoints are resolved, otherwise rebuilds with env_vars_are_encrypted true.
+    proof: [reload-stage-tests]
+  - text: A row that fails to build or register is logged and skipped, and the reload still swaps in the rest.
+    proof: [reload-stage-tests]
+  - text: Short prefixes are assigned over the full staged set and a previous short_prefix is kept.
+    proof: [reload-stage-tests]
+  - text: Dropped ids lose their discovery state, changed ids invalidate caches, and the swap happens in one write-lock section.
+    proof: [reload-swap-tests]
+  - text: The shadowed and capturing warnings log once per changed set and reset when the set changes.
+    proof: [reload-warn-tests]
+  - text: add ignores non-eligible approval status and already-registered ids, and update evicts on a non-eligible status.
+    proof: [reload-mutation-tests]
+  - text: update keeps the previous short_prefix and carries OAuth endpoints forward, and remove falls back to server_name and warns when missing.
+    proof: [reload-mutation-tests]
+  - text: initialize_tool_owners maps the original and listed name of every tool to its server, skips slot and user-token servers, and logs and skips a server whose tool list fails.
+    proof: [reload-mutation-tests]
+  - text: cleanup removes OpenAPI tools by prefix and the owned mapping rows, and nothing else.
+    proof: [reload-cleanup-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: reload-stage-tests
+      why: the reuse rule, the bad row skip or the prefix assignment is wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry_reload::tests::stage_/)'
+    - id: reload-swap-tests
+      why: dropped ids, cache invalidation or the swap is wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry_reload::tests::swap_/)'
+    - id: reload-warn-tests
+      why: a warning repeats, is missing or has the wrong text
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry_reload::tests::warn_/)'
+    - id: reload-mutation-tests
+      why: add, update or remove differs from the Python
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry_reload::tests::mutation_/)'
+    - id: reload-cleanup-tests
+      why: cleanup leaves stale tools or mapping rows, or removes too many
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry_reload::tests::cleanup_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The database read is a ServerRows trait and caches are cleared through a CacheInvalidator trait, not a prisma client and imported singletons.
+    why: the repo wires dependencies through constructors and has no module-level state.
+  - what: The warned sets are RegistryMutator fields, and the swap is one RwLock write section.
+    why: LiteLLM keeps them on the manager object and assigns a dict; Rust needs an explicit lock.
+
+out_of_scope:
+  - "Building a record from a row: B6763. Loading config servers: B6764."
+  - "The registry type and its reads: B4731. Allowed-server unions: B6591."
+  - "Health checks and toolset caches: B6592."
+  - "The table repository (MCPServerRepository) and approval filter query: B4711."
+  - "The management routes that call add, update and remove: the admin route tasks."
+
+pitfalls:
+  - "Rows in reload still carry encrypted env vars, but records handed to add and update are already decrypted; pass env_vars_are_encrypted true only in reload."
+  - "Never hold the write lock while building records or registering tools; stage first, then swap."
+  - "A reload that skips a bad row must still keep the remaining rows, so no error from stage one or two escapes."
+  - "Compare previous and new records by value (PartialEq) when deciding which ids to invalidate, not by identity."
+  - "The shadow and capture warning state is stored even when the set is empty, so a later reappearance warns again."
+  - "update on an id that is not registered does nothing, it does not add the server."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

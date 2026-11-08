@@ -1,0 +1,53 @@
+id: B7937
+title: Python types for Prometheus part one, constants, label validation and UserAPIKeyLabelNames (types/integrations/prometheus L1-L410)
+description: >-
+  `litellm/types/integrations/prometheus.py` has 1162 lines and decides which labels each Prometheus metric carries. It is split
+  in two. This task ports L1-L410 into `crates/betterlite-python/python/betterlite/types/integrations/prometheus/core.py`, `labels.py` and `validation.py`. It is Python only.
+  B7938 ports the rest and the umbrella B167 writes `integrations/prometheus/__init__.py`.
+
+
+  Contents: the `Final` constants for label names (`REQUESTED_MODEL`, `EXCEPTION_STATUS`, `STATUS_CODE` and the others at L129-L190),
+  `LATENCY_BUCKETS`, `INPUT_SEQUENCE_LENGTH_BUCKETS` and `BATCH_DURATION_BUCKETS` tuples, the functions `_sanitize_prometheus_label_name`,
+  `_sanitize_prometheus_label_value` and `get_input_sequence_length_bucket`, the errors `MetricValidationError` and `LabelValidationError`,
+  `ValidationResults`, the Enum `UserAPIKeyLabelNames` (L192-L340) and the functions `validate_prometheus_deployment_and_latency_caller_identity`,
+  `validate_caller_identity_settings` and `_resolve_deployment_and_latency_caller_identity_labels`. Every function keeps its output for every input.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/integrations/prometheus/core.py
+  - crates/betterlite-python/python/betterlite/types/integrations/prometheus/labels.py
+  - crates/betterlite-python/python/betterlite/types/integrations/prometheus/validation.py
+  - crates/betterlite-python/tests/test_types_prometheus_labels_a.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L1-L191
+  why: Sanitizers, validation classes and bucket tuples.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L192-L410
+  why: UserAPIKeyLabelNames and the caller identity validators.
+out_of_scope:
+- >-
+  L411 on (`PrometheusMetricLabels`, `UserAPIKeyLabelValues`, `PrometheusMetricsConfig`, `PrometheusSettings`, `NoOpMetric`) belongs to B7938.
+pitfalls:
+- >-
+  The bucket tuples are compared element by element, including the last value; one wrong float changes every histogram.
+- >-
+  The two sanitizer functions carry regex rules. A test runs a set of strings with spaces, dots, dashes, unicode and a leading digit through both and compares with LiteLLM.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_prometheus_labels_a.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations: []
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

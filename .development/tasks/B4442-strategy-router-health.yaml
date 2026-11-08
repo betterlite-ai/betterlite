@@ -102,7 +102,7 @@ deviations:
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L348-L364
 out_of_scope:
 - "litellm/proxy/health_check.py: B4441 owns _resolve_health_check_mode (L75-94), _should_inject_health_check_max_tokens (L97-109), _get_process_rss_mb (L116-129), _rss_mb_for_log (L132-136), _get_random_llm_message (L139-145), _clean_endpoint_data (L148-153), health_check_filter_kwargs_from_general_settings (L156-171), parse_background_health_check_model_groups (L174-193), filter_deployments_to_model_groups (L196-203), filter_deployments_by_id (L206-222), run_with_timeout (L225-236), _skips_health_checks (L239-241), _health_check_eligible (L244-253), _deployment_model (L256-258), _owner_team_id (L261-264), _team_public_model_name (L267-270), _deployments_routed_by_name (L273-293), deployments_targeted_by_name (L296-302), _narrow_to_target (L305-314), _health_check_deployment_is_wildcard (L705-706), _resolve_health_check_max_tokens (L709-751), _update_litellm_params_for_health_check (L754-844)."
-- "litellm/proxy/health_check.py: B4440 owns _run_model_health_check (L514-536)."
+- "litellm/proxy/health_check.py: B4443 owns _run_model_health_check (L514-536)."
 - "litellm/proxy/health_check.py: B4443 owns _run_health_checks_with_bounded_concurrency (L539-576), _perform_health_check (L579-655), perform_health_check (L847-975), build_deployment_health_states (L658-693)."
 - "litellm/proxy/health_check.py: B4446 owns the HTTP routing and request validation for /health endpoints."
 pitfalls:

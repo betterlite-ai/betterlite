@@ -3,7 +3,7 @@ title: Batch retrieval route
 description: >-
   Implement the complete retrieve_batch handler and its three GET aliases. List registration belongs to B1133.
   Run B1021 validate_managed_id_requirement before decoding the model or preparing the request. B004's
-  common_processing_pre_call_logic uses route_type=aretrieve_batch. When a unified id contains a model id,
+  common_processing_pre_call_logic (B8801's PreCall step; keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step) uses route_type=aretrieve_batch. When a unified id contains a model id,
   resolve it through B844 and call B1020 authorize_model_for_key before any credentials or provider request.
   Fall back to the id itself if the catalog cannot resolve its model name.
 
@@ -30,7 +30,7 @@ description: >-
   A model-encoded id selects authorized model credentials, moves the credentials helper's file_id into batch_id,
   adds model and model_info, and sets litellm_metadata.model_group only when absent. B1037 performs the SDK call;
   B1019 encodes the returned batch id and each nonempty input_file_id/output_file_id/error_file_id with that model.
-  Otherwise, a unified id or enable_loadbalancing_on_batch_endpoints=true uses Router.aretrieve_batch (B162).
+  Otherwise, a unified id or enable_loadbalancing_on_batch_endpoints=true uses Router.aretrieve_batch (B8353).
   No router raises HTTPException 500 with source detail {error:"LLM Router not initialized. Ensure models added to proxy."}.
   B2400 converts that to 500 internal_server_error/param=null/code="500".
 
@@ -73,7 +73,7 @@ description: >-
 
 
   Direct service owners are B004/B012 for processing/hooks, B844 for resolved model names, B1037 for provider retrieval,
-  B162 for Router.aretrieve_batch, B1019-B1021 for ids/credentials/managed requirements, B1041/B1112 for MIT batch support,
+  B8353 for Router.aretrieve_batch, B1019-B1021 for ids/credentials/managed requirements, B1041/B1112 for MIT batch support,
   B1048 for batch_error and B2400 for provider-hint accessors/error handling. B732/B855/B756 provide authenticated
   admission; B003/B002/B1087 provide HTTP/config/limits and B1139/B856 supply isolated HTTP fixtures.
 
@@ -256,7 +256,7 @@ out_of_scope:
 - 'litellm/proxy/batches_endpoints/endpoints.py: B1133 owns list_batches L847-L1014.'
 - 'litellm/proxy/batches_endpoints/endpoints.py: B086 owns cancel_batch L1032-L1256.'
 - The cached terminal response path requires the enterprise managed_files hook; B1041 documents the MIT no-hook early return.
-- B1037 owns provider HTTP execution; B162 owns Router.aretrieve_batch, and B1040/B1043 own cost finalization/refund helpers unused by this MIT route path.
+- B1037 owns provider HTTP execution; B8353 owns Router.aretrieve_batch, and B1040/B1043 own cost finalization/refund helpers unused by this MIT route path.
 pitfalls:
 - A GET body custom_llm_provider is not a fallback source; only path, header and query select the provider here.
 - An existing managed-object row alone cannot activate terminal retrieval without managed_files.

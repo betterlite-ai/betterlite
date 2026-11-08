@@ -1,0 +1,102 @@
+id: B8521
+title: Third-party guardrail registry arms
+description: >-
+  B3682's `GuardrailFactories::build` knows seven guardrail types and answers "Unsupported guardrail: {kind}" for the
+  rest. In LiteLLM every folder under litellm/proxy/guardrails/guardrail_hooks/ adds its own entries to
+  `guardrail_initializer_registry` and `guardrail_class_registry`, and guardrail_registry.py merges them in with
+  `get_guardrail_initializer_from_hooks`. Rust has no import-time scan, so this task writes that merge as an explicit
+  table: one arm per third-party wire name that calls the initializer another task built and keeps its result as a
+  callback spec. Without it, a config with `guardrail: aim` or `guardrail: mcp_jwt_signer` fails to start.
+
+  Code goes in crates/betterlite-guardrails/src/hook_registry.rs and hook_registry/ (kinds.rs, spec.rs, ports.rs,
+  hooks.rs, error.rs, tests.rs), plus two edits to B3682's files: guardrail_registry/callback.rs gains the variant
+  `CallbackSpec::Hook(Box<HookSpec>)`, and guardrail_registry/build.rs gains, just before the Unsupported answer, a
+  call to `build_hook_spec`. Add the builder `GuardrailFactories::with_hooks(self, ports: HookPorts) -> Self` so
+  `GuardrailFactories::new` keeps its signature and B3683 keeps compiling; a factory built without hooks answers
+  Unsupported as before.
+
+  `HookPorts` (ports.rs) holds what the initializers take besides the params: the `SecretLookup` of B8290's
+  hook_initializers, whether a router handle exists (B8219 and B8214 take `router_present`), and the callback registry and the `JwtSignerSlot` that B8254's `initialize_mcp_jwt_signer` takes. `HookSpec` (spec.rs) has one variant per wire name below,
+  holding exactly what that kind's initializer returns. `build_hook_spec(kind: &str, params: &LitellmParams,
+  guardrail_name: &str, ports: &HookPorts) -> Option<Result<HookSpec, HookRegistryError>>` is None for a name it does
+  not know, and an initializer's error comes back as `HookRegistryError::Init { kind, message }` with the initializer's
+  own text. `HookSpec::settings(&self)` gives the guardrail name, event_hook, default_on and timeout for
+  `GuardrailSettings`, and `supported_event_hooks(kind)` (hooks.rs) gives the list each class constructor sets with
+  `kwargs.setdefault("supported_event_hooks", ...)` or returns from `get_supported_event_hooks`; read each class file
+  and keep LiteLLM's order. build.rs fills `GuardrailBase::new` from those two the same way it does for the seven
+  builtin kinds, and `compression_kind` still marks headroom, compresr and typesafe after the build.
+
+  Wire names (the `SupportedGuardrailIntegrations` values each __init__.py registers) and the initializer each calls:
+  - B8217 (third_party_init_a): aim, akto, aporia_ai, cisco_ai_defense, conduct, crowdstrike_aidr, deepkeep,
+    generic_guardrail_api, grayswan, guardrails_ai, headroom, lasso.
+  - B8218 (third_party_init_b): panw_prisma_airs, pillar, rubrik, straiker, typesafe, vigil_guard, xecguard.
+  - B8219 (content_filter_init): litellm_content_filter. B8290 (hook_initializers): agent_365, azure/prompt_shield,
+    azure/text_moderations, ibm_guardrails, microsoft_purview, model_armor, openai_moderation. B8254: mcp_jwt_signer.
+  - B8210 to B8216: decision_model, promptguard, qohash, qualifire, semantic_guard, singulr, zscaler_ai_guard.
+  - The class tasks that own their folder's initializer: block_code_execution (B3702), compresr
+    (B3765), hiddenlayer (B3776), javelin (B3777), noma (B3780), onyx (B3783), ovalix (B3784), pangea (B3785),
+    prompt_security (B3792), repelloai (B3793, B3794), custom_code (B3803), llm_as_a_judge (B3809),
+    mcp_end_user_permission and mcp_security (B3815).
+  - alice, cato_networks, dynamoai and enkryptai: their class tasks (B3752, B3755, B3768, B3769) build no initializer, so this task
+    ports the four `initialize_guardrail` functions of alice/__init__.py, cato_networks/__init__.py, dynamoai/__init__.py and
+    enkryptai/__init__.py as argument functions in kinds.rs, in the style of B8217: one struct and one function each,
+    no class.
+  Take every wire name from the folder's __init__.py at the pin, not from this list, and add an arm for any name this
+  list misses. A name that both a builtin kind and a folder register keeps the folder's initializer, as LiteLLM's
+  `update` does.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/hook_registry.rs
+    - crates/betterlite-guardrails/src/hook_registry/**
+    - crates/betterlite-guardrails/src/guardrail_registry/build.rs
+    - crates/betterlite-guardrails/src/guardrail_registry/callback.rs
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py
+    why: The builtin initializer dict and the merge with get_guardrail_initializer_from_hooks that this table replaces.
+  - url: https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks
+    why: Each folder's __init__.py holds its two registry dicts and the wire names they use.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cato_networks/__init__.py
+    why: One of the four initializers ported here (alice, dynamoai and enkryptai sit in the same place in their folders).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py
+    why: SupportedGuardrailIntegrations, the wire names.
+
+dod:
+  - text: Every wire name a guardrail_hooks folder registers at the pin builds a Hook callback through its initializer, with that class's supported event hooks.
+    proof: [hook-registry-tests]
+  - text: An initializer refusal comes back with its own text, an unknown name still answers Unsupported, and a factory built without hooks behaves as before.
+    proof: [hook-registry-tests, registry-tests]
+  - text: The alice, cato_networks, dynamoai and enkryptai argument functions copy their fields and defaults as LiteLLM does.
+    proof: [hook-registry-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: hook-registry-tests
+      why: a wire name is missing, calls the wrong initializer or gets the wrong event hooks
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hook_registry::/)'
+    - id: registry-tests
+      why: the edit to build.rs or callback.rs broke B3682's factory or handler
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_registry::/)'
+
+deviations:
+  - what: Third-party guardrails come from a fixed table instead of a scan of the guardrail_hooks folders.
+    why: Rust has no import-time discovery; the table lists every folder at the pin.
+
+out_of_scope:
+  - "Every initializer named above and its argument struct: the task named next to it."
+  - "The guardrail classes and their hooks, which act on the spec at request time: their own tasks."
+  - "Custom guardrail types loaded from a Python file (a type name with a dot): not built, see B3682."
+  - "Startup and reconciliation: B3683. The with_hooks call at startup: B8374."
+
+pitfalls:
+  - 'Azure registers two names, azure/prompt_shield and azure/text_moderations, and both go to one initializer that splits at the slash.'
+  - 'openai/__init__.py registers SupportedGuardrailIntegrations.OPENAI_MODERATION, so read its value in types/guardrails.py instead of guessing openai.'
+  - 'The registry dict of a folder can map one initializer to several names; count names, not folders.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+oracle_cases: []

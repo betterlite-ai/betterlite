@@ -53,7 +53,7 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1954-L2050
   why: Implementation boundary verified against the pinned checkout.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L509-L539
-  why: Shared Redis configuration precedence; B126 owns the full general cache transport.
+  why: Shared Redis configuration precedence; B5640 builds the general RedisCache over it.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1282-L1297
   why: Previously uncovered helper owned by this task.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1299-L1311
@@ -120,7 +120,7 @@ out_of_scope:
 - Response caching, discovery, general-purpose Redis APIs and the later Valkey platform features.
 - B390 owns typed routing values and bounded local store; consume its tested public interface.
 - B393 owns routing redis circuit and failure policy; consume its tested public interface.
-- 'litellm/caching/redis_cache.py: B126 owns: _AsyncRedisCommands.ping (L78-L78), _AsyncRedisCommands.delete
+- 'litellm/caching/redis_cache.py: B393, B4324 to B4329 and B5640 own these (B5640 out_of_scope maps each one): _AsyncRedisCommands.ping (L78-L78), _AsyncRedisCommands.delete
   (L80-L80), _AsyncRedisCommands.ttl (L82-L82), _AsyncRedisCommands.expire (L84-L84), _AsyncRedisCommands.rpush
   (L86-L86), _AsyncRedisCommands.lpop (L88-L88), _AsyncRedisCommands.pipeline (L90-L90), _AsyncRedisCommands.eval
   (L92-L92), _decoded_counts (L110-L113), _get_call_stack_info (L116-L155), _opaque_kwarg_key (L290-L291),

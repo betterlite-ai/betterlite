@@ -1,0 +1,132 @@
+id: B3344
+title: Video content and remix HTTP routes
+description: >-
+  Register GET /v1/videos/{video_id}/content, GET /videos/{video_id}/content, POST /v1/videos/{video_id}/remix and POST /videos/{video_id}/remix exactly once,
+  in betterlite-server::api::video_content_remix_routes, filled into the stub module crates/betterlite-server/src/routes/video_content_remix.rs.
+  Do not touch the other video routes: B3343 owns create, list and status, B3345 owns the character routes. Do not edit routes.rs or state.rs, B1100 declares the stub.
+  Both routes sit behind the virtual key authentication of B052, and a missing or wrong key answers 401 before any route code runs.
+  The calls behind them are B3339 (video_content, avideo_content) and B3340 (video_remix, avideo_remix) in betterlite-core. Fill the two core dispatch entries B014 registers for them,
+  operation/video_content.rs with dispatch/video_content.rs and operation/video_remix.rs with dispatch/video_remix.rs. Both LiteLLM handlers go through route_request, so each entry first calls B6460's plan_video_route (VideoCallKind Content or Remix). A Direct plan calls the B3339 or B3340 SDK function. A Router plan calls the matching VideoRouterCalls method (avideo_content or avideo_remix). A NotFound plan returns the model-not-found error. VideoRouterCalls and VideoRouteView are injected into the entries, because betterlite-core cannot import sdk or router. The content entry sends route type avideo_content and its result is the raw bytes. The remix entry sends route type avideo_remix and its result is the video object as JSON.
+  B8801 owns the pre-call step of the common request processing (these routes run its PreCall step; keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step); B004 owns the rest of it and the exception handling (LiteLLM's ProxyBaseLLMRequestProcessing and _handle_llm_api_exception). These routes only build the data map and hand it over.
+
+  Content route steps, in order. (1) Start data as {video_id}. The video_id is the whole path segment. (2) Call B672 decode_video_id_with_provider(video_id) and keep its custom_llm_provider and model_id.
+  (3) Pick custom_llm_provider as the first truthy value of: the custom-llm-provider header, the custom_llm_provider query parameter (both from B2400), the custom_llm_provider key of the JSON body (B2400, which reads the body through B1100), the provider from the decoded id. The body is only read when the header and the query are both empty, and a malformed body then fails with the 400 invalid_request_error from B1100 before the processing try block.
+  (4) When the pick is truthy, set data["custom_llm_provider"]. (5) When the decoded model_id is truthy and a router is loaded, call B844 resolve_model_name_from_model_id; when it gives a name, set data["model"]. (6) Call the common processing with route type avideo_content and model none.
+  (7) Return a new response with the bytes as the body, media type video/mp4 and the single header Content-Disposition: attachment; filename=video_{video_id}.mp4. The step is inside the same try as the processing, so a failure goes through the common exception handling.
+  Nothing else from the query reaches the call: variant, extra_query and every other query key are dropped, because data is only built from the steps above.
+
+  Remix route steps. (1) Read the JSON body with B1100 before any try block, and set data["video_id"] to the path segment (the path wins over a body video_id). (2) Decode the id as above. (3) Pick custom_llm_provider as the first truthy value of: the header, the query, data["custom_llm_provider"] from the body, the provider from the decoded id.
+  (4) When the pick is truthy, overwrite data["custom_llm_provider"]; when none is truthy, the body's own falsy value stays. (5) Resolve the model from the decoded model_id exactly as in the content route, and a resolved name replaces a body "model". (6) Call the common processing with route type avideo_remix and model none, and return its result unchanged.
+  The body is not validated here: prompt, extra_body and the rest go straight to the call. A JSON body that is not an object fails before the try block and is not shaped by the common exception handling; mirror what LiteLLM returns and record it in a case.
+
+  Why the video calls need no model: when data has no model, plan_video_route plans Direct and the entry calls the SDK function with custom_llm_provider (route_llm_request.py). When a model was resolved the plan is Router and the entry calls VideoRouterCalls. At the pin a call with a model gets no SDK fallback: the Router.avideo_* wrapper is an async_wrapper, so route_llm_request.py L700-L706 gets an unawaited coroutine and a router error surfaces at the caller's await, outside the try. The router error reaches the client and the entry never retries the SDK function. B6460 owns the plan and the router wrappers; this task only fills the two entries.
+
+  Tests: rstest functions named content_route_behavior, remix_route_behavior and provider_pick_behavior in api::video_content_remix_routes (betterlite-server), with a mock upstream server and fake collaborators for the model resolver and the calls, one named case per DoD item. Core entry tests are named video_entry_behavior.
+  The task parses no new bytes (B1100 owns the body decoder), so there is no fuzz target. Oracle cases are plain HTTP cases through the booted proxy, in tools/oracle/cases/api/video-content-remix-routes, with the mock provider as the openai upstream (config api_base "{{upstream}}", master key oracle-master as in tools/oracle/cases/chat/upstream-429.yaml).
+  The OpenAI video config calls GET {api_base}/videos/{original_id}/content and POST {api_base}/videos/{original_id}/remix with JSON {"prompt": ...}.
+  Encoded ids for the cases, all built as "video_" plus base64 of "litellm:custom_llm_provider:<provider>;model_id:<model or empty>;video_id:<id>": openai with model sora-2 and id video_123 is bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkZW9fMTIz,
+  openai with no model and id video_456 is bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDo7dmlkZW9faWQ6dmlkZW9fNDU2 (use the literal prefix "video_" in front when the case sends it as a path segment).
+  B3343 left the status and generation cases to itself and left the content HTTP cases to this task.
+scope:
+  paths:
+    - crates/betterlite-server/src/api/video_content_remix_routes.rs
+    - crates/betterlite-server/src/api/video_content_remix_routes/**
+    - crates/betterlite-server/src/routes/video_content_remix.rs
+    - crates/betterlite-server/src/routes/video_content_remix/**
+    - crates/betterlite-core/src/operation/video_content.rs
+    - crates/betterlite-core/src/operation/video_content/**
+    - crates/betterlite-core/src/dispatch/video_content.rs
+    - crates/betterlite-core/src/dispatch/video_content/**
+    - crates/betterlite-core/src/operation/video_remix.rs
+    - crates/betterlite-core/src/operation/video_remix/**
+    - crates/betterlite-core/src/dispatch/video_remix.rs
+    - crates/betterlite-core/src/dispatch/video_remix/**
+    - tools/oracle/cases/api/video-content-remix-routes/**
+    - tools/oracle/helpers/b3344.py
+    - tools/oracle/helpers/b3344/**
+    - tools/oracle/src/helpers/server/b3344.rs
+    - tools/oracle/src/helpers/server/b3344/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L308-L410
+    why: Both content decorators, the id decode, the provider pick, the model resolve and the fixed video/mp4 response with its Content-Disposition header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L413-L514
+    why: Both remix decorators, the body read before the try, the video_id override and the provider pick that includes the body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L52-L81
+    why: The three provider accessors; the body accessor reads the whole body even on a GET.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11528-L11583
+    why: resolve_model_name_from_model_id, which turns a decoded model_id into a configured model_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L611-L631
+    why: Video route types with no model go straight to the SDK function with custom_llm_provider.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L688-L703
+    why: With a model the router is called. The except branch never runs for a router error, see the description.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L59-L113
+    why: decode_video_id_with_provider, the source of the provider and model_id picks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L202-L262
+    why: The upstream URLs the openai config builds for content and remix, which the oracle cases assert.
+dod:
+  - text: >-
+      content_route_aliases: GET /videos/video_123/content and GET /v1/videos/video_123/content with the master key each make one upstream GET to /videos/video_123/content.
+      Both answer 200 with the upstream bytes, content-type video/mp4 and content-disposition "attachment; filename=video_video_123.mp4".
+    proof: [route-tests, oracle, new-cases]
+  - text: >-
+      content_response_headers: the client gets no x-litellm-* header written by the common processing, because the route returns a new response, and the upstream content-type is replaced by video/mp4.
+    proof: [route-tests, oracle]
+  - text: >-
+      content_provider_pick: the header wins over the query, the query over a body custom_llm_provider, the body over the provider inside an encoded id; an empty header falls through. The body is not read while the header or query is set.
+    proof: [route-tests, oracle]
+  - text: >-
+      content_drops_query: GET .../content?variant=thumbnail reaches the upstream without a variant query, as in LiteLLM.
+    proof: [route-tests, oracle]
+  - text: >-
+      remix_route_aliases: POST /videos/video_123/remix and POST /v1/videos/video_123/remix with {"prompt":"new"} each make one upstream POST to /videos/video_123/remix with JSON {"prompt":"new"} and return the upstream video object with status 200.
+    proof: [route-tests, oracle, new-cases]
+  - text: >-
+      remix_provider_and_model: an encoded id with provider openai and model_id sora-2 sets custom_llm_provider and, when sora-2 is a configured model name or the tail of a configured litellm_params.model, sets data model so the deployment's api_base is used; an unresolved model_id keeps a body "model".
+      A body video_id never overrides the path id. A header, query or body provider beats the decoded one.
+    proof: [route-tests, oracle]
+  - text: >-
+      content_remix_failures: an upstream 404 on content and on remix, a malformed JSON remix body, and an encoded id naming an unknown provider give the same status, error.type, error.param and error.code as LiteLLM (message text ignored). A malformed body is rejected before any upstream request.
+    proof: [route-tests, oracle]
+  - text: >-
+      content_remix_auth: no Authorization header and a wrong Bearer key give 401 auth_error with param "None" and code "401" on all four paths, with zero upstream requests; GET on the remix paths and POST on the content paths give 405.
+    proof: [route-tests, oracle]
+  - text: The video_content and video_remix core entries call B3339 and B3340, return bytes and the video object, and no longer answer NotBuilt.
+    proof: [entry-tests]
+checks:
+  optional: []
+  commands:
+    - id: route-tests
+      why: the four routes, the provider and model picks or the content response are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_content_remix_routes::/)'
+    - id: entry-tests
+      why: the core video_content and video_remix entries are still stubs
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^(operation|dispatch)::video_(content|remix)::/)'
+    - id: new-cases
+      why: the branch added no booted-proxy cases for these routes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/video-content-remix-routes)"
+oracle_cases:
+  - tools/oracle/cases/api/video-content-remix-routes/content-route-aliases.yaml
+  - tools/oracle/cases/api/video-content-remix-routes/content-provider-pick.yaml
+  - tools/oracle/cases/api/video-content-remix-routes/content-drops-query.yaml
+  - tools/oracle/cases/api/video-content-remix-routes/remix-route-aliases.yaml
+  - tools/oracle/cases/api/video-content-remix-routes/remix-provider-and-model.yaml
+  - tools/oracle/cases/api/video-content-remix-routes/content-remix-failures.yaml
+  - tools/oracle/cases/api/video-content-remix-routes/content-remix-auth.yaml
+deviations: []
+out_of_scope:
+  - "B3343 owns POST/GET /videos and GET /videos/{video_id}, with their cases. B3345 owns the character routes. The edits and extensions routes in the same file have no task yet, see the planner notes."
+  - "B3339 and B3340 own the call functions, B3334 the remix transport and B3333 the content transport; B672 owns the id codec; B844 owns resolve_model_name_from_model_id."
+  - "B8801 owns the pre-call step, B004 the rest of the common request processing, response headers and exception handling; B2400 the provider accessors; B1100 the body read; B052 authentication."
+  - "video_reference_to_id, extract_model_from_target_model_names, get_custom_provider_from_data and encode_character_id_in_response in video_endpoints/utils.py are not used by these two routes."
+pitfalls:
+  - The content route returns a new response, so custom headers set by the common processing are lost and only Content-Disposition is added.
+  - The content filename is video_{video_id}.mp4 with the full path segment, so a segment that already starts with video_ gives video_video_123.mp4.
+  - The content route reads the JSON body of a GET only when the header and query provider are empty, and a bad body then answers 400 invalid_request_error with param request_body.
+  - Remix overwrites a body custom_llm_provider only with a truthy header, query or decoded provider, so an empty body value survives otherwise.
+  - Content never forwards variant, even though the OpenAI config builds ?variant= when the call receives one.
+  - The body video_id in remix is replaced by the path segment, and a resolved model replaces a body model.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

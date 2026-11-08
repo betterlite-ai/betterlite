@@ -1,0 +1,165 @@
+id: B7972
+title: MCP OAuth protected-resource routes and aggregate authorization-server discovery
+description: >-
+  Build the protected-resource half of discoverable_endpoints.py: the upstream metadata fetch for pass-through servers, the RFC 9728 documents, the aggregate authorization-server document and the five routes that serve them. MCP clients read these documents to learn which authorization server to sign in with, so a wrong key, a wrong issuer or a wrong status sends a client to the wrong login.
+
+
+  Code goes in betterlite-server, module mcp::oauth_protected: crates/betterlite-server/src/mcp/oauth_protected.rs (the struct ProtectedRoot, its ports and the router builder), oauth_protected/upstream_fetch.rs, oauth_protected/documents.rs and oauth_protected/routes.rs, with a tests.rs beside each file. Nothing is global. ProtectedRoot is built once by B8624 and holds: the shared registry of B4731 (SharedRegistry, read under its lock), B6595's OAuthMetadataCache, the three ports below, the well-known root suffix (a String, B4654's well_known_root_suffix, read once at startup like LiteLLM reads it at import) and a clock that returns tokio::time::Instant.
+
+
+  Ports, all traits taken as generics, with native async fn where they wait:
+
+  - UpstreamGet: `async fn get(&self, url: &str, accept: &str) -> Result<UpstreamReply, GetFailure>`. UpstreamReply is status: u16 and body: Vec<u8>. GetFailure is Transport(String) for what httpx calls a TransportError (connection refused, DNS, TLS, timeout) and Other(String) for anything else. B8624 implements it over B173's pooled client for httpxSpecialProvider.Oauth2Check; the tests use a fake that serves canned replies by url and counts calls.
+
+  - RequestFacts: `fn request_base_url(&self, request: &RequestParts) -> String` (B4654's get_request_base_url with B743's trusted-proxy decision) and `fn client_ip(&self, request: &RequestParts) -> Option<String>` (B743's get_mcp_client_ip). RequestParts is B4719's type.
+
+  - GatewayFacts: `fn jwt_issuers(&self) -> Vec<String>` and `fn token_exchange(&self) -> TokenExchangePrerequisites` (B4663's type). Both are read on every request because LiteLLM reads its globals on every request. jwt_issuers is `_jwt_auth_issuers` (L2626-L2648): the JWT_ISSUER env var when it is set and not empty, then each litellm_jwtauth.issuers entry's issuer in order, skipping an empty one and one already in the list. B8624 reads the env var and the config; write the pure rule as `merge_issuers(env_issuer: Option<&str>, configured: &[Option<String>]) -> Vec<String>` in documents.rs so it is tested here. Token exchange is available when TokenExchangePrerequisites says every gate holds (LiteLLM's `available`, which is `refusal()` returning None).
+
+
+  1. upstream_fetch.rs, `fetch_upstream_oauth_protected_resource(&self, server: &MCPServer) -> Result<Option<serde_json::Map<String, Value>>, FetchError>` (L2380-L2475). FetchError carries the text of the last Transport failure. Steps in order.
+
+  (a) An empty or missing server.url gives Ok(None). Split the url into scheme, netloc and path; an empty scheme or empty netloc gives Ok(None). Query and fragment are ignored.
+
+  (b) cache key is (server.server_id, server.url). Call cache.prune(now), then cache.lookup(key, now). A hit returns its payload, and a cached None (the negative entry) returns Ok(None) with no request.
+
+  (c) Take cache.enter_fetch(key) and keep the slot for the rest of the function. After it is granted, look the key up again (prune is not called) and return a hit. Then read the generation with cache.generation(server.server_id). Time is read from the clock at each step, not once.
+
+  (d) Candidates: "<scheme>://<netloc>/.well-known/oauth-protected-resource", and when the url path is not "" and not "/", a second one "<scheme>://<netloc>/.well-known/oauth-protected-resource" followed by the path with trailing slashes removed (a path of "//" therefore gives a second candidate equal to the first; keep it).
+
+  (e) For each candidate in order, GET with Accept "application/json". Transport failure: remember it and go on. Other failure: log a warning "MCP OAuth metadata fetch for <candidate> raised non-transport <kind>: <text>, treating as no metadata for this candidate" and go on. A status other than 200 goes on silently. A 200 whose body is not valid JSON logs a warning "MCP OAuth metadata at <candidate> returned 200 but JSON decode failed (<kind>: <text>), treating as no metadata" and goes on. A 200 whose JSON is not an object goes on silently. A 200 JSON object is stored with cache.store(key, generation, Some(payload), 300, now) and returned. A store that returns false (the server changed while the fetch ran) still returns the payload to this caller.
+
+  (f) After the loop: when the number of remembered Transport failures equals the number of candidates, return Err with the last one and store nothing. Otherwise store None with ttl 60 (the negative entry) and return Ok(None).
+
+  The body decoder is `parse_metadata_body(bytes: &[u8]) -> BodyOutcome` with Object(Map), NotObject and NotJson, an input from the network, so it gets a fuzz target (see checks). Keep the key order of the upstream document: serde_json's Map must be built with the preserve_order feature (check the workspace already enables it, otherwise the architect adds it), because the document is returned to clients as received.
+
+  2. documents.rs, the typed documents. Struct fields serialize in the order LiteLLM writes its dict keys.
+
+  - RootResource (`oauth_protected_resource_root`, L2651-L2659): resource, authorization_servers, scopes_supported in that order. resource is "<scheme>://<netloc>" of the request base url (path dropped), authorization_servers is ["<base>/mcp"], scopes_supported is [].
+
+  - GatewayResource: authorization_servers, resource, scopes_supported in that order. Used by the aggregate document (`_build_aggregate_protected_resource_response`, L2662-L2679: authorization_servers ["<base>/mcp"], resource "<base>/mcp", scopes_supported []) and by every named-server branch below.
+
+  - AggregateAuthServer (`_build_aggregate_authorization_server_response`, L2682-L2712), keys in this order: issuer "<base>/mcp", authorization_endpoint "<base>/authorize/mcp-session", token_endpoint "<base>/token", introspection_endpoint "<base>/introspect", registration_endpoint "<base>/register", response_types_supported ["code"], scopes_supported [], grant_types_supported from B4674's supported_grant_types(token_exchange available), code_challenge_methods_supported ["S256"], token_endpoint_auth_methods_supported ["none", "client_secret_post"]. This is not B7321's AsMetadata: the keys, the issuer and the authorize path differ, so do not reuse that type.
+
+  - `named_resource(&self, base_url, name, standard: bool, server: Option<&MCPServer>) -> Result<NamedDocument, DiscoveryFailure>` (`_build_oauth_protected_resource_response`, L2484-L2603). NamedDocument is Gateway(GatewayResource) or Upstream(Map). The route never reaches LiteLLM's mcp_server_name None branch (the path always has a name), so it is not built. resource_url is "<base>/mcp/<name>" when standard, else "<base>/<name>/mcp". The server is resolved by the route before this call (see 3). Branches, first match wins:
+
+    1. server.is_dcr_bridge: authorization_servers ["<base>/<name>"], resource resource_url, scopes_supported the server scopes or [].
+
+    2. server.is_oauth_passthrough or is_oauth_delegate or is_true_passthrough: call fetch_upstream_oauth_protected_resource. Err gives a 502 with detail "Failed to fetch upstream oauth-protected-resource metadata for MCP server '<server.name>'" and a logged warning. Ok(Some(map)): when server.is_client_forwarded_token the map is returned unchanged, otherwise the map with "resource" set to resource_url (an existing "resource" key keeps its place, a missing one is appended). Ok(None) logs a warning and gives a 502 with detail "Upstream oauth-protected-resource metadata unavailable for MCP server '<server.name>'". It never falls through to the gateway documents. The quotes around the name follow Python's repr for a plain name.
+
+    3. OBO: auth_type oauth2_token_exchange and a non-empty gc.jwt_issuers(): authorization_servers is that list, resource resource_url, scopes_supported the server scopes or [].
+
+    4. server.advertises_gateway_authorization_server: authorization_servers ["<base>/mcp"], resource resource_url, scopes_supported the server scopes or [].
+
+    5. When the server is missing or its auth_type is not oauth2_token_exchange, the 404 check: pass for auth_type oauth2 (a dcr bridge never gets here), else 404 with detail "MCP server '<name>' is not an OAuth-protected resource" (the request name, not server.name). A missing server and a non-oauth2 server give the same 404, so names cannot be enumerated.
+
+    6. Otherwise authorization_servers ["<base>/<name>"], resource resource_url, scopes_supported the server scopes or [].
+
+  DiscoveryFailure is a status plus a string detail, answered as {"detail": "<text>"}.
+
+  3. routes.rs, five GET routes, JSON, no authentication. <suffix> is the root suffix.
+
+  - "/.well-known/oauth-protected-resource" answers RootResource. No suffix on this one.
+
+  - "/.well-known/oauth-protected-resource<suffix>/mcp" answers the aggregate document.
+
+  - "/.well-known/oauth-authorization-server<suffix>/mcp" answers AggregateAuthServer. It is the single segment /mcp: a server literally named mcp does not take it and keeps "/.well-known/oauth-authorization-server<suffix>/mcp/mcp" (B7321's route). B7321 registers the other authorization-server paths and B4678 the bare one, so register none of those here.
+
+  - "/.well-known/oauth-protected-resource<suffix>/mcp/{mcp_server_name}" calls named_resource with standard true.
+
+  - "/.well-known/oauth-protected-resource<suffix>/{mcp_server_name}/mcp" calls named_resource with standard false.
+
+  The two named routes resolve the server before the call: client_ip from RequestFacts, then B4731's server_by_name, and when that gives None, server_by_id, both with the client ip. A request for the name "mcp" on the legacy shape ("/.well-known/oauth-protected-resource/mcp/mcp") matches the standard shape first, as in LiteLLM. Expose `ProtectedRoot::router(self) -> axum::Router` so B8624 merges it with the other MCP discovery routers; it must not register any path that B7321 or B4678 registers.
+
+  Tests use synthetic servers (test-oauth-1 with url https://mcp.example.test/sse, a pass-through server at https://upstream.example.test/mcp), a fake UpstreamGet, fake RequestFacts and GatewayFacts, and paused tokio time. Cover: each fetch step including the second candidate, the negative entry for 60 seconds and the positive one for 300, all-transport-failure raising and not caching, a mixed failure caching the negative entry, a store refused after invalidation; every named_resource branch and its key order; the 404 for an unknown server and for a non-oauth2 server with the same body; the 502 texts; the five routes through a built Router, including that the router builds when merged with a router holding B7321's authorization-server paths.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/oauth_protected.rs
+    - crates/betterlite-server/src/mcp/oauth_protected/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/protected_resource_body.rs
+    - crates/betterlite-server/fuzz/corpus/protected_resource_body/**
+    - tools/oracle/helpers/b7972.py
+    - tools/oracle/helpers/b7972/**
+    - tools/oracle/src/helpers/server/b7972.rs
+    - tools/oracle/src/helpers/server/b7972/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2380-L2481
+    why: fetch_upstream_oauth_protected_resource (candidates, cache use, generation, negative entry) and is_network_error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2484-L2623
+    why: The named protected-resource builder, its branch order, the 502 texts and the OBO document.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2626-L2712
+    why: _jwt_auth_issuers, the root document and the two aggregate documents.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2715-L2781
+    why: The aggregate routes and the standard and legacy protected-resource routes with the root suffix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L776-L800
+    why: _raise_unless_oauth2_discovery_server, the 404 check used by branch 5.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L300-L400
+    why: advertises_gateway_authorization_server, is_dcr_bridge, is_client_forwarded_token and the pass-through properties.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/idp_token_exchange.py#L30-L100
+    why: What token_exchange_available reads.
+  - url: https://www.rfc-editor.org/rfc/rfc9728
+    why: Protected resource metadata and the path-insertion rule for the well-known url.
+
+dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports; B8624 mounts the routes and proves the items below over HTTP with the cases that moved there.
+    proof: [routes-tests]
+  - text: The upstream fetch tries the host candidate then the path candidate, caches a hit for 300 seconds and a miss for 60, raises only when every candidate failed on transport, and reads the cache before and after taking the slot.
+    proof: [fetch-tests]
+  - text: Each named branch (dcr bridge, pass-through, OBO, gateway-advertised, relay) returns LiteLLM's keys in order, and a pass-through server rewrites resource only when it is not client-forwarded.
+    proof: [documents-tests]
+  - text: A pass-through server with no upstream answer is 502 and never gets a gateway document; an unknown server and a non-oauth2 server both get the same 404.
+    proof: [documents-tests]
+  - text: The root, aggregate protected-resource and aggregate authorization-server documents match LiteLLM key for key, with the grant list depending on token exchange.
+    proof: [documents-tests]
+  - text: The five routes are registered with the root suffix, the aggregate authorization-server route is only the single /mcp segment, and none of B7321's or B4678's paths is registered here.
+    proof: [routes-tests]
+  - text: The metadata body decoder never panics on any bytes.
+    proof: [body-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: fetch-tests
+      why: the upstream metadata fetch has no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_protected::upstream_fetch::/) - test(replays_the_protected_resource_body_corpus)'
+    - id: documents-tests
+      why: the protected-resource documents or the issuer merge have no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_protected::documents::/)'
+    - id: routes-tests
+      why: the routes have no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_protected::routes::/)'
+    - id: body-corpus
+      why: the fuzz target, its seeds or the corpus replay test are missing
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/protected_resource_body.rs && grep -q protected_resource_body crates/betterlite-server/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/protected_resource_body)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_protected_resource_body_corpus)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - "The named, standard and legacy authorization-server documents, openid-configuration and jwks.json: B7321. The bare /.well-known/oauth-authorization-server path: B4678."
+  - "/authorize, /callback, /register and the browser flow routes: B7971. The gateway token routes: B7321."
+  - "The metadata cache type and its invalidation (OAuthMetadataCache, invalidate_oauth_metadata_cache, prune, store, enter_fetch): B6595. The server-side discovery fetch at server load (MCPServerManager): B6761."
+  - "The MCPServer record and its properties: B6590. get_request_base_url and well_known_root_suffix: B4654. get_mcp_client_ip: B743. supported_grant_types: B4674. TokenExchangePrerequisites: B4663."
+  - "The real UpstreamGet over the pooled client, and the RequestFacts and GatewayFacts adapters: B8624."
+
+pitfalls:
+  - The root document puts resource first, while every other protected-resource document puts authorization_servers first; keep each struct's field order.
+  - A pass-through server with no upstream document is a 502, never the gateway's own document, since that would point the client at the wrong login.
+  - Only the legacy is_oauth_passthrough and the non-forwarded case rewrite resource; true_passthrough and oauth_delegate return the upstream map untouched, because a strict identity provider rejects a token whose audience is the gateway.
+  - The 404 text uses the name from the request path, while the 502 texts use server.name.
+  - "A cached None is a real answer (the negative entry): return Ok(None) without a request, and do not confuse it with a miss."
+  - When every candidate fails on transport the error is returned and nothing is cached, so the next request retries at once.
+  - The path candidate keeps the path with trailing slashes removed, so "/mcp/" gives ".../oauth-protected-resource/mcp".
+  - The aggregate authorization-server route is exactly one /mcp segment and lists token_endpoint_auth_methods_supported as ["none", "client_secret_post"], unlike B7321's ["client_secret_post"].
+  - axum panics on a duplicate route, and "/mcp/{name}" next to "/{name}/mcp" is a shape the router must accept; the routes test builds the merged router to prove it.
+  - OBO falls back to the gateway-advertised branch when no issuer is configured, it does not return an empty authorization_servers list.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

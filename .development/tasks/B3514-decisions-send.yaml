@@ -20,7 +20,7 @@ scope:
     - crates/betterlite-core/src/api/decisions_send.rs
     - crates/betterlite-core/src/api/decisions_send/**
     - tools/oracle/src/sdk_http.rs
-    - tools/oracle/src/sdk_http/decisions_send.rs
+    - tools/oracle/src/sdk_http/**
     - tools/oracle/sdk_http/dispatch.py
     - tools/oracle/sdk_http/decisions_send.py
     - tools/oracle/cases/sdk-http/decisions-send/**
@@ -115,7 +115,7 @@ deviations: []
 out_of_scope:
   - B3513 owns prepare_call, DecisionsCall and reject_other_format; this task only consumes the call it returns.
   - B3515 owns adecisions, decisions, asystemone and systemone, which call asend and send here.
-  - B099 owns the HTTP routes, so the HTTP oracle cases for the Decisions routes belong there. This task uses SDK cases because no route reaches the send path yet.
+  - B8276 owns the HTTP routes, so the HTTP oracle cases for the Decisions routes belong there. This task uses SDK cases because no route reaches the send path yet.
   - B2402 owns the shared transport error conversion (_handle_error); B173 owns the pooled client; B595 owns run_aws_signing.
   - B3511 and B3512 own validate_environment, get_complete_url, sign_request, signs_with_aws and transform_decisions_response for each provider.
   - B186 owns exception_type and the other error classifiers.

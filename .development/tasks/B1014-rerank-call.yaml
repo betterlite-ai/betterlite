@@ -25,7 +25,7 @@ scope:
   - crates/betterlite-core/src/api/rerank_call.rs
   - crates/betterlite-core/src/api/rerank_call/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/rerank_call.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/rerank_call.py
   - tools/oracle/cases/sdk-http/rerank-call/**

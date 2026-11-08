@@ -9,13 +9,13 @@ description: >-
   before the handler's try block. Neither route reads query parameters or an environment variable directly.
 
   Implement betterlite-server::api::anthropic_messages_routes with a typed MessagesRouteServices constructor.
-  Delegate base_process_llm_request, response headers, exception logging and SSE serialization to B004;
+  Run B8801's PreCall step with route type anthropic_messages (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step), then delegate base_process_llm_request, response headers, exception logging and SSE serialization to B004;
   pass route_type=anthropic_messages, select_data_generator=null, model=null and the resolved user_model,
   user_temperature, user_request_timeout, user_max_tokens, user_api_base and version unchanged. B1134 owns
   the public dispatch operation registered with that processor. Do not dispatch separately to every adapter.
   B003 supplies shared HTTP error payload helpers, B011 supplies call-id policy, B958 the Anthropic mapper.
-  B104 owns ModifyResponseException and blocked_response_usage; inject its typed blocked-response result and
-  failure-hook interface because it has no task file yet. B124 owns general_settings_view and dangling OTel
+  B5471 owns ModifyResponseException (GuardrailFailure::ModifyResponse) and B3663 blocked_response_usage; call both directly. The failure hook is B8395's post_call_failure_hook; take it as an injected
+  interface. B8389 owns general_settings_view and dangling OTel
   span closure; consume a typed settings snapshot and close_error_span(status, error) seam pending that task.
 
   litellm_settings.strip_anthropic_total_tokens defaults false. When true, mutate only a dictionary-valued
@@ -182,7 +182,7 @@ out_of_scope:
 - Other covered __init__.py files contain only exports. Their implementations remain in B967 (chat adapter),
   B968/B972 (context edits), B983/B984/B985/B986 (Responses adapter), and B991 (marketplace router).
 - B004 owns processing, shared SSE transport and stream model restamping integration; B980 owns the restamper.
-  B003/B756/B855 own admission failures before this try block. B124 owns OTel span behavior behind the injected seam.
+  B003/B756/B855 own admission failures before this try block. B8389 owns OTel span behavior behind the injected seam (close_error_span).
 pitfalls:
 - A blocked stream contains one full message data frame; inventing a native lifecycle changes the pinned wire format.
 - Only literal data.stream=true selects the blocked streaming branch, and only dictionary-valued usage is stripped.

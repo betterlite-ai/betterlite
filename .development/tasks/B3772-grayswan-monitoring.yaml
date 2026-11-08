@@ -24,7 +24,7 @@ description: >-
 
   GraySwanGuardrail extends CustomGuardrail and implements get_supported_event_hooks() returning [pre_call, during_call, post_call] and should_run_guardrail(data, event_type) calling parent and logging event_type, event_hook, has_apply_guardrail, class name. GraySwanGuardrailConfigModel.ui_friendly_name() returns "Gray Swan Guardrail".
 
-  These functions own the monitor transport and context collection; B3771 owns the decision/enforcement logic, and B107 owns lifecycle entry points.
+  These functions own the monitor transport and context collection; B3771 owns the decision/enforcement logic, B8521 registers the guardrail, and B3680's unified guardrail lifecycle calls apply_guardrail.
 
 scope:
   paths:
@@ -168,7 +168,7 @@ oracle_cases: []
 
 deviations:
   - what: "GraySwanGuardrail.__init__ calls get_async_httpx_client(llm_provider=httpxSpecialProvider.GuardrailCallback) directly to obtain the HTTP client; betterlite injects this client as a dependency rather than calling the factory."
-    why: "HTTP client creation is a boundary between guardrails and the transport layer. B104 owns the factory; this task receives the client as a constructor parameter."
+    why: "HTTP client creation is a boundary between guardrails and the transport layer. The hook dispatcher that runs the guardrail from its registry spec passes the shared client; this task receives the client as a constructor parameter."
   - what: "The violation_threshold default is 0.5; on_flagged_action default is monitor in the constructor and passthrough in the config model's optional params. The constructor and config must be kept separate so the normalizer can preserve which value actually reaches constructor initialization."
     why: "Config defaults (passthrough) and constructor defaults (monitor) diverge by design; the normalizer controls which is active."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/grayswan.py#L12-L13"

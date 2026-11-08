@@ -1,0 +1,195 @@
+id: B3345
+title: Video character HTTP routes
+description: >-
+  Register the two character routes of litellm/proxy/video_endpoints/endpoints.py once, in
+  betterlite-server::api::video_character_routes: POST /v1/videos/characters and POST /videos/characters
+  (video_create_character), and GET /v1/videos/characters/{character_id} and GET /videos/characters/{character_id}
+  (video_get_character). Both sit behind B052 virtual key authentication and carry tags=["videos"]. There is no
+  /openai/v1 alias. The routes are mounted from their own route stub, crates/betterlite-server/src/routes/video_character.rs,
+  which B1100 registers; this task fills it and leaves routes.rs, state.rs and api.rs as they are. The other
+  routes of the same LiteLLM file belong to B3343 and B3344, so register nothing under /videos except these two paths.
+
+  Create reads the form with B1101 (fields and uploads) and B1100 (the cached body). The multipart field video is
+  required and name is required: a request without either gets FastAPI's own 422 with a detail list, before any
+  processing. The uploaded video becomes a named byte buffer through B082's upload-to-buffer helper (filename kept,
+  bytes kept) and is stored as data["video"]. Then: target_model_names is run through B3330's
+  extract_model_from_target_model_names; when it returns a name and data has no truthy model, data["model"] is set
+  to that name. The provider is the first truthy of: B2400's header reader (custom-llm-provider), B2400's query
+  reader (custom_llm_provider), B3330's get_custom_provider_from_data(data) (the body field, then the extra_body
+  field), and the literal "openai". The result is written to data["custom_llm_provider"]. B004's
+  B8801's PreCall step runs first (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step), then base_process_llm_request is called with the VideoCreateCharacter core entry (LiteLLM route_type "avideo_create_character"), model=None and the usual
+  user_model, user_temperature, user_request_timeout, user_max_tokens, user_api_base and version values. The entry's
+  dispatch calls the SDK function B3341's avideo_create_character or the router wrapper, as the Dispatch paragraph says; B004 owns the response headers and _handle_llm_api_exception; every
+  exception from the call goes through that handler.
+  After a successful call, and only when target_model_names gave a name, the response id is encoded: provider is the
+  response's _hidden_params custom_llm_provider, else the resolved provider, else "openai"; model id is _hidden_params
+  model_id, else data["model"]; B3330's encode_character_id_in_response does the work (B672's codec). Without
+  target_model_names the id is returned as the provider sent it.
+
+  Get takes character_id from the path. data starts as {"character_id": <path value>}. B672's
+  decode_character_id_with_provider splits the path value into provider, model id and the raw id; when the raw id is
+  truthy it replaces data["character_id"] (a plain id decodes to itself). The provider is the first truthy of: header
+  custom-llm-provider, query custom_llm_provider, the request body field custom_llm_provider (B2400's body reader,
+  which reads the cached body and treats an empty GET body as {}), the provider decoded from the id, and "openai".
+  When the decoded model id is truthy and a router exists, B844's resolve_model_name_from_model_id is asked for a
+  model name, and a non-empty answer is stored as data["model"]; with no router or no answer, data has no model key.
+  B004 is called the same way with the VideoGetCharacter entry (route_type "avideo_get_character"), and its dispatch follows the same plan_video_route choice between B3341's avideo_get_character and the router wrapper. After success, only when the original path
+  value began with the literal "character_", the response id is encoded again: provider is the decoded provider, else
+  the resolved provider, else "openai"; the model id is the decoded model id. A path value that does not start with
+  "character_" gets the provider's response back unchanged. B672's encoder returns an id unchanged when it already
+  decodes with a provider, and when provider or id is empty.
+
+  Dispatch. Fill the two core entries B014 registers for these calls: operation/video_create_character.rs with
+  dispatch/video_create_character.rs and operation/video_get_character.rs with dispatch/video_get_character.rs. Each
+  replaces its NotBuilt stub and stub test. Leave operation.rs and dispatch.rs as they are. Both LiteLLM handlers go through route_request, so each entry first calls B6460's plan_video_route (VideoCallKind CreateCharacter or GetCharacter). A Direct plan calls B3341's SDK function. A Router plan calls the matching VideoRouterCalls method (avideo_create_character or avideo_get_character). A NotFound plan returns the model-not-found error. VideoRouterCalls and VideoRouteView are injected into the entries, because betterlite-core cannot import sdk or router. At the pin a call with a model gets no SDK fallback: the Router.avideo_* wrapper is an async_wrapper, so route_llm_request.py L700-L706 gets an unawaited coroutine and a router error surfaces at the caller's await, outside the try. The router error reaches the client and the entry never retries the SDK function.
+
+  No new byte decoder: the body and form decoding stay with B1100 and B1101, so there is no fuzz target. Count
+  about 130 nonblank, non-comment LiteLLM lines (endpoints.py L516-L722); budget 220 implementation, 260 tests,
+  230 HTTP fixtures and 40 wiring lines. Every HTTP scenario boots both gateways with master_key=sk-test and a
+  model_list entry whose api_base is the mock upstream; the multipart case uses the oracle's multipart capture, not
+  a helper adapter.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/api/video_character_routes.rs
+    - crates/betterlite-server/src/api/video_character_routes/**
+    - crates/betterlite-server/src/routes/video_character.rs
+    - crates/betterlite-server/src/routes/video_character/**
+    - crates/betterlite-core/src/operation/video_create_character.rs
+    - crates/betterlite-core/src/operation/video_create_character/**
+    - crates/betterlite-core/src/dispatch/video_create_character.rs
+    - crates/betterlite-core/src/dispatch/video_create_character/**
+    - crates/betterlite-core/src/operation/video_get_character.rs
+    - crates/betterlite-core/src/operation/video_get_character/**
+    - crates/betterlite-core/src/dispatch/video_get_character.rs
+    - crates/betterlite-core/src/dispatch/video_get_character/**
+    - tools/oracle/cases/api/video-character-routes/**
+    - tools/oracle/fixtures/video-character-routes/**
+    - tools/oracle/helpers/b3345.py
+    - tools/oracle/helpers/b3345/**
+    - tools/oracle/src/helpers/server/b3345.rs
+    - tools/oracle/src/helpers/server/b3345/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L516-L616
+    why: Both create decorators (/v1/videos/characters, /videos/characters), the File and Form signature, the model and provider steps, and the id encoding after the call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L619-L722
+    why: Both get decorators, the id decode, the provider order that puts the request body before the id, the router model lookup and the re-encode on the character_ prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/utils.py#L8-L66
+    why: B3330 owns these helpers; the route calls extract_model_from_target_model_names, get_custom_provider_from_data and encode_character_id_in_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L122-L196
+    why: B672 owns the codec; the id format is character_ plus base64 of "litellm:custom_llm_provider:<p>;model_id:<m>;character_id:<id>".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L52-L84
+    why: B2400 owns the three provider readers; the body reader returns the field only when the key is present.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11528-L11583
+    why: B844 owns resolve_model_name_from_model_id; the route stores its answer as data["model"] when non-empty.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L45-L64
+    why: B082 owns uploadfile_to_bytesio and batch_to_bytesio, which the create route reuses for the video file.
+
+dod:
+  - text: >-
+      character_route_aliases: POST /v1/videos/characters and POST /videos/characters, each with a multipart video
+      file and name=hero and Bearer sk-test, reach one mock upload call each and return 200 with object "character".
+      GET /v1/videos/characters/char_1 and GET /videos/characters/char_1 reach one mock fetch each. POST on the get
+      path and GET on the create path answer as the other routes' tables do (no handler of this task runs), and
+      /openai/v1/videos/characters is 404. Nothing is registered twice.
+    proof: [route-tests, oracle]
+  - text: >-
+      create_form_validation: a create request with no video part, and one with no name field, each get HTTP 422
+      with a detail list that names the missing field (loc ["body","video"] or ["body","name"], type "missing"),
+      and cause zero upstream calls. A request with both reaches the upstream with the uploaded filename and bytes
+      unchanged.
+    proof: [route-tests, oracle]
+  - text: >-
+      create_provider_precedence: with name and video present, header custom-llm-provider=azure beats query
+      custom_llm_provider=vertex_ai, which beats form field custom_llm_provider=openai, which beats extra_body
+      '{"custom_llm_provider":"anthropic"}'. A form field with an empty value falls through to the next source, and
+      with all sources absent the provider is "openai". Each choice is checked on the data that reaches B004
+      (data["custom_llm_provider"]).
+    proof: [route-tests]
+  - text: >-
+      create_target_model: target_model_names="m1, m2" with no model sets model to m1; target_model_names="" or
+      absent leaves model unset; an explicit non-empty model field stays and is not replaced by the target name.
+      With target_model_names set and a deployment with model_info id dep1, the response id is
+      "character_" plus the base64 of "litellm:custom_llm_provider:openai;model_id:dep1;character_id:char_abc".
+      Without target_model_names the id is the provider's "char_abc".
+    proof: [route-tests, oracle]
+  - text: >-
+      get_id_decoding: a path id made by the encoder for provider openai, model id dep1 and id char_abc sends
+      character_id=char_abc upstream, selects provider openai, and sets data["model"] to the router model name for
+      dep1; a plain id char_9 is sent as char_9 with provider "openai" and no model key. An undecodable
+      "character_!!!" keeps its full text as character_id.
+    proof: [route-tests, oracle]
+  - text: >-
+      get_provider_precedence: header beats query, query beats body field custom_llm_provider (a JSON body on the
+      GET), the body beats the provider inside the id, and the id's provider beats the "openai" default. Each case
+      sends a character id whose encoded provider differs from the other sources.
+    proof: [route-tests, oracle]
+  - text: >-
+      get_response_encoding: a request for an id starting with "character_" returns the response id encoded again
+      with the decoded provider and model id, so the client sees the same id it sent; a request for plain char_9
+      returns the provider's id with no encoding. With no router, or a model id the router cannot resolve, the
+      request still runs and data has no model key.
+    proof: [route-tests, oracle]
+  - text: >-
+      character_error_envelopes: with no Authorization header and with Bearer sk-wrong, both methods return the
+      B052 auth failure (401, error.type auth_error) with zero upstream calls. An upstream 404
+      {"error":{"message":"no character"}} on GET and an upstream 400 on create reach the client through B004's
+      error mapping with the same status, error type, param and code as LiteLLM, plus x-litellm-call-id.
+    proof: [route-tests, oracle]
+  - text: The branch adds every HTTP scenario above as new oracle case files.
+    proof: [new-cases, oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: route-tests
+      why: The two routes and their aliases, form checks, provider order, model choice and id encoding need behavior tests in the server crate.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_character_routes::tests::(character_route_aliases|create_form_validation|create_provider_precedence|create_target_model|get_id_decoding|get_provider_precedence|get_response_encoding|character_error_envelopes)($|::)/)'
+    - id: new-cases
+      why: Route behavior must be compared through both proxies with newly added HTTP cases.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/video-character-routes)" && test -f tools/oracle/cases/api/video-character-routes/character-route-aliases.yaml && test -f tools/oracle/cases/api/video-character-routes/create-form-validation.yaml && test -f tools/oracle/cases/api/video-character-routes/create-target-model.yaml && test -f tools/oracle/cases/api/video-character-routes/get-id-decoding.yaml && test -f tools/oracle/cases/api/video-character-routes/get-provider-precedence.yaml && test -f tools/oracle/cases/api/video-character-routes/get-response-encoding.yaml && test -f tools/oracle/cases/api/video-character-routes/character-error-envelopes.yaml
+
+oracle_cases:
+  - tools/oracle/cases/api/video-character-routes/character-route-aliases.yaml
+  - tools/oracle/cases/api/video-character-routes/create-form-validation.yaml
+  - tools/oracle/cases/api/video-character-routes/create-target-model.yaml
+  - tools/oracle/cases/api/video-character-routes/get-id-decoding.yaml
+  - tools/oracle/cases/api/video-character-routes/get-provider-precedence.yaml
+  - tools/oracle/cases/api/video-character-routes/get-response-encoding.yaml
+  - tools/oracle/cases/api/video-character-routes/character-error-envelopes.yaml
+
+deviations:
+  - what: >-
+      GET /v1/videos/characters and GET /videos/characters answer 405 (the path exists for POST only). LiteLLM
+      sends that GET to video_status with the video id "characters".
+    why: >-
+      axum picks the static path over a parameter path and does not fall back across methods. The id "characters"
+      is not a real video id, so no client depends on it. Open question in the notes.
+  - what: >-
+      GET /v1/videos/characters/content answers from the character route, with character_id "content". LiteLLM
+      sends it to video_content with video_id "characters".
+    why: axum prefers the static "characters" segment over the {video_id} parameter. The same applies to /videos/characters/content.
+
+out_of_scope:
+  - B3341 owns avideo_create_character and avideo_get_character and their call-level defaults; this task supplies data to B004 and fills the two core entries that call them.
+  - B3330 owns extract_model_from_target_model_names, get_custom_provider_from_data, encode_character_id_in_response and the CharacterObject record; B672 owns the id codec.
+  - B8801 owns common_processing_pre_call_logic; B004 owns base_process_llm_request and _handle_llm_api_exception with their error envelopes and headers; B1100 owns _read_request_body; B1101 owns multipart parsing; B2400 owns the three provider readers; B844 owns resolve_model_name_from_model_id; B052 owns authentication.
+  - B082 owns uploadfile_to_bytesio and batch_to_bytesio in image_endpoints/endpoints.py.
+  - B3343 and B3344 own video_generation, video_list, video_status, video_content and video_remix in the same file; video_edit and video_extension (L725-L923) belong to B6360 and are not built here.
+
+pitfalls:
+  - The get route reads the provider from the request body before the provider in the id, but the create route has no body reader of its own and takes the form field through get_custom_provider_from_data; do not use one order for both.
+  - Create encodes the response id only when target_model_names gave a name, but get encodes whenever the path id starts with "character_"; a "character_" prefix test on the response id would be wrong.
+  - data["character_id"] is replaced by the decoded id only when that id is truthy; an empty decode must keep the path value.
+  - The provider fallback on create uses the response's _hidden_params custom_llm_provider before the request's provider, so a router deployment on azure encodes azure even when the request resolved to "openai".
+  - data["model"] on get is written only when resolve_model_name_from_model_id returns a non-empty name; do not write None or an empty string.
+  - base_process_llm_request gets model=None on both routes; the model travels only inside data.
+  - A multipart name field and video part are checked by FastAPI-style validation before any hook runs, and the 422 body is a detail list, not an OpenAI error object.
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+review_level: standard

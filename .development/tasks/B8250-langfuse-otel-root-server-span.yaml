@@ -1,0 +1,125 @@
+id: B8250
+title: Langfuse root span stamping and server span policy
+description: >-
+  Build the two pieces of OTel V2 that no part owns yet, in betterlite-logging. LiteLLM keeps them in
+  `litellm/integrations/otel/langfuse_logger.py` and `litellm/integrations/otel/mount.py`.
+
+  Part one, module `otel::langfuse_root`. Langfuse reads a trace's name, user, session, tags, input and output off the
+  root observation, which is the proxy's server span. That span is still recording when the LLM call starts, and it
+  ends when the response is sent, before the success callback runs. So LiteLLM stamps the root from request-task hooks
+  instead of from the success callback. Define a small trait `RootSpanSink` with `is_recording() -> bool` and
+  `set_attribute(key: &str, value: String)`, so tests use a fake and production passes the span that B3847's
+  request-root slot holds. The trait takes strings only, because every value stamped here is text or a string list
+  already built by the mapper.
+
+  `LangfuseOtel` wraps B3853's OpenTelemetryV2 callback by composition (Rust has no inheritance) and implements the same
+  pre-call hook. Its `log_pre_api_call(model, messages, kwargs)` takes the root from B3847's `request_root_span`; when the
+  root exists and is recording, it sets the attributes `LangfuseMapper::trace_attributes(caller_trace_controls(kwargs))`
+  returns (B3846 and B3892). Then it calls the wrapped callback's own pre-call hook. The stamp comes first, the wrapped
+  call second.
+
+  `LangfuseContentOtel` wraps `LangfuseOtel` and adds the input and output stamp. `async_post_call_success_hook(data,
+  user_api_key_dict, response)` calls `stamp_root_io(data, || response_output(response))`. The streaming hook
+  `async_post_call_streaming_iterator_hook` relays every chunk to the caller unchanged and in order, keeps each chunk,
+  and only after the last chunk calls `stamp_root_io(request_data, || stream_output(chunks, request_data))`. If the caller
+  drops the stream early, nothing is stamped, the same as LiteLLM's async generator that never reaches its tail.
+  `stamp_root_io` returns at once when the root is missing or not recording. It renders the output first; when the output
+  is `None` it returns without stamping anything. Otherwise it sets `LANGFUSE_OBSERVATION_OUTPUT`, then renders the input
+  with `request_input(data)`, and sets `LANGFUSE_OBSERVATION_INPUT` only when that input is not `None`. A projection error
+  (the projections of B3857 return a `Result`) is logged at debug level with the text "otel v2 langfuse: could not render
+  the root observation input or output" and swallowed, because telemetry must never fail the request it describes. An
+  output that was already stamped stays when only the input fails.
+
+  Part two, module `otel::server_span_policy`. LiteLLM mounts `FastAPIInstrumentor` once at app creation. The Rust
+  server opens its own HTTP server span, so this task builds only the decisions the mount module makes, as pure code
+  that the server layer calls.
+  `ServerSpanPolicy::from_gate(enabled: bool, env: &dyn EnvLookup) -> Option<ServerSpanPolicy>` returns `None` when the
+  gate is off (`enabled` is B3842's `is_otel_v2_enabled`) and builds the policy otherwise.
+  `ServerSpanPolicy::is_excluded(path: &str) -> bool` is a regex search over the path (unanchored, so a `server_root_path`
+  prefix does not matter and `/health` also covers `/health/readiness`). The default list is, in order: `/health`,
+  `/metrics`, `/litellm-asset-prefix`, `/_next`, `/ui`, `/swagger`, `/docs`, `/redoc`, `/openapi.json`, `favicon`,
+  `/.well-known`. The environment variable `OTEL_PYTHON_FASTAPI_EXCLUDED_URLS` replaces the whole list when it is set at
+  all, including to an empty string, which then excludes nothing. The override is a comma list of regexes, split on a
+  comma and any spaces after it, the OpenTelemetry convention. An entry that is not a valid regex is an error returned
+  from `from_gate`, not a silent skip.
+  `passthrough_span_name(method: &str, path: &str) -> Option<PassthroughSpanName>` returns `Some` when the first path
+  segment (after removing leading slashes, up to the next slash) is one of the sixteen passthrough prefixes: `openai`,
+  `openai_passthrough`, `anthropic`, `azure`, `azure_ai`, `bedrock`, `cohere`, `cursor`, `gemini`, `mistral`, `vllm`,
+  `vertex_ai`, `vertex-ai`, `assemblyai`, `eu.assemblyai`, `milvus`. The name is `"{method} {path}"` with outer spaces
+  trimmed (so an empty method gives just the path), and `route` is the path. The caller applies both only to a recording
+  span. Other paths return `None` and keep the route template name.
+  The ASGI `receive` and `send` sub-spans that LiteLLM drops with `exclude_spans` do not exist in axum; do not port them.
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/langfuse_root.rs
+    - crates/betterlite-logging/src/otel/langfuse_root/**
+    - crates/betterlite-logging/src/otel/server_span_policy.rs
+    - crates/betterlite-logging/src/otel/server_span_policy/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/langfuse_logger.py#L19-L76
+    why: Both Langfuse callback classes, the pre-call trace stamp, the success and streaming hooks and _stamp_root_io.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mount.py#L26-L77
+    why: The default excluded routes and the passthrough prefix set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mount.py#L79-L141
+    why: The passthrough span name hook and the gate and environment override in instrument_fastapi_app.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mappers/langfuse.py
+    why: LangfuseMapper.trace_attributes and the two LANGFUSE_OBSERVATION_* attribute keys (B3846 builds them).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/request_io.py
+    why: request_input, response_output and stream_output, the three projections the content stamp calls (B3857 builds them).
+dod:
+  - text: >-
+      LangfuseOtel stamps the trace controls on a recording root before it calls the wrapped pre-call hook, and does
+      nothing to a missing or non-recording root, while still calling the wrapped hook.
+    proof: [langfuse-root-tests]
+  - text: >-
+      The success hook stamps output then input on a recording root, stamps nothing when the output is None, stamps no
+      input when the input is None, and keeps an already stamped output when the input projection fails.
+    proof: [langfuse-root-tests]
+  - text: >-
+      The streaming hook relays every chunk unchanged and in order, stamps once after the last chunk, and stamps nothing
+      when the stream is dropped early.
+    proof: [langfuse-root-tests]
+  - text: >-
+      The default exclusion list has the eleven entries in order, the environment variable replaces it (an empty value
+      excludes nothing), matching is an unanchored search, an invalid override entry is an error, and the policy is None
+      when the gate is off.
+    proof: [server-policy-tests]
+  - text: >-
+      passthrough_span_name renames only paths whose first segment is one of the sixteen prefixes, builds
+      "{method} {path}" trimmed, and returns the path as the route.
+    proof: [server-policy-tests]
+checks:
+  optional: []
+  commands:
+    - id: langfuse-root-tests
+      why: fails while the pre-call stamp, the success stamp or the stream relay is missing or stamps in the wrong order
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::langfuse_root::/)'
+    - id: server-policy-tests
+      why: fails while the exclusion list, the environment override or the passthrough naming is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::server_span_policy::/)'
+oracle_cases: []
+deviations:
+  - what: Wrapping by composition instead of subclassing, and a RootSpanSink trait instead of the OpenTelemetry span object.
+    why: Rust has no inheritance, and the trait lets tests record stamps without a tracer provider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/langfuse_logger.py#L19-L28
+out_of_scope:
+  - "The axum layer that opens the HTTP server span, extracts traceparent and anchors the root span: B8680 installs the span layer in app::edge::wrap. This task only supplies ServerSpanPolicy and passthrough_span_name."
+  - "LangfuseMapper, caller_trace_controls, request_root_span and the three content projections: B3846, B3892, B3847 and B3857 own them; this task calls them."
+  - "Choosing the Langfuse callbacks from the OTel config name: B3853 notes that B110 dispatches to them, and that wiring is not part of this task."
+pitfalls:
+  - >-
+    The stamp order in the pre-call hook is trace attributes first, wrapped hook second. In the content stamp the output
+    is set before the input is rendered, so an input failure leaves the output on the span.
+  - >-
+    Only strings pass through RootSpanSink. Do not add a typed attribute value enum for this task.
+  - >-
+    The override env var is read once, when the policy is built. Do not read the process environment inside is_excluded;
+    the environment comes in through the injected lookup.
+  - >-
+    `/ui` and `/docs` are plain substrings in an unanchored search, so `/docs-private` and `/user/ui-config` are
+    excluded too. Keep that; do not anchor the patterns.
+budget:
+  max_changed_lines: 1100
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,13 @@
+id: B8380
+milestone: M8 platform
+title: Proxy config state, config saves and config-owned write guards
+status: todo
+depends_on: [B4140, B8382, B8397, B8410]
+file: tasks/B8380-proxy-config-state.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

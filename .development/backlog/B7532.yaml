@@ -1,0 +1,14 @@
+id: B7532
+milestone: M9 agents and mcp
+title: MCP OAuth authorize and token exchange flows
+status: todo
+depends_on: [B4654, B4655, B4658, B4659, B4662, B4666, B4674, B4713, B4715, B4719, B7530, B7531]
+file: tasks/B7532-mcp-oauth-authorize-token.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py"
+parent: B136
+split_from: B7321
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,13 @@
+kind: helper
+name: responses-bridge-prefix
+call:
+  b5651:
+    request:
+      model: responses/gpt-4o
+      custom_llm_provider: openai
+    capabilities:
+      model_info: {mode: null, litellm_provider: openai}
+      resolved_openai_api_base: https://api.openai.com/v1
+env: {}
+compare:
+  ignore: []

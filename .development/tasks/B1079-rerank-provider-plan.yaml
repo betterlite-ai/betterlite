@@ -4,8 +4,8 @@ description: >-
   Own the whole rerank function, including @client, at rerank_api/main.py:92-562 in
   betterlite-core::api::rerank_provider_plan. B1014 owns arerank. Resolve identity with B174, select
   the rerank config through B157, map options with B1013, and execute generic HTTP through B2454.
-  B037 supplies Cohere/Voyage/Jina/Infinity configs, B556 Foundry, B041 Together/Nvidia/Fireworks,
-  B042 Watsonx credentials and B639 Bedrock execution. Keep provider operations injectable through
+  B037 supplies Cohere/Voyage/Jina/Infinity configs, B556 Foundry, B5831 Together, B5837 Nvidia and B6070 Fireworks,
+  B5970 Watsonx credentials and B639 Bedrock execution. Keep provider operations injectable through
   B010; do not copy their transforms. B011 converts failures after the error diagnostic.
 
   The signature requires model,query,documents; custom_llm_provider,top_n,rank_fields,max_chunks_per_doc,
@@ -38,7 +38,7 @@ scope:
   - crates/betterlite-config/src/api/rerank_provider_plan/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/rerank-provider-plan-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/rerank_provider_plan.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/rerank_provider_plan.py
   - tools/oracle/cases/sdk-http/rerank-provider-plan/**
@@ -137,7 +137,7 @@ deviations: []
 out_of_scope:
 - B1014 owns arerank in the same file; B157 owns the provider-config selector and GenericLiteLLMParams.
 - B1013 owns optional rerank mapping and response types; B2454 owns generic HTTP; B174 identity and B011 exception conversion.
-- Provider config methods and direct handlers remain B037, B041, B042, B556 and B639; this task supplies their complete call arguments.
+- Provider config methods and direct handlers remain B037, B5831, B5837, B6070, B5842 and B5970 (watsonx), B5848 (Hugging Face), B556 and B639; this task supplies their complete call arguments.
 pitfalls:
 - The Infinity branch calculates a global API key and then omits it from the actual handler call.
 - Jina falls back to BEDROCK_API_BASE, while Nvidia ignores both the resolved base and the global base.

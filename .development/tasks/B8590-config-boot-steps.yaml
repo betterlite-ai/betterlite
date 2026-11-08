@@ -1,0 +1,113 @@
+id: B8590
+title: Config load steps for environment, credentials, registries, policies, alerting and secret managers
+description: >-
+  ProxyConfig.load_config in LiteLLM calls a row of small helpers that no other task builds. This task ports them as
+  plain functions in crates/betterlite/src/config_boot.rs (module declared by the skeleton), next to B8374's lifespan,
+  which calls them in load_config order. Error enum ConfigBootError in the module's own files.
+
+
+  `env_overlay(config, process_env, secrets)` ports _load_environment_variables. It reads the top-level
+  `environment_variables` mapping and returns a `BTreeMap<String, String>` that starts as a copy of process_env and
+  gets each config entry laid over it, in file order. Skip a key in BLOCKED_ENV_KEYS (PATH, LD_PRELOAD,
+  LD_LIBRARY_PATH, DYLD_LIBRARY_PATH, DYLD_INSERT_LIBRARIES, PYTHONPATH, PYTHONSTARTUP, PYTHONHOME, HOME, USER, SHELL,
+  LOGNAME, NO_PROXY, no_proxy; exact, case-sensitive match) with the warning "Skipping blocked environment variable key:
+  <key>". Skip the MCP stdio flag key (the key B3211's is_mcp_stdio_flag_key accepts) with the warning "Ignoring
+  <MCP_STDIO_ENABLED_ENV_VAR> set in the config file. Set it in the proxy's environment instead". A string value that
+  starts with "os.environ/" is resolved through B8500's `SecretLookup::get_secret_str` and set only when it resolves;
+  any other value is stored as its string form (numbers and booleans as Python's str() prints them: True, False, 1.5).
+  The overlay is what B8374 hands to every later env read, since betterlite does not write the process environment.
+
+
+  `misplaced_jwt_keys(config)` ports _warn_on_misplaced_jwt_keys: it returns the subset of enable_jwt_auth and
+  litellm_jwtauth (in that order) found at the top level and logs one warning naming them, joined with ", ".
+  `credential_list(config)` ports load_credential_list: the top-level credential_list parsed into B1601's
+  CredentialItem records, empty when the key is missing, null or an empty list.
+
+
+  `load_non_llm_configs(config, config_file_path, ports)` ports _init_non_llm_configs. In this order: mcp_tools
+  (when truthy) goes to ports.mcp_tools with the config file path; agents, or agent_list when agents is absent (an
+  explicit null agents key wins and skips both), goes to ports.agents; mcp_servers (when truthy) goes to
+  ports.mcp_servers with litellm_settings.mcp_aliases; vector_store_registry (when truthy) goes to
+  ports.vector_stores. worker_registry, when truthy, fails with ConfigBootError::WorkerRegistryNeedsPremium whose text
+  is "Trying to use `worker_registry`" followed by LiteLLM's CommonProxyErrors.not_premium_user text, because
+  open-source LiteLLM without a license refuses it the same way; otherwise the worker list is empty. The ports are one
+  trait `NonLlmRegistries` with four methods, and B8614's BootRegistries implements it over the agent, MCP and vector
+  store registries that Shared holds.
+
+
+  `init_policy_engine(config, has_db, ports)` ports _init_policy_engine: no config or a falsy policies key does
+  nothing; otherwise it calls ports.init_policies(policies, policy_attachments, validate_db = has_db,
+  fail_on_error = true) and returns its error. `load_alerting_settings(general_settings, ports)` ports
+  _load_alerting_settings: when general_settings.alerting is absent or null it does nothing; otherwise it calls
+  ports.update_alerting with alerting, alerting_threshold (default 600), alert_types, alert_to_webhook_url,
+  alerting_args and alert_type_config, then for each entry other than "slack" that is a known custom-logger callback
+  name it asks ports.add_alerting_logger(name, alerting_args) to register it; unknown names are skipped.
+
+
+  `select_secret_manager(key_management_system, config_file_path, env)` ports initialize_secret_manager and
+  load_from_azure_key_vault. None does nothing. The accepted values are KeyManagementSystem's: azure_key_vault,
+  google_kms, aws_secret_manager, aws_kms, google_secret_manager, hashicorp_vault, cyberark, custom. Any other string
+  fails with ConfigBootError::InvalidKeyManagementSystem and the text "Invalid Key Management System selected". It
+  returns the B4421 ManagerState (client handle plus settings) that B8500's SecretLookup.manager holds; azure_key_vault
+  without AZURE_KEY_VAULT_URI logs LiteLLM's error and installs no client instead of failing, google_kms and aws_kms go
+  through B4412, custom through B4419.
+scope:
+  paths:
+    - crates/betterlite/src/config_boot.rs
+    - crates/betterlite/src/config_boot/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6162-L6220
+    why: _BLOCKED_ENV_KEYS and _load_environment_variables, the skip order and the os.environ/ branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6222-L6233
+    why: _warn_on_misplaced_jwt_keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6097-L6105
+    why: load_credential_list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7046-L7098
+    why: _init_non_llm_configs with the agents fallback and the worker_registry premium gate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7100-L7138
+    why: _init_policy_engine.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7140-L7177
+    why: _load_alerting_settings and its callback loop.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7179-L7239
+    why: initialize_secret_manager's dispatch on key_management_system.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2719-L2745
+    why: load_from_azure_key_vault, which logs instead of raising.
+dod:
+  - text: env_overlay skips every blocked key and the MCP stdio flag with their warnings, resolves os.environ/ values through the secret lookup and stringifies the rest.
+    proof: [config-boot-tests]
+  - text: misplaced_jwt_keys and credential_list match LiteLLM for present, absent and empty keys.
+    proof: [config-boot-tests]
+  - text: load_non_llm_configs calls the registry ports in LiteLLM's order with the agents and agent_list fallback, and worker_registry fails with the premium text.
+    proof: [config-boot-tests]
+  - text: init_policy_engine and load_alerting_settings skip on missing keys and pass the defaults (alerting_threshold 600) through the ports.
+    proof: [config-boot-tests]
+  - text: select_secret_manager accepts the eight systems, refuses any other value with the LiteLLM text, and leaves Azure Key Vault without a URI unset.
+    proof: [config-boot-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-boot-tests
+      why: a load_config step is missing or differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^config_boot::/)'
+oracle_cases: []
+deviations:
+  - what: environment_variables from the config file go into an overlay map that betterlite's own env reads use, not into the process environment.
+    why: Rust code reads settings through the env map it is handed; writing the process environment after threads start is unsound.
+  - what: LITELLM_LICENSE in environment_variables does not re-check a premium license.
+    why: betterlite has no paid tier.
+out_of_scope:
+  - "Calling these steps at startup in load_config order: B8374. Building the production SecretLookup with real HTTP: B8612."
+  - "The response cache build (_init_cache) is B5630 with B8377's usage cache selection; switch_on_llm_response_caching is the production CacheReinit for B8502 that B8612 builds."
+  - "The registries behind the ports: MCP tools B4680, agents B4776, MCP servers B6764, policies B3250, alerting update_values B8399."
+  - "The router settings hierarchy (_parse_router_settings_value, get_hierarchical_router_settings): B881."
+pitfalls:
+  - A config with an explicit null agents key does not fall back to agent_list, since LiteLLM reads config.get("agents", config.get("agent_list")).
+  - BLOCKED_ENV_KEYS is case-sensitive, so "Path" or "ld_preload" pass through.
+  - An os.environ/ value that resolves to nothing leaves the key unset rather than writing the literal reference.
+  - alerting entries named "slack" are skipped in the callback loop but still reach update_alerting.
+  - The secret manager comparison is on the exact lower-case enum value strings.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

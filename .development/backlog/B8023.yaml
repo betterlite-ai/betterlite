@@ -1,0 +1,14 @@
+id: B8023
+milestone: M3 providers
+title: Map Linkup POST and SearXNG GET search requests and replies
+status: todo
+depends_on: [B002, B3270, B171]
+file: tasks/B8023-linkup-searxng-search.yaml
+covers:
+  - "litellm/llms/{linkup,searxng}/**"
+parent: B048
+split_from: B048
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

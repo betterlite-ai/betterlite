@@ -1,0 +1,116 @@
+id: B8561
+title: Prometheus success and failure hook orchestration
+description: >-
+  Port the four callback hooks of LiteLLM's PrometheusLogger and the one-logger-per-process construction behind
+  `callbacks: ["prometheus"]`. The collectors (B3875) and every emitter they call already have owners; this task is the
+  order of calls, the label values each hook builds and the skip rules around them. Put it in betterlite-server as the
+  module `prometheus_hooks` (crates/betterlite-server/src/prometheus_hooks.rs and prometheus_hooks/), since the failure
+  hook reads the caller's UserAPIKeyAuth and B1106's `get_logged_api_key`, and betterlite-logging may not depend on those.
+
+  `PrometheusHooks` holds B3875's `PrometheusCollectors`, the `prometheus_emit_stream_label` flag
+  (litellm_settings.prometheus_emit_stream_label, default false, read from the section B3875 or B3874 already owns; do not add a key) and the
+  budget and router ports the B3882, B3883 and B3879 emitters take. `PrometheusHooks::shared(build)` keeps one instance per
+  process: the first call builds it, later calls return the same `Arc`, as litellm_logging.py L4590-L4602 reuses the
+  PrometheusLogger already in the in-memory logger list.
+
+  `async_log_success_event(kwargs, response, start, end)`:
+  1. Debug-log "prometheus Logging - Enters success logging function (kwargs keys: %s)".
+  2. A missing standard_logging_object is the error `PrometheusHookError::MissingPayload` (LiteLLM raises ValueError
+     "standard_logging_object is required, got=None").
+  3. B3880's `should_skip_metrics_for_invalid_key(kwargs, payload)` true: return with nothing emitted.
+  4. Read model (default ""), litellm_params, metadata, end_user_id (B3873's cached end-user lookup with service_type
+     "prometheus"), and the user, key hash, key alias, team, team alias, org id, org alias and user email fields of the
+     payload metadata. Build `UserAPIKeyLabelValues` (B3870) with requested_model and model_group both set to the payload's
+     model_group, status_code "200", model and litellm_model_name both the kwargs model, the request tags, model_id,
+     api_base, api_provider from custom_llm_provider, no exception fields, the custom metadata labels (B3873), route from
+     user_api_key_request_route, client_ip from requester_ip_address, user_agent, stream as the text of the payload's
+     stream value only when the flag is on, and service_tier from B212's payload reader.
+  5. After the label values are built, a key that starts with `sk-` is hashed with B2314's hash_token for the emitters
+     below (the label values keep the original).
+  6. Build one `PrometheusLabelFactoryContext` and call, in this order: B3877 top-level request and spend, B3877 zero-cost,
+     B3877 token metrics, B3882/B3883 remaining budget (await), B3879 virtual-key rate limits, B3879 key and team rate
+     limits, B3878 latency (input sequence length only when emit_input_sequence_length_label is on), B3881 deployment
+     success, B3879 router remaining (await), B3877 cache, B3877 media generation, B3877 MCP tool calls, then B3876's
+     `inc_labeled_counter` on `litellm_proxy_total_requests_metric`. An emitter error stops the hook and propagates.
+
+  `async_log_failure_event(kwargs, response, start, end)`: debug-log the failure entry line, take the payload (an empty
+  one when missing), apply the same invalid-key skip, then inside one catch-all: build the smaller label values (end user,
+  key hash, alias, model, team, team alias, user, model_id default "", requested_model, api_provider, custom metadata
+  labels), increment `litellm_llm_api_failed_requests_metric`, call B3877 zero-cost with a fresh label context, B3881's
+  `set_llm_deployment_failure_metrics(kwargs)` and B3882's `_set_org_budget_metrics_after_api_request(org_id, 0)`. Any
+  error inside is logged with "prometheus Layer Error(): Exception occured - %s" and swallowed.
+
+  `async_post_call_failure_hook(request_data, exception, auth)`: status code from B3880's `extract_status_code(exception)`;
+  then, inside one catch-all with the same log line: request tags from B253's `_get_request_tags(request_data,
+  proxy_server_request or {})`, model_id from metadata.model_info.id or request_data.model_info.id, B3880's rate-limit
+  labels and api_provider (request data first, then the exception), and label values with end user, user, user email,
+  hashed key (None for a 401, else `get_logged_api_key(auth)`), key alias, team, team alias, org id, org alias,
+  requested_model through B3875's `_bounded_requested_model_label`, status_code and exception_status as the status text
+  ("None" when unknown), exception_class from B3880, rate-limit labels, tags, route from auth.request_route, client ip,
+  user agent, model_id, api_provider and the optional stream text. Increment `litellm_proxy_failed_requests_metric` and
+  then `litellm_proxy_total_requests_metric` with one label context. This hook has no invalid-key skip.
+
+  `async_post_call_success_hook` does nothing: the total requests counter is counted once, in the success event.
+scope:
+  paths:
+    - crates/betterlite-server/src/prometheus_hooks.rs
+    - crates/betterlite-server/src/prometheus_hooks/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1345-L1558
+    why: The success hook, its label values and the order of every emitter call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2365-L2424
+    why: The failure event, its smaller label set and the swallowed error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2608-L2693
+    why: The proxy failure hook, the 401 key rule and the no-op success hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4590-L4600
+    why: One PrometheusLogger per process, reused from the in-memory logger list.
+dod:
+  - text: "PrometheusHooks implements betterlite_logging::callback_logger::CallbackLogger with its success and failure hooks as the async events, so the callback_loggers slot (B8742) can register the prometheus name (tests named callback_logger_* in prometheus_hooks)."
+    proof: [callback-logger]
+  - text: The success hook refuses a missing payload, skips invalid keys, builds the label values as listed and calls the emitters in the listed order, ending with the total requests counter.
+    proof: [success-tests]
+  - text: A sk- key is hashed for the emitters while the label values keep the original.
+    proof: [success-tests]
+  - text: The failure event skips invalid keys, increments the failed counter, runs the deployment failure and org budget emitters, and swallows any error inside.
+    proof: [failure-tests]
+  - text: The proxy failure hook drops the key hash for a 401, increments failed then total requests, and swallows errors; the success hook emits nothing.
+    proof: [proxy-hook-tests]
+  - text: shared builds one instance and returns it on every later call.
+    proof: [shared-tests]
+checks:
+  optional: []
+  commands:
+    - id: callback-logger
+      why: PrometheusHooks cannot be registered as a callback logger
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_hooks::(.*::)?callback_logger_/)'
+    - id: success-tests
+      why: a success metric is missing, mislabeled or emitted out of order
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_hooks::success::/)'
+    - id: failure-tests
+      why: a failure metric is missing or an error escapes the failure event
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_hooks::failure::/)'
+    - id: proxy-hook-tests
+      why: the proxy failure counters are wrong or the success hook counts twice
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_hooks::proxy_hooks::/)'
+    - id: shared-tests
+      why: a second logger is built
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_hooks::shared::/)'
+oracle_cases: []
+deviations:
+  - what: A missing standard_logging_object in the success hook is a typed error, not a ValueError.
+    why: Same outcome for the caller, the hook stops before any metric.
+out_of_scope:
+  - "Collectors and the exporter settings: B3875. Emitters: B3876, B3877, B3878, B3879, B3881, B3882, B3883. Failure labels and the invalid-key skip: B3880. Label projections: B3873."
+  - "Scrape rendering and /metrics: B3886."
+  - "The HTTP scrape cases through the booted proxy: no callback adapter resolves the name prometheus at main (registry/catalog.rs adapter_for is a stub), so no request reaches these hooks yet; B8655 adds the prometheus arm to its callback logger catalog."
+  - "The scheduled set_spend_capture_rate job in proxy_server.py: not part of these hooks."
+pitfalls:
+  - "The success hook hashes an sk- key only after building the label values, so the hashed_api_key label carries the payload's value while the budget and rate-limit emitters get the hash."
+  - "The failure event reads the payload with a default of {}, so it does not raise on a missing payload, unlike the success hook."
+  - "The proxy failure hook stamps status_code with str(status_code), which is the text None when the exception carries no code."
+  - "async_post_call_success_hook must stay empty: litellm_proxy_total_requests_metric is counted in the success event for streams and non-streams alike."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

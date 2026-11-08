@@ -108,6 +108,7 @@ out_of_scope:
   - Provider-specific formulas outside this batch retain B031/B033/B035/B038-B042 and other provider owners; this task owns their typed dispatch interface and argument flow, not those formulas.
   - B1678 owns OCR, B1679 batch arithmetic, B1676 duration/character primitives and B1672/B1675/B1677 current native token policies; cost_calculator.py functions outside these owned ranges remain B068 or its previously named leaves.
 pitfalls:
+  - "Lemonade prices come from B8152 cost_per_token, injected through ProviderPricePolicy; B1686 calls it and does not copy the formula."
   - 'The oracle helper for this task is pre-registered as call_price in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/call_price.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/call_price.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Supplying usage does not replace the explicit prompt_tokens/completion_tokens arguments used by custom pricing.
   - Region-qualified catalog lookup is attempted only when the caller supplied a provider, not when one was inferred.

@@ -1,0 +1,78 @@
+kind: probe
+name: cooldown-429-multiple-versus-single
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 0}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 1, has_alternatives: false, provider_default: false}
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 10, failures: 1}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 1, has_alternatives: true, provider_default: false}
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 10, failures: 1}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: true}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 0}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: true}
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 0}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 0}
+        allowed_fails_before: 0
+        time_to_cooldown: 0.0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 0}
+        allowed_fails_before: 0
+        time_to_cooldown: 1.0e-9
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 0}
+        allowed_fails_before: 0
+        time_to_cooldown: 2.0e-9

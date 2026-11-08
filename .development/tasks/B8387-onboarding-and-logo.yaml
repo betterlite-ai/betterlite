@@ -1,0 +1,94 @@
+id: B8387
+title: Onboarding invitation, logo, image and favicon routes
+description: >-
+  Five unauthenticated routes in proxy_server.py serve the admin UI before anyone has logged in: the two invitation
+  onboarding steps and the logo, image and favicon lookups. Build crates/betterlite-server/src/onboarding_routes.rs
+  (declared by the skeleton) with `pub fn routes()` like the sibling route modules; B8671 mounts it outside the auth layers.
+  None of them is in the OpenAPI schema. Error enum OnboardingError.
+
+  GET `/onboarding/get_token?invite_link=`: no master key is a ProxyException ("Master Key not set for Proxy. Please
+  set Master Key to use Admin UI. ..." with LiteLLM's full text, type auth_error, param master_key, 500); no database
+  is 500 {"detail": {"error": <db not connected>}}. Read the invitation with B797's repository; missing is 401
+  "Invitation link does not exist in db.", an expires_at date before today (UTC, by date) is 401 "Invitation link has
+  expired.", accepted or with accepted_at is 401 "Invitation link has already been used.", and a missing user is 401
+  "User does not exist in db.". Mint an onboarding JWT (HS256 with the master key: token_type litellm_onboarding,
+  invitation_link, user_id, exp now plus 15 minutes) and a UI token object (user_id, key set to that JWT, user_email,
+  user_role, login_method username_password, premium_user, auth_header_name from general_settings
+  litellm_key_header_name or "Authorization", B063's disabled_non_admin_personal_key_creation, B2302's server root
+  path, password_reset_required false) signed the same way. Answer {login_url, token, user_email}, where login_url is
+  B7323's custom URL for the request base without its trailing slash, plus "/ui/onboarding?token={jwt}&user_email={email}".
+
+  POST `/onboarding/claim_token` with {invitation_link, user_id, password}: no database is the same 500; the invitation
+  checks repeat, then a user_id other than the link's is 401 "Invalid invitation link. The user id submitted does not
+  match the user id this link is attached to. Got={given}, Expected={stored}". The onboarding session comes from the
+  auth header named by litellm_key_header_name: missing is 401 "Missing onboarding session for invitation link.", a
+  "Bearer " prefix is dropped (any case), a JWT that fails to verify or whose token_type, invitation_link or user_id
+  differ is 401 "Invalid onboarding session for invitation link.". Check the password with B786's policy and breach
+  check, hash it, then in one writer transaction (B714): mark the link accepted only where is_accepted is false (no row
+  updated is 401 "Invitation link has already been used."), set the user's password, password_reset_required false and
+  last_breach_check_at null, then set accepted_at. After the commit revoke the user's UI session keys (B789) and mint
+  a UI session key with B056's generate_key_helper_fn (role from the user, LITELLM_UI_SESSION_DURATION,
+  max_ui_session_budget, no models, team UI_TEAM_ID) wrapped in the UI token object. When minting fails, set the link
+  back to not accepted (only where it is accepted, logging a failed rollback) and answer the HTTPException as it came,
+  else 500 "Failed to create onboarding session. Please retry the invitation link.". Answer {login_url (custom URL plus
+  "/ui?login=success"), token, user_email, user} with the password removed from user.
+
+  GET `/get_logo_url`: UI_LOGO_PATH when it starts with http:// or https://, else "" as {"logo_url": ...}, so local
+  paths never leak. GET `/get_image?theme=light|dark&variant=full|monogram`: try UI_LOGO_PATH_DARK (dark theme only)
+  then UI_LOGO_PATH, trimmed and non-empty; an http(s) value redirects (307), a local value is served when B4260's
+  resolve_validated_local_image_path accepts it, else it warns "Custom UI logo {path} is not a supported image file or
+  does not exist, falling back" and the next candidate is tried. With no custom logo serve the bundled logo for the
+  variant (the dark file for the dark theme when present) from the assets directory (LITELLM_ASSETS_PATH, default
+  /var/lib/litellm/assets when LITELLM_NON_ROOT is true, created when missing, falling back to the bundled directory
+  with a warning), and the bundled light logo as the last resort. GET `/get_favicon`: LITELLM_FAVICON_URL empty serves
+  the dashboard's favicon.ico (image/x-icon) or 404 "Default favicon not found"; an http(s) value redirects; a local
+  value is served when it validates, otherwise it warns and falls back to the default, or 404 "Favicon not found".
+
+  Tests cover each branch with in-memory repositories and a temporary assets directory, through tower's oneshot over this module's Router and fake ports. B8671 mounts the routes, and its HTTP oracle cases under
+  tools/oracle/cases/onboarding/ cover both onboarding routes without a database, /get_logo_url with a URL and with a
+  local path, and the /get_image and /get_favicon redirects.
+scope:
+  paths:
+    - crates/betterlite-server/src/onboarding_routes.rs
+    - crates/betterlite-server/src/onboarding_routes/**
+    - tools/oracle/helpers/b8387.py
+    - tools/oracle/helpers/b8387/**
+    - tools/oracle/src/helpers/server/b8387.rs
+    - tools/oracle/src/helpers/server/b8387/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17209-L17550
+    why: Both onboarding routes, the session claim check, the transaction and the rollback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17552-L17701
+    why: Logo URL, image and favicon lookups.
+dod:
+  - text: get_token checks the master key, database, link and user in LiteLLM's order and returns the onboarding login URL and UI token.
+    proof: [onboarding-tests]
+  - text: claim_token verifies the onboarding session, accepts the link once inside a transaction, and rolls the claim back when the session key cannot be minted.
+    proof: [onboarding-tests]
+  - text: Logo, image and favicon lookups redirect URLs, serve only validated local images, fall back in LiteLLM's order and never return a local path.
+    proof: [onboarding-tests]
+  - text: The handlers are tested with tower's oneshot over this module's Router and fake ports; B8671 mounts the routes and proves them over HTTP.
+    proof: [onboarding-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: onboarding-tests
+      why: An onboarding check, the claim transaction, the rollback or a logo or favicon fallback is missing or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^onboarding_routes::/)'
+oracle_cases: []
+deviations:
+  - what: The bundled logos and default favicon are betterlite's rebranded dashboard files, so /get_image and /get_favicon without a custom value return different bytes.
+    why: The dashboard is kept and rebranded (README decisions, 2026-10-24); the bundled directory is an input this task takes, not files it adds.
+out_of_scope:
+  - "Building and serving the dashboard and its bundled assets: the B144 dashboard work, which has no parts yet (planner notes)."
+  - "Invitation rows: B797. Password policy and breach check: B786. UI session key revocation: B789."
+pitfalls:
+  - The UI token object JWTs carry no exp claim; only the inner onboarding JWT expires.
+  - The accept update is conditional on is_accepted false, so two claims racing on one link let only one through.
+  - The invitation expiry compares calendar dates, so a link expiring later today still works.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

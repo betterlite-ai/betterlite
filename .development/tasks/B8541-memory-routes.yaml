@@ -1,0 +1,108 @@
+id: B8541
+title: Memory API routes
+description: >-
+  LiteLLM's memory API (litellm/proxy/memory/memory_endpoints.py) stores small key/value entries scoped to a user, a team or both.
+  B4530 built everything below the routes in crates/betterlite-server/src/memory_records: the row and request models, the
+  visibility and key filters, scope resolution, the write-access check, the unique-violation test, the database-missing and
+  internal-error builders and the two scoped lookups (_find_memory_for_caller, _find_visible_memory_or_none). Read that module and
+  call its functions as they are; do not write a second filter or access check. This task builds the five handlers and the router in
+  a new betterlite-server module `memory_routes` (crates/betterlite-server/src/memory_routes.rs and memory_routes/, declared by the
+  skeleton). `memory_routes(state) -> Router` registers the paths once; B8770 mounts it in the management area.
+
+  Paths, all tagged "memory management" and all behind B052's user_api_key_auth, so a missing or wrong key is that layer's 401:
+  POST /v1/memory, GET /v1/memory, and GET, PUT and DELETE /v1/memory/{key:path}. The key segment is a path parameter that keeps
+  slashes, so GET /v1/memory/team/notes/today looks up the key "team/notes/today"; use axum's wildcard segment `/v1/memory/{*key}`.
+  There are no /memory or /openai/v1 aliases at the pin.
+
+  Every handler first calls B4530's require-database helper, so without a database each one answers 500 with
+  CommonProxyErrors.db_not_connected_error's text, and that happens after body and query validation (FastAPI validates first, so a
+  bad body is 422 even without a database).
+
+  create_memory: resolve the scope from the caller and body.user_id/team_id, then create a row with key, value, user_id, team_id,
+  created_by and updated_by both set to the caller's user_id, and metadata only when it is not null (B4530's metadata serializer).
+  A unique violation is 409 "Memory with key '<key>' already exists."; any other error is B4530's internal error with the log text
+  "Error creating memory: %s" and detail "Internal error creating memory entry.". Answer the row model.
+
+  list_memory: query parameters key, key_prefix, search (all optional strings), page (default 1, at least 1) and page_size
+  (default 50, 1 to 500); a value outside those bounds is 422. Build the key filter and the visibility filter with B4530's helpers.
+  No visibility filter means the key filter alone; no key filter means the visibility filter alone; both mean one top-level AND of
+  the two, never a merge of their keys, since both can carry an OR. Count with that filter, then read rows ordered by updated_at
+  descending with skip (page - 1) * page_size and take page_size. A failure is the internal error "Error listing memory: %s" /
+  "Internal error listing memory entries.". Answer `{"memories": [...], "total": n}`.
+
+  get_memory: the scoped lookup by key; nothing visible is 404 "Memory with key '<key>' not found".
+
+  upsert_memory (PUT): build the update data from the fields the body actually sent: value when it is not null, metadata whenever
+  the body contains the metadata key (an explicit null is stored as JSON null, which reads back as null; an absent key leaves the
+  column alone). No value and no metadata is 400 "Request body must include at least one of: value, metadata.". Add updated_by.
+  Then look up the visible row. Found: run the write-access check, then update by memory_id. Not found: a null value is 400
+  "Cannot create a new memory via PUT without a 'value'."; otherwise resolve the scope as POST does and create the row as POST does,
+  with key from the path. When that create hits a unique violation, look up the visible row again: none visible is 409 "Memory with
+  key '<key>' already exists."; one visible runs the write-access check and the same update. A create error that is not a unique
+  violation goes on to the general handler. HTTP errors pass through unchanged; any other error is the internal error "Error
+  upserting memory: %s" / "Internal error updating memory entry.". An update that returns no row is 404 not found.
+
+  delete_memory: scoped lookup (404 as get), write-access check, delete by memory_id; a delete error is the internal error "Error
+  deleting memory: %s" / "Internal error deleting memory entry."; a missing deleted row is 404; success answers
+  `{"key": "<key>", "deleted": true}`.
+
+  Tests in `memory_routes::tests` with an in-memory store fake for the ordering cases and PostgreSQL tests through B726's
+  repositories for create, list pagination and the AND filter, the PUT race (seed the row between the lookup and the create), the
+  metadata null versus absent case, and a teammate who can see a personal row but gets the write-access 403 on PUT and DELETE.
+
+  The HTTP cases moved to B8770, which mounts this router; test the same requests here with tower's oneshot over memory_routes' own Router: create-no-database (POST
+  with a valid body and the master key, the 500), get-nested-key-no-database (GET /v1/memory/a/b/c, the same 500, proving the path
+  route matched), create-missing-value (POST without value, the 422), list-page-size-too-large (page_size=501, the 422) and
+  create-no-key (no Authorization header, B052's 401).
+scope:
+  paths:
+    - crates/betterlite-server/src/memory_routes.rs
+    - crates/betterlite-server/src/memory_routes/**
+    - tools/oracle/helpers/b8541.py
+    - tools/oracle/helpers/b8541/**
+    - tools/oracle/src/helpers/server/b8541.rs
+    - tools/oracle/src/helpers/server/b8541/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L285-L386
+    why: create_memory and list_memory with their decorators, query bounds and the AND filter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/memory/memory_endpoints.py#L413-L562
+    why: get_memory, upsert_memory with the race fallback, and delete_memory.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19995
+    why: The router is included without a prefix.
+dod:
+  - text: The handlers are tested with tower's oneshot over this task's own Router and fake ports; B8770 mounts them and proves them over HTTP.
+    proof: [memory-route-tests]
+  - text: The five memory routes are registered once with LiteLLM's paths, the path key keeps slashes, and validation runs before the database check.
+    proof: [memory-route-tests]
+  - text: Create and PUT-create resolve scope, write metadata only when given, and answer 409 on a duplicate key.
+    proof: [memory-route-tests, memory-postgres-tests]
+  - text: PUT distinguishes an absent metadata field from an explicit null and handles the create race by re-reading and re-checking write access.
+    proof: [memory-route-tests, memory-postgres-tests]
+  - text: List combines the key and visibility filters with one AND, counts, orders by updated_at descending and pages.
+    proof: [memory-postgres-tests]
+  - text: Get, PUT and DELETE answer 404 for an invisible key and 403 when the row is visible but not writable.
+    proof: [memory-route-tests, memory-postgres-tests]
+checks:
+  optional: []
+  commands:
+    - id: memory-route-tests
+      why: A route, its validation order or a handler branch is missing or differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^memory_routes::/) - test(/postgres/)'
+    - id: memory-postgres-tests
+      why: The database-backed create, list, race and access cases are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^memory_routes::/) & test(/postgres/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Every helper the routes call (models, filters, scope, write access, unique violation, lookups, error builders): B4530."
+  - "litellm/proxy/memory/__init__.py is empty."
+pitfalls:
+  - list_memory's search filter and the non-admin visibility filter both use an OR key, so merging the two maps instead of wrapping them in AND leaks rows.
+  - 'PUT reads model_fields_set, so `{"value": "x"}` keeps the stored metadata while `{"value": "x", "metadata": null}` clears it.'
+  - The create inside PUT catches only a unique violation; a second lookup that finds nothing visible is a 409, not a 404.
+  - The path parameter is `{key:path}`, so a route written as `/v1/memory/{key}` would 404 every key with a slash.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

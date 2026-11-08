@@ -1,0 +1,64 @@
+id: B8397
+title: Remaining PrismaClient table reads and writes and the config row cache
+description: >-
+  LiteLLM's PrismaClient routes most database work through four dispatchers, `get_data`, `insert_data`, `update_data` and `delete_data`, picked by table_name and query_type, plus `get_generic_data`. Other tasks took some branches: B2320 the combined_view read, B722 the token find_unique read (L4890-L4936), B3011 and B3012 the budget-reset reads (L4935-L4946, L4993-L5012, L5064-L5076), and B2362 the key and user insert and update branches with the shared retry and failure handler. This task builds every branch left, as typed functions in betterlite-db over B714's routed handles, plus the cached LiteLLM_Config reads that the proxy's config loading uses. Code goes in crates/betterlite-db/src/table_ops.rs and table_ops/ (reads.rs, inserts.rs, updates.rs, deletes.rs, generic.rs, team_json.rs, tests.rs) and crates/betterlite-server/src/config_param_cache.rs and config_param_cache/ (the cache lives in the server crate because it uses betterlite-cache's DualCache).
+
+  Read the dispatchers at L4737-L5728 and port, branch by branch: get_generic_data for users, keys, config and spend (find_first by one key, with the backoff of 1 try in 2 seconds and the failure handler with call_type get_generic_data); get_data's key find_all variants by user_id, team_id, expires with reset_at, and all; user find_all by key_val, reset_at, user_id_list and all; spend find_unique and find_all; budget find_all by reset_at; enduser find_all by budget_id_list; team find_unique, find_all by reset_at, user_id, team_id_list and all; user_notification find_unique and find_all. insert_data for team, config (one upsert per param, JSON values through B2362's jsonify_object), spend and user_notification. update_data for team (update and upsert as LiteLLM does), the batch update_many for key, user, enduser, budget and team inside one batch commit (the `_UpdateManyBatch` and `_EndUserBatchTable` protocols at L299-L328 are the shapes of that batch), and team_id_list updates for team and key. delete_data for keys by token list (with an optional team_id or user_id filter), keys by team_id_list (B811 deletes a team's keys this way) and teams by team_id_list. `jsonify_team_object` (L5268-L5274) turns the team's map fields into JSON strings. Every operation keeps LiteLLM's retry (3 tries in 10 seconds with on_backoff, B2362's helper), its failure handler call and its exact SQL filters and ordering; each failure goes through the same `FailureSink` B2362 uses.
+
+  config_param_cache.rs: `get_config_param(param_name)` (L4287-L4297) reads `litellm_config:param:{name}` from a DualCache with the TTL LITELLM_CONFIG_PARAM_CACHE_TTL_SECONDS (default 60, for memory and Redis, read through a config section `config_param_cache`), stores a miss as the marker "__litellm_config_param_miss__" and a hit as `{param_name, param_value}`. `evict_config_param`, `invalidate_config_param` (evict, then publish the change through LiteLLM's `publish_config_param_change`, taken as the trait `ConfigChangePublisher { async fn publish_param_change(&self, param_name: &str); }` this task declares; it returns nothing, as in LiteLLM, and B8399 implements it over B4144's config_sync_pubsub publisher) and `prefetch_config_params` (one find_many for all names, falling back silently on error). `cache_user_row(user_id, cache, db)` (L6996-L7009) stores `{user_id}_user_api_key_user_id` for 600 seconds after a miss.
+scope:
+  paths:
+    - crates/betterlite-db/src/table_ops.rs
+    - crates/betterlite-db/src/table_ops/**
+    - crates/betterlite-server/src/config_param_cache.rs
+    - crates/betterlite-server/src/config_param_cache/**
+    - crates/betterlite-config/src/sections/config_param_cache.rs
+    - crates/betterlite-config/src/sections/config_param_cache/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4737-L5728
+    why: get_generic_data and the four dispatchers; the branches other tasks own are named in the description.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4261-L4331
+    why: The cached LiteLLM_Config reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6996-L7009
+    why: _cache_user_row.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L299-L328
+    why: The batch protocols update_many writes through.
+dod:
+  - text: Each remaining get_data and get_generic_data branch returns LiteLLM's rows for its filters, tested against Postgres.
+    proof: [table-tests]
+  - text: insert_data, update_data and delete_data branches write the same rows, and update_many commits one batch.
+    proof: [table-tests]
+  - text: Failures retry 3 times in 10 seconds and reach the failure sink with the operation's call_type.
+    proof: [table-tests]
+  - text: Config params are cached with the miss marker and TTL, evicted, invalidated with a publish, and prefetched in one query.
+    proof: [cache-tests, config-tests]
+checks:
+  optional: []
+  commands:
+    - id: table-tests
+      why: a remaining table branch, the batch update or the retry is missing or wrong
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^table_ops::/)'
+    - id: cache-tests
+      why: the config param cache or the user row cache is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^config_param_cache::/)'
+    - id: config-tests
+      why: LITELLM_CONFIG_PARAM_CACHE_TTL_SECONDS is not read or has the wrong default
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::config_param_cache::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The combined_view read and the deprecated key lookup: B2320. Token storage: B722. Budget reset reads: B3011 and B3012. Key and user insert and update, hash_token, jsonify_object and on_backoff: B2362."
+  - "PrismaClient.get_request_status: B1743. Health check rows: B7640 and B3193."
+  - "The routes that call these operations keep their owners; HTTP oracle cases come with them."
+pitfalls:
+  - 'The key find_all read hashes list entries only when they start with sk-, orders by spend descending, and answers HTTP 401 "Authentication Error: invalid user key - token does not exist" when the result is None.'
+  - The unfiltered user find_all without expires is raw SQL that joins key aliases with json_agg, ordered by spend descending with LIMIT $1 OFFSET $2.
+  - update_many writes every row in one batch and commits once, so a failure loses the whole batch, not one row.
+  - get_generic_data has only one try within 2 seconds, unlike the 3 tries of the other operations.
+  - The config cache stores a miss marker, so a missing row is not looked up again until the TTL passes.
+  - invalidate_config_param must publish after the local eviction, so other pods evict too.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

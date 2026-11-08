@@ -68,10 +68,10 @@ description: >-
   declared in routes.rs. Its routes function takes &Arc<ServerState> and returns a Router, and router() merges it
   before the auth layers. A stub routes function returns an empty Router, so its owner's paths keep answering the
   existing Not Found fallback until the owner fills the module. The existing empty completions.rs and moderations.rs
-  get stub routes functions the same way. A state entry is a module crates/betterlite-server/src/state/<module>.rs
-  declared in state.rs. It defines a Slot type with a constructor that takes the loaded Config, and ServerState
+  get stub routes functions the same way. routes/ocr.rs is one of these stubs, and B092 fills it. A state entry is a module crates/betterlite-server/src/state/<module>.rs
+  declared in state.rs. It defines a Slot type with a constructor `Slot::new(config: &Config, shared: &Shared)`, and ServerState
   carries one field per entry of type <module>::Slot. A stub Slot holds nothing. ServerState lives in state.rs and
-  holds the loaded Config, the executor that application() already builds and the slots. It is built once in
+  holds the loaded Config, the executor that application() already builds, `shared: Arc<Shared>` and the slots. `Shared` is an empty struct this task declares in crates/betterlite-server/src/state/shared.rs; B8610 fills it with the startup resources (database, Redis, HTTP client, router and the ports several areas share), so slots get them without a signature change. It is built once in
   server.rs application(). router() takes it as an Arc, hands it to each routes function and adds it as the
   outermost Extension layer, so auth stages and chat handlers read their slot from the request. Update the router()
   callers in server.rs and in the auth and model_list router tests to pass it. The test
@@ -261,6 +261,7 @@ checks:
       routes audio
       routes realtime
       routes rerank
+      routes ocr
       routes batch
       routes managed_file
       routes assistant_runs
@@ -355,6 +356,10 @@ checks:
       routes team_merge_patch
       routes debug_report
       routes mcp_byok_consent
+      routes video_create
+      routes video_content_remix
+      routes video_character
+      routes video_edit
       state virtual_key_auth
       state jwt_auth
       state custom_auth
@@ -413,6 +418,7 @@ checks:
       state current_spend
       state master_database_auth
       state adaptive_persistence
+      state callback_loggers
       EOF
 oracle_cases:
 - tools/oracle/cases/helpers/request-body/cached-body-single-read.yaml
@@ -440,13 +446,13 @@ pitfalls:
 - http_parsing_utils.py:327 emits the diagnostic 'Unexpected error reading request query params - %s'; retain its
   level and fallback instead of turning it into a hard error.
 - >-
-  The 560-line estimate covers the request body work only. The 109 route stubs, the 58 state slots, their registry
-  lines and the ServerState wiring add about 1900 lines outside it.
+  The 560-line estimate covers the request body work only. The 114 route stubs, the 58 state slots, their registry
+  lines and the ServerState wiring add about 1940 lines outside it.
 - >-
   A stub routes function or Slot constructor has a one-line body because it is a placeholder its owner replaces,
   not a wrapper to inline. Do not prefill a stub with its owner's paths, handlers or fields.
 - Router::merge panics when two routers register the same method and path, so an empty stub router registers nothing.
 review_level: security
 budget:
-  max_changed_lines: 3400
+  max_changed_lines: 3450
   max_new_expects: 1

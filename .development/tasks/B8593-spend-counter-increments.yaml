@@ -1,0 +1,82 @@
+id: B8593
+title: Post-call spend counter increments per budget scope
+description: >-
+  After a request is priced, LiteLLM's cost callback awaits increment_spend_counters, which charges every budget
+  scope the request touched in one Redis batch. B3015 builds the low-level counter writes; this task builds the fan-out
+  above them in crates/betterlite-auth/src/spend_increments.rs (declared by the skeleton), error enum
+  SpendIncrementError.
+
+
+  `increment_spend_counters(input, ports)` opens B2316's spend counter batch scope over the post_call_counter_keys of
+  the request and runs `increment_batched`. That first reconciles the budget reservation (`reconcile_reservation`,
+  porting _reconcile_budget_reservation_for_counter_update): no reservation or one already finalized gives no reserved
+  keys; otherwise B3003's get_reserved_counter_keys and reconcile_budget_reservation(actual_cost or 0, finalize false,
+  apply_consistent false); a failure logs a warning, invalidates the reserved counters (a second failure is logged) and
+  falls back to no reserved keys and no pending adjustments. A null or zero cost applies only the reservation's pending
+  adjustments through B3015's apply_spend_counter_increments, stamps the actual cost and marks the reservation finalized.
+
+
+  Otherwise the scopes run together, each skipping a counter key that the reservation already holds. Key: counter
+  spend:key:<hash> where a token starting with "sk-" is hashed with hash_token, source cache key the hash; then for each
+  entry of the cached key's budget_limits (a JSON string is parsed) a window counter spend:key:<hash>:window:<duration>
+  through `prepare_window_increment` and a window row update through the WindowSpendQueue port. Team: spend:team:<id>
+  with source team_id:<id> and the same window loop on team budget_limits. Team member: spend:team_member:<user>:<team>
+  with source team_membership:<user>:<team>. User: spend:user:<id>. End user: spend:end_user:<id> with B733's
+  end_user_cache_key. Tags: spend:tag:<tag> for each distinct non-empty string tag, first-seen order. Model access
+  groups: B733's model_access_group_spend_counter_key for each distinct non-empty string group. Org: spend:org:<id> with
+  source keys org_id:<id>:with_budget then org_id:<id>. Project: project_spend_counter_key. Each prepare step calls
+  B3015's ensure_spend_counter_initialized before returning the pending increment. All pending increments (reservation
+  adjustments first) are applied in one call, the actual cost is stamped, the first scope error is returned after that,
+  and only a clean run marks the reservation finalized.
+
+
+  `prepare_window_increment` skips with the warning "Skipping spend counter increment for invalid budget window <key>"
+  when the window start is missing and returns nothing when B3015's window initialization says false.
+  `enqueue_window_row` does nothing without a window start or reset_at, and logs at debug and carries on when the
+  queue fails, since spend tracking never fails the cost callback.
+scope:
+  paths:
+    - crates/betterlite-auth/src/spend_increments.rs
+    - crates/betterlite-auth/src/spend_increments/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3045-L3093
+    why: increment_spend_counters and its batch scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3096-L3346
+    why: The per-scope fan-out, error collection and finalize order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3349-L3391
+    why: _ReservationCounterUpdate and the reconcile fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3394-L3541
+    why: End user, tag, access group, org and project prepare steps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3544-L3617
+    why: Window row enqueue and window counter preparation.
+dod:
+  - text: Every scope builds LiteLLM's counter key and source cache key and skips reserved keys.
+    proof: [spend-increment-tests]
+  - text: Window budgets add a window counter and a queued row update only when start and reset_at exist.
+    proof: [spend-increment-tests]
+  - text: A reconcile failure invalidates the reserved counters and falls back to direct increments.
+    proof: [spend-increment-tests]
+  - text: Pending increments go out in one apply call, and a scope error is returned after the apply without finalizing.
+    proof: [spend-increment-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: spend-increment-tests
+      why: a spend scope, its key or the reservation handling differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^spend_increments::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Counter initialization, warm checks, apply and settle: B3015. Reservation reconcile and stamp: B3003. Batch scope and post_call_counter_keys: B2316. Window start: B2361. Cache key builders: B733."
+  - "build_window_spend_transaction and the window spend queue sit behind the WindowSpendQueue port; the wiring passes B1734's queue."
+  - "The cost callback that awaits increment_spend_counters: B1719."
+pitfalls:
+  - Only tokens starting with "sk-" are hashed; any other token is used as is in the key.
+  - A team member counter needs both user_id and team_id; a user counter needs only user_id.
+  - Window prepare errors are gathered with return_exceptions, so one bad window does not stop the others.
+  - The reservation is stamped even when a scope failed, but finalized only when none did.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

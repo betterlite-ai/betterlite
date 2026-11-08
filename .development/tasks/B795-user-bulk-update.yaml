@@ -69,13 +69,13 @@ description: >-
   remains the REQUEST email, updated_user is the whole helper response, error=null. A bare-model
   insert response lacking get can turn a committed insert into a failed result. Row exceptions
   produce both exception and error logs, then success=false,error=str(exception), requested ID/email,
-  updated_user=null, and continue. HTTPException row text includes its status; do not use B124's
+  updated_user=null, and continue. HTTPException row text includes its status; do not use B2400's
   exception converter. Cases response_id_and_requested_email, bare_model_insert_row_failure,
   row_error_text_and_continue and mixed_counts_and_order compare all fields. An exception in
   result handling itself becomes HTTPException 500 detail.error, as in the fallback defect above.
 
   There is NO route except block. Handler HTTPExceptions retain the outer {detail:...} envelope,
-  without OpenAI type/param/code; unexpected preflight errors reach B124's outer 500
+  without OpenAI type/param/code; unexpected preflight errors reach B8591's outer 500
   internal_server_error envelope (no param/code). Auth/schema failures remain B052/B2334.
   Cases route_http_detail_envelope and preflight_unexpected_500 distinguish these mappings.
 
@@ -128,8 +128,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/user_bulk_update.rs
     - crates/betterlite-server/src/routes/user_bulk_update/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/user-bulk-update/**
     - tools/oracle/helpers/b795.py
     - tools/oracle/helpers/b795/**

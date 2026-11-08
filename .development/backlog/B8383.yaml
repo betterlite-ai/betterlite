@@ -1,0 +1,13 @@
+id: B8383
+milestone: M8 platform
+title: Database settings reloads for search, SSO and secret managers
+status: todo
+depends_on: [B8382, B8397, B1118, B1610, B1646, B4412, B8201]
+file: tasks/B8383-db-settings-reload.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

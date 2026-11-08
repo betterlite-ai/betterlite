@@ -1,0 +1,280 @@
+id: B4447
+title: Exercise configured health service integrations
+description: >-
+  Build LiteLLM's GET /health/services and GET /test routes plus get_callback_identifier in betterlite-server, in a new
+  module `health_services`. The source is litellm/proxy/health_endpoints/_health_endpoints.py lines 176-262 and 264-612.
+  /health/services is an admin-ish probe: given ?service=<name> it fires one test event at that integration (a mock LLM
+  request, a vendor health check, a Slack, Teams, webhook or email test alert) and answers a small JSON body. Split
+  Rust files at the repository 300-line limit: service_name, callback_id, service_probes, alert_tests, mock_requests and
+  service_routes under crates/betterlite-server/src/health_services/, with `health_services.rs` declaring them.
+
+  Route split. B4448 registers the readiness, details, backlog, drain, license, OPTIONS, /settings and
+  /active/callbacks routes. B4446 registers POST /health/test_connection. This task registers only GET /test and GET
+  /health/services, in one function `health_services_routes(state) -> Router` that B8540 mounts once. Do not
+  register any path B4448 or B4446 owns. Both routes sit behind B052's user_api_key_auth, so a missing or wrong key is
+  that pipeline's 401 and this module never sees it.
+
+  GET /test (deprecated). Authenticated, answers `{"route": <request route>}` where the route is the request path after
+  the root-path prefix, through B882's get_request_route. Nothing else.
+
+  Service names (`service_name`). The query parameter `service` is required; a request without it never reaches the
+  handler and gets the proxy's usual 422 request-validation answer. The accepted set is exactly these 22 names:
+  slack_budget_alerts, email, langfuse, langfuse_otel, slack, ms_teams, openmeter, webhook, braintrust, otel,
+  custom_callback_api, langsmith, datadog, datadog_metrics, datadog_llm_observability, generic_api, arize, galileo,
+  newrelic, pointfive, signoz, sqs. Parse the text into a `ServiceName` enum with `FromStr`; any other text is HTTP 400
+  with detail `{"error": "Service must be in list. Service=<service> not in <list>"}` (see error shape below).
+
+  Error shape. The whole handler runs inside one catch. An HTTP error (400, 403, 422, 500 below) becomes the proxy error
+  body with type `auth_error`, param `"None"`, code the status as a string, and message the text of the detail map, so
+  the message reads `{'error': '<text>'}`. Any other failure becomes status 500, type `auth_error`, param `"None"` and
+  message `Authentication Error, <error text>`. Every failure first logs at error level
+  `litellm.proxy.proxy_server.health_services_endpoint(): Exception occured - <error>` (keep the typo) and the traceback
+  at debug. Use the error type and body builder the proxy already has (B746/B882 auth error conversion); add no second
+  error JSON writer.
+
+  Dispatch (`service_probes`), in this exact order. Step 1: decide `in_success_callbacks`. It is true when the service
+  text equals any entry of the success-callback list, or when any registered callback has the same name, or whose
+  get_callback_identifier equals the service text. Step 2: take the mock-LLM branch when the service is openmeter,
+  braintrust or generic_api, or when in_success_callbacks is true and the service is neither langfuse nor pointfive.
+  This test comes before every vendor branch, so datadog, arize and the rest run a mock request instead of their own
+  health check when they are in the success-callback list. The mock request goes through the injected `MockRequests`
+  trait (below) and the answer is `{"status": "success", "message": "Mock LLM request made - check <service>."}`.
+  Step 3, otherwise by service:
+  datadog calls the Datadog health check and answers status from it with message the error text when unhealthy, else
+  "Datadog is healthy". datadog_metrics does the same with "Datadog Metrics is healthy" (the production probe reuses the
+  already registered Datadog metrics logger when one exists, else builds one without its periodic flush). arize with
+  "Arize is healthy". galileo with "Galileo is healthy". sqs answers status and the error text as message, which is null
+  when healthy. newrelic needs a proxy admin (full or view-only, B4446's role check) or answers 403
+  `Only proxy admins can trigger the New Relic test event.`; it answers status from the check and message the error text
+  when unhealthy, else the New Relic text `New Relic is healthy`, a space, the em dash character (U+2014), a space and
+  `test event sent`. pointfive needs a proxy admin or answers 403 `Only proxy admins can trigger the PointFive liveness
+  ping.`; building its logger can fail on a missing key, and that failure answers 200 `{"status": "unhealthy",
+  "message": <error text>}`; otherwise status is from the check and message is the error text when unhealthy, else
+  "PointFive is healthy", and an unhealthy check with an empty error text also reads "PointFive is healthy". langfuse
+  runs the injected Langfuse auth check (B3904's auth_check, which returns None or a reason); a reason fails with
+  the plain error `langfuse auth_check failed: <reason>` (so the route answers 500 `Authentication Error, langfuse
+  auth_check failed: <reason>`); on success it makes the mock request and answers the mock message for langfuse.
+  The remaining names (webhook, slack, slack_budget_alerts, ms_teams, email) go to the alert tests below, and every
+  name that matches nothing (otel, custom_callback_api, langsmith, langfuse_otel, datadog_llm_observability, signoz,
+  and any other name that is not in the success list) falls out of the whole chain and answers 200 with a JSON null body.
+
+  Alert tests (`alert_tests`).
+  webhook needs a proxy admin or answers 403 `Only proxy admins can trigger the webhook test alert.` It then sends a
+  user-budget test alert through the injected `AlertActions::send_user_budget_test` with the caller's token (empty text
+  when absent), user_id, key_alias and team_id; the production implementation builds B4025's CallInfo with spend 1,
+  max_budget 0 and event group key, and calls its budget_alerts entry with type user_budget. The route then answers
+  200 with a JSON null body, because the webhook branch is an `if` that falls out of the chain (see pitfalls).
+  slack and slack_budget_alerts: when the configured general_settings.alerting list does not contain "slack" the answer
+  is 422 `"<service>" not in proxy config: general_settings. Unable to test this.` Otherwise ask
+  `AlertActions::webhook_alert_types()`. When it returns Some(list) (the unique-webhook-per-type setup), loop in list
+  order and skip a type when `active_alert_types()` is Some and does not contain it; for each remaining type pick the
+  message: llm_exceptions "LLM Exception test alert", llm_too_slow "LLM Too Slow test alert", llm_requests_hanging "LLM
+  Requests Hanging test alert", budget_alerts "Budget Alert test alert", db_exceptions "DB Exception test alert",
+  outage_alerts "Outage Alert Exception test alert", daily_reports "Daily Reports test alert", and every other type
+  "Budget Alert test alert". Send each with level Low and that alert type. When it returns None, send one alert with
+  "This is a test slack alert message", level Low, type budget_alerts. After the sends, when a database exists
+  (`has_database()`), start two background tasks, `send_monthly_spend_report` and `send_weekly_spend_report`, without
+  awaiting them (tokio::spawn through the injected trait; B4029 owns the reports). Answer `{"status": "success",
+  "alert_types": <active alert type names, [] when None>, "message": "Mock Slack Alert sent, verify Slack Alert Received
+  on your channel"}`.
+  ms_teams: alerting without "ms_teams" is 422 with the same not-in-config text as slack. A missing Teams webhook URL
+  (`ms_teams_webhook_url()` is None) is 422 `MS_TEAMS_WEBHOOK_URL not set. Unable to test this.` Otherwise build the text
+  "Alert type: `budget_alerts`" newline "Level: `Low`" newline "Timestamp: `HH:MM:SS`" (local time, from the injected
+  clock), a blank line, then "Message: This is a test MS Teams alert message", and post it with `post_teams(url, text)`
+  (the production implementation wraps it with B4021's Adaptive Card builder and header map and B173's client). A
+  delivery status of 400 or more is a 500 with detail
+  `MS Teams webhook returned status <code>: <body text>`; otherwise answer `{"status": "success", "message": "Mock MS
+  Teams Alert sent, verify MS Teams Alert Received in your channel"}`.
+  email: build a key_created test event with event_message "Test Email Alert", key_alias "Email Test key (This is only a
+  test alert key. DO NOT USE THIS IN PRODUCTION.)", spend 0, max_budget 0, the caller's token, user_id and team_id, and
+  user_email from the config value TEST_EMAIL_ADDRESS; send it through `AlertActions::send_test_email`, which the
+  production implementation maps to B4023's send_key_created_or_user_invited_email. The returned success flag is
+  ignored. Answer `{"status": "success", "message": "Mock Email Alert sent, verify Email Alert Received"}`.
+
+  Injected traits (defined in the module `service_probes` and `alert_tests`, faked in tests; B8540 builds the
+  production implementations over the logging, alerting and model-call crates, since no other task does).
+  `MockRequests::send_mock_request(&self) -> Result<(), ServiceTestError>`: one chat completion with model
+  `openai/litellm-mock-response-model`, messages `[{"role": "user", "content": "Hey, how's it going?"}]`, user
+  `litellm:/health/services` and mock_response `This is a mock response`; the production implementation calls B5656's
+  completion entry. `IntegrationChecks`: async `datadog()`, `datadog_metrics()`, `arize()`, `galileo()`, `newrelic()`,
+  `sqs()` each returning `Result<IntegrationHealthStatus, ServiceTestError>` (B3931's type), `pointfive()` returning
+  `Result<IntegrationHealthStatus, PointFiveSetupError>` where the setup error carries the missing-key text, and
+  `langfuse_auth_check()` returning `Result<Option<String>, ServiceTestError>`. `AlertActions` as above, plus
+  `has_database()`. `CallbackSource`: `success_callback_entries()` returning each entry as either a plain name or a
+  registered callback (so the name test and the identifier test both work). A fake for each lives in the tests.
+
+  get_callback_identifier (`callback_id`). Public `get_callback_identifier(entry) -> String`: a plain name entry returns
+  itself; a registered callback returns B4448's public `callback_name(callback)` (read crates/betterlite-server/src/
+  health_readiness/callback_listing.rs for its exact argument type and use that type). LiteLLM first looks at a
+  callback_name attribute and at CustomLoggerRegistry class strings before falling back to callback_name; B189's
+  registry has one registered name per callback and no Python objects, so those first two steps collapse into
+  callback_name (a deviation). B4447 owns this function and B4448 does not call it.
+
+  Config section `health_services`, in crates/betterlite-config/src/sections/health_services.rs. It reads
+  general_settings.alerting (a list of strings; absent, null or a non-list gives an empty list, and non-string items are
+  dropped) and the env var TEST_EMAIL_ADDRESS (an optional string, empty counts as absent), using betterlite_env helpers
+  as sections/aiohttp_transport_toggle.rs does. Settings reach this module as config.sections.health_services. If B4020's
+  alert_settings section already exposes the alerting list when you start, read it from there and keep only
+  TEST_EMAIL_ADDRESS here.
+
+  Tests live in `health_services::tests` (any submodule below it) with these prefixes: `service_` (name parsing and the
+  400), `identifier_`, `dispatch_` (success-callback precedence and the mock branch), `vendor_` (the vendor health
+  messages and the admin gates), `alert_` (webhook, slack, ms_teams, email), `route_` (error shape, /test, the null
+  bodies). Every branch above gets a named case; use fake traits and tokio's paused clock. Config tests live in
+  sections::health_services::tests. The HTTP oracle cases run through the booted proxy.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/health_services.rs
+    - crates/betterlite-server/src/health_services/**
+    - crates/betterlite-config/src/sections/health_services.rs
+    - crates/betterlite-config/src/sections/health_services/**
+    - "crates/betterlite-config/fuzz/corpus/config_yaml/health-services-*"
+    - tools/oracle/cases/health/services-no-key.yaml
+    - tools/oracle/cases/health/services-unknown-name.yaml
+    - tools/oracle/cases/health/services-missing-name.yaml
+    - tools/oracle/cases/health/services-mock-braintrust.yaml
+    - tools/oracle/cases/health/services-unmatched-null.yaml
+    - tools/oracle/cases/health/services-webhook-null.yaml
+    - tools/oracle/cases/health/services-slack-not-configured.yaml
+    - tools/oracle/cases/health/services-teams-not-configured.yaml
+    - tools/oracle/cases/health/services-teams-no-url.yaml
+    - tools/oracle/cases/health/test-route.yaml
+    - tools/oracle/helpers/b4447.py
+    - tools/oracle/helpers/b4447/**
+    - tools/oracle/src/helpers/server/b4447.rs
+    - tools/oracle/src/helpers/server/b4447/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L176-L202
+    why: get_callback_identifier and its fallback to callback_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L205-L261
+    why: The accepted service list, the two reply shapes and GET /test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L264-L349
+    why: GET /health/services decorator, name check, the success-callback test and the mock-request and datadog branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L350-L481
+    why: Vendor branches (datadog_metrics, arize, galileo, langfuse, newrelic, pointfive), the webhook test and sqs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L482-L612
+    why: Slack, Teams and email test alerts and the error conversion at the end of the handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/ms_teams.py#L1-L76
+    why: The Teams webhook URL env name, header map and card payload the production post uses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4353
+    why: ProxyException turns the message into text and the code into a string.
+
+dod:
+  - text: >-
+      GET /test answers the request route, and GET /health/services without a service query gets the validation 422 and with an unknown name gets a 400 auth_error whose message starts `{'error': 'Service must be in list.`
+    proof: [service-tests, route-tests, oracle]
+  - text: The 22 service names parse and nothing else does.
+    proof: [service-tests]
+  - text: The success-callback test matches a plain name, a registered callback name or its identifier, and wins over every vendor branch except langfuse and pointfive.
+    proof: [dispatch-tests, oracle]
+  - text: openmeter, braintrust, generic_api and a listed callback make the mock request with the exact model, message, user and mock_response and answer the mock message; langfuse checks auth first and fails with the auth_check text.
+    proof: [dispatch-tests, oracle]
+  - text: datadog, datadog_metrics, arize, galileo, sqs, newrelic and pointfive answer the exact status and message texts, including the pointfive setup failure and its empty-error rule.
+    proof: [vendor-tests]
+  - text: newrelic, pointfive and webhook answer 403 for a caller who is not a proxy admin, and view-only admins pass.
+    proof: [vendor-tests, alert-tests]
+  - text: webhook sends the user-budget test alert and answers a JSON null body, as do the names that match no branch.
+    proof: [alert-tests, route-tests, oracle]
+  - text: slack and slack_budget_alerts answer 422 without "slack" in alerting, pick the per-type message, honor the active alert types, spawn the two spend reports only with a database, and list the active alert types.
+    proof: [alert-tests, oracle]
+  - text: ms_teams answers 422 without alerting config or without a webhook URL, posts the timestamped text, and turns a status of 400 or more into a 500.
+    proof: [alert-tests, oracle]
+  - text: email sends the key_created test event with TEST_EMAIL_ADDRESS and answers success whatever the send returns.
+    proof: [alert-tests, health-services-config-tests]
+  - text: Every failure logs the typo'd error line and the 500 fallback message reads "Authentication Error, <error>".
+    proof: [route-tests]
+  - text: The health_services section loads alerting and TEST_EMAIL_ADDRESS with their defaults, and the config corpus has the new seeds.
+    proof: [health-services-config-tests, config-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: service-tests
+      why: service name parsing or the unknown-name 400 is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_services::(.*::)?tests::service_/)'
+    - id: dispatch-tests
+      why: the success-callback test, its precedence, the identifier or the mock request is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_services::(.*::)?tests::(dispatch_|identifier_)/)'
+    - id: vendor-tests
+      why: a vendor health message, setup failure or admin gate is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_services::(.*::)?tests::vendor_/)'
+    - id: alert-tests
+      why: a webhook, slack, ms_teams or email test alert behavior is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_services::(.*::)?tests::alert_/)'
+    - id: route-tests
+      why: the route, error shape, null body or /test answer is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_services::(.*::)?tests::route_/)'
+    - id: health-services-config-tests
+      why: the health_services section keys, env var or defaults are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::health_services::/) - test(replays_the_config_yaml_corpus)'
+    - id: config-corpus
+      why: the new health-services config seeds are missing or do not replay
+      run: >-
+        git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml | grep -Fq "/health-services-" &&
+        test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs &&
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/health/services-no-key.yaml
+  - tools/oracle/cases/health/services-unknown-name.yaml
+  - tools/oracle/cases/health/services-missing-name.yaml
+  - tools/oracle/cases/health/services-mock-braintrust.yaml
+  - tools/oracle/cases/health/services-unmatched-null.yaml
+  - tools/oracle/cases/health/services-webhook-null.yaml
+  - tools/oracle/cases/health/services-slack-not-configured.yaml
+  - tools/oracle/cases/health/services-teams-not-configured.yaml
+  - tools/oracle/cases/health/services-teams-no-url.yaml
+  - tools/oracle/cases/health/test-route.yaml
+
+deviations:
+  - what: The 400 message lists betterlite's 22 accepted names, not the Python typing repr of the Literal.
+    why: The repr text of a typing union is a Python runtime detail. The status, type, param and code match, and the oracle ignores /error/message for that case.
+  - what: get_callback_identifier has no attribute or class-registry steps; a registered callback returns its registered name.
+    why: B189's registry holds a closed enum with one registered name per callback, and there are no Python objects to inspect.
+  - what: Vendor checks that LiteLLM runs by constructing a fresh logger (DataDogLogger(), ArizeLogger(), GalileoObserve(), SQSLogger()) run through injected probes over the configured integration.
+    why: Construction reads the same env vars the integration already resolved at startup, and the repository rule keeps env reads in the config crate.
+  - what: TEST_EMAIL_ADDRESS is read once when the config loads, not on every call.
+    why: The repository rule keeps environment reads inside the config crate.
+
+out_of_scope:
+  - "The 22 vendor health checks themselves, the Slack alert sender, budget_alerts, the spend reports, the email sender and the mock completion: B3933, B3939, B3862, B3964, B3995, B3942, B3074, B3904, B4024, B4025, B4029, B4023 and B5656 own them. This task defines the traits and fakes only."
+  - "The production implementations of MockRequests, IntegrationChecks, AlertActions and CallbackSource: B8540 builds them, because no leaf task depends on all of those crates."
+  - "Every route of the file outside lines 176-612: B4448 (readiness, drain, backlog, details, license, OPTIONS, /settings, /active/callbacks, callback_name), B4446 (POST /health/test_connection and the admin helpers), B4445 owns /health, /health/history and /health/latest, B4444 owns /health/shared-status, and B8540 mounts every one of them."
+  - "_is_proxy_admin (L921-L933): B4446 owns it. This task calls it."
+  - "The unreachable `service is None` 400 (L284): Service is a required query parameter, so the branch has no caller at the pin."
+
+pitfalls:
+  - "The success-callback test comes before the vendor branches, so a datadog, arize or sqs service that is in the success-callback list runs the mock request and never its own health check; only langfuse and pointfive are excluded from it."
+  - "openmeter, braintrust and generic_api take the mock branch even when not in the success-callback list."
+  - "The webhook branch is an `if`, not an `elif`: after the alert it falls through the slack, ms_teams and email checks (none match) and the handler ends without a return, so the answer is HTTP 200 with a JSON null body."
+  - "Names that are in the list but have no branch (otel, custom_callback_api, langsmith, langfuse_otel, datadog_llm_observability, signoz) answer 200 null unless they are in the success-callback list."
+  - "The message map for slack ends with an `else` of \"Budget Alert test alert\", so spend_reports, new_model_added and every other type read like budget_alerts; the initial \"default test message\" is never sent."
+  - "A webhook-per-type setup skips an alert type that is missing from alert_types only when alert_types is set; None means every type is sent."
+  - "The monthly and weekly spend reports start as background tasks only when a database exists, and a failure inside them must not change the answer."
+  - "The email branch ignores the sender's success flag and always answers the success body."
+  - "pointfive reports an unhealthy check as \"PointFive is healthy\" when its error text is empty, and a missing key is a 200 with status unhealthy, not an error."
+  - "sqs returns the error text as message even when healthy, so a healthy answer has message null."
+  - "newrelic, pointfive and webhook check the role before building anything, and the admin check includes the view-only admin role."
+  - "The 403, 422 and 400 answers are raised inside the catch-all and rewrapped, so their body is the proxy error shape with type auth_error, param \"None\" and the detail map as text, not a bare detail."
+  - "The ms_teams timestamp uses local time as %H:%M:%S, so the test fixes the clock through the injected trait."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

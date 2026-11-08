@@ -8,7 +8,7 @@ description: >-
   wrapper. Credentials and the base URL are plain arguments: take B5940's OciCredentials and the
   optional api_base, never read the environment or a config section. Also define OciCompletionPayload
   (compartmentId, servingMode, chatRequest as the GENERIC or the Cohere request from B5942) here,
-  since B042's pydantic types are not built yet.
+  since litellm/types/llms/oci.py has no port of its own.
 
   Parameter maps. Build the two maps exactly as in __init__: GENERIC maps stream to isStream,
   max_tokens and max_completion_tokens to maxTokens, temperature, tools, frequency_penalty to
@@ -66,7 +66,7 @@ description: >-
   content. The decoder reports, for the returned choices, whether any delta had tool calls and the
   last finish reason, so the stream assembly of B2232 can set the same state. Streaming constants:
   timeout 300 seconds, and a non-200 status is OciError with that status and the body text. The
-  HTTP posts themselves belong to B042. get_error_class is OciError with the status and message.
+  HTTP posts themselves belong to B8330. get_error_class is OciError with the status and message.
 
   Plan 330 lines of module code, 180 of tests and fixtures, 90 of oracle adapters and 52 of
   fuzz and replay. The remaining source is 652 nonblank, noncomment lines.
@@ -154,9 +154,9 @@ deviations:
     why: A Rust gateway has no LiteLLM package version to report.
 out_of_scope:
   - B5940 owns oci_common, B5941 owns the embedding config and B5942 owns every function in chat/cohere.py and chat/generic.py.
-  - The two get_*_custom_stream_wrapper methods send the HTTP request; B042 owns those calls, the client choice and the signing call order, and calls this module only for the 300 second timeout, the status check and the decoder.
+  - The two get_*_custom_stream_wrapper methods send the HTTP request; B8330 owns those calls, the client choice and the signing call order, and calls this module only for the 300 second timeout, the status check and the decoder.
   - B2232 owns the shared stream assembly that the CustomStreamWrapper base class provides; this task only returns what the decoder saw.
-  - B042 owns reading the OCI_* environment variables, the _complete_oci dispatch and the HTTP oracle cases.
+  - B8330 owns reading the OCI_* environment variables, the _complete_oci dispatch and the HTTP oracle cases.
 pitfalls:
   - The chat serving mode is compared exactly, so "dedicated" in lower case is an error here while the embedding config accepts it.
   - maxTokens becomes maxCompletionTokens only for GENERIC vendors, never for Cohere, and the first of max_tokens or max_completion_tokens present wins and never writes both.
