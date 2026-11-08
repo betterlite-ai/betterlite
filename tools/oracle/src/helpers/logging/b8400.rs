@@ -68,20 +68,19 @@ enum Call {
     },
 }
 
+// an absent detail is the case's way of saying LiteLLM reads the message attribute instead
 #[derive(Clone, Deserialize)]
 #[serde(untagged)]
 enum DetailWire {
     Text(String),
     Map(BTreeMap<String, Json>),
-    Other(Value),
 }
 
 impl DetailWire {
-    fn into_detail(self) -> Option<Detail> {
+    fn into_detail(self) -> Detail {
         match self {
-            Self::Text(text) => Some(Detail::Text(text)),
-            Self::Map(map) => Some(Detail::Map(map)),
-            Self::Other(_) => None,
+            Self::Text(text) => Detail::Text(text),
+            Self::Map(map) => Detail::Map(map),
         }
     }
 }
@@ -104,71 +103,98 @@ fn perform(call: &Call) -> HelperResult {
             status,
             detail,
             message,
-        } => {
-            let code =
-                StatusCode::from_u16(*status).map_err(|error| failure(&error.to_string()))?;
-            let http = HttpException {
-                status: code,
-                detail: detail.clone().and_then(DetailWire::into_detail),
-                message: message.clone().and_then(DetailWire::into_detail),
-            };
-            Ok(json!(error_message_str(ErrorText::Http(&http))))
-        }
-        Call::PlainErrorMessage { text } => {
-            let error = IoError::other(text.clone());
-            Ok(json!(error_message_str(ErrorText::Other(&error))))
-        }
+        } => error_message(*status, detail.as_ref(), message.as_ref()),
+        Call::PlainErrorMessage { text } => Ok(json!(error_message_str(ErrorText::Other(
+            &IoError::other(text.clone())
+        )))),
         Call::TeamModels {
             team_id,
             team_config,
             request_data,
-        } => {
-            let mut config = team_config.clone();
-            let outcome =
-                check_team_models(team_id.as_deref(), config.as_mut(), request_data.as_ref());
-            Ok(json!({ "result": outcome_name(&outcome), "team_config": config }))
+        } => Ok(json!(team_models(
+            team_id.as_deref(),
+            team_config.as_ref(),
+            request_data.as_ref()
+        ))),
+        Call::MonthEnd { today } => {
+            Ok(json!(month_end_date(*today).format("%Y-%m-%d").to_string()))
         }
-        Call::MonthEnd { today } => Ok(json!(today.format("%Y-%m-%d").to_string())),
         Call::Projection {
             spend,
             soft_limit,
             today,
-        } => {
-            let spend_amount = parse_amount(spend)?;
-            let limit_value = soft_limit.as_deref().map(parse_amount).transpose()?;
-            let over = is_projected_spend_over_limit(spend_amount, limit_value, *today)
-                .map_err(|error: ProjectionError| failure(&error.to_string()))?;
-            let reached = projected_spend_over_limit(spend_amount, limit_value, *today)
-                .map_err(|error: ProjectionError| failure(&error.to_string()))?;
-            let limit = reached.map(limit_json).transpose()?.unwrap_or(Value::Null);
-            Ok(json!({ "over_limit": over, "limit": limit }))
-        }
+        } => projection(spend, soft_limit.as_deref(), *today),
         Call::Premium {
             premium_user,
             feature,
-        } => match premium_user_check(*premium_user, feature.as_deref()) {
-            Ok(()) => Ok(json!({ "allowed": true })),
-            Err(error) => Ok(json!({
-                "allowed": false,
-                "status": error.status_code().as_u16(),
-                "detail": error.detail(),
-            })),
-        },
-        Call::Database { connected, message } => {
-            let database = connected.then_some(());
-            match prisma_client_or_throw(database.as_ref(), message) {
-                Ok(_client) => Ok(json!({ "connected": true })),
-                Err(error) => Ok(json!({
-                    "connected": false,
-                    "status": error.status_code().as_u16(),
-                    "detail": error.detail(),
-                })),
-            }
-        }
+        } => Ok(json!(premium(*premium_user, feature.as_deref()))),
+        Call::Database { connected, message } => Ok(json!(database(*connected, message))),
     }
 }
 
-fn outcome_name(outcome: &Result<(), ProxyCheckError>) -> &'static str {
+fn error_message(
+    status: u16,
+    detail: Option<&DetailWire>,
+    message: Option<&DetailWire>,
+) -> HelperResult {
+    let code = StatusCode::from_u16(status).map_err(|error| failure(&error.to_string()))?;
+    let http = HttpException {
+        status: code,
+        detail: detail.cloned().map(DetailWire::into_detail),
+        message: message.cloned().map(DetailWire::into_detail),
+    };
+    Ok(json!(error_message_str(ErrorText::Http(&http))))
+}
+
+fn team_models(
+    team_id: Option<&str>,
+    team_config: Option<&BTreeMap<String, Json>>,
+    request_data: Option<&BTreeMap<String, Json>>,
+) -> Value {
+    let mut config = team_config.cloned();
+    let outcome = check_team_models(team_id, config.as_mut(), request_data);
+    json!({ "result": outcome_name(&outcome), "team_config": config })
+}
+
+fn projection(spend: &str, soft_limit: Option<&str>, today: NaiveDate) -> HelperResult {
+    let spend_amount = parse_amount(spend)?;
+    let limit_value = soft_limit.map(parse_amount).transpose()?;
+    let over = is_projected_spend_over_limit(spend_amount, limit_value, today)
+        .map_err(|error: ProjectionError| failure(&error.to_string()))?;
+    let reached = projected_spend_over_limit(spend_amount, limit_value, today)
+        .map_err(|error: ProjectionError| failure(&error.to_string()))?;
+    let limit = reached
+        .as_ref()
+        .map(limit_json)
+        .transpose()?
+        .unwrap_or(Value::Null);
+    Ok(json!({ "over_limit": over, "limit": limit }))
+}
+
+fn premium(premium_user: bool, feature: Option<&str>) -> Value {
+    match premium_user_check(premium_user, feature) {
+        Ok(()) => json!({ "allowed": true }),
+        Err(error) => json!({
+            "allowed": false,
+            "status": error.status_code().as_u16(),
+            "detail": error.detail(),
+        }),
+    }
+}
+
+fn database(connected: bool, message: &str) -> Value {
+    let client = connected.then_some(());
+    match prisma_client_or_throw(client.as_ref(), message) {
+        Ok(_client) => json!({ "connected": true }),
+        Err(error) => json!({
+            "connected": false,
+            "status": error.status_code().as_u16(),
+            "detail": error.detail(),
+        }),
+    }
+}
+
+const fn outcome_name(outcome: &Result<(), ProxyCheckError>) -> &'static str {
     match outcome {
         Ok(()) => "ok",
         Err(ProxyCheckError::InvalidTeamModel { .. }) => "invalid_model",
@@ -184,7 +210,7 @@ fn parse_amount(text: &str) -> Result<Decimal, Box<HelperError>> {
         .map_err(|error: rust_decimal::Error| failure(&error.to_string()))
 }
 
-fn limit_json(limit: ProjectedLimit) -> Result<Value, Box<HelperError>> {
+fn limit_json(limit: &ProjectedLimit) -> Result<Value, Box<HelperError>> {
     Ok(json!({
         "projected_spend": float_text(limit.projected_spend)?,
         "date": limit.limit_exceed_date.format("%Y-%m-%d").to_string(),
