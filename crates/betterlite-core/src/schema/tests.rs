@@ -284,6 +284,14 @@ struct Case {
     expected: None,
     failure: Failure::SchemaTooLarge,
 })]
+#[case::values_count_toward_the_schema_limit(Case {
+    operation: Operation::Validate,
+    schema: serde_json::json!({"a": "0123456789012345678901234567890"}),
+    response: "{}",
+    limits: Some(SchemaLimits { max_schema_bytes: 20, ..SchemaLimits::default() }),
+    expected: None,
+    failure: Failure::SchemaTooLarge,
+})]
 #[case::schema_at_the_byte_limit_passes(Case {
     operation: Operation::Validate,
     schema: serde_json::json!({"type": "object"}),
