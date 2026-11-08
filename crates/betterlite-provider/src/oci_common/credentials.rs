@@ -1,8 +1,9 @@
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::Deserialize;
 
 pub const DEFAULT_OCI_REGION: &str = "us-ashburn-1";
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct OciExplicitParams {
     pub oci_region: Option<String>,
     pub oci_user: Option<String>,
@@ -13,7 +14,7 @@ pub struct OciExplicitParams {
     pub oci_compartment_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct OciEnvValues {
     pub oci_region: Option<String>,
     pub oci_user: Option<String>,

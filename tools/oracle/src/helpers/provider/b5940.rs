@@ -14,7 +14,7 @@ use betterlite_provider::oci_common::{Clock, OciError};
 use chrono::{DateTime, Utc};
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::ExposeSecret;
 use serde::Deserialize;
 
 use crate::helpers::HelperError;
@@ -25,17 +25,17 @@ const FIXED_SECONDS: i64 = 1_730_882_977;
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
     Credentials {
-        explicit: CredentialValues,
-        env: CredentialValues,
+        explicit: OciExplicitParams,
+        env: OciEnvValues,
     },
     BaseUrl {
-        explicit: CredentialValues,
-        env: CredentialValues,
+        explicit: OciExplicitParams,
+        env: OciEnvValues,
         api_bases: Vec<Option<String>>,
     },
     Sign {
-        explicit: CredentialValues,
-        env: CredentialValues,
+        explicit: OciExplicitParams,
+        env: OciEnvValues,
         api_base: String,
         request: Json,
         headers: BTreeMap<String, String>,
@@ -47,48 +47,6 @@ pub(crate) enum Input {
         description: String,
         schema: Json,
     },
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct CredentialValues {
-    #[serde(rename = "oci_region")]
-    region: Option<String>,
-    #[serde(rename = "oci_user")]
-    user: Option<String>,
-    #[serde(rename = "oci_fingerprint")]
-    fingerprint: Option<String>,
-    #[serde(rename = "oci_tenancy")]
-    tenancy: Option<String>,
-    #[serde(rename = "oci_key")]
-    key: Option<String>,
-    #[serde(rename = "oci_key_file")]
-    key_file: Option<String>,
-    #[serde(rename = "oci_compartment_id")]
-    compartment_id: Option<String>,
-}
-
-fn explicit_params(values: &CredentialValues) -> OciExplicitParams {
-    OciExplicitParams {
-        oci_region: values.region.clone(),
-        oci_user: values.user.clone(),
-        oci_fingerprint: values.fingerprint.clone(),
-        oci_tenancy: values.tenancy.clone(),
-        oci_key: values.key.as_deref().map(SecretString::from),
-        oci_key_file: values.key_file.clone(),
-        oci_compartment_id: values.compartment_id.clone(),
-    }
-}
-
-fn env_values(values: &CredentialValues) -> OciEnvValues {
-    OciEnvValues {
-        oci_region: values.region.clone(),
-        oci_user: values.user.clone(),
-        oci_fingerprint: values.fingerprint.clone(),
-        oci_tenancy: values.tenancy.clone(),
-        oci_key: values.key.as_deref().map(SecretString::from),
-        oci_key_file: values.key_file.clone(),
-        oci_compartment_id: values.compartment_id.clone(),
-    }
 }
 
 fn oci_failure(error: OciError) -> Box<HelperError> {
@@ -210,27 +168,19 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
-            Input::Credentials { explicit, env } => {
-                Ok(credentials(&explicit_params(explicit), &env_values(env)))
-            }
+            Input::Credentials { explicit, env } => Ok(credentials(explicit, env)),
             Input::BaseUrl {
                 explicit,
                 env,
                 api_bases,
-            } => base_urls(&explicit_params(explicit), &env_values(env), api_bases),
+            } => base_urls(explicit, env, api_bases),
             Input::Sign {
                 explicit,
                 env,
                 api_base,
                 request,
                 headers,
-            } => signature(
-                &explicit_params(explicit),
-                &env_values(env),
-                api_base,
-                request,
-                headers,
-            ),
+            } => signature(explicit, env, api_base, request, headers),
             Input::Schema { schema } => Ok(schema_output(schema)),
             Input::Description {
                 description,
