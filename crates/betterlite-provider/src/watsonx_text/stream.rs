@@ -48,7 +48,13 @@ pub fn decode_stream_line(line: &str) -> TextGenerationChunk {
         .strip_prefix("data: ")
         .or_else(|| line.strip_prefix("data:"))
         .unwrap_or(line);
-    let Ok(body) = serde_json::from_str::<StreamChunkBody>(stripped) else {
+    // serde also deserializes a struct from a JSON array, but only a parsed object reaches chunk_parser
+    let parsed = if stripped.trim_start().starts_with('{') {
+        serde_json::from_str::<StreamChunkBody>(stripped).ok()
+    } else {
+        None
+    };
+    let Some(body) = parsed else {
         return TextGenerationChunk {
             text: String::new(),
             is_finished: false,
@@ -56,6 +62,10 @@ pub fn decode_stream_line(line: &str) -> TextGenerationChunk {
             usage: None,
         };
     };
+    chunk_from_body(body)
+}
+
+fn chunk_from_body(body: StreamChunkBody) -> TextGenerationChunk {
     let Some(result) = body.results.and_then(|results| results.into_iter().next()) else {
         return TextGenerationChunk {
             text: String::new(),

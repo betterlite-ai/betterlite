@@ -20,8 +20,12 @@ call:
         messages: [{role: user, content: hi}]
         options:
           temperature: 0.2
-          extra_body: {top_k: 3, temperature: 0.9}
+          extra_body: {top_k: 3, temperature: 0.9, project_id: from-extra}
           moderations: {hap: true}
+      - model: ibm-mistralai/granite-chat-13b
+        messages: [{role: user, content: hi}]
+        options:
+          max_tokens: 5
       - model: deployment/deployment-id
         messages: [{role: user, content: hi}]
         options: {}

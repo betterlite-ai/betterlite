@@ -10,6 +10,9 @@ call:
       - {model: watsonx/ibm-mistral-8x7b}
       - {model: watsonx/ibm-mistralai/mixtral}
       - {model: watsonx/granite-chat-openai/gpt-oss-120b}
+      - {model: ibm-mistral-granite-chat}
+      - {model: ibm-mistral-openai/gpt-oss-x}
+      - {model: openai/gpt-oss-meta-llama/llama-3-instruct}
       - {model: watsonx/meta-llama/llama-3-instruct-8b}
       - {model: watsonx/openai/gpt-oss-120b}
       - {model: watsonx_text/openai/gpt-oss-120b}

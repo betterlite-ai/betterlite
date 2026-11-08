@@ -209,13 +209,18 @@ fn payload_overlays_extra_body_before_the_api_params() {
         "granite",
         Some("prompt"),
         params(
-            r#"{"temperature":0.2,"extra_body":{"top_k":3,"temperature":0.9},"moderations":{"hap":true}}"#,
+            r#"{"temperature":0.2,"extra_body":{"top_k":3,"temperature":0.9,"project_id":"from-extra"},"moderations":{"hap":true}}"#,
         ),
         &project_environment(),
     )
     .unwrap();
     assert_eq!(body.parameters, params(r#"{"temperature":0.9,"top_k":3}"#));
     assert_eq!(body.moderations, params(r#"{"hap":true}"#));
+    assert_eq!(
+        body.identity,
+        params(r#"{"model_id":"granite","project_id":"from-extra"}"#)
+    );
+    assert!(!body.parameters.contains_key("project_id"));
 }
 
 #[test]
@@ -457,13 +462,13 @@ async fn request_converts_the_messages_with_the_model_provider() {
     };
     let body = config
         .transform_request(
-            "watsonx/granite-chat-13b",
+            "ibm-mistralai/granite-chat-13b",
             &messages(r#"[{"role":"user","content":"hi"}]"#),
             params(r#"{"max_tokens":5}"#),
         )
         .await
         .unwrap();
-    assert_eq!(body.input.as_deref(), Some("<|user|>\nhi\n<|assistant|>"));
+    assert_eq!(body.input.as_deref(), Some("<s>[INST] hi [/INST]\n"));
     assert_eq!(body.parameters, params(r#"{"max_tokens":5}"#));
 }
 

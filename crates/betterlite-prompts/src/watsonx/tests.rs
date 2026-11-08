@@ -46,19 +46,36 @@ fn now() -> DateTime<Utc> {
 }
 
 #[rstest]
-#[case::granite("watsonx/granite-chat-13b", "<|user|>\nhi\n<|assistant|>")]
-#[case::ibm_mistral("watsonx/ibm-mistral-8x7b", "<s>[INST] hi [/INST]\n")]
-#[case::ibm_mistral_before_mistralai("watsonx/ibm-mistralai/mixtral", "<s>[INST] hi [/INST]\n")]
+#[case::granite("watsonx/granite-chat-13b", Some("<|user|>\nhi\n<|assistant|>"))]
+#[case::ibm_mistral("watsonx/ibm-mistral-8x7b", Some("<s>[INST] hi [/INST]\n"))]
+#[case::ibm_mistral_before_mistralai(
+    "watsonx/ibm-mistralai/mixtral",
+    Some("<s>[INST] hi [/INST]\n")
+)]
 #[case::granite_before_gpt_oss(
     "watsonx/granite-chat-openai/gpt-oss-120b",
-    "<|user|>\nhi\n<|assistant|>"
+    Some("<|user|>\nhi\n<|assistant|>")
 )]
+#[case::granite_before_ibm_mistral(
+    "watsonx/ibm-mistral-granite-chat",
+    Some("<|user|>\nhi\n<|assistant|>")
+)]
+#[case::ibm_mistral_before_gpt_oss(
+    "watsonx/ibm-mistral-openai/gpt-oss-x",
+    Some("<s>[INST] hi [/INST]\n")
+)]
+#[case::gpt_oss_does_not_fall_through_to_llama3("openai/gpt-oss-meta-llama/llama-3-instruct", None)]
 #[case::llama3(
     "watsonx/meta-llama/llama-3-instruct-8b",
-    "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\nhi<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n"
+    Some(
+        "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\nhi<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n"
+    )
 )]
 #[tokio::test]
-async fn prompt_templates_follow_the_pattern_order(#[case] model: &str, #[case] expected: &str) {
+async fn prompt_templates_follow_the_pattern_order(
+    #[case] model: &str,
+    #[case] expected: Option<&str>,
+) {
     let prompt = apply_prompt_template(
         &factory(),
         model,
@@ -67,7 +84,7 @@ async fn prompt_templates_follow_the_pattern_order(#[case] model: &str, #[case] 
     )
     .await
     .unwrap();
-    assert_eq!(prompt.as_deref(), Some(expected));
+    assert_eq!(prompt.as_deref(), expected);
 }
 
 #[rstest]
@@ -136,7 +153,7 @@ async fn prompt_templates_return_none_without_a_pattern(#[case] model: &str) {
 async fn messages_to_prompt_uses_the_mistral_template_for_the_ibm_mistralai_provider() {
     let prompt = messages_to_prompt(
         &factory(),
-        "ibm-mistralai/mixtral",
+        "ibm-mistralai/granite-chat-13b",
         &messages(r#"[{"role":"user","content":"hi"}]"#),
         "ibm-mistralai",
         now(),
