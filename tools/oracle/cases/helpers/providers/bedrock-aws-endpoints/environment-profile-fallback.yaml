@@ -8,13 +8,16 @@ call:
           environment:
             AWS_DEFAULT_REGION: ap-south-1
             AWS_CONFIG_FILE: /nonexistent/betterlite/aws-config
+            AWS_SHARED_CREDENTIALS_FILE: /nonexistent/betterlite/aws-credentials
         - optional_params: {}
           environment:
             AWS_CONFIG_FILE: /nonexistent/betterlite/aws-config
+            AWS_SHARED_CREDENTIALS_FILE: /nonexistent/betterlite/aws-credentials
         - optional_params: {}
           environment:
             AWS_DEFAULT_REGION: ''
             AWS_CONFIG_FILE: /nonexistent/betterlite/aws-config
+            AWS_SHARED_CREDENTIALS_FILE: /nonexistent/betterlite/aws-credentials
         - optional_params: {}
           environment:
             AWS_REGION_NAME: ap-south-1

@@ -27,10 +27,12 @@ call:
           environment:
             AWS_DEFAULT_REGION: us-west-1
             AWS_CONFIG_FILE: /nonexistent/betterlite/aws-config
+            AWS_SHARED_CREDENTIALS_FILE: /nonexistent/betterlite/aws-credentials
         - optional_params: {}
           environment:
             AWS_DEFAULT_REGION: ''
             AWS_CONFIG_FILE: /nonexistent/betterlite/aws-config
+            AWS_SHARED_CREDENTIALS_FILE: /nonexistent/betterlite/aws-credentials
         - optional_params: {aws_region_name: us-east-1}
           environment: {AWS_REGION_NAME: ''}
         - optional_params: {aws_region_name: ''}
