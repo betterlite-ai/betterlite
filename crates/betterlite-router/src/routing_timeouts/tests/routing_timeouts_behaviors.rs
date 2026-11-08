@@ -124,7 +124,7 @@ struct PrecedenceCase {
     deployment_timeout: None,
     deployment_request_timeout: Some(8.0_f64),
     stream: false,
-    expected_stream: None,
+    expected_stream: Some(300.0_f64),
     expected_non_stream: 8.0_f64,
     expected_attempt: 8.0_f64,
 })]

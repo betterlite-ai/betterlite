@@ -80,7 +80,7 @@ fn the_shipped_valid_seed_loads() {
         resolved.global,
         GlobalTimeout {
             seconds: 6000.0_f64,
-            explicitly_set: false,
+            explicitly_set: true,
         }
     );
 }
