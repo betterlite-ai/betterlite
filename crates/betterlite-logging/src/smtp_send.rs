@@ -153,10 +153,10 @@ impl Delivery {
             .timeout(Some(self.timeout));
         transport = match self.security {
             ConnectionSecurity::ImplicitTls => {
-                transport.tls(Tls::Wrapper(TlsParameters::new(self.host.clone())?))
+                transport.tls(Tls::Wrapper(TlsParameters::new(self.host)?))
             }
             ConnectionSecurity::StartTls => {
-                transport.tls(Tls::Required(TlsParameters::new(self.host.clone())?))
+                transport.tls(Tls::Required(TlsParameters::new(self.host)?))
             }
             ConnectionSecurity::PlainText => transport,
         };
