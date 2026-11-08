@@ -12,6 +12,7 @@ use http::HeaderMap;
 use http::header::CONTENT_TYPE;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use tokio::time::timeout;
 use url::Url;
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "type")]
@@ -99,6 +100,23 @@ pub async fn inline_remote_document(
     Url::parse(source).map_err(|_source| OcrError::RequestField {
         path: "document URL".to_owned(),
     })?;
+    let download = timeout(connection.timeout, fetch_document(client, source, limit)).await;
+    let (media_type, bytes) = match download {
+        Ok(result) => result?,
+        Err(_elapsed) => return Err(OcrError::Transport(OcrTransportError::Timeout)),
+    };
+    let converted = document.with_source(format!(
+        "data:{media_type};base64,{}",
+        STANDARD.encode(bytes)
+    ));
+    validate_inline_document(&converted)?;
+    Ok(converted)
+}
+async fn fetch_document(
+    client: &OcrClient,
+    source: &str,
+    limit: u64,
+) -> Result<(String, Vec<u8>), OcrError> {
     let response = client
         .document_fetcher
         .fetch(&client.document_http, source, &HeaderMap::new())
@@ -111,14 +129,9 @@ pub async fn inline_remote_document(
             body: "the OCR document download failed".to_owned(),
         }));
     }
-    let content_type = content_type(&response);
+    let media_type = content_type(&response);
     let bytes = download_body(response, limit).await?;
-    let converted = document.with_source(format!(
-        "data:{content_type};base64,{}",
-        STANDARD.encode(bytes)
-    ));
-    validate_inline_document(&converted)?;
-    Ok(converted)
+    Ok((media_type, bytes))
 }
 fn content_type(response: &StreamResponse) -> String {
     response

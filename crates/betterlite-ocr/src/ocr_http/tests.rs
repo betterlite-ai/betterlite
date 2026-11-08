@@ -13,13 +13,13 @@ use url::Url;
 
 use crate::json::{Json, Object};
 use crate::ocr_auth::{AwsRequestSigner, AwsSigningContext, AwsSigningRequest};
-use crate::ocr_config::decode::response_format;
+use crate::ocr_config::decode::{decode_response, response_format};
 use crate::ocr_config::{DecodedOcrResponse, OcrEnvironment};
 use crate::ocr_document::OcrDocument;
 use crate::ocr_error::{OcrError, OcrTransportError};
 use crate::ocr_http::{
     CallHooks, OcrCallContext, OcrWireRequest, body_document, build_http_request,
-    guardrail_document, ocr, read_json_response, read_response_bytes, transform_request_body,
+    guardrail_document, ocr, read_response_bytes, transform_request_body,
 };
 use crate::ocr_settings::OcrSettings;
 use crate::request_format::RequestFormat;
@@ -199,7 +199,7 @@ async fn send_to(base: &str) -> StreamResponse {
 }
 
 #[tokio::test]
-async fn read_helpers_decode_success_and_report_failed_statuses() {
+async fn read_response_bytes_decodes_success_and_reports_failed_statuses() {
     let server = MockServer::start(vec![reply(
         "200 OK",
         &[],
@@ -207,9 +207,11 @@ async fn read_helpers_decode_success_and_report_failed_statuses() {
     )])
     .await;
     let response = send_to(&server.base).await;
-    let decoded: DecodedOcrResponse<TestPayload> = read_json_response(response, true, 1024)
+    let bytes = read_response_bytes(response, 1024)
         .await
-        .expect("the success body decodes");
+        .expect("the success body reads");
+    let decoded: DecodedOcrResponse<TestPayload> =
+        decode_response(&bytes, true).expect("the success body decodes");
     assert_eq!(decoded.data.pages.len(), 1);
     assert_eq!(decoded.data.pages[0].markdown, "hello");
     assert!(decoded.native.is_some());

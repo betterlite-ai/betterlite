@@ -3,10 +3,10 @@ mod request;
 use crate::json::Json;
 use crate::ocr_auth::{AwsRequestSigner, AwsSigningRequest, AzureTokenSource, VertexTokenSource};
 use crate::ocr_config::decode::{
-    OcrFieldKind, compose_body, decode_response, decode_value, response_format, to_json,
+    OcrFieldKind, compose_body, decode_value, response_format, to_json,
 };
 use crate::ocr_config::{
-    DecodedOcrResponse, OcrEnvironment, OcrProviderConfig, OcrResponseContext, PreparedOcrRequest,
+    OcrEnvironment, OcrProviderConfig, OcrResponseContext, PreparedOcrRequest,
 };
 use crate::ocr_document::OcrDocument;
 use crate::ocr_error::{OcrError, OcrParamsError, OcrSecretError, OcrTransportError};
@@ -20,7 +20,6 @@ use betterlite_http::user_url::fetch::UserUrlFetcher;
 use betterlite_http::user_url::validate::SystemResolver;
 use secrecy::SecretString;
 use serde::Serialize;
-use serde::de::DeserializeOwned;
 use std::sync::Arc;
 pub struct OcrClient {
     pub provider_http: ProxiedClient,
@@ -36,7 +35,7 @@ pub struct OcrClient {
 pub trait SecretSource: Send + Sync {
     fn secret(&self, name: &str) -> Result<Option<SecretString>, OcrSecretError>;
 }
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct OcrWireRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
@@ -95,18 +94,6 @@ where
     config
         .async_transform_ocr_response(&request.model, response, context)
         .await
-}
-pub async fn read_json_response<T>(
-    response: StreamResponse,
-    native: bool,
-    max_response_bytes: usize,
-) -> Result<DecodedOcrResponse<T>, OcrError>
-where
-    T: DeserializeOwned,
-{
-    let bytes = read_response_bytes(response, max_response_bytes).await?;
-    let decoded = decode_response(&bytes, native)?;
-    Ok(decoded)
 }
 pub async fn read_response_bytes(
     mut response: StreamResponse,

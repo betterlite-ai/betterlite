@@ -5,6 +5,10 @@ use std::time::Duration;
 
 use rstest::rstest;
 
+use crate::ocr_config::connection::{
+    OcrConnection, OcrInputSource, OcrTransportConfig, ResolvedOcrCredentials,
+};
+use crate::ocr_config::{OCR_RESPONSE_MAX_BYTES, Secrets};
 use crate::ocr_document::{
     InlineDocument, OcrDocument, inline_remote_document, validate_inline_document,
 };
@@ -33,6 +37,20 @@ fn settings(max_download_bytes: u64) -> OcrSettings {
         vertex_location: None,
         enable_azure_ad_token_refresh: false,
     }
+}
+
+fn connection_with_timeout(max_download_bytes: u64, timeout: Duration) -> OcrConnection {
+    OcrConnection::new(
+        ResolvedOcrCredentials::default(),
+        OcrTransportConfig {
+            extra_headers: Vec::new(),
+            extra_headers_source: OcrInputSource::Deployment,
+            timeout: Some(timeout),
+            max_response_bytes: OCR_RESPONSE_MAX_BYTES,
+        },
+        settings(max_download_bytes),
+        Secrets::new(),
+    )
 }
 
 #[rstest]
@@ -238,10 +256,15 @@ async fn a_stalled_download_times_out() {
         Duration::from_millis(300),
     )])
     .await;
-    let client = ocr_client(settings(1024), Duration::from_millis(50));
+    let client = ocr_client(settings(1024), Duration::from_secs(5));
     let remote = document(&format!("{}/document", server.base));
-    let error = inline_remote_document(&client, remote, &connection(settings(1024)))
+    let stalled = connection_with_timeout(1024, Duration::from_millis(50));
+    let error = inline_remote_document(&client, remote, &stalled)
         .await
         .expect_err("the stalled download times out");
+    assert!(matches!(
+        error,
+        OcrError::Transport(OcrTransportError::Timeout)
+    ));
     assert_eq!(error.http_status_code(), Some(408));
 }

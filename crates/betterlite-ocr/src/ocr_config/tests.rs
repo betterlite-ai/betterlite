@@ -243,10 +243,11 @@ fn compose_body_merges_unknown_options_and_extra_body() {
         ("req_format", Json::Text("litellm".to_owned())),
         (
             "extra_body",
-            Json::Object(object(&[(
-                "provider_option",
-                Json::Text("value".to_owned()),
-            )])),
+            Json::Object(object(&[
+                ("provider_option", Json::Text("value".to_owned())),
+                ("model", Json::Text("other-model".to_owned())),
+                ("api_key", Json::Text("sk-secret".to_owned())),
+            ])),
         ),
     ]);
     let body = TestBody {
@@ -257,7 +258,10 @@ fn compose_body_merges_unknown_options_and_extra_body() {
     let Json::Object(fields) = composed else {
         panic!("the composed body is an object");
     };
-    assert!(fields.contains_key("model"));
+    assert_eq!(
+        fields.get("model"),
+        Some(&Json::Text("requested-model".to_owned()))
+    );
     assert!(fields.contains_key("document"));
     assert_eq!(fields.get("future_option"), Some(&Json::Bool(true)));
     assert_eq!(
@@ -266,4 +270,5 @@ fn compose_body_merges_unknown_options_and_extra_body() {
     );
     assert!(fields.get("pages").is_none());
     assert!(fields.get("req_format").is_none());
+    assert!(fields.get("api_key").is_none());
 }

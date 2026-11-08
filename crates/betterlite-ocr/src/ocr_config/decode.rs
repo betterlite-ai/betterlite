@@ -120,6 +120,9 @@ where
         let _previous = fields.insert(name.clone(), value.clone());
     }
     for (name, value) in overrides.into_iter().flatten() {
+        if name.as_str() == "model" || name.as_str() == "extra_body" || is_control_param(&name) {
+            continue;
+        }
         let _previous = fields.insert(name, value);
     }
     Ok(Json::Object(fields))
