@@ -1,0 +1,11 @@
+task: B347
+deviations:
+  - what: >-
+      Adaptive concurrency waits are bounded by a deadline and a 1024-waiter capacity. A caller whose
+      deadline already passed is denied with the typed deadline error instead of joining the queue, and
+      the 1025th waiting caller gets the typed overloaded error instead of waiting. A waiter whose
+      deadline passes while it is queued is removed and denied.
+    why: >-
+      The pinned deque is unbounded and every wait is unbounded, contrary to async-hygiene and
+      bounded-inputs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L23-L69
