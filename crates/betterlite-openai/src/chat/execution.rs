@@ -23,6 +23,7 @@ use crate::chat::{
 use crate::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
 };
+use transport_failure::http_failure;
 
 // LiteLLM's DEFAULT_CHAT_COMPLETION_PARAM_VALUES: these go through the OpenAI parameter policy, the rest are forwarded
 const KNOWN_PARAMS: &str = "functions function_call temperature top_p n stream stream_options stop max_tokens max_completion_tokens modalities prediction audio presence_penalty frequency_penalty logit_bias user model custom_llm_provider response_format seed tools tool_choice max_retries logprobs top_logprobs extra_headers api_version parallel_tool_calls drop_params allowed_openai_params additional_drop_params messages reasoning_effort verbosity thinking web_search_options include_server_side_tool_invocations service_tier safety_identifier prompt_cache_key prompt_cache_retention store metadata context_management";
@@ -282,33 +283,5 @@ fn header_value(text: &str, name: &str) -> Result<HeaderValue, ChatError> {
     })
 }
 
-fn http_failure(source: TransportError) -> ChatError {
-    match source {
-        TransportError::ConnectTimeout(_) | TransportError::Deadline(_) => ChatError::Timeout,
-        TransportError::BodyTooLarge { .. } | TransportError::HeadersTooLarge { .. } => {
-            ChatError::TooLarge
-        }
-        TransportError::Rejected(_)
-        | TransportError::Build(_)
-        | TransportError::Connect(_)
-        | TransportError::Request(_)
-        | TransportError::Body(_)
-        | TransportError::InvalidHeader { .. }
-        | TransportError::MultipartContentType { .. }
-        | TransportError::MultipartBoundaryHeader { .. }
-        | TransportError::MultipartBoundary { .. }
-        | TransportError::Mock(_)
-        | TransportError::Closed
-        | TransportError::DrainTimeout { .. }
-        | TransportError::ConfiguredUrl { .. }
-        | TransportError::TooManyRedirects { .. }
-        | TransportError::RedirectTarget { .. }
-        | TransportError::RedirectUrl { .. }
-        | TransportError::RedirectUserinfo
-        | TransportError::RedirectScheme { .. }
-        | TransportError::InsecureRedirect
-        | TransportError::RedirectBody => ChatError::Http { source },
-    }
-}
-
 mod tests;
+mod transport_failure;
