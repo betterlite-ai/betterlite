@@ -4,7 +4,7 @@ use betterlite_prompts::anthropic_results::tool_result::FileBlocks;
 use betterlite_prompts::anthropic_user_blocks::prelude::prepare;
 use betterlite_prompts::anthropic_user_blocks::system_prompt::get_system_prompt;
 use betterlite_prompts::anthropic_user_blocks::user_run::UserBlockBuilder;
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Json;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use serde::Deserialize;
 use tokio::runtime::Runtime;
@@ -91,18 +91,10 @@ where
                 &format!("message at index {index} is not part of a user run"),
             ));
         }
-        if !run.blocks.is_empty() {
-            converted.push(user_message(run.blocks));
+        if let Some(message) = run.message() {
+            converted.push(message);
         }
         index = run.next;
     }
     Ok(converted)
-}
-
-fn user_message(blocks: Vec<Object>) -> Json {
-    let content = blocks.into_iter().map(Json::Object).collect::<Vec<_>>();
-    Json::Object(Object::from_iter([
-        ("role".to_owned(), Json::Text("user".to_owned())),
-        ("content".to_owned(), Json::List(content)),
-    ]))
 }

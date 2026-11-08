@@ -35,6 +35,25 @@ pub struct UserRun {
     pub next: usize,
 }
 
+impl UserRun {
+    // LiteLLM appends a merged user turn only when the run produced at least one block
+    #[must_use]
+    pub fn message(&self) -> Option<Json> {
+        if self.blocks.is_empty() {
+            return None;
+        }
+        let content = self
+            .blocks
+            .iter()
+            .map(|block| Json::Object(block.clone()))
+            .collect();
+        Some(Json::Object(Object::from_iter([
+            (ROLE.to_owned(), Json::Text(USER.to_owned())),
+            (CONTENT.to_owned(), Json::List(content)),
+        ])))
+    }
+}
+
 impl<Fetcher, Blocks, Ids> UserBlockBuilder<'_, Fetcher, Blocks, Ids>
 where
     Fetcher: RemoteMediaFetcher + Sync,

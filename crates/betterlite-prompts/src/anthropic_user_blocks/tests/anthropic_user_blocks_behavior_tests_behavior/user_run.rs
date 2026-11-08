@@ -50,6 +50,17 @@ async fn anthropic_user_blocks_behavior_tests_behavior_a_user_string_content_bec
 }
 
 #[tokio::test]
+async fn anthropic_user_blocks_behavior_tests_behavior_a_user_run_builds_one_user_message() {
+    let run = run(r#"[{"role":"user","content":"a"},{"role":"user","content":"b"}]"#).await;
+    assert_eq!(
+        run.message(),
+        Some(Json::Object(object(
+            r#"{"role":"user","content":[{"type":"text","text":"a"},{"type":"text","text":"b"}]}"#
+        )))
+    );
+}
+
+#[tokio::test]
 async fn anthropic_user_blocks_behavior_tests_behavior_a_message_cache_control_reaches_its_text_block()
  {
     let run = run(r#"[{"role":"user","content":"hi","cache_control":{"type":"ephemeral"}}]"#).await;
@@ -197,6 +208,7 @@ async fn anthropic_user_blocks_behavior_tests_behavior_an_unknown_block_type_is_
 async fn anthropic_user_blocks_behavior_tests_behavior_a_null_content_contributes_no_block() {
     let run = run(r#"[{"role":"user","content":null}]"#).await;
     assert!(run.blocks.is_empty());
+    assert!(run.message().is_none());
     assert_eq!(run.next, 1);
 }
 
@@ -205,6 +217,7 @@ async fn anthropic_user_blocks_behavior_tests_behavior_an_empty_content_list_con
 {
     let run = run(r#"[{"role":"user","content":[]}]"#).await;
     assert!(run.blocks.is_empty());
+    assert!(run.message().is_none());
     assert_eq!(run.next, 1);
 }
 
