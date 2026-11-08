@@ -59,7 +59,8 @@ pub(crate) struct LlmCallInput {
     time_to_first_chunk_seconds: Option<Decimal>,
     request_route: Option<String>,
     session_id: Option<String>,
-    tool_attr_budget: Option<usize>,
+    #[serde(default = "default_tool_attr_budget")]
+    tool_attr_budget: usize,
 }
 
 #[derive(Deserialize)]
@@ -135,11 +136,8 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-const fn budget(value: Option<usize>) -> usize {
-    match value {
-        Some(share) => share,
-        None => MAX_TOOL_ATTRS_PER_SPAN,
-    }
+const fn default_tool_attr_budget() -> usize {
+    MAX_TOOL_ATTRS_PER_SPAN
 }
 
 fn llm_call_span(
@@ -148,16 +146,6 @@ fn llm_call_span(
 ) -> Result<LLMCallSpanData, Box<crate::helpers::HelperError>> {
     LLMCallSpanData::from_standard_logging_payload(payload, options)
         .map_err(|error| helper_error("MetadataError", error.to_string()))
-}
-
-fn llm_call_options(input: &LlmCallInput) -> LLMCallOptions {
-    LLMCallOptions {
-        capture_content: input.capture_content,
-        time_to_first_chunk_seconds: input.time_to_first_chunk_seconds,
-        request_route: input.request_route.clone(),
-        trace: TraceControls::default(),
-        session_id: input.session_id.clone(),
-    }
 }
 
 impl Vocabulary {
@@ -173,9 +161,15 @@ fn llm_call_record(
     input: &LlmCallInput,
     vocabulary: Vocabulary,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let span = llm_call_span(&input.payload, llm_call_options(input))?;
-    let attributes =
-        vocabulary.attributes(&SpanData::LLMCall(&span), budget(input.tool_attr_budget));
+    let options = LLMCallOptions {
+        capture_content: input.capture_content,
+        time_to_first_chunk_seconds: input.time_to_first_chunk_seconds,
+        request_route: input.request_route.clone(),
+        trace: TraceControls::default(),
+        session_id: input.session_id.clone(),
+    };
+    let span = llm_call_span(&input.payload, options)?;
+    let attributes = vocabulary.attributes(&SpanData::LLMCall(&span), input.tool_attr_budget);
     Ok(attributes_record(&attributes))
 }
 
@@ -202,6 +196,9 @@ fn mcp_record(
     input: &McpInput,
     method: McpMethod,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
+    let mapper = GenAIMapper {
+        tool_attr_budget: MAX_TOOL_ATTRS_PER_SPAN,
+    };
     let attributes = match method {
         McpMethod::ToolCall => {
             let span = MCPToolCallSpanData::from_standard_logging_payload(
@@ -209,18 +206,12 @@ fn mcp_record(
                 input.capture_content,
             )
             .map_err(|error| helper_error("MetadataError", error.to_string()))?;
-            GenAIMapper {
-                tool_attr_budget: MAX_TOOL_ATTRS_PER_SPAN,
-            }
-            .map(&SpanData::MCPToolCall(&span), &BTreeMap::new())
+            mapper.map(&SpanData::MCPToolCall(&span), &BTreeMap::new())
         }
         McpMethod::ListTools => {
             let span = MCPListToolsSpanData::from_standard_logging_payload(&input.payload)
                 .map_err(|error| helper_error("MetadataError", error.to_string()))?;
-            GenAIMapper {
-                tool_attr_budget: MAX_TOOL_ATTRS_PER_SPAN,
-            }
-            .map(&SpanData::MCPListTools(&span), &BTreeMap::new())
+            mapper.map(&SpanData::MCPListTools(&span), &BTreeMap::new())
         }
     };
     Ok(attributes_record(&attributes))

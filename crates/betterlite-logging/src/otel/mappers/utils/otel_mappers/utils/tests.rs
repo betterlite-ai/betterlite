@@ -1,14 +1,12 @@
 #![cfg(test)]
 
 use opentelemetry::Value;
-use rust_decimal::Decimal;
 use std::collections::BTreeMap;
-use std::str::FromStr as _;
 
 use crate::otel::mappers::base::AttributeTable;
 use crate::otel::mappers::utils::{
-    MAX_TOOL_ATTRS_PER_SPAN, collect, decimal_attr, drop_none, drop_none_pairs, json_if,
-    json_or_none, tool_attr_budget, tool_definition_attrs,
+    MAX_TOOL_ATTRS_PER_SPAN, collect, drop_none, drop_none_pairs, json_if, tool_attr_budget,
+    tool_definition_attrs,
 };
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::payloads::tool_definition::ToolDefinition;
@@ -97,31 +95,4 @@ fn json_if_skips_the_empty_payload() {
     let payload =
         MetadataMap::from([("key".to_owned(), OtelModelValue::String("value".to_owned()))]);
     assert_eq!(json_if(&payload), Some(r#"{"key":"value"}"#.to_owned()));
-}
-
-#[test]
-fn json_or_none_serializes_every_value() {
-    assert_eq!(
-        json_or_none(&OtelModelValue::String("text".to_owned())),
-        Some(r#""text""#.to_owned())
-    );
-    assert_eq!(
-        json_or_none(&OtelModelValue::Bool(true)),
-        Some("true".to_owned())
-    );
-    assert_eq!(
-        json_or_none(&OtelModelValue::Array(vec![OtelModelValue::Number(
-            serde_json::Number::from(1_i64)
-        )])),
-        Some("[1]".to_owned())
-    );
-}
-
-#[test]
-fn decimal_attributes_keep_missing_costs_absent() {
-    assert_eq!(decimal_attr(None), None);
-    assert_eq!(
-        decimal_attr(Some(Decimal::from_str("0.25").expect("decimal"))),
-        Some(Value::F64(0.25))
-    );
 }

@@ -1,6 +1,4 @@
 use opentelemetry::{Array, StringValue, Value};
-use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive as _;
 use std::collections::BTreeMap;
 
 use super::base::{AttributeMap, AttributeTable};
@@ -83,13 +81,6 @@ pub fn string_array(values: &[String]) -> Value {
 }
 
 #[must_use]
-pub fn decimal_attr(amount: Option<Decimal>) -> Option<Value> {
-    let cost = amount?;
-    let number = cost.to_f64()?;
-    Some(Value::F64(number))
-}
-
-#[must_use]
 pub fn json_if(payload: &MetadataMap) -> Option<String> {
     if payload.is_empty() {
         return None;
@@ -98,26 +89,10 @@ pub fn json_if(payload: &MetadataMap) -> Option<String> {
 }
 
 #[must_use]
-pub fn json_or_none(value: &OtelModelValue) -> Option<String> {
-    let Ok(text) = serde_json::to_string(value) else {
-        return None;
-    };
-    Some(text)
-}
-
-#[must_use]
-pub fn stringify_message(message: &MetadataMap) -> Option<String> {
-    let Ok(text) = serde_json::to_string(message) else {
-        return None;
-    };
-    Some(text)
-}
-
-#[must_use]
 pub fn serialize_messages(messages: &[MetadataMap]) -> Option<String> {
     let mut serialized: Vec<OtelModelValue> = Vec::new();
     for message in messages {
-        let Some(text) = stringify_message(message) else {
+        let Ok(text) = serde_json::to_string(message) else {
             continue;
         };
         if let Ok(parsed) = serde_json::from_str(&text) {

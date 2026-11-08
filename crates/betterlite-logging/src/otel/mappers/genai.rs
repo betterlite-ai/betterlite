@@ -1,9 +1,10 @@
 use betterlite_config::loader::EnvironmentLookup;
 use opentelemetry::Value;
+use rust_decimal::prelude::ToPrimitive as _;
 
 use super::base::{AttributeMap, AttributeMapper, AttributeTable, Extractor, SpanData};
 use super::utils::{
-    collect, decimal_attr, output_messages, serialize_messages, string_array, tool_definition_attrs,
+    collect, output_messages, serialize_messages, string_array, tool_definition_attrs,
 };
 use crate::otel::model::db_endpoint::db_span_attributes;
 use crate::otel::model::payloads::guardrail::GuardrailSpanData;
@@ -39,7 +40,7 @@ const LLM_CALL_ATTRS: AttributeTable<LLMCallSpanData> = &[
     (gen_ai::RESPONSE_MODEL, |data| data.response_model.clone().map(Value::from)),
     (gen_ai::RESPONSE_ID, |data| data.response_id.clone().map(Value::from)),
     (gen_ai::RESPONSE_FINISH_REASONS, |data| (!data.finish_reasons.is_empty()).then(|| string_array(&data.finish_reasons))),
-    (gen_ai::RESPONSE_TIME_TO_FIRST_CHUNK, |data| decimal_attr(data.time_to_first_chunk_seconds)),
+    (gen_ai::RESPONSE_TIME_TO_FIRST_CHUNK, |data| data.time_to_first_chunk_seconds.and_then(|cost| cost.to_f64()).map(Value::F64)),
     (gen_ai::USAGE_INPUT_TOKENS, |data| data.usage.input_tokens.map(Value::I64)),
     (gen_ai::USAGE_OUTPUT_TOKENS, |data| data.usage.output_tokens.map(Value::I64)),
     (gen_ai::USAGE_CACHE_CREATION_TOKENS, |data| data.usage.cache_creation_input_tokens.map(Value::I64)),
@@ -56,18 +57,18 @@ const LLM_CALL_ATTRS: AttributeTable<LLMCallSpanData> = &[
 
 #[rustfmt::skip]
 const COST_ATTRS: &[(&str, Extractor<LLMCallSpanData>)] = &[
-    ("total", |data| decimal_attr(data.response_cost)),
-    ("input", |data| decimal_attr(data.cost.input)),
-    ("output", |data| decimal_attr(data.cost.output)),
-    ("cache_read", |data| decimal_attr(data.cost.cache_read)),
-    ("cache_creation", |data| decimal_attr(data.cost.cache_creation)),
-    ("tool_usage", |data| decimal_attr(data.cost.tool_usage)),
-    ("original", |data| decimal_attr(data.cost.original)),
-    ("discount_amount", |data| decimal_attr(data.cost.discount_amount)),
-    ("discount_percent", |data| decimal_attr(data.cost.discount_percent)),
-    ("margin_fixed_amount", |data| decimal_attr(data.cost.margin_fixed_amount)),
-    ("margin_percent", |data| decimal_attr(data.cost.margin_percent)),
-    ("margin_total_amount", |data| decimal_attr(data.cost.margin_total_amount)),
+    ("total", |data| data.response_cost.and_then(|cost| cost.to_f64()).map(Value::F64)),
+    ("input", |data| data.cost.input.and_then(|cost| cost.to_f64()).map(Value::F64)),
+    ("output", |data| data.cost.output.and_then(|cost| cost.to_f64()).map(Value::F64)),
+    ("cache_read", |data| data.cost.cache_read.and_then(|cost| cost.to_f64()).map(Value::F64)),
+    ("cache_creation", |data| data.cost.cache_creation.and_then(|cost| cost.to_f64()).map(Value::F64)),
+    ("tool_usage", |data| data.cost.tool_usage.and_then(|cost| cost.to_f64()).map(Value::F64)),
+    ("original", |data| data.cost.original.and_then(|cost| cost.to_f64()).map(Value::F64)),
+    ("discount_amount", |data| data.cost.discount_amount.and_then(|cost| cost.to_f64()).map(Value::F64)),
+    ("discount_percent", |data| data.cost.discount_percent.and_then(|cost| cost.to_f64()).map(Value::F64)),
+    ("margin_fixed_amount", |data| data.cost.margin_fixed_amount.and_then(|cost| cost.to_f64()).map(Value::F64)),
+    ("margin_percent", |data| data.cost.margin_percent.and_then(|cost| cost.to_f64()).map(Value::F64)),
+    ("margin_total_amount", |data| data.cost.margin_total_amount.and_then(|cost| cost.to_f64()).map(Value::F64)),
 ];
 
 #[rustfmt::skip]
@@ -116,7 +117,7 @@ const GUARDRAIL_ATTRS: AttributeTable<GuardrailSpanData> = &[
     (litellm::GUARDRAIL_POLICY_TEMPLATE, |data| data.policy_template.clone().map(Value::from)),
     (litellm::GUARDRAIL_DETECTION_METHOD, |data| data.detection_method.clone().map(Value::from)),
     (litellm::GUARDRAIL_USAGE, |data| data.usage_json.clone().map(Value::from)),
-    (litellm::GUARDRAIL_COST, |data| decimal_attr(data.cost)),
+    (litellm::GUARDRAIL_COST, |data| data.cost.and_then(|cost| cost.to_f64()).map(Value::F64)),
     (litellm::GUARDRAIL_COST_IN_SPEND, |data| data.cost_in_spend.map(Value::Bool)),
 ];
 
@@ -169,7 +170,11 @@ impl GenAIMapper {
 
 fn tool_call_attributes(data: &MCPToolCallSpanData) -> AttributeMap {
     let mut attrs = collect(MCP_ATTRS, data);
-    if let Some(value) = decimal_attr(data.response_cost) {
+    if let Some(value) = data
+        .response_cost
+        .and_then(|cost| cost.to_f64())
+        .map(Value::F64)
+    {
         attrs.insert(format!("{}total", litellm::COST_PREFIX), value);
     }
     attrs

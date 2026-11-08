@@ -1,8 +1,6 @@
 #![cfg(test)]
 
-use crate::otel::mappers::utils::{
-    message_content, output_messages, serialize_messages, stringify_message,
-};
+use crate::otel::mappers::utils::{message_content, output_messages, serialize_messages};
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::metadata::wire::payload::Payload;
 use crate::otel::model::payloads::llm_call::{LLMCallOptions, LLMCallSpanData};
@@ -68,12 +66,6 @@ fn serialize_messages_keeps_multimodal_content_and_tool_calls() {
 #[test]
 fn serialize_messages_returns_none_without_messages() {
     assert_eq!(serialize_messages(&[]), None);
-}
-
-#[test]
-fn stringify_message_encodes_one_message() {
-    let serialized = stringify_message(&message(r#"{"role": "user"}"#));
-    assert_eq!(serialized, Some(r#"{"role":"user"}"#.to_owned()));
 }
 
 #[test]
