@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::body::Body;
-use axum::http::{Request, StatusCode, header};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::admission_control::{Limits, Settings};
 use rand::SeedableRng as _;
@@ -37,7 +37,6 @@ enum Boundary {
     HotRoutesFirst,
     InstallWiresTheStack,
     UpgradeBypassesSaturation,
-    UpgradeWithoutConnectionIsHttp,
     ContentLengthSurvivesTheStack,
 }
 
@@ -50,7 +49,6 @@ enum Boundary {
 #[case::hot_routes_first(Boundary::HotRoutesFirst)]
 #[case::install_wires_the_stack(Boundary::InstallWiresTheStack)]
 #[case::upgrade_bypasses_saturation(Boundary::UpgradeBypassesSaturation)]
-#[case::upgrade_without_connection_is_http(Boundary::UpgradeWithoutConnectionIsHttp)]
 #[case::content_length_survives_the_stack(Boundary::ContentLengthSurvivesTheStack)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn admission_control_boundaries(#[case] boundary: Boundary) {
@@ -65,7 +63,6 @@ async fn admission_control_boundaries(#[case] boundary: Boundary) {
         Boundary::HotRoutesFirst => hot_routes_first_audit(),
         Boundary::InstallWiresTheStack => install_wires_the_stack().await,
         Boundary::UpgradeBypassesSaturation => upgrade_bypasses_saturation().await,
-        Boundary::UpgradeWithoutConnectionIsHttp => upgrade_without_connection_is_http().await,
         Boundary::ContentLengthSurvivesTheStack => content_length_survives_the_stack().await,
     }
 }
@@ -267,17 +264,37 @@ async fn content_length_survives_the_stack() {
     }
 }
 
-async fn upgrade_without_connection_is_http() {
+#[rstest]
+#[case::no_connection(Method::GET, &[("upgrade", "websocket"), ("sec-websocket-key", "k"), ("sec-websocket-version", "13")])]
+#[case::post(Method::POST, &[("upgrade", "websocket"), ("connection", "upgrade"), ("sec-websocket-key", "k"), ("sec-websocket-version", "13")])]
+#[case::no_key(Method::GET, &[("upgrade", "websocket"), ("connection", "upgrade"), ("sec-websocket-version", "13")])]
+#[case::no_version(Method::GET, &[("upgrade", "websocket"), ("connection", "upgrade"), ("sec-websocket-key", "k")])]
+#[case::last_connection_wins(Method::GET, &[("upgrade", "websocket"), ("connection", "upgrade"), ("connection", "close"), ("sec-websocket-key", "k"), ("sec-websocket-version", "13")])]
+#[case::last_upgrade_wins(Method::GET, &[("upgrade", "websocket"), ("upgrade", "h2c"), ("connection", "upgrade"), ("sec-websocket-key", "k"), ("sec-websocket-version", "13")])]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn upgrade_lookalikes_are_http(
+    #[case] method: Method,
+    #[case] headers: &'static [(&'static str, &'static str)],
+) {
     let gates = gates(&[("/a", Behavior::Hold), ("/ws", Behavior::Immediate)]);
     let harness = harness(SATURATED, "", gates);
     let mut requests = Requests::default();
     requests.start(&harness.router, "/a");
     await_started(&harness.gates, "/a").await;
-    let request = Request::builder()
+    let mut request = Request::builder()
+        .method(method)
         .uri("/ws")
-        .header(header::UPGRADE, "websocket")
         .body(Body::empty())
         .unwrap();
+    *request.headers_mut() = headers
+        .iter()
+        .map(|(name, value)| {
+            (
+                HeaderName::from_static(name),
+                HeaderValue::from_static(value),
+            )
+        })
+        .collect::<HeaderMap>();
     let response = harness.router.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(harness.stack.admission.stats().rejected_total, 1);

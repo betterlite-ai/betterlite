@@ -165,7 +165,9 @@ async fn call(router: Router, path: String, upgrade: bool) -> Answer {
     if upgrade {
         builder = builder
             .header(header::UPGRADE, "websocket")
-            .header(header::CONNECTION, "upgrade");
+            .header(header::CONNECTION, "keep-alive, Upgrade")
+            .header(header::SEC_WEBSOCKET_KEY, "dGhlIHNhbXBsZSBub25jZQ==")
+            .header(header::SEC_WEBSOCKET_VERSION, "13");
     }
     let request = builder.body(Body::empty()).unwrap();
     let response = router.oneshot(request).await.unwrap();

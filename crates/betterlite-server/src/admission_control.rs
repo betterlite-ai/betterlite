@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{Request, header};
+use axum::http::{Method, Request, header};
 use axum::middleware::{Next, from_fn_with_state};
 use axum::response::Response;
 use betterlite_config::sections::admission_control::{Limits, Settings};
@@ -182,19 +182,29 @@ impl AdmissionStack {
     }
 }
 
-// uvicorn builds a websocket scope only when Upgrade is websocket and Connection carries the upgrade token
+// uvicorn reads the last Upgrade and Connection header, and its handshake takes only a GET with a key and a version
 fn is_websocket_upgrade(request: &Request<Body>) -> bool {
     let headers = request.headers();
     let upgrades = headers
-        .get(header::UPGRADE)
+        .get_all(header::UPGRADE)
+        .iter()
+        .next_back()
         .is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"websocket"));
-    upgrades
-        && headers.get_all(header::CONNECTION).iter().any(|value| {
+    let connects = headers
+        .get_all(header::CONNECTION)
+        .iter()
+        .next_back()
+        .is_some_and(|value| {
             value
                 .as_bytes()
                 .split(|byte| *byte == b',')
                 .any(|token| token.trim_ascii().eq_ignore_ascii_case(b"upgrade"))
-        })
+        });
+    request.method() == Method::GET
+        && upgrades
+        && connects
+        && headers.contains_key(header::SEC_WEBSOCKET_KEY)
+        && headers.contains_key(header::SEC_WEBSOCKET_VERSION)
 }
 
 // LiteLLM strips the scope root_path itself, and a scalar SERVER_ROOT_PATH has no middleware to do it here
