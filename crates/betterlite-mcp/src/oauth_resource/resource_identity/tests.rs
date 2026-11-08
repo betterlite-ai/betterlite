@@ -7,7 +7,7 @@ use super::{
     UpstreamServer, UrlIdentityError, build_upstream_token_request, canonical_resource_uri,
     canonicalize_url_identity, redact_mcp_resource_url, resolve_upstream_resource,
 };
-use crate::oauth_resource::python_url::UrlParseError;
+use crate::oauth_resource::python_url::{UrlParseError, join, parse};
 
 fn secret(value: &str) -> SecretString {
     SecretString::from(value.to_owned())
@@ -195,4 +195,33 @@ fn a_signed_port_is_accepted_when_redacting() {
         redact_mcp_resource_url(Some("https://h:+443/x")).as_deref(),
         Some("https://h:443")
     );
+}
+
+#[rstest]
+#[case::double_slash_path_without_scheme("", "", "//x", "////x")]
+#[case::netloc_scheme_with_rooted_path("http", "", "/x", "http:///x")]
+#[case::netloc_scheme_with_empty_path("http", "", "", "http://")]
+#[case::netloc_scheme_with_relative_path("http", "", "x", "http:x")]
+#[case::other_scheme_keeps_one_slash("mailto", "", "/x", "mailto:/x")]
+#[case::other_scheme_empty_path("foo", "", "", "foo:")]
+#[case::netloc_adds_the_separator("http", "h", "x", "http://h/x")]
+fn join_matches_urlunsplit(
+    #[case] scheme: &str,
+    #[case] netloc: &str,
+    #[case] path: &str,
+    #[case] expected: &str,
+) {
+    assert_eq!(join(scheme, netloc, path, "", ""), expected);
+}
+
+#[rstest]
+#[case::digit_first("1http://h/")]
+#[case::underscore_inside("ht_tp://h/")]
+#[case::underscore_after_a_letter("a_b:rest")]
+#[case::digit_then_letter("1a:x")]
+fn parse_ignores_an_invalid_scheme(#[case] url: &str) {
+    let parsed = parse(url).unwrap();
+    assert_eq!(parsed.scheme, "");
+    assert_eq!(parsed.netloc, "");
+    assert_eq!(parsed.path, url);
 }

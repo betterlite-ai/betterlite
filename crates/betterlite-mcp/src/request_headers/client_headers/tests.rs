@@ -1,9 +1,13 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
+use tracing::{Subscriber, subscriber::set_default};
+use tracing_subscriber::Layer;
+use tracing_subscriber::layer::{Context, SubscriberExt as _};
 
 use super::{
     get_litellm_api_key, mcp_auth_header, oauth2_headers, parse_mcp_access_groups_header,
@@ -15,6 +19,20 @@ fn exposed(map: BTreeMap<String, SecretString>) -> BTreeMap<String, String> {
     map.into_iter()
         .map(|(name, value)| (name, value.expose_secret().to_owned()))
         .collect()
+}
+
+struct Warnings(Arc<Mutex<usize>>);
+
+impl<Current> Layer<Current> for Warnings
+where
+    Current: Subscriber,
+{
+    fn on_event(&self, event: &tracing::Event<'_>, _context: Context<'_, Current>) {
+        if *event.metadata().level() == tracing::Level::WARN {
+            let mut count = self.0.lock().unwrap();
+            *count = count.saturating_add(1);
+        }
+    }
 }
 
 fn raw_headers(pairs: &[(&str, &str)]) -> RawHeaders {
@@ -84,6 +102,21 @@ fn mcp_auth_header_uses_the_configured_name(
     let headers = raw_headers(&[("X-Mcp-Auth", "v")]);
     let value = mcp_auth_header(&headers, configured_name);
     assert_eq!(value.as_ref().map(ExposeSecret::expose_secret), expected);
+}
+
+#[rstest]
+#[case::present(&[("x-mcp-auth", "v")], 1)]
+#[case::empty(&[("x-mcp-auth", "")], 0)]
+#[case::absent(&[], 0)]
+fn mcp_auth_header_warns_only_for_a_non_empty_value(
+    #[case] pairs: &[(&str, &str)],
+    #[case] warnings: usize,
+) {
+    let count = Arc::new(Mutex::new(0_usize));
+    let _guard = set_default(tracing_subscriber::registry().with(Warnings(Arc::clone(&count))));
+    let value = mcp_auth_header(&raw_headers(pairs), "x-mcp-auth");
+    assert_eq!(value.is_some(), !pairs.is_empty());
+    assert_eq!(*count.lock().unwrap(), warnings);
 }
 
 #[test]

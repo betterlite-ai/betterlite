@@ -77,3 +77,12 @@ fn empty_headers_hold_nothing() {
     assert!(headers.items().is_empty());
     assert_eq!(headers.lookup("authorization"), None);
 }
+
+#[test]
+fn debug_output_lists_the_lowercased_names_and_no_values() {
+    let headers = parsed_headers(&[("X-Api-Key", "sk-secret"), ("Accept", "text/plain")]);
+    assert_eq!(
+        format!("{headers:?}"),
+        "RawHeaders { names: [\"x-api-key\", \"accept\"] }"
+    );
+}

@@ -54,6 +54,26 @@ fn route_relative_request_path_matches_litellm(
 }
 
 #[rstest]
+#[case::original_path_differs(
+    Some("/litellm/orig/mcp"),
+    "/other/mcp",
+    Some("/litellm"),
+    "/orig/mcp"
+)]
+#[case::empty_original_path_falls_back(Some(""), "/mcp/foo", None, "/mcp/foo")]
+fn route_relative_request_path_prefers_a_non_empty_original(
+    #[case] original_path: Option<&str>,
+    #[case] path: &str,
+    #[case] app_root_path: Option<&str>,
+    #[case] expected: &str,
+) {
+    assert_eq!(
+        route_relative_request_path(original_path, path, app_root_path, None),
+        expected
+    );
+}
+
+#[rstest]
 #[case::server_first(
     "/foo/mcp",
     "foo",
