@@ -112,23 +112,22 @@ fn banner_link() {
 }
 
 #[rstest]
-#[case::visible(false, "false", None, false)]
-#[case::setting_on(true, "false", None, true)]
-#[case::environment_on(false, "TRUE", None, true)]
-#[case::environment_spaced(false, " TRUE ", None, false)]
-#[case::environment_numeric(false, "1", None, false)]
-#[case::password_on(false, "false", Some("s3cret"), true)]
-#[case::password_empty(false, "false", Some(""), false)]
+#[case::visible(false, "false", "", false)]
+#[case::setting_on(true, "false", "", true)]
+#[case::environment_on(false, "TRUE", "", true)]
+#[case::environment_spaced(false, " TRUE ", "", false)]
+#[case::environment_numeric(false, "1", "", false)]
+#[case::password_on(false, "false", "s3cret", true)]
 fn hidden_hint(
     #[case] setting: bool,
     #[case] environment: &str,
-    #[case] password: Option<&str>,
+    #[case] password: &str,
     #[case] hidden: bool,
 ) {
     let mut sources = settings("", "");
     sources.hide_default_credentials_hint = setting;
     sources.hide_hint_environment = environment.to_owned();
-    sources.ui_password = SecretString::from(password.unwrap_or_default().to_owned());
+    sources.ui_password = SecretString::from(password.to_owned());
     assert_eq!(should_hide_credentials_hint(&sources), hidden);
     let html = LoginForm::from_settings(&sources).html(LoginPageOptions {
         show_deprecation_banner: false,
