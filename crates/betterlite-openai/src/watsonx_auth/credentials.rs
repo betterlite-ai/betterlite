@@ -114,7 +114,23 @@ pub fn get_api_params(
     Ok(found)
 }
 
-fn environment_api_key(environment: &WatsonxEnvironment) -> Option<Value> {
+enum ApiKey {
+    Text(SecretString),
+    NotText,
+    Unset,
+}
+
+fn api_key_from_value(value: Option<Value>) -> ApiKey {
+    match value {
+        None | Some(Value::Null) => ApiKey::Unset,
+        Some(Value::String(text)) => ApiKey::Text(SecretString::from(text)),
+        Some(Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_)) => {
+            ApiKey::NotText
+        }
+    }
+}
+
+fn environment_api_key(environment: &WatsonxEnvironment) -> ApiKey {
     let candidates = [
         environment.watsonx_apikey.as_ref(),
         environment.watsonx_api_key.as_ref(),
@@ -122,28 +138,28 @@ fn environment_api_key(environment: &WatsonxEnvironment) -> Option<Value> {
         environment.watsonx_zenapikey.as_ref(),
     ];
     for candidate in candidates.into_iter().flatten() {
-        let text = candidate.expose_secret();
-        if !text.is_empty() {
-            return Some(Value::String(text.to_owned()));
+        if !candidate.expose_secret().is_empty() {
+            return ApiKey::Text(candidate.clone());
         }
     }
-    None
+    ApiKey::Unset
 }
 
 fn credential_key(
     params: &mut WatsonxParams,
     api_key: Option<&SecretString>,
     environment: &WatsonxEnvironment,
-) -> Option<Value> {
-    api_key
-        .filter(|candidate| !candidate.expose_secret().is_empty())
-        .map(|candidate| Value::String(candidate.expose_secret().to_owned()))
-        .or_else(|| {
-            params
-                .remove("apikey")
-                .filter(|value| !matches!(value, Value::String(text) if text.is_empty()))
-        })
-        .or_else(|| environment_api_key(environment))
+) -> ApiKey {
+    if let Some(candidate) = api_key.filter(|candidate| !candidate.expose_secret().is_empty()) {
+        return ApiKey::Text(candidate.clone());
+    }
+    let popped = params
+        .remove("apikey")
+        .filter(|value| !value.as_str().is_some_and(str::is_empty));
+    match api_key_from_value(popped) {
+        ApiKey::Unset => environment_api_key(environment),
+        found @ (ApiKey::Text(_) | ApiKey::NotText) => found,
+    }
 }
 
 fn credential_base(
@@ -159,7 +175,7 @@ fn credential_base(
     params
         .remove("url")
         .or(legacy)
-        .filter(|value| !matches!(value, Value::String(text) if text.is_empty()))
+        .filter(|value| !(value.is_null() || value.as_str().is_some_and(str::is_empty)))
         .or_else(|| {
             environment
                 .api_base()
@@ -169,16 +185,15 @@ fn credential_base(
 
 struct CredentialOverrides {
     api_base: Option<Value>,
-    api_key: Option<Value>,
+    api_key: Option<ApiKey>,
     token: Option<Value>,
 }
 
 fn credential_overrides(
     params: &mut WatsonxParams,
 ) -> Result<Option<CredentialOverrides>, WatsonxError> {
-    let value = params
-        .remove("wx_credentials")
-        .map_or_else(|| params.remove("watsonx_credentials"), Some);
+    let nested = params.remove("watsonx_credentials");
+    let value = params.remove("wx_credentials").or(nested);
     match value {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_)) => {
@@ -186,16 +201,15 @@ fn credential_overrides(
                 field: "wx_credentials",
             })
         }
-        Some(Value::Object(fields)) => Ok(Some(CredentialOverrides {
-            api_base: fields.get("url").cloned(),
+        Some(Value::Object(mut fields)) => Ok(Some(CredentialOverrides {
+            api_base: fields.remove("url"),
             api_key: fields
-                .get("apikey")
-                .or_else(|| fields.get("api_key"))
-                .cloned(),
+                .remove("apikey")
+                .or_else(|| fields.remove("api_key"))
+                .map(|raw| api_key_from_value(Some(raw))),
             token: fields
-                .get("token")
-                .or_else(|| fields.get("watsonx_token"))
-                .cloned(),
+                .remove("token")
+                .or_else(|| fields.remove("watsonx_token")),
         })),
     }
 }
@@ -210,13 +224,13 @@ pub fn get_watsonx_credentials(
     let base_value = credential_base(params, api_base, environment);
     let (final_key, final_base, final_token) = match credential_overrides(params)? {
         Some(found) => (
-            found.api_key.or(key_value),
+            found.api_key.unwrap_or(key_value),
             found.api_base.or(base_value),
             found.token,
         ),
         None => (key_value, base_value, None),
     };
-    let Some(Value::String(key_text)) = final_key else {
+    let ApiKey::Text(key) = final_key else {
         return Err(WatsonxError::Api {
             status_code: 401,
             message: KEY_NOT_SET.to_owned(),
@@ -238,7 +252,7 @@ pub fn get_watsonx_credentials(
         }
     };
     Ok(WatsonxCredentials {
-        api_key: SecretString::from(key_text),
+        api_key: key,
         api_base: base_text,
         token,
     })

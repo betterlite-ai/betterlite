@@ -281,6 +281,39 @@ fn credentials_ignore_a_null_wx_credentials_and_drop_watsonx_credentials() {
 }
 
 #[test]
+fn credentials_pop_both_credential_keys_and_prefer_wx_credentials() {
+    let mut optional_params = params(&[
+        ("wx_credentials", object(&[("apikey", json!("wx-key"))])),
+        (
+            "watsonx_credentials",
+            object(&[("apikey", json!("alternate-key"))]),
+        ),
+    ]);
+    let found = get_watsonx_credentials(
+        &mut optional_params,
+        None,
+        Some("https://argument-base"),
+        &environment(&[]),
+    )
+    .unwrap();
+    assert_eq!(found.api_key.expose_secret(), "wx-key");
+    assert!(optional_params.is_empty());
+}
+
+#[test]
+fn credentials_take_the_environment_for_null_key_and_base() {
+    let mut optional_params = params(&[("apikey", Value::Null), ("url", Value::Null)]);
+    let values = [
+        ("WATSONX_APIKEY", "env-key"),
+        ("WATSONX_API_BASE", "https://env-base"),
+    ];
+    let found =
+        get_watsonx_credentials(&mut optional_params, None, None, &environment(&values)).unwrap();
+    assert_eq!(found.api_key.expose_secret(), "env-key");
+    assert_eq!(found.api_base, "https://env-base");
+}
+
+#[test]
 fn credentials_read_the_key_and_base_from_the_environment() {
     let values = [
         ("WATSONX_APIKEY", "first-key"),

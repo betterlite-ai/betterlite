@@ -120,22 +120,16 @@ pub(super) fn resolve_api_key(
     )
 }
 
-fn lock_cache<T>(auth: &WatsonxAuth<T>) -> Result<MutexGuard<'_, LocalTtlCache>, WatsonxError> {
+pub(super) fn lock_cache<T>(
+    auth: &WatsonxAuth<T>,
+) -> Result<MutexGuard<'_, LocalTtlCache>, WatsonxError> {
     match auth.cache.lock() {
         Ok(cache) => Ok(cache),
         Err(_poisoned) => Err(WatsonxError::Cache(CacheError::Unavailable)),
     }
 }
 
-fn cached_value<T>(auth: &WatsonxAuth<T>, key: &str) -> Result<Option<CacheValue>, WatsonxError> {
-    let cached = {
-        let mut cache = lock_cache(auth)?;
-        cache.get(key)
-    };
-    cached.map_err(WatsonxError::Cache)
-}
-
-fn token_from_cache(cached: CacheValue) -> Option<SecretString> {
+pub(super) fn token_from_cache(cached: CacheValue) -> Option<SecretString> {
     match cached {
         CacheValue::Credential(handle) => Some(handle.0.token.clone()),
         CacheValue::Bytes(_)
@@ -147,16 +141,6 @@ fn token_from_cache(cached: CacheValue) -> Option<SecretString> {
         | CacheValue::Array(_)
         | CacheValue::Object(_) => None,
     }
-}
-
-pub(super) fn cached_token<T>(
-    auth: &WatsonxAuth<T>,
-    key: &str,
-) -> Result<Option<SecretString>, WatsonxError> {
-    let Some(cached) = cached_value(auth, key)? else {
-        return Ok(None);
-    };
-    Ok(token_from_cache(cached))
 }
 
 pub(super) fn store_token<T>(

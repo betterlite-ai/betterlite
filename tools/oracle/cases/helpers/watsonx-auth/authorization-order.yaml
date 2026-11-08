@@ -16,6 +16,7 @@ call:
     steps:
       - {op: authorization, headers: {Authorization: "Bearer caller"}, params: {zen_api_key: zen-param}}
       - {op: authorization, headers: {}, params: {token: param-token, zen_api_key: zen-param}}
+      - {op: authorization, headers: {X-Custom: custom, Content-Type: text/plain}, params: {token: param-token}}
       - {op: authorization, headers: {}, params: {zen_api_key: zen-param}}
       - {op: authorization, headers: {}, params: {}, api_key: key-1}
       - {op: generate, api_key: key-1}

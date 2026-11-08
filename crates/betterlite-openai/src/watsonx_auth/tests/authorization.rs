@@ -55,6 +55,34 @@ async fn caller_headers_override_the_two_defaults() {
 }
 
 #[tokio::test]
+async fn caller_headers_survive_when_the_authorization_is_computed() {
+    let clock = Clock::new();
+    let client = fixture(Script::default(), &clock, &[]);
+    let mut optional_params = params(&[("token", json!("param-token"))]);
+    let mut headers = HeaderMap::new();
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/plain"));
+    headers.append("x-custom", HeaderValue::from_static("one"));
+    headers.append("x-custom", HeaderValue::from_static("two"));
+    let resolved = client
+        .validate_environment(headers, &mut optional_params, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        resolved
+            .get(AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer param-token")
+    );
+    assert_eq!(
+        resolved
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("text/plain")
+    );
+    assert_eq!(resolved.get_all("x-custom").iter().count(), 2);
+}
+
+#[tokio::test]
 async fn params_token_wins_over_the_zen_api_key_and_the_iam_token() {
     let clock = Clock::new();
     let client = fixture(Script::default(), &clock, &[("WX_API_KEY", "env-key")]);

@@ -8,8 +8,8 @@ use self::environment::WatsonxEnvironment;
 use self::error::WatsonxError;
 use self::headers::secret_from_params;
 use self::iam::{
-    EXPIRY_BUFFER_OFFSET, cached_token, decode_iam_token_response, get_watsonx_iam_url,
-    iam_request, resolve_api_key, store_token,
+    EXPIRY_BUFFER_OFFSET, decode_iam_token_response, get_watsonx_iam_url, iam_request, lock_cache,
+    resolve_api_key, store_token, token_from_cache,
 };
 use self::transport::WatsonxTransport;
 use self::types::WatsonxParams;
@@ -54,10 +54,14 @@ impl<T: WatsonxTransport> WatsonxAuth<T> {
         &self,
         api_key: Option<&SecretString>,
     ) -> Result<SecretString, WatsonxError> {
-        if let Some(key) = api_key
-            && let Some(cached) = cached_token(self, key.expose_secret())?
-        {
-            return Ok(cached);
+        if let Some(key) = api_key {
+            let cached = lock_cache(self)?
+                .get(key.expose_secret())
+                .map_err(WatsonxError::Cache)?
+                .and_then(token_from_cache);
+            if let Some(token) = cached {
+                return Ok(token);
+            }
         }
         let resolved =
             resolve_api_key(api_key, &self.environment).ok_or(WatsonxError::IamApiKeyRequired)?;
@@ -94,7 +98,7 @@ impl<T: WatsonxTransport> WatsonxAuth<T> {
 
     pub async fn validate_environment(
         &self,
-        headers: HeaderMap,
+        mut headers: HeaderMap,
         optional_params: &mut WatsonxParams,
         api_key: Option<&SecretString>,
     ) -> Result<HeaderMap, WatsonxError> {
@@ -102,9 +106,7 @@ impl<T: WatsonxTransport> WatsonxAuth<T> {
         resolved.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         resolved.insert(ACCEPT, HeaderValue::from_static("application/json"));
         if headers.contains_key(AUTHORIZATION) {
-            for (name, value) in &headers {
-                resolved.insert(name, value.clone());
-            }
+            resolved.extend(headers);
             return Ok(resolved);
         }
         let requested_token = secret_from_params(
@@ -133,7 +135,8 @@ impl<T: WatsonxTransport> WatsonxAuth<T> {
                 source,
             })?;
         value.set_sensitive(true);
-        resolved.insert(AUTHORIZATION, value);
+        headers.insert(AUTHORIZATION, value);
+        resolved.extend(headers);
         Ok(resolved)
     }
 }
