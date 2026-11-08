@@ -25,7 +25,7 @@ const ACCEPT_JSON: &str = "application/json";
 
 pub struct IdpClient {
     pub(crate) client: Client,
-    pub(crate) timeout: Option<Duration>,
+    pub(crate) timeout: Duration,
     pub(crate) jwks_cache: Mutex<BTreeMap<String, Cached<Vec<Jwk>>>>,
     pub(crate) discovery_cache: Mutex<BTreeMap<String, Cached<DiscoveryDocument>>>,
 }
@@ -146,14 +146,12 @@ impl IdpClient {
         let Some(introspection_endpoint) = endpoint else {
             return Err(IdpError::MissingIntrospectionEndpoint);
         };
-        let mut request = self
+        let request = self
             .client
             .post(introspection_endpoint)
             .header(ACCEPT, ACCEPT_JSON)
-            .form(&[("token", token.expose_secret())]);
-        if let Some(timeout) = self.timeout {
-            request = request.timeout(timeout);
-        }
+            .form(&[("token", token.expose_secret())])
+            .timeout(self.timeout);
         let response = request.send().await.map_err(|source| IdpError::Request {
             uri: introspection_endpoint.to_owned(),
             source,
@@ -181,10 +179,11 @@ impl IdpClient {
     }
 
     async fn get_bytes(&self, uri: &str) -> Result<Vec<u8>, IdpError> {
-        let mut request = self.client.get(uri).header(ACCEPT, ACCEPT_JSON);
-        if let Some(timeout) = self.timeout {
-            request = request.timeout(timeout);
-        }
+        let request = self
+            .client
+            .get(uri)
+            .header(ACCEPT, ACCEPT_JSON)
+            .timeout(self.timeout);
         let response = request.send().await.map_err(|source| IdpError::Request {
             uri: uri.to_owned(),
             source,

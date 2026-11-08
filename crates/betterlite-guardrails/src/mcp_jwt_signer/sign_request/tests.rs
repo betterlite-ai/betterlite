@@ -356,6 +356,23 @@ async fn there_is_no_debug_header_by_default() {
     );
 }
 
+#[test]
+fn the_debug_output_redacts_tokens() {
+    let data = HookData {
+        tool_name: Some("weather".to_owned()),
+        incoming_bearer_token: Some(SecretString::from("opaque-incoming-token")),
+        extra_headers: Some(headers(&[(
+            "Authorization",
+            "Bearer signed-outbound-token",
+        )])),
+    };
+    let text = format!("{data:?}");
+    assert!(!text.contains("signed-outbound-token"));
+    assert!(!text.contains("opaque-incoming-token"));
+    assert!(text.contains("Authorization"));
+    assert!(text.contains("[redacted]"));
+}
+
 #[tokio::test]
 async fn the_proxy_decoded_claims_are_used_when_no_token_is_verified() {
     let signer = build_signer(&base_options());

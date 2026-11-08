@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::{self, Debug, Formatter};
 
 use betterlite_prompts::arguments::json::Json;
 use reqwest::StatusCode;
@@ -23,11 +24,30 @@ const AUTHORIZATION_HEADER: &str = "Authorization";
 const CHANNEL_TOKEN_HEADER: &str = "x-mcp-channel-token";
 const DEBUG_HEADER: &str = "x-litellm-mcp-debug";
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct HookData {
     pub tool_name: Option<String>,
     pub incoming_bearer_token: Option<SecretString>,
     pub extra_headers: Option<BTreeMap<String, String>>,
+}
+
+impl Debug for HookData {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HookData")
+            .field("tool_name", &self.tool_name)
+            .field(
+                "incoming_bearer_token",
+                &self.incoming_bearer_token.as_ref().map(|_| "[redacted]"),
+            )
+            .field(
+                "extra_headers",
+                &self
+                    .extra_headers
+                    .as_ref()
+                    .map(|headers| headers.keys().collect::<Vec<_>>()),
+            )
+            .finish()
+    }
 }
 
 pub struct PreCallInput<'input> {

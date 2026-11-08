@@ -5,6 +5,7 @@ use jsonwebtoken::jwk::{AlgorithmParameters, EllipticCurve, Jwk};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
+use serde_json::Number;
 use thiserror::Error;
 
 use crate::mcp_jwt_signer::JwtSigner;
@@ -30,23 +31,8 @@ pub enum IncomingTokenError {
         #[source]
         source: serde_json::Error,
     },
-    #[error(
-        "Failed to parse JWKS from {uri}: key {index} uses algorithm {algorithm}, which is not supported"
-    )]
-    UnsupportedAlgorithm {
-        uri: String,
-        index: usize,
-        algorithm: String,
-    },
-    #[error("Failed to parse JWKS from {uri}: key {index} has an unsupported key type")]
-    UnsupportedKeyType { uri: String, index: usize },
-    #[error("Failed to parse JWKS from {uri}: key {index} cannot be decoded: {source}")]
-    UndecodableKey {
-        uri: String,
-        index: usize,
-        #[source]
-        source: JsonWebTokenError,
-    },
+    #[error("Failed to parse JWKS from {uri}: the key set has no usable key")]
+    NoUsableKey { uri: String },
     #[error("No JWKS key matching kid={kid} at {uri}")]
     MissingKey { kid: String, uri: String },
     #[error("the incoming token failed verification: {source}")]
@@ -157,7 +143,7 @@ fn validate_claim_types(claims: &Claims, now: i64) -> Result<(), IncomingTokenEr
             expected: "an integer",
         });
     };
-    let Some(issued_at) = number.as_i64() else {
+    let Some(issued_at) = whole_seconds(number) else {
         return Err(IncomingTokenError::ClaimType {
             claim: "iat",
             expected: "an integer",
@@ -169,61 +155,54 @@ fn validate_claim_types(claims: &Claims, now: i64) -> Result<(), IncomingTokenEr
     Ok(())
 }
 
+fn whole_seconds(number: &Number) -> Option<i64> {
+    if let Some(seconds) = number.as_i64() {
+        return Some(seconds);
+    }
+    // PyJWT's int() truncates a fractional NumericDate; the integer part of the text avoids float arithmetic
+    number.to_string().split('.').next()?.parse::<i64>().ok()
+}
+
 fn parse_keys(keys: &[Jwk], uri: &str) -> Result<Vec<SigningJwk>, IncomingTokenError> {
-    let mut parsed = Vec::with_capacity(keys.len());
-    for (index, jwk) in keys.iter().enumerate() {
-        let algorithm = key_algorithm(jwk, uri, index)?;
-        let decoding =
-            DecodingKey::from_jwk(jwk).map_err(|source| IncomingTokenError::UndecodableKey {
-                uri: uri.to_owned(),
-                index,
-                source,
-            })?;
-        parsed.push(SigningJwk {
-            kid: jwk.common.key_id.clone(),
-            algorithm,
-            decoding,
+    let parsed: Vec<SigningJwk> = keys.iter().filter_map(usable_key).collect();
+    if parsed.is_empty() {
+        return Err(IncomingTokenError::NoUsableKey {
+            uri: uri.to_owned(),
         });
     }
     Ok(parsed)
 }
 
-fn key_algorithm(jwk: &Jwk, uri: &str, index: usize) -> Result<Algorithm, IncomingTokenError> {
+fn usable_key(jwk: &Jwk) -> Option<SigningJwk> {
+    let algorithm = key_algorithm(jwk)?;
+    let decoding = DecodingKey::from_jwk(jwk).ok()?;
+    if decoding.family() != algorithm.family() {
+        return None;
+    }
+    Some(SigningJwk {
+        kid: jwk.common.key_id.clone(),
+        algorithm,
+        decoding,
+    })
+}
+
+fn key_algorithm(jwk: &Jwk) -> Option<Algorithm> {
     if let Some(algorithm) = jwk.common.key_algorithm {
-        return Algorithm::try_from(algorithm).map_err(|_source| {
-            IncomingTokenError::UnsupportedAlgorithm {
-                uri: uri.to_owned(),
-                index,
-                algorithm: algorithm.to_string(),
-            }
-        });
+        return Algorithm::try_from(algorithm).ok();
     }
     match &jwk.algorithm {
-        AlgorithmParameters::RSA(_) => Ok(Algorithm::RS256),
+        AlgorithmParameters::RSA(_) => Some(Algorithm::RS256),
         AlgorithmParameters::EllipticCurve(parameters) => match parameters.curve {
-            EllipticCurve::P256 => Ok(Algorithm::ES256),
-            EllipticCurve::P384 => Ok(Algorithm::ES384),
-            EllipticCurve::P521 | EllipticCurve::Ed25519 | _ => {
-                Err(IncomingTokenError::UnsupportedKeyType {
-                    uri: uri.to_owned(),
-                    index,
-                })
-            }
+            EllipticCurve::P256 => Some(Algorithm::ES256),
+            EllipticCurve::P384 => Some(Algorithm::ES384),
+            EllipticCurve::P521 | EllipticCurve::Ed25519 | _ => None,
         },
-        AlgorithmParameters::OctetKey(_) => Ok(Algorithm::HS256),
+        AlgorithmParameters::OctetKey(_) => Some(Algorithm::HS256),
         AlgorithmParameters::OctetKeyPair(parameters) => match parameters.curve {
-            EllipticCurve::Ed25519 => Ok(Algorithm::EdDSA),
-            EllipticCurve::P256 | EllipticCurve::P384 | EllipticCurve::P521 | _ => {
-                Err(IncomingTokenError::UnsupportedKeyType {
-                    uri: uri.to_owned(),
-                    index,
-                })
-            }
+            EllipticCurve::Ed25519 => Some(Algorithm::EdDSA),
+            EllipticCurve::P256 | EllipticCurve::P384 | EllipticCurve::P521 | _ => None,
         },
-        AlgorithmParameters::Other(_) | _ => Err(IncomingTokenError::UnsupportedKeyType {
-            uri: uri.to_owned(),
-            index,
-        }),
+        AlgorithmParameters::Other(_) | _ => None,
     }
 }
 

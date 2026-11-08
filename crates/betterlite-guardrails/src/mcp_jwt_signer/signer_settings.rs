@@ -11,6 +11,8 @@ mod tests;
 pub const DEFAULT_ISSUER: &str = "litellm";
 pub const DEFAULT_AUDIENCE: &str = "mcp";
 pub const DEFAULT_TTL_SECONDS: i64 = 300;
+// LiteLLM passes timeout=None to httpx, whose default is Timeout(600, connect=5); the connect limit belongs to the injected client.
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 const ISSUER_ENV: &str = "MCP_JWT_ISSUER";
 const AUDIENCE_ENV: &str = "MCP_JWT_AUDIENCE";
 const TTL_ENV: &str = "MCP_JWT_TTL_SECONDS";
@@ -57,7 +59,7 @@ pub struct SignerSettings {
     pub optional_claims: Vec<String>,
     pub debug_headers: bool,
     pub allowed_scopes: Option<Vec<String>>,
-    pub timeout: Option<Duration>,
+    pub timeout: Duration,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -106,7 +108,7 @@ impl SignerSettings {
             optional_claims: options.optional_claims.clone().unwrap_or_default(),
             debug_headers: options.debug_headers,
             allowed_scopes: options.allowed_scopes.clone(),
-            timeout: options.timeout,
+            timeout: options.timeout.unwrap_or(DEFAULT_TIMEOUT),
         })
     }
 

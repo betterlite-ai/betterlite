@@ -6,17 +6,21 @@ use std::future::IntoFuture as _;
 use std::io;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::Bytes;
 use axum::http::{HeaderMap, Method, StatusCode, Uri};
+use axum::routing::get;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 
 use super::document::{IdpDocument, decode_idp_document};
 use super::{IdpClient, IdpError};
 use crate::mcp_jwt_signer::jwks_document::get_jwks;
+use crate::mcp_jwt_signer::signer_settings::DEFAULT_TIMEOUT;
 use crate::mcp_jwt_signer::signing_key::SigningKey;
 
 type Server = JoinSet<Result<(), io::Error>>;
@@ -89,9 +93,13 @@ fn ok(body: &str) -> Answer {
 }
 
 fn client() -> IdpClient {
+    client_with_timeout(DEFAULT_TIMEOUT)
+}
+
+fn client_with_timeout(timeout: Duration) -> IdpClient {
     IdpClient {
         client: reqwest::Client::default(),
-        timeout: None,
+        timeout,
         jwks_cache: Mutex::new(BTreeMap::new()),
         discovery_cache: Mutex::new(BTreeMap::new()),
     }
@@ -188,6 +196,24 @@ async fn fetch_jwks_fails_on_a_non_success_status() {
         .expect_err("status error");
     assert!(matches!(error, IdpError::Status { .. }));
     assert!(error.to_string().contains("500"));
+}
+
+#[tokio::test]
+async fn a_slow_idp_response_times_out() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("address"));
+    let answer = || async {
+        sleep(Duration::from_millis(200)).await;
+        (StatusCode::OK, "{}".to_owned())
+    };
+    let router = Router::new().route("/jwks", get(answer));
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    let error = client_with_timeout(Duration::from_millis(1))
+        .fetch_jwks(&format!("{base}/jwks"), 1000)
+        .await
+        .expect_err("timed out");
+    assert!(matches!(error, IdpError::Request { .. }));
 }
 
 #[tokio::test]

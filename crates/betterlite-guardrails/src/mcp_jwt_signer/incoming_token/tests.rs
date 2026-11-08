@@ -258,6 +258,38 @@ async fn rejects_a_token_whose_iat_is_in_the_future() {
 }
 
 #[tokio::test]
+async fn accepts_a_fractional_issued_at() {
+    let key = idp_key();
+    let (base, _server) = idp_server(jwks_body(&key)).await;
+    let mut accepted = claims();
+    accepted.insert(
+        "iat".to_owned(),
+        serde_json::from_str::<Json>("1700000000.5").expect("fractional number"),
+    );
+    verify_incoming_jwt(
+        &build_signer(&options(&base)),
+        &token(&key, &accepted),
+        now(),
+    )
+    .await
+    .expect("a fractional iat is a valid NumericDate");
+    let mut rejected = claims();
+    let future = format!("{}.5", now().saturating_add(3600));
+    rejected.insert(
+        "iat".to_owned(),
+        serde_json::from_str::<Json>(&future).expect("fractional number"),
+    );
+    let error = verify_incoming_jwt(
+        &build_signer(&options(&base)),
+        &token(&key, &rejected),
+        now(),
+    )
+    .await
+    .expect_err("future fractional iat");
+    assert!(matches!(error, IncomingTokenError::NotYetValid));
+}
+
+#[tokio::test]
 async fn rejects_a_token_with_a_non_string_subject() {
     let key = idp_key();
     let (base, _server) = idp_server(jwks_body(&key)).await;
@@ -404,10 +436,7 @@ async fn a_key_set_that_cannot_be_parsed_is_an_error() {
     let error = verify_incoming_jwt(&build_signer(&options(&base)), &token, now())
         .await
         .expect_err("bad key set");
-    assert!(matches!(
-        error,
-        IncomingTokenError::UnsupportedKeyType { .. }
-    ));
+    assert!(matches!(error, IncomingTokenError::NoUsableKey { .. }));
     assert!(
         error
             .to_string()
@@ -416,22 +445,24 @@ async fn a_key_set_that_cannot_be_parsed_is_an_error() {
 }
 
 #[tokio::test]
-async fn a_key_with_an_unknown_algorithm_fails_the_whole_set() {
+async fn an_unusable_key_next_to_a_good_one_is_skipped() {
     let key = idp_key();
     let entry = &get_jwks(&key).keys[0];
     let jwks = format!(
-        r#"{{"keys":[{{"kty":"RSA","alg":"ML-DSA-44","kid":"{}","n":"{}","e":"{}"}}]}}"#,
-        entry.kid, entry.modulus, entry.exponent
+        r#"{{"keys":[{{"kty":"RSA","alg":"RSA-OAEP","use":"enc","kid":"encryption","n":"{}","e":"{}"}},{{"kty":"RSA","alg":"ML-DSA-44","kid":"post-quantum","n":"{}","e":"{}"}},{}]}}"#,
+        entry.modulus,
+        entry.exponent,
+        entry.modulus,
+        entry.exponent,
+        key_entry(&key)
     );
     let (base, _server) = idp_server(jwks).await;
-    let token = token(&key, &claims());
-    let error = verify_incoming_jwt(&build_signer(&options(&base)), &token, now())
+    let claims = claims();
+    let token = token_with_header(&key, &claims, None, Algorithm::RS256);
+    let verified = verify_incoming_jwt(&build_signer(&options(&base)), &token, now())
         .await
-        .expect_err("unknown algorithm");
-    assert!(matches!(
-        error,
-        IncomingTokenError::UnsupportedAlgorithm { .. }
-    ));
+        .expect("first usable key");
+    assert_eq!(verified.get("sub"), claims.get("sub"));
 }
 
 #[tokio::test]

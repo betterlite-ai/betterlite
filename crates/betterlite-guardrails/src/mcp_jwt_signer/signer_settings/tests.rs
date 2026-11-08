@@ -6,7 +6,9 @@ use std::time::Duration;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 
-use super::{DEFAULT_AUDIENCE, DEFAULT_ISSUER, DEFAULT_TTL_SECONDS, SettingsError};
+use super::{
+    DEFAULT_AUDIENCE, DEFAULT_ISSUER, DEFAULT_TIMEOUT, DEFAULT_TTL_SECONDS, SettingsError,
+};
 use super::{SignerOptions, SignerSettings};
 
 fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -222,6 +224,13 @@ fn an_explicit_empty_allowed_scope_list_stays_empty() {
 }
 
 #[test]
+fn the_timeout_defaults_to_six_hundred_seconds() {
+    let settings = resolve(&base_options(), &env(&[]));
+    assert_eq!(settings.timeout, DEFAULT_TIMEOUT);
+    assert_eq!(DEFAULT_TIMEOUT, Duration::from_secs(600));
+}
+
+#[test]
 fn debug_headers_default_to_off_and_are_kept_when_set() {
     let settings = resolve(&base_options(), &env(&[]));
     assert!(!settings.debug_headers);
@@ -290,5 +299,5 @@ fn the_verification_settings_are_carried_through() {
     );
     assert_eq!(settings.verify_audience.as_deref(), Some("api://app"));
     assert_eq!(settings.channel_token_audience.as_deref(), Some("channel"));
-    assert_eq!(settings.timeout, Some(Duration::from_secs(5)));
+    assert_eq!(settings.timeout, Duration::from_secs(5));
 }
