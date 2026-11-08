@@ -27,6 +27,6 @@ deviations:
   - what: "A $ref expansion that would inline more than 10,000,000 estimated bytes stops with OciError status 400 instead of growing without bound."
     why: LiteLLM expands every reference in place, so a small schema whose definitions each reference the next one twice grows exponentially and ends in RecursionError or MemoryError; betterlite charges each expansion against the 10 MB budget betterlite-prompts uses for the same reason and refuses the request.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L425-L453
-  - what: "A property named title survives sanitizing together with its required entry; title is dropped only where it is schema metadata."
-    why: LiteLLM skips every title key while walking, so a tool parameter called title disappears from the schema and its required entry is then filtered out; betterlite keeps property names, which are data.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L492-L494
+  - what: "Every key of a properties map is a parameter name, so parameters named title, default or required survive sanitizing with their schemas and required entries; those metadata keys are dropped only in schema objects."
+    why: LiteLLM walks a properties map as if it were a schema, so a parameter called title disappears, one called default with a null value disappears, and one called required becomes [] when its value is not a list, after which the required names pointing at them are filtered out; betterlite keeps property names, which are data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L491-L516

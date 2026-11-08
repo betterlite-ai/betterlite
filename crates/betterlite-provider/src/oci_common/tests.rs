@@ -854,6 +854,14 @@ fn resolve_oci_schema_anyof_matches_litellm(#[case] input: &str, #[case] expecte
     r#"{"type": "object", "properties": {"title": {"type": "string"}, "x": {"type": "number", "title": "X"}}, "required": ["title", "x"]}"#,
     r#"{"type": "object", "properties": {"title": {"type": "string"}, "x": {"type": "number"}}, "required": ["title", "x"]}"#
 )]
+#[case::keeps_a_property_named_required(
+    r#"{"properties": {"required": {"type": "boolean"}, "title": {"type": "string"}}, "required": ["required", "title"]}"#,
+    r#"{"properties": {"required": {"type": "boolean"}, "title": {"type": "string"}}, "required": ["required", "title"]}"#
+)]
+#[case::keeps_a_property_named_default(
+    r#"{"properties": {"default": null, "x": {"type": "string"}}}"#,
+    r#"{"properties": {"default": null, "x": {"type": "string"}}}"#
+)]
 #[case::recurses_into_lists(r#"[{"title": "T"}]"#, "[{}]")]
 fn sanitize_oci_schema_matches_litellm(#[case] input: &str, #[case] expected: &str) {
     assert_eq!(
