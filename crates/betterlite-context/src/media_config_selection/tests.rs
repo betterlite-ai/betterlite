@@ -5,6 +5,7 @@ use betterlite_models::identity::provider_id::ProviderId;
 use rstest::rstest;
 
 use super::audio_transcription::{AudioTranscriptionConfigTag, select_transcription_config};
+use super::cost_entry::provider_cost_entry;
 use super::image_edit::{ImageEditConfigTag, select_image_edit};
 use super::image_generation::{ImageGenerationConfigTag, select_image_generation};
 use super::text_to_speech::{TextToSpeechConfigTag, select_text_to_speech};
@@ -17,7 +18,9 @@ const LIVE: &str = r#"{
     "azure-speech": {"audio_transcription_config": "azure_speech"},
     "azure/azure-prefixed": {"audio_transcription_config": "azure_speech"},
     "azure/azure-other": {"audio_transcription_config": "other"},
-    "azure/live-wins": {"audio_transcription_config": "other"}
+    "azure/live-wins": {"audio_transcription_config": "other"},
+    "dual": {"audio_transcription_config": "azure_speech"},
+    "azure/dual": {"audio_transcription_config": "other"}
 }"#;
 
 const BUNDLED: &str = r#"{
@@ -25,6 +28,21 @@ const BUNDLED: &str = r#"{
     "bundled-prefixed": {"audio_transcription_config": "azure_speech"},
     "azure/live-wins": {"audio_transcription_config": "azure_speech"}
 }"#;
+
+#[rstest]
+#[case::live_bare("azure-speech", Some("azure-speech"))]
+#[case::live_prefixed("azure-prefixed", Some("azure/azure-prefixed"))]
+#[case::bare_before_prefixed("dual", Some("dual"))]
+#[case::live_before_bundled("live-wins", Some("azure/live-wins"))]
+#[case::bundled_prefixed("bundled", Some("azure/bundled"))]
+#[case::bundled_bare("bundled-prefixed", Some("bundled-prefixed"))]
+#[case::absent("unknown", None)]
+fn cost_entry_lookup(#[case] model: &str, #[case] expected: Option<&str>) {
+    let live = catalog(LIVE);
+    let bundled = catalog(BUNDLED);
+    let entry = provider_cost_entry(model, ProviderId::Azure, &live, &bundled);
+    assert_eq!(entry.map(|found| found.name.as_str()), expected);
+}
 
 fn transcription(model: &str, provider: ProviderId, expected: Option<AudioTranscriptionConfigTag>) {
     let live = catalog(LIVE);
