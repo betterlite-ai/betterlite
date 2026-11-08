@@ -385,6 +385,25 @@ fn request_transforms_a_user_content_image_url_string() {
 }
 
 #[test]
+fn request_strips_cache_control_from_forwarded_messages() {
+    let messages = chat_messages(
+        r#"[{"role":"user","content":[{"type":"text","text":"hi","cache_control":{"type":"ephemeral"}}]}]"#,
+    );
+    let body = transform_request(
+        "org/model",
+        &messages,
+        &Object::new(),
+        None,
+        &RefusingSource,
+    )
+    .unwrap();
+    assert_eq!(
+        pointer(&body, "/messages/0/content/0/cache_control"),
+        Value::Null
+    );
+}
+
+#[test]
 fn request_an_empty_api_base_does_not_take_the_shortcut() {
     let messages = chat_messages(
         r#"[{"role":"user","content":[{"type":"image_url","image_url":"https://example.com/a.png"}]}]"#,
