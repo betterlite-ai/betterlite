@@ -7,7 +7,7 @@ use axum::response::Response;
 use futures_util::stream;
 use tokio::sync::Notify;
 
-use super::{Behavior, Input, RequestSpec};
+use super::{Behavior, Input};
 
 pub(super) struct Gate {
     pub(super) behavior: Behavior,
@@ -67,15 +67,16 @@ pub(super) fn gate_app(input: &Input) -> App {
     let gates = input
         .requests
         .iter()
-        .map(|spec| (spec.path.clone(), gate(spec)))
+        .map(|spec| {
+            (
+                spec.path.clone(),
+                Gate {
+                    behavior: spec.behavior,
+                    started: Arc::new(Notify::new()),
+                    release: Arc::new(Notify::new()),
+                },
+            )
+        })
         .collect();
     App { gates }
-}
-
-fn gate(spec: &RequestSpec) -> Gate {
-    Gate {
-        behavior: spec.behavior,
-        started: Arc::new(Notify::new()),
-        release: Arc::new(Notify::new()),
-    }
 }

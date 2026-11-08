@@ -61,7 +61,13 @@ pub(super) async fn drive(
         driver.apply(step, &app).await?;
     }
     Ok(super::Output {
-        limits: limits_output(settings),
+        limits: settings.limits.map(|limits| LimitsOutput {
+            max_in_flight_requests: u64::try_from(limits.max_in_flight_requests)
+                .unwrap_or(u64::MAX),
+            max_queued_requests: u64::try_from(limits.max_queued_requests).unwrap_or(u64::MAX),
+            queue_timeout_seconds: Number::from_f64(limits.queue_timeout.as_secs_f64())
+                .unwrap_or_else(|| Number::from(0_u64)),
+        }),
         observations: driver.observations,
     })
 }
@@ -76,14 +82,15 @@ fn build_router(
     Arc<InFlightRequests>,
 ) {
     let app = Arc::new(app::gate_app(input));
+    let scalar_root = if input.scalar_root {
+        input.root_path.clone()
+    } else {
+        String::new()
+    };
     let stack = AdmissionStack {
         admission: Arc::new(AdmissionControl::from_settings(settings)),
         in_flight: Arc::new(InFlightRequests::default()),
-        scalar_root: if input.scalar_root {
-            input.root_path.clone()
-        } else {
-            String::new()
-        },
+        scalar_root,
     };
     let inner = Router::new()
         .fallback(app::dispatch)
@@ -102,16 +109,6 @@ fn build_router(
         }
     };
     (router, app, stack.admission, stack.in_flight)
-}
-
-fn limits_output(settings: &Settings) -> Option<LimitsOutput> {
-    let limits = settings.limits?;
-    Some(LimitsOutput {
-        max_in_flight_requests: u64::try_from(limits.max_in_flight_requests).unwrap_or(u64::MAX),
-        max_queued_requests: u64::try_from(limits.max_queued_requests).unwrap_or(u64::MAX),
-        queue_timeout_seconds: Number::from_f64(limits.queue_timeout.as_secs_f64())
-            .unwrap_or_else(|| Number::from(0_u64)),
-    })
 }
 
 impl Driver {
@@ -158,7 +155,13 @@ impl Driver {
     }
 
     async fn await_queued(&mut self, queued: u16) {
-        let reached = wait_queued(&self.admission, u64::from(queued)).await;
+        let reached = timeout(WAIT, async {
+            while self.admission.stats().queued != u64::from(queued) {
+                sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .is_ok();
         self.observations.push(if reached {
             Observation::Queued {
                 queued: u64::from(queued),
@@ -228,16 +231,6 @@ impl Driver {
         }
         Err(invalid("a request never completed"))
     }
-}
-
-async fn wait_queued(admission: &AdmissionControl, queued: u64) -> bool {
-    timeout(WAIT, async {
-        while admission.stats().queued != queued {
-            sleep(Duration::from_millis(1)).await;
-        }
-    })
-    .await
-    .is_ok()
 }
 
 async fn call(router: Router, path: String) -> Answer {

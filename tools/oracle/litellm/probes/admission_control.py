@@ -130,24 +130,6 @@ class Gate:
         self.release = asyncio.Event()
 
 
-class ObservedState(AdmissionControlState):
-    changed: asyncio.Event
-
-    def __init__(self) -> None:
-        super().__init__(lambda: None)
-        self.changed = asyncio.Event()
-
-    @override
-    def record_queue(self) -> None:
-        super().record_queue()
-        self.changed.set()
-
-    @override
-    def record_dequeue(self) -> None:
-        super().record_dequeue()
-        self.changed.set()
-
-
 class Recorder:
     messages: list[object]
 
@@ -166,7 +148,7 @@ Answer: TypeAlias = tuple[int, dict[str, str], bytes]
 
 class Harness:
     parsed: AdmissionControlSettings | None
-    state: ObservedState
+    state: AdmissionControlState
     root_path: str
     specs: dict[int, RequestSpec]
     by_path: dict[str, int]
@@ -178,8 +160,16 @@ class Harness:
 
     def __init__(self, settings: dict[str, JsonValue], root_path: str, requests: list[RequestSpec]) -> None:
         self.parsed = get_admission_control_settings(settings)
-        self.limits_output = self.limit_values(self.parsed)
-        self.state = ObservedState()
+        self.limits_output = (
+            None
+            if self.parsed is None
+            else LimitsOutput(
+                max_in_flight_requests=self.parsed.max_in_flight_requests,
+                max_queued_requests=self.parsed.max_queued_requests,
+                queue_timeout_seconds=self.parsed.queue_timeout_seconds,
+            )
+        )
+        self.state = AdmissionControlState(lambda: None)
         self.root_path = root_path
         self.specs = {}
         self.by_path = {}
@@ -195,15 +185,6 @@ class Harness:
 
     def get_settings(self) -> AdmissionControlSettings | None:
         return self.parsed
-
-    def limit_values(self, settings: AdmissionControlSettings | None) -> LimitsOutput | None:
-        if settings is None:
-            return None
-        return LimitsOutput(
-            max_in_flight_requests=settings.max_in_flight_requests,
-            max_queued_requests=settings.max_queued_requests,
-            queue_timeout_seconds=settings.queue_timeout_seconds,
-        )
 
     def spec(self, request_id: int) -> RequestSpec:
         spec = self.specs.get(request_id)
@@ -309,9 +290,7 @@ class Harness:
         while self.state.get_stats().queued != queued:
             if loop.time() > deadline:
                 return TimedOutObservation(wait="queued")
-            self.state.changed.clear()
-            with suppress(TimeoutError):
-                await asyncio.wait_for(self.state.changed.wait(), timeout=0.001)
+            await asyncio.sleep(0.001)
         return QueuedObservation(queued=queued)
 
     async def cancel(self, request_id: int) -> None:

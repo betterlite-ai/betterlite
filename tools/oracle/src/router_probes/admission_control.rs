@@ -1,7 +1,7 @@
 mod app;
 mod driver;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::admission_control::Settings;
@@ -103,8 +103,6 @@ pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
-    let ids = validate_requests(input)?;
-    validate_steps(input, &ids)?;
     let settings = load_settings(&input.settings)?;
     let runtime = RuntimeBuilder::new_current_thread()
         .enable_all()
@@ -142,56 +140,4 @@ fn invalid(message: &str) -> OperationError {
     OperationError::InvalidRequest {
         message: message.to_owned(),
     }
-}
-
-fn validate_requests(input: &Input) -> Result<BTreeSet<u16>, OperationError> {
-    let mut paths = BTreeSet::<&str>::new();
-    let mut ids = BTreeSet::<u16>::new();
-    for spec in &input.requests {
-        if !paths.insert(spec.path.as_str()) {
-            return Err(invalid("a request path is used twice"));
-        }
-        if !ids.insert(spec.id) {
-            return Err(invalid("a request id is used twice"));
-        }
-    }
-    Ok(ids)
-}
-
-fn validate_steps(input: &Input, ids: &BTreeSet<u16>) -> Result<(), OperationError> {
-    let mut started = BTreeSet::<u16>::new();
-    let mut finished = BTreeSet::<u16>::new();
-    for step in &input.steps {
-        match step {
-            Step::Start { request } => {
-                if !ids.contains(request) {
-                    return Err(invalid("a step names an unknown request"));
-                }
-                if !started.insert(*request) {
-                    return Err(invalid("a request is started twice"));
-                }
-            }
-            Step::AwaitQueued { .. } | Step::Stats => {}
-            Step::AwaitStarted { request }
-            | Step::Release { request }
-            | Step::Cancel { request }
-            | Step::Complete { request } => {
-                if !ids.contains(request) {
-                    return Err(invalid("a step names an unknown request"));
-                }
-                if !started.contains(request) {
-                    return Err(invalid("a step runs before its request starts"));
-                }
-                if matches!(step, Step::Cancel { .. } | Step::Complete { .. })
-                    && !finished.insert(*request)
-                {
-                    return Err(invalid("a request terminates twice"));
-                }
-            }
-        }
-    }
-    if started.len() != finished.len() {
-        return Err(invalid("a started request never completes or cancels"));
-    }
-    Ok(())
 }
