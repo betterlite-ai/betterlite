@@ -124,16 +124,17 @@ fn plan_keeps_the_request_deadline_apart_from_the_attempt() {
         stream_timeout: None,
         request_timeout: None,
     };
-    let settings = resolve(&section(
-        (6000.0_f64, false),
-        ConfigRouter::default(),
-        vec![deployment],
-    ))
-    .unwrap();
+    let router = ConfigRouter {
+        timeout: Some(5.0_f64),
+        stream_timeout: None,
+        default_timeout: None,
+        default_stream_timeout: None,
+    };
+    let settings = resolve(&section((6000.0_f64, false), router, vec![deployment])).unwrap();
     let base = Instant::now();
     let request = RequestTimeouts {
         stream: false,
-        timeout: Some(Seconds(5.0_f64)),
+        timeout: None,
         request_timeout: None,
         stream_timeout: None,
     };

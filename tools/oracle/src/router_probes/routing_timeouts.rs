@@ -356,6 +356,14 @@ fn fill_expiry(
         .ok_or_else(|| OperationError::InvalidRequest {
             message: "the elapsed time does not fit in an instant".to_owned(),
         })?;
+    let deadline = plan
+        .attempt_deadline(now)
+        .map_err(|error| OperationError::InvalidRequest {
+            message: error.to_string(),
+        })?;
+    if fired < deadline {
+        return Ok(());
+    }
     let error = plan.expired(fired);
     output.expired_status = error.status_code();
     output.expired_code = error.code().map(str::to_owned);

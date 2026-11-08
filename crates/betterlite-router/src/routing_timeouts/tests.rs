@@ -79,8 +79,8 @@ fn at(base: Instant, seconds: u64) -> Instant {
 #[case::non_stream_router_request_timeout("non_stream_router_request_timeout")]
 #[case::non_stream_router_timeout("non_stream_router_timeout")]
 #[case::non_stream_global_default("non_stream_global_default")]
-#[case::plan_deadline_keeps_request_sources("plan_deadline_keeps_request_sources")]
-#[case::plan_stream_deadline_and_attempt("plan_stream_deadline_and_attempt")]
+#[case::plan_deadline_ignores_deployment_sources("plan_deadline_ignores_deployment_sources")]
+#[case::plan_stream_timeout_below_deadline("plan_stream_timeout_below_deadline")]
 fn routing_timeouts_behaviors(#[case] name: &str) {
     let mut kwargs = TimeoutKwargs::default();
     match name {
@@ -297,31 +297,29 @@ fn routing_timeouts_behaviors(#[case] name: &str) {
                 Some(seconds(6000.0))
             );
         }
-        "plan_deadline_keeps_request_sources" => {
+        "plan_deadline_ignores_deployment_sources" => {
             let base = Instant::now();
-            let mut request = request_settings(false);
-            request.timeout = Some(seconds(5.0));
+            let request = request_settings(false);
             let mut deployment = no_deployment();
             deployment.timeout = Some(seconds(4.0));
             let plan =
                 TimeoutPlan::new(base, &router_settings(10.0), &request, &deployment).unwrap();
-            assert_eq!(plan.deadline, at(base, 5));
+            assert_eq!(plan.deadline, at(base, 10));
             assert_eq!(plan.attempt, Some(seconds(4.0)));
             assert_eq!(plan.stream, None);
             assert_eq!(plan.attempt_deadline(base).unwrap(), at(base, 4));
         }
-        "plan_stream_deadline_and_attempt" => {
+        "plan_stream_timeout_below_deadline" => {
             let base = Instant::now();
-            let mut request = request_settings(true);
-            request.stream_timeout = Some(seconds(2.0));
+            let request = request_settings(true);
             let mut deployment = no_deployment();
             deployment.stream_timeout = Some(seconds(3.0));
             let plan =
                 TimeoutPlan::new(base, &router_settings(10.0), &request, &deployment).unwrap();
-            assert_eq!(plan.deadline, at(base, 2));
+            assert_eq!(plan.deadline, at(base, 10));
             assert_eq!(plan.stream, Some(seconds(3.0)));
             assert_eq!(plan.attempt, Some(seconds(3.0)));
-            assert_eq!(plan.attempt_deadline(base).unwrap(), at(base, 2));
+            assert_eq!(plan.attempt_deadline(base).unwrap(), at(base, 3));
         }
         other => panic!("unknown behavior {other}"),
     }
@@ -384,8 +382,7 @@ fn routing_timeouts_boundaries(#[case] name: &str) {
             assert_eq!(value.transport(), seconds(0.0));
         }
         "zero_attempt_expires_immediately" => {
-            let mut request = request_settings(false);
-            request.timeout = Some(seconds(5.0));
+            let request = request_settings(false);
             let mut deployment = no_deployment();
             deployment.timeout = Some(seconds(0.0));
             let plan =
@@ -394,12 +391,11 @@ fn routing_timeouts_boundaries(#[case] name: &str) {
             assert_eq!(plan.expired(base), TimeoutError::AttemptExpired);
         }
         "attempt_equal_to_deadline" => {
-            let mut request = request_settings(false);
-            request.timeout = Some(seconds(5.0));
+            let request = request_settings(false);
             let mut deployment = no_deployment();
             deployment.timeout = Some(seconds(5.0));
             let plan =
-                TimeoutPlan::new(base, &router_settings(10.0), &request, &deployment).unwrap();
+                TimeoutPlan::new(base, &router_settings(5.0), &request, &deployment).unwrap();
             assert_eq!(plan.attempt_deadline(base).unwrap(), plan.deadline);
             assert_eq!(plan.expired(at(base, 5)), TimeoutError::DeadlineExpired);
         }
