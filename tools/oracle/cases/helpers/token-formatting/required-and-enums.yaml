@@ -1,0 +1,25 @@
+kind: helper
+name: token-formatting-required-and-enums
+call:
+  token_formatting:
+    function: format_tools
+    tools:
+      - type: function
+        function:
+          name: configure
+          parameters:
+            type: object
+            properties:
+              color:
+                type: string
+                enum: [red, green, blue]
+              retries:
+                type: integer
+                enum: [1, 2, 3]
+              ratio:
+                type: number
+              label:
+                type: string
+            required: [color, retries]
+env: {}
+compare: {ignore: []}

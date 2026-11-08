@@ -1,14 +1,14 @@
 id: B8390
 milestone: M8 platform
 title: Callback capability flags and the proxy callback traits
-status: todo
+status: done
 depends_on: []
 file: tasks/B8390-callback-capabilities.yaml
 covers:
   - "litellm/proxy/utils.py"
 parent: B124
 split_from: B124
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 918

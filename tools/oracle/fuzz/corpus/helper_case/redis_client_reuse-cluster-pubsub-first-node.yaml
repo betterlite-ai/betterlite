@@ -1,0 +1,10 @@
+kind: helper
+name: redis-client-reuse-corpus-cluster-pubsub-first-node
+call:
+  b4325:
+    function: cluster_pubsub_node
+    startup_nodes:
+      - {host: fuzz-first.internal, port: 7000}
+      - {host: fuzz-second.internal, port: 7001}
+env: {}
+compare: {ignore: []}

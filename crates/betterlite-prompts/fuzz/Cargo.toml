@@ -17,6 +17,7 @@ chrono = "0.4.45"
 indexmap = "2.14.2"
 libfuzzer-sys = "0.4.9"
 serde_json = { version = "1.0.145", features = ["arbitrary_precision"] }
+tokio = { workspace = true }
 
 [[bin]]
 name = "gitlab_templates"
@@ -112,6 +113,13 @@ bench = false
 [[bin]]
 name = "gemini_tool_invokes"
 path = "fuzz_targets/gemini_tool_invokes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gemini_tool_results"
+path = "fuzz_targets/gemini_tool_results.rs"
 test = false
 doc = false
 bench = false

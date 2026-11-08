@@ -33,7 +33,7 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/file_storage_service-*
   - tools/oracle/cases/helpers/file-storage-service/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/file_storage_service.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/file_storage_service.py
   - tools/oracle/cases/sdk-http/file-storage-service/**

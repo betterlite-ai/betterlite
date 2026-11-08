@@ -1,0 +1,14 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-primitive-bool",
+  "call": {
+    "b3844": {
+      "function": "primitive_value",
+      "value": true
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

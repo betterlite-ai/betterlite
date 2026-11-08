@@ -1,0 +1,17 @@
+kind: helper
+name: socket_timeouts
+call:
+  b7813:
+    calls:
+      - call: timeouts
+        input:
+          timeouts:
+            - {kind: none}
+            - {kind: seconds, seconds: 7.0}
+            - {kind: seconds, seconds: 2.5}
+            - {kind: object, connect: 3.0}
+            - {kind: object, read: 12.0}
+            - {kind: object, connect: 4.0, read: 6.0}
+            - {kind: object}
+env: {}
+compare: {ignore: []}
