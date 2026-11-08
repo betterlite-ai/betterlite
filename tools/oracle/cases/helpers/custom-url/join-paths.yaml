@@ -1,7 +1,7 @@
 kind: helper
 name: join-paths
 call:
-  b7323: {"function":"join_paths","base_path":"https://api.example.com/base/","route":"/v1/chat"}
+  b7323: {"function":"join_paths","base_path":"https://api.example.com/base/","route":""}
 env: {}
 compare:
   ignore: []
