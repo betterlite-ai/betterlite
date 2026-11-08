@@ -10,6 +10,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 
+use crate::cyberark::transport::ClientCertificate;
 use crate::secret_read_dispatch::http_transport::{HttpError, HttpExchange, TlsVerification};
 use crate::secret_read_dispatch::reqwest_exchange::ReqwestExchange;
 use crate::secret_read_dispatch::vault_http::VaultHttpTransport;
@@ -19,6 +20,8 @@ use super::socket::request;
 
 struct Authority {
     ca_pem: String,
+    ca_params: CertificateParams,
+    ca_key: KeyPair,
     server_cert: CertificateDer<'static>,
     server_key: Vec<u8>,
 }
@@ -37,18 +40,30 @@ fn authority() -> Authority {
         .expect("a server certificate");
     Authority {
         ca_pem: ca_cert.pem(),
+        ca_params,
+        ca_key,
         server_cert: server_cert.der().clone(),
         server_key: server_key.serialize_der(),
     }
 }
 
-fn ca_file(pem: &str) -> tempfile::NamedTempFile {
+fn pem_file(contents: &str) -> tempfile::NamedTempFile {
     let mut file = tempfile::Builder::new()
         .suffix(".pem")
         .tempfile()
-        .expect("a CA file");
-    file.write_all(pem.as_bytes()).expect("the CA PEM");
+        .expect("a PEM file");
+    file.write_all(contents.as_bytes()).expect("the PEM");
     file
+}
+
+fn client_identity(authority: &Authority) -> (tempfile::NamedTempFile, tempfile::NamedTempFile) {
+    let issuer = Issuer::from_params(&authority.ca_params, &authority.ca_key);
+    let key = KeyPair::generate().expect("a client key");
+    let params = CertificateParams::new(vec!["client".to_owned()]).expect("client parameters");
+    let certificate = params
+        .signed_by(&key, &issuer)
+        .expect("a client certificate");
+    (pem_file(&certificate.pem()), pem_file(&key.serialize_pem()))
 }
 
 fn server_config(authority: &Authority) -> Arc<ServerConfig> {
@@ -88,7 +103,7 @@ async fn serve(listener: &TcpListener, acceptor: &TlsAcceptor, body: &str) {
 #[tokio::test]
 async fn vault_transport_trusts_a_private_ca_file() {
     let server = authority();
-    let ca = ca_file(&server.ca_pem);
+    let ca = pem_file(&server.ca_pem);
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("a listener");
     let port = listener.local_addr().expect("an address").port();
     let acceptor = TlsAcceptor::from(server_config(&server));
@@ -106,7 +121,7 @@ async fn vault_transport_trusts_a_private_ca_file() {
 #[tokio::test]
 async fn vault_transport_rejects_a_server_outside_the_ca_file() {
     let server = authority();
-    let ca = ca_file(&authority().ca_pem);
+    let ca = pem_file(&authority().ca_pem);
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("a listener");
     let port = listener.local_addr().expect("an address").port();
     let acceptor = TlsAcceptor::from(server_config(&server));
@@ -118,4 +133,27 @@ async fn vault_transport_rejects_a_server_outside_the_ca_file() {
     };
     let (result, ()) = tokio::join!(transport.send(request(url)), handshake);
     assert!(matches!(result, Err(HttpError::Transport(_))));
+}
+
+#[tokio::test]
+async fn vault_transport_loads_a_client_certificate_on_the_async_path() {
+    let server = authority();
+    let ca = pem_file(&server.ca_pem);
+    let (certificate, key) = client_identity(&server);
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("a listener");
+    let port = listener.local_addr().expect("an address").port();
+    let acceptor = TlsAcceptor::from(server_config(&server));
+    let transport = transport(TlsVerification::CaFile(ca.path().to_path_buf()));
+    let url = format!("https://127.0.0.1:{port}/v1/secret/data/db");
+    let mut call = request(url);
+    call.client_certificate = Some(ClientCertificate {
+        certificate_path: certificate
+            .path()
+            .to_str()
+            .expect("a UTF-8 path")
+            .to_owned(),
+        key_path: key.path().to_str().expect("a UTF-8 path").to_owned(),
+    });
+    let (result, ()) = tokio::join!(transport.send(call), serve(&listener, &acceptor, "{}"));
+    assert_eq!(result.expect("a reply").status, 200);
 }
