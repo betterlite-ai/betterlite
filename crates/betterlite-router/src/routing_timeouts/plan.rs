@@ -10,7 +10,6 @@ use super::seconds::Seconds;
 pub struct RouterTimeoutSources {
     pub timeout: Option<Seconds>,
     pub stream_timeout: Option<Seconds>,
-    pub default_timeout: Option<Seconds>,
     pub default_stream_timeout: Option<Seconds>,
 }
 
@@ -19,7 +18,6 @@ pub struct RouterTimeouts {
     pub timeout: Seconds,
     pub stream_timeout: Option<Seconds>,
     pub request_timeout: Option<Seconds>,
-    pub default_timeout: Option<Seconds>,
     pub default_stream_timeout: Option<Seconds>,
 }
 
@@ -49,7 +47,6 @@ pub fn resolve_router_timeouts(
         timeout: sources.timeout.unwrap_or(global.seconds),
         stream_timeout: sources.stream_timeout,
         request_timeout,
-        default_timeout: sources.default_timeout.or(sources.timeout),
         default_stream_timeout: sources.default_stream_timeout,
     }
 }
@@ -58,8 +55,8 @@ pub fn resolve_router_timeouts(
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SelectedTimeouts {
     pub stream: Option<Seconds>,
-    pub non_stream: Option<Seconds>,
-    pub attempt: Option<Seconds>,
+    pub non_stream: Seconds,
+    pub attempt: Seconds,
 }
 
 #[must_use]
@@ -74,16 +71,16 @@ pub fn select_timeouts(
         .or(router.stream_timeout)
         .or(router.request_timeout)
         .or(router.default_stream_timeout);
+    // _get_non_stream_timeout's last default_litellm_params.timeout step never runs because Router.timeout is always set
     let non_stream = request
         .timeout
         .or(request.request_timeout)
         .or(deployment.timeout)
         .or(deployment.request_timeout)
         .or(router.request_timeout)
-        .or(Some(router.timeout))
-        .or(router.default_timeout);
+        .unwrap_or(router.timeout);
     let attempt = if request.stream {
-        stream.or(non_stream)
+        stream.unwrap_or(non_stream)
     } else {
         non_stream
     };
@@ -97,7 +94,7 @@ pub fn select_timeouts(
 #[derive(Debug)]
 pub struct TimeoutPlan {
     pub deadline: Instant,
-    pub attempt: Option<Seconds>,
+    pub attempt: Seconds,
     pub stream: Option<Seconds>,
     pub cancellation: CancellationToken,
 }
@@ -109,9 +106,7 @@ impl TimeoutPlan {
         request: &RequestTimeouts,
         deployment: &DeploymentTimeouts,
     ) -> Result<Self, TimeoutError> {
-        let whole = select_timeouts(request, &DeploymentTimeouts::default(), router)
-            .attempt
-            .ok_or(TimeoutError::NoTimeout)?;
+        let whole = select_timeouts(request, &DeploymentTimeouts::default(), router).attempt;
         // a deployment change only narrows the attempt; the routing deadline was fixed from the request's own sources
         let selected = select_timeouts(request, deployment, router);
         let deadline = now
@@ -135,14 +130,11 @@ impl TimeoutPlan {
         if now >= self.deadline {
             return Err(TimeoutError::DeadlineExpired);
         }
-        let Some(attempt) = self.attempt else {
-            return Ok(self.deadline);
-        };
         let expires = now
-            .checked_add(attempt.duration("the attempt timeout")?)
+            .checked_add(self.attempt.duration("the attempt timeout")?)
             .ok_or_else(|| TimeoutError::OutOfRange {
                 field: "the attempt timeout".to_owned(),
-                seconds: attempt.0,
+                seconds: self.attempt.0,
             })?;
         Ok(expires.min(self.deadline))
     }

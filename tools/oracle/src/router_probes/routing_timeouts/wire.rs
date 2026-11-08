@@ -66,8 +66,6 @@ pub(super) struct RouterInput {
     #[serde(default)]
     pub stream_timeout: Option<String>,
     #[serde(default)]
-    pub default_timeout: Option<String>,
-    #[serde(default)]
     pub default_stream_timeout: Option<String>,
     pub global_timeout: GlobalInput,
     #[serde(default)]

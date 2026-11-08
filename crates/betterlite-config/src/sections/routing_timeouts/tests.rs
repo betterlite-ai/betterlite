@@ -56,14 +56,13 @@ fn global_timeout(
 
 #[test]
 fn router_timeouts_resolve_keys_and_environment() {
-    let source = "router_settings:\n  timeout: 7\n  stream_timeout: os.environ/STREAM_TIMEOUT\n  default_litellm_params:\n    timeout: 5\n    stream_timeout: 4";
+    let source = "router_settings:\n  timeout: 7\n  stream_timeout: os.environ/STREAM_TIMEOUT\n  default_litellm_params:\n    stream_timeout: 4";
     let resolved = settings(source, &[("STREAM_TIMEOUT", "3")]).unwrap();
     assert_eq!(
         resolved.router,
         RouterTimeouts {
             timeout: Some(7.0_f64),
             stream_timeout: Some(3.0_f64),
-            default_timeout: Some(5.0_f64),
             default_stream_timeout: Some(4.0_f64),
         }
     );

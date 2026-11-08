@@ -44,6 +44,16 @@ fn fill_completion(
     let Some(input) = completion else {
         return Ok(());
     };
+    let supported = supports_httpx_timeout(&input.provider);
+    output.resolved = Some(TimeoutOutput::from(completion_timeout(input, supported)?));
+    output.transport = Some(TimeoutOutput::from(completion_timeout(input, false)?));
+    Ok(())
+}
+
+fn completion_timeout(
+    input: &CompletionInput,
+    phases_supported: bool,
+) -> Result<TimeoutValue, OperationError> {
     let global = global_timeout(
         &input.global_timeout.seconds,
         input.global_timeout.explicitly_set,
@@ -57,20 +67,12 @@ fn fill_completion(
         .as_ref()
         .map(timeout_value)
         .transpose()?;
-    let phases_supported = supports_httpx_timeout(&input.provider);
-    output.resolved = Some(TimeoutOutput::from(resolve(
+    Ok(resolve(
         model_timeout,
         &kwargs,
         global.configured(),
         phases_supported,
-    )));
-    output.transport = Some(TimeoutOutput::from(resolve(
-        model_timeout,
-        &kwargs,
-        global.configured(),
-        false,
-    )));
-    Ok(())
+    ))
 }
 
 fn fill_router(router: Option<&RouterInput>, output: &mut Fields) -> Result<(), OperationError> {
@@ -85,8 +87,8 @@ fn fill_router(router: Option<&RouterInput>, output: &mut Fields) -> Result<(), 
     let timeouts = resolve_router_timeouts(&probe.sources, global);
     let selected = select_timeouts(&probe.request, &probe.deployment, &timeouts);
     output.stream = selected.stream.map(TimeoutOutput::from);
-    output.non_stream = selected.non_stream.map(TimeoutOutput::from);
-    output.attempt = selected.attempt.map(TimeoutOutput::from);
+    output.non_stream = Some(TimeoutOutput::from(selected.non_stream));
+    output.attempt = Some(TimeoutOutput::from(selected.attempt));
     fill_plan(input, output, &timeouts, &probe.request, &probe.deployment)
 }
 
@@ -102,10 +104,6 @@ fn probe_timeouts(input: &RouterInput) -> Result<ProbeTimeouts, OperationError> 
         stream_timeout: as_seconds(
             input.stream_timeout.as_deref(),
             "router_settings.stream_timeout",
-        )?,
-        default_timeout: as_seconds(
-            input.default_timeout.as_deref(),
-            "router_settings.default_litellm_params.timeout",
         )?,
         default_stream_timeout: as_seconds(
             input.default_stream_timeout.as_deref(),

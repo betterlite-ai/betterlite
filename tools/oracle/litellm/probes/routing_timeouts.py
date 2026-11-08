@@ -67,7 +67,6 @@ class DeploymentInput(Strict):
 class RouterInput(Strict):
     timeout: str | None = None
     stream_timeout: str | None = None
-    default_timeout: str | None = None
     default_stream_timeout: str | None = None
     global_timeout: GlobalInput
     kwargs: KwargsInput = Field(default_factory=KwargsInput)
@@ -207,9 +206,6 @@ def completion_result(completion: CompletionInput) -> CompletionResult:
 
 def router_defaults(router: RouterInput) -> dict[str, float]:
     defaults: dict[str, float] = {}
-    default_timeout = optional_seconds(router.default_timeout, "default timeout")
-    if default_timeout is not None:
-        defaults["timeout"] = default_timeout
     default_stream_timeout = optional_seconds(router.default_stream_timeout, "default stream timeout")
     if default_stream_timeout is not None:
         defaults["stream_timeout"] = default_stream_timeout

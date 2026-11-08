@@ -41,10 +41,6 @@ pub fn resolve(section: &config::Settings) -> Result<TimeoutSettings, RoutingTim
             "router_settings.stream_timeout",
             section.router.stream_timeout,
         )?,
-        default_timeout: optional(
-            "router_settings.default_litellm_params.timeout",
-            section.router.default_timeout,
-        )?,
         default_stream_timeout: optional(
             "router_settings.default_litellm_params.stream_timeout",
             section.router.default_stream_timeout,

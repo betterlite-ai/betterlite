@@ -14,8 +14,6 @@ pub enum TimeoutError {
     AttemptExpired,
     #[error("the routing was cancelled")]
     Cancelled,
-    #[error("the routing sources select no timeout")]
-    NoTimeout,
 }
 
 impl TimeoutError {
@@ -27,8 +25,7 @@ impl TimeoutError {
             Self::NotFinite { .. }
             | Self::Negative { .. }
             | Self::OutOfRange { .. }
-            | Self::Cancelled
-            | Self::NoTimeout => None,
+            | Self::Cancelled => None,
         }
     }
 }

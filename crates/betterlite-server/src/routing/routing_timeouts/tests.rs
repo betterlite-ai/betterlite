@@ -40,7 +40,6 @@ fn resolve_maps_every_level() {
     let router = ConfigRouter {
         timeout: Some(7.0_f64),
         stream_timeout: Some(3.0_f64),
-        default_timeout: Some(5.0_f64),
         default_stream_timeout: Some(4.0_f64),
     };
     let resolved = resolve(&section((300.0_f64, true), router, vec![deployment])).unwrap();
@@ -49,7 +48,6 @@ fn resolve_maps_every_level() {
     assert_eq!(resolved.router.timeout, Seconds(7.0_f64));
     assert_eq!(resolved.router.stream_timeout, Some(Seconds(3.0_f64)));
     assert_eq!(resolved.router.request_timeout, Some(Seconds(300.0_f64)));
-    assert_eq!(resolved.router.default_timeout, Some(Seconds(5.0_f64)));
     assert_eq!(
         resolved.router.default_stream_timeout,
         Some(Seconds(4.0_f64))
@@ -75,7 +73,6 @@ fn resolve_without_router_timeout_uses_the_global() {
     .unwrap();
     assert_eq!(resolved.router.timeout, Seconds(300.0_f64));
     assert_eq!(resolved.router.request_timeout, None);
-    assert_eq!(resolved.router.default_timeout, None);
 }
 
 #[test]
@@ -127,7 +124,6 @@ fn plan_keeps_the_request_deadline_apart_from_the_attempt() {
     let router = ConfigRouter {
         timeout: Some(5.0_f64),
         stream_timeout: None,
-        default_timeout: None,
         default_stream_timeout: None,
     };
     let settings = resolve(&section((6000.0_f64, false), router, vec![deployment])).unwrap();
@@ -140,7 +136,7 @@ fn plan_keeps_the_request_deadline_apart_from_the_attempt() {
     };
     let plan = plan(&settings, &request, 0, base).unwrap();
     assert_eq!(plan.deadline, at(base, 5));
-    assert_eq!(plan.attempt, Some(Seconds(4.0_f64)));
+    assert_eq!(plan.attempt, Seconds(4.0_f64));
     assert_eq!(plan.attempt_deadline(base).unwrap(), at(base, 4));
 }
 
