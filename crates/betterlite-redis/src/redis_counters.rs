@@ -10,6 +10,7 @@ pub mod set_max;
 
 mod tests;
 
+use std::result::Result as StdResult;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -30,6 +31,10 @@ use crate::redis_client_reuse::transport::RedisTransport;
 use crate::redis_live_client::LiveClientError;
 
 use self::guard::finish_guard;
+
+pub type Counts = Vec<Option<i64>>;
+
+pub type Result<T> = StdResult<T, RedisCountersError>;
 
 pub struct RedisCounters {
     pub transport: Arc<RedisTransport>,
@@ -57,12 +62,7 @@ impl RedisCounters {
         }
     }
 
-    pub fn increment_cache(
-        &self,
-        key: &str,
-        value: i64,
-        ttl: Option<f64>,
-    ) -> Result<i64, RedisCountersError> {
+    pub fn increment_cache(&self, key: &str, value: i64, ttl: Option<f64>) -> Result<i64> {
         let set_ttl = increment::resolve_ttl(ttl, self.default_ttl)?;
         let namespaced = check_and_fix_namespace(self.namespace.as_deref(), Some(key))
             .unwrap_or_else(|| key.to_owned());
@@ -85,63 +85,31 @@ impl RedisCounters {
         outcome
     }
 
-    pub fn increment_with_floor(
-        &self,
-        key: &str,
-        value: i64,
-        ttl: i64,
-    ) -> Result<i64, RedisCountersError> {
+    pub fn increment_with_floor(&self, key: &str, value: i64, ttl: i64) -> Result<i64> {
         let admission = self.gate.enter("increment_with_floor")?;
-        finish_guard(
-            self.gate.as_ref(),
-            admission,
-            floor::increment_with_floor(self, key, value, ttl),
-        )
+        let outcome = floor::sync_floor(self, key, value, ttl);
+        finish_guard(self.gate.as_ref(), admission, outcome)
     }
 
-    pub async fn async_increment_with_floor(
-        &self,
-        key: &str,
-        value: i64,
-        ttl: i64,
-    ) -> Result<i64, RedisCountersError> {
+    pub async fn async_increment_with_floor(&self, key: &str, value: i64, ttl: i64) -> Result<i64> {
         let admission = self.gate.enter("async_increment_with_floor")?;
-        finish_guard(
-            self.gate.as_ref(),
-            admission,
-            floor::async_increment_with_floor(self, key, value, ttl).await,
-        )
+        let outcome = floor::eval_floor(self, key, value, ttl).await;
+        finish_guard(self.gate.as_ref(), admission, outcome)
     }
 
-    pub fn batch_get_counts(
-        &self,
-        key_list: &[String],
-    ) -> Result<Vec<Option<i64>>, RedisCountersError> {
+    pub fn batch_get_counts(&self, key_list: &[String]) -> Result<Counts> {
         let admission = self.gate.enter("batch_get_counts")?;
-        finish_guard(
-            self.gate.as_ref(),
-            admission,
-            counts::batch_get_counts(self, key_list),
-        )
+        let outcome = counts::batch_get_counts(self, key_list);
+        finish_guard(self.gate.as_ref(), admission, outcome)
     }
 
-    pub async fn async_batch_get_counts(
-        &self,
-        key_list: &[String],
-    ) -> Result<Vec<Option<i64>>, RedisCountersError> {
+    pub async fn async_batch_get_counts(&self, key_list: &[String]) -> Result<Counts> {
         let admission = self.gate.enter("async_batch_get_counts")?;
-        finish_guard(
-            self.gate.as_ref(),
-            admission,
-            counts::async_batch_get_counts(self, key_list).await,
-        )
+        let outcome = counts::read_counts(self, key_list).await;
+        finish_guard(self.gate.as_ref(), admission, outcome)
     }
 
-    pub async fn async_scan_iter(
-        &self,
-        pattern: &str,
-        count: usize,
-    ) -> Result<Vec<Vec<u8>>, RedisCountersError> {
+    pub async fn async_scan_iter(&self, pattern: &str, count: usize) -> Result<Vec<Vec<u8>>> {
         let started = Instant::now();
         let admission = self.gate.enter(scan::SCAN_OPERATION)?;
         let outcome = finish_guard(
@@ -177,7 +145,7 @@ impl RedisCounters {
         value: f64,
         ttl: Option<i64>,
         refresh_ttl: bool,
-    ) -> Result<f64, RedisCountersError> {
+    ) -> Result<f64> {
         let client = self.transport.async_client().await?;
         match ttl {
             None => {
@@ -202,7 +170,7 @@ impl RedisCounters {
     pub async fn pipeline_increment(
         &self,
         increment_list: &[IncrementOperation],
-    ) -> Result<Vec<f64>, RedisCountersError> {
+    ) -> Result<Vec<f64>> {
         if increment_list.is_empty() {
             return Ok(Vec::new());
         }
@@ -230,13 +198,10 @@ impl RedisCounters {
         key: &str,
         value: f64,
         ttl: Option<i64>,
-    ) -> Result<Option<f64>, RedisCountersError> {
+    ) -> Result<Option<f64>> {
         let admission = self.gate.enter("async_set_max")?;
-        finish_guard(
-            self.gate.as_ref(),
-            admission,
-            set_max::set_max_body(self, key, value, ttl).await,
-        )
+        let outcome = set_max::set_max_body(self, key, value, ttl).await;
+        finish_guard(self.gate.as_ref(), admission, outcome)
     }
 }
 
