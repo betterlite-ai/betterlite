@@ -35,7 +35,7 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/file_azure_storage-*
   - tools/oracle/cases/helpers/file-azure-storage/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/file_azure_storage.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/file_azure_storage.py
   - tools/oracle/cases/sdk-http/file-azure-storage/**
