@@ -67,7 +67,11 @@ fn assign(
         }
         "required" => node.required = json::keyword(scanner, b'[', Scanner::skip_value)?,
         "enum" => node.enum_values = json::keyword(scanner, b'[', Scanner::skip_value)?,
-        "items" => node.items = json::keyword(scanner, b'{', |reader| parse_node(reader, depth))?,
+        "items" => {
+            node.items = json::keyword(scanner, b'{', |reader| {
+                parse_node(reader, depth.saturating_add(1))
+            })?;
+        }
         _ => {
             scanner.skip_value()?;
         }
@@ -89,7 +93,9 @@ fn parse_kind(scanner: &mut Scanner<'_>) -> Result<Option<Kind>, ToolFormatError
 
 fn parse_members(scanner: &mut Scanner<'_>, depth: usize) -> Result<Members, ToolFormatError> {
     json::object_entries(scanner, IndexMap::new(), |members, reader, key| {
-        let child = json::keyword(reader, b'{', |nested| parse_node(nested, depth))?;
+        let child = json::keyword(reader, b'{', |nested| {
+            parse_node(nested, depth.saturating_add(1))
+        })?;
         members.insert(key, child.unwrap_or(Field::Wrong("null")));
         Ok(())
     })
