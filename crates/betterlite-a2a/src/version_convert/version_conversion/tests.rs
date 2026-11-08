@@ -115,6 +115,30 @@ fn converts_a_10_task_result_to_03() {
         member(member(result, "status"), "state"),
         &text_value("working")
     );
+    let status = member(result, "status").as_object().expect("status");
+    assert!(!status.contains_key("message"));
+    assert!(!status.contains_key("timestamp"));
+    assert!(!result.as_object().expect("task").contains_key("history"));
+}
+
+#[test]
+fn converts_a_10_task_result_to_03_for_get() {
+    let content = object(
+        r#"{"jsonrpc":"2.0","id":"1","result":{"id":"t1","contextId":"c1","status":{"state":"TASK_STATE_AUTH_REQUIRED"},"history":[{"messageId":"m1","role":"ROLE_AGENT","parts":[{"text":"hi"}]}]}}"#,
+    );
+    let converted = normalize_jsonrpc_response(content, ProtocolVersion::V0_3, "tasks/get");
+    let result = result_of(&converted);
+    assert_eq!(member(result, "kind"), &text_value("task"));
+    assert_eq!(
+        member(member(result, "status"), "state"),
+        &text_value("auth-required")
+    );
+    let history = member(result, "history").as_array().expect("history");
+    assert_eq!(member(&history[0], "role"), &text_value("agent"));
+    assert_eq!(
+        member(&history[0], "parts"),
+        &value(r#"[{"kind": "text", "text": "hi"}]"#)
+    );
 }
 
 #[test]
