@@ -1,0 +1,50 @@
+task: B3816
+deviations:
+  - what: >-
+      There is no process-wide signer singleton and no "replacing existing
+      singleton" warning. The caller that wires the guardrail holds the JwtSigner
+      and hands it to the routes and to the upstream helper.
+    why: >-
+      The repo rules forbid module-level state; LiteLLM's global only exists so
+      the JWKS route can find the signer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L352-L360
+  - what: >-
+      The 401 detail after "MCPJWTSigner: incoming token verification failed: "
+      is betterlite's own verification error, not PyJWT's wording. The status,
+      the "error" key and the prefix are the same.
+    why: >-
+      PyJWT exception text cannot be reproduced by a Rust JWT library.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L837-L844
+  - what: >-
+      Key PEM files must be unencrypted RSA private keys (PKCS#8 or PKCS#1);
+      LiteLLM's loader has the same limit by passing password None.
+    why: Keeps parity; an encrypted key is a startup error in both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L140-L151
+  - what: >-
+      A discovery document, JWKS body or introspection response larger than
+      1 MiB fails with a typed error instead of being parsed.
+    why: >-
+      bounded-inputs: these documents come from a configured URL and the proxy
+      caps what it buffers, where LiteLLM reads whatever the IdP sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L196-L200
+  - what: >-
+      An OIDC discovery document whose jwks_uri is an empty string is returned
+      without caching; LiteLLM caches it for 24 hours because the key exists.
+    why: >-
+      An empty value is not a usable jwks_uri, so betterlite recovers as soon as
+      the IdP answers with a real URI instead of staying broken for a day.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L422-L429
+  - what: >-
+      A JWKS entry on the P-521 curve (ES512) fails the key set as an
+      unsupported key type; PyJWT verifies ES512 tokens.
+    why: >-
+      jsonwebtoken and aws-lc-rs ship no ES512 verifier, and failing the set is
+      safer than silently skipping a key the IdP published.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L459-L472
+  - what: >-
+      A token whose exp equals the current second passes betterlite's expiry
+      check and fails PyJWT's; both use zero leeway.
+    why: >-
+      jsonwebtoken rejects exp < now where PyJWT rejects exp <= now, so the
+      difference lasts one second at the boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L478-L491
