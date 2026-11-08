@@ -79,6 +79,34 @@ fn anthropic_invokes_behavior_tests_behavior_non_object_tool_calls_are_skipped()
     );
 }
 
+#[test]
+fn anthropic_invokes_behavior_tests_behavior_a_skipped_tool_does_not_stop_later_calls() {
+    let blocks = invoke(
+        r#"[{"id":"c0","type":"web_search","function":{"name":"x","arguments":"{}"}},{"id":"c1","type":"function","function":{"name":"x","arguments":"{}"}}]"#,
+    );
+    assert_eq!(
+        blocks.unwrap(),
+        vec![object(
+            r#"{"type":"tool_use","id":"c1","name":"x","input":{}}"#
+        )]
+    );
+}
+
+#[test]
+fn anthropic_invokes_behavior_tests_behavior_a_plain_id_with_a_result_stays_a_tool_use() {
+    let blocks = invoke_with(
+        r#"[{"id":"call_1","type":"function","function":{"name":"search","arguments":"{}"}}]"#,
+        r#"[{"tool_use_id":"call_1","source":"web"}]"#,
+        "[]",
+    );
+    assert_eq!(
+        blocks.unwrap(),
+        vec![object(
+            r#"{"type":"tool_use","id":"call_1","name":"search","input":{}}"#
+        )]
+    );
+}
+
 #[rstest::rstest]
 #[case::empty_function(r#"{"id":"c1","type":"function","function":{}}"#)]
 #[case::null_fields(r#"{"id":"c1","type":"function","function":{"name":null,"arguments":null}}"#)]
