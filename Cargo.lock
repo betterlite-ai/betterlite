@@ -1489,11 +1489,13 @@ name = "betterlite-error"
 version = "0.1.0"
 dependencies = [
  "betterlite-redact",
+ "derive_more",
  "regex",
  "rstest",
  "rust_decimal",
  "serde",
  "serde_json",
+ "strum",
  "thiserror",
 ]
 
