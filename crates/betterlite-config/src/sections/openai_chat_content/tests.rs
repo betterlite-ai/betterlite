@@ -34,7 +34,7 @@ fn openai_chat_content_config_cases(#[case] case: u8) {
             let empty_value = load("litellm_settings:\n  openai_system_messages_first:\n").unwrap();
             assert!(!empty_value.openai_system_messages_first);
             let wrong =
-                load("litellm_settings:\n  openai_system_messages_first: \"yes\"\n").unwrap_err();
+                load("litellm_settings:\n  openai_system_messages_first: [1]\n").unwrap_err();
             assert!(matches!(wrong, ConfigError::Yaml { .. }));
         }
         1 => {
