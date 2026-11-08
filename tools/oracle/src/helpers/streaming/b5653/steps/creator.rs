@@ -100,4 +100,3 @@ fn tool_call_view(value: &JsonValue) -> Value {
         function.map_or(Value::Null, function_view),
     ])
 }
-

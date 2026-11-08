@@ -1,8 +1,6 @@
 use betterlite_streaming::provider_chunk_decode::chunk::{DecodeState, DecodedChunk};
 use betterlite_streaming::provider_chunk_decode::error::ProviderChunkError;
-use betterlite_streaming::stream_chunk_shaping::records::{
-    JsonObject, JsonValue, Usage,
-};
+use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue, Usage};
 use serde_json::{Value, json};
 
 pub(super) fn decode_view(decoded: &DecodedChunk, state: &DecodeState) -> Value {
