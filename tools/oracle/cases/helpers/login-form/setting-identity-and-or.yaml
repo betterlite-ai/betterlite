@@ -1,0 +1,19 @@
+kind: helper
+name: login-form-setting-identity-and-or
+call:
+  login_form:
+    environment:
+      LITELLM_HIDE_DEFAULT_CREDENTIALS_HINT: "false"
+    general_settings: {hide_default_credentials_hint: true}
+    show_deprecation_banner: false
+env: {}
+compare:
+  ignore:
+    - pointer: /value/texts/title
+      why: visible product text is rebranded to betterlite
+    - pointer: /value/texts/logo
+      why: visible product text is rebranded to betterlite
+    - pointer: /value/texts/subtitle
+      why: visible product text is rebranded to betterlite
+    - pointer: /value/texts/default_credentials
+      why: visible product text is rebranded to betterlite
