@@ -87,6 +87,10 @@ impl CallbackLogger for QuietLogger {
     fn redacts_messages_itself(&self) -> bool {
         true
     }
+
+    fn message_logging(&self) -> bool {
+        false
+    }
 }
 
 struct SuccessOnlyLogger {
@@ -258,6 +262,18 @@ fn message_flags_default_to_false_and_a_logger_can_set_them() {
     };
     assert!(quiet.turn_off_message_logging());
     assert!(quiet.redacts_messages_itself());
+}
+
+#[test]
+fn message_logging_defaults_to_true_and_a_logger_can_turn_it_off() {
+    let base = BaseLogger {
+        name: "base".to_owned(),
+    };
+    assert!(base.message_logging());
+    let quiet = QuietLogger {
+        name: "quiet".to_owned(),
+    };
+    assert!(!quiet.message_logging());
 }
 
 #[test]

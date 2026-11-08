@@ -23,6 +23,11 @@ pub trait CallbackLogger: Send + Sync {
         false
     }
 
+    // the deprecated constructor flag; false redacts the messages and the response for this logger
+    fn message_logging(&self) -> bool {
+        true
+    }
+
     fn log_success_event(&self, _event: &LoggerEvent) -> Result<(), LoggerError> {
         Ok(())
     }
