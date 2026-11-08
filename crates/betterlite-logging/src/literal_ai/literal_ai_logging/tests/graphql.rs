@@ -31,7 +31,9 @@ fn with_index(block: &str, index: usize) -> String {
     if index == 0 {
         return block.to_owned();
     }
-    block.replace("_0", &format!("_{index}"))
+    block
+        .replace("_0", &format!("_{index}"))
+        .replace("step0", &format!("step{index}"))
 }
 
 #[test]
