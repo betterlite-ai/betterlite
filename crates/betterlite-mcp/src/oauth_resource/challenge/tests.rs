@@ -109,9 +109,9 @@ fn www_authenticate_matches_litellm(#[case] invalid_token: bool, #[case] expecte
 }
 
 #[rstest]
-#[case::unset_proxy("", "/litellm", "/litellm/")]
-#[case::unset_proxy_trims_root("", "/litellm//", "/litellm/")]
-#[case::configured_proxy("https://p.example.com/", "/litellm", "https://p.example.com/")]
+#[case::unset_proxy("", "/litellm", "/litellm")]
+#[case::unset_proxy_trims_root("", "/litellm//", "/litellm")]
+#[case::configured_proxy("https://p.example.com/", "/litellm", "https://p.example.com")]
 fn byok_www_authenticate_matches_litellm(
     #[case] proxy_base_url: &str,
     #[case] request_root_path: &str,
