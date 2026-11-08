@@ -49,14 +49,18 @@ fn formatted_tool(parameters: &str) -> String {
 #[rstest]
 fn token_formatting_behavior_tests_behavior() {
     let leaf = padded_leaf();
+    checks_object_chains(&leaf);
+    checks_schema_depth();
+}
 
-    let formatted = formatted_tool(&object_chain(60, "", &leaf));
+fn checks_object_chains(leaf: &str) {
+    let formatted = formatted_tool(&object_chain(60, "", leaf));
     assert!(formatted.contains("p?: boolean,"));
 
-    let with_items = formatted_tool(&object_chain(60, r#","items":5"#, &leaf));
+    let with_items = formatted_tool(&object_chain(60, r#","items":5"#, leaf));
     assert!(with_items.contains("p?: boolean,"));
 
-    let too_deep = tool_with(&object_chain(70, "", &leaf));
+    let too_deep = tool_with(&object_chain(70, "", leaf));
     let error = format(&too_deep).expect_err("70 object levels pass the depth cap");
     assert!(matches!(
         error,
@@ -64,9 +68,18 @@ fn token_formatting_behavior_tests_behavior() {
             limit: MAX_SCHEMA_DEPTH
         }
     ));
+}
 
+fn checks_schema_depth() {
     let deepest = formatted_tool(&array_chain(MAX_SCHEMA_DEPTH, r#"{"type":"string"}"#));
     assert!(deepest.contains("type deep = () => any;"));
+
+    let boundary = format!(
+        r#"{{"type":"object","properties":{{"deep":{}}}}}"#,
+        array_chain(MAX_SCHEMA_DEPTH.saturating_sub(1), r#"{"type":"string"}"#)
+    );
+    let rendered = formatted_tool(&boundary);
+    assert!(rendered.contains("deep?: string[]"));
 
     let too_many_arrays = tool_with(&array_chain(
         MAX_SCHEMA_DEPTH.saturating_add(8),

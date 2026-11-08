@@ -6,6 +6,7 @@ use crate::tools::{ToolLimits, format_function_definitions, parse_tool_definitio
 mod corpus;
 mod depth;
 mod errors;
+mod json;
 mod schema;
 mod shapes;
 

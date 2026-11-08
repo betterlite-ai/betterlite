@@ -98,7 +98,7 @@ impl Scanner<'_> {
             match self.peek() {
                 Some(b',') => self.take_byte(b',')?,
                 Some(byte) if byte == close => {
-                    self.take_byte(close)?;
+                    self.at = self.at.saturating_add(1);
                     return Ok(start..self.at);
                 }
                 Some(_) | None => return Err(broken()),
