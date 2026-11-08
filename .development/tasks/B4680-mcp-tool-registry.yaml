@@ -1,0 +1,154 @@
+id: B4680
+title: Local MCP tool registry and configured handlers
+description: >-
+  Build the local MCP tool registry in betterlite-mcp, module tool_registry, and the config section that feeds it. LiteLLM's MCPToolRegistry is one process-wide dict of tools. The manager fills it with one tool per OpenAPI operation, and `mcp_tools` in config.yaml fills it with tools backed by handler functions. The call path reads it by name. betterlite has no module-level state, so the registry is a value that the startup code builds once and passes to its users through their constructors.
+
+  Types. ToolRegistry holds an IndexMap<String, LocalTool> behind a std::sync::RwLock, and every method takes &self so one Arc<ToolRegistry> can be shared. Never hold the lock across an await. LocalTool is LiteLLM's MCPTool: name, description, input_schema (a serde_json::Map<String, Value>) and handler (Arc<dyn ToolHandler>). It derives Clone. ToolHandler is an async trait with `call(&self, arguments: &serde_json::Map<String, Value>, context: &OpenApiCallContext) -> Result<OpenApiToolOutput, ToolHandlerError>`. Write it as a trait with a boxed future method, since the registry stores it as a trait object. OpenApiCallContext and OpenApiToolOutput come from betterlite-mcp's openapi_tools module (B4683) and are reused as they are, so the per-request headers (BYOK Authorization, forwarded headers, resolved upstream credential) reach a handler without module-level state. LiteLLM passes them through ContextVars. ToolHandlerError has two variants: OpenApi(OpenApiToolError) with #[from] and #[source], so the UpstreamAuth challenge keeps its type up to the caller, and Failed(String) for any other handler failure.
+
+  Methods, all in LiteLLM's order and with its rules:
+  - register_tool(name, description, input_schema, handler): insert or replace by name. A replaced name keeps its first position, as a Python dict does. Log "Registered tool: {name}" at debug.
+  - get_tool(name) -> Option<LocalTool>: a clone of the entry.
+  - list_tools(tool_prefix: Option<&str>) -> Vec<LocalTool>: in insertion order. A prefix that is None or "" returns everything, otherwise only tools whose name starts with it (case-sensitive).
+  - unregister_tools_with_prefix(prefix) -> usize: an empty prefix removes nothing and returns 0. Otherwise remove every tool whose name starts with the prefix, log "Unregistered MCP tool {name}" at debug for each, and return the count. The manager calls it when an OpenAPI server leaves, with `normalized_server_prefix + separator`.
+  - to_sdk_tools(tools: &[LocalTool]) -> Vec<SdkTool>: LiteLLM's convert_tools_to_mcp_sdk_tool_type. SdkTool is a serde type with name, description and input_schema serialized as `inputSchema`, which is the wire shape of the MCP Tool the manager lists. Look in crates/betterlite-mcp/src/tools/schemas.rs (B4740) and types.rs first and reuse an existing MCP tool type if one has these three fields; make a new SdkTool only if none does.
+
+  Loading `mcp_tools`. load_tools_from_config(entries: Option<&[McpToolEntry]>, config_file_path: Option<&Path>, loader: &dyn ToolHandlerLoader) -> Result<(), ToolRegistryError> is LiteLLM's load_tools_from_config. ToolHandlerLoader is a trait with `load(&self, handler: &str, config_file_path: Option<&Path>) -> Result<Option<Arc<dyn ToolHandler>>, HandlerLoadError>`. It stands in for get_instance_fn, which imports a Python function from a dotted path ("module.function") and, for an s3:// or gcs:// path, downloads and runs a module (only when config_file_path is set). betterlite has no Python interpreter, so this task defines only the trait. B165 (embedded Python) and B124 own the real loader and the call at startup; the tests use a small fake loader that maps fixed strings to fake handlers.
+  Before the loop, a None argument fails with the message "mcp_tools_config is required, please set `mcp_tools` in your proxy config" (ToolRegistryError::Missing). Then per entry, in order: an entry that is not a mapping fails with "mcp_tools_config must be a list of dictionaries" (NotAMapping), and entries before it stay registered, as in LiteLLM. An entry with a missing, null or empty name, description or handler is skipped silently (Python `all([...])`). input_schema defaults to {}. Call the loader with the handler string. A loader error ends loading with ToolRegistryError::Handler carrying the cause with #[source]; LiteLLM lets the import error propagate the same way and does not skip. When the loader returns Ok(None), log at warn "Warning: Could not find handler {handler} for tool {name}" and go to the next entry. Otherwise register the tool. After the loop log the list of registered tool names at debug (LiteLLM dumps json of the whole dict; log names only, never handlers).
+
+  Config section. The section crates/betterlite-config/src/sections/mcp_tools.rs reads the top-level `mcp_tools` key of config.yaml. McpToolsSection has `entries: Vec<McpToolEntry>` and an empty list when the key is absent. McpToolEntry is an enum: Tool(McpToolSettings) for a mapping with the optional fields name, description, input_schema (a JSON object) and handler (strings), and NotAMapping for any other YAML value (a string, a number, a list, null). Unknown keys in a mapping are ignored, as LiteLLM ignores them. Only a top-level value that is not a list (for example a mapping) is a config error with the key name `mcp_tools`. Expose `decode_mcp_tools(bytes: &[u8]) -> Result<McpToolsSection, McpToolsError>` which parses YAML bytes with the repo's YAML crate (serde-saphyr, already used by betterlite-config) and reads the key. The fuzz target mcp_tools in crates/betterlite-config/fuzz feeds arbitrary bytes to it and must never panic. Add a committed corpus and a replay test named replays_the_mcp_tools_corpus.
+
+  Registered OpenAPI handlers. OpenApiToolHandler in the module `openapi_handler` holds an OpenApiTool and an Arc<dyn OpenApiTransport> (both from B4683) and implements ToolHandler by calling tool.call(arguments, context, transport) and mapping the Err with ToolHandlerError::OpenApi. It is the value the manager passes to register_tool for each operation. A handler made this way is the whole reason the context travels with the call.
+
+  Tests live in crates/betterlite-mcp/src/tool_registry/tests.rs and tests/ with module names registration, listing, prefix_removal, sdk_tools, config_loading and openapi_handler under tool_registry::, and in crates/betterlite-config/src/sections/mcp_tools/tests.rs for the section.
+
+  Oracle. Helper cases only, since no route reaches the registry yet (the manager parts add the HTTP cases). The helper operation takes `function` (list_tools, unregister_prefix or load_from_config), `tool_names` (names to register in order, each with the handler `builtins.len` on the Python side), `prefix`, and for load_from_config an `mcp_tools` list. The Python side builds an MCPToolRegistry and answers `{"names": [...], "removed": n}` or `{"error": "<ValueError message>"}`; for load_from_config it also answers each tool's description and input_schema. The Rust adapter uses the fake loader that knows only `builtins.len`. Cases: list with no prefix, with a prefix, with an empty prefix, with a prefix that matches nothing; unregister with a matching prefix, with an empty prefix, and a re-registered name keeping its position; load with a skipped entry (no description), a skipped entry (empty handler), a default input_schema, a non-mapping entry, and a missing config.
+scope:
+  paths:
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/src/tool_registry.rs
+    - crates/betterlite-mcp/src/tool_registry/**
+    - crates/betterlite-config/src/sections/mcp_tools.rs
+    - crates/betterlite-config/src/sections/mcp_tools/**
+    - crates/betterlite-config/fuzz/Cargo.toml
+    - crates/betterlite-config/fuzz/fuzz_targets/mcp_tools.rs
+    - crates/betterlite-config/fuzz/corpus/mcp_tools/**
+    - tools/oracle/cases/helpers/mcp-tool-registry/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-tool-registry-*
+    - tools/oracle/helpers/b4680.py
+    - tools/oracle/helpers/b4680/**
+    - tools/oracle/src/helpers/mcp/b4680.rs
+    - tools/oracle/src/helpers/mcp/b4680/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_registry.py#L17-L85
+    why: Registry dict, register_tool, get_tool, list_tools with the prefix filter, unregister_tools_with_prefix and the SDK type conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_registry.py#L87-L143
+    why: load_tools_from_config, with its two ValueErrors, the silent skip of incomplete entries, the handler warning and the module-level instance.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/tool_registry.py#L1-L12
+    why: MCPTool, the stored record. The other models in that file have no caller at the pin.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L9-L65
+    why: get_instance_fn, which the config loader calls for each handler string. Only the call shape is needed here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7046-L7058
+    why: The only caller of load_tools_from_config. It runs only when mcp_tools is truthy and passes config_file_path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2745-L2870
+    why: The OpenAPI registration caller. It builds the prefixed name and the handler per operation and calls register_tool with them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2872-L2895
+    why: unregister_tools_with_prefix caller, run when a server leaves the registry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L4529-L4546
+    why: list_tools with the registry prefix and the SDK conversion, used when listing an OpenAPI server's tools.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5732-L5775
+    why: get_tool by registry key and the handler call with **arguments for an OpenAPI tool.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L2611-L2650
+    why: "The local-tool call path: get_tool, 404 when missing, sync or async handler, and the handler_outcome conversion."
+dod:
+  - text: register_tool inserts or replaces by name and keeps the first position of a replaced name; get_tool returns the entry or None.
+    proof: [registry-tests, oracle]
+  - text: list_tools returns insertion order, and a None or empty prefix returns all tools while a non-empty prefix filters by starts-with.
+    proof: [registry-tests, oracle]
+  - text: unregister_tools_with_prefix removes the matching tools and returns the count, and an empty prefix removes nothing and returns 0.
+    proof: [registry-tests, oracle]
+  - text: to_sdk_tools gives name, description and inputSchema for each tool in the given order.
+    proof: [registry-tests]
+  - text: load_tools_from_config fails on a missing config and on a non-mapping entry with LiteLLM's messages, skips entries with a missing or empty name, description or handler, defaults input_schema to {}, warns and skips when the loader returns no handler, and fails when the loader fails.
+    proof: [registry-tests, oracle]
+  - text: The mcp_tools section reads name, description, input_schema and handler per entry, keeps non-mapping entries as NotAMapping, returns an empty list when the key is absent and rejects a top-level value that is not a list.
+    proof: [config-section-tests]
+  - text: The mcp_tools decoder has a cargo-fuzz target with a committed corpus that replays without a panic.
+    proof: [mcp-tools-fuzz]
+  - text: OpenApiToolHandler calls the wrapped tool with the call's arguments and context and keeps UpstreamAuth as ToolHandlerError::OpenApi.
+    proof: [registry-tests]
+  - text: The oracle helper adapter passes strict Python checks and its seeds replay.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: registry-tests
+      why: the tool_registry behavior tests fail, do not exist, or the filter selects nothing
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^tool_registry::/)'
+    - id: config-section-tests
+      why: the mcp_tools section tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_tools::/) - test(replays_the_mcp_tools_corpus)'
+    - id: registry-clippy
+      why: clippy catches issues in the new module, the section and the fuzz target
+      run: cargo clippy --locked -p betterlite-mcp -p betterlite-config --all-targets -- -D warnings
+    - id: mcp-tools-fuzz
+      why: the fuzz target, its added corpus or its replay test is missing or fails
+      run: test -f crates/betterlite-config/fuzz/fuzz_targets/mcp_tools.rs && grep -q mcp_tools crates/betterlite-config/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/mcp_tools)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_mcp_tools_corpus)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b4680.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-tool-registry-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-tool-registry/list-all.yaml
+  - tools/oracle/cases/helpers/mcp-tool-registry/list-prefix.yaml
+  - tools/oracle/cases/helpers/mcp-tool-registry/list-empty-prefix.yaml
+  - tools/oracle/cases/helpers/mcp-tool-registry/unregister-prefix.yaml
+  - tools/oracle/cases/helpers/mcp-tool-registry/unregister-empty-prefix.yaml
+  - tools/oracle/cases/helpers/mcp-tool-registry/re-register-position.yaml
+  - tools/oracle/cases/helpers/mcp-tool-registry/load-skips.yaml
+  - tools/oracle/cases/helpers/mcp-tool-registry/load-defaults.yaml
+  - tools/oracle/cases/helpers/mcp-tool-registry/load-errors.yaml
+deviations:
+  - what: The registry is a value passed through constructors, not the module-level global_mcp_tool_registry.
+    why: The repository forbids module-level state. The methods and their results are the same.
+  - what: A handler is a Rust ToolHandler, resolved by an injected ToolHandlerLoader, not a Python function imported from a dotted path.
+    why: betterlite has no Python interpreter. B165 and B124 supply the real loader. Until then a `handler` string in `mcp_tools` fails startup with the loader's error, never a silent skip.
+  - what: ToolHandler receives the per-request OpenApiCallContext as an argument, where LiteLLM's OpenAPI handlers read three ContextVars.
+    why: Same reason as B4683. The values and their precedence do not change.
+  - what: A top-level `mcp_tools` value that is not a list is a config error naming the key.
+    why: LiteLLM would iterate whatever it got (a mapping yields its keys) and fail with the "list of dictionaries" message or a later error. A typed section cannot hold it.
+  - what: to_sdk_tools cannot fail with "MCP SDK is not installed".
+    why: That ImportError only exists because the Python SDK is optional.
+out_of_scope:
+  - "register_tools_from_openapi and its suffixing of colliding tool names (_2, _3, ...) in openapi_to_mcp_generator.py: B4683 left it out as having no caller, and the registry is not that caller. Only its own file calls it. The manager (mcp_server_manager.py:2745) does its own loop, names tools with openapi_tool_name plus the server prefix, and calls register_tool directly, so a name collision there replaces the earlier tool. This task keeps that replace behavior."
+  - "ToolSchema, ListToolsResponse and ContentItem in litellm/types/mcp_server/tool_registry.py: no caller at the pin. CallToolRequest of that file is shadowed by the MCP SDK type that operations.py imports."
+  - "get_instance_fn and the s3:// and gcs:// module loading: B124 and B165 own them and implement ToolHandlerLoader; B4143 owns the module download."
+  - "Calling load_tools_from_config at startup (proxy_server.py:7046): B124 remaining work."
+  - "The call paths that read the registry (operations.py _handle_local_mcp_tool, the managed OpenAPI handler at mcp_server_manager.py:5732), the 404 for an unknown tool, the 'Error: ...' result for a failing handler and handler_outcome (str(value) as text): B136 manager parts. They call get_tool and ToolHandler::call."
+  - "Building OpenApiTool values, prefixed tool names, the registry key and the tool_name_to_mcp_server_name_mapping: B4683 and the B136 manager parts."
+pitfalls:
+  - >-
+    Replacing a tool with the same name keeps its first slot. With an IndexMap use insert, not shift_remove then insert, or the list order changes.
+  - >-
+    unregister_tools_with_prefix("") returns 0 and removes nothing, while list_tools(Some("")) returns everything. The two empty-prefix rules are opposites, so test both.
+  - >-
+    The prefix filter is a plain starts-with on the registered name, so "srv_" also matches "srv_x_y". The manager adds the separator itself.
+  - >-
+    The skip test is Python's `all([name, description, handler])`: a missing key, null and "" all skip. A description of " " does not.
+  - >-
+    input_schema is read with a default of {}. A key that is present with null passes null on to the tool in LiteLLM; the typed section reads null as {} (list the cause in the section tests).
+  - >-
+    A loader error stops loading. LiteLLM only skips when the function it got is None, and the entries registered before the failure stay registered.
+  - >-
+    The handler string is passed through unchanged, with the config file path, because a remote (s3:// or gcs://) module is allowed only when the path is present. Never pass a path for a handler that came from anywhere but config.yaml.
+  - >-
+    Do not log handler objects or input schemas at debug. The dump in LiteLLM would print them; log tool names only.
+  - >-
+    ToolHandler is called with **arguments in LiteLLM, so extra or missing keys are the handler's problem. The registry does not validate arguments against input_schema.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

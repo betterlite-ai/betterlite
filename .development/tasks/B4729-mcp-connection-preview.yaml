@@ -1,0 +1,157 @@
+id: B4729
+title: MCP connection preview staging and test routes
+description: >-
+  Build the two preview routes an admin uses before saving an MCP server, and the staging step in front of them. Both are POST routes under the router prefix /mcp-rest (LiteLLM mounts this router with that prefix only, so there is no /v1/... or /openai/v1/... alias): POST /mcp-rest/test/connection checks that a not-yet-saved server config can be reached, and POST /mcp-rest/test/tools/list lists its tools. The body of both is a NewMCPServerRequest, the same model the create route takes. Both need a valid key and then the PROXY_ADMIN role. PROXY_ADMIN_VIEW_ONLY and every other role get 403.
+
+
+  Code goes in betterlite-server, two modules. mcp::preview_staging (crates/betterlite-server/src/mcp/preview_staging.rs, preview_staging/** and a tests.rs beside each file) holds the pure steps. api::mcp_preview_routes (crates/betterlite-server/src/api/mcp_preview_routes.rs, mcp_preview_routes/** and a tests.rs beside each file) holds the two handlers and exposes `pub fn router(state) -> axum::Router`. It never mounts itself, so the B139 umbrella adds it to the app. Add betterlite-mcp and the url crate to crates/betterlite-server/Cargo.toml if the file does not list them yet (B4727 and B4728 may have added betterlite-mcp already, so read the file first). Types and functions of other tasks are used by the names they have on main when this task runs, so read the merged files: NewMCPServerRequest, StdioPolicy and RequestError from B4716 (server_payload), inherit_credentials_from_existing_server from B4717 (mcp::management_visibility), ServerRegistry from B4731 (registry), MCPServer from B6590, MCPAuth from B2305, the OAuth2 header reader and the x-litellm-api-key constant from B4654 (client_headers), UPSTREAM_OAUTH_DISCOVERY_AUTH_TYPES from B6760 (server_oauth), the temporary-client runner and the list betterlite_mcp::mcp_preview::STAGED_AUTH_VALUE_AUTH_TYPES from B4730, MCPClient from B4744 and B4745, and the OpenAPI functions from B4683 (openapi_tools). Do not copy any of them. Logging goes through tracing.
+
+
+  Module mcp::preview_staging. Function names are LiteLLM's without the leading underscore.
+
+  1. preview_origin(url: Option<&str>) -> Option<(String, String, Option<u16>)>: parse with the url crate and return (scheme, host, port) when the scheme is http or https and a host exists. An absent, empty or unparseable url, another scheme (ws, ftp, file) or a missing host gives None. The port is Url::port(), so an explicit default port (https://a.example:443) is None, exactly like httpx. Hosts compare in lowercase.
+
+  2. stage_server_test(request: NewMCPServerRequest, headers, registry) -> StagedPreview { request, mcp_auth_header: Option<String>, oauth2_headers: Option<BTreeMap<String, String>> } (LiteLLM's _stage_server_test and _StagedServerTest). Both routes call it so both hand the temporary client the same credentials. Steps in order.
+
+  a. saved: when request.server_id is non-empty, registry.server_by_id(server_id, no client ip); otherwise None.
+
+  b. may_inherit is true when auth_type is not one of STAGED_AUTH_VALUE_AUTH_TYPES (api_key, bearer_token, basic, authorization, token; an absent auth_type is not in the list), or when saved exists and preview_origin(saved.url) is Some and equals preview_origin(request.url). So a typed-in secret type can pull the stored secret only when the preview URL has the same scheme, host and port as the saved one. This stops an admin from sending a stored api key to a new host.
+
+  c. request becomes inherit_credentials_from_existing_server(request) when may_inherit, else stays as it is.
+
+  d. mcp_auth_header is credentials["auth_value"] when auth_type is in STAGED_AUTH_VALUE_AUTH_TYPES and credentials is an object; otherwise None. A missing key gives None and a non-string value follows the declared type of MCPCredentials.
+
+  e. oauth2_headers is B4654's OAuth2 header reader applied to the request headers when auth_type is in UPSTREAM_OAUTH_DISCOVERY_AUTH_TYPES (oauth2, true_passthrough, oauth_delegate) AND the x-litellm-api-key header is present and non-empty. Without that primary header the Authorization value is the caller's own LiteLLM key (the admission fallback), so it is never forwarded upstream. Keep LiteLLM's code comment on this as one line.
+
+  f. protocol_version: when saved exists and request.mcp_info has no "protocol_version" key (a missing mcp_info counts as empty), the staged request is a copy whose mcp_info is the old one plus protocol_version = saved.protocol_version. This happens whether or not credentials were inherited, and it stamps the value even when it is the default "auto". Without a saved server, or with the key present, the request is unchanged.
+
+  3. list_tools_within(client, deadline_seconds: f64) -> Result<Option<Vec<Tool>>, ClientError>: call client.list_tools with raise_on_error true, give up after deadline_seconds and return None on that timeout (anyio.move_on_after). An error from list_tools is returned, not swallowed. The client call is cancelled when the deadline passes.
+
+  4. preview_openapi_tools(spec_path: &str) -> serde_json::Value: load the document with B4683's load_openapi_spec_async(spec_path) with no max_bytes, then for each path in the order of the document and each method in the fixed order get, post, put, delete, patch (skip a method the path item lacks): resolved = resolve_operation_params(operation, path_item, components); raw id = operation.operationId or "{method}_{path}" with the method in lowercase; op_id = sanitize_openapi_tool_name(raw id); while op_id is already used, n starts at 1 for this operation, add one, suffix = "_{n}" and op_id = first (128 minus suffix length) characters of the sanitized id plus the suffix (the 128 is B4683's OPENAPI_TOOL_NAME_MAX_LEN; the cut is from the sanitized id, not from the previous candidate); record op_id as used. description = operation.description, defaulting to operation.summary (default empty); the tool's description is description, else summary, else "{METHOD} {path}" with the method in uppercase. Each tool is { "name": op_id, "description": ..., "inputSchema": build_input_schema(resolved) }. Success returns { "tools": [...], "error": null, "message": "Found N tools from OpenAPI spec" }. Any failure to load or read the document logs "Error previewing OpenAPI tools: {error}" at error level and returns { "tools": [], "error": true, "message": "Failed to load OpenAPI spec: {error}" }. The HTTP status is 200 in both cases. A missing "paths" or "components" key counts as an empty object.
+
+
+  Module api::mcp_preview_routes.
+
+  Handler order for both routes: the key check (auth layer), then the admin check, then staging, and only then the route's own work. The admin check compares the role with PROXY_ADMIN exactly and answers 403 with the body {"detail": {"error": "<text>"}}. The text of /test/connection is "User does not have permission to test MCP server connections. Only PROXY_ADMIN users can perform this action." and of /test/tools/list "User does not have permission to test MCP server tools. Only PROXY_ADMIN users can perform this action.". The body is parsed with NewMCPServerRequest::from_value using the StdioPolicy held in the route state. A RequestError answers 422 in FastAPI's shape {"detail": [{"type", "loc": ["body"], "msg", "input"}]} and the msg for a RequestError::Value is "Value error, " plus the text. The raw request headers go to stage_server_test as they are. The headers for the stdio environment (raw_headers of B4730's runner) come from B1100's safe header reader as a name to value map.
+
+  /test/connection: after staging, call B4730's runner with the staged request, the staged mcp_auth_header and oauth2_headers, the raw headers and the default timeout. The operation opens a session with run_with_session and a no-op body, then returns { "status": "ok" }. The runner's own error value (status "error", error true, message) is returned as is. Both outcomes are HTTP 200.
+
+  /test/tools/list: after staging, a truthy spec_path on the staged request returns preview_openapi_tools(spec_path) without creating a client (only the staging ran before it). Otherwise call the runner with an operation that lists tools. The listing deadline is max(client timeout in seconds, 30.0 seconds), where the client timeout is the client's own timeout when it is set and non-zero, else the 60.0 second default of LITELLM_MCP_CLIENT_TIMEOUT, and the 30.0 is the default of LITELLM_MCP_TOOL_LISTING_TIMEOUT. Both defaults and the env overrides are owned by B4730's constants, so read them there. max() keeps a single slow page inside the client timeout working and lets a per-server timeout above 30 seconds extend the deadline. When list_tools_within returns None, log at warning "MCP tools/list preview timed out after {deadline} seconds while paginating upstream tools" and return { "status": "error", "error": true, "message": "Timed out listing tools after {deadline} seconds. The MCP server may be responding slowly or paginating excessively." }. The deadline prints the way Python prints a float, so 30.0 and 60.0 keep their ".0" (use the Debug format of f64, not Display). On success return { "tools": [each tool serialized with its wire (alias) field names, so inputSchema and not input_schema], "error": null, "message": "Successfully retrieved tools" }. All outcomes are HTTP 200.
+
+  Tests use fakes that record calls (a fake registry, a fake runner, a fake client), synthetic servers and names with the prefix test-. Oracle HTTP cases cover the cases a booted proxy can answer without a reachable MCP server.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/preview_staging.rs
+    - crates/betterlite-server/src/mcp/preview_staging/**
+    - crates/betterlite-server/src/api/mcp_preview_routes.rs
+    - crates/betterlite-server/src/api/mcp_preview_routes/**
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - tools/oracle/cases/http/mcp-rest-preview/**
+    - tools/oracle/helpers/b4729.py
+    - tools/oracle/helpers/b4729/**
+    - tools/oracle/src/helpers/server/b4729.rs
+    - tools/oracle/src/helpers/server/b4729/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1395-L1464
+    why: The auth-type list, StagedServerTest, preview_origin and stage_server_test, including the same-origin rule and the protocol_version stamp.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1466-L1469
+    why: list_tools_within, the bounded tools/list call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1623-L1683
+    why: preview_openapi_tools, the tool naming, the unique-name loop and both result shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1685-L1776
+    why: Both route decorators, the admin check and 403 texts, and the connection and tools/list operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L97-L100
+    why: The router prefix /mcp-rest.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L884-L917
+    why: The inherit function that stage_server_test calls, to see what it needs as input.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1447-L1470
+    why: The OAuth2 header reader applied to the request headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L341-L342
+    why: Routes under /mcp-rest/ skip the role route check, so the handler's own admin check is the only role gate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L200-L202
+    why: The 60.0 and 30.0 second defaults and their env names, used by the listing deadline.
+
+dod:
+  - text: >-
+      preview_origin gives (scheme, host, port) for http and https urls with a host, None for an absent, empty, unparseable or non-http url, and drops an explicit default port.
+    proof: [staging-tests]
+  - text: >-
+      stage_server_test inherits stored credentials for a secret-carrying auth type only when the preview url has the saved server's scheme, host and port, always inherits for other auth types, and passes the request through unchanged when there is no saved server.
+    proof: [staging-tests]
+  - text: >-
+      stage_server_test takes mcp_auth_header from credentials.auth_value only for the five secret-carrying auth types, and sets oauth2_headers only for oauth2, true_passthrough and oauth_delegate when the x-litellm-api-key header is non-empty, never from the Authorization fallback alone.
+    proof: [staging-tests]
+  - text: >-
+      stage_server_test copies the saved server's protocol_version into mcp_info only when the key is missing, and leaves a request that already has the key alone.
+    proof: [staging-tests]
+  - text: >-
+      list_tools_within returns the tools, returns None when the deadline passes, and returns a list_tools error instead of hiding it.
+    proof: [staging-tests]
+  - text: >-
+      preview_openapi_tools names tools like LiteLLM (operationId or method_path, sanitized, unique suffix cut to 128 characters, description fallback chain) and returns the two result shapes with HTTP 200 for a load failure.
+    proof: [staging-tests]
+  - text: >-
+      Both routes answer 403 with the exact detail.error text for every role except PROXY_ADMIN, before staging or any client call.
+    proof: [route-tests, oracle]
+  - text: >-
+      /test/connection returns {"status": "ok"} on a reachable server and the runner's error value otherwise, and /test/tools/list returns the tools, the OpenAPI preview for a spec_path without building a client, and the timeout message with the deadline printed as 30.0 or 60.0.
+    proof: [route-tests]
+  - text: >-
+      A body that fails NewMCPServerRequest validation answers 422 in FastAPI's detail list shape and an unreachable server answers 200 with the "the server is unreachable" message.
+    proof: [route-tests, oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: staging-tests
+      why: preview_origin, the same-origin inheritance rule, the credential and header selection, the protocol_version stamp, the bounded listing or the OpenAPI preview is missing or wrong.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::preview_staging::/)'
+    - id: route-tests
+      why: the admin gate, the staging call order, the response shapes or the timeout message of the two routes is missing or wrong.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::mcp_preview_routes::/)'
+
+oracle_cases:
+  - tools/oracle/cases/http/mcp-rest-preview/connection-regular-user-403.yaml
+  - tools/oracle/cases/http/mcp-rest-preview/connection-view-only-admin-403.yaml
+  - tools/oracle/cases/http/mcp-rest-preview/tools-list-regular-user-403.yaml
+  - tools/oracle/cases/http/mcp-rest-preview/connection-unreachable-server.yaml
+  - tools/oracle/cases/http/mcp-rest-preview/connection-missing-url-422.yaml
+  - tools/oracle/cases/http/mcp-rest-preview/tools-list-unreachable-server.yaml
+  - tools/oracle/cases/http/mcp-rest-preview/tools-list-openapi-missing-file.yaml
+
+deviations:
+  - what: The message after the text "Failed to load OpenAPI spec" is the Display text of the B4683 error, not Python exception text.
+    why: Only the missing-file text ("OpenAPI spec not found at {location}") is the same in both. HTTP failures and parse failures read differently in Python (httpx and json error strings), and a user gets the same "error true, tools empty" shape either way. The oracle case covers the missing file only.
+  - what: A RequestError::Shape answers 422 with serde's text in msg, not Pydantic's text.
+    why: Pydantic's error text and type names are library output with no Rust equivalent. Status, loc and the body shape stay the same, and the oracle compares the Value case only.
+
+out_of_scope:
+  - "The temporary-client runner (_execute_with_mcp_client), _extract_credentials, the connection error messages with their reference id, the STAGED_AUTH_VALUE_AUTH_TYPES list and the timeout constants: B4730 owns them and this task only calls them."
+  - "_inherit_credentials_from_existing_server: B4717. NewMCPServerRequest and its validators: B4716. get_mcp_server_by_id: B4731. The OAuth2 header reader and the x-litellm-api-key name: B4654. UPSTREAM_OAUTH_DISCOVERY_AUTH_TYPES: B6760."
+  - "load_openapi_spec_async, sanitize_openapi_tool_name, resolve_operation_params and build_input_schema: B4683. MCPClient list_tools and run_with_session: B4745 and B4744."
+  - "The routes /mcp-rest/tools/list and /mcp-rest/tools/call and the helpers around them: B4726, B4727 and B4728."
+  - "Mounting the router into the app, and the auth layer that rejects a missing or invalid key before the handler: the B139 umbrella and B742."
+
+pitfalls:
+  - The admin check is the only role gate. Routes under /mcp-rest/ skip route_checks (it passes them with "authN/authZ handled by api itself"), so a missing check would let any valid key test connections and make the proxy fetch arbitrary URLs.
+  - The same-origin rule compares scheme, host and port of the saved url and the preview url. Comparing only the host, or skipping the rule when the saved url is missing, would let a typed-in url with an api_key auth type receive the stored secret.
+  - The inherit step is skipped for the five secret-carrying auth types on a different origin, but it still runs for oauth2 and the other types even when the url differs, because those carry no static secret in auth_value.
+  - The oauth2_headers branch needs the x-litellm-api-key header and not just Authorization. When a caller sends only Authorization (the fallback for the LiteLLM key), forwarding it would hand the caller's own LiteLLM key to the previewed server.
+  - The protocol_version stamp checks for the key in mcp_info, not for a non-null value, and it runs even when no credentials were inherited. A saved server whose protocol_version is "auto" still stamps "auto".
+  - Url::port() drops default ports on its own. Do not use port_or_known_default, or https://a.example and https://a.example:443 would count as different origins and https://a.example:443 against http://a.example:443 would not be told apart by port alone.
+  - The timeout message prints the deadline as a Python float. Rust Display for 30.0_f64 gives "30", so use the Debug format to keep "30.0".
+  - list_tools_within turns only the deadline into None. An error from list_tools must propagate to the runner, which turns it into the classified connection message. Catching it here would hide the real cause behind the timeout text.
+  - The OpenAPI branch runs after staging and before any client exists, so a spec_path request never opens a connection and never needs the credentials staging computed. Do not call the runner for it.
+  - The unique-name loop restarts n at 1 for each operation and cuts the sanitized id each time. Carrying n over from the previous operation, or cutting the previous candidate, gives different names from LiteLLM on a third duplicate.
+  - Tools are serialized with their wire field names (model_dump by_alias). A tool serialized with Rust field names would drop inputSchema from the dashboard.
+  - Every outcome of both routes except the 403 and the 422 is HTTP 200, errors included. The error value is data in the body (status "error" for the runner, error true for the openapi and listing paths), not an HTTP error.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

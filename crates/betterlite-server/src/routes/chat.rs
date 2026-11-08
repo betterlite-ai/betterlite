@@ -87,10 +87,11 @@ struct ChatRouteState {
     errors: Arc<ErrorLayer>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct CallContext<'id> {
     pub(super) id: &'id str,
     pub(super) include_in_body: bool,
+    pub(super) started: Instant,
     errors: &'id ErrorLayer,
 }
 
@@ -109,6 +110,7 @@ async fn chat_completion(
     let mut call = CallContext {
         id: &call_id,
         include_in_body: state.include_call_id,
+        started,
         errors: &state.errors,
     };
     let request = match ChatRequest::parse(&body) {
@@ -118,14 +120,14 @@ async fn chat_completion(
                 // LiteLLM's _read_request_body treats an empty body as {} instead of raising.
                 call.include_in_body &= body.is_empty() || !(json.is_syntax() || json.is_eof());
             }
-            return failure(&ChatError::from(source), call, None);
+            return failure(&ChatError::from(source), &call, None);
         }
     };
     let deployment = match picked_deployment(&state, &request, path_model) {
         Ok(deployment) => deployment,
-        Err(error) => return failure(&error, call, None),
+        Err(error) => return failure(&error, &call, None),
     };
-    execute_chat(&state, &request, deployment, call, started).await
+    execute_chat(&state, &request, deployment, &call).await
 }
 
 fn picked_deployment<'executor>(
@@ -143,11 +145,10 @@ async fn execute_chat(
     state: &ChatRouteState,
     request: &ChatRequest,
     deployment: &ChatDeployment,
-    call: CallContext<'_>,
-    started: Instant,
+    call: &CallContext<'_>,
 ) -> Response {
     if request.stream {
-        return stream_chat(&state.executor, deployment, request, call, started).await;
+        return stream_chat(&state.executor, deployment, request, call).await;
     }
     match state.executor.send(deployment, request).await {
         Ok(outcome) => {
@@ -156,7 +157,7 @@ async fn execute_chat(
                 deployment,
                 call.id,
                 outcome.upstream_time,
-                started.elapsed(),
+                call.started.elapsed(),
             );
             (headers, Json(outcome.response)).into_response()
         }
@@ -166,7 +167,7 @@ async fn execute_chat(
 
 fn failure(
     error: &ChatError,
-    call: CallContext<'_>,
+    call: &CallContext<'_>,
     deployment: Option<&ChatDeployment>,
 ) -> Response {
     let failure = error.failure();

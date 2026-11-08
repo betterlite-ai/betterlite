@@ -1,0 +1,153 @@
+id: B3276
+title: Search HTTP execution
+description: >-
+  Build crates/betterlite-core::api::search_http, the one place that turns a prepared search call into an
+  outbound HTTP request and a SearchResponse. It replaces BaseLLMHTTPHandler.search and async_search in
+  llm_http_handler.py (L1800-L2010). B3272 calls it with the provider config, the query and the options; this task
+  never builds options, picks a provider or looks up credentials. The provider contract is the SearchProvider trait
+  in crates/betterlite-openai/src/search/provider.rs (B3270): validate_environment, transform_search_request,
+  complete_url, sign_request, http_method, transform_search_response and http_error. B3276 widens transform_search_request and complete_url to LiteLLM's async-path arguments (below) and updates the merged impl and callers; everything else in the trait is called as is.
+
+  Expose one async function, execute_search, generic over SearchProvider. Its input is a SearchHttpCall record:
+  query (SearchQuery), optional_params (Object), timeout (Duration), api_key (Option<SecretString>), api_base
+  (Option<String>), headers (Headers, empty when the caller has none), an optional supplied ProxiedClient and the
+  deployment's TlsPolicy and ProxyPolicy. It also takes the shared ClientPool, the logging handle B012 provides
+  and the network_mock flag. The output is Result<SearchResponse, SearchHttpError>. SearchHttpError wraps
+  ProviderError (an HTTP status failure or a transport failure after conversion) and a missing-config case is
+  not needed because the trait object is always present (the Python ValueError "No provider config found for
+  provider" cannot happen here).
+
+  Order of work, same as LiteLLM's async_search: (1) headers = provider.validate_environment(headers, api_key,
+  api_base). (2) body = provider.transform_search_request(query, optional_params, api_key, api_base, headers), the widened signature, with the validated headers from step 1. (3) complete_url =
+  provider.complete_url(api_base, optional_params, Some(body), api_key), also widened. (4) sign_request with the validated headers
+  and an OutboundSearch built from complete_url, the key, optional_params and the body; it returns the signed
+  headers and an optional signed body. LiteLLM runs this call off the event loop only for AWS signers
+  (sign_request_off_loop_if_aws, owned by B595); no search provider at the pin signs with AWS, so call it inline.
+  (5) Emit the pre_call logging record with input = the query (a list is logged as its text form, like
+  str(list) would be, use the JSON array text), api_key, and additional_args holding complete_input_dict (the
+  body), api_base (complete_url) and headers. The logged headers are the validated ones from step 1, not the signed
+  ones from step 4. (6) Choose the client with ClientPool::select, with the supplied client only if it was given,
+  falling back to the pool, as B173 defines. (7) Send by provider.http_method().
+
+  GET: send the request to complete_url with the signed headers and no body, and no per-request timeout (the
+  client's own timeout applies, matching LiteLLM). Anything but 2xx is an HTTP status failure. Other method (POST):
+  send the signed body bytes verbatim when sign_request returned one, otherwise the JSON of the body, with the
+  call's timeout as the request deadline. A signed body must never be re-serialized, since that breaks the
+  signature. Use betterlite-http OutboundRequest with RequestBody::Bytes or RequestBody::Json and send_buffered.
+
+  Errors: a non-2xx answer becomes provider.http_error(ProviderResponse{status_code, headers, text}), which is
+  LiteLLM's get_http_error_class(HTTPStatusError). Any other failure while sending (connect, deadline, body too
+  large, pool closed) goes through the shared transport error conversion B2402 owns
+  (api::vector_store_http_write, the Rust form of _handle_error), called with this provider's error_class
+  so the status, text and headers are kept and a status that did not come from the server is marked
+  synthesized. Do not copy that conversion here. Response parsing is outside the catch: after a 2xx answer, call
+  provider.transform_search_response(ProviderResponse{...}) and return its error as is, never remapped as a
+  transport error. Never retry.
+
+  Python's sync search() differs from async_search in three ways that do not matter in Rust and are listed under
+  deviations: the sync path hands transform_search_request no api_key, api_base or headers; it compares the method
+  without upper-casing; and it uses _get_httpx_client() instead of the Search pool. Betterlite has one path that
+  follows async_search, because the proxy always reaches the async one (litellm.asearch runs search() with
+  asearch=True).
+
+  Estimate: 170 implementation, 330 behavior tests, 60 wiring, about 560 changed lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/search_http.rs
+    - crates/betterlite-core/src/api/search_http/**
+    - crates/betterlite-openai/src/search/provider.rs
+    - crates/betterlite-openai/src/search/provider/tests.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1800-L1907
+    why: Sync search; the dispatch to async_search, the call order, the GET and POST branches, the signed body rule and the error mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1909-L2010
+    why: Async search; the form betterlite follows. It passes api_key, api_base and headers into transform_search_request and upper-cases the method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6052-L6111
+    why: _handle_error, the transport error converter B2402 builds. This task only calls it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L270-L300
+    why: The only caller. It passes api_base=complete_url (already resolved) and headers already validated, so the handler validates and resolves a second time.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1770-L1779
+    why: sign_request_off_loop_if_aws, the only reason the async path signs on an executor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/apiserpent/search/transformation.py#L40-L44
+    why: One of two providers (with tinyfish) whose get_http_method returns "GET", so the GET branch is live.
+dod:
+  - text: >-
+      widened_trait changes SearchProvider so transform_search_request takes (query, optional_params, api_key, api_base,
+      headers) and complete_url takes (api_base, optional_params, body, api_key), as LiteLLM async_search passes them. The
+      only merged impl (EchoSearch in provider/tests.rs) and its calls compile with the new arguments, and a test
+      impl sees the key, base and validated headers in transform_search_request.
+    proof: [search-trait-tests]
+  - text: >-
+      post_body_sent builds a test provider whose request body is {"q":"rust"}, with POST and URL
+      http://127.0.0.1:<port>/search. Expect one POST /search, content-type application/json, JSON body
+      {"q":"rust"}, and the provider's transform_search_response result returned unchanged.
+    proof: [search-http-tests]
+  - text: >-
+      get_without_body uses a provider whose http_method is Get and complete_url is
+      http://127.0.0.1:<port>/search?q=rust. Expect one GET /search?q=rust with no body and the signed headers.
+      A POST-only header such as a signed body never appears.
+    proof: [search-http-tests]
+  - text: >-
+      signed_body_verbatim uses a provider whose sign_request returns headers with x-signature=abc and the body
+      bytes `{ "q" : "rust" }` (odd spacing). Expect the mock to receive exactly those bytes, not the compact JSON
+      of the body, with x-signature=abc.
+    proof: [search-http-tests]
+  - text: >-
+      step_order records the calls of a test provider: validate_environment, transform_search_request, complete_url,
+      sign_request. It must show them in that order, each once, and sign_request must see complete_url's value as
+      its api_base. The pre_call record logs the pre-signing headers and the unsigned body.
+    proof: [search-http-tests]
+  - text: >-
+      status_failure answers 429 with text "slow down" and Retry-After=3. Expect the provider's http_error to be
+      called once with status 429, that text and that header map, and its ProviderError returned. A 200 answer with
+      a body the provider's transform_search_response rejects returns that error unchanged and is not passed to
+      the transport conversion. Neither case sends a second request.
+    proof: [search-http-tests]
+  - text: >-
+      transport_failure points at a closed port and at a mock that holds the answer past a 50 ms deadline.
+      Both return the error produced by B2402's transport converter (a connect failure and a deadline failure),
+      not http_error, and the closed-pool case (ClientPool shut down) is also a transport failure.
+    proof: [search-http-tests]
+  - text: >-
+      client_selection checks that a supplied client is used when given, that the pool client is used when not,
+      and that network_mock=true takes the mock transport before the pool. POST sends the call timeout as its
+      deadline; GET sends none, so the client's own default applies.
+    proof: [search-http-tests]
+checks:
+  optional: []
+  commands:
+    - id: search-trait-tests
+      why: the widened SearchProvider signatures, the updated test impl or its calls are missing or do not compile
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^search::search_hooks::/)'
+    - id: search-http-tests
+      why: the search HTTP execution tests fail, do not exist or skip a behavior
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::search_http::tests::(post_body_sent|get_without_body|signed_body_verbatim|step_order|status_failure|transport_failure|client_selection)($|::)/)'
+oracle_cases: []
+deviations:
+  - what: One execution path follows LiteLLM's async_search, so a provider's transform_search_request always gets the same inputs as in the proxy.
+    why: The sync search() passes fewer arguments to transform_search_request, compares the method without upper-casing and uses a different default client, but only the async path is reachable from the proxy and the public asearch.
+  - what: sign_request runs inline, with no executor.
+    why: LiteLLM offloads only AWS signers (B595 owns that helper); no search provider at the pin is one.
+  - what: There is no "No provider config found" error.
+    why: The provider is a typed trait value the caller must supply, so the case cannot occur.
+out_of_scope:
+  - B3272 owns litellm/search/main.py, including option building, the query check, complete_url resolution before this call, update_from_kwargs logging and exception_type wrapping.
+  - B3270 owns the SearchProvider trait, SearchResponse and the credential trust check. B3276 only widens transform_search_request and complete_url.
+  - B173 owns ClientPool, ProxiedClient and OutboundRequest. B2402 owns _handle_error and the vector-store handlers in the same Python file.
+  - B595 owns sign_request_off_loop_if_aws and AWS signing.
+  - Every other function in llm_http_handler.py keeps its own API owner; this task claims only search and async_search.
+  - Provider search configs (Tavily, Exa, Perplexity and the rest) build their own request and response shapes.
+  - No HTTP oracle cases here. No route reaches this code yet, and an HTTP handler cannot be a pure helper case; the umbrella that wires /v1/search (B091) adds them.
+pitfalls:
+  - search/main.py already passes api_base=complete_url and validated headers, so validate_environment and complete_url run a second time in the handler on the resolved URL; the Rust caller must pass the same already-resolved values and must not resolve the URL itself first.
+  - The logged headers are the ones validate_environment returned, not sign_request's signed headers, so a signature never reaches logs.
+  - A signed body is sent as raw bytes with the signed headers; when sign_request returns no body, send the JSON of the transformed body, never both.
+  - GET has no per-request timeout in LiteLLM ("timeout is set on the client itself"); only the POST branch sends timeout.
+  - GET calls raise_for_status explicitly, but the POST helper raises on non-2xx itself, so both reach get_http_error_class, so every non-2xx answer is an HTTP status failure.
+  - transform_search_response errors, and a malformed 2xx body, are not wrapped by the transport catch, so they must not reach B2402's converter.
+  - The pre_call input for a list query is the list's text form, not the first item.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

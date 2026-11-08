@@ -2,8 +2,8 @@ id: B4026
 milestone: M7 observability
 title: Deployment and provider region outage alerts
 status: todo
-depends_on: [B4020, B4024, B174, B844]
-file: null
+depends_on: [B4020, B4024, B174, B5365]
+file: tasks/B4026-outage-alerts.yaml
 covers:
   - "litellm/integrations/SlackAlerting/slack_alerting.py"
 parent: B116

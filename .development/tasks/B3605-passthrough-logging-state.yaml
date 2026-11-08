@@ -53,6 +53,8 @@ description: >-
   `result` string on (LiteLLM only does that for a dict result, which the declared str type rules out). `log_dispatch()` returns the
   injected dispatcher when set, else the default.
 
+  The response object enum, PassThroughResponse, has a variant for each result a provider handler can return. Three are for the Vertex and Gemini handlers: VideoOperation carries LiteLLM's VideoObject (Gemini and Vertex predictLongRunning), VertexBatchRecord carries the ModelResponse that batch_prediction_jobs_handler returns (with batch_job_state in provider_specific_fields), and VertexSearchWrapper carries StandardPassThroughResponseObject, the {"response": ...} dict that wraps the Vertex search response.
+
   Response text. `safe_response_text(body: &UpstreamBodyText) -> String` where `UpstreamBodyText` is `Read(String)` or `NotRead`.
   Streamed responses are never read into memory, so NotRead gives an empty string and Read gives the text. The caller decodes bytes.
 
@@ -208,7 +210,7 @@ pitfalls:
   - "is_cursor_route is true for custom_llm_provider 'cursor' or any hostname containing 'api.cursor.com'. The tracked /v0/ routes only match when the provider is already 'cursor', so a bare /v0/agents URL with another provider is false."
   - "is_langfuse_route checks the parsed path only, while is_vertex_ai_live_route checks the whole route string and returns false for an empty string."
   - "is_openrouter_decisions_route needs both custom_llm_provider 'openrouter' and a path ending in '/alpha/decisions'; the query string is not part of the path."
-  - "The response object enum needs a video variant (Gemini predictLongRunning in B3640)."
+  - "The response object enum has the variants VideoOperation (VideoObject), VertexBatchRecord (ModelResponse) and VertexSearchWrapper (StandardPassThroughResponseObject) for B3640 and B3642; the other variants belong to the tasks that return them."
 review_level: security
 budget:
   max_changed_lines: 1500

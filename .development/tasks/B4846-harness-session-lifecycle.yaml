@@ -1,0 +1,190 @@
+id: B4846
+title: Own harness session startup, interruption and resumable state
+description: >-
+  Port LiteLLM's `AsyncSession` lifecycle (litellm/harness/runtime.py L584-L776) and the harness registry (litellm/harness/handlers/__init__.py,
+  litellm/utils.py `ProviderConfigManager.get_provider_harness_config`) into a new module `session_runtime` of the crate betterlite-harness. A session is
+  the long-lived object that owns one handler, one sandbox, one optional model endpoint and the runtime's own conversation id. This task builds how it
+  starts, stops, restarts after an interrupt, is detached into a `State` and resumed from one. Running a turn on it is B4847's job and the public entry
+  points are B4848's. Read these on main first and use their exact Rust names: crates/betterlite-harness/src/session.rs and session/validation.rs
+  (B4844: `SessionConfig`, `build_config`, `context_for`, `validate`), handlers.rs (the `BaseHarnessHandler` trait), transformation.rs
+  (`BaseHarnessConfig`, with `USES_MODEL_ENDPOINT` and `validate_environment`), context.rs (`SessionContext`, `SessionSettings`, `TurnOutcome`),
+  state.rs (`State`), events.rs (`RunResult`), endpoint.rs (B4841: `ModelEndpoint`, `UsageTracker`) and serve.rs (B4843: `EndpointServer`).
+
+
+  The session is generic: `AsyncSession<S, H, E>` where `S: Sandbox + Clone`, `H: BaseHarnessHandler` and `E: SessionEndpoints`. The handler and the
+  endpoint starter come in through the constructor, because the handler traits have associated types and cannot be picked at run time, and because the
+  Deep Agents handler lives in betterlite-deepagents-harness, which depends on this crate. Fields are `pub(crate)` where B4847 needs them: `config`
+  (`SessionConfig<S>`), `ctx` (`SessionContext<S>`), `handler`, `results` (`Vec<RunResult>`), plus private `endpoint`, `resume_from`, `native_id`,
+  `started`, `closed`, `busy` (an `Arc<AtomicBool>`) and `restart_needed`. `handler` and `ctx` are `pub(crate)` so B4847 can borrow them next to its own locals.
+
+
+  Construction (`__init__` L587-L609). `AsyncSession::new(config, handler, endpoints, resume_from: Option<String>, interactive: bool)` runs, in this
+  order and before any I/O: `validate` for the harness (B4844), the resume check, `context_for` with a fresh `Uuid::new_v4()`, and the config's
+  `validate_environment`. A `resume_from` on a harness without `Capability::Resume` fails with `HarnessError::CapabilityUnsupported { capability:
+  Resume }`. `native_id` starts as `resume_from`. The other flags start false.
+
+
+  Registry (`session_runtime/registry.rs`). Python's `get_harness_config` returns a config object and `get_harness_handler` picks the handler class.
+  Rust cannot return one value for four config types, so the registry is a set of functions that match on `Harness` and call the generic code with the
+  right config type: `harness_capabilities(Harness) -> Capabilities` (the `agent_capabilities` body, L976-L978, which B4848 calls), `uses_model_endpoint(Harness)
+  -> bool` (the `USES_MODEL_ENDPOINT` const of the four configs: true for Claude Code, Codex and OpenCode, false for Deep Agents),
+  `validate_for(Harness, &SessionConfig<S>, interactive)` and `validate_environment_for(Harness, &SessionContext<S>)`. The configs are
+  `ClaudeCodeHarnessConfig` (providers/claude_code.rs), `CodexHarnessConfig` (providers/codex), `OpenCodeHarnessConfig` (providers/opencode) and
+  B4837's Deep Agents config in deepagents/transformation.rs. `handler_kind(Harness) -> HandlerKind` returns `Cli` for the first three and `InProcess`
+  for Deep Agents, the `isinstance(config, BaseCLIHarnessConfig)` test at L18. `Harness` is a closed enum, so LiteLLM's "No harness config registered" and "No handler" errors
+  cannot happen in Rust and are not built.
+
+
+  Endpoint seam (`session_runtime/endpoint.rs`). `ModelEndpoint` lets a CLI runtime in the sandbox call the model through a loopback server. The session
+  only needs three things from it, so the trait `SessionEndpoints` has `open(EndpointRequest) -> Future<Result<Self::Running, SessionRuntimeError>>`
+  and the trait `RunningEndpoint` has `usage_counters() -> UsageCounters` and `stop() -> Future<Result<(), SessionRuntimeError>>`. `EndpointRequest` carries
+  what L622-L630 passes: harness, model, gateway, api_key, api_base and metadata, cloned from the session settings. `UsageCounters` is `{ usage: Usage,
+  cost: Decimal }`. The production implementation `ServedEndpoints` builds B4841's `ModelEndpoint` and starts B4843's `EndpointServer` with the
+  gateway sender and the SDK caller it was constructed with; its running value reads the endpoint's `UsageTracker` and stops the server. Tests use a
+  fake `SessionEndpoints` that counts opens and stops.
+
+  LiteLLM's handlers read `ctx.endpoint` (claude_code transformation.py L297-L312, opencode transformation.py L317-L332), so this task adds `pub endpoint: Option<EndpointAccess>` to B4830's `SessionContext` in context.rs. `EndpointAccess` is `{ url: String, port: u16, token: SecretString, model: Option<String> }` (Clone, Debug; the token is redacted by SecretString), and `RunningEndpoint` gets `access() -> EndpointAccess`. The session sets `ctx.endpoint` right after `open` (L632) and clears it in the close path (L673). `context_for` and every `SessionContext` literal in the harness crate and the oracle helper b5081 get `endpoint: None`.
+
+
+  Start (`_open_endpoint` L620-L632, `_launch` L634-L637, `start` L639-L651). `start(&mut self)` fails with `HarnessError::SessionClosed` when closed and
+  returns at once when already started. Otherwise it opens the endpoint, but only when `uses_model_endpoint(harness)` is true and no endpoint is held. It
+  then runs `launch`: `handler.start(&mut ctx)`, followed by `handler.resume(&mut ctx, native_id)` when `native_id` is set and either `resume_from` is
+  set or `restart_needed` is true. When `launch` fails, the endpoint is closed, the error is returned unchanged, and `started` stays false. On success
+  `started` becomes true.
+
+
+  Interrupt and restart (`interrupt` L653-L660, `_ensure_ready` L662-L669). `interrupt` copies `handler.native_session_id()` into `native_id` when the
+  handler has one, calls `handler.stop`, logs a stop failure with `tracing::warn!` and goes on, then sets `restart_needed`. It does not check
+  `started` or `closed`. `ensure_ready` fails with `SessionClosed` when closed, calls `start` when not started, and otherwise calls `launch` again when `restart_needed` is true.
+  It clears `restart_needed` only after all that succeeded, so a failed relaunch is retried by the next turn. B4847 calls `begin_turn`, `ensure_ready` and `end_turn` around every turn, with these exact signatures: `pub(crate) async fn interrupt(&mut self)`, `pub(crate) async fn ensure_ready(&mut self) -> Result<(), SessionRuntimeError>`, `pub(crate) fn begin_turn(&self) -> Result<TurnPermit, SessionRuntimeError>` and `pub(crate) fn end_turn(&self, permit: TurnPermit)`. `begin_turn` swaps `busy` from false to true and fails with a plain `SessionRuntimeError::TurnRunning` ("a turn is already running on this session") when a turn is running. `TurnPermit` (in session_runtime.rs, `pub(crate)`) owns a clone of the `Arc<AtomicBool>` and stores false in its `Drop`, so a turn stream dropped before Done never wedges the session. `end_turn` drops the permit and is the normal-path call. The permit borrows nothing from the session, so the turn stream can hold it while it borrows `ctx` and `handler` mutably.
+
+
+  Close (`_close_endpoint` L671-L679, `aclose` L681-L693). `close` is safe to call twice. The first call sets `closed`, and when `started` it takes
+  `native_id` from the handler as in `interrupt`, calls `handler.stop` and logs a failure with `tracing::warn!`. Then it takes the endpoint out of the
+  session and stops it, logging a stop failure the same way. A session that was never started closes without calling the handler.
+
+
+  State (`state` L695-L705, `adetach` L707-L710, `astop` L712-L715, `session_id` L771, `closed` L775). `state()` returns a `State` with the harness,
+  the sandbox workdir, `settings.model` and `STATE_VERSION`. Its `native_session_id` is the handler's own id when the session is started and not closed,
+  falling back to `native_id`; in any other case it is `native_id`. `detach` and `stop` both close the session and then return `state()`; the two
+  names exist in LiteLLM as aliases and one Rust method each (`detach`, `stop`) is enough.
+
+
+  Usage and results (`usage_counters` L720-L727, `record` L729, `cost` L759-L761, `usage` L763-L769). `usage_counters()` reads the running endpoint when one is
+  held and the `ctx.outcome` usage and cost otherwise (in-process harnesses). `record(RunResult)` appends to `results`. `cost()` sums the results' costs
+  and `usage()` sums input tokens, output tokens and calls with `checked_add`, mapping an overflow to `HarnessError::TokenOverflow`.
+  `history()` (L750-L757) fails with `CapabilityUnsupported { capability: History }` when the harness lacks the capability, then runs `ensure_ready` and returns
+  `handler.history(&ctx)`.
+
+
+  Errors. `session_runtime/error.rs` owns `SessionRuntimeError`: `Harness(#[from] HarnessError)`, `Validation(#[from] ValidationError)` (B4844),
+  `TurnRunning` and `Endpoint { source: io::Error }`. It has no catch-all variant.
+scope:
+  paths:
+  - crates/betterlite-harness/src/session_runtime.rs
+  - crates/betterlite-harness/src/session_runtime/**
+  - crates/betterlite-harness/src/context.rs
+  - crates/betterlite-harness/src/session.rs
+  - crates/betterlite-harness/src/handlers/tests.rs
+  - crates/betterlite-harness/src/cli_handler/tests.rs
+  - crates/betterlite-harness/src/providers/claude_code/tests.rs
+  - crates/betterlite-harness/src/providers/opencode/transformation/tests.rs
+  - crates/betterlite-harness/src/providers/codex/transformation/tests.rs
+  - tools/oracle/src/helpers/harness/b5081.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L584-L609
+    why: AsyncSession fields and constructor; the order of validate, resume check, context and validate_environment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L611-L651
+    why: Await and context-manager entry points, endpoint opening, launch with resume, and start with cleanup on failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L653-L693
+    why: interrupt, ensure_ready, endpoint close and aclose with their swallowed stop failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L695-L731
+    why: state, detach, stop, usage_counters and record.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L750-L776
+    why: history, cost, usage, session_id and closed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L976-L978
+    why: agent_capabilities, which reads the registry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/__init__.py#L13-L31
+    why: get_harness_config and get_harness_handler, the CLI versus Deep Agents choice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9936-L9965
+    why: get_provider_harness_config, the harness to config table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L366-L428
+    why: ModelEndpoint construction, url and start/stop, the contract the endpoint seam stands for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/base.py#L15-L43
+    why: The handler calls the session makes (start, stop, native_session_id, resume, history).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/harness/transformation.py#L79-L98
+    why: uses_model_endpoint and capabilities on the base config.
+dod:
+  - text: Constructing a session validates, rejects resume on a harness without the resume capability, builds the context with a fresh session id and runs validate_environment, all before any handler or endpoint call.
+    proof: [lifecycle-tests]
+  - text: start opens the endpoint only for a harness that uses one, runs handler.start, and calls handler.resume only when a native id exists and the session was built with resume_from or restarted after an interrupt.
+    proof: [lifecycle-tests]
+  - text: A failed start closes the endpoint, returns the handler's error and leaves the session unstarted; start on a closed session fails with SessionClosed and start on a started session does nothing.
+    proof: [lifecycle-tests]
+  - text: interrupt keeps the handler's native id, tolerates a failing handler.stop and makes the next ensure_ready relaunch the handler with resume; a failed relaunch keeps restart_needed set.
+    proof: [interrupt-tests]
+  - text: close stops the handler only when started, stops the endpoint, survives failures of both, and is safe to call twice.
+    proof: [interrupt-tests]
+  - text: state, detach and stop return the harness, workdir, model, STATE_VERSION and the live native id while running, or the saved id once closed.
+    proof: [state-tests]
+  - text: usage_counters reads the endpoint when one is held and the context outcome otherwise; record, cost and usage add up the recorded results and report TokenOverflow on overflow.
+    proof: [state-tests]
+  - text: history fails without the capability and otherwise readies the session and returns the handler's history; begin_turn fails with TurnRunning while a turn is marked running. A permit dropped without end_turn leaves the session not busy.
+    proof: [state-tests]
+  - text: The registry gives the right capabilities, endpoint use and handler kind for each of the four harnesses, and validates through the matching config.
+    proof: [registry-tests]
+  - text: The production endpoint starter serves on loopback, reports zero usage at first and refuses connections after stop.
+    proof: [endpoint-tests]
+  - text: After start, ctx.endpoint holds the running endpoint's url, port, token and model for a harness that uses one and stays None otherwise, and close clears it.
+    proof: [endpoint-tests]
+checks:
+  optional: []
+  commands:
+    - id: lifecycle-tests
+      why: construction, start and failed-start tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^session_runtime::(.*::)?lifecycle::/)'
+    - id: interrupt-tests
+      why: interrupt, relaunch and close tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^session_runtime::(.*::)?interrupt::/)'
+    - id: state-tests
+      why: state, detach, usage, history and busy-flag tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^session_runtime::(.*::)?state::/)'
+    - id: registry-tests
+      why: registry tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^session_runtime::(.*::)?registry::/)'
+    - id: endpoint-tests
+      why: production endpoint starter tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^session_runtime::(.*::)?endpoint::/)'
+oracle_cases: []
+deviations:
+  - what: The handler and endpoint starter are passed to the session constructor, and the harness registry is a set of match functions, not a lookup that returns a config object.
+    why: Config and handler traits have associated types, and the Deep Agents handler lives in a crate that depends on this one. The behavior a user sees is the same.
+  - what: Asking for a harness with no registered config or handler (L14-L16, L31) cannot happen.
+    why: Harness is a closed enum, so every member is registered.
+  - what: Using a closed or detached session fails with betterlite's SessionClosed message, not "session is closed".
+    why: The error enum already exists on main from B4830 with its own text.
+  - what: There is no `__await__`, `__aenter__` or `__aexit__`; callers call start and close.
+    why: Rust has no async context manager. B4848 wraps the calls where the public entry points need them.
+out_of_scope:
+  - "SessionConfig, build_config, validate, context_for, parse_output and resolve_model_route (runtime.py L72-L255) belong to B4844 and are called here."
+  - "TurnControl, pump_events, call_approval_handler, _Turn, _End and `turn_events` (L259-L541, L732-L741) belong to B4847, which depends on this task and uses ensure_ready, begin_turn, end_turn and record."
+  - "AsyncEventStream, _one_shot, astream, arun, _collect, aagent_session, arun_agent, astream_agent, _coerce_state, aagent_resume, agent_capabilities and aagent (L544-L582, L743-L748, L779-L1028) belong to B4848. agent_capabilities is one call to this task's harness_capabilities."
+  - "ModelEndpoint itself and its accounting are B4841 and its server is B4843; this task only starts and stops them."
+  - "The CLI handler (B4839) and the Deep Agents handler (B4840) are built already or by those tasks; the session takes whichever handler it is given."
+  - "ProviderConfigManager methods other than get_provider_harness_config in litellm/utils.py belong to B2202 and its siblings; the harness one is the registry here."
+pitfalls:
+  - launch calls handler.resume only when native_id is set and (resume_from is set or restart_needed is true); a fresh first start with no resume_from must not call it even if the handler already has an id.
+  - start closes the endpoint when launch fails but never marks the session closed, so the same session can call start again.
+  - interrupt takes the handler's native id with `handler.native_session_id() or self._native_id`, so a handler that returns None keeps the saved id.
+  - ensure_ready clears restart_needed after the relaunch, not before; clearing it first would lose the resume after a failed relaunch.
+  - aclose sets closed before it stops anything, so a second call during a slow stop returns at once; both stop failures are logged and swallowed.
+  - state() asks the handler for the native id only while started and not closed, because a closed session has stopped its handler and the saved id is the truth.
+  - The endpoint is built only when `uses_model_endpoint` is true; the Deep Agents config sets it false, and its usage then comes from `ctx.outcome`.
+  - Summing token counts must use checked_add; B4830's Usage::total_tokens shows the overflow error to reuse.
+  - "SessionContext.endpoint must be None before start and after close, because the handlers treat None as no model endpoint and return their missing-endpoint error."
+  - "TurnPermit clears busy in Drop, so end_turn is only a normal-path drop; never store busy as a plain bool, because the permit needs its own Arc clone."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

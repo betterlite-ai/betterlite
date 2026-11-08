@@ -38,13 +38,16 @@ description: >-
   - UnappliableRequestRewrite exception with guardrail_name field, reporting that a guardrail
     rewrote the request in a way the endpoint cannot apply.
 
-  Build Rust modules in crates/betterlite-server/src/guardrail_message_scope.rs:
+  Build Rust module crates/betterlite-guardrails/src/content_text.rs, not in the server crate, because the guardrails crate
+  (B3773, B3763, B3765) calls these three and the server crate sits above it:
   - content_to_text function collapsing message content (str or list-of-parts) to plain text,
     joining text parts with blank-line separators and skipping non-text parts.
   - is_all_text_parts predicate: true when content is a non-empty part list holding only
     text parts.
   - merge_rewritten_text_parts function: flatten an all-text part list into one part carrying
     new_text, preserving the first part's fields and the last declared cache_control breakpoint.
+
+  Build Rust modules in crates/betterlite-server/src/guardrail_message_scope.rs:
   - assistant_text_from_response function extracting the assistant's natural-language text
     from model response across chat, Anthropic and Responses shapes.
   - is_fastapi_http_exception predicate: true when exception is HTTPException with a
@@ -71,6 +74,8 @@ scope:
   paths:
     - crates/betterlite-guardrails/src/guardrail_message_scope.rs
     - crates/betterlite-guardrails/src/guardrail_message_scope/**
+    - crates/betterlite-guardrails/src/content_text.rs
+    - crates/betterlite-guardrails/src/content_text/**
     - crates/betterlite-server/src/guardrail_message_scope.rs
     - crates/betterlite-server/src/guardrail_message_scope/**
     - tools/oracle/cases/helpers/guardrail-message-scope/**
@@ -120,7 +125,9 @@ dod:
     proof: [exception-tests, oracle]
   - text: Guardrail selection checks request metadata and team metadata, with per-guardrail flags (guardrail_name -> false) and team modification locks.
     proof: [selection-tests, oracle]
-  - text: Content-to-text flattening joins text parts with blank-line separators while skipping non-text parts; is_all_text_parts gates true only for non-empty part lists; merge_rewritten_text_parts preserves first-part fields and the last cache_control breakpoint; assistant_text_from_response extracts text from chat/Anthropic/Responses response shapes.
+  - text: In betterlite-guardrails content_text, content_to_text joins text parts with blank-line separators while skipping non-text parts; is_all_text_parts gates true only for non-empty part lists; merge_rewritten_text_parts preserves first-part fields and the last cache_control breakpoint.
+    proof: [content-parts-tests, oracle]
+  - text: assistant_text_from_response extracts text from chat/Anthropic/Responses response shapes.
     proof: [content-text-tests, oracle]
   - text: UnappliableRequestRewrite exception reports guardrail_name and message naming the guardrail and stating the request was rejected rather than sent unrewritten.
     proof: [rewrite-exception-tests]
@@ -160,9 +167,12 @@ checks:
     - id: selection-tests
       why: Guardrail selection ignores metadata, does not respect false flags or team locks.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_message_scope::selection::/)'
+    - id: content-parts-tests
+      why: Content-to-text join logic fails, part type checking is wrong or cache_control merge drops breakpoints.
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_text::/)'
     - id: content-text-tests
-      why: Content-to-text join logic fails, part type checking is wrong, cache_control merge drops breakpoints, or response extraction misses shapes.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_message_scope::content_text::/)'
+      why: Response text extraction misses a chat, Anthropic or Responses shape.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_message_scope::assistant_text::/)'
     - id: rewrite-exception-tests
       why: UnappliableRequestRewrite exception fails to construct with guardrail_name or carries wrong message format.
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_message_scope::unappliable_rewrite::/)'
