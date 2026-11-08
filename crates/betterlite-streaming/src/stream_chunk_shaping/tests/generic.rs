@@ -14,9 +14,9 @@ fn generic_conversion_builds_the_chunk() {
     let generic: GenericChunk = parse(
         r#"{"text": "hi", "is_finished": true, "finish_reason": "length", "index": 2, "tool_use": {"id": "t"}, "usage": {"prompt_tokens": 1}}"#,
     );
-    let response = convert_generic_chunk(&generic, &FixedIdentity);
-    assert_eq!(response.id, "00000000-0000-4000-8000-000000000000");
-    assert_eq!(response.created, 1_700_000_000);
+    let response = convert_generic_chunk(&generic);
+    assert_eq!(response.id.len(), 36);
+    assert!(response.created > 1_600_000_000);
     assert_eq!(response.model, "");
     assert_eq!(response.choices[0].index, 2);
     assert_eq!(response.choices[0].delta.content.as_deref(), Some("hi"));
@@ -36,7 +36,7 @@ fn generic_conversion_builds_the_chunk() {
 fn generic_conversion_without_a_finish_reason_writes_null() {
     let generic: GenericChunk =
         parse(r#"{"text": "hi", "is_finished": false, "finish_reason": ""}"#);
-    let response = convert_generic_chunk(&generic, &FixedIdentity);
+    let response = convert_generic_chunk(&generic);
     assert_eq!(response.choices[0].index, 0);
     assert_eq!(response.extra.get("finish_reason"), Some(&JsonValue::Null));
     assert_eq!(response.usage, None);

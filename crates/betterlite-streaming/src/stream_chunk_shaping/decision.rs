@@ -1,7 +1,7 @@
 use std::mem;
 
 use crate::stream_chunk_shaping::ChunkShaper;
-use crate::stream_chunk_shaping::error::StreamShapeError;
+use crate::stream_chunk_shaping::StreamShapeError;
 use crate::stream_chunk_shaping::extras::has_special_delta_content;
 use crate::stream_chunk_shaping::records::{
     ChunkResponseObject, JsonValue, StreamChunk, StreamDelta, item_count,
@@ -28,29 +28,32 @@ pub fn is_chunk_non_empty(
         return false;
     };
     let delta = &choice.delta;
-    completion_obj
-        .content
-        .as_deref()
-        .is_some_and(|text| !text.is_empty())
-        || completion_obj
+    let checks = [
+        completion_obj
+            .content
+            .as_deref()
+            .is_some_and(|text| !text.is_empty()),
+        completion_obj
             .tool_calls
             .as_ref()
-            .is_some_and(|calls| item_count(calls) > 0)
-        || completion_obj.function_call.is_some()
-        || delta
+            .is_some_and(|calls| item_count(calls) > 0),
+        completion_obj.function_call.is_some(),
+        delta
             .tool_calls
             .as_ref()
-            .is_some_and(|calls| item_count(calls) > 0)
-        || delta.function_call.is_some()
-        || delta.reasoning_content.is_some()
-        || delta.provider_specific_fields.is_some()
-        || response_obj.provider_specific_fields.is_some()
-        || delta.annotations.is_some()
-        || (!shaper.progress.sent_first_chunk && delta.role.is_some())
-        || delta
+            .is_some_and(|calls| item_count(calls) > 0),
+        delta.function_call.is_some(),
+        delta.reasoning_content.is_some(),
+        delta.provider_specific_fields.is_some(),
+        response_obj.provider_specific_fields.is_some(),
+        delta.annotations.is_some(),
+        !shaper.progress.sent_first_chunk && delta.role.is_some(),
+        delta
             .extra
             .get("reasoning_items")
-            .is_some_and(|items| !matches!(items, JsonValue::Null))
+            .is_some_and(|items| !matches!(items, JsonValue::Null)),
+    ];
+    checks.into_iter().any(|flag| flag)
 }
 
 pub fn strip_role_from_delta(shaper: &mut ChunkShaper, model_response: &mut StreamChunk) {

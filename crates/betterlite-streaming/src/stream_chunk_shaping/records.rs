@@ -2,8 +2,6 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::stream_chunk_shaping::usage::Usage;
-
 pub type JsonObject = BTreeMap<String, JsonValue>;
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize)]
@@ -155,15 +153,8 @@ pub struct GenericChunk {
 }
 
 // frozenset(GenericStreamingChunk.__annotations__): the keys a provider may put in a generic chunk.
-pub const GENERIC_CHUNK_FIELDS: [&str; 7] = [
-    "text",
-    "tool_use",
-    "is_finished",
-    "finish_reason",
-    "usage",
-    "index",
-    "provider_specific_fields",
-];
+pub const GENERIC_CHUNK_FIELDS: &str =
+    " text tool_use is_finished finish_reason usage index provider_specific_fields ";
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
@@ -175,4 +166,34 @@ pub struct StreamOptions {
 #[serde(default)]
 pub struct ParsedChunkHiddenParams {
     pub provider_specific_fields: Option<JsonObject>,
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct Usage {
+    pub prompt_tokens: i64,
+    pub completion_tokens: i64,
+    pub total_tokens: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost: Option<JsonValue>,
+    pub prompt_tokens_details: Option<TokenDetails>,
+    pub completion_tokens_details: Option<TokenDetails>,
+    #[serde(flatten)]
+    pub extra: JsonObject,
+}
+
+// Both token-detail wrappers hold only counters, so one type carries either field verbatim.
+#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct TokenDetails {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cached_tokens: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_write_tokens: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_creation_tokens: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_creation_token_details: Option<JsonValue>,
+    #[serde(flatten)]
+    pub extra: JsonObject,
 }

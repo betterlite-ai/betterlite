@@ -14,14 +14,13 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::layer::{Context, Layer};
 
 use crate::stream_chunk_shaping::creation::{
-    StreamIdentity, StreamInstant, copy_provider_specific_fields, model_response_creator,
+    StreamInstant, copy_provider_specific_fields, model_response_creator,
     parsed_provider_hidden_params, provider_hidden_params, provider_response_model, set_model_id,
     stamp_served_service_tier,
 };
 use crate::stream_chunk_shaping::decision::{
     combine_thinking_in_choices, is_chunk_non_empty, is_delta_empty, return_processed_chunk_logic,
 };
-use crate::stream_chunk_shaping::error::StreamShapeError;
 use crate::stream_chunk_shaping::extras::{
     SpecialDeltaAttribute, apply_special_delta_attributes, convert_generic_chunk,
     copy_delta_attribute, generic_chunk_has_known_fields, has_any_special_attributes,
@@ -29,44 +28,36 @@ use crate::stream_chunk_shaping::extras::{
 };
 use crate::stream_chunk_shaping::records::{
     ChunkResponseObject, GenericChunk, JsonObject, JsonValue, StreamChoice, StreamChunk,
-    StreamDelta, StreamOptions,
+    StreamDelta, StreamOptions, TokenDetails, Usage,
 };
 use crate::stream_chunk_shaping::tokens::{
     check_is_function_call, check_send_stream_usage, check_special_tokens, finish_reason_handler,
     mapped_finish_reason, raise_on_model_repetition,
 };
-use crate::stream_chunk_shaping::usage::{TokenDetails, Usage};
 use crate::stream_chunk_shaping::usage_totals::{
     backfill_cache_usage, cache_token_count, calculate_total_usage, coerce_token_details,
     propagate_usage_cost, record_usage_only_chunk, resolve_provider_reported_cost,
 };
-use crate::stream_chunk_shaping::{ChunkShaper, ChunkShaperConfig};
+use crate::stream_chunk_shaping::{ChunkShaper, StreamShapeError};
 
-struct FixedIdentity;
-
-impl StreamIdentity for FixedIdentity {
-    fn new_id(&self) -> String {
-        "00000000-0000-4000-8000-000000000000".to_owned()
-    }
-
-    fn instant(&self) -> StreamInstant {
-        StreamInstant {
-            seconds: 1_700_000_000,
-            timestamp: 1_700_000_000.5,
-        }
+fn fixed_instant() -> StreamInstant {
+    StreamInstant {
+        seconds: 1_700_000_000,
+        timestamp: 1_700_000_000.5,
     }
 }
 
 const BASE_HIDDEN: &str = r#"{"model_id": "m1", "api_base": "https://example.test", "additional_headers": {}, "response_cost": null}"#;
 
 fn shaper(model: &str, provider: Option<&str>) -> ChunkShaper {
-    ChunkShaper::from(ChunkShaperConfig {
-        model: model.to_owned(),
-        provider: provider.map(str::to_owned),
-        merge_reasoning_in_choices: false,
-        base_hidden_params: json_object(BASE_HIDDEN),
-        identity: Arc::new(FixedIdentity),
-    })
+    let mut shaper = ChunkShaper::new(
+        model.to_owned(),
+        provider.map(str::to_owned),
+        false,
+        json_object(BASE_HIDDEN),
+    );
+    shaper.now = fixed_instant;
+    shaper
 }
 
 fn parse<T>(source: &str) -> T

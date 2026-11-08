@@ -123,7 +123,7 @@ fn processed_first_chunk_adds_the_assistant_role() {
     .expect("the chunk is sent");
     assert_eq!(sent.choices[0].delta.content.as_deref(), Some("hello"));
     assert_eq!(sent.choices[0].delta.role.as_deref(), Some("assistant"));
-    assert_eq!(sent.id, "chatcmpl-00000000-0000-4000-8000-000000000000");
+    assert!(sent.id.starts_with("chatcmpl-"));
     assert!(shaper.progress.sent_first_chunk);
 }
 

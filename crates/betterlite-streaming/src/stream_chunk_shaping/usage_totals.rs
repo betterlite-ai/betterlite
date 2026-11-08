@@ -4,8 +4,9 @@ use rust_decimal::Decimal;
 use serde_json::Number;
 
 use crate::stream_chunk_shaping::ChunkShaper;
-use crate::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamChunk};
-use crate::stream_chunk_shaping::usage::{TokenDetails, Usage};
+use crate::stream_chunk_shaping::records::{
+    JsonObject, JsonValue, StreamChunk, TokenDetails, Usage,
+};
 
 pub fn record_usage_only_chunk(shaper: &mut ChunkShaper, mut model_response: StreamChunk) {
     if model_response.usage.is_none() {

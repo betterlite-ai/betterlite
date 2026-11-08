@@ -1,4 +1,4 @@
-use betterlite_streaming::stream_chunk_shaping::error::StreamShapeError;
+use betterlite_streaming::stream_chunk_shaping::StreamShapeError;
 use serde::Serialize;
 use serde_json::Value;
 

@@ -1,4 +1,6 @@
-use crate::stream_chunk_shaping::creation::StreamIdentity;
+use uuid::Uuid;
+
+use crate::stream_chunk_shaping::creation::system_instant;
 use crate::stream_chunk_shaping::records::{
     GENERIC_CHUNK_FIELDS, GenericChunk, JsonObject, JsonValue, StreamChoice, StreamChunk,
     StreamDelta,
@@ -69,12 +71,12 @@ pub fn apply_special_delta_attributes(delta: &StreamDelta, model_response: &mut 
 pub fn generic_chunk_has_known_fields(chunk: &JsonObject) -> bool {
     chunk
         .keys()
-        .all(|key| GENERIC_CHUNK_FIELDS.contains(&key.as_str()))
+        .all(|key| GENERIC_CHUNK_FIELDS.contains(&format!(" {key} ")))
 }
 
 #[must_use]
-pub fn convert_generic_chunk(chunk: &GenericChunk, identity: &dyn StreamIdentity) -> StreamChunk {
-    let instant = identity.instant();
+pub fn convert_generic_chunk(chunk: &GenericChunk) -> StreamChunk {
+    let instant = system_instant();
     let delta = StreamDelta {
         content: Some(chunk.text.clone()),
         role: None,
@@ -103,7 +105,7 @@ pub fn convert_generic_chunk(chunk: &GenericChunk, identity: &dyn StreamIdentity
     let mut extra = JsonObject::new();
     extra.insert("finish_reason".to_owned(), finish_reason);
     StreamChunk {
-        id: identity.new_id(),
+        id: Uuid::new_v4().to_string(),
         object: "chat.completion.chunk".to_owned(),
         created: instant.seconds,
         model: String::new(),

@@ -3,37 +3,24 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::{Number, from_value, to_value};
 use uuid::Uuid;
 
-use crate::stream_chunk_shaping::ChunkShaper;
-use crate::stream_chunk_shaping::error::StreamShapeError;
 use crate::stream_chunk_shaping::records::{
     ChunkArguments, JsonObject, JsonValue, ParsedChunkHiddenParams, StreamChoice, StreamChunk,
 };
+use crate::stream_chunk_shaping::{ChunkShaper, StreamShapeError};
 
 pub struct StreamInstant {
     pub seconds: i64,
     pub timestamp: f64,
 }
 
-pub trait StreamIdentity: Send + Sync {
-    fn new_id(&self) -> String;
-    fn instant(&self) -> StreamInstant;
-}
-
-pub struct SystemStreamIdentity;
-
-impl StreamIdentity for SystemStreamIdentity {
-    fn new_id(&self) -> String {
-        Uuid::new_v4().to_string()
-    }
-
-    fn instant(&self) -> StreamInstant {
-        let elapsed = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default();
-        StreamInstant {
-            seconds: i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX),
-            timestamp: elapsed.as_secs_f64(),
-        }
+#[must_use]
+pub fn system_instant() -> StreamInstant {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    StreamInstant {
+        seconds: i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX),
+        timestamp: elapsed.as_secs_f64(),
     }
 }
 
@@ -43,7 +30,7 @@ pub fn model_response_creator(
     hidden_params: Option<&JsonObject>,
 ) -> Result<StreamChunk, StreamShapeError> {
     let arguments = chunk_arguments(chunk)?;
-    let instant = shaper.identity.instant();
+    let instant = (shaper.now)();
     let response_id = adopted_id(shaper, arguments.id);
     let created = adopted_created(shaper, arguments.created, instant.seconds);
     let system_fingerprint = shaper
@@ -99,7 +86,7 @@ fn adopted_id(shaper: &mut ChunkShaper, chunk_id: Option<String>) -> String {
     let response_id = match (&shaper.response_id, chunk_id) {
         (Some(current), _) => current.clone(),
         (None, Some(provided)) => provided,
-        (None, None) => format!("chatcmpl-{}", shaper.identity.new_id()),
+        (None, None) => format!("chatcmpl-{}", Uuid::new_v4()),
     };
     if shaper.response_id.is_none() && !response_id.is_empty() {
         shaper.response_id = Some(response_id.clone());

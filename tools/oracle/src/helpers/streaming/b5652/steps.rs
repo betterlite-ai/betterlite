@@ -1,16 +1,13 @@
-use std::sync::Arc;
-
 use betterlite_streaming::stream_chunk_shaping::{
-    ChunkShaper, ChunkShaperConfig,
+    ChunkShaper,
     creation::{
-        SystemStreamIdentity, model_response_creator, provider_hidden_params,
-        provider_response_model, set_model_id, stamp_served_service_tier,
+        model_response_creator, provider_hidden_params, provider_response_model, set_model_id,
+        stamp_served_service_tier,
     },
     decision::{combine_thinking_in_choices, is_chunk_non_empty, return_processed_chunk_logic},
     extras::{convert_generic_chunk, generic_chunk_has_known_fields, strip_sse_data_from_chunk},
-    records::{ChunkResponseObject, GenericChunk, JsonObject, StreamChunk, StreamDelta},
+    records::{ChunkResponseObject, GenericChunk, JsonObject, StreamChunk, StreamDelta, Usage},
     tokens::{check_special_tokens, finish_reason_handler, raise_on_model_repetition},
-    usage::Usage,
     usage_totals::{backfill_cache_usage, calculate_total_usage, propagate_usage_cost},
 };
 use serde::de::DeserializeOwned;
@@ -50,13 +47,12 @@ where
 
 fn build_shaper(input: &Value) -> Result<ChunkShaper, Box<HelperError>> {
     let state = input.get("state").cloned().unwrap_or_default();
-    let mut shaper = ChunkShaper::from(ChunkShaperConfig {
-        model: field::<String>(&state, "model")?.unwrap_or_default(),
-        provider: field(&state, "provider")?,
-        merge_reasoning_in_choices: field(&state, "merge_reasoning_in_choices")?.unwrap_or(false),
-        base_hidden_params: field::<JsonObject>(&state, "base_hidden_params")?.unwrap_or_default(),
-        identity: Arc::new(SystemStreamIdentity),
-    });
+    let mut shaper = ChunkShaper::new(
+        field::<String>(&state, "model")?.unwrap_or_default(),
+        field(&state, "provider")?,
+        field(&state, "merge_reasoning_in_choices")?.unwrap_or(false),
+        field::<JsonObject>(&state, "base_hidden_params")?.unwrap_or_default(),
+    );
     shaper.response_id = field(&state, "response_id")?;
     shaper.created = field(&state, "created")?;
     shaper.system_fingerprint = field(&state, "system_fingerprint")?;
@@ -72,7 +68,6 @@ fn apply(shaper: &mut ChunkShaper, step: &Value, limit: usize, providers: &[Stri
         Some("combine_thinking") => combine_thinking(shaper, step),
         Some("convert_generic") => encoded(&convert_generic_chunk(
             &field::<GenericChunk>(step, "chunk")?.unwrap_or_default(),
-            &SystemStreamIdentity,
         )),
         Some("is_chunk_non_empty") => chunk_non_empty(shaper, step),
         Some("returns") => returns(shaper, step, limit),

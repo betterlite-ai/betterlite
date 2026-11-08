@@ -1,6 +1,6 @@
 use crate::stream_chunk_shaping::ChunkShaper;
+use crate::stream_chunk_shaping::StreamShapeError;
 use crate::stream_chunk_shaping::creation::model_response_creator;
-use crate::stream_chunk_shaping::error::StreamShapeError;
 use crate::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamChunk, StreamOptions};
 
 // Template tokens that sagemaker and hf streams may split across chunks.

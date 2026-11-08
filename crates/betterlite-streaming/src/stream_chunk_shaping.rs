@@ -1,17 +1,30 @@
-use std::sync::Arc;
-
-use creation::StreamIdentity;
+use creation::{StreamInstant, system_instant};
 use records::{JsonObject, StreamChunk};
+use thiserror::Error;
 
 pub mod creation;
 pub mod decision;
-pub mod error;
 pub mod extras;
 pub mod records;
 mod tests;
 pub mod tokens;
-pub mod usage;
 pub mod usage_totals;
+
+// The wrapper raises litellm.InternalServerError for a repeating model, which the proxy answers with a 500.
+#[derive(Debug, Error)]
+pub enum StreamShapeError {
+    #[error("The model is repeating the same chunk = {last_content}.")]
+    Repetition {
+        last_content: String,
+        model: String,
+        provider: String,
+    },
+    #[error("the stream chunk arguments are invalid: {source}")]
+    Arguments {
+        #[from]
+        source: serde_json::Error,
+    },
+}
 
 // The two send flags stay apart: a finish reason can arrive before any chunk was sent.
 pub struct ChunkProgress {
@@ -42,25 +55,23 @@ pub struct ChunkShaper {
     pub intermittent_finish_reason: Option<String>,
     pub chunks: Vec<StreamChunk>,
     pub repeated_messages_count: usize,
-    pub identity: Arc<dyn StreamIdentity>,
+    pub now: fn() -> StreamInstant,
 }
 
-pub struct ChunkShaperConfig {
-    pub model: String,
-    pub provider: Option<String>,
-    pub merge_reasoning_in_choices: bool,
-    pub base_hidden_params: JsonObject,
-    pub identity: Arc<dyn StreamIdentity>,
-}
-
-impl From<ChunkShaperConfig> for ChunkShaper {
-    fn from(config: ChunkShaperConfig) -> Self {
+impl ChunkShaper {
+    #[must_use]
+    pub fn new(
+        model: String,
+        provider: Option<String>,
+        merge_reasoning_in_choices: bool,
+        base_hidden_params: JsonObject,
+    ) -> Self {
         Self {
-            model: config.model,
-            provider: config.provider,
-            merge_reasoning_in_choices: config.merge_reasoning_in_choices,
+            model,
+            provider,
+            merge_reasoning_in_choices,
             tool_call: false,
-            base_hidden_params: config.base_hidden_params,
+            base_hidden_params,
             response_id: None,
             created: None,
             system_fingerprint: None,
@@ -78,7 +89,7 @@ impl From<ChunkShaperConfig> for ChunkShaper {
             intermittent_finish_reason: None,
             chunks: Vec::new(),
             repeated_messages_count: 1,
-            identity: config.identity,
+            now: system_instant,
         }
     }
 }
