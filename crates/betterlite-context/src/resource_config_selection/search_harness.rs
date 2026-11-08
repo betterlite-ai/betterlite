@@ -86,7 +86,9 @@ pub const fn select_search_config(provider: SearchProvider) -> SearchConfigTag {
 pub enum Harness {
     ClaudeCode,
     Codex,
+    #[serde(rename = "opencode")]
     OpenCode,
+    #[serde(rename = "deepagents")]
     DeepAgents,
 }
 

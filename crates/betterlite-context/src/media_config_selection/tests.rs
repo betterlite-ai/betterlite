@@ -30,18 +30,22 @@ const BUNDLED: &str = r#"{
 }"#;
 
 #[rstest]
-#[case::live_bare("azure-speech", Some("azure-speech"))]
-#[case::live_prefixed("azure-prefixed", Some("azure/azure-prefixed"))]
-#[case::bare_before_prefixed("dual", Some("dual"))]
-#[case::live_before_bundled("live-wins", Some("azure/live-wins"))]
-#[case::bundled_prefixed("bundled", Some("azure/bundled"))]
-#[case::bundled_bare("bundled-prefixed", Some("bundled-prefixed"))]
+#[case::live_bare("azure-speech", Some(("azure-speech", Some("azure_speech"))))]
+#[case::live_prefixed("azure-prefixed", Some(("azure/azure-prefixed", Some("azure_speech"))))]
+#[case::bare_before_prefixed("dual", Some(("dual", Some("azure_speech"))))]
+#[case::live_before_bundled("live-wins", Some(("azure/live-wins", Some("other"))))]
+#[case::bundled_prefixed("bundled", Some(("azure/bundled", Some("azure_speech"))))]
+#[case::bundled_bare("bundled-prefixed", Some(("bundled-prefixed", Some("azure_speech"))))]
 #[case::absent("unknown", None)]
-fn cost_entry_lookup(#[case] model: &str, #[case] expected: Option<&str>) {
+fn cost_entry_lookup(#[case] model: &str, #[case] expected: Option<(&str, Option<&str>)>) {
     let live = catalog(LIVE);
     let bundled = catalog(BUNDLED);
     let entry = provider_cost_entry(model, ProviderId::Azure, &live, &bundled);
-    assert_eq!(entry.map(|found| found.name.as_str()), expected);
+    let found = entry.map(|found| {
+        let audio = found.fields.metadata.audio_transcription_config.as_deref();
+        (found.name.as_str(), audio)
+    });
+    assert_eq!(found, expected);
 }
 
 fn transcription(model: &str, provider: ProviderId, expected: Option<AudioTranscriptionConfigTag>) {
@@ -134,8 +138,13 @@ fn transcription(model: &str, provider: ProviderId, expected: Option<AudioTransc
     ProviderId::VertexAi,
     Some(AudioTranscriptionConfigTag::VertexGemini)
 )]
-#[case::vertex_gemini_plain(
+#[case::vertex_gemini_bare_transcribe(
     "gemini-1.5-transcribe",
+    ProviderId::VertexAi,
+    Some(AudioTranscriptionConfigTag::VertexGemini)
+)]
+#[case::vertex_gemini_plain(
+    "gemini-1.5-pro",
     ProviderId::VertexAi,
     Some(AudioTranscriptionConfigTag::VertexAI)
 )]

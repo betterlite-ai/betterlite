@@ -16,8 +16,8 @@ pub fn select_vector_store_config(provider: ProviderId) -> Option<VectorStoreCon
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VectorStoresConfigTag {
     OpenAI,
-    Azure,
-    VertexAI,
+    AzureOpenAI,
+    Vertex,
     VertexSearchAPI,
     Bedrock,
     PGVector,
@@ -32,7 +32,7 @@ pub enum VectorStoresConfigTag {
 
 const DIRECT_TAGS: &[(ProviderId, VectorStoresConfigTag)] = &[
     (ProviderId::Openai, VectorStoresConfigTag::OpenAI),
-    (ProviderId::Azure, VectorStoresConfigTag::Azure),
+    (ProviderId::Azure, VectorStoresConfigTag::AzureOpenAI),
     (ProviderId::Bedrock, VectorStoresConfigTag::Bedrock),
     (ProviderId::PgVector, VectorStoresConfigTag::PGVector),
     (ProviderId::AzureAi, VectorStoresConfigTag::AzureAI),
@@ -53,7 +53,7 @@ pub fn select_vector_stores_config(
         let tag = if api_type == Some("search_api") {
             VectorStoresConfigTag::VertexSearchAPI
         } else if api_type.is_none() || api_type == Some("rag_api") {
-            VectorStoresConfigTag::VertexAI
+            VectorStoresConfigTag::Vertex
         } else {
             return None;
         };

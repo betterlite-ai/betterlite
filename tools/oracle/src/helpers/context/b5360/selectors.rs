@@ -1,6 +1,8 @@
 use betterlite_context::media_config_selection::{
     audio_transcription, image_edit, image_generation, text_to_speech,
 };
+use betterlite_models::identity::provider_id::ProviderId;
+
 use betterlite_context::resource_config_selection::{
     messages, passthrough, realtime, responses, search_harness, skills_evals, vector_stores,
 };
@@ -66,16 +68,21 @@ pub(crate) fn responses(_input: &BatchInput, call: &Call) -> CallResult {
 }
 
 pub(crate) fn vector_stores(_input: &BatchInput, call: &Call) -> CallResult {
-    Ok(unit_report(
-        vector_stores::select_vector_stores_config(provider_of(call)?, call.api_type.as_deref()),
-        "VectorStoreConfig",
-    ))
+    let provider = provider_of(call)?;
+    let selected = vector_stores::select_vector_stores_config(provider, call.api_type.as_deref());
+    let suffix = if provider == ProviderId::PgVector {
+        "StoreConfig"
+    } else {
+        "VectorStoreConfig"
+    };
+    Ok(unit_report(selected, suffix))
 }
 
 fn search_class(tag: search_harness::SearchConfigTag) -> String {
-    let api = tag == search_harness::SearchConfigTag::SearchAPI;
-    let suffix = if api { "APIConfig" } else { "SearchConfig" };
-    format!("{tag:?}{suffix}")
+    if tag == search_harness::SearchConfigTag::SearchAPI {
+        return "SearchAPIConfig".to_owned();
+    }
+    format!("{tag:?}SearchConfig")
 }
 
 pub(crate) fn search(_input: &BatchInput, call: &Call) -> CallResult {

@@ -7,7 +7,11 @@ from unittest.mock import patch
 import litellm
 import litellm.utils
 from litellm.harness.types import Harness as LiteLLMHarness
+from litellm.llms.azure_ai import common_utils as azure_ai_common
 from litellm.llms.bedrock.common_utils import BedrockModelInfo
+from litellm.llms.bedrock_mantle import common_utils as mantle_common
+from litellm.llms.github_copilot.responses import transformation as copilot_responses
+from litellm.llms.vertex_ai.text_to_speech import transformation as vertex_speech
 from litellm.types.utils import LlmProviders, SearchProviders
 from litellm.utils import ProviderConfigManager
 
@@ -153,14 +157,6 @@ def _patch_factories(stack: ExitStack) -> None:
     )
 
 
-_MODULES: Final = {
-    "azure_ai": import_module(_LLMS + "azure_ai.common_utils"),
-    "copilot": import_module(_LLMS + "github_copilot.responses.transformation"),
-    "mantle": import_module(_LLMS + "bedrock_mantle.common_utils"),
-    "vertex_speech": import_module(_LLMS + "vertex_ai.text_to_speech.transformation"),
-}
-
-
 def _supports_reasoning(*_args: Json, **_kwargs: Json) -> bool:
     return _FACTS.supports_reasoning
 
@@ -186,7 +182,7 @@ def _lyria(*_args: Json, **_kwargs: Json) -> bool:
 
 
 def _vertex_lyria_class() -> type:
-    return cast(type, _MODULES["vertex_speech"].VertexAILyriaTextToSpeechConfig)
+    return cast(type, vertex_speech.VertexAILyriaTextToSpeechConfig)
 
 
 def _install(stack: ExitStack, input_value: dict[str, Json]) -> None:
@@ -196,10 +192,10 @@ def _install(stack: ExitStack, input_value: dict[str, Json]) -> None:
     stack.enter_context(patch.object(litellm.utils, "_get_bundled_model_cost_map", lambda: bundled))
     patches: Final[list[tuple[object, str, object]]] = [
         (litellm.utils, "supports_reasoning", _supports_reasoning),
-        (_MODULES["azure_ai"], "azure_ai_supports_native_responses", _native_responses),
-        (_MODULES["copilot"], "github_copilot_supports_responses_api", _github_copilot),
-        (_MODULES["mantle"], "mantle_supports_responses", _mantle_responses),
-        (_MODULES["mantle"], "mantle_base_segment", _mantle_segment),
+        (azure_ai_common, "azure_ai_supports_native_responses", _native_responses),
+        (copilot_responses, "github_copilot_supports_responses_api", _github_copilot),
+        (mantle_common, "mantle_supports_responses", _mantle_responses),
+        (mantle_common, "mantle_base_segment", _mantle_segment),
         (_vertex_lyria_class(), "is_lyria_model", _lyria),
         (
             BedrockModelInfo,

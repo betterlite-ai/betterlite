@@ -239,12 +239,12 @@ fn vector_store_selection(
 
 #[rstest]
 #[case::openai(ProviderId::Openai, None, Some(VectorStoresConfigTag::OpenAI))]
-#[case::azure(ProviderId::Azure, None, Some(VectorStoresConfigTag::Azure))]
-#[case::vertex_default(ProviderId::VertexAi, None, Some(VectorStoresConfigTag::VertexAI))]
+#[case::azure(ProviderId::Azure, None, Some(VectorStoresConfigTag::AzureOpenAI))]
+#[case::vertex_default(ProviderId::VertexAi, None, Some(VectorStoresConfigTag::Vertex))]
 #[case::vertex_rag(
     ProviderId::VertexAi,
     Some("rag_api"),
-    Some(VectorStoresConfigTag::VertexAI)
+    Some(VectorStoresConfigTag::Vertex)
 )]
 #[case::vertex_search(
     ProviderId::VertexAi,
