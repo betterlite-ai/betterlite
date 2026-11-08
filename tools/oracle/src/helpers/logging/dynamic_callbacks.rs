@@ -24,8 +24,7 @@ use support::Outcome;
 use support::Recorder;
 use support::entries;
 use support::entry_values;
-use support::failure;
-use support::invalid_input;
+use support::helper_error;
 use support::lists_value;
 use support::trusted;
 
@@ -87,14 +86,14 @@ fn add_process(input: &Input) -> HelperResult {
     if input.process {
         lists
             .process_dynamic_callbacks(&recorder, &trusted(&input.trusted))
-            .map_err(|error| failure(&error))?;
+            .map_err(|error| helper_error("DynamicCallbackError", error.to_string()))?;
     }
     Ok(json!({"lists": lists_value(&lists), "calls": recorder.recorded()}))
 }
 
 fn params(input: &Input) -> HelperResult {
     let request: PrivacyRequest = serde_json::from_value(input.request.clone())
-        .map_err(|error| invalid_input(&error.to_string()))?;
+        .map_err(|error| helper_error("InvalidInput", error.to_string()))?;
     let params = standard_callback_params(
         &request,
         &trusted(&input.trusted),
@@ -102,8 +101,8 @@ fn params(input: &Input) -> HelperResult {
             message_logging_disabled: input.inherited,
         },
     )
-    .map_err(|error| failure(&error))?;
-    serde_json::to_value(params).map_err(|error| invalid_input(&error.to_string()))
+    .map_err(|error| helper_error("DynamicCallbackError", error.to_string()))?;
+    serde_json::to_value(params).map_err(|error| helper_error("InvalidInput", error.to_string()))
 }
 
 fn combined(input: &Input) -> Value {

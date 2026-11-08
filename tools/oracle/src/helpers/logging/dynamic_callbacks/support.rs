@@ -6,7 +6,6 @@ use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::resolver::LoggerResolver;
 use betterlite_logging::dynamic_callbacks::DynamicCallback;
 use betterlite_logging::dynamic_callbacks::DynamicCallbackLists;
-use betterlite_logging::dynamic_callbacks::error::DynamicCallbackError;
 use betterlite_logging::dynamic_callbacks::filters::get_callback_name;
 use betterlite_logging::logging_privacy::callbacks::TrustedCallbacks;
 use betterlite_logging::registry::error::RegistryError;
@@ -205,24 +204,13 @@ pub(super) fn trusted(values: &BTreeMap<String, String>) -> TrustedCallbacks {
     }
 }
 
-pub(super) fn failure(error: &DynamicCallbackError) -> Box<HelperError> {
+pub(super) fn helper_error(class: &str, message: String) -> Box<HelperError> {
     Box::new(HelperError {
-        class: "DynamicCallbackError".to_owned(),
+        class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: error.to_string(),
-    })
-}
-
-pub(super) fn invalid_input(message: &str) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "InvalidInput".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: message.to_owned(),
+        message,
     })
 }
