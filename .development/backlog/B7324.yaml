@@ -1,14 +1,14 @@
 id: B7324
 milestone: M1 openai data plane
 title: Common request processing helpers
-status: todo
+status: done
 depends_on: [B3600]
 file: tasks/B7324-common-request-helpers.yaml
 covers:
   - "litellm/proxy/common_request_processing.py"
 parent: B004
 split_from: B004
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 907
