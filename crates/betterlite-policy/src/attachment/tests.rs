@@ -115,6 +115,19 @@ fn an_explicit_priority_precedes_the_scope_rank() {
 }
 
 #[test]
+fn unknown_attachment_keys_are_rejected() {
+    let error =
+        serde_json::from_str::<PolicyAttachment>(r#"{"policy": "x", "team": ["a"]}"#).unwrap_err();
+    assert!(error.to_string().contains("unknown field"));
+}
+
+#[test]
+fn an_attachment_needs_a_policy_name() {
+    let error = serde_json::from_str::<PolicyAttachment>(r#"{"teams": ["a"]}"#).unwrap_err();
+    assert!(error.to_string().contains("missing field `policy`"));
+}
+
+#[test]
 fn load_attachments_records_the_config_snapshot() {
     let registry = loaded(vec![global(), teams()]);
     assert!(registry.initialized);

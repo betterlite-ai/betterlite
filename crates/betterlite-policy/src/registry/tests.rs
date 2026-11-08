@@ -212,6 +212,45 @@ fn parse_policy_names_the_policy_in_a_pipeline_error() {
 }
 
 #[test]
+fn unknown_policy_keys_are_rejected() {
+    let error =
+        serde_json::from_str::<RawPolicy>(r#"{"guardrail": {"add": ["pii"]}}"#).unwrap_err();
+    assert!(error.to_string().contains("unknown field"));
+}
+
+#[test]
+fn a_pipeline_with_an_unknown_mode_is_rejected() {
+    let error = serde_json::from_str::<RawPipeline>(
+        r#"{"mode": "during_call", "steps": [{"guardrail": "pii"}]}"#,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("Invalid mode 'during_call'"));
+}
+
+#[test]
+fn a_bad_policy_leaves_the_registry_untouched() {
+    let mut registry = PolicyRegistry::default();
+    registry
+        .load_policies(config(vec![("baseline", raw(None, &["pii"], &[]))]))
+        .unwrap();
+    let broken = RawPolicy {
+        inherit: None,
+        description: None,
+        guardrails: None,
+        condition: None,
+        pipeline: Some(RawPipeline {
+            mode: PipelineMode::PreCall,
+            steps: Vec::new(),
+        }),
+    };
+    let error = registry
+        .load_policies(config(vec![("broken", broken)]))
+        .unwrap_err();
+    assert!(error.to_string().contains("Invalid policy 'broken'"));
+    assert!(registry.policies.contains_key("baseline"));
+}
+
+#[test]
 fn load_policies_tracks_config_policies_and_sources() {
     let mut registry = PolicyRegistry::default();
     registry
