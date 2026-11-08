@@ -1,0 +1,128 @@
+id: B4787
+title: Scope agent daily activity to the caller's grants
+description: >-
+  Build module agent_daily_activity in crates/betterlite-server and register GET /agent/daily/activity (LiteLLM's get_agent_daily_activity, tag "Agent Management", response SpendAnalyticsPaginatedResponse). The route decides which agents a caller may read daily spend for, then hands the result to B3091's get_daily_activity. B3095 also calls the scope resolver for the shared /agent/daily/activity/aggregated, /search, /keys, /model_top_keys and /export routes, so the resolver must work without the plain route.
+
+  The resolver. `AgentActivityResolver<A: AgentGrants, R: AgentRows, F: AgentsFeatureGate>` is built once with a struct literal holding `grants: A`, `rows: R` and `features: F` (agent_daily_activity/scope.rs, native async fn, no trait objects, no statics). The database handle lives inside `rows`, so callers do not pass one. All three ports are traits defined in agent_daily_activity/ports.rs:
+  - `AgentGrants`: `async fn agent_access(&self, auth: &UserApiKeyAuth) -> Result<AgentAccess, AgentAccessError>`. This is LiteLLM's `AgentRequestHandler.resolve_agent_access(user_api_key_auth=...)` with strict false. Implement the trait in the same file for B4780's `AgentAccessResolver<G, T, H>` by calling its `resolve_agent_access(Some(auth), false)`, so the server passes the real resolver and tests pass a fake. `AgentAccess` is B4778's enum (Unrestricted, or Restricted(BTreeSet<String>) where an empty set denies every agent). Do not rebuild any grant check.
+  - `AgentRows` (reads of the litellm_agentstable rows, B726's agents binding and B700's find_many_in behind it): `async fn all_agents(&self) -> Result<Vec<AgentRow>, StoreError>` (find_many with an empty filter), `async fn agents_created_by(&self, user_id: &str) -> Result<Vec<AgentRow>, StoreError>` (find_many where created_by equals user_id) and `async fn agents_with_ids(&self, agent_ids: &[String]) -> Result<Vec<AgentRow>, StoreError>` (B700's find_many_in on agent_id; it removes duplicate ids in first-seen order and runs no SQL for an empty list). `AgentRow { agent_id: String, agent_name: String }` is the only part of a row this module reads. StoreError is the error type B700 returns; take its exact name from B700's module.
+  - `AgentsFeatureGate`: `async fn check_agents(&self, auth: &UserApiKeyAuth) -> Result<(), FeatureAccessError>` is B864's check_feature_access_for_user(auth, "agents"). The production implementation forwards to B864; if B864 takes B732's AuthContext, convert inside the implementation, not in the resolver. FeatureAccessError is B864's error (HTTP 403 with detail.error "Access to agents is disabled for your role. Contact your proxy admin.").
+
+  `AgentActivityError` (agent_daily_activity/error.rs) has one `#[from]` variant per source: `Feature(FeatureAccessError)`, `Access(AgentAccessError)` and `Store(StoreError)`. Each keeps its own status and body; nothing is translated. `AgentActivityScope { agent_ids: Option<Vec<String>>, agent_metadata: BTreeMap<String, AgentMetadata> }` with `AgentMetadata { agent_name: String }` serializing as `{"agent_name": ...}`. Some(empty) and None are different: Some(empty) means "no agents", None means "every agent".
+
+  `resolve_scope(&self, agent_ids: Option<Vec<String>>, auth: &UserApiKeyAuth) -> Result<AgentActivityScope, AgentActivityError>` is LiteLLM's resolve_agent_daily_activity_scope (endpoints.py L353-L375), with the helpers _owned_agent_ids, _permitted_daily_activity_agent_ids and _resolve_daily_activity_agent_ids (L316-L350). Steps in order:
+  1. features.check_agents(auth). A failure returns at once, before any read.
+  2. If B2314's user_api_key_has_admin_view(auth) is true (proxy_admin and proxy_admin_viewer only), resolved = agent_ids unchanged. No grant lookup happens and unknown ids stay in the list.
+  3. Otherwise access = grants.agent_access(auth). Unrestricted: permitted = the agent_id of every row from agents_created_by(user_id), or the empty set when auth has no user_id (no read then). Restricted(ids): permitted = ids (raw ids, no stable id mapping, no ownership union).
+  4. Then resolved = requested ids kept only when in permitted, in the order requested with repeats kept, when agent_ids is Some and not empty. For None or an empty list, resolved = every permitted id in ascending string order (see deviations).
+  5. Rows: when resolved is None, all_agents(); otherwise agents_with_ids(resolved). agent_metadata maps each row's agent_id to its agent_name. A resolved id with no row gets no entry and stays in agent_ids.
+  Errors from the ports propagate in the order above; nothing is caught.
+
+  The request. `parse_agent_query` in agent_daily_activity/request.rs turns the raw query values into `AgentActivityQuery { agent_ids: Option<Vec<String>>, exclude_agent_ids: Option<Vec<String>>, start_date, end_date, model, api_key: Option<String>, page: i64, page_size: i64 }`. A non-empty `agent_ids` or `exclude_agent_ids` string splits on "," with no trimming and no deduplication ("a,,b" gives "a", "", "b"); an empty or missing string gives None. page defaults to 1 and page_size to 10, with no bounds. Query decoding errors (a non-integer page) come from B003's shared decoder, not from this module.
+
+  The handler `get_agent_daily_activity(query, auth)` in agent_daily_activity/request.rs runs, in this order: features.check_agents(auth); then, when the server has no database, HTTP 500 with detail `{"error": <CommonProxyErrors.db_not_connected_error text>}` (the text "DB not connected. This endpoint needs a database; set DATABASE_URL to a PostgreSQL connection string (postgresql://...) to enable it. See https://docs.litellm.ai/docs/proxy/virtual_keys"); then resolve_scope (which checks the feature gate a second time, as LiteLLM does); then, when agent_ids is Some(empty), the empty response below without calling B3091; otherwise B3091's get_daily_activity with table_name litellm_dailyagentspend, entity_id_field agent_id, entity_id = agent_ids (None or the list), entity metadata = agent_metadata, exclude_entity_ids = exclude_agent_ids, and start_date, end_date, model, api_key, page, page_size as given. Take the exact Rust signature from B3091's module and map AgentMetadata into the metadata type it expects. The route has no try/except and no management wrapper, so every error passes to B003's envelopes untouched.
+
+  The empty response is SpendAnalyticsPaginatedResponse (B3090) with results [] and a DailySpendMetadata that has every field at its default except page = the requested page, total_pages = 0 and has_more = false (so total_spend 0.0, all totals 0, api_key_limit, total_api_keys and entity_total_api_keys null, and total_pages 0 where the default is 1).
+
+  `routes/agent_daily_activity.rs` is a stub that B1100 registers; fill only that file (it only calls the handler) and leave routes.rs and state.rs alone. Register GET /agent/daily/activity exactly once with B052 authentication.
+
+  Oracle. The route is new behavior, so cases are HTTP cases through the booted proxy (path tools/oracle/cases/agent-activity/). Cases that need agent rows and keys use the Postgres fixtures B860 provides, like B058. Do not add a helper operation: every function here reaches the route.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/agent_daily_activity.rs
+    - crates/betterlite-server/src/agent_daily_activity/**
+    - crates/betterlite-server/src/routes/agent_daily_activity.rs
+    - crates/betterlite-server/src/routes/agent_daily_activity/**
+    - tools/oracle/cases/agent-activity/**
+    - tools/oracle/helpers/b4787.py
+    - tools/oracle/helpers/b4787/**
+    - tools/oracle/src/helpers/server/b4787.rs
+    - tools/oracle/src/helpers/server/b4787/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L311-L375
+    why: _AgentDailyActivityScope, _owned_agent_ids, _permitted_daily_activity_agent_ids, _resolve_daily_activity_agent_ids and resolve_agent_daily_activity_scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L1333-L1403
+    why: The route from its decorator (/agent/daily/activity, tag, dependencies, response_model) through the database check, the empty response and the get_daily_activity call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L86-L111
+    why: resolve_agent_access, the call the scope resolver makes with strict false.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/rbac_utils.py#L17-L68
+    why: check_feature_access_for_user, the "agents" gate that runs first and its 403 text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/common_daily_activity.py#L83-L124
+    why: DailySpendMetadata defaults and the response type used for the empty answer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_scopes.py#L146-L216
+    why: _resolve_agent, the other caller of the scope resolver (built by B3095).
+dod:
+  - text: resolve_scope runs the "agents" feature gate before anything else and returns its error without any read.
+    proof: [scope-tests]
+  - text: For a proxy_admin or proxy_admin_viewer caller, resolve_scope returns the requested ids unchanged (None stays None, unknown ids stay) and does not ask for grants.
+    proof: [scope-tests, oracle]
+  - text: For another caller with Unrestricted access, the permitted ids are the agents whose created_by is the caller's user_id, and a caller without a user_id gets none and triggers no read.
+    proof: [scope-tests, oracle]
+  - text: For another caller with Restricted access, the permitted ids are the granted ids as they are, and Restricted(empty) permits nothing.
+    proof: [scope-tests, oracle]
+  - text: Requested ids are kept only when permitted, in request order with repeats; a missing or empty request gives every permitted id in ascending order.
+    proof: [scope-tests, oracle]
+  - text: Metadata comes from all_agents when the scope is None and from agents_with_ids otherwise, maps agent_id to agent_name, skips ids with no row and runs no read for Some(empty).
+    proof: [scope-tests]
+  - text: Errors from the feature gate, the grant lookup and the row reads pass through with their own status and body.
+    proof: [scope-tests]
+  - text: parse_agent_query splits non-empty agent_ids and exclude_agent_ids on commas without trimming or deduplication, gives None for empty or missing strings, and defaults page to 1 and page_size to 10.
+    proof: [request-tests, oracle]
+  - text: The handler checks the feature gate, then the database (500 with detail.error set to the db_not_connected_error text), then resolves the scope, and checks the gate before the database check.
+    proof: [request-tests, oracle]
+  - text: An empty resolved scope returns the empty SpendAnalyticsPaginatedResponse (page as requested, total_pages 0, has_more false, all totals zero) without calling get_daily_activity.
+    proof: [request-tests, oracle]
+  - text: A non-empty or unrestricted scope calls get_daily_activity with table litellm_dailyagentspend, entity field agent_id, the scoped ids (None or the list), the metadata, the exclusions and every date, model, key and page argument.
+    proof: [request-tests, oracle]
+  - text: GET /agent/daily/activity is registered once with B052 authentication.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: scope-tests
+      why: the scope resolver differs from LiteLLM in gate order, admin bypass, ownership, restricted ids, filtering or metadata
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_daily_activity::scope::/)'
+    - id: request-tests
+      why: query parsing, check order, the empty response or the get_daily_activity arguments differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_daily_activity::request::/)'
+oracle_cases:
+  - tools/oracle/cases/agent-activity/no-database.yaml
+  - tools/oracle/cases/agent-activity/admin-all-agents.yaml
+  - tools/oracle/cases/agent-activity/admin-requested-ids-and-exclusions.yaml
+  - tools/oracle/cases/agent-activity/user-unrestricted-owned-only.yaml
+  - tools/oracle/cases/agent-activity/user-restricted-grants.yaml
+  - tools/oracle/cases/agent-activity/user-no-grants-empty-page.yaml
+  - tools/oracle/cases/agent-activity/requested-ids-filtered-to-permitted.yaml
+  - tools/oracle/cases/agent-activity/feature-disabled-for-internal-user.yaml
+deviations:
+  - what: resolve_agent_daily_activity_scope is named resolve_scope on AgentActivityResolver, and it takes no database argument.
+    why: A name over 30 characters is refused by the lint rule, and betterlite passes the database to a dependency through its constructor.
+  - what: The AgentRequestHandler call, the agents table reads and the feature gate are three port traits passed to the resolver's constructor.
+    why: betterlite wires dependencies through constructors and has no module globals such as prisma_client and general_settings. The calls and their order are the same.
+  - what: For a non-admin caller with no (or an empty) requested list, the permitted ids are sorted ascending. LiteLLM turns a frozenset into a tuple in hash order.
+    why: A set has no defined order and the daily rows are ordered by date, so only the order of the SQL parameter list differs.
+  - what: Errors are the typed AgentActivityError, not HTTPException values.
+    why: betterlite errors are typed, and B003 turns each variant's status and body into the response LiteLLM sends.
+out_of_scope:
+  - "B4780 owns AgentAccessResolver and resolve_agent_access, and B4778 owns AgentAccess; this task only calls them."
+  - "B864 owns check_feature_access_for_user, B2314 owns user_api_key_has_admin_view, B700 owns find_many_in and B726 owns the agents table binding."
+  - "B3091 owns get_daily_activity and B3090 owns the response types; this task calls them and builds one empty response."
+  - "B3095 owns the /agent entity resolver constant and the dispatch for /agent/daily/activity/aggregated, /search, /keys, /model_top_keys and /export, and B3096 to B3098 own those routes."
+  - "The other routes in endpoints.py belong to B4781, B4783, B4784, B4785 and B4786."
+pitfalls:
+  - A non-admin caller with Unrestricted access gets only the agents they created (created_by), not every agent; Restricted ids are not unioned with owned agents.
+  - Granted ids are used as raw ids and never mapped through the registry's stable_agent_id, unlike accessible_agents in B4780.
+  - agent_ids is truthy-tested, so an empty list behaves like None for a non-admin caller (all permitted agents) but an admin passes it through unchanged.
+  - Some(empty) and None are different scopes; collapsing Some(empty) into None would return every agent's spend.
+  - A request for "," splits into two empty strings, so it is a non-empty list that matches nothing and gives the empty response, not all agents.
+  - The route checks the feature gate before the database check, and the resolver checks it again; a disabled gate gives 403 even when there is no database.
+  - The empty response sets total_pages to 0 where DailySpendMetadata defaults to 1, and the metadata keeps page as requested.
+  - The route has no except block, so database and activity errors are not turned into 500 "Error ..." text.
+  - Unknown requested ids stay in an admin's scope and in the get_daily_activity call; only the metadata lacks them.
+  - Names stay at 30 characters or fewer, so the LiteLLM name resolve_agent_daily_activity_scope cannot be used.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

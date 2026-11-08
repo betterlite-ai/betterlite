@@ -1338,6 +1338,7 @@ dependencies = [
 name = "betterlite-core"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.23.1",
  "betterlite-auth",
  "betterlite-config",
@@ -1347,12 +1348,14 @@ dependencies = [
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-provider",
  "chrono",
  "futures-util",
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
  "lopdf",
+ "rand 0.10.3",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -1509,6 +1512,7 @@ dependencies = [
  "betterlite-http",
  "betterlite-prompts",
  "betterlite-redact",
+ "chrono",
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",
@@ -1532,6 +1536,8 @@ dependencies = [
  "tokio-rustls",
  "tracing",
  "tracing-subscriber",
+ "tree-sitter",
+ "tree-sitter-python",
  "ulid",
  "unicode-normalization",
  "url",
@@ -1646,6 +1652,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-interactions"
+version = "0.1.0"
+
+[[package]]
 name = "betterlite-lens"
 version = "0.1.0"
 dependencies = [
@@ -1701,6 +1711,7 @@ dependencies = [
  "jiff",
  "minijinja",
  "minijinja-contrib",
+ "nix",
  "opentelemetry",
  "opentelemetry-http",
  "opentelemetry-otlp",
@@ -1724,6 +1735,7 @@ dependencies = [
  "sha2 0.11.1",
  "strum",
  "temp-env",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -2114,6 +2126,7 @@ dependencies = [
  "futures-util",
  "http 1.5.0",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
@@ -2251,10 +2264,14 @@ dependencies = [
 name = "betterlite-router"
 version = "0.1.0"
 dependencies = [
+ "betterlite-error",
+ "betterlite-redis",
  "indexmap 2.14.2",
+ "prometheus-client",
  "rand 0.10.3",
  "regex",
  "rstest",
+ "rust_decimal",
  "serde",
  "serde_json",
  "thiserror",
@@ -7160,6 +7177,8 @@ version = "1.0.154"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6"
 dependencies = [
+ "foldhash",
+ "indexmap 2.14.2",
  "itoa",
  "memchr",
  "serde",
@@ -7488,6 +7507,12 @@ checksum = "bf6cc3b19bfb128a8ad11026086e31d3ce9ad23f8ea37354b31383a187c44cf3"
 dependencies = [
  "fallible-streaming-iterator",
 ]
+
+[[package]]
+name = "streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b2231b7c3057d5e4ad0156fb3dc807d900806020c5ffa3ee6ff2c8c76fb8520"
 
 [[package]]
 name = "strfmt"
@@ -8225,6 +8250,35 @@ dependencies = [
  "tracing-core",
  "tracing-log",
  "tracing-serde",
+]
+
+[[package]]
+name = "tree-sitter"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5129de2ccc97808c4583d48f1fb44576d015cf241e432800572bda11ef30c3b"
+dependencies = [
+ "cc",
+ "regex",
+ "serde_json",
+ "streaming-iterator",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-language"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0af592be68c579aa78a16846bd19422978c3c52e438523d45ff5d1bff1f9d4a"
+
+[[package]]
+name = "tree-sitter-python"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bf85fd39652e740bf60f46f4cda9492c3a9ad75880575bf14960f775cb74a1c"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
 ]
 
 [[package]]

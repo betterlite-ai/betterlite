@@ -30,7 +30,8 @@ description: >-
   status is "failed", raise an error with the HTTP status (200 stays 200) and message error.message, or "Unknown Perplexity
   error"; unreadable JSON is ignored; anything else goes to B508's reply decoder. Native websocket support is false.
 
-  perplexity_search. Implement the SearchProvider trait from B3270. Display name is Perplexity and the request is a POST.
+  perplexity_search. Implement the SearchProvider trait from B3270. It implements the widened signatures from B3276 (transform_search_request gets api_key, api_base and headers; complete_url gets api_key).
+  Display name is Perplexity and the request is a POST.
   Credentials follow B3270's server key policy with the key variable PERPLEXITYAI_API_KEY only (PERPLEXITY_API_KEY is not
   read here), base variable PERPLEXITY_API_BASE and default https://api.perplexity.ai. A missing key is an error whose text is
   "PERPLEXITYAI_API_KEY is not set. Set `PERPLEXITYAI_API_KEY` environment variable." Success sets Authorization: Bearer <key>

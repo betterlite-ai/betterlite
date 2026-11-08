@@ -1,0 +1,231 @@
+id: B3460
+title: RAG ingestion orchestration and call entry points
+description: >-
+  Build the part of LiteLLM's RAG ingest that ties the other RAG tasks together, in a new module
+  `rag_ingest_entry` of betterlite-server (crates/betterlite-server/src/rag_ingest_entry.rs and the folder
+  beside it). It has three submodules. `pipeline` is BaseRAGIngestion.ingest. `entry` is aingest and
+  ingest from rag/main.py. `registry` is _execute_ingest_pipeline, the part that turns the request's
+  vector_store record into one of the five provider objects. The module sits in betterlite-server because
+  it needs betterlite-core (B3451 state, B3453 OpenAI, B3454 Gemini, B3455 Vertex) and betterlite-rag
+  (B3457 Bedrock, B3459 S3 Vectors) together, and betterlite-rag already depends on betterlite-core, so
+  no lower crate can see both. Nothing may depend on betterlite-server, and this module registers no route:
+  B3465 calls `aingest` from the route handler.
+
+  Read first: crates/betterlite-core/src/rag/ingestion.rs (B3451: the state type, upload, ocr, chunk and
+  the abstract store contract), the provider modules B3453, B3454 and B3455 in betterlite-core/src/rag,
+  the Bedrock and S3 Vectors modules in betterlite-rag, and the port structs from the two sibling tasks
+  B7170 (store ports) and B7171 (step ports). Names below come from the task files and may differ a little
+  in the merged code. Use the merged names, and if a needed item is missing or private, stop and say so in
+  the report instead of copying it.
+
+  Submodule `pipeline`. Declare a trait `IngestSteps` with the six calls the pipeline makes, so the pipeline
+  can run against a scripted fake in tests and in the oracle helper: `ingest_id()`, `class_name()` (the Python
+  class name, see below), `supports_existing_file_id()`, and async `upload`, `ocr`, `chunk` (sync in B3451),
+  `embed` and `store`, each with the types B3451 and the providers already use. `run_ingest(steps, file_data,
+  file_url, file_id)` is BaseRAGIngestion.ingest (base_ingestion.py L296-L371), in this order. 1. Call
+  upload. An error from upload (no source, or a failed URL fetch) is returned to the caller as
+  `IngestError::Upload`, never turned into a failed response, because Python runs upload before its try
+  block. 2. From here every error becomes a failed response. If upload gave an existing_file_id and the
+  provider does not support one, fail with the message "{class_name} does not support ingesting an existing
+  file_id. Upload file data or provide file_url instead." before OCR. 3. ocr with the file content and content
+  type. 4. chunk with the OCR text, the file content and `ocr_was_used` = the state's ocr config is present
+  (not whether OCR returned text). 5. embed the chunks. 6. store with file content, filename, content type,
+  chunks, embeddings and the existing file id. Success returns B3450's `RAGIngestResponse` with id = the
+  ingest id, status "completed", vector_store_id = the store's id or "" when it is None or empty, and file_id
+  = the store's file id, else the existing_file_id (Python `or`, so an empty file id also falls back; the
+  field stays None when both are absent). Any error in steps 2 to 6 logs "RAG Pipeline failed: {error}" at
+  error level and returns status "failed", vector_store_id "", file_id None and error = the error's text. The
+  text is the Display of the failing step's error, and no step error may carry a credential, so it is safe
+  to return. Nothing from earlier steps is rolled back.
+
+  The Python class names that go into the existing-file message are `OpenAIRAGIngestion`,
+  `BedrockRAGIngestion`, `GeminiRAGIngestion`, `S3VectorsRAGIngestion` and `VertexAIRAGIngestion`. Only
+  OpenAI supports an existing file id (openai_ingestion.py L32); the other four keep the base default false.
+  The base-class embed (base_ingestion.py L244-L267) is not built, see out_of_scope.
+
+  Submodule `registry`. `ProviderIngestion` is an enum with one variant per provider, each holding the
+  provider struct from its task (`OpenAiIngestion`, `BedrockProvisioner` with its B3451 state,
+  `GeminiIngestion`, `S3VectorsWorkflow`, `VertexIngestion`). It implements `IngestSteps` by matching on the
+  variant, so the five providers are an explicit list, not a lookup by name. `build_ingestion(options, deps,
+  router)` is _execute_ingest_pipeline's construction half (main.py L94-L132). It picks the provider with
+  B3450's selection function on the record's custom_llm_provider (a missing provider means "openai", as B5134
+  made it), so an unknown provider returns B3450's error with the list of supported providers. It then builds
+  the B3451 state from the options and the credential port, and the provider from its settings and the ports
+  in `deps`. `RagIngestDeps` is one struct holding every port, built once at startup by the server and passed
+  in: the OpenAI, Gemini and Vertex ports from B7170, the OCR, URL fetch, credential and embedding ports from
+  B7171, the `AwsRagTransport` for Bedrock and S3 Vectors (B3457's `HttpRagTransport` over the shared
+  `ProxiedClient`), and an `IdSource`. Bedrock and S3 Vectors take a `unique_id` of 8 lowercase hex characters
+  (Python `uuid4().hex[:8]`): `IdSource::hex8()` returns it, the production impl uses uuid v4, and tests use
+  a fixed value. Bedrock settings come from B3456's `from_vector_store_config` and S3 Vectors settings from
+  B3459's `S3VectorsSettings` constructor plus the request's embedding options. A settings error is returned
+  as `IngestError::Setup` carrying the typed lower error.
+
+  Submodule `entry`. `aingest(options, file_data, file, file_url, file_id, router, deps)` is aingest and
+  ingest (main.py L138-L204 and L451-L524) as one async function; the sync `ingest` and the executor and
+  context-variable hand-off exist only for Python's event loop and are not built. If `file` is present and
+  `file_data` is absent, build file_data from it: filename default "document", content default "" and
+  content_type default "application/octet-stream"; content is base64. Decode it with the same function
+  B3462 uses for the JSON `file.content` (crates/betterlite-core/src/rag/ingest_request.rs); do not write a
+  second base64 decoder. When file_data is present, `file` is ignored. Then call `build_ingestion` and
+  `run_ingest`. `router` is passed through to the state and the ports unchanged and never read here.
+  Errors from `build_ingestion` and from upload are LiteLLM's exceptions caught by aingest's except
+  branch, which calls exception_type with model None and custom_llm_provider = the record's raw
+  custom_llm_provider value (None when absent). Do the same: map `IngestError` through betterlite-error's
+  dispatch (crates/betterlite-error/src/dispatch.rs, B185 and B186) with that provider string, so the client
+  sees the status and error type LiteLLM's mapping gives. Do not map a failed response, because it is a
+  normal 200 body.
+
+  Oracle helper. Helper cases run `BaseRAGIngestion.ingest` in Python against a test subclass whose ocr,
+  chunk, embed and store return or raise what the case scripts, and the Rust side runs `run_ingest` against a
+  scripted `IngestSteps` with the same script. Both sides project status, vector_store_id, file_id, error,
+  whether the id starts with "ingest_" (the id itself is random), and for an upload error the exception
+  kind and message. Cases that use `file` run Python's `ingest` conversion block and compare the resulting
+  file_data tuple. The skeleton creates the helper operation named after this task id and the worker writes
+  its adapter files. No HTTP case belongs here, because no route reaches `aingest` until B3465 registers
+  /v1/rag/ingest and /rag/ingest; B3465 adds those.
+
+  Size. The owned LiteLLM code is about 120 nonblank, non-comment lines (the registry and docstrings of
+  main.py L46-L91 belong to B3450). Allow 260 implementation, 300 tests, 110 adapters and 130 case lines.
+
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-server/src/rag_ingest_entry.rs
+    - crates/betterlite-server/src/rag_ingest_entry/**
+    - tools/oracle/cases/helpers/rag-ingest-entry/**
+    - "tools/oracle/fuzz/corpus/helper_case/rag_ingest_entry-*"
+    - tools/oracle/helpers/b3460.py
+    - tools/oracle/helpers/b3460/**
+    - tools/oracle/src/helpers/server_ops/b3460.rs
+    - tools/oracle/src/helpers/server_ops/b3460/**
+    - tools/oracle/src/helpers/server/b3460.rs
+    - tools/oracle/src/helpers/server/b3460/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L296-L371
+    why: BaseRAGIngestion.ingest, the six steps, the existing-file check, the completed and failed responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L45-L67
+    why: supports_existing_file_id default and the constructor that builds the state B3451 owns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L94-L132
+    why: _execute_ingest_pipeline, provider default, class lookup and the constructor call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L138-L204
+    why: aingest, including the exception_type wrap that uses the raw custom_llm_provider.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L451-L524
+    why: ingest, the file dict to file_data conversion and the async switch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/openai_ingestion.py#L32-L32
+    why: OpenAI is the only provider that sets supports_existing_file_id to true.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L653-L662
+    why: the one caller, passes file_data, file_url, file_id and router=llm_router and never passes file.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/__init__.py#L1-L19
+    why: only re-exports the six classes; nothing to build.
+
+dod:
+  - text: run_ingest returns a completed response with the ingest id, the store's vector store id and its file id, and falls back to the existing file id and to "" as LiteLLM does.
+    proof: [pipeline-completed, oracle, helper-python]
+  - text: An upload error is returned to the caller as IngestError::Upload and is never turned into a failed response.
+    proof: [pipeline-upload, oracle]
+  - text: An existing file id on a provider that does not support it fails before OCR with the class-name message, and OpenAI accepts it.
+    proof: [pipeline-existing-file, oracle]
+  - text: An error in OCR, chunk, embed or store becomes a failed response with empty vector_store_id, no file_id and the error text, and later steps do not run.
+    proof: [pipeline-failed, oracle]
+  - text: The chunk step receives ocr_was_used from the presence of the OCR config, not from the OCR result.
+    proof: [pipeline-ocr-flag]
+  - text: build_ingestion picks the provider with B3450's selection, defaults to openai and returns the supported-provider error for an unknown one.
+    proof: [registry-select]
+  - text: build_ingestion builds all five provider variants from RagIngestDeps, and Bedrock and S3 Vectors get an 8 character hex unique id from the IdSource.
+    proof: [registry-build]
+  - text: aingest builds file_data from the file object with LiteLLM's defaults only when file_data is absent, and file_data wins when both are given.
+    proof: [entry-file-object, oracle]
+  - text: aingest maps an upload or setup error through betterlite-error with the raw custom_llm_provider, and a failed response is returned unmapped.
+    proof: [entry-error-map]
+  - text: Helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: pipeline-completed
+      why: the completed response, its id fallbacks or the step order is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_ingest_entry::pipeline::tests::completed_/)'
+    - id: pipeline-upload
+      why: an upload error is swallowed into a failed response or not returned
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_ingest_entry::pipeline::tests::upload_error_/)'
+    - id: pipeline-existing-file
+      why: the existing file id check, its message or the OpenAI exception is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_ingest_entry::pipeline::tests::existing_file_/)'
+    - id: pipeline-failed
+      why: a step error does not become a failed response or later steps still run
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_ingest_entry::pipeline::tests::failed_/)'
+    - id: pipeline-ocr-flag
+      why: ocr_was_used is taken from the OCR result instead of the OCR config
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_ingest_entry::pipeline::tests::ocr_flag_/)'
+    - id: registry-select
+      why: provider default or the unsupported-provider error is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_ingest_entry::registry::tests::select_/)'
+    - id: registry-build
+      why: one of the five providers is not built from the ports or the unique id is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_ingest_entry::registry::tests::build_/)'
+    - id: entry-file-object
+      why: the file object conversion or its defaults are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_ingest_entry::entry::tests::file_object_/)'
+    - id: entry-error-map
+      why: upload and setup errors are not mapped with the raw provider, or failed responses are mapped
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_ingest_entry::entry::tests::mapped_error_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3460)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3460 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3460/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added ingest entry cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/rag_ingest_entry-*")" &&
+        grep -lE '^[[:space:]]+b3460:' tools/oracle/fuzz/corpus/helper_case/rag_ingest_entry-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/rag-ingest-entry/pipeline-completed.yaml
+  - tools/oracle/cases/helpers/rag-ingest-entry/pipeline-id-fallbacks.yaml
+  - tools/oracle/cases/helpers/rag-ingest-entry/pipeline-upload-error.yaml
+  - tools/oracle/cases/helpers/rag-ingest-entry/pipeline-existing-file.yaml
+  - tools/oracle/cases/helpers/rag-ingest-entry/pipeline-step-failures.yaml
+  - tools/oracle/cases/helpers/rag-ingest-entry/file-object-defaults.yaml
+
+deviations:
+  - what: Only the async entry exists. LiteLLM's sync `ingest` (which runs the pipeline on the event loop) and aingest's executor and contextvars hand-off are not built, and `timeout` is not accepted.
+    why: The gateway has no sync caller, and LiteLLM itself never reads `timeout` in either function (it is passed down and dropped). The B1028 task makes the same choice for sync file calls.
+  - what: The failed-response error text is the Display of the step's typed error, not Python's str(exception) of a boto3, httpx or SDK exception.
+    why: Typed lower errors replace those exceptions (B3453 to B3459 and the SDK ports). The text keeps the same lead phrases LiteLLM uses, but a provider's own error body wording can differ, and no text may include a credential.
+  - what: Provider objects are built from an explicit five-variant enum instead of looking the class up in INGESTION_REGISTRY by name.
+    why: The rules forbid reflection and auto-discovery. B3450 keeps the name list and the supported-provider error text, so a client sees the same message.
+
+out_of_scope:
+  - BaseRAGIngestion.embed (base_ingestion.py L244-L267) and its router.aembedding and litellm.aembedding calls. All five providers override embed (openai L41, gemini L45, vertex L96, bedrock L618, s3_vectors L399), so no caller reaches the base body at the pin. S3 Vectors embeds through B3459's embedder, which B7171 backs.
+  - BaseRAGIngestion.custom_llm_provider property (base_ingestion.py L96-L99). Nothing reads it at the pin; the default "openai" is applied by B3450's selection (B5134) and by build_ingestion.
+  - litellm/rag/ingestion/__init__.py. It only re-exports the six classes, so there is nothing to build.
+  - get_rag_ingestion_class in litellm/rag/utils.py. It has no caller at the pin and imports litellm.llms.vertex_ai.rag_engine.ingestion, a different Vertex class than the one INGESTION_REGISTRY uses. The registry in rag/main.py (B3450) is the only one built.
+  - aquery, query, _execute_query_pipeline and _suppressed_sub_call_billing in rag/main.py. B3461 owns them.
+  - The @client decorator on aingest and ingest (callbacks, logging object, call ids). B012 owns the logging pipeline that route handlers attach, and B3465 wires it.
+  - Request decoding, upload scanning and credential-field rejection. B3462 and B3452 own them.
+  - The ports themselves. B7170 builds the OpenAI, Gemini and Vertex ports and B7171 builds the OCR, URL fetch, credential and embedding ports.
+  - The /v1/rag/ingest and /rag/ingest routes, store persistence and authorization. B3465, B3463 and B3464 own them.
+
+pitfalls:
+  - Upload runs before the try block in LiteLLM, so an error from `upload` (ValueError for no source, a failed URL fetch) escapes as an exception, while the same kind of error from any later step is a 200 response with status "failed".
+  - The existing-file check is the first thing inside the try block, so an unsupported existing file id fails before OCR and before any provider call, and the response still has status "failed", not an exception.
+  - "Python truthiness applies to file_id (result_file_id or existing_file_id) and to vector_store_id (empty string becomes empty string), so an empty string from store behaves like None."
+  - ocr_was_used is `self.ocr_config is not None`, which is true even when OCR returned no text, and chunk then skips the file-bytes fallback.
+  - aingest passes ingest_options.get("vector_store", {}).get("custom_llm_provider") to exception_type unchanged, so a missing provider is None there even though the pipeline treats it as "openai".
+  - The `file` object is used only when file_data is None, and its content is base64 text; Python's b64decode drops characters outside the base64 alphabet and fails on bad padding, so check B3462's decoder and list any difference as a deviation.
+  - Bedrock and S3 Vectors need a fresh unique id for each ingest call, taken from IdSource; do not cache it in RagIngestDeps or two ingests would share one collection name.
+  - Add betterlite-rag and betterlite-vertex to crates/betterlite-server/Cargo.toml only if the architect has not (this task's scope leaves Cargo.toml to the skeleton); do not create a cycle, since betterlite-rag depends on betterlite-core and nothing may depend on betterlite-server.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

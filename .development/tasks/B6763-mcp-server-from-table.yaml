@@ -1,0 +1,118 @@
+id: B6763
+title: MCP server record from a database row
+description: >-
+  Build the function that turns one LiteLLM_MCPServerTable row into a runtime MCPServer record, with its credential decryption, OAuth metadata step and warnings. In LiteLLM this is `build_mcp_server_from_table` and the helpers it calls in mcp_server_manager.py. It is the only place a stored server becomes a runtime one, and B6765 (reload, add and update) and the admin routes call it.
+
+
+  Code goes in the new betterlite-mcp module server_build: crates/betterlite-mcp/src/server_build.rs, server_build/** and tests beside each file. Inputs: the row type from B858 (LiteLLM_MCPServerTable), MCPServer, MCPInfo and parse_pinned_tools from B2305 and B6590, decryption from B2303 (decrypt_value_helper, read the Rust name there), env var decryption from B4710 (decrypt_global_env_var_values, MCPEnvVar), prefix helpers from B6594 (`betterlite_mcp::server_utils::prefixes::get_server_prefix` and `compute_short_server_prefix`), the OAuth rules from B6760 (server_oauth), the fetch from B6761 (oauth_discovery) and the slot store from B6762 (discovery_slots). Take every collaborator as a constructor argument of a ServerBuilder struct: a Decryptor trait (decrypt(value, key) -> String, returning the original value when it is not decryptable, like return_original_value=True), the MetadataFetcher port, DiscoverySettings and a StdioPolicy trait (is_blocked() -> bool) for the stdio gate.
+
+
+  Items to build, as methods of ServerBuilder unless said otherwise.
+
+  1. `build_from_table` (`build_mcp_server_from_table`), inputs: &LiteLLM_MCPServerTable, credentials_are_encrypted (default true), env_vars_are_encrypted (Option<bool>, falls back to credentials_are_encrypted). Output: MCPServer or a BuildError. Follow the order of the Python function exactly: deserialize env, static_headers and credentials; take auth_value, client_id, client_secret from credentials (decrypted with the keys "auth_value", "client_id", "client_secret" when credentials_are_encrypted, else used as stored); AWS fields; scopes via extract_scopes (B6760); configured_scopes only when the stored scopes are a non-empty list of non-empty strings; name_for_prefix is alias, else server_name, else server_id; mcp_info copy with server_name and description defaults and normalize_cost_info; the manual OAuth urls through blank_to_none; issuer anchoring and endpoints_yield_to_issuer; the table OAuth metadata step; then fill every MCPServer field from the row. Defaults to keep: protocol_version "auto", subject_token_type DEFAULT_SUBJECT_TOKEN_TYPE, client_assertion_signing_alg "RS256", token_exchange_profile "rfc8693", available_on_public_internet true, the others false or empty. token_exchange_endpoint, audience, subject_token_type and token_exchange_profile prefer the row column and fall back to the credentials blob. client_id and client_secret prefer the decrypted credential and fall back to the row column. After the record is built call warn_legacy_delegate_auth (item 5) with source "database", then record the deferred flag with DiscoverySlots::set_deferred(server_id, requires_discovery(...)).
+
+  2. `resolve_table_oauth_metadata` (`_resolve_table_oauth_metadata`): returns (Option<MCPOAuthMetadata>, discovery_deferred). needs_authorization_url is is_discovery_auth_type and oauth2_flow not "client_credentials". needs_token_url is is_discovery_auth_type or obo_needs_discovery. needs_discovery is has_discovery_source and ((is_discovery_auth_type and not all of manual authorization url, manual token url and scopes present) or obo_needs_discovery). Deferred is needs_discovery and the on-startup flag is off, and then no fetch happens. With an issuer anchor and a manual issuer fetch with fetch_issuer_anchored_metadata, else discover_metadata with origin fallback allowed only for discovery auth types. An anchored server returns the metadata as is. Otherwise run restrict_to_corroborated for discovery auth types and then warn_unresolved.
+
+  3. `resolve_env_vars_list` (`_resolve_env_vars_list`): deserialize the env_vars list and run decrypt_global_env_var_values on it only when env_vars_are_encrypted. `extract_aws_credentials` (`_extract_aws_credentials`): reads aws_access_key_id, aws_secret_access_key, aws_session_token, aws_region_name, aws_service_name, aws_role_name, aws_session_name from credentials, decrypting the first three only (they are secrets) when encrypted. `decrypt_credential_field` (`_decrypt_credential_field`): empty gives None, not encrypted gives the value, else decrypt.
+
+  4. Free functions: `deserialize_json_dict` (`_deserialize_json_dict`) accepts a JSON object, a JSON string of an object or None, and gives an empty map for anything else. `deserialize_json_list` (`_deserialize_json_list`) is the same for lists. `normalize_cost_info` (`_normalize_mcp_server_cost_info`) mutates mcp_info so the costs are the shape the cost code reads (read the function and port it exactly).
+
+  5. Warnings: `warn_on_server_name_fields`, `warn_on_shared_identifier_prefixes`, `warn_legacy_delegate_auth_if_applicable` and `warn_config_id_jag_server_outruns_sso` (`_warn_*` at L1489-1575). Each logs once with the exact text of the Python message, with server ids replaced by names only where Python does so.
+
+  6. `assign_unique_short_prefix` (`_assign_unique_short_prefix`): sets a short prefix that is unique in a given set of used prefixes, rehashing with a counter up to 1024 attempts (`_SHORT_PREFIX_MAX_REHASH_ATTEMPTS`) and returning an error after that. Use `crate::server_utils::prefixes::compute_short_server_prefix` (B6594) for each attempt and the `crate::server_utils::names::short_tool_prefix_enabled` switch from B6594 to skip the work when it is off. `warn_if_newly_blocked_stdio` (`_warn_if_newly_blocked_stdio`): when the server transport is stdio and the StdioPolicy says blocked and the previous record (if any) was not blocked for this reason, log one warning.
+
+  Tests use synthetic rows (test- prefix names, https://mcp.test urls), a fake Decryptor that wraps values as "enc:<v>" and strips it, a fake fetcher and a capturing log subscriber.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/src/server_build.rs
+    - crates/betterlite-mcp/src/server_build/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3025-L3263
+    why: build_mcp_server_from_table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2944-L3023
+    why: env var list and table OAuth metadata step.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5320-L5374
+    why: credential field decrypt and AWS credentials.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1489-L1664
+    why: warning helpers, JSON deserializers and cost info normalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5426-L5486
+    why: unique short prefix assignment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L4655-L4657
+    why: stdio newly blocked warning.
+
+dod:
+  - text: build_from_table decrypts auth_value, client_id, client_secret and client_private_key only when credentials_are_encrypted, and falls back to the row columns as described.
+    proof: [build-credentials-tests]
+  - text: The AWS fields decrypt the three secrets only, and the remaining AWS fields pass through.
+    proof: [build-credentials-tests]
+  - text: The record defaults (protocol_version, subject_token_type, signing alg, token exchange profile, public internet flag) and the column-then-blob fallbacks match the Python.
+    proof: [build-fields-tests]
+  - text: configured_scopes is set only for a non-empty list of non-empty strings, and scopes come from the credentials or the gated metadata.
+    proof: [build-fields-tests]
+  - text: The OAuth metadata step defers, fetches, anchors and gates exactly as the item text says, including deferred servers making no fetch.
+    proof: [build-oauth-tests]
+  - text: deserialize_json_dict, deserialize_json_list and normalize_cost_info accept the stored shapes and give empty values for anything else.
+    proof: [build-json-tests]
+  - text: Each warn helper logs its message once under the stated condition.
+    proof: [build-warn-tests]
+  - text: assign_unique_short_prefix finds a free prefix by rehashing and errors after 1024 attempts, and warn_if_newly_blocked_stdio warns only on a new block.
+    proof: [build-prefix-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: build-credentials-tests
+      why: a credential or AWS field is decrypted wrongly or not at all
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_build::tests::credentials_/)'
+    - id: build-fields-tests
+      why: a record default, fallback or scope rule is wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_build::tests::fields_/)'
+    - id: build-oauth-tests
+      why: the table OAuth metadata step differs from the Python
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_build::tests::oauth_/)'
+    - id: build-json-tests
+      why: a stored JSON shape is not accepted or a bad one does not give an empty value
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_build::tests::json_/)'
+    - id: build-warn-tests
+      why: a warning is missing, repeated or has the wrong text
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_build::tests::warn_/)'
+    - id: build-prefix-tests
+      why: the unique prefix search or the stdio warning is wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_build::tests::prefix_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Collaborators (decryption, fetcher, stdio policy) are constructor arguments of ServerBuilder, and getattr defaults become typed Option fields on the row struct.
+    why: the repo wires dependencies through constructors and has no reflection.
+  - what: Errors are a BuildError enum (bad protocol_version, bad JSON, prefix exhaustion), not Pydantic ValidationError and RuntimeError.
+    why: typed errors, no Python exception hierarchy.
+
+out_of_scope:
+  - "The OAuth rules and the fetch: B6760 and B6761."
+  - "DiscoverySlots and set_deferred: B6762 (this task calls them)."
+  - "The MCPServer record and the table row type: B6590 and B858."
+  - "Building a record from the config file: B6764."
+  - "Registry writes, add_server and update_server: B6765."
+  - "stdio_gate (is_mcp_stdio_blocked, warn_if_mcp_stdio_blocked): no owner found, see the architect notes; this task only takes the StdioPolicy trait."
+  - "decrypt_global_env_var_values and MCPEnvVar: B4710. decrypt_value_helper: B2303."
+
+pitfalls:
+  - "Decrypt with return_original_value semantics: a value that does not decrypt is kept as stored, never turned into an error."
+  - "client_private_key is decrypted through decrypt_credential_field, but client_private_key_id is not."
+  - "The AWS access key id is not a secret in the Python code path; decrypt exactly the fields Python decrypts and no others."
+  - "oauth2_flow on the record is explicit_oauth2_flow of the row column, not the inferred flow."
+  - "Env vars are decrypted only when env_vars_are_encrypted, which defaults to credentials_are_encrypted."
+  - "The unique prefix search counts attempts from 0 and stops at 1024 total, and a server that already owns the prefix keeps it."
+  - "Token exchange fields read the credentials blob only as a fallback for rows saved before the columns existed."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
