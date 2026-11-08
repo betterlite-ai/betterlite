@@ -84,16 +84,14 @@ impl<'raw> StrictNode<'raw> {
     }
 }
 
-impl<'raw> LazyNode<'raw> {
-    fn into_schema(self) -> SchemaNode<'raw> {
-        SchemaNode {
-            kind: self.kind,
-            description: self.description,
-            properties: self.properties.map(Properties::Raw),
-            required: self.required,
-            enum_values: self.enum_values,
-            items: self.items.map(Item::Raw),
-        }
+fn lazy_node(node: LazyNode<'_>) -> SchemaNode<'_> {
+    SchemaNode {
+        kind: node.kind,
+        description: node.description,
+        properties: node.properties.map(Properties::Raw),
+        required: node.required,
+        enum_values: node.enum_values,
+        items: node.items.map(Item::Raw),
     }
 }
 
@@ -133,7 +131,7 @@ pub(super) fn parse_schema<'raw>(
     }
     let mut lazy = serde_json::Deserializer::from_str(raw.get());
     serde_path_to_error::deserialize::<_, LazyNode<'raw>>(&mut lazy)
-        .map(LazyNode::into_schema)
+        .map(lazy_node)
         .map_err(|source| ToolFormatError::Nested { field, source })
 }
 
@@ -147,7 +145,7 @@ fn parse_children<'raw>(
             .map_err(|source| ToolFormatError::Nested { field, source })?;
     Ok(children
         .into_iter()
-        .map(|(key, node)| (key, node.into_schema()))
+        .map(|(key, node)| (key, lazy_node(node)))
         .collect())
 }
 
