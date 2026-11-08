@@ -29,6 +29,7 @@ enum Outcome {
     Failure,
     Hang,
     Blocked,
+    Panic,
 }
 
 #[derive(Debug, Default)]
@@ -116,6 +117,7 @@ impl Callback for ScriptedCallback {
             Outcome::Success | Outcome::Blocked => Ok(()),
             Outcome::Failure => Err(ScriptedFailure),
             Outcome::Hang => pending().await,
+            Outcome::Panic => panic!("the scripted logging callback panicked"),
         }
     }
 }
@@ -310,6 +312,31 @@ async fn a_failed_callback_is_isolated_from_the_model_response() {
     let shutdown = worker.stop().await;
     assert_eq!(shutdown.failed, 1);
     assert_eq!(shutdown.completed, 0);
+}
+
+#[tokio::test]
+async fn a_panicking_callback_is_counted_under_its_span() {
+    let (buffer, _guard) = capture_warnings();
+    let record = Arc::new(Record::default());
+    let spans = Arc::new(SpanContexts::default());
+    let worker = LoggingWorker::start(settings(8, 2)).unwrap();
+    let span = tracing::info_span!("request_span", request = "request-panic");
+    spans.bind(&span, "request-panic");
+    let entered = span.enter();
+    let _panicking = worker.enqueue(callback(&record, "panicking", Outcome::Panic, &spans));
+    drop(entered);
+    let _next = worker.enqueue(callback(&record, "next", Outcome::Success, &spans));
+    let flush = worker.flush().await;
+    assert_eq!(flush.failed, 1);
+    assert_eq!(flush.completed, 1);
+    let contents = buffer.contents();
+    assert!(
+        line_with(&contents, "a logging callback task failed")
+            .contains(r#"request="request-panic""#)
+    );
+    let shutdown = worker.stop().await;
+    assert_eq!(shutdown.failed, 1);
+    assert_eq!(shutdown.completed, 1);
 }
 
 #[tokio::test]

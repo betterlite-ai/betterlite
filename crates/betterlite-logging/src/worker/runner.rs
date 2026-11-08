@@ -81,10 +81,7 @@ where
         loop {
             let event = self.next(closed).await;
             match event {
-                Event::Received(Some(queued)) => {
-                    self.spawn(queued).await;
-                    self.reap();
-                }
+                Event::Received(Some(queued)) => self.spawn(queued).await,
                 Event::Received(None) => closed = true,
                 Event::Joined(Some(joined)) => self.record_join(joined),
                 Event::Joined(None) => {}
@@ -93,6 +90,9 @@ where
                     self.finish().await;
                     return;
                 }
+            }
+            while let Some(joined) = self.tasks.try_join_next_with_id() {
+                self.record_join(joined);
             }
             if closed && self.tasks.is_empty() {
                 break;
@@ -165,12 +165,6 @@ where
             .instrument(span.clone()),
         );
         self.spans.insert(handle.id(), span);
-    }
-
-    fn reap(&mut self) {
-        while let Some(joined) = self.tasks.try_join_next_with_id() {
-            self.record_join(joined);
-        }
     }
 
     fn record_join(&mut self, joined: Result<(Id, ()), JoinError>) {
