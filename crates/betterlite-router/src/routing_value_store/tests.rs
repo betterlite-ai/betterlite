@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::thread;
 
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -164,7 +165,7 @@ fn routing_value_store_behaviors(#[case] name: &str) {
         "concurrent_set_add_keeps_every_member" => {
             let store = Arc::new(store_with(None, &clock()));
             let key = route_key("dynamic_rate:00-00:model");
-            std::thread::scope(|scope| {
+            thread::scope(|scope| {
                 for index in 0..16_u32 {
                     let shared = Arc::clone(&store);
                     let route_key = key.clone();
