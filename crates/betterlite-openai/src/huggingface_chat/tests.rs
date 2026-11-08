@@ -333,9 +333,11 @@ fn request_ignores_an_incomplete_entry_for_another_provider() {
     assert_eq!(body.get("model"), Some(&json!("org/mapped")));
 }
 
-#[test]
-fn request_an_incomplete_selected_entry_is_a_typed_error() {
-    let mapping = source(r#"{"novita": {"status": "live"}}"#);
+#[rstest]
+#[case::missing_provider_id(r#"{"novita": {"status": "live"}}"#, "providerId")]
+#[case::missing_status(r#"{"novita": {"providerId": "org/mapped"}}"#, "status")]
+fn request_an_incomplete_selected_entry_is_a_typed_error(#[case] entry: &str, #[case] field: &str) {
+    let mapping = source(entry);
     let messages = chat_messages(r#"[{"role":"user","content":"hi"}]"#);
     let error = transform_request(
         "novita/org/model",
@@ -345,23 +347,40 @@ fn request_an_incomplete_selected_entry_is_a_typed_error() {
         &mapping,
     )
     .unwrap_err();
-    assert!(
-        matches!(
-            error,
-            HuggingfaceChatError::IncompleteProviderMapping { .. }
-        ),
-        "{error}"
-    );
+    let HuggingfaceChatError::IncompleteProviderMapping { field: named, .. } = &error else {
+        panic!("unexpected {error:?}");
+    };
+    assert_eq!(*named, field);
 }
 
 #[rstest]
-#[case::mapped(None)]
-#[case::api_base(Some("http://mock"))]
-fn request_keeps_a_tool_call_turn_content_null(#[case] api_base: Option<&str>) {
+#[case::tool_calls_mapped(
+    r#"{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]}"#,
+    None
+)]
+#[case::tool_calls_api_base(
+    r#"{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]}"#,
+    Some("http://mock")
+)]
+#[case::function_call_mapped(
+    r#"{"role":"assistant","content":null,"function_call":{"name":"lookup","arguments":"{}"}}"#,
+    None
+)]
+#[case::function_call_api_base(
+    r#"{"role":"assistant","content":null,"function_call":{"name":"lookup","arguments":"{}"}}"#,
+    Some("http://mock")
+)]
+#[case::function_message_mapped(r#"{"role":"function","name":"lookup","content":null}"#, None)]
+#[case::function_message_api_base(
+    r#"{"role":"function","name":"lookup","content":null}"#,
+    Some("http://mock")
+)]
+fn request_keeps_a_tool_call_turn_content_null(
+    #[case] message: &str,
+    #[case] api_base: Option<&str>,
+) {
     let mapping = source(r#"{"novita": {"status": "live", "providerId": "org/mapped"}}"#);
-    let messages = chat_messages(
-        r#"[{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]}]"#,
-    );
+    let messages = chat_messages(&format!("[{message}]"));
     let body = transform_request(
         "novita/org/model",
         &messages,

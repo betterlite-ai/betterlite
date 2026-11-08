@@ -106,10 +106,14 @@ fn request_body(
             let Value::Object(fields) = item else {
                 continue;
             };
-            let assistant = fields.get("role").and_then(Value::as_str) == Some("assistant");
-            let tool_call = fields.contains_key("tool_calls");
-            if assistant && tool_call && !fields.contains_key("content") {
-                // LiteLLM forwards a tool-call turn's content: null; the typed message cannot tell null from absent
+            let role = fields.get("role").and_then(Value::as_str);
+            let assistant_call = role == Some("assistant")
+                && (fields.contains_key("tool_calls")
+                    || fields
+                        .get("function_call")
+                        .is_some_and(|call| !call.is_null()));
+            if (assistant_call || role == Some("function")) && !fields.contains_key("content") {
+                // LiteLLM forwards these turns' content: null; the typed message cannot tell null from absent
                 fields.insert("content".to_owned(), Value::Null);
             }
         }

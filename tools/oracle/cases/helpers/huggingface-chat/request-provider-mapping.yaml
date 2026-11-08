@@ -35,5 +35,29 @@ call:
             content: null
             tool_calls:
               - {id: "call_1", type: function, function: {name: lookup, arguments: "{}"}}
+      - kind: transform_request
+        model: "novita/org/model"
+        messages:
+          - role: assistant
+            content: null
+            function_call: {name: lookup, arguments: "{}"}
+        mapping: {novita: {status: live, providerId: "org/mapped"}}
+      - kind: transform_request
+        model: "novita/org/model"
+        api_base: "http://mock"
+        messages:
+          - role: assistant
+            content: null
+            function_call: {name: lookup, arguments: "{}"}
+      - kind: transform_request
+        model: "novita/org/model"
+        messages:
+          - {role: function, name: lookup, content: null}
+        mapping: {novita: {status: live, providerId: "org/mapped"}}
+      - kind: transform_request
+        model: "novita/org/model"
+        api_base: "http://mock"
+        messages:
+          - {role: function, name: lookup, content: null}
 env: {}
 compare: {ignore: []}
