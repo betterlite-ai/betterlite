@@ -14,11 +14,17 @@ use crate::aws::request_signing::{
 };
 use crate::secret_contracts::options::SecretTimeout;
 
-mod blocking;
 mod tests;
 
 const GET_SECRET_VALUE: &str = "GetSecretValue";
 const SECRET_STRING: &str = "SecretString";
+const BOOTSTRAP_NAMES: [&str; 5] = [
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_REGION_NAME",
+    "AWS_REGION",
+    "AWS_BEDROCK_RUNTIME_ENDPOINT",
+];
 
 pub trait AwsBlockingTransport: AwsTransport {
     fn post_blocking(
@@ -145,31 +151,9 @@ where
     }
 }
 
-async fn post_and_read<Resolver, Transport>(
-    manager: &AwsSecretsManager<Resolver, Transport>,
-    secret_name: &str,
-    optional_params: Option<&mut AwsOptionalParams>,
-    timeout: Option<SecretTimeout>,
-) -> Result<Option<SecretString>, AwsReadError<Resolver::Error, Transport::Error>>
-where
-    Resolver: CredentialResolver + Sync,
-    Transport: AwsTransport,
-{
-    let request: ActionRequest<'_, NoBody> = ActionRequest {
-        action: GET_SECRET_VALUE,
-        secret_name,
-        request_data: None,
-    };
-    read_reply(
-        secret_name,
-        manager
-            .async_post_action(&request, optional_params, timeout)
-            .await,
-    )
-}
-
 impl<Resolver, Transport> AwsSecretsManager<Resolver, Transport>
 where
+    Resolver: CredentialResolver + Sync,
     Transport: AwsTransport,
 {
     pub async fn async_read_secret(
@@ -178,25 +162,73 @@ where
         optional_params: Option<&mut AwsOptionalParams>,
         timeout: Option<SecretTimeout>,
         primary_secret_name: Option<&str>,
-    ) -> Result<Option<SecretString>, AwsReadError<Resolver::Error, Transport::Error>>
-    where
-        Resolver: CredentialResolver + Sync,
-    {
-        if let Some(primary) = primary_secret_name.filter(|name| !name.is_empty()) {
-            return self.async_read_from_primary(secret_name, primary).await;
-        }
-        post_and_read(self, secret_name, optional_params, timeout).await
+    ) -> Result<Option<SecretString>, AwsReadError<Resolver::Error, Transport::Error>> {
+        let Some(primary) = primary_secret_name.filter(|name| !name.is_empty()) else {
+            let request: ActionRequest<'_, NoBody> = ActionRequest {
+                action: GET_SECRET_VALUE,
+                secret_name,
+                request_data: None,
+            };
+            let reply = self
+                .async_post_action(&request, optional_params, timeout)
+                .await;
+            return read_reply(secret_name, reply);
+        };
+        self.async_read_from_primary(secret_name, primary).await
     }
 
     pub async fn async_read_from_primary(
         &self,
         secret_name: &str,
         primary_secret_name: &str,
-    ) -> Result<Option<SecretString>, AwsReadError<Resolver::Error, Transport::Error>>
-    where
-        Resolver: CredentialResolver + Sync,
-    {
-        let primary_text = post_and_read(self, primary_secret_name, None, None).await?;
+    ) -> Result<Option<SecretString>, AwsReadError<Resolver::Error, Transport::Error>> {
+        let request: ActionRequest<'_, NoBody> = ActionRequest {
+            action: GET_SECRET_VALUE,
+            secret_name: primary_secret_name,
+            request_data: None,
+        };
+        let reply = self.async_post_action(&request, None, None).await;
+        let primary_text = read_reply(primary_secret_name, reply)?;
+        let mut secrets =
+            parse_primary_secret(primary_text.as_ref()).map_err(AwsReadError::Primary)?;
+        Ok(secrets.remove(secret_name))
+    }
+}
+
+impl<Resolver, Transport> AwsSecretsManager<Resolver, Transport>
+where
+    Resolver: CredentialResolver + Sync,
+    Transport: AwsBlockingTransport,
+{
+    pub fn sync_read_secret(
+        &self,
+        secret_name: &str,
+        optional_params: Option<&mut AwsOptionalParams>,
+        timeout: Option<SecretTimeout>,
+        primary_secret_name: Option<&str>,
+    ) -> Result<Option<SecretString>, AwsReadError<Resolver::Error, Transport::Error>> {
+        if BOOTSTRAP_NAMES.contains(&secret_name) {
+            let value = self.dependencies.environment.get(secret_name).cloned();
+            return Ok(value.map(SecretString::from));
+        }
+        let Some(primary) = primary_secret_name.filter(|name| !name.is_empty()) else {
+            let request: ActionRequest<'_, NoBody> = ActionRequest {
+                action: GET_SECRET_VALUE,
+                secret_name,
+                request_data: None,
+            };
+            let reply = self.blocking_post_action(&request, optional_params, timeout);
+            return read_reply(secret_name, reply);
+        };
+        self.sync_read_from_primary(secret_name, primary)
+    }
+
+    pub fn sync_read_from_primary(
+        &self,
+        secret_name: &str,
+        primary_secret_name: &str,
+    ) -> Result<Option<SecretString>, AwsReadError<Resolver::Error, Transport::Error>> {
+        let primary_text = self.sync_read_secret(primary_secret_name, None, None, None)?;
         let mut secrets =
             parse_primary_secret(primary_text.as_ref()).map_err(AwsReadError::Primary)?;
         Ok(secrets.remove(secret_name))
