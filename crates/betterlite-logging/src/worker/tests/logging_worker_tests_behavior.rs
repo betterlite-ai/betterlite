@@ -15,8 +15,8 @@ use tracing_subscriber::fmt::MakeWriter;
 
 use crate::worker::{
     Admission, Callback, DEFAULT_CONCURRENCY, DEFAULT_EVENT_TIMEOUT, DEFAULT_MAX_QUEUE_SIZE,
-    DEFAULT_SHUTDOWN_DRAIN, DEFAULT_TIMEOUT_SUMMARY_WINDOW, LoggingWorker, Rejection, WorkerError,
-    WorkerSettings,
+    DEFAULT_SHUTDOWN_DRAIN, DEFAULT_TIMEOUT_SUMMARY_WINDOW, FlushReport, LoggingWorker, Rejection,
+    WorkerError, WorkerSettings,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -213,6 +213,15 @@ fn line_with<'text>(contents: &'text str, needle: &str) -> &'text str {
         .unwrap_or("")
 }
 
+async fn flush_within<C>(worker: &LoggingWorker<C>) -> FlushReport
+where
+    C: Callback,
+{
+    timeout(Duration::from_secs(2), worker.flush())
+        .await
+        .expect("the logging worker flush did not complete")
+}
+
 fn summary_lines(contents: &str) -> Vec<&str> {
     contents
         .lines()
@@ -303,7 +312,7 @@ async fn successful_callbacks_run_and_flush_waits_for_them() {
     let _a = worker.enqueue(callback(&record, "a", Outcome::Success, &spans));
     let _b = worker.enqueue(callback(&record, "b", Outcome::Success, &spans));
     let _c = worker.enqueue(callback(&record, "c", Outcome::Success, &spans));
-    let flush = worker.flush().await;
+    let flush = flush_within(&worker).await;
     assert_eq!(flush.accepted, 3);
     assert_eq!(flush.completed, 3);
     assert_eq!(flush.failed, 0);
@@ -327,7 +336,7 @@ async fn a_failed_callback_is_isolated_from_the_model_response() {
     let worker = LoggingWorker::start(settings(8, 1)).unwrap();
     let admission = worker.enqueue(callback(&record, "broken", Outcome::Failure, &spans));
     assert_eq!(admission, Admission::Accepted);
-    let flush = worker.flush().await;
+    let flush = flush_within(&worker).await;
     assert_eq!(flush.failed, 1);
     assert!(buffer.contents().contains("the logging callback failed"));
     let shutdown = worker.stop().await;
@@ -354,7 +363,7 @@ async fn a_panicking_callback_is_counted_under_its_span() {
     let _panicking = worker.enqueue(callback(&record, "panicking", Outcome::Panic, &spans));
     drop(entered);
     let _next = worker.enqueue(callback(&record, "next", Outcome::Success, &spans));
-    let flush = worker.flush().await;
+    let flush = flush_within(&worker).await;
     assert_eq!(flush.failed, 1);
     assert_eq!(flush.completed, 1);
     let contents = buffer.contents();
@@ -375,7 +384,7 @@ async fn a_callback_that_panics_before_its_future_is_counted() {
         panic_before_future: true,
     });
     assert_eq!(admission, Admission::Accepted);
-    let flush = worker.flush().await;
+    let flush = flush_within(&worker).await;
     assert_eq!(flush.failed, 1);
     let shutdown = worker.stop().await;
     assert_eq!(shutdown.failed, 1);
@@ -397,7 +406,7 @@ async fn each_event_keeps_the_context_captured_before_enqueue() {
     let _first = enqueue_in_span(&worker, &record, &spans, "first", "request-a");
     let _second = enqueue_in_span(&worker, &record, &spans, "second", "request-b");
     let _third = enqueue_in_span(&worker, &record, &spans, "third", "request-c");
-    let flush = worker.flush().await;
+    let flush = flush_within(&worker).await;
     assert_eq!(flush.completed, 3);
     let mut contexts = record.contexts();
     contexts.sort_unstable();
@@ -428,7 +437,7 @@ async fn a_callback_logs_under_the_span_captured_at_enqueue() {
     let worker = LoggingWorker::start(settings(8, 2)).unwrap();
     let _first = enqueue_in_span(&worker, &record, &spans, "first", "request-a");
     let _second = enqueue_in_span(&worker, &record, &spans, "second", "request-b");
-    let flush = worker.flush().await;
+    let flush = flush_within(&worker).await;
     assert_eq!(flush.completed, 2);
     let contents = buffer.contents();
     assert!(line_with(&contents, r#"callback="first""#).contains(r#"request="request-a""#));
@@ -460,7 +469,7 @@ async fn a_full_queue_rejects_only_the_new_event() {
     assert_eq!(worker.stats().rejected_full, 1);
     assert_eq!(model_response, "the successful model response");
     release.notify_one();
-    let flush = worker.flush().await;
+    let flush = flush_within(&worker).await;
     assert_eq!(flush.accepted, 5);
     assert_eq!(flush.completed, 5);
     let names = record.names();
@@ -494,7 +503,7 @@ async fn at_most_the_configured_callbacks_run_at_once() {
     first_release.notify_one();
     wait_for_names(&record, &["first", "second"]).await;
     second_release.notify_one();
-    let flush = worker.flush().await;
+    let flush = flush_within(&worker).await;
     assert_eq!(flush.completed, 2);
     let shutdown = worker.stop().await;
     assert!(shutdown.drained);
@@ -513,7 +522,7 @@ async fn a_timed_out_callback_releases_its_permit() {
     let worker = LoggingWorker::start(settings).unwrap();
     let _hang = worker.enqueue(callback(&record, "hang", Outcome::Hang, &spans));
     let _next = worker.enqueue(callback(&record, "next", Outcome::Success, &spans));
-    let flush = worker.flush().await;
+    let flush = flush_within(&worker).await;
     assert_eq!(flush.timed_out, 1);
     assert_eq!(flush.completed, 1);
     let shutdown = worker.stop().await;
@@ -572,9 +581,37 @@ async fn stop_accounts_for_events_left_at_the_deadline() {
         .saturating_add(shutdown.cancelled)
         .saturating_add(shutdown.dropped);
     assert_eq!(shutdown.accepted, settled);
-    let flush = worker.flush().await;
+    let flush = flush_within(&worker).await;
     assert_eq!(flush.accepted, 2);
     assert_eq!(flush.completed, 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn stop_cancels_running_callbacks_when_the_deadline_expires() {
+    let record = Arc::new(Record::default());
+    let spans = Arc::new(SpanContexts::default());
+    let first_release = Arc::new(Notify::new());
+    let second_release = Arc::new(Notify::new());
+    let settings = timed_settings(
+        2,
+        Duration::from_secs(5),
+        Duration::from_millis(30),
+        Duration::from_millis(20),
+    );
+    let worker = LoggingWorker::start(settings).unwrap();
+    let mut first = callback(&record, "first", Outcome::Blocked, &spans);
+    first.release = Some(first_release);
+    let _first = worker.enqueue(first);
+    let mut second = callback(&record, "second", Outcome::Blocked, &spans);
+    second.release = Some(second_release);
+    let _second = worker.enqueue(second);
+    wait_for_names(&record, &["first", "second"]).await;
+    let shutdown = worker.stop().await;
+    assert!(!shutdown.drained);
+    assert_eq!(shutdown.accepted, 2);
+    assert_eq!(shutdown.completed, 0);
+    assert_eq!(shutdown.cancelled, 2);
+    assert_eq!(shutdown.dropped, 0);
 }
 
 #[tokio::test(start_paused = true)]
@@ -595,7 +632,7 @@ async fn a_timeout_burst_is_summarized_once() {
         &spans,
         &["first", "second", "third", "fourth", "fifth"],
     );
-    let flush = worker.flush().await;
+    let flush = flush_within(&worker).await;
     assert_eq!(flush.timed_out, 5);
     sleep(Duration::from_millis(20)).await;
     let contents = buffer.contents();
@@ -632,7 +669,7 @@ async fn timeout_bursts_are_summarized_once_per_window() {
     assert_eq!(first_window.len(), 1);
     assert!(first_window[0].contains("callbacks=3"));
     assert!(worker.stats().started < 8);
-    let flush = worker.flush().await;
+    let flush = flush_within(&worker).await;
     assert_eq!(flush.timed_out, 8);
     sleep(Duration::from_millis(30)).await;
     let contents = buffer.contents();
@@ -690,21 +727,21 @@ async fn admission_reports_a_closed_worker() {
 async fn wait_for_names(record: &Arc<Record>, wanted: &[&'static str]) {
     timeout(Duration::from_secs(2), async {
         while !wanted.iter().all(|name| record.names().contains(name)) {
-            yield_now().await;
+            sleep(Duration::from_millis(1)).await;
         }
     })
     .await
-    .unwrap();
+    .expect("the scripted callbacks did not start");
 }
 
 async fn wait_for_dequeued(worker: &LoggingWorker<ScriptedCallback>, depth: usize) {
     timeout(Duration::from_secs(2), async {
         while worker.stats().dequeued < depth {
-            yield_now().await;
+            sleep(Duration::from_millis(1)).await;
         }
     })
     .await
-    .unwrap();
+    .expect("the worker did not dequeue the events");
 }
 
 #[derive(Clone, Default)]

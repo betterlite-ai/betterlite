@@ -33,7 +33,7 @@ pub(super) async fn run<C>(
     C: Callback,
 {
     let runner = Runner {
-        receiver,
+        receiver: Some(receiver),
         semaphore: Arc::new(Semaphore::new(settings.concurrency)),
         tasks: JoinSet::new(),
         counters: context.counters,
@@ -59,7 +59,7 @@ struct Runner<C>
 where
     C: Callback,
 {
-    receiver: mpsc::Receiver<Queued<C>>,
+    receiver: Option<mpsc::Receiver<Queued<C>>>,
     semaphore: Arc<Semaphore>,
     tasks: JoinSet<()>,
     counters: Arc<Counters>,
@@ -75,37 +75,41 @@ where
     C: Callback,
 {
     async fn run(mut self) {
-        let mut closed = false;
         loop {
-            let event = self.next(closed).await;
+            let event = self.next().await;
             match event {
                 Event::Received(Some(queued)) => self.spawn(queued).await,
-                Event::Received(None) => closed = true,
+                Event::Received(None) => self.receiver = None,
                 Event::Joined => {}
                 Event::Shutdown => {
                     self.tasks.shutdown().await;
-                    self.finish().await;
-                    return;
+                    break;
                 }
             }
             while self.tasks.try_join_next().is_some() {}
-            if closed && self.tasks.is_empty() {
+            if self.receiver.is_none() && self.tasks.is_empty() {
                 break;
             }
         }
-        self.finish().await;
+        self.shutdown.cancel();
+        let Some(summarizer) = self.summarizer.take() else {
+            return;
+        };
+        if summarizer.await.is_err() {
+            tracing::error!("the logging timeout summarizer failed");
+        }
     }
 
-    async fn next(&mut self, closed: bool) -> Event<C> {
+    async fn next(&mut self) -> Event<C> {
         if self.shutdown.is_cancelled() {
             return Event::Shutdown;
         }
         let has_tasks = !self.tasks.is_empty();
         let mut pending: Vec<NextEvent<'_, C>> = Vec::new();
-        if !closed {
-            pending.push(Box::pin(async {
-                Event::Received(self.receiver.recv().await)
-            }));
+        if let Some(receiver) = self.receiver.as_mut() {
+            pending.push(Box::pin(
+                async move { Event::Received(receiver.recv().await) },
+            ));
         }
         if has_tasks {
             pending.push(Box::pin(async {
@@ -160,16 +164,6 @@ where
             }
             .instrument(span),
         );
-    }
-
-    async fn finish(&mut self) {
-        self.shutdown.cancel();
-        let Some(summarizer) = self.summarizer.take() else {
-            return;
-        };
-        if summarizer.await.is_err() {
-            tracing::error!("the logging timeout summarizer failed");
-        }
     }
 }
 
