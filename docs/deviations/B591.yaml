@@ -1,0 +1,5 @@
+task: B591
+deviations:
+  - what: An aws_sts_endpoint that urllib.parse treats as having no hostname (for example "https://exa mple.com" or "http://") is an endpoint URL error in betterlite, where LiteLLM finds no region in it and falls back to the environment or the configured region.
+    why: urlsplit never validates a URL string, while url::Url::parse enforces RFC 3986; a hostless or malformed STS endpoint cannot reach boto3 either way, so no working setup relies on the fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L807-L815
