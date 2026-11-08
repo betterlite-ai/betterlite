@@ -1,0 +1,8 @@
+task: B022
+deviations:
+  - what: admission_queue_timeout_seconds is held as a Duration, so a timeout is applied at the nearest nanosecond instead of the exact Python float.
+    why: tokio timers are nanosecond-based; a configured timeout whose binary fraction needs sub-nanosecond precision rounds to the closest nanosecond. The config test sub_nanosecond_timeout_rounds_to_the_nearest_nanosecond pins the rounding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L270
+  - what: A max_in_flight_requests_per_worker or max_queued_requests_per_worker above the platform's addressable range disables admission with a warning, where LiteLLM stores any Python int.
+    why: the worker slots come from a tokio semaphore with a fixed maximum permit count and a usize queue bound, so a larger configured limit cannot be represented; the pinned fallback of disabling admission keeps the gateway serving.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/admission_control_middleware.py#L86
