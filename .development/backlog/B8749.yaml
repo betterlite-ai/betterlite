@@ -1,0 +1,13 @@
+id: B8749
+milestone: M8 platform
+title: FinOps callback names and the dynamic rate limiter hooks by name
+status: todo
+depends_on: [B8742, B8747, B8741, B8740, B8390, B8612, B8611, B3050, B3051, B3052, B3053]
+file: tasks/B8749-finops-and-limiter-hooks.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

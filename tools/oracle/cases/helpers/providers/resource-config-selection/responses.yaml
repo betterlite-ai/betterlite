@@ -1,0 +1,41 @@
+kind: helper
+name: resource-config-responses
+call:
+  b5360:
+    requests:
+      - selector: responses
+        calls:
+          - {provider: openai, model: gpt-4o}
+          - {provider: xai, model: grok}
+          - {provider: sail, model: m}
+          - {provider: chatgpt, model: m}
+          - {provider: litellm_proxy, model: m}
+          - {provider: volcengine, model: m}
+          - {provider: manus, model: m}
+          - {provider: perplexity, model: m}
+          - {provider: openrouter, model: m}
+          - {provider: hosted_vllm, model: m}
+          - {provider: fireworks_ai, model: m}
+          - {provider: edenai, model: m}
+          - {model: m}
+          - {provider: azure, model: o_series-preview}
+          - {provider: azure, model: o1, facts: {azure: {supports_reasoning: true}}}
+          - {provider: azure, model: gpt-4o, facts: {azure: {supports_reasoning: true}}}
+          - {provider: azure, model: o1}
+          - {provider: azure, facts: {azure: {supports_reasoning: true}}}
+          - {provider: azure_ai, model: m, facts: {azure: {native_responses: true}}}
+          - {provider: azure_ai, model: m}
+          - {provider: github_copilot}
+          - {provider: github_copilot, model: gpt-5.3-codex, facts: {github_copilot_responses: true}}
+          - {provider: github_copilot, model: gpt-5.3-codex}
+          - {provider: databricks, model: databricks-gpt-4}
+          - {provider: databricks, model: llama-3}
+          - {provider: bedrock, model: openai.gpt-5}
+          - {provider: bedrock}
+          - {provider: bedrock_mantle, model: gpt-5, facts: {mantle: {supported: true, use_openai_path: true}}}
+          - {provider: bedrock_mantle, model: gpt-5, facts: {mantle: {supported: true}}}
+          - {provider: bedrock_mantle, model: gpt-5}
+          - {provider: bedrock_mantle, facts: {mantle: {supported: true, use_openai_path: true}}}
+          - {provider: groq, model: m}
+env: {}
+compare: {ignore: []}

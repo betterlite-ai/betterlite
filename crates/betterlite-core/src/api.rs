@@ -152,6 +152,7 @@ pub mod messages_stream_usage;
 pub mod messages_sync_stream;
 pub mod messages_thinking;
 pub mod messages_token_route;
+pub mod passthrough_call;
 pub mod passthrough_logging;
 pub mod polly;
 pub mod prompt_hook_dispatch;

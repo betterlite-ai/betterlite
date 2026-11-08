@@ -13,6 +13,7 @@ pub mod router_call_types;
 pub mod router_completion;
 pub mod router_container;
 pub mod router_generic;
+pub mod router_passthrough;
 pub mod router_single_calls;
 pub mod router_video;
 pub mod silent_experiment;

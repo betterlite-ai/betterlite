@@ -1,7 +1,7 @@
 id: B3426
 title: Eval create list and retrieval routes
 description: >-
-  Register POST and GET `/v1/evals` and GET `/v1/evals/{eval_id}` routes in `betterlite-server::api::eval_read_create_routes`.
+  Register POST and GET `/v1/evals` and GET `/v1/evals/{eval_id}` routes in `betterlite-server::api::eval_read_create_routes`, returned by `pub fn routes(..)`, which B8775 mounts and proves over HTTP; test the handlers here with tower's oneshot over that Router.
   The module exports a function that registers these three routes with the server and returns a router factory. Decode optional request
   bodies with orjson and apply model selection precedence: truthy body `model`, then query `model`, then header `x-litellm-model`.
   For create_eval, accept `metadata` in the request but pass it only when explicitly provided through `extra_body` (create does not
@@ -16,7 +16,6 @@ scope:
   paths:
     - crates/betterlite-server/src/api/eval_read_create_routes.rs
     - crates/betterlite-server/src/api/eval_read_create_routes/**
-    - tools/oracle/cases/evals/create-list-get/**
     - tools/oracle/helpers/b3426.py
     - tools/oracle/helpers/b3426/**
     - tools/oracle/src/helpers/server/b3426.rs
@@ -87,27 +86,13 @@ checks:
     - id: response-contracts
       why: response models do not use Eval and ListEvalsResponse from B3420
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_read_create_routes::tests::response_contracts(::|$)/)'
-oracle_cases:
-  - tools/oracle/cases/evals/create-list-get/create-eval-basic.yaml
-  - tools/oracle/cases/evals/create-list-get/create-eval-model-body.yaml
-  - tools/oracle/cases/evals/create-list-get/create-eval-model-query.yaml
-  - tools/oracle/cases/evals/create-list-get/create-eval-model-header.yaml
-  - tools/oracle/cases/evals/create-list-get/list-evals-basic.yaml
-  - tools/oracle/cases/evals/create-list-get/list-evals-limit-default.yaml
-  - tools/oracle/cases/evals/create-list-get/list-evals-body-params.yaml
-  - tools/oracle/cases/evals/create-list-get/list-evals-query-override.yaml
-  - tools/oracle/cases/evals/create-list-get/get-eval-basic.yaml
-  - tools/oracle/cases/evals/create-list-get/get-eval-path-override.yaml
-  - tools/oracle/cases/evals/create-list-get/get-eval-model-header.yaml
-  - tools/oracle/cases/evals/create-list-get/create-eval-provider-body.yaml
-  - tools/oracle/cases/evals/create-list-get/create-eval-provider-null.yaml
-  - tools/oracle/cases/evals/create-list-get/malformed-json-body.yaml
+oracle_cases: []
 deviations:
   - what: "Malformed JSON request bodies return 400 Bad Request with parse error details."
     why: "LiteLLM returns 500 Internal Server Error for malformed JSON because orjson.loads() raises an exception caught by the global exception handler. Betterlite explicitly decodes before the route handler's try block and returns 400 for malformed JSON, providing more specific error information and failing fast on parse errors."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L76-L77"
 out_of_scope:
-  - "ProxyBaseLLMRequestProcessing.base_process_llm_request implementation and its internal processing steps; owned by the handler/transport owner identified by B096's external-calls table."
+  - "ProxyBaseLLMRequestProcessing.base_process_llm_request implementation and its internal processing steps; the pre-call step is B8801's shared PreCall step (take `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state constructor; the part that mounts these routes passes B8802's pre_call_step(state)), the rest is owned by the handler/transport owner identified by B096's external-calls table."
   - "ProxyBaseLLMRequestProcessing._handle_llm_api_exception implementation; owned by the handler/transport owner identified by B096's external-calls table."
   - "Authentication and user_api_key_auth dependency injection; B756 or another auth task owns that."
   - "The concrete operation implementations (acreate_eval, alist_evals, aget_eval) owned by B3421 and B3422; routes only dispatch to them."

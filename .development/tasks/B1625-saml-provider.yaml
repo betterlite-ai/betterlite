@@ -50,7 +50,6 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/saml-provider-*
     - tools/oracle/litellm/pyproject.toml
     - tools/oracle/litellm/uv.lock
-    - tools/oracle/cases/sso/saml-provider/**
     - tools/oracle/helpers/b1625.py
     - tools/oracle/helpers/b1625/**
     - tools/oracle/src/helpers/auth/b1625.rs
@@ -66,8 +65,10 @@ references:
   - url: https://github.com/njaremko/samael/blob/master/Cargo.toml
     why: The xmlsec feature and native XML/crypto dependency requirements.
 dod:
+  - text: The handlers are tested with tower's oneshot over this task's own Router and fake ports; B8770 mounts them through B063 and B8771 proves them over HTTP.
+    proof: [saml-provider-tests]
   - text: The two real HTTP routes emit valid SP metadata and bound AuthnRequests, with source-compatible configuration errors.
-    proof: [saml-provider-tests, oracle]
+    proof: [saml-provider-tests]
   - text: All SAML provider env values load into the toolkit settings and metadata caching honors source precedence and TTL.
     proof: [saml-provider-tests, saml-provider-config]
   - text: XML metadata parsing rejects external entities and replays the added XML/config corpus safely.
@@ -84,12 +85,7 @@ checks:
     - id: saml-provider-corpora
       why: Metadata XML and SAML config changes have no new replay inputs.
       run: test -f crates/betterlite-auth/fuzz/fuzz_targets/saml_metadata.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/saml_metadata)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/saml-provider-*')" && cargo nextest run --locked -p betterlite-auth -p betterlite-config --no-tests=fail -E 'test(replays_the_saml_metadata_corpus) | test(replays_the_config_yaml_corpus)'
-oracle_cases:
-  - tools/oracle/cases/sso/saml-provider/unconfigured-provider.yaml
-  - tools/oracle/cases/sso/saml-provider/inline-metadata-and-entity-id.yaml
-  - tools/oracle/cases/sso/saml-provider/remote-metadata-precedes-inline.yaml
-  - tools/oracle/cases/sso/saml-provider/authn-request-cookie-and-relay-state.yaml
-  - tools/oracle/cases/sso/saml-provider/disabled-ui-still-publishes-metadata.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - B1626 owns read_acs_post_data, handle_acs, _replay_guard_ttl, _response_in_response_to, _enforce_response_binding, _result_from_auth, _attribute_value and _attribute_values in saml_sso.py, including their attribute constants.

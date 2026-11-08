@@ -16,12 +16,11 @@ description: >-
   key to verify set_cache succeeds.
   Dependencies: B4299 Cache.ping and delete_cache_keys; B4297 Cache.async_add_cache for test
   writes; B4290 CachePingResponse and HealthCheckCacheParams types; B244 SensitiveDataMasker
-  for credential masking; B003 HTTP routing and error integration through user_api_key_auth.
+  for credential masking; B003 HTTP routing and error integration through user_api_key_auth. Expose pub fn router(state) -> axum::Router from cache_routes.rs for B8650 to merge, and register the routes nowhere else.
 scope:
   paths:
     - crates/betterlite-server/src/cache_routes.rs
     - crates/betterlite-server/src/cache_routes/**
-    - tools/oracle/cases/cache/**
     - tools/oracle/helpers/b4309.py
     - tools/oracle/helpers/b4309/**
     - tools/oracle/src/helpers/server/b4309.rs
@@ -43,39 +42,41 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L1-L50
     why: "CachePingResponse and HealthCheckCacheParams type definitions."
 dod:
+  - text: The handler tests call tower's oneshot on cache_routes' own Router with fake ports; B8650 runs the HTTP cases through the booted proxy.
+    proof: [ping-tests, delete-tests, redis-info-tests, flushall-tests, auth-tests]
   - text: >-
       GET /cache/ping returns status 503 when cache is uninitialized (litellm.cache is None)
       or when backend ping() fails for Redis type. Returns status 200 with ping_response=true
       for successful Redis ping and set_cache operations, or without ping_response for
-      non-Redis types.
-    proof: [oracle, ping-tests]
+      non-Redis types. B8650 proves it over HTTP.
+    proof: [ping-tests]
 
   - text: >-
       GET /cache/ping extracts and masks cache parameters with HealthCheckCacheParams
-      validation, returning them in the response only when cache is initialized.
-    proof: [oracle, ping-param-tests]
+      validation, returning them in the response only when cache is initialized. B8650 proves it over HTTP.
+    proof: [ping-param-tests]
 
   - text: >-
       POST /cache/delete requires keys parameter (list of strings), returns 500 when
       cache is uninitialized (due to blanket exception rewrite), 500 when backend is not Redis,
-      and 200 with status=success when deletion completes. All exceptions return 500.
-    proof: [oracle, delete-tests]
+      and 200 with status=success when deletion completes. All exceptions return 500. B8650 proves it over HTTP.
+    proof: [delete-tests]
 
   - text: >-
       GET /cache/redis/info returns 503 when cache is uninitialized or backend is not
       Redis (blanket exception rewrite), and 503 when redis info() fails. Returns num_clients,
-      clients list (with fallback message if CLIENT LIST unavailable), and redis info dict.
-    proof: [oracle, redis-info-tests]
+      clients list (with fallback message if CLIENT LIST unavailable), and redis info dict. B8650 proves it over HTTP.
+    proof: [redis-info-tests]
 
   - text: >-
       POST /cache/flushall returns 503 when cache is uninitialized, 503 when backend
       is not Redis (blanket exception rewrite), and 200 with status=success when flushall()
-      completes. All exceptions return 503.
-    proof: [oracle, flushall-tests]
+      completes. All exceptions return 503. B8650 proves it over HTTP.
+    proof: [flushall-tests]
 
   - text: >-
-      All four routes require user API key authentication through user_api_key_auth dependency.
-    proof: [oracle, auth-tests]
+      All four routes require user API key authentication through user_api_key_auth dependency. B8650 proves it over HTTP.
+    proof: [auth-tests]
 
   - text: >-
       SensitiveDataMasker masks cache parameters in /ping response; credential fields
@@ -84,8 +85,8 @@ dod:
 
   - text: >-
       CLIENT LIST restriction on managed Redis is handled gracefully: fallback returns
-      a warning message and num_clients=-1 instead of raising an exception.
-    proof: [oracle, client-list-fallback-test]
+      a warning message and num_clients=-1 instead of raising an exception. B8650 proves it over HTTP.
+    proof: [client-list-fallback-test]
 
 checks:
   optional: [mutants]
@@ -122,25 +123,7 @@ checks:
       why: CLIENT LIST exception is not caught or does not return a fallback message with num_clients=-1
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_routes::redis_info::client_list_restricted/)'
 
-oracle_cases:
-  - tools/oracle/cases/cache/ping-uninitialized.yaml
-  - tools/oracle/cases/cache/ping-redis-success.yaml
-  - tools/oracle/cases/cache/ping-redis-failure.yaml
-  - tools/oracle/cases/cache/ping-non-redis-success.yaml
-  - tools/oracle/cases/cache/delete-uninitialized.yaml
-  - tools/oracle/cases/cache/delete-redis-success.yaml
-  - tools/oracle/cases/cache/delete-non-redis.yaml
-  - tools/oracle/cases/cache/delete-redis-failure.yaml
-  - tools/oracle/cases/cache/redis-info-uninitialized.yaml
-  - tools/oracle/cases/cache/redis-info-non-redis.yaml
-  - tools/oracle/cases/cache/redis-info-success.yaml
-  - tools/oracle/cases/cache/redis-info-client-list-restricted.yaml
-  - tools/oracle/cases/cache/redis-info-failure.yaml
-  - tools/oracle/cases/cache/flushall-uninitialized.yaml
-  - tools/oracle/cases/cache/flushall-non-redis.yaml
-  - tools/oracle/cases/cache/flushall-success.yaml
-  - tools/oracle/cases/cache/flushall-redis-failure.yaml
-  - tools/oracle/cases/cache/routes-require-auth.yaml
+oracle_cases: []
 
 deviations:
   - what: |-

@@ -1,0 +1,98 @@
+id: B8668
+title: Mount the guardrail submission, catalog, apply and custom code test routes
+description: >-
+  B3686 (crates/betterlite-server/src/guardrails/submissions), B3687 (guardrails/catalog_apply) and B6670
+  (guardrails/custom_code_test) build guardrail routes that nothing mounts, so team submissions, the guardrail catalog,
+  /guardrails/apply_guardrail with its /apply_guardrail alias and the custom code test route answer 404. LiteLLM serves
+  them under the guardrails lazy feature, behind user_api_key_auth. This task fills
+  crates/betterlite-server/src/app/guardrails/submit_mount.rs, whose `mount(router, state, routes: &GuardrailRouteState)`
+  B8667 wrote as a stub and already calls, and puts any state code in app/guardrails/submit_mount/** (tests.rs at
+  least). Read each route module before writing and use the route function and state type it exports.
+
+
+  State. B3686 is shaped like B3685: build its state from `routes.mutation` (the same runtime and database handle) and
+  its own submission rows over `state.shared.db`, None without a database, which gives the no-database answers its
+  cases check. B3687 takes `routes.read_through` and B8665's `RuntimeGuardrailLookup` over `routes.runtime`; do not build
+  a second read-through. B6670 takes what its `routes()` asks for from the same runtime and config. Build everything
+  once in mount, never per request.
+
+
+  Mount. Merge B3686's routes, then B3687's, then B6670's, each once. axum panics on a repeated method and path, and
+  B3686's text lists the paths that belong to B3684, B3685 and B3687, so do not register those here. Do not call
+  .fallback, and do not touch app/guardrails.rs.
+
+
+  HTTP oracle cases through the booted proxy. The cases below moved here from B3686, B3687 and B6670; write each from
+  that task's text, with the config its name implies (master key set, no database unless the name says db). Tests in
+  submit_mount/tests.rs (names start with `mount_`) assert that the state reuses the shared route state and that a
+  request without a key gets 401 from each family.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/guardrails/submit_mount.rs
+    - crates/betterlite-server/src/app/guardrails/submit_mount/**
+    - tools/oracle/cases/guardrails/submissions/**
+    - tools/oracle/cases/guardrails/catalog-apply/**
+    - tools/oracle/cases/guardrails/custom-code-test/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1296-L1301
+    why: The submission and catalog route decorators; the others start at L1393, L1454, L1498, L1530, L1910, L2038 and L2337 (with the /apply_guardrail alias at L2338), all behind user_api_key_auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L64-L74
+    why: The guardrails lazy feature and its path prefixes.
+dod:
+  - text: The submission, catalog, apply and custom code test state is built once from the shared route state, with no second read-through.
+    proof: [mount-tests]
+  - text: Those routes answer through the booted proxy as LiteLLM does, and a request without a key gets 401.
+    proof: [mount-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: mount-tests
+      why: a route family is not mounted, builds its own read-through or skips the auth layers
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::guardrails::submit_mount::/)'
+deviations: []
+out_of_scope:
+  - "The handlers and their unit tests: B3686, B3687 and B6670."
+  - "The shared route state and the area file: B8667. The read-through adapters: B8665."
+pitfalls:
+  - "B3687's apply route answers on both /guardrails/apply_guardrail and /apply_guardrail; mount both paths from its routes() and add neither by hand."
+  - "A second RegistryReadThrough would keep its own miss cache, so a guardrail that one replica just missed could be retried past the budget."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+oracle_cases:
+  - tools/oracle/cases/guardrails/submissions/register-no-database.yaml
+  - tools/oracle/cases/guardrails/submissions/register-body-missing-name.yaml
+  - tools/oracle/cases/guardrails/submissions/list-no-database.yaml
+  - tools/oracle/cases/guardrails/submissions/get-no-database.yaml
+  - tools/oracle/cases/guardrails/submissions/auth-required.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/category-yaml-found.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/category-json-found.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/category-not-found.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/category-invalid-name.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/major-airlines.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/blocked-words-valid.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/blocked-words-entry-errors.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/blocked-words-bad-shape.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/blocked-words-empty.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/apply-echo-text.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/apply-alias-echo-text.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/apply-unknown-guardrail.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/apply-missing-text.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/auth-required.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/allow-result.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/block-result.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/modify-result.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/async-function.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/syntax-error.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/import-refused.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/missing-function.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/not-callable.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/runtime-error.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/non-dict-result.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/request-data-keys.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/texts-default.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/timeout-in-loop.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/body-missing-code.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/auth-required.yaml

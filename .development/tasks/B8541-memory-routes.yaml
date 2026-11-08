@@ -7,7 +7,7 @@ description: >-
   internal-error builders and the two scoped lookups (_find_memory_for_caller, _find_visible_memory_or_none). Read that module and
   call its functions as they are; do not write a second filter or access check. This task builds the five handlers and the router in
   a new betterlite-server module `memory_routes` (crates/betterlite-server/src/memory_routes.rs and memory_routes/, declared by the
-  skeleton). `memory_routes(state) -> Router` registers the paths once; the skeleton mounts it in the app router.
+  skeleton). `memory_routes(state) -> Router` registers the paths once; B8770 mounts it in the management area.
 
   Paths, all tagged "memory management" and all behind B052's user_api_key_auth, so a missing or wrong key is that layer's 401:
   POST /v1/memory, GET /v1/memory, and GET, PUT and DELETE /v1/memory/{key:path}. The key segment is a path parameter that keeps
@@ -50,7 +50,7 @@ description: >-
   repositories for create, list pagination and the AND filter, the PUT race (seed the row between the lookup and the create), the
   metadata null versus absent case, and a teammate who can see a personal row but gets the write-access 403 on PUT and DELETE.
 
-  HTTP oracle cases through the booted proxy (no database in the oracle), in tools/oracle/cases/memory/: create-no-database (POST
+  The HTTP cases moved to B8770, which mounts this router; test the same requests here with tower's oneshot over memory_routes' own Router: create-no-database (POST
   with a valid body and the master key, the 500), get-nested-key-no-database (GET /v1/memory/a/b/c, the same 500, proving the path
   route matched), create-missing-value (POST without value, the 422), list-page-size-too-large (page_size=501, the 422) and
   create-no-key (no Authorization header, B052's 401).
@@ -58,7 +58,6 @@ scope:
   paths:
     - crates/betterlite-server/src/memory_routes.rs
     - crates/betterlite-server/src/memory_routes/**
-    - tools/oracle/cases/memory/**
     - tools/oracle/helpers/b8541.py
     - tools/oracle/helpers/b8541/**
     - tools/oracle/src/helpers/server/b8541.rs
@@ -72,8 +71,10 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19995
     why: The router is included without a prefix.
 dod:
+  - text: The handlers are tested with tower's oneshot over this task's own Router and fake ports; B8770 mounts them and proves them over HTTP.
+    proof: [memory-route-tests]
   - text: The five memory routes are registered once with LiteLLM's paths, the path key keeps slashes, and validation runs before the database check.
-    proof: [memory-route-tests, oracle]
+    proof: [memory-route-tests]
   - text: Create and PUT-create resolve scope, write metadata only when given, and answer 409 on a duplicate key.
     proof: [memory-route-tests, memory-postgres-tests]
   - text: PUT distinguishes an absent metadata field from an explicit null and handles the create race by re-reading and re-checking write access.
@@ -91,12 +92,7 @@ checks:
     - id: memory-postgres-tests
       why: The database-backed create, list, race and access cases are missing or fail
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^memory_routes::/) & test(/postgres/)'
-oracle_cases:
-  - tools/oracle/cases/memory/create-no-database.yaml
-  - tools/oracle/cases/memory/get-nested-key-no-database.yaml
-  - tools/oracle/cases/memory/create-missing-value.yaml
-  - tools/oracle/cases/memory/list-page-size-too-large.yaml
-  - tools/oracle/cases/memory/create-no-key.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - "Every helper the routes call (models, filters, scope, write access, unique violation, lookups, error builders): B4530."
