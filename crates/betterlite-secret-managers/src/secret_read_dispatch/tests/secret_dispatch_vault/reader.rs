@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::io;
 use std::io::Error as IoError;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use secrecy::{ExposeSecret, SecretString};
 use tokio::time::Instant;
@@ -11,16 +11,17 @@ use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::fmt::fmt;
 
 use crate::cyberark::Clock;
-use crate::secret_read_dispatch::manager_readers::VaultManagerReader;
 use crate::secret_read_dispatch::protocols::SyncSecretReader as _;
+use crate::vault::HashicorpSecretManager;
 use crate::vault::transport::{VaultRequest, VaultResponse, VaultTransport};
 
 const KV_BODY: &str = r#"{"data":{"data":{"key":"vault-value"}}}"#;
 
+#[derive(Clone)]
 struct ScriptedVault {
     status: u16,
     body: String,
-    requests: Mutex<Vec<VaultRequest>>,
+    requests: Arc<Mutex<Vec<VaultRequest>>>,
 }
 
 impl ScriptedVault {
@@ -28,15 +29,20 @@ impl ScriptedVault {
         Self {
             status,
             body: body.to_owned(),
-            requests: Mutex::new(Vec::new()),
+            requests: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
+    fn recorded(&self) -> MutexGuard<'_, Vec<VaultRequest>> {
+        self.requests.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn request_count(&self) -> usize {
+        self.recorded().len()
+    }
+
     fn answer(&self, request: VaultRequest) -> VaultResponse {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
+        self.recorded().push(request);
         VaultResponse {
             status: self.status,
             body: SecretString::from(self.body.as_str()),
@@ -128,38 +134,39 @@ fn environment() -> BTreeMap<String, String> {
     ])
 }
 
+fn manager<T>(environment: &BTreeMap<String, String>, transport: T) -> HashicorpSecretManager<T>
+where
+    T: VaultTransport,
+{
+    let clock: Clock = Arc::new(Instant::now);
+    HashicorpSecretManager::new(environment, transport, clock).expect("a manager")
+}
+
 #[test]
 fn vault_reader_reads_through_the_manager() {
-    let transport = Arc::new(ScriptedVault::new(200, KV_BODY));
-    let clock: Clock = Arc::new(Instant::now);
-    let reader =
-        VaultManagerReader::new(&environment(), Arc::clone(&transport), clock).expect("a reader");
+    let vault = ScriptedVault::new(200, KV_BODY);
+    let reader = manager(&environment(), vault.clone());
     let secret = reader.sync_read_secret("db").expect("a secret");
     assert_eq!(secret.expose_secret(), "vault-value");
-    let requests = transport
-        .requests
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
+    let requests = vault.recorded();
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].url, "http://127.0.0.1:8200/v1/secret/data/db");
+    assert!(requests[0].namespace.is_none());
     assert_eq!(
         requests[0].token.as_ref().map(ExposeSecret::expose_secret),
         Some("token")
     );
+    drop(requests);
 }
 
 #[test]
 fn vault_reader_leaves_the_namespace_out_of_the_header() {
-    let transport = Arc::new(ScriptedVault::new(200, KV_BODY));
-    let clock: Clock = Arc::new(Instant::now);
+    let vault = ScriptedVault::new(200, KV_BODY);
     let mut vars = environment();
     vars.insert("HCP_VAULT_NAMESPACE".to_owned(), "team".to_owned());
-    let reader = VaultManagerReader::new(&vars, Arc::clone(&transport), clock).expect("a reader");
+    let reader = manager(&vars, vault.clone());
     assert!(reader.sync_read_secret("db").is_some());
-    let requests = transport
-        .requests
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
+    let requests = vault.recorded();
     assert_eq!(
         requests[0].url,
         "http://127.0.0.1:8200/v1/team/secret/data/db"
@@ -169,27 +176,43 @@ fn vault_reader_leaves_the_namespace_out_of_the_header() {
 }
 
 #[test]
+fn vault_reader_serves_the_second_read_from_the_body_cache() {
+    let vault = ScriptedVault::new(200, KV_BODY);
+    let reader = manager(&environment(), vault.clone());
+    assert!(reader.sync_read_secret("db").is_some());
+    assert!(reader.sync_read_secret("db").is_some());
+    assert_eq!(vault.request_count(), 1);
+}
+
+#[test]
 fn vault_reader_returns_none_on_an_error_status_and_logs_it() {
     let (logs, _guard) = capture_logs();
-    let transport = Arc::new(ScriptedVault::new(404, "{\"errors\":[]}"));
-    let clock: Clock = Arc::new(Instant::now);
-    let reader = VaultManagerReader::new(&environment(), transport, clock).expect("a reader");
+    let reader = manager(&environment(), ScriptedVault::new(404, "{\"errors\":[]}"));
     assert!(reader.sync_read_secret("db").is_none());
     assert!(
         logs.captured()
-            .contains("Error reading secret from Hashicorp Vault: Vault answered with status 404")
+            .contains("error reading secret from Hashicorp Vault: Vault answered with status 404")
     );
+}
+
+#[test]
+fn vault_reader_logs_a_non_json_body() {
+    let (logs, _guard) = capture_logs();
+    let reader = manager(&environment(), ScriptedVault::new(200, "not json"));
+    assert!(reader.sync_read_secret("db").is_none());
+    assert!(logs.captured().contains(
+        "error reading secret from Hashicorp Vault: the Vault response body is not a JSON object"
+    ));
 }
 
 #[test]
 fn vault_reader_logs_a_failed_transport_read() {
     let (logs, _guard) = capture_logs();
-    let clock: Clock = Arc::new(Instant::now);
-    let reader =
-        VaultManagerReader::new(&environment(), Arc::new(FailingVault), clock).expect("a reader");
+    let reader = manager(&environment(), FailingVault);
     assert!(reader.sync_read_secret("db").is_none());
     assert!(
-        logs.captured()
-            .contains("Error reading secret from Hashicorp Vault: connection refused")
+        logs.captured().contains(
+            "error reading secret from Hashicorp Vault: the Vault request did not complete"
+        )
     );
 }

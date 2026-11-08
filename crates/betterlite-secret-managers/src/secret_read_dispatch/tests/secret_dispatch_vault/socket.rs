@@ -4,7 +4,7 @@ use std::time::Duration;
 use axum::http::Method;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::secret_read_dispatch::http_transport::{HttpError, HttpExchange};
+use crate::secret_read_dispatch::http_transport::{HttpError, HttpExchange, TlsVerification};
 use crate::secret_read_dispatch::reqwest_exchange::ReqwestExchange;
 use crate::secret_read_dispatch::vault_http::VaultHttpTransport;
 use crate::vault::transport::{VaultMethod, VaultRequest, VaultTransport as _};
@@ -20,11 +20,11 @@ fn exchange() -> Arc<dyn HttpExchange> {
 fn transport() -> VaultHttpTransport {
     VaultHttpTransport {
         exchange: exchange(),
-        verify_tls: true,
+        tls: TlsVerification::Enabled,
     }
 }
 
-fn request(url: String) -> VaultRequest {
+pub(super) fn request(url: String) -> VaultRequest {
     VaultRequest {
         method: VaultMethod::Get,
         url,

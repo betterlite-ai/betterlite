@@ -2,7 +2,9 @@ use secrecy::{ExposeSecret, SecretString};
 
 use crate::cyberark::transport::{ConjurRequest, ConjurTransport as _, HttpMethod as ConjurMethod};
 use crate::secret_read_dispatch::conjur_http::ConjurHttpTransport;
-use crate::secret_read_dispatch::http_transport::{self, HttpError, HttpMethod, RequestHeader};
+use crate::secret_read_dispatch::http_transport::{
+    self, HttpError, HttpMethod, RequestHeader, TlsVerification,
+};
 
 use super::super::exchange::{header, reply, scripted};
 
@@ -49,7 +51,7 @@ async fn conjur_http_transport_sends_the_authorization_header() {
         http_transport::MAX_RESPONSE_BYTES
     );
     assert!(requests[0].follow_redirects);
-    assert!(requests[0].verify_tls);
+    assert_eq!(requests[0].tls, TlsVerification::Enabled);
 }
 
 #[tokio::test]
@@ -80,7 +82,7 @@ async fn conjur_http_transport_posts_the_body_and_content_type() {
         header(&requests[0], "content-type"),
         Some("application/x-yaml")
     );
-    assert!(!requests[0].verify_tls);
+    assert_eq!(requests[0].tls, TlsVerification::Disabled);
 }
 
 #[tokio::test]

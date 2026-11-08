@@ -1,5 +1,6 @@
 use std::future::Future;
 use std::io::Error as IoError;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::str::{self, Utf8Error};
 use std::time::Duration;
@@ -62,6 +63,14 @@ impl RequestHeader {
     }
 }
 
+// LiteLLM's get_ssl_verify returns a CA bundle path from SSL_VERIFY or litellm.ssl_verify
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TlsVerification {
+    Enabled,
+    Disabled,
+    CaFile(PathBuf),
+}
+
 // No Debug: the header values and the body can hold a secret
 #[derive(Clone)]
 pub struct HttpRequest {
@@ -71,7 +80,7 @@ pub struct HttpRequest {
     pub body: Option<SecretString>,
     pub timeout: Duration,
     pub follow_redirects: bool,
-    pub verify_tls: bool,
+    pub tls: TlsVerification,
     pub certificate: Option<ClientCertificate>,
     pub max_response_bytes: usize,
 }

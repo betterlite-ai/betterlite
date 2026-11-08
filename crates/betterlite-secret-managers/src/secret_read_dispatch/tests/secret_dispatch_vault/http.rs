@@ -1,10 +1,11 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::secret_read_dispatch::http_transport::{
-    HttpError, HttpExchange, HttpMethod, RequestHeader,
+    HttpError, HttpExchange, HttpMethod, RequestHeader, TlsVerification,
 };
 use crate::secret_read_dispatch::vault_http::VaultHttpTransport;
 use crate::vault::transport::{VaultMethod, VaultRequest, VaultTransport as _};
@@ -30,7 +31,7 @@ fn request(path: &str) -> VaultRequest {
 fn vault_transport(exchange: Arc<dyn HttpExchange>) -> VaultHttpTransport {
     VaultHttpTransport {
         exchange,
-        verify_tls: true,
+        tls: TlsVerification::Enabled,
     }
 }
 
@@ -57,7 +58,7 @@ async fn vault_http_transport_sends_the_token_and_namespace() {
     assert!(matches!(token, Some(RequestHeader::Secret(_))));
     assert_eq!(requests[0].timeout, Duration::from_secs(5));
     assert!(requests[0].follow_redirects);
-    assert!(requests[0].verify_tls);
+    assert_eq!(requests[0].tls, TlsVerification::Enabled);
     assert_eq!(requests[0].max_response_bytes, 1024);
 }
 
@@ -122,13 +123,30 @@ async fn vault_http_transport_forwards_tls_verification() {
     let (exchange, recorder) = scripted(vec![Ok(reply(200, b"{}"))]);
     let transport = VaultHttpTransport {
         exchange,
-        verify_tls: false,
+        tls: TlsVerification::Disabled,
     };
     transport
         .send(request("/v1/secret/data/db"))
         .await
         .expect("a successful reply");
-    assert!(!recorder.requests()[0].verify_tls);
+    assert_eq!(recorder.requests()[0].tls, TlsVerification::Disabled);
+}
+
+#[tokio::test]
+async fn vault_http_transport_forwards_a_ca_file() {
+    let (exchange, recorder) = scripted(vec![Ok(reply(200, b"{}"))]);
+    let transport = VaultHttpTransport {
+        exchange,
+        tls: TlsVerification::CaFile(PathBuf::from("/etc/vault-ca.pem")),
+    };
+    transport
+        .send(request("/v1/secret/data/db"))
+        .await
+        .expect("a successful reply");
+    assert_eq!(
+        recorder.requests()[0].tls,
+        TlsVerification::CaFile(PathBuf::from("/etc/vault-ca.pem"))
+    );
 }
 
 #[test]

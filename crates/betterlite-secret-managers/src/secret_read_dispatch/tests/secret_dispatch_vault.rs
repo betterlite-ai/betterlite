@@ -4,6 +4,7 @@ use crate::secret_types::KeyManagementSystem;
 mod http;
 mod reader;
 mod socket;
+mod tls;
 
 use super::support::{assert_secret, empty_environment, sync_reader_fake, vault_client};
 

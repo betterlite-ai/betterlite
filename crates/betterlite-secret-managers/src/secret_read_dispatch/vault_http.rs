@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use super::http_transport::{
-    HttpError, HttpExchange, HttpMethod, HttpRequest, HttpResponse, RequestHeader, into_reply,
+    HttpError, HttpExchange, HttpMethod, HttpRequest, HttpResponse, RequestHeader, TlsVerification,
+    into_reply,
 };
 use crate::vault::transport::{VaultMethod, VaultRequest, VaultResponse, VaultTransport};
 
 pub struct VaultHttpTransport {
     pub exchange: Arc<dyn HttpExchange>,
-    pub verify_tls: bool,
+    pub tls: TlsVerification,
 }
 
 impl VaultHttpTransport {
@@ -35,7 +36,7 @@ impl VaultHttpTransport {
             body: request.body.clone(),
             timeout: request.timeout,
             follow_redirects: request.follow_redirects,
-            verify_tls: self.verify_tls,
+            tls: self.tls.clone(),
             certificate: request.client_certificate.clone(),
             max_response_bytes: request.max_response_bytes,
         }

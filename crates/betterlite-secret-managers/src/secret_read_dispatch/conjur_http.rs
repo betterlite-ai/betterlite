@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use super::http_transport::{
-    self, HttpError, HttpExchange, HttpMethod, HttpRequest, HttpResponse, RequestHeader, into_reply,
+    self, HttpError, HttpExchange, HttpMethod, HttpRequest, HttpResponse, RequestHeader,
+    TlsVerification, into_reply,
 };
 use crate::cyberark::transport::{
     ConjurRequest, ConjurResponse, ConjurTransport, HttpMethod as ConjurMethod,
@@ -32,9 +33,17 @@ fn spec(request: ConjurRequest<'_>) -> HttpRequest {
         body: request.body.cloned(),
         timeout: http_transport::DEFAULT_TIMEOUT,
         follow_redirects: true,
-        verify_tls: request.verify_tls,
+        tls: tls(request.verify_tls),
         certificate: request.client_certificate.cloned(),
         max_response_bytes: http_transport::MAX_RESPONSE_BYTES,
+    }
+}
+
+const fn tls(verify_tls: bool) -> TlsVerification {
+    if verify_tls {
+        TlsVerification::Enabled
+    } else {
+        TlsVerification::Disabled
     }
 }
 

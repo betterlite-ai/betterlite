@@ -9,12 +9,13 @@ use reqwest::blocking::{
 };
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::redirect::Policy;
-use reqwest::{Client, ClientBuilder, Identity, Method};
+use reqwest::{Certificate, Client, ClientBuilder, Identity, Method};
 use secrecy::ExposeSecret as _;
+use tokio::fs as async_fs;
 use tokio::runtime::Handle;
 
 use super::http_transport::{
-    ExchangeFuture, HttpError, HttpExchange, HttpMethod, HttpRequest, HttpResponse,
+    ExchangeFuture, HttpError, HttpExchange, HttpMethod, HttpRequest, HttpResponse, TlsVerification,
 };
 
 const MAX_REDIRECTS: usize = 20;
@@ -27,11 +28,17 @@ pub struct ReqwestExchange {
 
 impl ReqwestExchange {
     async fn execute(&self, request: HttpRequest) -> Result<HttpResponse, HttpError> {
-        let client = self
-            .async_clients
-            .get(&ClientKey::of(&request), |client_key| {
-                builder(client_key)?.build().map_err(HttpError::Client)
-            })?;
+        let client_key = ClientKey::of(&request);
+        let client = if let Some(cached) = self.async_clients.cached(&client_key) {
+            cached
+        } else {
+            let built = async_builder(&client_key)
+                .await?
+                .build()
+                .map_err(HttpError::Client)?;
+            self.async_clients.store(&client_key, built.clone());
+            built
+        };
         let mut outgoing = client
             .request(method(request.method), &request.url)
             .timeout(request.timeout)
@@ -91,7 +98,7 @@ impl HttpExchange for ReqwestExchange {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct ClientKey {
     follow_redirects: bool,
-    verify_tls: bool,
+    tls: TlsVerification,
     certificate: Option<(String, String)>,
 }
 
@@ -99,7 +106,7 @@ impl ClientKey {
     fn of(request: &HttpRequest) -> Self {
         Self {
             follow_redirects: request.follow_redirects,
-            verify_tls: request.verify_tls,
+            tls: request.tls.clone(),
             certificate: request.certificate.as_ref().map(|certificate| {
                 (
                     certificate.certificate_path.clone(),
@@ -123,23 +130,30 @@ impl<T> Default for Clients<T> {
 }
 
 impl<T: Clone> Clients<T> {
+    fn cached(&self, key: &ClientKey) -> Option<T> {
+        self.clients
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .cloned()
+    }
+
+    fn store(&self, key: &ClientKey, client: T) {
+        self.clients
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.clone(), client);
+    }
+
     fn get<Build>(&self, key: &ClientKey, build: Build) -> Result<T, HttpError>
     where
         Build: FnOnce(&ClientKey) -> Result<T, HttpError>,
     {
-        if let Some(cached) = self
-            .clients
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(key)
-        {
-            return Ok(cached.clone());
+        if let Some(cached) = self.cached(key) {
+            return Ok(cached);
         }
         let client = build(key)?;
-        self.clients
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(key.clone(), client.clone());
+        self.store(key, client.clone());
         Ok(client)
     }
 }
@@ -147,24 +161,71 @@ impl<T: Clone> Clients<T> {
 impl Clients<BlockingClient> {
     fn handle(&self, request: &HttpRequest) -> Result<BlockingClient, HttpError> {
         self.get(&ClientKey::of(request), |client_key| {
-            BlockingClientBuilder::from(builder(client_key)?)
+            BlockingClientBuilder::from(blocking_builder(client_key)?)
                 .build()
                 .map_err(HttpError::Client)
         })
     }
 }
 
-fn builder(key: &ClientKey) -> Result<ClientBuilder, HttpError> {
-    let builder = ClientBuilder::new()
-        .redirect(redirect_policy(key.follow_redirects))
-        .tls_danger_accept_invalid_certs(!key.verify_tls);
+fn base_builder(key: &ClientKey) -> ClientBuilder {
+    let builder = ClientBuilder::new().redirect(redirect_policy(key.follow_redirects));
+    if key.tls == TlsVerification::Disabled {
+        builder.tls_danger_accept_invalid_certs(true)
+    } else {
+        builder
+    }
+}
+
+fn root_certificates(builder: ClientBuilder, pem: &[u8]) -> Result<ClientBuilder, HttpError> {
+    // httpx trusts only the verify bundle; reqwest's add_root_certificate is deprecated in 0.13
+    Certificate::from_pem_bundle(pem)
+        .map(|certificates| builder.tls_certs_only(certificates))
+        .map_err(HttpError::Certificate)
+}
+
+fn client_identity(builder: ClientBuilder, pem: &[u8]) -> Result<ClientBuilder, HttpError> {
+    Identity::from_pem(pem)
+        .map(|identity| builder.identity(identity))
+        .map_err(HttpError::Certificate)
+}
+
+async fn async_builder(key: &ClientKey) -> Result<ClientBuilder, HttpError> {
+    let mut builder = base_builder(key);
+    if let TlsVerification::CaFile(path) = &key.tls {
+        let pem = async_fs::read(path)
+            .await
+            .map_err(HttpError::CertificateRead)?;
+        builder = root_certificates(builder, &pem)?;
+    }
+    if let Some((certificate_path, key_path)) = &key.certificate {
+        let mut pem = async_fs::read(certificate_path)
+            .await
+            .map_err(HttpError::CertificateRead)?;
+        pem.extend(
+            async_fs::read(key_path)
+                .await
+                .map_err(HttpError::CertificateRead)?,
+        );
+        builder = client_identity(builder, &pem)?;
+    }
+    Ok(builder)
+}
+
+fn blocking_builder(key: &ClientKey) -> Result<ClientBuilder, HttpError> {
+    let mut builder = base_builder(key);
+    if let TlsVerification::CaFile(path) = &key.tls {
+        builder = root_certificates(
+            builder,
+            &fs::read(path).map_err(HttpError::CertificateRead)?,
+        )?;
+    }
     let Some((certificate_path, key_path)) = &key.certificate else {
         return Ok(builder);
     };
     let mut pem = fs::read(certificate_path).map_err(HttpError::CertificateRead)?;
     pem.extend(fs::read(key_path).map_err(HttpError::CertificateRead)?);
-    let identity = Identity::from_pem(&pem).map_err(HttpError::Certificate)?;
-    Ok(builder.identity(identity))
+    client_identity(builder, &pem)
 }
 
 fn redirect_policy(follow_redirects: bool) -> Policy {
