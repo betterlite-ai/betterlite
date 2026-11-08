@@ -1,0 +1,18 @@
+kind: helper
+name: stream-chunk-shaping-strip-sse-data
+call:
+  b5652:
+    state: {model: gpt-4, provider: openai}
+    repeated_chunk_limit: 100
+    steps:
+      - {op: strip_sse, chunk: "data: {}"}
+      - {op: strip_sse, chunk: "data:{}"}
+      - {op: strip_sse, chunk: "data:"}
+      - {op: strip_sse, chunk: "data"}
+      - {op: strip_sse, chunk: ""}
+      - {op: strip_sse, chunk: "data:  {}"}
+      - {op: strip_sse, chunk: " data: {}"}
+      - {op: strip_sse}
+env: {}
+compare:
+  ignore: []

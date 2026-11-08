@@ -32,6 +32,8 @@ scope:
   paths:
     - crates/betterlite-logging/src/supabase.rs
     - crates/betterlite-logging/src/supabase/**
+    - crates/betterlite-logging/src/registry/catalog/supabase.rs
+    - crates/betterlite-logging/src/registry/catalog/supabase/**
   lint_tables: false
 
 references:
@@ -53,6 +55,8 @@ references:
     why: Terminal log_event dispatch site (second call site).
 
 dod:
+  - text: "The Supabase logger answers the success and failure events of CallbackLogger by writing its request rows, and registry/catalog/supabase.rs builds it from SUPABASE_URL and SUPABASE_KEY in CatalogInputs.env (tests named callback_logger_* in supabase and registry/catalog/supabase/tests.rs)."
+    proof: [callback-logger]
   - text: Supabase.__init__ reads SUPABASE_URL and SUPABASE_KEY from config (B002), raises ValueError with message "LiteLLM Error, trying to use Supabase but url or key not passed. Create a table and set `litellm.supabase_url=<your-url>` and `litellm.supabase_key=<your-key>`" if either is missing, creates supabase.create_client with those credentials.
     proof: [supabase-tests]
   - text: input_log_event inserts a row with status "initiated", containing model, messages, end_user and litellm_call_id, without raising on insertion failure.
@@ -71,6 +75,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: callback-logger
+      why: supabase cannot be resolved by name or never writes a row from a logger event
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::supabase::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^supabase::(.*::)?callback_logger_/)'
     - id: supabase-tests
       why: Supabase logging tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^supabase::(.*::)?supabase_logging::/)'

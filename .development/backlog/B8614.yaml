@@ -1,0 +1,13 @@
+id: B8614
+milestone: M8 platform
+title: MCP, vector store and pass-through registries for Shared and the config boot NonLlmRegistries implementation
+status: todo
+depends_on: [B002, B8590, B4776, B4680, B4711, B4731, B6595, B6761, B6762, B6763, B6764, B6765, B1600, B1062, B1063, B3602, B1302, B3614, B3616, B700, B173]
+file: tasks/B8614-boot-registries.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

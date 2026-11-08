@@ -6,7 +6,7 @@ description: >-
   credential (worker_auth), lease (assigned), claim (the claim route and claim_candidate), progress (progress and heartbeat), sample, content, model, result, merge (merge_results),
   evidence (validate_finding), router and error. The admin routes, user_scope, LensRoutesState and the Clock and IdSource ports belong to B4503.
   This task imports `crate::lens_access::lookup::get_lens`, `crate::lens_access::lookup::required`, `crate::lens_access::storage::source_reader` and `crate::lens_access::state::LensRoutesState` (B4503, all `pub(crate)` in the same crate) and registers its seven routes in one function
-  `lens_worker_routes::router(state)`. The wave 17 Lens wiring part composes it with B4503's router, so nothing is registered twice. No new crate dependency is needed
+  `lens_worker_routes::router(state)`. B8682 mounts it through app::edge::mount_public, beside B4503's router, so nothing is registered twice. No new crate dependency is needed
   (the server already has sha2, hex, base64 and chrono; B4503 added betterlite-lens and betterlite-db).
 
   State. `WorkerRoutesState` holds the B4503 `LensRoutesState` (`crate::lens_access::state::LensRoutesState`: repository, storage, Clock) and the value B4504 exports to run lens_inference::analyze (its ports bundled, so tests pass a fake).
@@ -69,7 +69,6 @@ scope:
   paths:
     - crates/betterlite-server/src/lens_worker_routes.rs
     - crates/betterlite-server/src/lens_worker_routes/**
-    - tools/oracle/cases/http/lens-worker-routes/**
     - tools/oracle/helpers/b4505.py
     - tools/oracle/helpers/b4505/**
     - tools/oracle/src/helpers/server/b4505.rs
@@ -98,27 +97,29 @@ references:
     why: analyze, the one call the model route makes (owned by B4504).
 dod:
   - text: worker_auth hashes the bearer token with SHA-256, answers 401 for an unknown or revoked worker, and checks the header before the database.
-    proof: [credential-tests, oracle]
+    proof: [credential-tests]
   - text: assigned answers 404 for a missing lens and 409 for a missing, other, non-running, foreign or expired job.
     proof: [lease-tests]
   - text: claim answers 409 for protocol versions other than 2 and for a worker without an analysis key, heartbeats, and returns the first lens whose claim_candidate takes a new running job for this worker, else null.
-    proof: [claim-tests, oracle]
+    proof: [claim-tests]
   - text: claim_candidate queues a job only when the lens is enabled and due, then claims it, and gives no claim when update changed nothing or the job was already this worker's.
     proof: [claim-tests]
   - text: progress and heartbeat set stage, coverage and a five minute lease, write the worker heartbeat, and answer true even when the transform changed nothing.
-    proof: [progress-tests, oracle]
+    proof: [progress-tests]
   - text: sample returns a frozen sample without storage, otherwise pages by cursor until the first page's selected count is reached, freezes it once, and answers 409 when the job moved.
-    proof: [sample-tests, oracle]
+    proof: [sample-tests]
   - text: content answers 404 for an execution outside the frozen sample before it needs storage, then returns the reader's content.
-    proof: [content-tests, oracle]
+    proof: [content-tests]
   - text: model calls analyze after assigned and returns its result or its error unchanged.
-    proof: [model-tests, oracle]
+    proof: [model-tests]
   - text: result applies the idempotent early return and the four 422 checks in order, validates every finding, and finishes the job with the stated job and lens fields.
-    proof: [result-tests, oracle]
+    proof: [result-tests]
   - text: validate_finding and merge_results apply the same-check 422, the evidence 422 and the newest-first merge order.
     proof: [evidence-tests, merge-tests]
   - text: The router mounts exactly the seven worker routes and no B4503 route.
     proof: [router-tests]
+  - text: The handlers are tested with tower's oneshot over lens_worker_routes::router and fake ports; B8682 mounts them and proves the HTTP answers with the oracle cases moved there.
+    proof: [router-tests, credential-tests]
 checks:
   optional: []
   commands:
@@ -155,17 +156,7 @@ checks:
     - id: router-tests
       why: the worker route table is missing or mounts a wrong route
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_worker_routes::router::/)'
-oracle_cases:
-  - tools/oracle/cases/http/lens-worker-routes/claim-without-bearer.yaml
-  - tools/oracle/cases/http/lens-worker-routes/claim-basic-scheme.yaml
-  - tools/oracle/cases/http/lens-worker-routes/claim-without-database-503.yaml
-  - tools/oracle/cases/http/lens-worker-routes/claim-bad-query-without-database-503.yaml
-  - tools/oracle/cases/http/lens-worker-routes/progress-without-database-503.yaml
-  - tools/oracle/cases/http/lens-worker-routes/heartbeat-without-database-503.yaml
-  - tools/oracle/cases/http/lens-worker-routes/sample-without-database-503.yaml
-  - tools/oracle/cases/http/lens-worker-routes/content-without-database-503.yaml
-  - tools/oracle/cases/http/lens-worker-routes/model-without-database-503.yaml
-  - tools/oracle/cases/http/lens-worker-routes/result-without-database-503.yaml
+oracle_cases: []
 deviations:
   - what: The sample route computes the start and end milliseconds from the job's integer microsecond timestamps, not from a float seconds value multiplied by 1000.
     why: LiteLLM's int(timestamp() * 1000) can land one millisecond low when the float is just under a whole millisecond. Integer arithmetic is exact, and the same choice is made for the preview window in B4503.
@@ -174,7 +165,7 @@ out_of_scope:
   - "B4503 owns get_lens, required, source_reader, user_scope, LensRoutesState, Clock and IdSource, and the 16 admin routes. This task only imports them."
   - "B4500 owns the records (Claim, Progress, Result, ModelRequest, ModelResult, Sample, Worker), queue_job, claim_job, current_job, replace_job, merge_finding and snapshot_finding. B4501 owns LensRepository and its SQL, B4502 the SourceReader, B4504 analyze."
   - "The cases need no database and no tracing store, so the claim loop, leases, sample freezing, result merging and every 401 for an unknown worker are covered by native tests only. The oracle worker sandbox has no Postgres for either gateway."
-  - "The wave 17 Lens wiring part decides how the key auth layer treats /lens/worker paths. LiteLLM runs no key auth on them (no user_api_key_auth dependency, not in litellm_native_routes), and B742's route policy says so; that part also composes this router."
+  - "B8682 mounts /lens/worker paths through app::edge::mount_public, outside the key auth layer. LiteLLM runs no key auth on them (no user_api_key_auth dependency, not in litellm_native_routes), and B742's route policy says so; B8682 also mounts this router."
 pitfalls:
   - The worker routes never call user_api_key_auth, so a worker token is not a virtual key and the master key does not open them; only the SHA-256 of the bearer token in LiteLLM_LensWorker does.
   - claim defaults protocol_version to 1, so a worker that sends no query gets 409 "Upgrade the Lens worker using the current Connect worker command" and never reaches the analysis key check.

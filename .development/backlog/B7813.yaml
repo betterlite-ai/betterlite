@@ -1,14 +1,14 @@
 id: B7813
 milestone: M3 providers
 title: Valkey direct vector search
-status: todo
+status: done
 depends_on: [B1131, B5220]
 file: tasks/B7813-valkey-vector-search.yaml
 covers:
   - "litellm/llms/valkey/**"
 parent: B049
 split_from: B049
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 914

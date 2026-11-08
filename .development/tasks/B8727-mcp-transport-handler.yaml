@@ -1,0 +1,110 @@
+id: B8727
+title: MCP transport handlers behind /mcp and the McpStreamHandler implementation
+description: >-
+  This task builds LiteLLM's two MCP entry points, handle_streamable_http_mcp and handle_sse_mcp, and the routes of the MCP sub app that LiteLLM mounts at /mcp. It is the production handler B8592's McpStreamHandler port stands for. It composes B8720 to B8726 and does not mount anything into the app. Code goes in betterlite-server, module mcp::transport_handler (crates/betterlite-server/src/mcp/transport_handler.rs) with the submodules streamable, sse, errors and routes, each with a tests.rs.
+
+
+  Ports. TransportPorts is one trait with native async methods, passed as a generic parameter, for what lives outside this module: admit(request view) -> Result<Admitted, _> (B4673's RequestAdmission::admit_mcp_request, which returns the auth, the mcp auth header, the header servers, the per server auth headers, the oauth2 headers and the raw headers), client_ip(request parts) (B743's get_mcp_client_ip), apply_toolset_scope(auth, toolset_id) and toolset_server_ids(toolset_id) (B6593's ToolsetScope), client_allowlist() (the current general_settings snapshot through B8724's allowlist_from_settings), cors_origins(), operations() (the B8199 GatewayOperations value B8720's handler takes), challenge ports (B8725's ChallengePorts, including the probe over the shared HTTP client) and debug headers (B8194's maybe_build_debug_headers and the diagnostics it records). McpTransport<P: TransportPorts> holds the ports, a stateless and a stateful B8721 StreamTransport, B8722's ModernTransport, B8723's SessionRegistry over the stateful one (exposed as registry(), which B8701 reads) and B8726's SseTransport. The production TransportPorts over Shared and the MCP wiring state is built by the part that mounts these routes, not here.
+
+
+  streamable. McpTransport::handle(&self, request, rewritten_path: &str, original_path: Option<&str>, proxy_mode: bool, toolset_id: Option<String>) -> Result<http::Response<axum::body::Body>, McpHttpError> is handle_streamable_http_mcp. Its arguments match B8592's port, so B8592 implements McpStreamHandler for McpTransport by calling it; this task cannot depend on B8592. Steps in LiteLLM's order:
+
+  1. B8724's reject_disallowed_origin with cors_origins(). Then unsupported_protocol_version against B8190's configured_versions(); a hit answers 400 with B8724's version_refusal body and stops.
+
+  2. extract_mcp_auth_context: admit the request; when B8724's servers_in_path(rewritten_path) is Some, it replaces the header servers. Then B8724's reject_disallowed_client with client_allowlist(). scoped_server_endpoint is whether servers_in_path gives exactly one name. client_ip from the ports.
+
+  3. Remove every x-mcp-toolset-id header the client sent. When toolset_id is Some and the auth is present, the auth becomes apply_toolset_scope(auth, id) and allowed ids become toolset_server_ids(id).
+
+  4. B8725's preemptive_challenge with those allowed ids, then check_passthrough_auth.
+
+  5. Debug headers: when B8194 builds them (the client sent x-litellm-mcp-debug: true), add them and the diagnostics headers to the response head, whatever the status.
+
+  6. session = B8724's session_id_header. With a session, compare B8723's owner_of(session) with owner_fingerprint(auth, oauth2 headers, client ip); a known different owner answers 403 {"error": "Forbidden", "details": "mcp-session-id is bound to a different caller."} and stops. Then B8723's check_stale: Done answers its response; StripHeader removes the header and the request continues without a session.
+
+  7. For POST, B8724's peek_routing_body; is_initialize from the peek. A request whose MCP-Protocol-Version takes B8722's modern path goes to ModernTransport with a new handler and skips steps 8 to 10.
+
+  8. use_stateful is a session id or is_initialize. A new initialize without a session runs B8723's enforce_owner_cap(owner); false answers 429 {"error": "Too Many Requests", "details": "Too many active MCP sessions for this caller."}.
+
+  9. A POST whose peek is_jsonrpc_response skips the lock. Otherwise a stateful request with a session id and method POST or DELETE holds B8723's session_lock for the dispatch. begin_request for the session id when stateful.
+
+  10. Dispatch: B8720's set_or_update with the session's stored SessionAuth (copy_existing = is_initialize), then stamp last seen unless the method is DELETE. B8725's initialize_overrides(auth, servers, client ip, scoped_server_endpoint, is_initialize) gives the InitOverrides with proxy_mode. Build B8720's GatewayServer with the operations, the SessionAuth, the overrides and B8191's McpContext (proxy mode, toolset id, instructions, server name) and call the chosen StreamTransport. On a stateful initialize, when the response head carries mcp-session-id, call B8723's register with the SessionAuth, the owner and B8724's initialize_client_info of the peek. A stateful DELETE with a session id removes its tracking after the transport answered.
+
+  11. Always, also on error: B8723's finish for the guard.
+
+  Errors (errors submodule). An MCPUpstreamAuthError becomes B8190's to_http_exception with the request base url (B4654's get_request_base_url) and the original path, else the rewritten path. An McpHttpError passes through. A ProxyException becomes B8724's proxy_error_to_http. Anything else logs "Error handling MCP request: {err}" and answers 500 {"error": "MCP request failed", "details": "<error text>"}. McpHttpError renders as LiteLLM's HTTPException handler renders it (B8591's handler): {"detail": ...} with its status and headers.
+
+
+  sse. McpTransport::handle_sse(&self, request) is handle_sse_mcp: steps 1 to 4 above with the path from the request route (path without the root path) and no toolset id; then a new SessionAuth; owner = owner_fingerprint. POST goes to B8726's post with the owner. GET computes initialize_overrides with is_initialize true and calls B8726's connect with a GatewayServer for that SessionAuth.
+
+
+  routes. mcp_app_routes(transport: Arc<McpTransport<P>>) -> axum::Router is the /mcp sub app: GET /mcp/enabled answers {"enabled": true} (get_mcp_server_enabled; MCP is always built in); GET /mcp/sse and /mcp/sse/ and POST /mcp/sse/messages and /mcp/sse/messages/ go to handle_sse; every method on /mcp/ and /mcp/{*rest} goes to handle with the path as rewritten path, no original path, proxy_mode false and no toolset. The bare /mcp and /mcp/proxy stay B8592's routes; axum prefers them over the wildcard.
+
+  start(&self) spawns B8723's run_cleanup and stop(&self) cancels it and terminates every live session; they replace initialize_session_managers and shutdown_session_managers, which LiteLLM runs lazily on the first request.
+
+
+  Tests use fake TransportPorts and fake GatewayOperations through tower's oneshot over mcp_app_routes, with synthetic auths named test-.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/transport_handler.rs
+    - crates/betterlite-server/src/mcp/transport_handler/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L743-L805
+    why: initialize_session_managers, shutdown_session_managers and the sub app lifespan.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1139-L1171
+    why: extract_mcp_auth_context and the path servers override.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1982-L2324
+    why: handle_streamable_http_mcp, every step, the lock, the counters and the error mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L2326-L2472
+    why: handle_sse_mcp.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L2474-L2508
+    why: The sub app routes, the /enabled answer and the catch all mount.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L193-L200
+    why: LiteLLM mounts the sub app at /mcp.
+dod:
+  - text: handle runs origin, version, auth, allowlist, toolset scope, challenges and the pass-through probe in LiteLLM's order, strips a client x-mcp-toolset-id, and lets path servers replace header servers.
+    proof: [streamable-tests]
+  - text: Owner binding answers 403, a stale id is answered or stripped, a new initialize over the cap answers 429, and an initialize registers its session with owner and client info.
+    proof: [streamable-tests]
+  - text: The session lock serializes POST and DELETE on one session and is skipped for a JSON-RPC response, and the in flight counts and last seen stamps settle on success and on error.
+    proof: [streamable-tests]
+  - text: Upstream auth errors, HTTP errors, proxy errors and other failures render with LiteLLM's status, body and headers.
+    proof: [errors-tests]
+  - text: handle_sse runs the same checks, binds the owner, and sends POST to the message endpoint and GET to a new stream with the initialize overrides.
+    proof: [sse-tests]
+  - text: mcp_app_routes answers /mcp/enabled, routes the four SSE paths and sends every other /mcp/ path to handle; start and stop run and end the cleanup.
+    proof: [routes-tests]
+checks:
+  optional: []
+  commands:
+    - id: streamable-tests
+      why: a step of handle_streamable_http_mcp, its order, the lock or the counters differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::transport_handler::streamable::/)'
+    - id: errors-tests
+      why: an error mapping or its body differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::transport_handler::errors::/)'
+    - id: sse-tests
+      why: handle_sse_mcp's checks, owner binding or dispatch differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::transport_handler::sse::/)'
+    - id: routes-tests
+      why: a sub app route, the enabled answer or the cleanup lifecycle differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::transport_handler::routes::/)'
+oracle_cases: []
+deviations:
+  - what: The session cleanup starts with the proxy instead of on the first MCP request.
+    why: betterlite has a startup hook; LiteLLM starts it lazily because its mounted sub app gets no lifespan. Nothing a client sees changes.
+  - what: The toolset id, proxy mode and initialize overrides travel as arguments and in McpContext instead of ContextVars.
+    why: The Rust rules forbid task locals; every value reaches the same consumer.
+out_of_scope:
+  - "Mounting mcp_app_routes and B8592's routes into the app, the production TransportPorts over Shared and the MCP wiring state, and the HTTP oracle cases for /mcp: B8728."
+  - "_apply_toolset_scope and _toolset_server_ids: B6593. The 30 second header wait of the path routes: B8592's relay_mcp_response."
+pitfalls:
+  - "Owner binding runs before the stale id check, so a non owner cannot use a stale DELETE to clear another caller's tracking."
+  - "The cap runs only for an initialize without a session id; an initialize that brings an id goes to the stateful manager with copy_existing true."
+  - "The lock is per session id and skipped for GET, because a held GET stream would block every POST on that session."
+  - "The finally block runs on every exit, errors included; a missed decrement keeps the session busy forever and purge never frees it."
+  - "x-mcp-toolset-id from the client is removed before anything reads headers, so a client cannot scope itself to a toolset it does not hold."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,11 @@
+kind: helper
+name: pack_vector_bytes
+call:
+  b7813:
+    calls:
+      - {call: pack, input: {vector: [1.0, -2.5]}}
+      - {call: pack, input: {vector: [0.1, 0.2, 0.30000001]}}
+      - {call: pack, input: {vector: []}}
+      - {call: pack, input: {vector: [123456.789, -0.000001]}}
+env: {}
+compare: {ignore: []}

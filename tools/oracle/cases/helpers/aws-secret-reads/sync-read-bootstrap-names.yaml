@@ -1,0 +1,22 @@
+kind: helper
+name: aws-secret-reads-sync-read-bootstrap-names
+env: {}
+compare: {ignore: []}
+call:
+  b4414:
+    env:
+      AWS_ACCESS_KEY_ID: AKIAORACLEEXAMPLE
+      AWS_SECRET_ACCESS_KEY: oracle-secret-key
+      AWS_REGION_NAME: us-east-1
+      AWS_BEDROCK_RUNTIME_ENDPOINT: https://bedrock-runtime.us-east-1.amazonaws.com
+    routes:
+      - route: "POST https://secretsmanager.us-east-1.amazonaws.com"
+        replies:
+          - {status: 200, body: '{"SecretString":"from-aws"}'}
+    steps:
+      - {op: read, path: sync, secret: AWS_ACCESS_KEY_ID, primary: gateway}
+      - {op: read, path: sync, secret: AWS_SECRET_ACCESS_KEY}
+      - {op: read, path: sync, secret: AWS_REGION_NAME}
+      - {op: read, path: sync, secret: AWS_REGION}
+      - {op: read, path: sync, secret: AWS_BEDROCK_RUNTIME_ENDPOINT}
+      - {op: read, path: async, secret: AWS_REGION_NAME}

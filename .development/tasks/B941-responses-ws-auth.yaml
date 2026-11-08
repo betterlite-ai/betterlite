@@ -86,7 +86,7 @@ description: >-
   "http", method "POST", path "/v1/responses", the WebSocket scope headers,
   and request._url equal to websocket.url. Its body is the UTF-8 JSON bytes
   produced from {"model": "gpt-4o"}, including the json.dumps space after the
-  colon. Call common_processing_pre_call_logic before route_request, pass
+  colon. Call common_processing_pre_call_logic (B8801's PreCall step with route type _aresponses_websocket; keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step) before route_request, pass
   route_type="_aresponses_websocket", resolved model, original first_message,
   user_api_key_dict and only non-null routing hints. The route data starts with
   model, websocket and first_message, then includes user_api_key_dict and the
@@ -380,7 +380,7 @@ out_of_scope:
 - 'litellm/proxy/response_api_endpoints/endpoints.py: B080 owns responses_api L212-L458; B938 owns get_response L695-L790, delete_response L811-L899, get_response_input_items L920-L970 and cancel_response L1216-L1313; B939 owns compact_response L988-L1052, _TokenCounter.__call__ L1078, _proxy_token_counter L1081-L1084, _responses_invalid_request_response L1090-L1099, _missing_responses_param_response L1102-L1107, _responses_input_as_token_count_messages L1110-L1125 and responses_input_tokens L1143-L1198.'
 - 'litellm/proxy/auth/user_api_key_auth.py: B756 owns user_api_key_auth_websocket L644-L707, including Authorization, api-key and openai-insecure-api-key.<token> extraction and pre-accept 403/1008; B732 and B748 own identity, key and model-grant resolution reached by the first-frame access check.'
 - 'litellm/proxy/auth/user_api_key_auth.py: B754 owns _run_centralized_common_checks called after _enforce_key_and_fallback_model_access; B941 owns only the gate conditions and its pre-call error frame.'
-- 'litellm/proxy/common_request_processing.py: B014 owns ProxyBaseLLMRequestProcessing and common_processing_pre_call_logic; B941 records its call-before-route ordering and route_type without reimplementing admission, guardrails, rate limits, or budgets.'
+- 'litellm/proxy/common_request_processing.py: B8801 owns common_processing_pre_call_logic and B014 the rest of ProxyBaseLLMRequestProcessing; B941 records its call-before-route ordering and route_type without reimplementing admission, guardrails, rate limits, or budgets.'
 - 'litellm/proxy/route_llm_request.py: B014 owns route_request dispatch; B943 owns native Responses WebSocket execution and B945 owns managed turn execution. B941 supplies routed_data and handles only the surrounding failure control flow.'
 - 'litellm/proxy/utils.py: B8395 owns ProxyLogging.post_call_failure_hook L3197-L3314 and B012 owns logger/event integration; B941 records hook order without implementing callback, persistence, or redaction.'
 - 'Database/cache reads or writes reached through auth, common processing, failure hooks, and provider execution belong to B732, B748, B754, B8395, B856, B943, and B945. The owned endpoints.py slice performs no database write.'

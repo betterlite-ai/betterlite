@@ -3,11 +3,11 @@ title: Pass-through Vertex HTTP and discovery routes
 description: >-
   Build the three Vertex AI pass-through HTTP routes and the shared function behind them, as the module vertex_passthrough_routes in crates/betterlite-server.
   The shared function is LiteLLM's _base_vertex_proxy_route. It authenticates the caller, works out the Vertex project, location and model, picks the credentials, builds the Google target URL and hands the request to B3615's create_pass_through_route handler.
-  This task registers routes, so it adds HTTP oracle cases. The Live WebSocket route at /vertex_ai/live belongs to B3629 and is not built here.
+  This task builds the routers; B8608 mounts them and owns their HTTP oracle cases, so test the handlers here with tower oneshot over the router and fakes. The Live WebSocket route at /vertex_ai/live belongs to B3629 and is not built here.
   Every name below is at most 30 characters; LiteLLM's longer names are renamed on purpose.
 
-  Registration. `vertex_routes_router(deps: VertexRouteDeps)` returns the axum router with these paths, each for GET, POST, PUT, DELETE and PATCH, where `endpoint` is the rest of the path without a leading slash: `/vertex_ai/discovery/{endpoint}`, `/vertex_ai/{endpoint}` and `/vertex-ai/{endpoint}`. The hyphen path is an alias of the underscore one and is left out of the OpenAPI schema. The architect adds the router to the app once and merges it with B3629's WebSocket route.
-  `VertexRouteDeps` holds the ports below, built once by the architect. This task declares each port as a small trait with one async method, so tests use recording fakes and nothing global is read:
+  Registration. `vertex_routes_router(deps: VertexRouteDeps)` returns the axum router with these paths, each for GET, POST, PUT, DELETE and PATCH, where `endpoint` is the rest of the path without a leading slash: `/vertex_ai/discovery/{endpoint}`, `/vertex_ai/{endpoint}` and `/vertex-ai/{endpoint}`. The hyphen path is an alias of the underscore one and is left out of the OpenAPI schema. B8608 adds the router to the app once beside B3629's WebSocket route.
+  `VertexRouteDeps` holds the ports below, built once by B8608 from B8641's adapters. This task declares each port as a small trait with one async method, so tests use recording fakes and nothing global is read:
   - `VertexKeyAuth`: B052's key authentication with an explicit api key string, returns the authenticated key or the auth error unchanged.
   - `VertexStoreAccess`: `managed_store(vector_store_id)` and `assert_access(store, key)`, backed by B1061 (get_litellm_managed_vector_store and assert_user_can_access_vector_store in betterlite-core::api::vector_endpoint_access; read the merged names). A lookup failure is B1061's own 500 "Unable to validate vector store access"; a denied caller is its 403.
   - `VertexCredentialLookup`: `credentials(project, location) -> Option<VertexPassThroughCredentials>`, backed by B3602's get_vertex_credentials (record at `crate::pass_through_credentials::VertexPassThroughCredentials`).
@@ -38,7 +38,6 @@ scope:
   paths:
     - crates/betterlite-server/src/vertex_passthrough_routes.rs
     - crates/betterlite-server/src/vertex_passthrough_routes/**
-    - tools/oracle/cases/server/vertex-passthrough-routes/**
     - tools/oracle/helpers/b3623.py
     - tools/oracle/helpers/b3623/**
     - tools/oracle/src/helpers/server/b3623.rs
@@ -64,12 +63,14 @@ references:
   - url: https://docs.litellm.ai/docs/pass_through/vertex_ai
     why: How clients call the route, including the x-litellm-api-key header.
 dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports. B8608 mounts the routes and proves them over HTTP with the oracle cases that were listed here.
+    proof: [router-tests]
   - text: vertex_routes_router serves /vertex_ai/discovery/{endpoint}, /vertex_ai/{endpoint} and /vertex-ai/{endpoint} for GET, POST, PUT, DELETE and PATCH, builds without an axum path conflict, and the discovery path is not captured by the generic one.
-    proof: [router-tests, oracle]
+    proof: [router-tests]
   - text: The discovery route looks up a managed store only for an endpoint with dataStores/<id>, treats an unknown id as no credentials, and checks the caller's access to a found store before anything else happens.
     proof: [discovery-tests]
   - text: The aiplatform base handler answers 400 with the exact location-required detail for no location, gives B3622's host otherwise and turns an invalid location into a 500, and the discovery handler always gives the discoveryengine host.
-    proof: [base-handler-tests, oracle]
+    proof: [base-handler-tests]
   - text: vertex_proxy_core authenticates with the string from get_litellm_virtual_key, applies the vector store override, then the router model resolution, and stores the model info only when it is a non-empty map.
     proof: [core-order-tests]
   - text: The target is built from the base, the slash-prefixed encoded endpoint and the final project and location, with the version and project segments B1304 adds, and the relay gets the resolved endpoint and B3622's upstream headers.
@@ -78,8 +79,6 @@ dod:
     proof: [streaming-tests]
   - text: A ProxyException from the relay gets the "No credentials found on proxy" text only when the headers were passed through, with project and location as printed by Python, and keeps its other fields.
     proof: [proxy-error-tests]
-  - text: A request with no valid proxy key is refused, a request with no location gets the 400 detail, and a request with no Google credential and no configured credentials gets B3603's 401, each over the booted proxy.
-    proof: [oracle]
 checks:
   optional: []
   commands:
@@ -104,14 +103,7 @@ checks:
     - id: proxy-error-tests
       why: the passed-through-headers text is added when it should not be, or is missing
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vertex_passthrough_routes::tests::proxy_error(::|$)/)'
-oracle_cases:
-  - tools/oracle/cases/server/vertex-passthrough-routes/invalid-key-aiplatform.yaml
-  - tools/oracle/cases/server/vertex-passthrough-routes/invalid-key-hyphen-alias.yaml
-  - tools/oracle/cases/server/vertex-passthrough-routes/invalid-key-discovery.yaml
-  - tools/oracle/cases/server/vertex-passthrough-routes/no-location-400.yaml
-  - tools/oracle/cases/server/vertex-passthrough-routes/bad-location-500.yaml
-  - tools/oracle/cases/server/vertex-passthrough-routes/no-google-credential-401.yaml
-  - tools/oracle/cases/server/vertex-passthrough-routes/discovery-no-credential-401.yaml
+oracle_cases: []
 deviations:
   - what: An invalid location in the URL answers with the plain body "Internal Server Error", the same as LiteLLM's unhandled ValueError.
     why: Kept as is so a client sees no difference; the notes ask whether to return a typed 400 instead.

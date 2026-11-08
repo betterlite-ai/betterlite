@@ -1,0 +1,14 @@
+id: B8724
+milestone: M9 agents and mcp
+title: MCP transport request checks and routing peeks
+status: todo
+depends_on: [B8191, B4672, B8190, B2314]
+file: tasks/B8724-mcp-transport-checks.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/server.py"
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

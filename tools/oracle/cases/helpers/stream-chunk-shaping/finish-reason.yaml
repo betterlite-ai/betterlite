@@ -1,0 +1,26 @@
+kind: helper
+name: stream-chunk-shaping-finish-reason
+call:
+  b5652:
+    state:
+      model: gpt-4
+      provider: openai
+      response_id: chatcmpl-fixed
+      created: 1700000000
+      tool_call: true
+    repeated_chunk_limit: 100
+    steps:
+      - {op: finish_reason}
+      - {op: set_state, patch: {received_finish_reason: content_filter}}
+      - {op: finish_reason}
+      - {op: set_state, patch: {received_finish_reason: max_tokens}}
+      - {op: finish_reason}
+      - {op: set_state, patch: {tool_call: false, received_finish_reason: stop}}
+      - {op: finish_reason}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/0/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}
+    - {pointer: /value/2/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}
+    - {pointer: /value/4/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}
+    - {pointer: /value/6/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}

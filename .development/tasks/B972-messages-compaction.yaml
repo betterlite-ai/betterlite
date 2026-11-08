@@ -25,7 +25,7 @@ scope:
   - tools/oracle/cases/helpers/context-edit-dispatch/**
   - tools/oracle/fuzz/corpus/helper_case/context_edit_dispatch-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/context_edit_dispatch.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/context_edit_dispatch.py
   - tools/oracle/cases/sdk-http/context-edit-dispatch/**

@@ -1,0 +1,81 @@
+id: B8771
+title: Prove the SSO CLI, SAML provider and status routes over HTTP
+description: >-
+  B8770 mounts B063's SSO routers, so the CLI login flow (B1613: POST /sso/cli/start and POST
+  /sso/cli/complete/{login_id}), the CLI poll (B1614: GET /sso/cli/poll/{key_id}), the SAML provider routes (B1625: GET
+  /sso/saml/login and GET /sso/saml/metadata) and the status and debug routes (B1627: GET /sso/get/ui_settings,
+  /sso/readiness, /sso/debug/login and /sso/debug/callback) answer through the booted proxy for the first time. Those
+  tasks test their handlers with tower's oneshot over their own routers, and their HTTP cases moved here under the
+  file names below. This task writes those cases and changes no product code; when a case shows a bug, the fix goes
+  to the owning task's module in a follow-up.
+
+
+  Write each case from its owner's text. CLI flow: a public start without the complete URI unless the opt-in flag is
+  set, the thirty-first start in a window, a legacy and an invalid login id, an unready and an expired session. CLI
+  poll: a missing and a wrong poll secret, a started but unverified login, an expired login id. SAML provider: no
+  provider configured, inline metadata with its entity id, remote metadata taking precedence over inline, the AuthnRequest
+  cookie and RelayState, and metadata still published while the admin UI is disabled. Status and debug: settings and
+  readiness need a key, SAML enabled while OAuth readiness is unconfigured, a Microsoft provider missing its secret
+  and tenant, the generic provider's required variable order, the debug routes answering 404 while disabled, the
+  enabled debug callback with no provider, the generic claim display, and the default team flag that cannot be
+  forced off. Use B1630's and B1631's SSO fixtures and add no new one.
+scope:
+  paths:
+    - tools/oracle/cases/sso/cli-flow/**
+    - tools/oracle/cases/sso/cli-poll/**
+    - tools/oracle/cases/sso/saml-provider/**
+    - tools/oracle/cases/sso/status-debug/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L703-L760
+    why: The CLI start and complete routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2466-L2480
+    why: The CLI poll route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2665-L2710
+    why: The UI settings and readiness routes behind the key.
+dod:
+  - text: Over HTTP, the CLI flow, CLI poll, SAML provider and status and debug routes answer the same status, body, cookies and redirects as LiteLLM.
+    proof: [sso-flow-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: sso-flow-cases
+      why: a moved SSO family has no booted-proxy case on this branch
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sso/cli-flow)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sso/cli-poll)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sso/saml-provider)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sso/status-debug)"
+oracle_cases:
+  - tools/oracle/cases/sso/cli-flow/public-start-without-complete-uri.yaml
+  - tools/oracle/cases/sso/cli-flow/opt-in-complete-uri.yaml
+  - tools/oracle/cases/sso/cli-flow/thirty-first-start.yaml
+  - tools/oracle/cases/sso/cli-flow/legacy-and-invalid-login-id.yaml
+  - tools/oracle/cases/sso/cli-flow/unready-and-expired-session.yaml
+  - tools/oracle/cases/sso/cli-poll/missing-poll-secret.yaml
+  - tools/oracle/cases/sso/cli-poll/wrong-poll-secret.yaml
+  - tools/oracle/cases/sso/cli-poll/started-but-unverified.yaml
+  - tools/oracle/cases/sso/cli-poll/expired-login-id.yaml
+  - tools/oracle/cases/sso/saml-provider/unconfigured-provider.yaml
+  - tools/oracle/cases/sso/saml-provider/inline-metadata-and-entity-id.yaml
+  - tools/oracle/cases/sso/saml-provider/remote-metadata-precedes-inline.yaml
+  - tools/oracle/cases/sso/saml-provider/authn-request-cookie-and-relay-state.yaml
+  - tools/oracle/cases/sso/saml-provider/disabled-ui-still-publishes-metadata.yaml
+  - tools/oracle/cases/sso/status-debug/settings-and-readiness-require-auth.yaml
+  - tools/oracle/cases/sso/status-debug/saml-enabled-but-oauth-readiness-unconfigured.yaml
+  - tools/oracle/cases/sso/status-debug/microsoft-missing-secret-and-tenant.yaml
+  - tools/oracle/cases/sso/status-debug/generic-required-variable-order.yaml
+  - tools/oracle/cases/sso/status-debug/disabled-debug-is-404.yaml
+  - tools/oracle/cases/sso/status-debug/enabled-callback-without-provider.yaml
+  - tools/oracle/cases/sso/status-debug/generic-claim-display.yaml
+  - tools/oracle/cases/sso/status-debug/default-team-disable-cannot-be-forced-off.yaml
+deviations: []
+out_of_scope:
+  - "The handlers: B1613, B1614, B1625 and B1627. The composed routers: B063. Their mount and the login entry and callback cases: B8770."
+pitfalls:
+  - "The CLI and SAML routes are public but the status routes are not, so a case for /sso/readiness must send no key to prove the 401."
+  - "The debug routes answer 404 while debug is off; a case that only checks the enabled path misses a route mounted without the flag check."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -7,7 +7,7 @@ description: >-
   Every name below is at most 30 characters.
 
   Routes. All three require the authenticated key (B052's user_api_key_auth).
-  `/bedrock/{endpoint:path}` takes GET, POST, PUT, DELETE and PATCH (five methods; B3620's text names four, PATCH is served too). `/comprehendmedical/{operation}` and `/comprehendmedical` take POST only; any other method is axum's 405. There is no /v1, /openai or other alias. The architect adds the three routes to the server route table once.
+  `/bedrock/{endpoint:path}` takes GET, POST, PUT, DELETE and PATCH (five methods; B3620's text names four, PATCH is served too). `/comprehendmedical/{operation}` and `/comprehendmedical` take POST only; any other method is axum's 405. There is no /v1, /openai or other alias. Expose them as one axum router; B8607 merges it into the app once.
 
   Shared state keys. A signed request is sent from request state, not from the incoming body. Before calling the handler from create_pass_through_route, set two request-state values with B3600's keys: LITELLM_PASS_THROUGH_CUSTOM_BODY_STATE_KEY holds the parsed JSON object, and LITELLM_PASS_THROUGH_RAW_BODY_STATE_KEY holds the exact bytes that were signed. Serialize the JSON once, sign those bytes, send those bytes. B3615 clears both keys afterwards.
 
@@ -38,7 +38,6 @@ scope:
   paths:
     - crates/betterlite-server/src/bedrock_comprehend_routes.rs
     - crates/betterlite-server/src/bedrock_comprehend_routes/**
-    - tools/oracle/cases/server/bedrock-comprehend-routes/**
     - tools/oracle/helpers/b3621.py
     - tools/oracle/helpers/b3621/**
     - tools/oracle/src/helpers/server/b3621.rs
@@ -66,12 +65,14 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/comprehend_medical_passthrough_logging_handler.py#L17-L27
     why: The tariff table whose keys are the supported operations (B3651).
 dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports. B8607 mounts the routes and proves them over HTTP with the oracle cases that were listed here.
+    proof: [route-table-tests]
   - text: The /bedrock route accepts GET, POST, PUT, DELETE and PATCH, and the two Comprehend routes accept only POST.
     proof: [route-table-tests]
   - text: An endpoint with none of the agent-runtime fragments goes to bedrock_llm_proxy_route unchanged, before the disabled check, the signer and the handler factory are touched.
     proof: [bedrock-dispatch-tests]
   - text: An agent-runtime endpoint is answered 403 with the disabled message when the setting is on, and the check runs only after the dispatch test.
-    proof: [agent-gate-tests, oracle]
+    proof: [agent-gate-tests]
   - text: The agent-runtime target is https://bedrock-agent-runtime.<region>.<suffix> plus the endpoint path with query and fragment dropped, uses only AWS_REGION_NAME, and renders a missing region as the text None.
     proof: [agent-url-tests]
   - text: The agent-runtime request is signed for service bedrock with the serialized body and the one Content-Type header, the signed bytes are the bytes in the raw-body state value, the parsed object is in the custom-body value, and the streaming flag is a substring test over the full URL.
@@ -79,11 +80,11 @@ dod:
   - text: The agent-runtime custom headers come from B3603's filter with the signed headers, and the handler is built with the original endpoint and the signed URL.
     proof: [agent-headers-tests]
   - text: comprehend_medical_route checks in order the operation, the region (three env vars in order), the body read, the object shape and the stream key, each with its exact 400 text.
-    proof: [comprehend-checks-tests, oracle]
+    proof: [comprehend-checks-tests]
   - text: comprehend_medical_route signs for service comprehendmedical with the X-Amz-Target and JSON 1.1 content-type headers, passes only the signed headers to the handler, uses custom_llm_provider comprehendmedical, and sets both request-state values.
     proof: [comprehend-signing-tests]
   - text: comprehend_sdk_route reads x-amz-target case-insensitively, rejects a wrong prefix or empty operation with the exact 400 text, and forwards the part after the first dot.
-    proof: [comprehend-sdk-tests, oracle]
+    proof: [comprehend-sdk-tests]
 checks:
   optional: []
   commands:
@@ -114,16 +115,7 @@ checks:
     - id: comprehend-sdk-tests
       why: the SDK route reads the wrong header, splits at the wrong dot, or has the wrong 400 text
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bedrock_comprehend_routes::tests::comprehend_sdk(::|$)/)'
-oracle_cases:
-  - tools/oracle/cases/server/bedrock-comprehend-routes/agent-runtime-disabled-bool.yaml
-  - tools/oracle/cases/server/bedrock-comprehend-routes/agent-runtime-disabled-string.yaml
-  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-unsupported-operation.yaml
-  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-no-region.yaml
-  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-body-not-object.yaml
-  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-stream-member.yaml
-  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-sdk-missing-target.yaml
-  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-sdk-wrong-prefix.yaml
-  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-sdk-empty-operation.yaml
+oracle_cases: []
 deviations:
   - what: The agent-runtime route reads its body through B1100, so an unreadable body gets B1100's 400, and the Comprehend route puts that read failure's message in the 400 detail string.
     why: LiteLLM's Bedrock branch puts the raw exception object into detail, which cannot be encoded as JSON, and its parser message text is Python's. B3620 already takes B1100's 400 for the model path.

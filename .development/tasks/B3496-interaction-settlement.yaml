@@ -94,7 +94,7 @@ deviations:
 out_of_scope:
   - "B3481 owns the poll loop, poll_intervals, BackgroundInteractionPollContext, the settlement flag and claim_settlement, the active-poll registry, maybe_schedule_background_interaction_cost_polling, is_pollable_background_interaction, missing_usage_is_expected and the default aget-based fetcher."
   - "B3500 owns adelete and the call to settle_before_delete; B3499 owns scheduling a poll after a create."
-  - "B3003 owns release_budget_reservation; the server wiring that implements SettlementHost::release_reservation with it has no owner in this task."
+  - "B3003 owns release_budget_reservation; SettlementHost::release_reservation reaches it through B3499's injected ReservationRelease port, which B8660 implements over the shared budget services."
   - "B250 owns the success handler, success dedupe markers and the rest of the recognized-call-type check; B069 owns the proxy cost callback that decides a reservation stays open for a pollable create."
   - "Rest of litellm_logging.py, including the other InteractionsAPIResponse conversion at lines 4149-4160."
 pitfalls:

@@ -2,7 +2,7 @@ id: B8596
 milestone: M8 platform
 title: Callback config routes and the /config/yaml stub
 status: todo
-depends_on: [B8594, B8380, B8381, B4140, B2304]
+depends_on: [B8594, B8380, B8611, B4140, B2304]
 file: tasks/B8596-callback-config-routes.yaml
 covers: []
 parent: B124

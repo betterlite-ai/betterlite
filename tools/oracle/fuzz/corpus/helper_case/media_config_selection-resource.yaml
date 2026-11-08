@@ -1,0 +1,22 @@
+kind: helper
+name: media-config-selection-seed-resource
+call:
+  b5360:
+    model_cost: {}
+    bundled_model_cost: {}
+    requests:
+      - selector: responses
+        calls:
+          - {provider: azure, model: o_series-preview}
+          - {provider: azure, model: gpt-4o, facts: {azure: {supports_reasoning: true}}}
+          - {provider: bedrock_mantle, model: gpt-5, facts: {mantle: {supported: true, use_openai_path: true}}}
+      - selector: search
+        calls:
+          - {search_provider: perplexity}
+          - {search_provider: bing_grounding}
+      - selector: vector_stores
+        calls:
+          - {provider: vertex_ai, api_type: search_api}
+          - {provider: vertex_ai, api_type: other}
+env: {}
+compare: {ignore: []}
