@@ -31,7 +31,8 @@ impl Helper for Op {
 
     fn run(input: &Input) -> HelperResult {
         match assert_same_origin(&input.candidate_url, &input.expected_url) {
-            Ok(_origin) => Ok(serde_json::json!(null)),
+            // the oracle decodes a Python null as no value at all, so a passed check reports true on both sides
+            Ok(_origin) => Ok(serde_json::json!(true)),
             Err(error) => Err(Box::new(HelperError {
                 class: class(&error).to_owned(),
                 status: None,

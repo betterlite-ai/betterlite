@@ -16,4 +16,4 @@ def run(input_value: dict[str, Json]) -> Json:
     if not isinstance(expected_url, str):
         raise ValueError("expected_url must be a string")
     assert_same_origin(candidate_url, expected_url)
-    return None
+    return True
