@@ -21,6 +21,9 @@ fn empty_url_defaults() {
     let settings = load("{}", &[]).unwrap();
     assert_eq!(settings.proxy_base_url, "");
     assert_eq!(settings.server_root_path, "");
+    assert!(!settings.hide_default_credentials_hint);
+    assert_eq!(settings.hide_hint_environment, "false");
+    assert!(settings.ui_password.expose_secret().is_empty());
 }
 
 #[test]
@@ -41,79 +44,85 @@ fn raw_url_concatenation() {
 #[test]
 fn nonempty_password() {
     let settings = load("{}", &[("UI_PASSWORD", "s3cret")]).unwrap();
-    let password = settings.ui_password.unwrap();
-    assert!(!password.expose_secret().is_empty());
+    assert_eq!(settings.ui_password.expose_secret(), "s3cret");
 }
 
 #[test]
 fn empty_password() {
     let settings = load("{}", &[("UI_PASSWORD", "")]).unwrap();
-    let password = settings.ui_password.unwrap();
-    assert!(password.expose_secret().is_empty());
+    assert!(settings.ui_password.expose_secret().is_empty());
 }
 
 #[test]
 fn env_true_casefold() {
     // the hint predicate lowercases this text, so the loader keeps the spelling it was set with
     let settings = load("{}", &[("LITELLM_HIDE_DEFAULT_CREDENTIALS_HINT", "TRUE")]).unwrap();
-    assert_eq!(settings.hide_hint_environment.as_deref(), Some("TRUE"));
+    assert_eq!(settings.hide_hint_environment, "TRUE");
 }
 
 #[test]
 fn env_whitespace_false() {
     // the surrounding spaces survive, so the predicate's exact "true" comparison does not match
     let settings = load("{}", &[("LITELLM_HIDE_DEFAULT_CREDENTIALS_HINT", " TRUE ")]).unwrap();
-    assert_eq!(settings.hide_hint_environment.as_deref(), Some(" TRUE "));
+    assert_eq!(settings.hide_hint_environment, " TRUE ");
 }
 
 #[test]
 fn env_numeric_false() {
     // "1" is not parsed as a bool here; only the predicate's text comparison decides
     let settings = load("{}", &[("LITELLM_HIDE_DEFAULT_CREDENTIALS_HINT", "1")]).unwrap();
-    assert_eq!(settings.hide_hint_environment.as_deref(), Some("1"));
+    assert_eq!(settings.hide_hint_environment, "1");
 }
 
 #[rstest]
-#[case::literal_true("general_settings: {hide_default_credentials_hint: true}", Some(true))]
-#[case::literal_false(
-    "general_settings: {hide_default_credentials_hint: false}",
-    Some(false)
-)]
-#[case::string_true(
-    "general_settings: {hide_default_credentials_hint: \"true\"}",
-    Some(false)
-)]
-#[case::null("general_settings: {hide_default_credentials_hint: null}", None)]
-#[case::absent("{}", None)]
-fn literal_boolean_only(#[case] source: &str, #[case] loaded: Option<bool>) {
+#[case::literal_true("general_settings: {hide_default_credentials_hint: true}", true)]
+#[case::literal_false("general_settings: {hide_default_credentials_hint: false}", false)]
+#[case::string_true("general_settings: {hide_default_credentials_hint: \"true\"}", false)]
+#[case::null("general_settings: {hide_default_credentials_hint: null}", false)]
+#[case::absent("{}", false)]
+fn literal_boolean_only(#[case] source: &str, #[case] hidden: bool) {
     let settings = load(source, &[]).unwrap();
-    assert_eq!(settings.hide_default_credentials_hint, loaded);
+    assert_eq!(settings.hide_default_credentials_hint, hidden);
 }
 
 #[rstest]
-#[case::setting_only("general_settings: {hide_default_credentials_hint: true}", &[], Some(true))]
+#[case::setting_only(
+    "general_settings: {hide_default_credentials_hint: true}",
+    &[],
+    true,
+    "false",
+    ""
+)]
 #[case::environment_only(
     "{}",
     &[("LITELLM_HIDE_DEFAULT_CREDENTIALS_HINT", "true")],
-    None
+    false,
+    "true",
+    ""
 )]
-#[case::password_only("{}", &[("UI_PASSWORD", "s3cret")], None)]
-#[case::none("general_settings: {hide_default_credentials_hint: false}", &[], Some(false))]
+#[case::false_setting_with_true_environment(
+    "general_settings: {hide_default_credentials_hint: false}",
+    &[("LITELLM_HIDE_DEFAULT_CREDENTIALS_HINT", "true")],
+    false,
+    "true",
+    ""
+)]
+#[case::password_with_false_setting(
+    "general_settings: {hide_default_credentials_hint: false}",
+    &[("UI_PASSWORD", "s3cret")],
+    false,
+    "false",
+    "s3cret"
+)]
 fn hide_sources_or(
     #[case] source: &str,
     #[case] environment: &[(&str, &str)],
-    #[case] setting: Option<bool>,
+    #[case] setting: bool,
+    #[case] hint_environment: &str,
+    #[case] password: &str,
 ) {
     let settings = load(source, environment).unwrap();
     assert_eq!(settings.hide_default_credentials_hint, setting);
-    assert_eq!(
-        settings.hide_hint_environment.is_some(),
-        environment
-            .iter()
-            .any(|(name, _)| *name == "LITELLM_HIDE_DEFAULT_CREDENTIALS_HINT")
-    );
-    assert_eq!(
-        settings.ui_password.is_some(),
-        environment.iter().any(|(name, _)| *name == "UI_PASSWORD")
-    );
+    assert_eq!(settings.hide_hint_environment, hint_environment);
+    assert_eq!(settings.ui_password.expose_secret(), password);
 }

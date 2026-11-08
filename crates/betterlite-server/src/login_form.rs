@@ -63,17 +63,10 @@ impl LoginForm {
 
 #[must_use]
 pub fn should_hide_credentials_hint(settings: &Settings) -> bool {
-    let setting_hides = settings.hide_default_credentials_hint == Some(true);
     // LiteLLM lowercases the raw text and compares it with exactly "true", so " TRUE " and "1" stay false
-    let environment_hides = settings
-        .hide_hint_environment
-        .as_deref()
-        .is_some_and(|value| value.to_lowercase() == "true");
-    let password_hides = settings
-        .ui_password
-        .as_ref()
-        .is_some_and(|password| !password.expose_secret().is_empty());
-    setting_hides || environment_hides || password_hides
+    let environment_hides = settings.hide_hint_environment.to_lowercase() == "true";
+    let password_hides = !settings.ui_password.expose_secret().is_empty();
+    settings.hide_default_credentials_hint || environment_hides || password_hides
 }
 
 fn escape_attribute(value: &str) -> String {

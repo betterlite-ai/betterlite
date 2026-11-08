@@ -36,9 +36,9 @@ enum LiteralBoolean {
 pub struct Settings {
     pub proxy_base_url: String,
     pub server_root_path: String,
-    pub hide_default_credentials_hint: Option<bool>,
-    pub hide_hint_environment: Option<String>,
-    pub ui_password: Option<SecretString>,
+    pub hide_default_credentials_hint: bool,
+    pub hide_hint_environment: String,
+    pub ui_password: SecretString,
 }
 
 impl Section for Raw {
@@ -51,12 +51,15 @@ impl Section for Raw {
         Ok(Settings {
             proxy_base_url: lookup.lookup(PROXY_BASE_URL_NAME).unwrap_or_default(),
             server_root_path: lookup.lookup(SERVER_ROOT_PATH_NAME).unwrap_or_default(),
-            hide_default_credentials_hint: self
-                .general_settings
-                .hide_default_credentials_hint
-                .map(|value| matches!(value, LiteralBoolean::Boolean(true))),
-            hide_hint_environment: lookup.lookup(HIDE_HINT_NAME),
-            ui_password: lookup.lookup(UI_PASSWORD_NAME).map(SecretString::from),
+            hide_default_credentials_hint: matches!(
+                self.general_settings.hide_default_credentials_hint,
+                Some(LiteralBoolean::Boolean(true))
+            ),
+            // LiteLLM reads this variable with a "false" default before it compares the lowercased text
+            hide_hint_environment: lookup
+                .lookup(HIDE_HINT_NAME)
+                .unwrap_or_else(|| "false".to_owned()),
+            ui_password: SecretString::from(lookup.lookup(UI_PASSWORD_NAME).unwrap_or_default()),
         })
     }
 }

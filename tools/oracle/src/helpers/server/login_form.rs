@@ -50,8 +50,8 @@ fn facts(form: &LoginForm, html: &str, hide: bool) -> HelperResult {
     let (hint, texts) = hint_facts(html)?;
     Ok(json!({
         "hide_default_credentials_hint": hide,
-        "form_action": form.action.clone(),
-        "new_login_url": form.new_login_url.clone(),
+        "form_action": form.action,
+        "new_login_url": form.new_login_url,
         "form_tag": element(html, "<form ", ">")?,
         "banner": banner_facts(html)?,
         "hint": hint,

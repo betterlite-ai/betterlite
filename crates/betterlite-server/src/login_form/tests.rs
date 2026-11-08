@@ -13,9 +13,9 @@ fn settings(proxy_base_url: &str, server_root_path: &str) -> Settings {
     Settings {
         proxy_base_url: proxy_base_url.to_owned(),
         server_root_path: server_root_path.to_owned(),
-        hide_default_credentials_hint: None,
-        hide_hint_environment: None,
-        ui_password: None,
+        hide_default_credentials_hint: false,
+        hide_hint_environment: "false".to_owned(),
+        ui_password: SecretString::from(String::new()),
     }
 }
 
@@ -29,6 +29,13 @@ fn configured(source: &str, environment: &[(&str, &str)]) -> Settings {
         .unwrap()
         .sections
         .login_form
+}
+
+fn render(settings: &Settings) -> String {
+    LoginForm::from_settings(settings).html(LoginPageOptions {
+        show_deprecation_banner: false,
+        hide_default_credentials_hint: should_hide_credentials_hint(settings),
+    })
 }
 
 #[test]
@@ -55,6 +62,24 @@ fn configured_bindings_reach_the_renderer() {
         r#"<form action="https://proxy.example.com/base//gateway/login" method="post">"#
     ));
     assert!(!html.contains(r#"<div class="info-box">"#));
+}
+
+#[rstest]
+#[case::environment_on(
+    "general_settings: {hide_default_credentials_hint: false}",
+    &[("LITELLM_HIDE_DEFAULT_CREDENTIALS_HINT", "true")]
+)]
+#[case::password_on(
+    "general_settings: {hide_default_credentials_hint: false}",
+    &[("UI_PASSWORD", "s3cret")]
+)]
+fn false_setting_does_not_cancel_a_true_source(
+    #[case] source: &str,
+    #[case] environment: &[(&str, &str)],
+) {
+    let settings = configured(source, environment);
+    assert!(should_hide_credentials_hint(&settings));
+    assert!(!render(&settings).contains(r#"<div class="info-box">"#));
 }
 
 #[test]
@@ -87,24 +112,23 @@ fn banner_link() {
 }
 
 #[rstest]
-#[case::visible(None, None, None, false)]
-#[case::setting_on(Some(true), None, None, true)]
-#[case::setting_off(Some(false), None, None, false)]
-#[case::environment_on(None, Some("TRUE"), None, true)]
-#[case::environment_spaced(None, Some(" TRUE "), None, false)]
-#[case::environment_numeric(None, Some("1"), None, false)]
-#[case::password_on(None, None, Some("s3cret"), true)]
-#[case::password_empty(None, None, Some(""), false)]
+#[case::visible(false, "false", None, false)]
+#[case::setting_on(true, "false", None, true)]
+#[case::environment_on(false, "TRUE", None, true)]
+#[case::environment_spaced(false, " TRUE ", None, false)]
+#[case::environment_numeric(false, "1", None, false)]
+#[case::password_on(false, "false", Some("s3cret"), true)]
+#[case::password_empty(false, "false", Some(""), false)]
 fn hidden_hint(
-    #[case] setting: Option<bool>,
-    #[case] environment: Option<&str>,
+    #[case] setting: bool,
+    #[case] environment: &str,
     #[case] password: Option<&str>,
     #[case] hidden: bool,
 ) {
     let mut sources = settings("", "");
     sources.hide_default_credentials_hint = setting;
-    sources.hide_hint_environment = environment.map(str::to_owned);
-    sources.ui_password = password.map(|value| SecretString::from(value.to_owned()));
+    sources.hide_hint_environment = environment.to_owned();
+    sources.ui_password = SecretString::from(password.unwrap_or_default().to_owned());
     assert_eq!(should_hide_credentials_hint(&sources), hidden);
     let html = LoginForm::from_settings(&sources).html(LoginPageOptions {
         show_deprecation_banner: false,
