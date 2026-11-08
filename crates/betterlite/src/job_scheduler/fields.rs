@@ -45,11 +45,10 @@ impl CronField {
 }
 
 pub(crate) fn normalize_field(field: CronField, text: &str) -> Result<String, SchedulerError> {
-    let mut terms = Vec::new();
-    for term in text.split(',') {
-        terms.push(normalize_term(field, term)?);
-    }
-    Ok(terms.join(","))
+    text.split(',')
+        .map(|term| normalize_term(field, term))
+        .collect::<Result<Vec<_>, _>>()
+        .map(|terms| terms.join(","))
 }
 
 // A name expression matches its prefix, so whatever follows the second name is ignored as APScheduler does.

@@ -199,10 +199,7 @@ impl Inner {
         if delay <= TimeDelta::zero() {
             return Some(MIN_SLEEP);
         }
-        match delay.to_std() {
-            Ok(duration) => Some(duration.min(MAX_SLEEP)),
-            Err(_source) => Some(MAX_SLEEP),
-        }
+        Some(delay.to_std().unwrap_or(MAX_SLEEP).min(MAX_SLEEP))
     }
 }
 
