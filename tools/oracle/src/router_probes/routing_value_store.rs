@@ -170,8 +170,8 @@ pub enum ValueSummary {
     },
 }
 
-struct Call<'a> {
-    store: &'a RoutingValueStore,
+struct Call<'store> {
+    store: &'store RoutingValueStore,
     key: Option<RouteKey>,
     ttl: Option<f64>,
 }
@@ -239,11 +239,11 @@ fn execute_step(store: &RoutingValueStore, step: &Step) -> StepResult {
     }
 }
 
-fn route_call<'a>(
-    store: &'a RoutingValueStore,
+fn route_call<'store>(
+    store: &'store RoutingValueStore,
     key: Option<&str>,
     ttl: Option<Seconds>,
-) -> Call<'a> {
+) -> Call<'store> {
     Call {
         store,
         key: key.and_then(|raw| RouteKey::parse(raw).ok()),
@@ -375,7 +375,8 @@ fn parse_payload(payload: &ParsePayload) -> Result<ParseResult, OperationError> 
             let value = RouteValue::Pin(PinValue {
                 model_id: "a".repeat(length),
             });
-            serde_json::to_vec(&value).map_err(store_error)?
+            serde_json::to_vec(&value)
+                .map_err(|source| store_error(StoreError::Encoding { source }))?
         }
     };
     match parse_route_value(&bytes) {
