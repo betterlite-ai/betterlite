@@ -1,12 +1,15 @@
 use std::time::{Duration, TryFromFloatSecsError};
 
 use betterlite_config::types::ModelDeployment;
+use betterlite_http::url_policy::base::ConfiguredBase;
+use betterlite_http::url_policy::error::UrlPolicyError;
 use secrecy::{ExposeSecret, SecretString};
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 use url::Url;
 
 const OPENAI_API_BASE: &str = "https://api.openai.com/v1";
+const API_BASE_KEY: &str = "litellm_params.api_base";
 // LiteLLM's DEFAULT_REQUEST_TIMEOUT_SECONDS
 const REQUEST_TIMEOUT_SECONDS: f64 = 6000.0;
 
@@ -17,6 +20,12 @@ pub enum DeploymentError {
         model_name: String,
         #[source]
         source: url::ParseError,
+    },
+    #[error("model_list entry {model_name} has an api_base that cannot be used: {source}")]
+    ConfiguredBase {
+        model_name: String,
+        #[source]
+        source: UrlPolicyError,
     },
     #[error(
         "model_list entry {model_name} has a timeout of {seconds} seconds, which no wait can last"
@@ -51,6 +60,8 @@ pub struct ChatDeployment {
     pub provider: Provider,
     pub api_base: String,
     pub endpoint: Url,
+    // the Basic header HTTPX would build from userinfo in api_base, which is stripped from every stored URL
+    pub authorization: Option<SecretString>,
     pub api_key: Option<SecretString>,
     pub organization: Option<String>,
     pub timeout: Duration,
@@ -69,14 +80,7 @@ impl ChatDeployment {
         let params = &deployment.litellm_params;
         let model_name = &deployment.model_name;
         let litellm_model = params.model.clone().unwrap_or_default();
-        let provider = litellm_model.strip_prefix("openai/").map_or_else(
-            || Provider::Unsupported {
-                model: litellm_model.clone(),
-            },
-            |model| Provider::OpenAi {
-                model: model.to_owned(),
-            },
-        );
+        let provider = provider_of(&litellm_model);
         let api_base = params
             .api_base
             .iter()
@@ -84,11 +88,13 @@ impl ChatDeployment {
             .find(|base| !base.is_empty())
             .map_or(OPENAI_API_BASE, String::as_str);
         let (seconds, wait) = timeout(params.timeout, defaults, model_name)?;
+        let configured = configured_base(api_base, model_name)?;
         Ok(Self {
             timeout: wait,
             model_group: model_name.clone(),
-            api_base: api_base.split('?').next().unwrap_or_default().to_owned(),
-            endpoint: endpoint(api_base, model_name)?,
+            api_base: stored_api_base(&configured, api_base),
+            endpoint: endpoint(configured.url),
+            authorization: configured.authorization,
             api_key: params
                 .api_key
                 .iter()
@@ -106,8 +112,27 @@ impl ChatDeployment {
         })
     }
 
+    // HTTPX's BasicAuth from URL userinfo overwrites the Authorization header, so it beats the api_key bearer
+    #[must_use]
+    pub fn credential(&self) -> Option<SecretString> {
+        self.authorization.clone().or_else(|| {
+            self.api_key
+                .as_ref()
+                .map(|key| SecretString::from(format!("Bearer {}", key.expose_secret())))
+        })
+    }
+
+    // userinfo belongs to the URL it came with, so a call's own api_base replaces the Basic header too
+    pub fn override_base(&mut self, api_base: &str) -> Result<(), DeploymentError> {
+        let configured = configured_base(api_base, &self.model_group)?;
+        self.api_base = String::from(configured.url.clone());
+        self.endpoint = endpoint(configured.url);
+        self.authorization = configured.authorization;
+        Ok(())
+    }
+
     pub fn endpoint_for(&self, resource: &str) -> Result<Url, DeploymentError> {
-        let mut url = endpoint(&self.api_base, &self.model_group)?;
+        let mut url = endpoint(configured_base(&self.api_base, &self.model_group)?.url);
         let path = format!(
             "{}/{}",
             url.path().trim_end_matches("/chat/completions"),
@@ -116,6 +141,27 @@ impl ChatDeployment {
         url.set_path(&path);
         Ok(url)
     }
+}
+
+fn provider_of(litellm_model: &str) -> Provider {
+    litellm_model.strip_prefix("openai/").map_or_else(
+        || Provider::Unsupported {
+            model: litellm_model.to_owned(),
+        },
+        |model| Provider::OpenAi {
+            model: model.to_owned(),
+        },
+    )
+}
+
+// the base as written without its query, or rebuilt from the parsed URL when userinfo had to come out
+fn stored_api_base(configured: &ConfiguredBase, written: &str) -> String {
+    if configured.authorization.is_none() {
+        return written.split('?').next().unwrap_or_default().to_owned();
+    }
+    let mut stripped = configured.url.clone();
+    stripped.set_query(None);
+    String::from(stripped)
 }
 
 fn timeout(
@@ -135,14 +181,22 @@ fn timeout(
     Ok((resolved, wait))
 }
 
-fn endpoint(api_base: &str, model_name: &str) -> Result<Url, DeploymentError> {
-    let mut url = Url::parse(api_base).map_err(|source| DeploymentError::ApiBase {
+// the scheme and userinfo checks run here, once, so a bad api_base fails config load by key
+fn configured_base(api_base: &str, model_name: &str) -> Result<ConfiguredBase, DeploymentError> {
+    let url = Url::parse(api_base).map_err(|source| DeploymentError::ApiBase {
         model_name: model_name.to_owned(),
         source,
     })?;
+    ConfiguredBase::parse(url, API_BASE_KEY).map_err(|source| DeploymentError::ConfiguredBase {
+        model_name: model_name.to_owned(),
+        source,
+    })
+}
+
+fn endpoint(mut url: Url) -> Url {
     let path = format!("{}/chat/completions", url.path().trim_end_matches('/'));
     url.set_path(&path);
-    Ok(url)
+    url
 }
 
 // LiteLLM's generate_model_id hashes the model group and each litellm_params key and value in order
