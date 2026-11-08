@@ -1,3 +1,4 @@
+pub mod agent_api;
 pub mod cli_handler;
 pub mod context;
 pub mod deepagents;
@@ -15,6 +16,7 @@ pub mod session;
 pub mod session_runtime;
 pub mod snapshots;
 pub mod state;
+pub mod sync_bridge;
 pub mod transformation;
 pub mod turn_runtime;
 pub mod types;

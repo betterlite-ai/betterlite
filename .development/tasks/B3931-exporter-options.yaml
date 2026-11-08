@@ -236,7 +236,7 @@ deviations:
     why: LiteLLM's field is bool or None, and None behaves like false in every branch of the redaction except for a harmless extra copy.
 out_of_scope:
   - "The hook methods of CustomLogger (custom_logger.py L141-L835: pre and post call hooks, log_* events, agentic loop hooks, deployment hooks) are the extension surface. B189 owns the native phases and B6030 the Python class."
-  - "AgenticLoopPlan, AgenticLoopRequestPatch, AgenticLoopSafetyError and the interception key helpers in litellm/types/integrations/custom_logger.py L1-L55 and L65-L88 are owned by B189 according to B2419 and B3544."
+  - "AgenticLoopPlan, AgenticLoopRequestPatch, AgenticLoopSafetyError and the interception key helpers in litellm/types/integrations/custom_logger.py L1-L55 and L65-L88 are owned by B4119 (the plan and patch) and B189 (the rest) according to B2419 and B3544."
   - "get_callback_env_vars (custom_logger.py L102-L139) has no caller at the pin."
   - "get_proxy_server_request_from_cold_storage_with_object_key (L976-L982) only returns None in the base class. Exporters that override it own their versions."
   - "All of litellm_logging.py belongs to B247 to B253. Its _handle_callback_failure (L3579-L3599) is B250, and the call to the redaction hook at L3483 is made by B250 and B251 using the function built here."

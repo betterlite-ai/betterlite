@@ -1,0 +1,22 @@
+id: B7953
+milestone: M12 python
+title: Python types for videos, secret managers, pass-through endpoints, prompts and repositories
+status: todo
+depends_on: [B5657, B7929]
+file: tasks/B7953-types-runtime-helper-types.yaml
+covers:
+  - "litellm/types/videos/**"
+  - "litellm/types/secret_managers/**"
+  - "litellm/types/passthrough_endpoints/assembly_ai.py"
+  - "litellm/types/passthrough_endpoints/managed_id_rewriter.py"
+  - "litellm/types/passthrough_endpoints/pass_through_endpoints.py"
+  - "litellm/types/passthrough_endpoints/tinyfish.py"
+  - "litellm/types/prompts/**"
+  - "litellm/types/litellm_core_utils/**"
+  - "litellm/types/repositories/**"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

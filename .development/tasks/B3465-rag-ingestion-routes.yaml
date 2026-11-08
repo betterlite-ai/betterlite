@@ -1,0 +1,224 @@
+id: B3465
+title: RAG ingest and query HTTP routes
+description: >-
+  Register the four routes of LiteLLM's rag_endpoints/endpoints.py and write their two handlers, in a new
+  module `api::rag_routes` of betterlite-server (crates/betterlite-server/src/api/rag_routes.rs and the folder
+  beside it). The routes are POST /v1/rag/ingest and POST /rag/ingest (handler rag_ingest, endpoints.py
+  L527-L760), and POST /v1/rag/query and POST /rag/query (handler rag_query, L763-L903). Every route
+  authenticates through B003 like the other proxy routes. The handlers are glue: the logic lives in the tasks
+  named below, and this task calls them in LiteLLM's order and keeps LiteLLM's error bodies. Read the merged
+  code of each dependency first and use its real names. The names below come from the task files and may
+  differ a little. If something you need is missing or private, stop and say so in the report, and do not copy
+  it. B3465 is the only task that registers these four routes, so axum never sees a duplicate.
+
+  rag_ingest, in this order. 1. Decode the request with B3462's `parse_rag_ingest_request`, which returns
+  ingest_options, file_data, file_url and file_id. Its upload scan is B3452's. 2. A caller whose role is
+  `internal_user_viewer` (LitellmUserRoles.INTERNAL_USER_VIEW_ONLY) and whose `ingest_options.vector_store`
+  has no truthy `vector_store_id` gets HTTP 403 with detail {"error": "internal_user_viewer role can only
+  ingest files to an existing vector store. Provide 'vector_store_id' in ingest_options.vector_store."}. An
+  empty string counts as missing. 3. Authorize every `vector_store_id` found anywhere in the whole
+  ingest_options with B3463's nested-store authorization, which returns the managed stores it resolved, keyed
+  by id. 4. Run B884's `is_request_body_safe` on the request's own `vector_store` record with model "" and the
+  injected general settings and router. A ValueError becomes HTTP 400 with detail {"error": <message>}. 5.
+  `managed_store` is the resolved store whose id equals the record's `vector_store_id`, or none. Merge with
+  B3463: the caller options B3463 keeps for that store, then B3463's managed overrides on top, and put the
+  result back as `vector_store` in a copy of ingest_options. 6. B3463's provider check on the merged record. A
+  returned message becomes HTTP 400 with detail {"error": <message>}. 7. Build the request data with B1103's
+  `add_litellm_data_to_request` from an empty map, the request, the general settings, the key identity, the
+  version and the proxy config. 8. Log at debug "RAG Ingest - options: %s, custom_llm_provider: %s" with the
+  caller's options and the merged provider (default "openai"). 9. Call B3460's `aingest` with the merged
+  options, file_data, file_url, file_id, the router and the request data. 10. Log at debug "RAG Ingest -
+  Checking database save conditions: prisma_client=%s, response=%s, response_type=%s". When a database is
+  attached and a response came back, call B3464's `RagIngestStore::save` with the response mapped to its
+  `IngestedFile` (file_id, vector_store_id), the caller's ingest_options (not the merged ones), the key
+  identity, the uploaded file info and `store_is_managed` = whether `managed_store` is set. B3464 swallows its
+  own errors. For the file info, build B3464's `UploadedFileInfo` from file_data: filename, content_type and
+  the byte length of the content, or none when there was no file_data. Otherwise log at warning "Skipping
+  database save: prisma_client=%s, response=%s". 11. Return the response as JSON with status 200. A response
+  whose status field is "failed" is still a normal 200 body, because B3460 does not raise for it.
+
+  rag_ingest error handling. Any HTTPException-style error (the 400 and 403 above, and the ones B3462 and B3463
+  raise) passes through unchanged. Any other error, including everything `aingest` raises after B3460 mapped
+  it through B185 and B186, is logged with `verbose_proxy_logger.exception` text "RAG Ingest failed: %s" and
+  returned as HTTP 500 with detail {"error": <the error's text>}. The status of the mapped provider error is
+  not used here: a provider 429 behind /v1/rag/ingest reaches the client as 500.
+
+  rag_query, in this order. 1. Read the body with B1100's `_read_request_body`. 2. Take model, messages,
+  retrieval_config, rerank and stream (default false). 3. Validate in this order, each failure HTTP 400 with
+  detail {"error": ...}: model falsy gives "model is required"; messages falsy gives "messages is required";
+  retrieval_config falsy gives "retrieval_config is required"; retrieval_config not an object gives
+  "retrieval_config must be an object"; no `vector_store_id` key gives "retrieval_config must contain
+  'vector_store_id'". "Falsy" means missing, null, "", 0, false, [] or {}, so {} is "required", not "must be an
+  object". 4. Call B1067's `reject_caller_embedding_selection_params` on retrieval_config with
+  source "retrieval_config". 5. Authorize every nested `vector_store_id` in retrieval_config with B3463. 6.
+  `managed_store` is the resolved store for `retrieval_config["vector_store_id"]`. `store_data` is B1067's
+  `build_request_data_from_managed_vector_store` for it, or empty when none. Unlike the ingest merge, null
+  values in store_data are kept here. `merged_retrieval_config` is retrieval_config with store_data on top, so
+  the store wins on conflict. 7. Build the request data with `add_litellm_data_to_request` as in ingest. 8. Log
+  at debug "RAG Query - model: %s, vector_store_id: %s, custom_llm_provider: %s". 9. Call B3461's `aquery` with
+  model, messages, merged_retrieval_config, `vector_store_params` = store_data, rerank, stream, the router and
+  the request data. 10. The response headers come from B004's `get_custom_headers` with the key identity and
+  these values read from the response's hidden params, each defaulting to "": litellm_call_id, model_id,
+  cache_key, api_base, plus response_cost (no default) and the request data. 11. Not streaming: copy those
+  headers onto the response and return it as JSON. 12. Streaming: wrap the call in B004's
+  `open_sse_before_first_byte` with `ttft_keepalive_interval(data, router)` as the ping interval. Inside it,
+  await `aquery`, then answer with a text/event-stream body made by the shared `select_data_generator` over
+  the response, with the same custom headers. The query call runs inside the wrapper, so an upstream error
+  still reaches the error handler below.
+
+  rag_query error handling. HTTPException-style errors pass through. Any other error is logged "RAG Query
+  failed: %s" and returned with the status from `upstream_status_code` and detail {"error": <text>}.
+  `upstream_status_code` (endpoints.py L73-L75) is owned here: it returns the error's `status_code` when the
+  error type carries an integer one (B3461 and B185 give provider errors a status), else 500. No other task
+  names it. Use the typed error enum's status accessor, not reflection. B3461 keeps the retrieval, rerank,
+  completion and billing logic, so this task writes none of it.
+
+  Dependencies come in through a constructor: `RagRoutes` takes the B3460 ingest service, the B3461 query
+  service, the B3464 `RagIngestStore` (optional, none when no database is attached), the B003 auth layer and
+  the settings B1103 needs. No module-level state. The module registers the routes from the router function
+  that B1067 and the other route modules use, in the same style. Tests in `api::rag_routes::tests` use scripted
+  fakes for the services and check each branch above, one named test per DoD item.
+
+  Size. The owned LiteLLM code is about 150 nonblank, non-comment lines. Allow 330 implementation, 330 tests,
+  and 20 oracle cases of about 25 lines each.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/api/rag_routes.rs
+    - crates/betterlite-server/src/api/rag_routes/**
+    - tools/oracle/cases/api/rag-routes/**
+    - tools/oracle/helpers/b3465.py
+    - tools/oracle/helpers/b3465/**
+    - tools/oracle/src/helpers/server/b3465.rs
+    - tools/oracle/src/helpers/server/b3465/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L527-L572
+    why: Both ingest decorators (/v1/rag/ingest, /rag/ingest), the handler start, the parse call and the view-only 403.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L573-L714
+    why: Authorization, is_request_body_safe, the managed merge, the provider 400, request data and the aingest call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L715-L760
+    why: The database save condition, the warning branch, and the two except branches (500 with detail error).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L73-L75
+    why: _upstream_status_code, used only by rag_query.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L763-L822
+    why: Both query decorators (/v1/rag/query, /rag/query) and the handler signature.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L823-L903
+    why: Field validation order, store merge, aquery call, custom headers, streaming branch and the error handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L353-L400
+    why: aquery, the entry the query handler calls.
+
+dod:
+  - text: >-
+      ingest_aliases_and_validation: POST with a bearer key to /v1/rag/ingest and /rag/ingest with a JSON body
+      that has ingest_options.vector_store but no file, file_url or file_id gets the same 400 body as LiteLLM on
+      both paths. Without a bearer key both paths return B003's 401 envelope before any parsing.
+    proof: [route-tests, oracle, new-cases]
+  - text: >-
+      ingest_rejects_before_provider: a vector_store record with api_key, a nested vector_store_id that is an
+      empty string, a custom_llm_provider that is not supported, and a base_url style field that
+      is_request_body_safe refuses each give HTTP 400 {"detail":{"error":...}} like LiteLLM, and the fake
+      ingest service is never called.
+    proof: [route-tests, oracle, new-cases]
+  - text: >-
+      ingest_view_only_role: a caller with role internal_user_viewer and no vector_store_id gets the 403 body
+      from the description. With a vector_store_id it goes on. The ingest service is not called on the 403.
+    proof: [route-tests]
+  - text: >-
+      ingest_managed_store_merge: when the authorized store is managed, caller keys outside the seven allowed
+      options are dropped, the store's non-null settings win on conflict, and the merged record (not the
+      caller's) reaches aingest, while B3464 save receives the caller's ingest_options and store_is_managed true.
+    proof: [route-tests]
+  - text: >-
+      ingest_success_and_save: with an existing OpenAI vector_store_id and a file_id the route returns the
+      200 RAGIngestResponse body like LiteLLM, and the save port is called once with the response's file_id and
+      vector_store_id. With no database attached the save is skipped and the warning is logged. A response with
+      status "failed" is still 200.
+    proof: [route-tests, oracle, new-cases]
+  - text: >-
+      ingest_unexpected_error_is_500: an error from aingest of any kind, including a mapped provider error with
+      status 429, is returned as 500 with detail {"error": text}.
+    proof: [route-tests]
+  - text: >-
+      query_required_fields: missing or empty model, messages and retrieval_config, a non-object
+      retrieval_config, and a retrieval_config without vector_store_id each give LiteLLM's 400 message in the
+      listed order. {} counts as missing, a string as "must be an object". Both aliases behave the same.
+    proof: [route-tests, oracle, new-cases]
+  - text: >-
+      query_embedding_selection_and_auth: embedding_model, litellm_embedding_model, litellm_embedding_config
+      or litellm_credential_name inside retrieval_config is refused with B1067's 400 before any store lookup or
+      upstream call. Without a bearer key the 401 envelope comes first.
+    proof: [route-tests, oracle, new-cases]
+  - text: >-
+      query_store_merge: for a managed store the store_data keys overwrite the caller's retrieval_config keys,
+      null values included, and aquery receives vector_store_params equal to store_data.
+    proof: [route-tests]
+  - text: >-
+      query_success_headers: a non-streaming query returns the aquery response as JSON with the
+      get_custom_headers values (x-litellm-call-id, x-litellm-model-id, x-litellm-response-cost and the rest B004
+      builds from the response's hidden params). The oracle case compares the body, status and those headers
+      with LiteLLM.
+    proof: [route-tests, oracle, new-cases]
+  - text: >-
+      query_streaming: with stream true the route answers text/event-stream through open_sse_before_first_byte
+      with the ttft keepalive interval, with the custom headers on the stream response, and an error raised by
+      aquery before the first byte becomes the JSON error response of the next item.
+    proof: [route-tests]
+  - text: >-
+      query_error_status: an aquery error that carries status 429 returns 429 {"detail":{"error":text}}, an
+      error without a status returns 500, and an HTTPException-style error passes through unchanged. Compared
+      with LiteLLM for an upstream 429.
+    proof: [route-tests, oracle, new-cases]
+
+checks:
+  optional: []
+  commands:
+    - id: route-tests
+      why: a handler branch, error body or call order of the RAG routes is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::rag_routes::tests::/)'
+    - id: new-cases
+      why: the RAG routes are not compared through real authenticated HTTP
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/rag-routes)"
+
+oracle_cases:
+  - tools/oracle/cases/api/rag-routes/ingest-v1-missing-source.yaml
+  - tools/oracle/cases/api/rag-routes/ingest-plain-missing-source.yaml
+  - tools/oracle/cases/api/rag-routes/ingest-unauthenticated.yaml
+  - tools/oracle/cases/api/rag-routes/ingest-blocked-credential.yaml
+  - tools/oracle/cases/api/rag-routes/ingest-empty-nested-store-id.yaml
+  - tools/oracle/cases/api/rag-routes/ingest-unsupported-provider.yaml
+  - tools/oracle/cases/api/rag-routes/ingest-openai-existing-file.yaml
+  - tools/oracle/cases/api/rag-routes/query-v1-missing-model.yaml
+  - tools/oracle/cases/api/rag-routes/query-plain-missing-messages.yaml
+  - tools/oracle/cases/api/rag-routes/query-empty-retrieval-config.yaml
+  - tools/oracle/cases/api/rag-routes/query-retrieval-config-not-object.yaml
+  - tools/oracle/cases/api/rag-routes/query-missing-store-id.yaml
+  - tools/oracle/cases/api/rag-routes/query-embedding-selection.yaml
+  - tools/oracle/cases/api/rag-routes/query-unauthenticated.yaml
+  - tools/oracle/cases/api/rag-routes/query-openai-success.yaml
+  - tools/oracle/cases/api/rag-routes/query-upstream-429.yaml
+
+deviations: []
+
+out_of_scope:
+  - "B3460 owns aingest and the ingest pipeline, B3461 owns aquery with retrieval, rerank, completion and billing, B3462 owns parse_rag_ingest_request and _secure_uploaded_file, B3463 owns the store-id scan, authorization, option merge and provider check, B3464 owns _build_file_metadata_entry and _save_vector_store_to_db_from_rag_ingest. This task only calls them."
+  - "_as_string_keyed_mapping and _response_attr (endpoints.py L66-L70) are Python typing helpers. In Rust the fields are typed, so there is nothing to port, and the other tasks use no such helper."
+  - "B7324 owns open_sse_before_first_byte, ttft_keepalive_interval and select_data_generator, B005 owns SSE framing, and get_custom_headers is not built by any task yet. This task calls them."
+  - "The upload scanner EicarTestMalwareScanner is chosen by the caller of parse_rag_ingest_request; pass B3452's EICAR scanner, as the route does. B3452 owns the scanner itself."
+
+pitfalls:
+  - A provider error behind /rag/ingest becomes HTTP 500 {"detail":{"error":text}}, never the provider's own status, because the ingest handler's catch-all ignores status_code. Only /rag/query uses upstream_status_code.
+  - The merged record goes to aingest, but the caller's un-merged ingest_options go to the database save and into the debug log.
+  - store_is_managed is whether the authorized store matched the record's vector_store_id, not whether any store was found in the payload.
+  - The view-only 403 check runs after parsing and before authorization, and looks only at ingest_options.vector_store.vector_store_id.
+  - Ingest drops null values from the managed overrides, but query keeps them; copy each merge as written.
+  - Falsy checks in rag_query use Python truthiness for model, messages and retrieval_config only, so retrieval_config {} reports "retrieval_config is required".
+  - Error bodies are {"detail":{"error":...}} with no type, param or code, unlike chat errors.
+  - The streaming branch awaits aquery inside open_sse_before_first_byte, so the 429 of a streaming query is still decided by upstream_status_code.
+  - Never log the merged vector_store record at debug level; it can hold the managed store's credentials. Log the provider only, as LiteLLM's second argument does.
+  - A success oracle case reaches the mock upstream through env vars (OPENAI_API_BASE, OPENAI_API_KEY) because api_base is a blocked field in the request record. If B3453 or B3461 do not read them, say so in the report instead of weakening the case.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

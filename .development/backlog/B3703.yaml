@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Prompt injection heuristics and model moderation
 status: todo
 depends_on: [B1688, B002]
-file: null
+file: tasks/B3703-prompt-injection-detection.yaml
 covers:
   - "litellm/proxy/hooks/prompt_injection_detection.py"
   - "litellm/litellm_core_utils/prompt_templates/factory.py"

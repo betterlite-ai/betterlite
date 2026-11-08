@@ -109,6 +109,7 @@ pub(super) fn compare_transcript(
         headers_present: Vec::new(),
         upstream_headers,
         ignore: Vec::new(),
+        contracts: None,
     };
     compare::compare(
         &sentinel,

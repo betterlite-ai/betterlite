@@ -1,0 +1,87 @@
+id: B7814
+title: RAGFlow dataset vector store
+description: >-
+  Build RAGFlow's dataset (vector store) config, ragflow/vector_stores/transformation.py (234 lines), as the module
+  ragflow_vector_store in betterlite-openai, over B1131 wire records. It manages datasets only; search is unsupported. The
+  caller (B1064 and B2484) reads RAGFLOW_API_KEY and RAGFLOW_API_BASE and sends the requests, so RagflowEnv holds them as
+  input.
+
+  Auth. get_auth_credentials takes the explicit litellm_params api_key, else the env key; it fails when still null with
+  "api_key is required (set RAGFLOW_API_KEY env var or pass in litellm_params)" and returns Authorization "Bearer <key>". An
+  empty string key counts as set. validate_environment takes the params api_key or the env key (empty string falls through
+  to the env), fails with "RAGFLOW_API_KEY is required (set env var or pass in litellm_params)" when null, and sets
+  Authorization and Content-Type application/json. Endpoints are empty for read and write.
+
+  URL. The base is the explicit base, else litellm_params["api_base"], else RAGFLOW_API_BASE, else http://localhost:9380,
+  with trailing slashes removed, plus /api/v1/datasets. Search request and response both fail with "RAGFlow vector stores
+  support dataset management only, not search/retrieval".
+
+  Create request. The URL is the given base as is. name must be non-empty ("name is required for RAGFlow dataset creation").
+  When metadata is non-empty, copy these keys that exist, in this order: avatar, description, embedding_model, permission,
+  chunk_method, parser_config, parse_type, pipeline_id. chunk_method together with pipeline_id fails with "chunk_method and
+  pipeline_id are mutually exclusive. Specify either chunk_method or pipeline_id, not both." With neither, chunk_method is
+  "naive". Create response (decode_ragflow_create): parse JSON; code other than 0 gives the provider error with message
+  (default "Unknown error") and the response status and headers; data.id must be non-empty ("RAGFlow response missing
+  dataset id"); created_at is int(create_time/1000) or 0; the reply has object "vector_store", bytes 0, all file counts 0,
+  status "completed" and null expiry, last_active and metadata. Any other failure, including unreadable JSON, becomes the
+  provider error with the message text, status and headers; an error that already carries a status, or the missing id
+  error, passes through unchanged. Add a fuzz target for decode_ragflow_create. About 184 LiteLLM lines.
+scope:
+  paths:
+    - crates/betterlite-openai/src/ragflow_vector_store.rs
+    - crates/betterlite-openai/src/ragflow_vector_store/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/ragflow_vector_store.rs
+    - crates/betterlite-openai/fuzz/corpus/ragflow_vector_store/**
+    - tools/oracle/cases/helpers/ragflow-vector-store/**
+    - tools/oracle/helpers/b7814.py
+    - tools/oracle/helpers/b7814/**
+    - tools/oracle/src/helpers/openai/b7814.rs
+    - tools/oracle/src/helpers/openai/b7814/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ragflow/vector_stores/transformation.py#L25-L85
+    why: Credentials, endpoints, headers and the dataset URL with its default base.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ragflow/vector_stores/transformation.py#L87-L159
+    why: Unsupported search and the create request fields, exclusion rule and default chunk method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ragflow/vector_stores/transformation.py#L161-L234
+    why: Create response decoding and its error wrapping.
+dod:
+  - text: Credentials, headers, endpoints and the dataset URL follow LiteLLM, including the localhost default and the empty-key difference between the two key checks.
+    proof: [ragflow-store-tests, oracle]
+  - text: The create request copies only the allowed metadata fields, rejects chunk_method with pipeline_id and defaults to naive.
+    proof: [ragflow-store-tests, oracle]
+  - text: The create response keeps the seconds conversion, zero counts and the three error paths.
+    proof: [ragflow-store-tests, oracle]
+  - text: Create response bytes replay through decode_ragflow_create without a panic.
+    proof: [ragflow-store-corpus]
+checks:
+  optional: []
+  commands:
+    - id: ragflow-store-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^ragflow_vector_store::/) - test(replays_the_ragflow_vector_store_corpus)'
+      why: Fixtures cover credentials, URL, create request and the three response error paths.
+    - id: ragflow-store-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/ragflow_vector_store.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/ragflow_vector_store)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_ragflow_vector_store_corpus)'
+      why: Added corpus files replay through the create response decoder.
+oracle_cases:
+  - tools/oracle/cases/helpers/ragflow-vector-store/default-base-url.yaml
+  - tools/oracle/cases/helpers/ragflow-vector-store/missing-key-messages.yaml
+  - tools/oracle/cases/helpers/ragflow-vector-store/create-metadata-fields.yaml
+  - tools/oracle/cases/helpers/ragflow-vector-store/chunk-method-exclusive.yaml
+  - tools/oracle/cases/helpers/ragflow-vector-store/default-chunk-method.yaml
+  - tools/oracle/cases/helpers/ragflow-vector-store/create-response-time.yaml
+  - tools/oracle/cases/helpers/ragflow-vector-store/nonzero-code.yaml
+  - tools/oracle/cases/helpers/ragflow-vector-store/missing-dataset-id.yaml
+deviations: []
+out_of_scope:
+  - B1064 and B2484 read RAGFLOW_API_KEY and RAGFLOW_API_BASE and send the HTTP request.
+  - The RAGFlow chat provider and the _complete_ragflow dispatch are B049.
+pitfalls:
+  - get_auth_credentials tests for null while validate_environment uses or, so an empty api_key behaves differently in the two.
+  - The create request does not append /api/v1/datasets because the base it receives already has it.
+  - The metadata allowlist is applied in a fixed order and unknown keys are dropped without an error.
+  - A create_time of 0 or a missing one gives created_at 0, and the division truncates toward zero.
+  - The missing dataset id error is not rewrapped, but a bad JSON body is.
+budget: {max_changed_lines: 1500, max_new_expects: 1}
+review_level: standard

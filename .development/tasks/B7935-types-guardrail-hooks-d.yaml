@@ -1,0 +1,56 @@
+id: B7935
+title: Python types for guardrail hooks panw_prisma_airs to straiker (types/proxy/guardrails/guardrail_hooks)
+description: >-
+  This task ports nine type files into `crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/`: `panw_prisma_airs`, `pillar`, `presidio`,
+  `promptguard`, `prompt_security`, `qohash`, `qualifire`, `repelloai` and `singulr`, plus `straiker`. It is Python only.
+
+
+  `straiker.py` (200 lines) holds the webhook models: stream, event, content, usage, context and identity, all pydantic. The
+  others are one to five classes each, either TypedDicts or pydantic config models.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/panw_prisma_airs.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/pillar.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/presidio.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/promptguard.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/prompt_security.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/qohash.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/qualifire.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/repelloai.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/singulr.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/straiker.py
+  - crates/betterlite-python/tests/test_types_guardrail_hooks_d.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/straiker.py#L1-L200
+  why: Webhook models.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/singulr.py#L1-L68
+  why: Singulr types.
+out_of_scope:
+- >-
+  tool_permission, typesafe, vigil_guard, xecguard and zscaler_ai_guard are in B7936.
+pitfalls:
+- >-
+  The webhook models in `straiker.py` nest (event holds content, usage, context and identity). A test builds one full event and compares `model_dump`.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_guardrail_hooks_d.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

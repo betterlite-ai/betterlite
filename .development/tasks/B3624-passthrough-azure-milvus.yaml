@@ -1,0 +1,165 @@
+id: B3624
+title: Pass-through Azure and Milvus routes
+description: >-
+  Build the Azure, Azure AI and Milvus pass-through routes of llm_passthrough_endpoints.py as the module passthrough_azure_milvus in crates/betterlite-server.
+  This task registers its own routes (the registration task B3616 only handles configured endpoints), so it adds HTTP oracle cases.
+  The Azure routes finish by calling openai_pass_through from B3628, the Milvus route calls B3615's create_pass_through_route. Call them; do not copy them.
+  Every name below is at most 30 characters; LiteLLM's longer names are renamed on purpose.
+
+  Registration. `azure_milvus_router(deps: AzureMilvusDeps)` returns the axum router with these paths, each for GET, POST, PUT, DELETE and PATCH, where `endpoint` is the rest of the path without a leading slash: `/azure/{endpoint}`, `/azure_ai/{endpoint}` and `/milvus/{endpoint}`.
+  `/azure` and `/azure_ai` run the same function, `azure_proxy_route`. Authentication is the normal proxy key dependency (B052), applied the way the other route tasks do it. The architect adds the router to the app once.
+  `AzureMilvusDeps` holds the handler dependencies that B3613 declares as HandlerDeps (pass them on to B3628's function and B3615's factory; read B3628's merged signature for how it takes them), the optional router (the type B3618's uses_router_model takes) and the ports below. Each port is a small trait declared in this module so tests use recording fakes and no global is read:
+  - `VectorRegistryPort`: `has_index_registry()` and `has_store_registry()` (false when LiteLLM's `litellm.vector_store_index_registry` or `litellm.vector_store_registry` is None), `is_index(name)`, `index_by_name(name)` returning an `Option` of a record with `vector_store_name` and `vector_store_index`, and `store_by_name(vector_store_name)` returning an `Option` of B1131's managed vector store record. Backed by B1062 (is-index, index by name) and B1063 (store by name from the registry).
+  - `VectorAccessPort`: `assert_store_access(store, key)` (B1061's assert_user_can_access_vector_store, a denied caller is its 403), `check_index_endpoint(provider, index_name, request, key)` (B1061's is_allowed_to_call_vector_store_endpoint, its result is not used, only its error) and `assert_admin_for_index_create(key)` (B1060's assert_proxy_admin_for_vector_store_index_management with operation `create`, 403 "Only proxy admins can create vector store indexes. Contact your LiteLLM administrator." for a non-admin).
+  - `VectorProviderPort`: `auth_headers(provider, litellm_params)` and `complete_url(provider, litellm_params)` over the `VectorProvider` enum `{ Milvus, AzureAi }`, plus `has_config(provider)`. See the notes: B558 owns the Azure AI side, and B7892 (milvus_vector_config, MilvusProviderPorts) implements the Milvus side with MilvusVectorStoreConfig get_auth_credentials and get_complete_url. The composition root wires MilvusProviderPorts into this port, so this task adds no dependency on B7892.
+  The architect builds the real adapters later.
+
+  Azure and Azure AI route. `azure_proxy_route(endpoint, request, response, key)` runs these steps in order:
+  1. `is_azure_index_create(method, endpoint)` replaces is_azure_ai_search_service_level_index_create. It is true only for POST when the endpoint, cut at the first `?` and stripped of `/` on both ends, equals `indexes` or ends with `/indexes`. When true, call VectorAccessPort.assert_admin_for_index_create(key) first; a non-admin gets that 403 and nothing else runs.
+  2. `parts` is the endpoint split on `/`. `azure_index_from_endpoint(endpoint)` replaces get_azure_ai_search_index_from_endpoint: cut the endpoint at the first `?`, strip `/` from both ends, split on `/`, and return the segment right after the first segment equal to `indexes` (None when it is empty or absent). Only that segment counts as the index; `.../docs/index` has no index.
+  3. When parts has more than one entry and a router exists, walk the parts in order. For each part: it is a router model when B3618's uses_router_model is true for the body `{"model": part}`; it is a managed index when the part equals the index from step 2, the index registry exists and `is_index(part)` is true. The first part that is either wins, and the router model test is checked first for that part.
+  4. Router model part: read the body with B1101's get_request_body, `streaming = is_streaming_body(body)` (B3618), then call B7324's open_sse_before_first_byte around `relay_azure_router_model(router, part, endpoint, request, body, streaming, key)`, with ping_interval_seconds the setting `sse_keepalive_ping_interval_seconds` (B002) for a streaming call and none otherwise. Return its result.
+  5. Managed index part: no provider config for AzureAi gives an internal error `Provider config not found for Azure AI`. No store registry gives `Vector store registry not found`. Then check_index_endpoint(AzureAi, part, request, key). Take the index record with index_by_name(part); none gives `Vector store index not found for <part>`. Take the store by the record's vector_store_name; none gives `Vector store not found for <name>`. Then assert_store_access. The extra headers are auth_headers(AzureAi, store.litellm_params). The base URL is the store's litellm_params `api_base` when it is a string, else the internal error `API base not found for <part>`. Return openai_pass_through with endpoint, request, response, key, that base, api_key none, provider AzureAi and those extra headers. Every internal error here is a plain error that becomes HTTP 500, as in B3628.
+  6. No part matched: `relay_azure_body_group` (replaces _relay_azure_body_model_group). It returns none (so the route goes on) when there is no router, when B548's is_azure_body_model_inference_endpoint(endpoint) is false, when the request content type is not JSON (B1100's is_json_content_type), when the body `model` is not a string, or when uses_router_model is false for the body. Otherwise it streams like step 4 and returns the relay of that model with the same open_sse_before_first_byte wrapper.
+  7. `relay_azure_router_model` first asks B548's foreign_azure_deployment(endpoint, model, served) where served is B3618's models_served_by_group(router, model), read only when the function needs it. A foreign deployment gives HTTP 400 with B3618's RelayRejection as detail: `{"error": "deployment '<name>' in the path is not served by model group '<model>'; put the model group name in the deployments segment"}`, so the body is `{"detail": {"error": ...}}`. Otherwise call B3618's relay_router_model with the endpoint unchanged.
+  8. Fallthrough. Base URL is B129's get_secret_str("AZURE_API_BASE"); none gives the internal error `Required 'AZURE_API_BASE' in environment to make pass-through calls to Azure.` Key is B3602's get_credentials("azure", None); none gives `Required 'AZURE_API_KEY' in environment to make pass-through calls to Azure.` The base is checked before the key. Then return openai_pass_through with provider Azure, that base and key, and no extra headers. The `/azure_ai` prefix uses this same Azure base, key and provider; it is only a second path.
+
+  Milvus route. `milvus_proxy_route(endpoint, request, response, key)` runs these steps in order:
+  1. No provider config (VectorProviderPort.has_config(Milvus) false) gives HTTP 500 `Unable to find Milvus vector store config.`
+  2. Body = B1101's get_request_body (POST with a JSON or form content type is parsed, any other method gives an empty object, another POST content type is an error that becomes HTTP 500).
+  3. `collectionName` set but not a string gives HTTP 400 `collectionName must be a string. Got <type>`, where type is `int` or `float` for a number, `bool`, `list` or `dict`. A missing, null or empty collection name gives HTTP 400 `Collection name is required. Got <body>` with the body as compact JSON.
+  4. Either registry missing (has_index_registry or has_store_registry false) gives HTTP 500 `Unable to find Milvus vector store index registry or vector store registry.`
+  5. `is_index(collection)` false gives HTTP 400 `Collection <name> is not a litellm managed vector store index. Only litellm managed vector store indexes are supported.`
+  6. check_index_endpoint(Milvus, collection, request, key).
+  7. index_by_name; none gives the internal error `Vector store index not found for <name>`. Set the body's `collectionName` to the record's vector_store_index and store the body again with B1100's set-parsed-body function (_safe_set_request_parsed_body), so the relay sends the rewritten name.
+  8. store_by_name(record.vector_store_name); none gives the internal error `Vector store not found for <vector_store_name>`. Then assert_store_access.
+  9. Headers = auth_headers(Milvus, store.litellm_params). Base = complete_url(Milvus, store.litellm_params). Target = B3618's provider_target_url(base, endpoint).
+  10. Call B3615's create_pass_through_route with endpoint, the target as a string and those custom headers only: no custom_llm_provider, not streaming. Call the handler it returns with the request, response and key and return the result.
+scope:
+  paths:
+    - crates/betterlite-server/src/passthrough_azure_milvus.rs
+    - crates/betterlite-server/src/passthrough_azure_milvus/**
+    - tools/oracle/cases/server/passthrough-azure-milvus/**
+    - tools/oracle/helpers/b3624.py
+    - tools/oracle/helpers/b3624/**
+    - tools/oracle/src/helpers/server/b3624.rs
+    - tools/oracle/src/helpers/server/b3624/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L675-L804
+    why: milvus_proxy_route from its decorator, every 400 and 500 text, the collectionName rewrite and the headers from the provider config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1941-L1969
+    why: The Azure AI Search index helpers and why a service-level index create needs an admin.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1988-L2012
+    why: _relay_azure_router_model and the foreign deployment rejection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2134-L2160
+    why: _relay_azure_body_model_group, the body-model relay for endpoints without a deployment segment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2163-L2308
+    why: Both decorators of azure_proxy_route, the part walk, the managed index branch and the AZURE_API_BASE and key fallthrough.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L66-L96
+    why: is_azure_body_model_inference_endpoint and foreign_azure_deployment, which B548 owns and this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L324-L336
+    why: assert_user_can_access_vector_store, the 403 the managed store branches can return (B1061 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L414-L500
+    why: is_allowed_to_call_vector_store_endpoint, the per-index permission check both routes call (B1061 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/milvus/vector_stores/transformation.py#L69-L119
+    why: Milvus get_auth_credentials (Bearer header, ValueError without api_key) and get_complete_url (api_base or MILVUS_API_BASE, trailing slash removed).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/vector_stores/transformation.py#L73-L82
+    why: Azure AI get_auth_credentials, an `api-key` header and ValueError when the key is missing (B558 owns it).
+dod:
+  - text: azure_milvus_router serves /azure, /azure_ai and /milvus for GET, POST, PUT, DELETE and PATCH, and /azure and /azure_ai reach the same function.
+    proof: [router-tests]
+  - text: is_azure_index_create is true only for POST on `indexes` or a path ending in `/indexes`, azure_index_from_endpoint returns only the segment after `indexes`, and a non-admin POST to an indexes path gets the 403 before any other step.
+    proof: [azure-index-tests]
+  - text: azure_proxy_route sends the first part that is a router model or a managed index, checks the router model before the index for the same part, and calls open_sse_before_first_byte with the keepalive interval only for streaming bodies.
+    proof: [azure-part-tests, oracle]
+  - text: relay_azure_router_model answers 400 with the exact `detail.error` text for a deployment the model group does not serve, and otherwise relays with the unchanged endpoint.
+    proof: [azure-foreign-tests, oracle]
+  - text: relay_azure_body_group relays by the body model only for a JSON body on a body-model endpoint with a known router model, and gives none in every other case so the route goes on.
+    proof: [azure-body-tests, oracle]
+  - text: A managed Azure AI index runs the endpoint check, the store access check and the api-key headers, and calls openai_pass_through with provider AzureAi, no api key and the store's api_base.
+    proof: [azure-store-tests]
+  - text: The Azure fallthrough checks AZURE_API_BASE before the key, fails with the exact two messages, and calls openai_pass_through with provider Azure for both the /azure and /azure_ai paths.
+    proof: [azure-env-tests, oracle]
+  - text: milvus_proxy_route answers the exact 400 and 500 texts in order for a missing config, a non-string collectionName, a missing name, missing registries and a collection that is not a managed index.
+    proof: [milvus-error-tests, oracle]
+  - text: milvus_proxy_route rewrites collectionName to the index's vector_store_index, stores the changed body, sends the provider auth headers to the provider base joined with the endpoint, and passes no provider name and no streaming flag.
+    proof: [milvus-forward-tests]
+checks:
+  optional: []
+  commands:
+    - id: router-tests
+      why: a path or method is missing from the router, or the two Azure paths do not share one function
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_azure_milvus::tests::router(::|$)/)'
+    - id: azure-index-tests
+      why: the index create test, the index name lookup or the admin check order is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_azure_milvus::tests::azure_index(::|$)/)'
+    - id: azure-part-tests
+      why: the part walk picks the wrong part, checks the index before the model, or sets the wrong keepalive interval
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_azure_milvus::tests::azure_part(::|$)/)'
+    - id: azure-foreign-tests
+      why: the foreign deployment rejection is missing, has other text or changes the endpoint
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_azure_milvus::tests::azure_foreign(::|$)/)'
+    - id: azure-body-tests
+      why: the body-model relay fires for a form body, a deployment path or an unknown model
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_azure_milvus::tests::azure_body(::|$)/)'
+    - id: azure-store-tests
+      why: the managed Azure AI index branch skips a check, sends a key or uses the wrong base
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_azure_milvus::tests::azure_store(::|$)/)'
+    - id: azure-env-tests
+      why: the Azure fallthrough reads the wrong variable, checks in the wrong order or uses the wrong provider
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_azure_milvus::tests::azure_env(::|$)/)'
+    - id: milvus-error-tests
+      why: a Milvus rejection has the wrong status, text or position in the order
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_azure_milvus::tests::milvus_error(::|$)/)'
+    - id: milvus-forward-tests
+      why: the Milvus forward keeps the client collection name, drops the headers or sets a provider name
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_azure_milvus::tests::milvus_forward(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-env-forwards.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-ai-prefix-uses-azure.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-no-api-base.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-no-api-key.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-router-model-in-path.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-foreign-deployment-400.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-body-model-group.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-body-form-not-relayed.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/milvus-no-collection-400.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/milvus-collection-not-string.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/milvus-no-registry-500.yaml
+deviations:
+  - what: The Milvus `Collection name is required. Got <body>` message prints the body as compact JSON, where LiteLLM prints the Python dict repr.
+    why: Python repr text is not ported (docs/compatibility.md). For an empty object both give `{}`, and the oracle case sends that.
+  - what: The Milvus and Azure missing-config errors, the missing AZURE_API_BASE and AZURE_API_KEY errors and the vector-store lookup errors are HTTP 500 with the message in the proxy's error envelope.
+    why: LiteLLM raises a bare Exception and the unhandled-error path renders it. Status and message text match; the oracle cases ignore the body shape, as B3628's missing-key case does. Open question in the notes.
+  - what: The registries, the access checks and the vector store provider configs are reached through the ports VectorRegistryPort, VectorAccessPort and VectorProviderPort, and the router through B3618's trait.
+    why: Python reads litellm module globals and proxy_server globals. Rust needs seams for tests, and the real adapters come later. What a client sees is the same.
+  - what: The dead branch `api_base not found in vector store configuration` after Milvus get_complete_url is not built.
+    why: Milvus get_complete_url raises ValueError or returns a string, never None, so the branch cannot run.
+out_of_scope:
+  - "The Azure AI Speech route azure_speech_proxy_route and its helpers (L1481-L1600): B3625."
+  - "openai_pass_through, join_url_paths, assemble_openai_headers and the OpenAI-Beta header: B3628 owns them and this task calls openai_pass_through."
+  - "create_pass_through_route and its handler: B3615. get_credentials: B3602. provider_target_url, uses_router_model, is_streaming_body, models_served_by_group, RelayRejection and relay_router_model: B3618."
+  - "open_sse_before_first_byte: B7324. get_request_body: B1101. is_json_content_type and the parsed-body setter: B1100. get_secret_str: B129."
+  - "is_azure_body_model_inference_endpoint, azure_router_model_in_endpoint (no caller in these routes), foreign_azure_deployment and the Azure native pass-through config: B548."
+  - "assert_proxy_admin_for_vector_store_index_management: B1060. assert_user_can_access_vector_store and is_allowed_to_call_vector_store_endpoint: B1061. The index and store registries: B1062 and B1063."
+  - "AzureAIVectorStoreConfig: B558. MilvusVectorStoreConfig and ProviderConfigManager.get_provider_vector_stores_config for Milvus: B7892 implements them and the composition root wires them into VectorProviderPort; see the notes."
+  - "The vector store index and store management routes: B1068 and B1076 and the other vector store route tasks."
+  - "The production adapters for the three ports and the router trait: the architect wires them."
+pitfalls:
+  - "The `/azure_ai/` prefix reads AZURE_API_BASE and AZURE_API_KEY and uses provider Azure, not Azure AI; only the managed index branch uses provider AzureAi."
+  - "The part walk needs more than one part and a router. A one-segment endpoint such as `models` skips the walk and goes to the body-model relay or the fallthrough."
+  - "get_request_body runs only inside a matching branch, so a POST with an odd content type on an endpoint with no router model fails only in the body-model relay, and there only after the JSON content type test passes."
+  - "The index test is `part == index_from_endpoint` and not 'any part is an index', so a model named like an index elsewhere in the path is not mistaken for one."
+  - "The service-level `POST /indexes` check runs before everything, including the router walk; the endpoint `docs/index` or `myidx/indexes/x` is not an index create."
+  - "foreign_azure_deployment matches the deployment against the group name exactly, but against the served model names ignoring case, so `GRP` is served when the group serves `grp`."
+  - "The managed index branch passes api_key none, so openai_pass_through sends no authorization or api-key header from a key; only the store's own `api-key` header goes out."
+  - "The body-model relay only runs for endpoints with no `openai/deployments/<name>` segment; `openai/deployments/x/chat/completions` never reaches it."
+  - "Milvus reads the body even for GET, which gives an empty object, so a GET always ends in the `Collection name is required` 400."
+  - "The Milvus registry check is before the managed-index check, so a deployment with no database never reaches the 400 about an unmanaged collection; it answers 500."
+  - "collectionName is replaced in the stored body only after the access check on the original name; a client cannot reach another index by sending its backing name."
+  - "The Milvus forward sets no custom_llm_provider, so logging types the call as a generic endpoint."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

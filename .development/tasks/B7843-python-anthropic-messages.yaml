@@ -1,0 +1,142 @@
+id: B7843
+title: Python Anthropic Messages functions
+description: >-
+  Add `betterlite.messages.create`, `betterlite.messages.acreate`, `anthropic_messages` and `anthropic_messages_handler` so
+  they work where LiteLLM's do. The Rust owner of the call is B1134 (Messages public dispatch). That task holds the empty
+  content block clean-up, the sanitizers, cache control, the web search short-circuit, the Responses bridge and the provider
+  call. Python collects the arguments and moves JSON and bytes. It adds none of that logic.
+
+
+  Native side, the family `messages`, in `crates/betterlite-python`. It follows B5659's shape: `src/messages.rs` has
+  `pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()>` that adds the class `NativeMessagesSession`, the class
+  `NativeMessagesStream` and the exception `NativeMessagesError` (made with `pyo3::create_exception!`). The architect writes
+  the `mod` and `register` lines in `src/lib.rs` and the import in the `.pyi` package, so never edit `lib.rs`. The session is
+  built from the JSON settings text. Its methods `messages(payload_text, blobs)` and `amessages(payload_text, blobs)` take
+  what B6040's `to_call_payload` builds. The first runs on the tokio runtime inside `py.detach`, and the second returns an
+  awaitable through `future_into_py`. Each returns `(kind, value)`: kind "response" with the response body as JSON text, or
+  kind "stream" with a `NativeMessagesStream`. The stream has `next_chunk()`, `anext_chunk()`, `close()` and `aclose()`, and a
+  chunk is raw bytes of the Anthropic server-sent event text, or None at the end. Read B1134 for the Rust entry name and
+  B5659 for the error JSON keys. Conversions sit in `src/messages/convert.rs` and need no interpreter, with tests that start
+  with `request_` and `error_`.
+
+
+  Python side, the package `python/betterlite/_messages/` with files under 300 lines and an explicit `__all__`:
+  `anthropic_messages` (async), `anthropic_messages_handler` (sync), `create` and `acreate`. The package
+  `python/betterlite/messages/__init__.py` re-exports `anthropic_messages` and `anthropic_messages_handler`, as
+  litellm/messages/__init__.py does, and `python/betterlite/anthropic_interface/messages/__init__.py` defines `create` and
+  `acreate` as thin wrappers, as litellm/anthropic_interface/messages/__init__.py L21-L146 does. The architect writes one star
+  line in `python/betterlite/__init__.py`. Never edit that file. Use `to_call_payload`, `call_native`, `acall_native`,
+  `read_settings` and `proxy_headers` from B6040's `_endpoints` package and do not write a second copy.
+
+
+  Signatures follow litellm/llms/anthropic/pass_through/messages/handler.py. `anthropic_messages` (L228-L260) takes
+  `(max_tokens, messages, model, metadata=None, stop_sequences=None, stream=False, system=None, temperature=None,
+  thinking=None, tool_choice=None, tools=None, top_k=None, top_p=None, api_key=None, api_base=None, client=None,
+  custom_llm_provider=None, **kwargs)`. `anthropic_messages_handler` (L423-L445) has the same list with `container=None` after
+  `top_p`. `create` and `acreate` have the same list as the handler without `api_key`, `api_base`, `client` and
+  `custom_llm_provider`, which go in `**kwargs`. A test compares `inspect.signature` for the four.
+
+
+  `client` raises B158's `UnsupportedCallArgument`, through `to_call_payload`, when it is not None. `metadata` goes to Rust
+  as given, since B1134 validates it. `kwargs` pass through, including `litellm_metadata`, `extra_headers`, `timeout` and
+  `max_retries`. A `litellm_logging_obj` is dropped. The internal flag `_litellm_messages_presanitized` is popped and dropped,
+  since Rust sanitizes once. `read_settings` supplies `api_key`, `api_base` and `use_chat_completions_url_for_anthropic_messages`,
+  read at call time.
+
+
+  Results: a "response" result is `json.loads` of the text, a plain dict, since `AnthropicMessagesResponse` is a TypedDict. A
+  "stream" result is a `MessagesStream` with `__iter__`/`__next__` yielding `bytes` (sync) and `__aiter__`/`__anext__`
+  yielding `bytes` (async), `close` and `aclose`. `stream=True` in the sync handler gives a sync iterator, and the async
+  function gives an async iterator, as LiteLLM does. The sync handler with `kwargs["is_async"]` true returns a coroutine, as
+  the source does: the flag is `is_async`, popped from `kwargs` with default False (L479). A provider error raises the class from
+  B158's table, with the native error as `__cause__`.
+
+
+  Tests build a local server in `tests/messages_server.py` (an `http.server` in a thread). It answers POST `/v1/messages` with
+  fixed JSON, or with `event: message_start` ... `event: message_stop` text when the body has `"stream": true`, records each
+  request, and gives a 401 body in Anthropic's error shape when `x-api-key` is "bad-key". Tests call both packages with the same
+  arguments and compare the results, and compare the bytes of a stream.
+scope:
+  paths:
+  - crates/betterlite-python/Cargo.toml
+  - crates/betterlite-python/src/messages.rs
+  - crates/betterlite-python/src/messages/**
+  - crates/betterlite-python/python/betterlite/_native_messages.pyi
+  - crates/betterlite-python/python/betterlite/_messages/**
+  - crates/betterlite-python/python/betterlite/messages/**
+  - crates/betterlite-python/python/betterlite/anthropic_interface/**
+  - crates/betterlite-python/tests/messages_server.py
+  - crates/betterlite-python/tests/test_anthropic_messages.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L228-L560
+  why: The two public signatures and the flags the sync handler reads.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/messages/__init__.py#L21-L146
+  why: The create and acreate wrappers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/messages/__init__.py
+  why: The two names the messages package exports.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/messages/dispatch.py
+  why: The rust_bridge selector, not built here; it shows which entries the native side must replace.
+- url: https://github.com/PyO3/pyo3-async-runtimes
+  why: The future_into_py bridge.
+dod:
+- text: The four functions keep LiteLLM's signatures.
+  proof: [messages-signature]
+- text: A plain call and a call with tools, thinking, system blocks and metadata send the same request body and return the same dict as LiteLLM.
+  proof: [messages-call]
+- text: The async functions run on the event loop, and the sync handler returns a coroutine when its async flag is set.
+  proof: [messages-async]
+- text: A stream gives the same bytes as LiteLLM on both iteration paths, ends cleanly and closes.
+  proof: [messages-stream]
+- text: A provider 401 raises the authentication class with the native error as cause, and `client` is refused.
+  proof: [messages-error]
+- text: The native register function adds the session, the stream and the error class, and conversion has tests without an interpreter.
+  proof: [messages-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: messages-signature
+    why: A renamed or reordered parameter breaks positional callers.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_anthropic_messages.py -k signature
+  - id: messages-call
+    why: A request field is dropped or renamed on the way to the provider.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_anthropic_messages.py -k "plain or optional"
+  - id: messages-async
+    why: An async call blocks the loop or the async flag returns the wrong type.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_anthropic_messages.py -k "async or coroutine"
+  - id: messages-stream
+    why: Stream bytes differ from LiteLLM's or iteration never ends.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_anthropic_messages.py -k stream
+  - id: messages-error
+    why: A provider error shows up as a generic exception, or a client is dropped silently.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_anthropic_messages.py -k "error or client"
+  - id: messages-native
+    why: The native conversion drops a field of the request or the error.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^messages::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Untyped dicts and ignores creep in at the native boundary.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`client` raises `UnsupportedCallArgument`."
+  why: A Python HTTP client can't drive the Rust call, and ignoring it could send a request past a caller's proxy or custom TLS.
+- what: "`litellm.messages.dispatch` and its rust_bridge selector do not exist."
+  why: Every call already goes through the native session.
+- what: The sanitizers run once, in Rust, and the `_litellm_messages_presanitized` flag is dropped.
+  why: B1134 owns the clean-up, and a Python copy would run it twice.
+out_of_scope:
+- The clean-up of empty content blocks, tool id rules, cache control, the web search short-circuit, the Responses bridge and the pre-request hooks are B1134 and its parts.
+- "`validate_anthropic_api_metadata` (L411) runs in Rust."
+- The error table and `UnsupportedCallArgument` are B158, and the payload, runner and settings helpers are B6040.
+pitfalls:
+- '`system` can be a string or a list of blocks. Send it as given.'
+- 'The sync handler takes `container`, and `anthropic_messages` does not. Keep that split, or the signature test fails.'
+- 'A stream chunk is bytes, not str. Do not decode it.'
+- 'The `betterlite.messages` package must still import when `betterlite.anthropic_interface.messages` imports it, so keep the import one way.'
+- 'Close a stream once: `close` after the end does nothing and does not raise.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
