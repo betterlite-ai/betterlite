@@ -1,0 +1,11 @@
+kind: helper
+name: token-count-threshold-one
+call:
+  token_count:
+    function: token_counter
+    model: gpt-3.5-turbo
+    text: hello world hello world
+    max_exact_chars: 1
+env:
+  TOKEN_COUNTER_MAX_EXACT_CHARS: "1"
+compare: {ignore: []}

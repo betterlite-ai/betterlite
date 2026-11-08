@@ -1,0 +1,15 @@
+kind: helper
+name: inference-profile-model-id
+call:
+  bedrock_aws_endpoints:
+    bedrock_model_id:
+      cases:
+        - optional_params: {}
+          model: 'bedrock/arn:aws:bedrock:us-east-1:123:inference-profile/global.anthropic.claude'
+          provider: null
+        - optional_params: {}
+          model: 'bedrock/converse/arn:aws:bedrock:us-east-1:1:application-inference-profile/abc'
+        - optional_params: {}
+          model: 'arn:aws:bedrock:us-east-1:1:inference-profile/x'
+env: {}
+compare: {ignore: []}
