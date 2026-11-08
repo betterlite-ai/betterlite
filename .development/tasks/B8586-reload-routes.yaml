@@ -4,7 +4,7 @@ description: >-
   An admin reloads the model cost map or the Anthropic beta headers config from the UI, schedules a periodic reload, cancels
   it and reads its status. These are nine handlers in proxy_server.py (L19335-L19850), all hidden from the OpenAPI schema
   (include_in_schema=False) and all behind the normal key check (B052). Build crates/betterlite-server/src/reload_routes.rs
-  (declared by the skeleton) with `pub fn routes()` like the sibling route modules; the architect's skeleton mounts it.
+  (declared by the skeleton) with `pub fn routes()` like the sibling route modules; B8676 mounts it.
   They read and write the same per-pod state as the timer checks: B8385's `PeriodicReloads` (cost map applied revision,
   cost map loaded_at, last beta headers reload time), through its accessors. Never keep a second copy of that state.
 
@@ -44,7 +44,7 @@ description: >-
   "last_run": the stored last reload time, "next_run"}.
 
   Tests run every handler against fake PeriodicReloads, config repository, catalog and beta header sources and a fixed
-  clock. HTTP oracle cases under tools/oracle/cases/reload-routes/ cover the paths a booted proxy without a database can
+  clock. HTTP oracle cases (B8676 writes and runs them, not this task) under tools/oracle/cases/reload-routes/ cover the paths a booted proxy without a database can
   show: a non-admin key on a write route (403), hours=0 (400), the cost map reload and schedule without a database
   (the 500 texts in the pitfalls), both status routes without a database, and the cost map source route with model_count.
   Compare status and body, and leave timestamp, loaded_at and the other clock or revision fields out of the comparison.
@@ -52,7 +52,6 @@ scope:
   paths:
     - crates/betterlite-server/src/reload_routes.rs
     - crates/betterlite-server/src/reload_routes/**
-    - tools/oracle/cases/reload-routes/**
     - tools/oracle/helpers/b8586.py
     - tools/oracle/helpers/b8586/**
     - tools/oracle/src/helpers/server/b8586.rs
@@ -64,35 +63,33 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19587-L19850
     why: The Anthropic beta headers reload, schedule, cancel and status handlers.
 dod:
-  - text: Write routes refuse every role but proxy_admin and read routes refuse callers without admin view, with LiteLLM's 403 text, before any other check.
-    proof: [reload-route-tests, oracle]
+  - text: "The handlers are tested with tower's oneshot over the module's own Router and fake ports; B8676 runs the HTTP oracle cases through the booted proxy."
+    proof: [route-oneshot]
+  - text: Write routes refuse every role but proxy_admin and read routes refuse callers without admin view, with LiteLLM's 403 text, before any other check. B8676 proves it over HTTP.
+    proof: [reload-route-tests]
   - text: A manual cost map reload adopts the map, updates loaded_at and stores the revision from record_manual_reload in PeriodicReloads, and a failed fetch is 502 with the current map kept.
     proof: [reload-route-tests]
-  - text: Schedule and cancel routes reject hours <= 0 with 400 and write or clear the stored schedule, and their database errors come out wrapped as in LiteLLM.
-    proof: [reload-route-tests, oracle]
+  - text: Schedule and cancel routes reject hours <= 0 with 400 and write or clear the stored schedule, and their database errors come out wrapped as in LiteLLM. B8676 proves it over HTTP.
+    proof: [reload-route-tests]
   - text: The beta headers reload sets force_reload with the stored interval kept, and its status route computes next_run from the pod's last reload time.
     proof: [reload-route-tests]
-  - text: Both status routes and the source route answer LiteLLM's shape without a database.
-    proof: [reload-route-tests, oracle]
+  - text: Both status routes and the source route answer LiteLLM's shape without a database. B8676 proves it over HTTP.
+    proof: [reload-route-tests]
 checks:
   optional: [mutants]
   commands:
+    - id: route-oneshot
+      why: the handlers are not tested with tower's oneshot over the module's own Router and fake ports
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^reload_routes::tests::oneshot_/)'
     - id: reload-route-tests
       why: A reload, schedule, cancel, status or source route is missing or differs from LiteLLM
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^reload_routes::/)'
-oracle_cases:
-  - tools/oracle/cases/reload-routes/non-admin-reload.yaml
-  - tools/oracle/cases/reload-routes/schedule-zero-hours.yaml
-  - tools/oracle/cases/reload-routes/cost-map-reload-no-database.yaml
-  - tools/oracle/cases/reload-routes/cost-map-schedule-no-database.yaml
-  - tools/oracle/cases/reload-routes/cost-map-status-no-database.yaml
-  - tools/oracle/cases/reload-routes/beta-headers-status-no-database.yaml
-  - tools/oracle/cases/reload-routes/cost-map-source.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - "The timer checks and the PeriodicReloads state: B8385. The reload schedule rows and their status shape: B4145. Cost map refetch, adoption, provenance and source info: B194. The beta headers config reload: B959."
-  - "Mounting the routes: the architect's skeleton."
+  - "Mounting the routes and their HTTP oracle cases: B8676."
 pitfalls:
   - "Only the cost map reload re-raises HTTP errors. The schedule and cancel handlers and the beta headers reload catch every exception, their own 500 included, so a missing database reads \"Failed to schedule model cost map reload: 500: Database connection not available\" (and the same for the other wrapped handlers)."
   - "The beta headers status reads the pod's own last reload time, not a database value, so a pod that never reloaded reports scheduled true with last_run and next_run null."

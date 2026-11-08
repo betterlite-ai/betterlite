@@ -1,0 +1,97 @@
+id: B8673
+title: Mount the search tool and usage AI chat routes with their production ports
+description: >-
+  B3275 built the seven /search_tools management routes in search_tool_routes.rs and B8271 built POST /usage/ai/chat
+  in usage_ai_chat_route.rs. Both take their collaborators as traits in their state constructors and left the real
+  implementations and the mount to the wiring, and no B1100 registry entry merges either module. This task writes
+  the missing implementations, builds both states, mounts the routes and proves them over HTTP.
+
+
+  Where. crates/betterlite-server/src/app/admin/search_usage.rs and app/admin/search_usage/** (the skeleton declares
+  the module in app/admin.rs, see B8675), tests in app/admin/search_usage/tests.rs, plus one line in admin.rs
+  `mount`. Read the trait definitions in both route modules on the branch and implement exactly those signatures.
+
+
+  1. Search tool ports. `ConfigSearchTools`: LiteLLM's list reads `proxy_config.get_config()` and then
+  `parse_search_tools(config)`. Implement it as `ProxyConfigSearchTools` over `shared.proxy_config` (B8380's config
+  read, which reads the file and, with a database, the stored config) and B8384's parse_search_tools; an error goes back
+  to the route, which logs it at debug and lists no config tools. The router refresh after a write is B8384's
+  RouterSearchRefresh over `shared.router` (no router installed: the refresh does nothing, as LiteLLM skips it when
+  llm_router is None). The team read is B737's get_team_object behind B3275's TeamObjectLookup, over `shared.db` and
+  `shared.auth_cache`. The provider list is B2202's ProviderCatalog and the connection test is B3272's ConnectionSearch,
+  with `shared.http` as its client. When a trait already has its implementation in the backing module, pass that
+  type; write an adapter only where none exists.
+
+  2. Usage chat factory. `UsageChatFactory` returns B3103's UsageChatParts for one request. The model client is
+  B5656's SDK completion call (LiteLLM's usage AI chat calls litellm.acompletion directly, not the router, so config
+  deployments do not apply and the provider key comes from the environment); the data source is B3103's
+  DailyActivityUsageData over `shared.db`; the clock gives the local date. Write `DbUsageChatFactory` holding the
+  database and the client. The ping interval is `litellm_settings.sse_keepalive_ping_interval_seconds` from B005's
+  section in the loaded Config, read once; the caller-id check is B861's.
+
+  3. Mount. `pub(crate) fn mount_search_usage(router: Router, state: &Arc<ServerState>) -> Router` merges
+  search_tool_routes::routes and usage_ai_chat_route::routes once each. Every one of these paths needs a key in
+  LiteLLM, so admin.rs `mount` calls it.
+
+
+  Tests in app/admin/search_usage/tests.rs (module `app::admin::search_usage::tests`, names start with `oneshot_`,
+  `config_tools_` and `usage_parts_`) use the in-memory fakes of B8610's tests. They assert every search tool path
+  and POST /usage/ai/chat answer something other than 404 on the mounted router, ProxyConfigSearchTools returns the
+  `search_tools:` entries of a loaded config in file order and none when the config has none, the refresh does nothing
+  without a router, and DbUsageChatFactory builds parts whose clock gives today's local date.
+
+
+  HTTP oracle cases. The nine cases B3275 planned (tools/oracle/cases/search-tools/) and the three B8271 planned
+  (tools/oracle/cases/usage-ai-chat/) move here unchanged with their folders; the worker writes them from those tasks'
+  texts and runs them through the booted proxy with master key oracle-master.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/admin.rs
+    - crates/betterlite-server/src/app/admin/search_usage.rs
+    - crates/betterlite-server/src/app/admin/search_usage/**
+    - tools/oracle/cases/search-tools/**
+    - tools/oracle/cases/usage-ai-chat/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L190-L215
+    why: The list route's get_config and parse_search_tools reads, and the router refresh after each write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/endpoints.py
+    why: POST /usage/ai/chat and the direct acompletion call behind the usage AI chat.
+dod:
+  - text: ProxyConfigSearchTools, the router refresh, the team read, the provider list and the connection test back B3275's ports with the shared config, router, database and client.
+    proof: [search-usage-tests]
+  - text: DbUsageChatFactory gives B8271 the SDK model client, the database usage source and a local-date clock, with the ping interval from the loaded config.
+    proof: [search-usage-tests]
+  - text: Both route modules are merged once inside the auth layers and answer like LiteLLM through the booted proxy.
+    proof: [search-usage-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: search-usage-tests
+      why: a port is backed by a fake or a second copy of shared state, the config search tools ignore the loaded file, or a router is not merged
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::admin::search_usage::/)'
+oracle_cases:
+  - tools/oracle/cases/search-tools/list-no-database.yaml
+  - tools/oracle/cases/search-tools/create-no-database.yaml
+  - tools/oracle/cases/search-tools/update-no-database.yaml
+  - tools/oracle/cases/search-tools/delete-no-database.yaml
+  - tools/oracle/cases/search-tools/get-no-database.yaml
+  - tools/oracle/cases/search-tools/create-invalid-body.yaml
+  - tools/oracle/cases/search-tools/test-connection-no-provider.yaml
+  - tools/oracle/cases/search-tools/test-connection-invalid-body.yaml
+  - tools/oracle/cases/search-tools/auth-required.yaml
+
+  - tools/oracle/cases/usage-ai-chat/auth-required.yaml
+  - tools/oracle/cases/usage-ai-chat/invalid-role.yaml
+  - tools/oracle/cases/usage-ai-chat/missing-messages.yaml
+
+deviations: []
+out_of_scope:
+  - "The handlers and the trait definitions: B3275 and B8271. The engine behind the chat: B3103. parse_search_tools and the refresh: B8384."
+pitfalls:
+  - The usage AI chat calls the SDK directly, so passing the router's completion call would route through config deployments LiteLLM does not use here.
+  - A failing config search tool read must reach the route as an error, since the route logs it and still lists the database tools.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

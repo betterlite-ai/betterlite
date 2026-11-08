@@ -29,7 +29,7 @@ scope:
   - tools/oracle/helpers/messages_chat_transform/**
   - tools/oracle/fuzz/corpus/helper_case/messages_chat_transform-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/messages_chat_transform_stream.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/messages_chat_transform_stream.py
   - tools/oracle/cases/helpers/messages-chat-transform/**

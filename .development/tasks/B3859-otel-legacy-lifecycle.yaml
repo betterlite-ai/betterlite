@@ -69,6 +69,8 @@ references:
     why: "_emit_guardrail_spans_from_request_data pulling guardrail_information from request_data metadata and calling _create_guardrail_span with shared dedupe state for pre-call guardrails on failure path"
 
 dod:
+  - text: "The legacy OpenTelemetry logger implements CallbackLogger, its success and failure lifecycle becoming the trait events that the legacy arms of B8746 rely on (tests named callback_logger_* under otel::legacy_lifecycle)."
+    proof: [callback-logger]
   - text: log_success_event and log_failure_event route to _handle_success/_handle_failure; async_log_success_event and async_log_failure_event route to the same handlers (sync/async handlers share implementation).
     proof: [legacy-lifecycle-tests]
   - text: get_tracer_to_use_for_request checks for full per-request OpenTelemetryConfig first, then per-request headers, then global tracer or langfuse_otel env-var headers or global fallback.
@@ -119,6 +121,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: callback-logger
+      why: the legacy OpenTelemetry logger cannot be returned by a catalog arm
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_lifecycle::(.*::)?callback_logger_/)'
     - id: legacy-lifecycle-tests
       why: Legacy lifecycle, tracer selection, dynamic config/headers, proxy span management, guardrail span creation or dedup tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^legacy_lifecycle|^tracer_selection|^dynamic_|^guardrail_|^proxy_span/) - test(replays_the_legacy_lifecycle_corpus)'

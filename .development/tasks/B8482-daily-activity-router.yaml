@@ -1,7 +1,7 @@
 id: B8482
 title: Compose daily activity routes for every entity and the cache activity route
 description: >-
-  Build the module `daily_activity_router` in betterlite-server with one public function, `routes()`, that returns the axum router for every daily activity path and the cache activity report. It is the port of `register_daily_activity_routes` and the loop over the six resolvers at the bottom of litellm/proxy/management_endpoints/daily_activity_routes.py (L560-L579), plus the `app.include_router(analytics_router)` line in proxy_server.py (L19981). The handlers are built: B3096 (key pages, model leaders, cache leakage), B3097 (aggregated and search) and B3098 (export) each expose a function that returns the routes for one resolver, and B3099 exposes the cache activity route. This task only calls them in LiteLLM's order. This task also mounts `routes()` in the app (crates/betterlite-server/src/app.rs and app/**), so the routes of B3096 to B3099 answer through the booted proxy for the first time.
+  Build the module `daily_activity_router` in betterlite-server with one public function, `routes()`, that returns the axum router for every daily activity path and the cache activity report. It is the port of `register_daily_activity_routes` and the loop over the six resolvers at the bottom of litellm/proxy/management_endpoints/daily_activity_routes.py (L560-L579), plus the `app.include_router(analytics_router)` line in proxy_server.py (L19981). The handlers are built: B3096 (key pages, model leaders, cache leakage), B3097 (aggregated and search) and B3098 (export) each expose a function that returns the routes for one resolver, and B3099 exposes the cache activity route. This task only calls them in LiteLLM's order. This task also merges `routes()` in the spend area's `mount(router, state)` in crates/betterlite-server/src/app/spend.rs (the skeleton stubs it, and B8610's app::mount calls it inside the auth layers), so the routes of B3096 to B3099 answer through the booted proxy for the first time.
 
   The loop. For each resolver in this order: user, team, tag, organization, customer, agent (B3094's `USER_RESOLVER` and `TEAM_RESOLVER`, B3095's `TAG_RESOLVER`, `ORGANIZATION_RESOLVER`, `CUSTOMER_RESOLVER` and `AGENT_RESOLVER`, or the matching variants of B3094's `Entity` enum), and for each prefix in that resolver's `route_prefixes` (customer has `/customer` and then `/end_user`), add in this order: aggregated (B3097), key page (B3096), search (B3097), model leaders (B3096), export (B3098), and for the user entity only, cache leakage (B3096). Then add B3099's cache activity route once. Where a part's function already loops over the prefixes of its resolver, call it once per resolver and keep the per-prefix order above by calling the parts in that order for each resolver; if a part's function takes a prefix, call it once per prefix. Read the three parts' merged signatures first and follow them.
 
@@ -16,8 +16,7 @@ scope:
   paths:
     - crates/betterlite-server/src/daily_activity_router.rs
     - crates/betterlite-server/src/daily_activity_router/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
+    - crates/betterlite-server/src/app/spend.rs
     - tools/oracle/cases/daily-activity-router/**
     - tools/oracle/cases/management/daily-activity-keys/**
     - tools/oracle/cases/management/daily-activity-aggregate/**
@@ -40,7 +39,7 @@ dod:
     proof: [router-tests, new-cases, oracle]
   - text: The router builds without a duplicate route panic, and /end_user paths stay out of /openapi.json.
     proof: [router-tests, oracle]
-  - text: routes() is mounted in the app, so every daily activity path and the cache activity route answer through the booted proxy.
+  - text: routes() is merged in app/spend.rs's mount, so every daily activity path and the cache activity route answer through the booted proxy.
     proof: [oracle]
   - text: Over HTTP, B3096's key page answers with limit default 50 and maximum 100 and offset default 0, both echoed; model leaders requires a non-empty model_group, defaults by_model_group to true and limit to 5 and echoes model_group as model; cache leakage exists on /user only with limit default 20 and maximum 100.
     proof: [oracle]
@@ -126,7 +125,7 @@ deviations: []
 out_of_scope:
   - "The handlers and their per-resolver route functions: B3096, B3097 and B3098. The cache activity handler: B3099."
   - "The resolvers, their prefixes, tags and operation names: B3094 and B3095."
-  - "The other spend routes, layers and production adapters: the wave 17 spend wiring part mounts them. This task mounts only daily_activity_router::routes()."
+  - "The other spend routes, layers and production adapters: B8661 merges the user agent analytics routes (B3100, B3101), GET /gateway/daily/activity (B3102) and GET /agent/daily/activity (B4787) after this one in app/spend.rs; B8662 merges B069's spend report and spend log routes; B8660 passes the budget services to the auth slots and the reservation call; the edge part (B8680) installs B8270's release layer. This task mounts only daily_activity_router::routes()."
 pitfalls:
   - "The customer resolver has two prefixes; /end_user is the same handler set as /customer, registered once per prefix, never merged into /customer."
   - "cache_leakage_keys is added after export and only for the user entity; adding it for team gives a route LiteLLM does not have."

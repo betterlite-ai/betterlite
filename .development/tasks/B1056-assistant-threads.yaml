@@ -18,7 +18,7 @@ scope:
   - crates/betterlite-core/src/api/assistant_threads.rs
   - crates/betterlite-core/src/api/assistant_threads/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/assistant_threads.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/assistant_threads.py
   - tools/oracle/cases/sdk-http/assistant-threads/**

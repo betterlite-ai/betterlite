@@ -20,7 +20,7 @@ scope:
   - crates/betterlite-core/src/api/speech_call_plan.rs
   - crates/betterlite-core/src/api/speech_call_plan/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/speech_call_plan.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/speech_call_plan.py
   - tools/oracle/cases/sdk-http/speech-call-plan/**

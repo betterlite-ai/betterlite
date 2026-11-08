@@ -1,0 +1,42 @@
+task: B4812
+deviations:
+  - what: >-
+      Wire format detection infers the protocol version from the payload shape at the conversion boundary: a `kind` field means 0.3, the protobuf envelope keys mean 1.0, and an unknown shape is left alone. No stored version tag decides it.
+    why: >-
+      Payloads arrive in either shape from upstream agents, so the version is only knowable once the payload is in hand.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L153-L158'
+  - what: >-
+      A conversion that fails is logged at debug level and the caller gets the original payload back, unchanged, instead of an error.
+    why: >-
+      The proxy sits between clients and agents, so a conversion bug must not destroy a response the agent already produced.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L48-L54'
+  - what: >-
+      A card downgraded to 0.3 never carries additionalInterfaces, and a card that cannot be downgraded (no interface with a 0.x protocol version) comes back unchanged.
+    why: >-
+      additionalInterfaces can expose backend URLs that the proxy-fronting merge deliberately drops, and a failed conversion must keep the data it could not convert.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L299-L317'
+  - what: >-
+      In `tasks/list` parameters a status is sent as a 0.3 wire value only when the 1.0 enum name drops its `TASK_STATE_` prefix, turns underscores into dashes and matches a value the 0.3 enum defines. Any other status, including the unspecified one, is dropped.
+    why: >-
+      A 0.3 agent would reject an unknown state, so leaving the filter out is safer than inventing one.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L397-L430'
+  - what: >-
+      A 1.0 send response whose envelope carries neither `message` nor `task` is returned unchanged. LiteLLM's a2a-sdk conversion turns that empty envelope into a default 0.3 message with an empty id and no parts.
+    why: >-
+      No working agent sends an empty send response, and passing the payload through preserves what the agent actually said.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L1295-L1311'
+  - what: >-
+      Agent card conversion maps the top-level version layout (url, preferredTransport, protocolVersion and supportedInterfaces, security and securityRequirements, capabilities.extendedAgentCard and supportsAuthenticatedExtendedCard) and leaves the nested records as the source version wrote them, including the securitySchemes shape and a skill's security or securityRequirements.
+    why: >-
+      Those nested mappings are the a2a-sdk compat conversions that the task puts out of scope; re-deriving them here would copy the SDK rather than the proxy boundary LiteLLM owns.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L299-L317'
+  - what: >-
+      A card upgraded to 1.0 keeps top-level fields that neither wire schema defines, where LiteLLM round-trips the card through the protobuf AgentCard and drops them.
+    why: >-
+      The task requires the upgrade to keep all fields, and dropping a field the schema does not know loses data an upstream agent may rely on.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L299-L317'
+  - what: >-
+      A 1.0 task or artifact record that omits a proto3 default string such as its id keeps the original payload, where LiteLLM's ParseDict fills the empty value and the conversion emits the defaulted record.
+    why: >-
+      The core records the client transport exposes require the id, and re-deriving them here would duplicate the client transport's models; no working agent omits it.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L238-L254'

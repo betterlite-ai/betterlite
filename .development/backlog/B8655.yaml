@@ -1,0 +1,13 @@
+id: B8655
+milestone: M8 platform
+title: Callback logger catalog for prometheus, team loggers, litellm_agent and generic_api
+status: todo
+depends_on: [B8610, B8611, B8561, B8251, B8252, B8253, B8560, B8466, B3875, B3883, B3933, B3943, B3944, B8741, B8740]
+file: tasks/B8655-callback-logger-catalog.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

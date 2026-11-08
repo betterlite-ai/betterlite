@@ -1,0 +1,17 @@
+kind: helper
+name: aws-secret-reads-region-override
+env: {}
+compare: {ignore: []}
+call:
+  b4414:
+    env:
+      AWS_ACCESS_KEY_ID: AKIAORACLEEXAMPLE
+      AWS_SECRET_ACCESS_KEY: oracle-secret-key
+      AWS_REGION_NAME: us-east-1
+    routes:
+      - route: "POST https://secretsmanager.eu-west-1.amazonaws.com"
+        replies:
+          - {status: 200, body: '{"SecretString":"eu-password"}'}
+    steps:
+      - {op: read, path: async, secret: prod/db/password, params: {aws_region_name: eu-west-1}}
+      - {op: read, path: sync, secret: prod/db/password, params: {aws_region_name: eu-west-1}}

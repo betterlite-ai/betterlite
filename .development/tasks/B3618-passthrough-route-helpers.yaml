@@ -32,7 +32,7 @@ description: >-
   - a streaming result that is a bare byte stream (no status and no headers) becomes a status 200 streaming response with the single header `content-type: text/event-stream`;
   - any other streaming result carries its own status and headers: the response uses that status and B3600's get_response_headers of its headers.
   Both streaming forms are wrapped in the SSE keepalive wrapper (the SseKeepalive trait that B3613's HandlerDeps already holds; read where it is declared) with ping_interval_seconds from the setting `sse_keepalive_ping_interval_seconds` (B002, default None, which means no pings) and, as upstream headers, the single content-type header or the result's own headers.
-  The router is reached through a small trait this module declares, `RouterPassthrough`, with one async method that takes a `RouterPassthroughCall` (the arguments above) and returns `RouterPassthroughReply` (Buffered, ByteStream, or StatusStream with status, headers and byte stream) or `RouterPassthroughError` (UpstreamStatus carrying the upstream response, or Other). The architect wires the real router to it later; tests use a recording fake.
+  The router is reached through a small trait this module declares, `RouterPassthrough`, with one async method that takes a `RouterPassthroughCall` (the arguments above) and returns `RouterPassthroughReply` (Buffered, ByteStream, or StatusStream with status, headers and byte stream) or `RouterPassthroughError` (UpstreamStatus carrying the upstream response, or Other). B8694's RouterHop implements it over the router (B8691 and B8690); tests use a recording fake.
 scope:
   paths:
     - crates/betterlite-server/src/passthrough_route_helpers.rs
@@ -130,7 +130,7 @@ out_of_scope:
   - "_is_bedrock_agent_runtime_route, _is_bedrock_agent_runtime_passthrough_disabled and the Bedrock model helpers: B3620 and B3621 own them."
   - "_join_url_paths (used only by the OpenAI routes at L3144 and L3253): B3628 owns it."
   - "_proxy_general_settings, _resolve_aws_passthrough_region and _get_llm_router: single-route readers of proxy globals; B3621, B3625 and B3629 own them."
-  - "The streaming type of Router.allm_passthrough_route (AsyncPassthroughStreamingResponse): B3572 owns it. The Router method itself has no owning task I could find; see the notes."
+  - "The streaming type of Router.allm_passthrough_route (AsyncPassthroughStreamingResponse): B3572 owns it. The Router method is B8354's factory branch with B8691's executor, and B8694 implements RouterPassthrough over it."
   - "create_pass_through_route, join_base_and_endpoint_path and get_response_headers: B3615 and B3600 own them; this task only calls them."
 pitfalls:
   - "httpx.URL(endpoint).path drops everything after `?` and `#`, so a query string inside `endpoint` never reaches the target; the route's own query forwarding is B3615's job."

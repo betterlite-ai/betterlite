@@ -66,6 +66,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4590-L4600
     why: One PrometheusLogger per process, reused from the in-memory logger list.
 dod:
+  - text: "PrometheusHooks implements betterlite_logging::callback_logger::CallbackLogger with its success and failure hooks as the async events, so the callback_loggers slot (B8742) can register the prometheus name (tests named callback_logger_* in prometheus_hooks)."
+    proof: [callback-logger]
   - text: The success hook refuses a missing payload, skips invalid keys, builds the label values as listed and calls the emitters in the listed order, ending with the total requests counter.
     proof: [success-tests]
   - text: A sk- key is hashed for the emitters while the label values keep the original.
@@ -79,6 +81,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: callback-logger
+      why: PrometheusHooks cannot be registered as a callback logger
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_hooks::(.*::)?callback_logger_/)'
     - id: success-tests
       why: a success metric is missing, mislabeled or emitted out of order
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_hooks::success::/)'
@@ -98,7 +103,7 @@ deviations:
 out_of_scope:
   - "Collectors and the exporter settings: B3875. Emitters: B3876, B3877, B3878, B3879, B3881, B3882, B3883. Failure labels and the invalid-key skip: B3880. Label projections: B3873."
   - "Scrape rendering and /metrics: B3886."
-  - "The HTTP scrape cases through the booted proxy: no callback adapter resolves the name prometheus at main (registry/catalog.rs adapter_for is a stub), so no request reaches these hooks yet; the wave 17 callbacks wiring part adds the prometheus arm."
+  - "The HTTP scrape cases through the booted proxy: no callback adapter resolves the name prometheus at main (registry/catalog.rs adapter_for is a stub), so no request reaches these hooks yet; B8655 adds the prometheus arm to its callback logger catalog."
   - "The scheduled set_spend_capture_rate job in proxy_server.py: not part of these hooks."
 pitfalls:
   - "The success hook hashes an sk- key only after building the label values, so the hashed_api_key label carries the payload's value while the budget and rate-limit emitters get the hash."

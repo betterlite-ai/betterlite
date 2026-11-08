@@ -1,0 +1,13 @@
+id: B8651
+milestone: M8 platform
+title: Build the semantic response cache backends with router embeddings
+status: todo
+depends_on: [B8611, B173, B4290, B4299, B4310, B4381, B4382, B4383, B5220, B8296]
+file: tasks/B8651-semantic-cache-backends.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

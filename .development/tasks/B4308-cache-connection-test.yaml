@@ -4,7 +4,7 @@ description: >-
   Serve POST /cache/settings/test from crates/betterlite-server. The admin UI sends the cache form to this route before it
   saves, and the route answers whether a Redis built from those settings answers PING. It never changes the running cache.
   The route is authenticated with the same dependency as the other management routes (user_api_key_auth, whose route check refuses a non-admin key for /cache/settings routes, as in LiteLLM). Put the handler and its types in crates/betterlite-server/src/cache_settings_test/route.rs and expose
-  pub fn router(state) -> axum::Router for the architect to merge. Do not register the route anywhere else and do not touch lib.rs.
+  pub fn router(state) -> axum::Router for B8650 to merge. Do not register the route anywhere else and do not touch lib.rs.
 
   The body is CacheTestRequest, one member cache_settings, a JSON object. A missing member or a non-object value is a 422 with
   the validation error body B003 already produces. The answer is always HTTP 200 with CacheTestResponse: status ("success" or
@@ -45,7 +45,6 @@ scope:
   paths:
   - crates/betterlite-server/src/cache_settings_test.rs
   - crates/betterlite-server/src/cache_settings_test/**
-  - tools/oracle/cases/cache_settings_test/**
   - tools/oracle/helpers/b4308.py
   - tools/oracle/helpers/b4308/**
   - tools/oracle/src/helpers/server/b4308.rs
@@ -69,14 +68,16 @@ references:
   why: RedisClusterCache.test_connection, the cluster answers (B4326 owns it).
 
 dod:
-- text: POST /cache/settings/test answers 401 without a valid key, the admin-only route error for a non-admin key, and 200 for a proxy admin key, with status, message and error in the body, error being null on success.
-  proof: [route-tests, oracle]
-- text: A body without cache_settings, or with a non-object cache_settings, answers 422 with B003's validation error body.
-  proof: [route-tests, oracle]
-- text: A type that is not the string "redis" (absent, null, "local" and others) answers status "failed" with the message "Only Redis cache type is currently supported for testing" and constructs no cache.
-  proof: [route-tests, oracle]
-- text: A reachable Redis answers status "success" with message "Redis connection test successful", and an unreachable one answers status "failed" with a non-null error.
-  proof: [route-tests, oracle]
+- text: The handler tests call tower's oneshot on cache_settings_test's own Router with fake ports; B8650 runs the HTTP cases through the booted proxy.
+  proof: [route-tests]
+- text: POST /cache/settings/test answers 401 without a valid key, the admin-only route error for a non-admin key, and 200 for a proxy admin key, with status, message and error in the body, error being null on success. B8650 proves it over HTTP.
+  proof: [route-tests]
+- text: A body without cache_settings, or with a non-object cache_settings, answers 422 with B003's validation error body. B8650 proves it over HTTP.
+  proof: [route-tests]
+- text: A type that is not the string "redis" (absent, null, "local" and others) answers status "failed" with the message "Only Redis cache type is currently supported for testing" and constructs no cache. B8650 proves it over HTTP.
+  proof: [route-tests]
+- text: A reachable Redis answers status "success" with message "Redis connection test successful", and an unreachable one answers status "failed" with a non-null error. B8650 proves it over HTTP.
+  proof: [route-tests]
 - text: >-
     A password sent as ***REDACTED*** or left out, with the same host and port as the saved row, reaches the Redis as the saved
     (decrypted) password.
@@ -111,13 +112,7 @@ checks:
     why: the route does not authenticate, merge saved secrets by target, guard the type, test the connection or keep secrets out of logs
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_settings_test::route::/)'
 
-oracle_cases:
-- tools/oracle/cases/cache_settings_test/post-without-key.yaml
-- tools/oracle/cases/cache_settings_test/post-missing-cache-settings.yaml
-- tools/oracle/cases/cache_settings_test/post-type-absent.yaml
-- tools/oracle/cases/cache_settings_test/post-type-local.yaml
-- tools/oracle/cases/cache_settings_test/post-redis-unreachable.yaml
-- tools/oracle/cases/cache_settings_test/post-redis-redacted-password-no-saved.yaml
+oracle_cases: []
 
 deviations:
 - what: >-

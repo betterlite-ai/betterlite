@@ -1,0 +1,8 @@
+kind: helper
+name: token-formatting-encoding-seed
+call:
+  token_formatting:
+    function: encoding_name
+    model: gpt-4o
+env: {}
+compare: {ignore: []}

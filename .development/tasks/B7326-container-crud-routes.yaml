@@ -2,7 +2,7 @@ id: B7326
 title: Container create, list, retrieve and delete routes
 description: >-
   Register the four container routes of litellm/proxy/container_endpoints/endpoints.py and build the handler behind each, in betterlite-server as module api::container_routes
-  (crates/betterlite-server/src/api/container_routes.rs and container_routes/**), mounted once from a route stub module routes/containers.rs that the architect registers.
+  (crates/betterlite-server/src/api/container_routes.rs and container_routes/**), mounted once from a route stub module routes/containers.rs that B8635 fills and mounts.
   Each route is registered at the `/v1` prefix and at the bare path, so eight registrations: POST /v1/containers and POST /containers (create, route type acreate_container), GET /v1/containers and
   GET /containers (list, alist_containers), GET /v1/containers/{container_id} and GET /containers/{container_id} (retrieve, aretrieve_container), DELETE /v1/containers/{container_id} and
   DELETE /containers/{container_id} (delete, adelete_container). Every route sits behind B756 authentication and reads the authenticated caller (LiteLLM lists user_api_key_auth as a route dependency and as a
@@ -13,7 +13,7 @@ description: >-
   value that holds `Arc<dyn ContainerAccess>`, `Arc<dyn RequestProcessing>` and a new trait `ContainerOwners` declared here. `ContainerOwners` has two async methods, both thin adapters in
   production over B3362: `list_owned(pages, after, limit, caller, provider)` (B3362's list_owned_containers, where `pages` is a `&dyn ContainerPages`, a trait declared here with
   `async fn fetch_page(&self, after: Option<String>, limit: Option<i64>) -> Result<Value, ContainerRouteError>`) and `record_owner(reply, caller, provider)` (record_container_owner, which returns
-  the reply it was given). The production `RequestProcessing` is B004's common request processing, which reaches the container route types through B7430's ContainerCall dispatch entry; this task
+  the reply it was given). The production `RequestProcessing` runs B8801's shared PreCall step (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step) and then B004's common request processing, which reaches the container route types through B7430's ContainerCall dispatch entry; this task
   passes the route type name and the data map and nothing else. `ContainerRouteError` is this module's error enum: Body (B1100's body error), Access (B3362's 403 "Forbidden", kept as it is),
   Owner (an error from record_owner, with its status and detail), Query (a bad `limit`, see list) and Processing (the mapped error that `handle_exception` returns). Each variant keeps its source by `#[from]`.
 
@@ -47,7 +47,7 @@ description: >-
   Responses. A success is HTTP 200 with the reply as JSON and the response headers B004 set (the x-litellm-* headers), the same as B3372's file routes. Error bodies from B004 keep its OpenAI error
   object; the 403 and 500 above are `{"detail": ...}`.
 
-  HTTP oracle cases. These are new routes a client sees, so the branch adds cases under tools/oracle/cases/api/container-routes, run against LiteLLM and betterlite with master_key=sk-test, a second
+  HTTP oracle cases. These are new routes a client sees, so B8635, which mounts them, adds cases under tools/oracle/cases/api/container-routes, run against LiteLLM and betterlite with master_key=sk-test, a second
   non-admin virtual key (created through the key route) and the OpenAI mock provider's container endpoints (B3363 owns the provider side). They check: create on both prefixes with the data the provider
   received (a body custom_llm_provider is replaced by the picked one; the header beats the query value, which beats the body value); the list route on both prefixes with admin and with the non-admin key (the
   non-admin key sees only the containers it created through POST /v1/containers, and limit, order and after reach the provider as strings with an unknown query name absent); a non-integer limit answering 422;
@@ -62,8 +62,6 @@ scope:
     - crates/betterlite-server/src/api/container_routes/**
     - crates/betterlite-server/src/routes/containers.rs
     - crates/betterlite-server/src/routes/containers/**
-    - tools/oracle/cases/api/container-routes/**
-    - tools/oracle/fixtures/container-routes/**
     - tools/oracle/helpers/b7326.py
     - tools/oracle/helpers/b7326/**
     - tools/oracle/src/helpers/server/b7326.rs
@@ -91,27 +89,27 @@ references:
 dod:
   - text: >-
       The four routes are registered once each at the /v1 prefix and the bare path with their methods (POST and GET on /containers, GET and DELETE on /containers/{container_id}), the other methods on those paths answer 405, and a request without a valid key gets 401 from B756 with no provider request, on all eight paths.
-    proof: [route-aliases, auth-failures, oracle]
+    proof: [route-aliases, auth-failures]
   - text: >-
       Create picks the provider from the header, then the query value, then the body value, then "openai", puts it in data over any body value, passes the route type acreate_container with no model, and runs no ownership check before processing.
-    proof: [create-data, oracle]
+    proof: [create-data]
   - text: >-
       Create records the owner after processing with the picked provider; an HTTP error from the recorder is returned with its status and a plain detail body and skips exception handling, any other recorder error is logged and the upstream reply is returned with status 200, and a good record returns what the recorder returned.
-    proof: [create-owner, error-bodies, oracle]
+    proof: [create-owner, error-bodies]
   - text: >-
       List builds the data map with the full query map under "query_params", the model query value, order and the pick, adds after and limit (null when absent) per page, and passes route type alist_containers with no model.
-    proof: [list-data, oracle]
+    proof: [list-data]
   - text: >-
       An admin caller gets one unfiltered page fetch, any other caller goes through list_owned with a fetcher that makes one process call per page, and a limit that is not an integer answers 422 before any processing.
-    proof: [list-scope, oracle]
+    proof: [list-scope]
   - text: >-
       Retrieve and delete check access with the picked provider, update data with the forwarding result over earlier keys, send only container_id, custom_llm_provider and model_id with route types aretrieve_container and adelete_container, and return the reply unchanged.
-    proof: [item-flow, oracle]
+    proof: [item-flow]
   - text: >-
       A caller that does not own the container gets 403 with the body {"detail": "Forbidden"} on retrieve and delete, no provider request is made, and the denial never goes through exception handling.
-    proof: [item-access, error-bodies, oracle]
-  - text: The branch adds HTTP oracle cases for the container create, list, retrieve and delete routes.
-    proof: [new-cases, oracle]
+    proof: [item-access, error-bodies]
+  - text: Tests drive the handlers with tower's oneshot over the module's own Router and fake ports; B8635 mounts the routes and proves them over HTTP.
+    proof: [route-aliases, auth-failures]
 checks:
   optional: []
   commands:
@@ -142,18 +140,7 @@ checks:
     - id: auth-failures
       why: a route is reachable without a valid key or reaches the provider first
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_routes::tests::auth_failures($|::)/)'
-    - id: new-cases
-      why: the branch adds no HTTP oracle cases for the container routes
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/container-routes)"
-oracle_cases:
-  - tools/oracle/cases/api/container-routes/container-create.yaml
-  - tools/oracle/cases/api/container-routes/container-create-provider.yaml
-  - tools/oracle/cases/api/container-routes/container-list.yaml
-  - tools/oracle/cases/api/container-routes/container-list-owned.yaml
-  - tools/oracle/cases/api/container-routes/container-list-limit.yaml
-  - tools/oracle/cases/api/container-routes/container-item.yaml
-  - tools/oracle/cases/api/container-routes/container-forbidden.yaml
-  - tools/oracle/cases/api/container-routes/container-auth.yaml
+oracle_cases: []
 deviations:
   - what: The authenticated caller is read once per request.
     why: LiteLLM lists user_api_key_auth as a route dependency and as a handler parameter, and FastAPI runs it once for both; the client sees the same 401.

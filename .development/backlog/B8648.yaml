@@ -1,0 +1,13 @@
+id: B8648
+milestone: M9 agents and mcp
+title: Mount the A2A agent routes and the agent skills discovery routes
+status: todo
+depends_on: [B8610, B8611, B8612, B8645, B8647, B1103, B3210, B3212, B4780, B4789, B4814, B7323, B8231, B8274, B8394, B8395, B8589, B8802]
+file: tasks/B8648-a2a-skills-mount.yaml
+covers: []
+parent: B078
+split_from: B078
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

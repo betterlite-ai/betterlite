@@ -15,8 +15,6 @@ scope:
   paths:
     - crates/betterlite-server/src/mcp_toolsets_and_sessions.rs
     - crates/betterlite-server/src/mcp_toolsets_and_sessions/**
-    - tools/oracle/cases/http/sessions/**
-    - tools/oracle/cases/http/toolset/**
     - tools/oracle/helpers/b4725.py
     - tools/oracle/helpers/b4725/**
     - tools/oracle/src/helpers/server/b4725.rs
@@ -36,6 +34,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1483-L1485
     why: DELETE /v1/mcp/sessions validates both session_id_prefix and user_id null, returns 400 if both absent.
 dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports; B8701 mounts the routes and proves the items below over HTTP with the cases that moved there.
+    proof: [route-tests]
   - text: >-
       Cases session_get_requires_admin_view, session_delete_requires_full_admin, session_delete_no_selectors_400,
       session_delete_prefix_too_short_422, toolset_post_admin_only_403, toolset_post_duplicate_409,
@@ -44,37 +44,26 @@ dod:
       toolset_delete_admin_only_403 and toolset_delete_not_found_404 verify every permission gate
       and named HTTP status/error message via oracle cases.
     proof:
-      - oracle
+      - route-tests
   - text: Toolset CRUD routes preserve grant-filtered reads per object_permission.mcp_toolsets, duplicate-name
       409 responses and cache invalidation after committed writes.
     proof:
-      - oracle
+      - route-tests
   - text: Session termination requires an explicit session_id_prefix (min_length=8) and/or user_id (min_length=1) selector,
       returns 400 if both are null, 422 if prefix is too short.
     proof:
-      - oracle
+      - route-tests
   - text: Audit logging captures the litellm_changed_by header or caller principal for toolset POST and PUT mutations.
     proof:
-      - oracle
+      - route-tests
 checks:
   optional: []
-  commands: []
+  commands:
+    - id: route-tests
+      why: a toolset or session handler, its permission gate or its error mapping is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp_toolsets_and_sessions::/)'
 
-oracle_cases:
-  - tools/oracle/cases/http/sessions/get-requires-admin-or-view-only.yaml
-  - tools/oracle/cases/http/sessions/delete-requires-full-admin.yaml
-  - tools/oracle/cases/http/sessions/delete-missing-both-selectors-400.yaml
-  - tools/oracle/cases/http/sessions/delete-session-id-prefix-too-short-422.yaml
-  - tools/oracle/cases/http/toolset/post-create-admin-only-403.yaml
-  - tools/oracle/cases/http/toolset/post-duplicate-name-409.yaml
-  - tools/oracle/cases/http/toolset/get-list-grant-filtered.yaml
-  - tools/oracle/cases/http/toolset/get-detail-not-found-404.yaml
-  - tools/oracle/cases/http/toolset/get-detail-access-denied-403.yaml
-  - tools/oracle/cases/http/toolset/put-update-admin-only-403.yaml
-  - tools/oracle/cases/http/toolset/put-not-found-404.yaml
-  - tools/oracle/cases/http/toolset/put-duplicate-name-409.yaml
-  - tools/oracle/cases/http/toolset/delete-admin-only-403.yaml
-  - tools/oracle/cases/http/toolset/delete-not-found-404.yaml
+oracle_cases: []
 deviations: []
 
 out_of_scope:

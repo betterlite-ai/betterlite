@@ -3,7 +3,7 @@ title: Guardrail list projections and provider form fields
 description: >-
   Build the read side of the guardrail admin API in betterlite-server: the two list routes, the info route, the add-guardrail settings route and the provider form route, plus the masking and filtering they share. Everything goes in crates/betterlite-server/src/guardrails/admin_reads.rs and admin_reads/. The create, change and delete routes are B3685, submissions are B3686 and B3687 owns the catalog and apply routes; none of them lives here.
 
-  Routes, all behind the normal key check (any valid key, any role, no other permission). `GET /guardrails/list`, `GET /v2/guardrails/list`, `GET /guardrails/{guardrail_id}` and its alias `GET /guardrails/{guardrail_id}/info`, `GET /guardrails/ui/add_guardrail_settings` and `GET /guardrails/ui/provider_specific_params`. Expose `pub fn routes()` the way the sibling modules in crates/betterlite-server/src/guardrails/ do; the architect's skeleton mounts it, so do not touch app.rs. The response records `GuardrailInfoResponse`, `ListGuardrailsResponse` and `GuardrailUiAddSettings` are B3662's (betterlite-config, sections::guardrail_params); the registry reads and the in-memory handler are B3682's and B3683's.
+  Routes, all behind the normal key check (any valid key, any role, no other permission). `GET /guardrails/list`, `GET /v2/guardrails/list`, `GET /guardrails/{guardrail_id}` and its alias `GET /guardrails/{guardrail_id}/info`, `GET /guardrails/ui/add_guardrail_settings` and `GET /guardrails/ui/provider_specific_params`. Expose `pub fn routes()` the way the sibling modules in crates/betterlite-server/src/guardrails/ do; B8667 mounts it, so do not touch app.rs. The response records `GuardrailInfoResponse`, `ListGuardrailsResponse` and `GuardrailUiAddSettings` are B3662's (betterlite-config, sections::guardrail_params); the registry reads and the in-memory handler are B3682's and B3683's.
 
   Masking, in `masking.rs`: `mask_sensitive_values(values: &Map<String, Value>) -> Map<String, Value>` follows `_get_masked_values` (litellm_logging.py L4346-L4404) with `unmasked_length` 4 and `number_of_asterisks` 4. A key is sensitive when its lowercase text contains one of `authorization`, `token`, `key`, `secret`, `vertex_credentials`, `credentials`, `password`, `passwd`. A sensitive key with a string value becomes `*****` when the string has 4 characters or fewer, else the first 2 characters, `****` and the last 2 characters. A sensitive key with an object value is masked again inside, up to depth 20 (below that the object is returned as it is). Every other value, including lists and non-strings under a sensitive key, is kept. It is `pub(crate)` and lives at `crate::guardrails::admin_reads::masking::mask_sensitive_values` (declare `pub(crate) mod masking;` in admin_reads.rs). B3686 calls it for the submission items, so keep that signature. Give it its own tests.
 
@@ -22,7 +22,6 @@ scope:
   paths:
     - crates/betterlite-server/src/guardrails/admin_reads.rs
     - crates/betterlite-server/src/guardrails/admin_reads/**
-    - tools/oracle/cases/guardrails/admin-reads/**
     - tools/oracle/helpers/b3684.py
     - tools/oracle/helpers/b3684/**
     - tools/oracle/src/helpers/server/b3684.rs
@@ -49,17 +48,19 @@ dod:
   - text: Masking follows the rule exactly. A sensitive key keeps the first 2 and last 2 characters around four asterisks, a value of 4 characters or fewer becomes five asterisks, objects under a sensitive key are masked inside, other values and other keys stay.
     proof: [admin-masking-tests]
   - text: GET /guardrails/list returns the config file's guardrails with masked params, `[]` when the file has none, and the default all-null params for an item with no litellm_params.
-    proof: [admin-routes-tests, oracle]
+    proof: [admin-routes-tests]
   - text: The v2 list returns admin everything, other callers only entries with no team or one of their teams, skips db-sourced in-memory entries, never repeats an id, labels each entry db or config, and answers 500 with the error text on failure.
-    proof: [admin-routes-tests, oracle]
+    proof: [admin-routes-tests]
   - text: The info route finds a db row, then a config entry, never a db-sourced in-memory entry, answers 404 with the exact text otherwise, and serves both paths.
-    proof: [admin-routes-tests, oracle]
+    proof: [admin-routes-tests]
   - text: The add-guardrail settings body, with the per-provider modes table, matches LiteLLM's.
-    proof: [admin-routes-tests, oracle]
+    proof: [admin-routes-tests]
   - text: The provider form route returns the merged map in LiteLLM's key set, with a later registry entry replacing an earlier one, and turns a too-deep model into 400.
-    proof: [admin-routes-tests, oracle]
-  - text: Every route needs a valid key; a request without one gets the usual 401 body.
-    proof: [oracle]
+    proof: [admin-routes-tests]
+  - text: Every route needs a valid key; a oneshot test without a key gets the usual 401 body, and B8667 proves it over HTTP.
+    proof: [admin-routes-tests]
+  - text: The handlers are tested with tower's oneshot over the module's own Router and fake ports. B8667 mounts the routes and owns their HTTP oracle cases, so write no HTTP case here.
+    proof: [admin-routes-tests]
 checks:
   optional: []
   commands:
@@ -69,17 +70,7 @@ checks:
     - id: admin-routes-tests
       why: a list, info, settings or provider-form behaviour is missing
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::admin_reads::tests::(list_|team_|info_|settings_|forms_)/)'
-oracle_cases:
-  - tools/oracle/cases/guardrails/admin-reads/list-config-masked.yaml
-  - tools/oracle/cases/guardrails/admin-reads/list-config-empty.yaml
-  - tools/oracle/cases/guardrails/admin-reads/list-v2-config.yaml
-  - tools/oracle/cases/guardrails/admin-reads/list-v2-no-database.yaml
-  - tools/oracle/cases/guardrails/admin-reads/info-config-found.yaml
-  - tools/oracle/cases/guardrails/admin-reads/info-alias-found.yaml
-  - tools/oracle/cases/guardrails/admin-reads/info-not-found.yaml
-  - tools/oracle/cases/guardrails/admin-reads/add-settings-body.yaml
-  - tools/oracle/cases/guardrails/admin-reads/provider-params-body.yaml
-  - tools/oracle/cases/guardrails/admin-reads/auth-required.yaml
+oracle_cases: []
 deviations:
   - what: Config guardrails get a stable `guardrail_id` in the v2 and info responses only if the registry gave them one when it started them; the v1 list shows the id as written in the file.
     why: LiteLLM does the same, because v1 reads the raw file and v2 reads the handler.
