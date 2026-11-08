@@ -1,0 +1,16 @@
+kind: helper
+name: gcs-mock-mock-latency-default-150ms
+call:
+  b3996:
+    environment: {GCS_MOCK: "true"}
+    original: {status: 418, body: "original-response"}
+    requests:
+      - method: get
+        url: https://storage.googleapis.com/storage/v1/b/mock-bucket/o/mock-object?alt=media
+      - method: post
+        url: https://storage.googleapis.com/upload/storage/v1/b/mock-bucket/o?uploadType=media&name=mock-object
+        data: '{"a":1}'
+      - method: delete
+        url: https://storage.googleapis.com/storage/v1/b/mock-bucket/o/mock-object
+env: {}
+compare: {ignore: []}
