@@ -37,6 +37,7 @@ pub struct StreamingCapabilities {
 #[derive(Clone, Default)]
 pub struct CallbackCapabilities {
     pub has_post_call_response_headers: bool,
+    pub needs_per_chunk_hook: bool,
     pub guardrails: GuardrailCapabilities,
     pub request: RequestCapabilities,
     pub streaming: StreamingCapabilities,
@@ -136,8 +137,11 @@ impl CapabilityWalk {
                 .iter()
                 .any(|entry| entry.kind == IteratorKind::ApplyGuardrail);
         self.streaming.has_iterator_override = wraps_iterator;
+        let needs_per_chunk_hook =
+            self.streaming.has_streaming_chunk_override || self.guardrails.has_guardrail;
         CallbackCapabilities {
             has_post_call_response_headers: self.has_post_call_response_headers,
+            needs_per_chunk_hook,
             guardrails: self.guardrails,
             request: self.request,
             streaming: self.streaming,

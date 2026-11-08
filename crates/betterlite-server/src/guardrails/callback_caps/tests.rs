@@ -10,10 +10,7 @@ use betterlite_core::routes::CallType;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use rstest::rstest;
 
-use super::caps::{
-    CallbackCache, CallbackCapabilities, GuardrailCapabilities, IteratorKind, RequestCapabilities,
-    StreamingCapabilities, combined_callback_list,
-};
+use super::caps::{CallbackCache, CallbackCapabilities, IteratorKind, combined_callback_list};
 use super::errors::{
     GuardrailGateError, ModifiedResponseError, ProxyException, ProxyHookError, SensitiveRouteError,
     changes_request_flow, is_client_error,
@@ -229,27 +226,6 @@ fn rejected_request() -> ProxyHookError {
     }
 }
 
-fn build_capabilities(flags: (bool, bool, bool)) -> CallbackCapabilities {
-    CallbackCapabilities {
-        has_post_call_response_headers: false,
-        guardrails: GuardrailCapabilities {
-            has_guardrail: flags.2,
-            has_moderation_override: false,
-        },
-        request: RequestCapabilities {
-            has_pre_call_override: false,
-            has_content_enforcer: false,
-        },
-        streaming: StreamingCapabilities {
-            has_iterator_override: flags.0,
-            has_streaming_chunk_override: flags.1,
-        },
-        iterator_overrides: Vec::new(),
-        resolved_callbacks: Vec::new(),
-        listed_models_filters: Vec::new(),
-    }
-}
-
 #[test]
 fn from_callbacks_defaults_to_no_flags() {
     let capabilities = CallbackCapabilities::from_callbacks(&[]);
@@ -461,24 +437,38 @@ fn cache_recomputes_when_the_length_changes() {
     assert!(!back.streaming.has_streaming_chunk_override);
 }
 
-#[rstest]
-#[case::nothing((false, false, false), (false, false))]
-#[case::iterator_only((true, false, false), (true, false))]
-#[case::chunk_only((false, true, false), (true, true))]
-#[case::guardrail_only((false, false, true), (true, true))]
-#[case::chunk_and_guardrail((false, true, true), (true, true))]
-#[case::everything((true, true, true), (true, true))]
-fn predicates_combine_the_flags_like_litellm(
-    #[case] flags: (bool, bool, bool),
-    #[case] expected: (bool, bool),
-) {
-    let capabilities = build_capabilities(flags);
-    assert_eq!(capabilities.has_streaming_callbacks(), expected.0);
-    let per_chunk = capabilities.streaming.has_streaming_chunk_override
-        || capabilities.guardrails.has_guardrail;
-    assert_eq!(per_chunk, expected.1);
-    assert_eq!(capabilities.streaming.has_iterator_override, flags.0);
-    assert_eq!(capabilities.guardrails.has_guardrail, flags.2);
+#[test]
+fn has_streaming_callbacks_covers_every_streaming_hook() {
+    let empty = CallbackCapabilities::from_callbacks(&[]);
+    let iterator =
+        CallbackCapabilities::from_callbacks(&[callback("iterator", &[Hook::StreamingIterator])]);
+    let chunk = CallbackCapabilities::from_callbacks(&[callback("chunk", &[Hook::StreamingChunk])]);
+    let guarded = CallbackCapabilities::from_callbacks(&[guardrail("guard", &[])]);
+
+    assert!(!empty.has_streaming_callbacks());
+    assert!(iterator.has_streaming_callbacks());
+    assert!(chunk.has_streaming_callbacks());
+    assert!(guarded.has_streaming_callbacks());
+}
+
+#[test]
+fn needs_per_chunk_hook_needs_a_chunk_override_or_a_guardrail() {
+    let empty = CallbackCapabilities::from_callbacks(&[]);
+    let iterator =
+        CallbackCapabilities::from_callbacks(&[callback("iterator", &[Hook::StreamingIterator])]);
+    let chunk = CallbackCapabilities::from_callbacks(&[callback("chunk", &[Hook::StreamingChunk])]);
+    let guarded = CallbackCapabilities::from_callbacks(&[guardrail("guard", &[])]);
+    let both = CallbackCapabilities::from_callbacks(&[
+        callback("iterator", &[Hook::StreamingIterator]),
+        callback("chunk", &[Hook::StreamingChunk]),
+        guardrail("guard", &[]),
+    ]);
+
+    assert!(!empty.needs_per_chunk_hook);
+    assert!(!iterator.needs_per_chunk_hook);
+    assert!(chunk.needs_per_chunk_hook);
+    assert!(guarded.needs_per_chunk_hook);
+    assert!(both.needs_per_chunk_hook);
 }
 
 #[test]
@@ -510,12 +500,17 @@ fn partition_post_call_keeps_guardrails_first_in_order() {
 fn combined_callback_list_returns_the_global_list_when_dynamic_is_none() {
     let first = callback("first", &[]);
     let second = callback("second", &[]);
-    let combined = combined_callback_list(None, &[Arc::clone(&first), Arc::clone(&second)]);
-    assert_eq!(combined.len(), 2);
+    let global = [Arc::clone(&first), Arc::clone(&second), Arc::clone(&first)];
+    let combined = combined_callback_list(None, &global);
+
+    let names: Vec<&str> = combined
+        .iter()
+        .map(|callback| callback.class_name())
+        .collect();
+    assert_eq!(names, ["first", "second", "first"]);
+    assert_eq!(combined.len(), 3);
     let head = combined.first().expect("the global list is kept");
-    let tail = combined.get(1).expect("the global list is kept");
     assert!(Arc::ptr_eq(head, &first));
-    assert!(Arc::ptr_eq(tail, &second));
 }
 
 #[test]
@@ -524,8 +519,16 @@ fn combined_callback_list_puts_dynamic_first_and_drops_later_duplicates() {
     let shared = callback("shared", &[]);
     let global = callback("global", &[]);
     let combined = combined_callback_list(
-        Some(&[Arc::clone(&dynamic), Arc::clone(&shared)]),
-        &[Arc::clone(&shared), Arc::clone(&global)],
+        Some(&[
+            Arc::clone(&dynamic),
+            Arc::clone(&shared),
+            Arc::clone(&dynamic),
+        ]),
+        &[
+            Arc::clone(&shared),
+            Arc::clone(&global),
+            Arc::clone(&global),
+        ],
     );
     let names: Vec<&str> = combined
         .iter()
