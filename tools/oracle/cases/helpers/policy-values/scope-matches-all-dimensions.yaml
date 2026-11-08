@@ -1,0 +1,17 @@
+kind: helper
+name: scope-matches-all-dimensions
+call:
+  b3240:
+    function: scope_matches
+    scope:
+      teams: [healthcare]
+      keys: ["dev-*"]
+      models: ["gpt-4*"]
+      tags: [prod]
+    context:
+      team_alias: healthcare
+      key_alias: dev-key
+      model: gpt-4o
+      tags: [prod]
+env: {}
+compare: {ignore: []}

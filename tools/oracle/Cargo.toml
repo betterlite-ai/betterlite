@@ -38,10 +38,12 @@ betterlite-ocr = { path = "../../crates/betterlite-ocr" }
 betterlite-openai = { path = "../../crates/betterlite-openai" }
 betterlite-openapi = { path = "../../crates/betterlite-openapi" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
+betterlite-policy = { path = "../../crates/betterlite-policy" }
 betterlite-postgres-fixture = { path = "../postgres-fixture" }
 betterlite-prompts = { path = "../../crates/betterlite-prompts" }
 betterlite-provider = { path = "../../crates/betterlite-provider" }
 betterlite-proxy = { path = "../../crates/betterlite-proxy" }
+betterlite-rag = { path = "../../crates/betterlite-rag" }
 betterlite-rate-limit = { path = "../../crates/betterlite-rate-limit" }
 betterlite-redact = { path = "../../crates/betterlite-redact" }
 betterlite-redis = { path = "../../crates/betterlite-redis" }

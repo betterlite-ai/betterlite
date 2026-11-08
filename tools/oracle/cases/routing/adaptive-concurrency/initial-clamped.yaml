@@ -1,0 +1,30 @@
+kind: probe
+name: initial-clamped
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_concurrency:
+        initial: 0
+        floor: 2
+        ceiling: 5
+        steps:
+          - {action: snapshot}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_concurrency:
+        initial: 9
+        floor: 2
+        ceiling: 5
+        steps:
+          - {action: snapshot}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_concurrency:
+        initial: 3
+        floor: 2
+        ceiling: 5
+        steps:
+          - {action: snapshot}
