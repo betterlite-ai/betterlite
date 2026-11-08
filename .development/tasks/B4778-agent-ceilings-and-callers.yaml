@@ -1,0 +1,138 @@
+id: B4778
+title: Resolve agent access ceilings and forwarded caller identities
+description: >-
+  Build the pieces that cap an agent's own key: the access group ceiling of an agent, the stand-in auth record for the user and team an agent echoes back, the loaders for that caller's team and user rows, and the agent access set with its key-and-team intersection. All of it goes in crates/betterlite-auth, in two modules: `agent_access_groups` (files agent_access_groups.rs and agent_access_groups/**) and `agent_caller` (agent_caller.rs and agent_caller/**). Each module owns its error enum in its own files (`AccessGroupsError`, `AgentCallerError`). Neither module imports betterlite-core, because betterlite-core depends on betterlite-auth.
+
+  Reuse, do not rebuild. B2313 (module `agent_policy`) owns the records `AgentCaller` (user_id and team_id, both optional) and `AgentResponse`. B2314 (module `resolved_key`) owns `UserApiKeyAuth`, which has the fields `agent_id`, `agent_caller`, `user_id`, `team_id` and `requires_fresh_policy`. B721 owns the access group row with the lists `access_model_names`, `access_mcp_server_ids` and `access_agent_ids`. B736 owns the user row read (get_user_object) and B737 owns the team row read (get_team_object) and the access group read (get_access_object). B4776 owns `AgentRegistry` with `stable_agent_id`. The caller headers x-litellm-user-id and x-litellm-team-id and `agent_caller_from_headers` are not here: B052 reads the headers and sets `agent_caller` on the key.
+
+  Ports. Nothing reads a database or the registry directly. The first port is the trait `AccessGroupReads` (agent_access_groups/reads.rs, native async fn, no trait object), received by the constructor of `AgentAccessGroups<R: AccessGroupReads>`. Its methods: `has_database(&self) -> bool` (sync, false when no database is connected); `agent_access_group_ids(&self, agent_id: &str) -> Vec<String>` (the access_group_ids of the agent found by id or by name, in the registry first and then through the read-through that resyncs one row from the database; empty when the agent is unknown; it cannot fail, because LiteLLM swallows a failed resync and answers as if the agent was missing); `access_group(&self, access_group_id: &str, check_db_only: bool) -> Result<AccessGroup, AuthError>` (B737's get_access_object, where `AuthError` is the error type B737's access group read returns, and check_db_only=true bypasses the cache and reads the writer). The second port is the trait `CallerReads` (agent_caller/reads.rs), received by the constructor of `AgentCallerLoaders<R: CallerReads>`: `team(&self, team_id: &str) -> Result<TeamObject, AuthError>` (B737's get_team_object with default flags, where `TeamObject` is the row type that read returns) and `user(&self, user_id: &str) -> Result<Option<UserRow>, AuthError>` (B736's get_user_object with user_id_upsert false, check_db_only unset, and no sso id or email). The server builds the production implementations; that wiring is not in this task (see the notes). Tests use in-memory fakes.
+
+  `AgentAccessGroupCeiling` (agent_access_groups/ceiling.rs) is a plain struct: `access_group_ids: Vec<String>` (the attached ids in the order the agent lists them, duplicates kept), and the BTreeSets `models`, `mcp_server_ids` and `agent_ids`. An empty set means that resource kind is denied. `AgentAccessGroups` has three methods.
+  - `resolve_agent_access_group_ceiling(agent_id, check_db_only) -> Result<Option<AgentAccessGroupCeiling>, AccessGroupsError>`. It asks `agent_access_group_ids`; an empty answer returns None (nothing is capped) and reads no group. Otherwise it reads every attached group (LiteLLM reads them concurrently; the result does not depend on the order, so reading them one after another is fine) and unions the three lists of the groups that loaded. One group read goes through the private step `load_group`: with no database it logs the warning "Agent access group {id} cannot be loaded without a DB" and gives None, whatever check_db_only says; with check_db_only false a failed read logs the warning "Agent access group {id} could not be loaded, treating it as empty: {error}" and gives None; with check_db_only true a failed read returns the error as `AccessGroupsError::Read` (source kept). Ids whose group did not load stay in `access_group_ids` and add nothing to the sets, so a group that vanished denies instead of opening up. When check_db_only is true every read passes check_db_only=true to the port; when false every read passes false.
+  - `agent_access_group_server_ids(agent_id) -> Result<Option<Vec<String>>, AccessGroupsError>`: the non-strict ceiling's `mcp_server_ids` as a sorted Vec, or None when no group is attached. B4670 (module `ceilings` in betterlite-mcp) calls this under the same name, and its production CeilingReads forwards to it.
+  - `resolve_managed_agent_ceilings(agent_id, access_group_ids: &[String]) -> Result<Vec<AgentAccessGroupCeiling>, AccessGroupsError>`: for a managed agent, the ids come from the agent record the caller already holds (not from the registry) and every group is read with check_db_only=true, so a read error propagates. It returns an empty Vec when the agent has no ids and a Vec of one ceiling otherwise. LiteLLM takes the whole AgentResponse here; betterlite takes the two fields it reads, so this module needs no AgentResponse (see the deviations).
+
+  `agent_caller_auth(auth: &UserApiKeyAuth) -> Option<UserApiKeyAuth>` (agent_caller/caller_auth.rs, a plain sync function, same name and argument as the method B4670's CeilingReads trait declares; the async trait method in betterlite-mcp wraps it). It returns None when `auth.agent_caller` is None. Otherwise it returns a fresh record built with `user_id` and `team_id` of the caller, a copy of the key's trace handle field as B2314 holds it, and `requires_fresh_policy` copied from the key; every other field is the record's default, so `agent_id` is None and the result never counts as an agent key itself. LiteLLM sets requires_fresh_policy after construction with model_copy, which skips validation. Build it the same way here so the copied value is exactly the key's value.
+
+  `AgentCallerLoaders` (agent_caller/loaders.rs):
+  - `load_agent_caller_team(&self, auth) -> Result<Option<TeamObject>, AgentCallerError>`: None when the key has no `agent_caller` or the caller has no team_id; otherwise `CallerReads::team(team_id)`. A read error returns `AgentCallerError::Team` with the cause as source. A caller we cannot resolve must never be treated as unrestricted, so there is no fallback.
+  - `load_agent_caller_user(&self, auth) -> Result<Option<UserRow>, AgentCallerError>`: None when there is no `agent_caller` or no user_id; otherwise `CallerReads::user(user_id)`. A None row logs at debug "agent caller user {id} not found; no user ceiling applied" and returns None. A read error returns `AgentCallerError::User`.
+
+  Oracle helper b4778 has four operations. `ceiling` and `managed_ceilings` call LiteLLM's resolvers with `agent_access_group_ids` and a `groups` map (group id to its three lists, or null for a group that does not load) as the loaders and print the ceiling or null. `caller_auth` builds a UserAPIKeyAuth from `agent_id`, `models`, `agent_caller` and `requires_fresh_policy`, calls agent_caller_auth, and prints user_id, team_id, agent_id, models and requires_fresh_policy of the result or null. `intersect_access` loads `config_agents` into a fresh registry, turns each access side into an AgentAccess (`unrestricted`, or a restricted set made of `restricted_ids` as given, `restricted_by_legacy_name` as the legacy id of the named config agent and `restricted_by_stable_name` as its stable id), calls _intersect_agent_access, and prints the sorted ids or unrestricted.
+
+  Agent access (agent_access_groups/access.rs): `enum AgentAccess { Unrestricted, Restricted(BTreeSet<String>) }` (an empty set denies every agent); `to_stable_ids(registry: &AgentRegistry, ids: &BTreeSet<String>) -> BTreeSet<String>` maps each id through `registry.stable_agent_id`; `intersect_agent_access(registry, key_access, team_access) -> AgentAccess` maps both sides through to_stable_ids first and then: both Unrestricted gives Unrestricted; one Restricted side gives Restricted with that side's stable ids; both Restricted gives the intersection. B4779 and B4780 call these; the other methods of LiteLLM's AgentRequestHandler stay with them.
+scope:
+  paths:
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-auth/src/agent_access_groups.rs
+    - crates/betterlite-auth/src/agent_access_groups/**
+    - crates/betterlite-auth/src/agent_caller.rs
+    - crates/betterlite-auth/src/agent_caller/**
+    - tools/oracle/cases/agent-ceilings/**
+    - tools/oracle/helpers/b4778.py
+    - tools/oracle/helpers/b4778/**
+    - tools/oracle/src/helpers/auth/b4778.rs
+    - tools/oracle/src/helpers/auth/b4778/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_access_groups.py#L20-L61
+    why: AgentAccessGroupCeiling (an empty set denies), the registry read of the agent's access_group_ids, and _load_access_group with its two failure paths (no database, HTTPException).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_access_groups.py#L64-L101
+    why: resolve_agent_access_group_ceiling (None for no groups, union, check_db_only overrides the injected loader) and resolve_managed_agent_ceilings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_caller.py#L39-L88
+    why: agent_caller_auth, load_agent_caller_team and load_agent_caller_user. Lines 1-37 (the header reader) are B052's.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L35-L69
+    why: AgentAccess, _to_stable_ids, _restricted_ids and _intersect_agent_access. The rest of the file belongs to B4779 and B4780.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L159-L212
+    why: How an agent is found by id or by name and resynced from the database (the source of the agent_access_group_ids port).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3349-L3416
+    why: get_access_object, the read behind the AccessGroupReads port (404 for a missing row, 503 on the writer path).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4546-L4640
+    why: The callers of the ceiling resolver and of the two caller loaders (B748), to see which result shapes they use.
+dod:
+  - text: resolve_agent_access_group_ceiling returns None and reads no group when the agent lists no access group ids.
+    proof: [ceiling-tests, oracle-cases]
+  - text: With attached groups it unions models, mcp_server_ids and agent_ids over the groups that loaded, and keeps access_group_ids in the agent's order with duplicates.
+    proof: [ceiling-tests, oracle-cases]
+  - text: A group that does not load (row missing, read failed or no database) in non-strict mode is logged and dropped but its id stays listed, so the sets can be empty and deny.
+    proof: [ceiling-tests, oracle-cases]
+  - text: With check_db_only true every group read asks the port for the writer path and a read failure returns AccessGroupsError::Read, while no database still drops the group with the warning.
+    proof: [ceiling-tests]
+  - text: resolve_managed_agent_ceilings reads the ids it is given with check_db_only true, returns an empty Vec for no ids and one ceiling otherwise, and propagates a read error.
+    proof: [ceiling-tests, oracle-cases]
+  - text: agent_access_group_server_ids returns the sorted mcp_server_ids of the non-strict ceiling and None when no group is attached.
+    proof: [ceiling-tests]
+  - text: agent_caller_auth returns None without an agent_caller and otherwise a record holding only the caller's user_id and team_id and the key's requires_fresh_policy, with no agent_id.
+    proof: [caller-auth-tests, oracle-cases]
+  - text: load_agent_caller_team returns None when there is no caller or no team id, reads the team otherwise, and returns a read error as AgentCallerError::Team.
+    proof: [caller-loader-tests]
+  - text: load_agent_caller_user returns None when there is no caller or no user id, returns None for an absent row, and returns a read error as AgentCallerError::User.
+    proof: [caller-loader-tests]
+  - text: to_stable_ids maps a legacy config agent id to its stable id and keeps any other id.
+    proof: [access-tests, oracle-cases]
+  - text: intersect_agent_access gives Unrestricted only when both sides are Unrestricted, gives one side's stable ids when the other is Unrestricted, and intersects the stable ids when both are Restricted.
+    proof: [access-tests, oracle-cases]
+checks:
+  optional: []
+  commands:
+    - id: ceiling-tests
+      why: the access group ceiling, the managed ceilings or the server id list are missing or differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_access_groups::ceiling::/)'
+    - id: access-tests
+      why: stable id mapping or the key and team intersection of agent access is missing or wrong
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_access_groups::access::/)'
+    - id: caller-auth-tests
+      why: the stand-in auth record for the forwarded caller is missing or carries more than the caller's ids and requires_fresh_policy
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_caller::caller_auth::/)'
+    - id: caller-loader-tests
+      why: the caller team or user loaders return the wrong value for a missing id, a missing row or a read error
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_caller::loaders::/)'
+    - id: oracle-cases
+      why: ceilings, caller records or agent access intersections differ from LiteLLM's on the same input
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/agent-ceilings)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::auth::b4778::/)'
+oracle_cases:
+  - tools/oracle/cases/agent-ceilings/ceiling-no-groups-attached.yaml
+  - tools/oracle/cases/agent-ceilings/ceiling-unions-loaded-groups.yaml
+  - tools/oracle/cases/agent-ceilings/ceiling-unloaded-group-denies.yaml
+  - tools/oracle/cases/agent-ceilings/managed-ceilings-use-given-ids.yaml
+  - tools/oracle/cases/agent-ceilings/managed-ceilings-no-ids.yaml
+  - tools/oracle/cases/agent-ceilings/caller-auth-user-and-team.yaml
+  - tools/oracle/cases/agent-ceilings/caller-auth-none-without-caller.yaml
+  - tools/oracle/cases/agent-ceilings/caller-auth-copies-fresh-policy.yaml
+  - tools/oracle/cases/agent-ceilings/access-both-unrestricted.yaml
+  - tools/oracle/cases/agent-ceilings/access-one-side-restricted-maps-legacy-id.yaml
+  - tools/oracle/cases/agent-ceilings/access-both-restricted-intersect.yaml
+deviations:
+  - what: The injectable loader callables (AccessGroupIdsLoader, AccessGroupLoader, CeilingResolver) are replaced by the `AccessGroupReads` trait, and a caller that wants a fake passes a fake implementation of the trait.
+    why: betterlite wires dependencies through constructors and has no function-valued defaults that reach module globals. Behavior is the same for every caller.
+  - what: In LiteLLM, passing check_db_only=True makes resolve_agent_access_group_ceiling ignore the injected group loader and call its own database loader. Here the one port serves both modes, and check_db_only is the second argument of `access_group`.
+    why: There is no second loader to ignore. The reads that reach the database are the same.
+  - what: resolve_managed_agent_ceilings takes `agent_id` and `access_group_ids` instead of an AgentResponse.
+    why: The function reads only these two fields, so a plain pair is enough and the caller does not have to build a record.
+  - what: A read failure carries a typed error (AccessGroupsError::Read, AgentCallerError::Team, AgentCallerError::User) with the cause as source, where LiteLLM lets the HTTPException or Exception pass through unchanged.
+    why: betterlite errors are typed. The HTTP layer maps the cause the same way B737 and B736 map it for their own callers.
+  - what: The trace handle (parent_otel_span) is not passed to the team and user reads.
+    why: The reads run inside the request's tracing span, so no handle is needed. agent_caller_auth still copies the field the key record holds.
+out_of_scope:
+  - "B052 owns _header and agent_caller_from_headers (agent_caller.py L23-L37) and sets agent_caller on the resolved key."
+  - "B2313 owns AgentCaller, the two caller header name constants and AgentResponse."
+  - "B4779 owns AgentRequestHandler's key and team grant methods and _agent_access_group_ceiling (agent_permission_handler.py L72-L591 except the pieces named above). B4780 owns resolve_agent_access, is_agent_allowed and the functions from _granted_ids on (L592-L721)."
+  - "B4772 owns managed_authorization.py, including managed_agent_policy. B4670 asks for it through its own CeilingReads trait."
+  - "B748 owns _check_agent_access_group_model_access and _check_agent_caller_model_access (auth_checks.py L4546-L4640), the callers of this task's loaders."
+  - "agent_endpoints/auth/__init__.py is empty, so nothing is built for it."
+  - "The read-through that resyncs an agent from the database (registry_read_through._resync_agents, get_agent_with_read_through) has no owner yet. See the notes."
+pitfalls:
+  - A group that is attached but failed to load keeps its id in access_group_ids and adds nothing to the three sets. Dropping the id from the list or returning None here would lift the cap, which is the one thing this module must not do.
+  - The ceiling is None only when the agent lists no group ids. An agent whose only group was deleted gets a ceiling with empty sets, and B748 reads an empty `models` set as "deny every model".
+  - With no database, a group read logs "cannot be loaded without a DB" and gives None in both modes. It does not return an error even when check_db_only is true.
+  - With check_db_only true, the writer path is used for every group and a 404 or 503 from the port is returned, not dropped. B4779's strict mode relies on that.
+  - resolve_managed_agent_ceilings ignores the registry. It trusts the ids the caller holds, so a stale registry copy cannot widen a managed agent.
+  - agent_caller_auth does not set agent_id on the stand-in record. If it did, the shared key resolvers would treat the invoking user as another agent key and cap it again.
+  - The stand-in record starts from defaults, so it does not inherit the key's models, teams, object permission or role. Only the echoed ids and requires_fresh_policy are carried.
+  - load_agent_caller_team with an unknown team returns the read error. Falling back to None would make an unreadable caller team look like no team and drop the cap.
+  - load_agent_caller_user returns None for a missing row but passes read errors up. A user id that does not exist narrows nothing, while a failed read must not be hidden.
+  - intersect_agent_access maps ids to stable ids even when only one side is Restricted, so a key that stores a legacy config agent id gets its stable id back in the result.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,14 @@
+id: B6160
+milestone: M6 guardrails
+title: Registry adapters for completion, embeddings, image, speech, transcription and video guardrails
+status: todo
+depends_on: [B3661, B207, B5820, B3677]
+file: tasks/B6160-unified-simple-translations.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py"
+parent: B104
+split_from: B3680
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,178 @@
+id: B6070
+title: Fireworks AI shared auth, embedding params, pricing tiers and rerank
+description: >-
+  Build four small Fireworks AI modules in betterlite-openai, all pure and with no HTTP: fireworks_ai_common
+  (crates/betterlite-openai/src/fireworks_ai_common.rs and its folder), fireworks_ai_embedding, fireworks_ai_cost and
+  fireworks_ai_rerank. They port litellm/llms/fireworks_ai/common_utils.py (except the resource-name function that
+  B2222 built), embed/fireworks_ai_transformation.py, cost_calculator.py and rerank/transformation.py. Nothing here
+  reads an env var or the process clock: the caller passes a FireworksEnv value (the four key variables
+  FIREWORKS_API_KEY, FIREWORKS_AI_API_KEY, FIREWORKSAI_API_KEY, FIREWORKS_AI_TOKEN as the caller resolved them; an empty
+  value counts as unset) and an explicit billing instant. B042 and the dispatch tasks wire them in.
+
+
+  Common. FireworksError carries status, message and optional headers (LiteLLM FireworksAIException, built by get_error_class).
+  A missing key is a typed MissingApiKey error with the text "FIREWORKS_API_KEY is not set". resolve_api_key returns the
+  argument key if it is non-empty, else the first non-empty env value in the order above. get_session_id reads a litellm_params
+  map: if metadata is a map and metadata["litellm_session_id_generated"] is truthy it returns None; else the first non-empty of
+  params["litellm_session_id"], params["session_id"]; else metadata["session_id"] when non-empty; else None. It never falls
+  back to a trace id. with_session_affinity returns the headers unchanged when any header name equals x-session-affinity in
+  any case, or when there is no session id; otherwise it adds "x-session-affinity" with the id. validate_environment
+  (the FireworksAIMixin one, used by the text-completion config) resolves the key or fails, builds Authorization
+  "Bearer {key}" first and lets every caller header override it, adds Content-Type "application/json" only when no header
+  name matches content-type in any case, then applies session affinity.
+
+
+  Embedding. supported params are ["dimensions"] when the model contains "nomic-ai", else []. map_openai_params copies only the
+  supported keys from non_default_params into optional_params in order and returns it.
+
+
+  Cost. FireworksPricingTiers holds four limits read from env by the caller: FIREWORKS_AI_4_B (4), FIREWORKS_AI_16_B (16),
+  FIREWORKS_AI_56_B_MOE (56), FIREWORKS_AI_176_B_MOE (176). get_base_model_for_pricing lowercases the name. If it contains
+  "<a>x<b>b" (first match of (\d+)x(\d+)b), the product a*b is compared: at most the 56 limit gives
+  "fireworks-ai-moe-up-to-56b", at most the 176 limit gives "fireworks-ai-56b-to-176b", and a larger product falls through.
+  Then the first match of (\d+)b gives a number: at most 4 gives "fireworks-ai-up-to-4b", at most 16 gives
+  "fireworks-ai-4.1b-to-16b", above 16 gives "fireworks-ai-above-16b". No match gives "fireworks-ai-default".
+  cost_per_token(model, usage, instant, lookup) resolves model info through an injected ModelInfoLookup trait
+  (get(model, Option<provider>) -> Result<ModelInfo, LookupFailed>, backed by B2219 in production and in the helper adapter):
+  first get(model, "fireworks_ai"); on any failure get(model without a leading "fireworks_ai/", no provider); on any failure
+  get(get_base_model_for_pricing(model), "fireworks_ai"), whose failure is returned. It then calls B1672 generic_cost_per_token
+  with the resolved record as the supplied model info, its litellm_provider as the provider and the given instant, and returns
+  (prompt_cost, completion_cost). B1672 already applies the half-price cache-read default for fireworks_ai; do not repeat it.
+  B1686 calls this function for the fireworks_ai branch.
+
+
+  Rerank. get_complete_url: a given api_base is stripped of trailing "/"; if it already ends in "/rerank" it is returned; else
+  if it ends in "/v1" or "/inference/v1" append "/rerank"; else append "/inference/v1/rerank". No base gives
+  "https://api.fireworks.ai/inference/v1/rerank". The supported list is query, documents, top_n, return_documents.
+  map_cohere_rerank_params builds {query, documents}, adds top_n when not None and return_documents when not None (the
+  formal default is true), and ignores rank_fields, max_chunks_per_doc, max_tokens_per_doc and instruction without a warning.
+  validate_environment resolves the key or fails with MissingApiKey (text names FIREWORKS_API_KEY and FIREWORKS_AI_API_KEY),
+  starts from Authorization Bearer and Content-Type application/json, replaces Authorization by the caller's header named
+  exactly "Authorization", then lets every caller header override; it adds no session affinity. transform_rerank_request needs
+  "query" and "documents" keys, else a typed error naming the field; it removes one "fireworks_ai/" prefix, prepends "fireworks/"
+  unless the name already starts with it, and sends model, query, documents plus top_n and return_documents when not None.
+  transform_rerank_response parses JSON (failure is FireworksError with the HTTP status and "Failed to parse response" text),
+  reads usage (total_tokens, prompt_tokens, completion_tokens, each default 0) into B1013 meta with billed_units.search_units =
+  total_tokens and tokens input/output, takes results from "data" and, when that is missing or empty, from "results" (neither gives
+  an error), requires index and relevance_score on every result, casts them to integer and float, and adds a document only for a
+  non-empty string document or a map document with non-empty "text". The id is the body id when truthy, else a fresh uuid from an
+  injected id source. decode_rerank_response(bytes) is the fuzz entry point and rejects input over 1 MiB with a typed error.
+
+
+  Helper cases (helper b6070) call the pinned Python functions with a local model map and fixed ids; the Rust adapter calls only
+  the production functions. LiteLLM size: 83 common, 34 embedding, 70 cost and 184 rerank lines, 371 in all.
+scope:
+  paths:
+    - crates/betterlite-openai/src/fireworks_ai_common.rs
+    - crates/betterlite-openai/src/fireworks_ai_common/**
+    - crates/betterlite-openai/src/fireworks_ai_embedding.rs
+    - crates/betterlite-openai/src/fireworks_ai_embedding/**
+    - crates/betterlite-openai/src/fireworks_ai_cost.rs
+    - crates/betterlite-openai/src/fireworks_ai_cost/**
+    - crates/betterlite-openai/src/fireworks_ai_rerank.rs
+    - crates/betterlite-openai/src/fireworks_ai_rerank/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/fireworks_ai_rerank_response.rs
+    - crates/betterlite-openai/fuzz/corpus/fireworks_ai_rerank_response/**
+    - tools/oracle/cases/helpers/fireworks-ai-common/**
+    - "tools/oracle/fuzz/corpus/helper_case/fireworks_ai_common-*"
+    - tools/oracle/helpers/b6070.py
+    - tools/oracle/helpers/b6070/**
+    - tools/oracle/src/helpers/openai/b6070.rs
+    - tools/oracle/src/helpers/openai/b6070/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/common_utils.py#L14-L58
+    why: Error class, session id rules, affinity header and key resolution order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/common_utils.py#L77-L114
+    why: Mixin error class, key lookup, header merge and affinity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/embed/fireworks_ai_transformation.py#L11-L44
+    why: The nomic-ai dimensions rule and the copy of supported params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/cost_calculator.py#L21-L94
+    why: Size tiers and the three-step model info fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L605-L612
+    why: The four tier limits and their env var names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L710-L711
+    why: The only caller of cost_per_token.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/rerank/transformation.py#L26-L259
+    why: URL, param map, headers, request body and response projection.
+  - url: https://docs.fireworks.ai/api-reference/rerank
+    why: The rerank request and response shape.
+dod:
+  - text: Key resolution, session affinity and the mixin header merge match LiteLLM.
+    proof: [fw-common-tests, oracle, helper-python]
+  - text: The embedding param list and copy rule match LiteLLM.
+    proof: [fw-embedding-tests, oracle]
+  - text: Base-model tiers and the three-step model info fallback give LiteLLM's names and costs.
+    proof: [fw-cost-tests, oracle]
+  - text: Rerank URL, params, headers, request body and response projection match LiteLLM.
+    proof: [fw-rerank-tests, oracle]
+  - text: The rerank decoder rejects over 1 MiB and malformed JSON with a typed error, and the corpus replays.
+    proof: [fw-rerank-corpus]
+  - text: The new helper cases replay through the shared parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: fw-common-tests
+      why: Key order, session id rules or the header merge are missing.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^fireworks_ai_common::/)'
+    - id: fw-embedding-tests
+      why: The nomic-ai dimensions rule is missing.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^fireworks_ai_embedding::/)'
+    - id: fw-cost-tests
+      why: Tier names or the model info fallback order differ from LiteLLM.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^fireworks_ai_cost::/)'
+    - id: fw-rerank-tests
+      why: Rerank URL, params, headers, request or response rules are missing.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^fireworks_ai_rerank::/) - test(replays_the_rerank_response_corpus)'
+    - id: fw-rerank-corpus
+      why: The rerank decoder fuzz target or its replay corpus is missing or fails.
+      run: >-
+        test -f crates/betterlite-openai/fuzz/fuzz_targets/fireworks_ai_rerank_response.rs &&
+        grep -q 'name = "fireworks_ai_rerank_response"' crates/betterlite-openai/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/fireworks_ai_rerank_response)" &&
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_rerank_response_corpus)'
+    - id: helper-python
+      why: The strict oracle adapter lint or type checks fail.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6070.py)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added cases are absent or do not replay.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/fireworks_ai_common-*")" &&
+        grep -lE '^[[:space:]]+b6070:' tools/oracle/fuzz/corpus/helper_case/fireworks_ai_common-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/fireworks-ai-common/api-key-order.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-common/session-affinity.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-common/mixin-headers.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-common/embedding-params.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-common/base-model-tiers.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-common/cost-model-fallback.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-common/rerank-url.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-common/rerank-request-and-params.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-common/rerank-headers.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-common/rerank-response.yaml
+deviations:
+  - what: A missing query or documents in a rerank request, and a result without index or relevance_score, are typed errors that name the field, not bare ValueErrors.
+    why: The compatibility rules reject a value the declared type cannot hold at the point it enters; the status follows B2454's mapping of request errors.
+  - what: Cost reads the four tier limits from a FireworksPricingTiers value the caller built from env, and takes the billing instant as an argument.
+    why: A provider leaf reads no env var or clock; the defaults and env names are LiteLLM's.
+out_of_scope:
+  - B1672 owns cache_pricing.py (with_default_cache_read_rate) and generic_cost_per_token; B2222 owns resolve_fireworks_resource_name; B2219 owns get_model_info.
+  - FireworksAIEmbeddingConfig.is_fireworks_embedding_model has no caller at the pin, so it is not built and gets no case.
+  - B1686 owns the fireworks_ai branch of the cost dispatch in litellm/cost_calculator.py and calls cost_per_token here.
+  - B2454 owns the rerank HTTP execution and B1013 owns the rerank records and get_optional_rerank_params. B042 wires these modules into dispatch.
+  - The embedding request itself is OpenAI-shaped and goes through the generic embedding path; this task owns only the param list.
+pitfalls:
+  - 'A MoE name whose product is above the 176 limit does not stop in the MoE branch: "8x30b" (240) falls to the (\d+)b search, reads 30 and returns "fireworks-ai-above-16b", while "8x22b" (176) is still "fireworks-ai-56b-to-176b".'
+  - The first (\d+)b match decides the tier, so "llama-v3-70b-instruct" uses 70 and a name with no digits before b returns "fireworks-ai-default".
+  - cost_per_token tries the provider-qualified lookup first and the unqualified one second, so a failure of the first never reaches the caller.
+  - The session affinity check on existing headers ignores case, but the rerank Authorization override matches the exact key "Authorization" only.
+  - A rerank body whose "data" is an empty list falls to "results" and ends as an error when that is absent too.
+  - The mixin lets a caller Authorization replace the Bearer value because the headers are spread after it.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

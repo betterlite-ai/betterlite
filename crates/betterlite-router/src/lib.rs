@@ -95,6 +95,8 @@ pub mod routing_state;
 pub mod routing_state_store;
 pub mod routing_timeouts;
 pub mod routing_value_store;
+pub mod search_tool_routing;
+pub mod semantic_embedding_inputs;
 pub mod semantic_embeddings;
 pub mod semantic_math;
 pub mod semantic_router;

@@ -1,0 +1,9 @@
+kind: helper
+name: binary-with-content-type
+call:
+  b5240:
+    function: "output_choices"
+    response: {"num_bytes": 12, "content_type": "application/octet-stream"}
+env: {}
+compare:
+  ignore: []

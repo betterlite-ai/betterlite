@@ -1,0 +1,217 @@
+id: B3643
+title: Vertex Live turn usage and session cost
+description: >-
+  Build the Vertex AI Live pass-through logging handler in betterlite-server, in the new module vertex_ai_live_logging
+  (crates/betterlite-server/src/pass_through_logging/vertex_ai_live_logging.rs and its folder). It is LiteLLM's
+  VertexAILivePassthroughLoggingHandler. A Live session is a WebSocket that sends many JSON frames; some carry a usageMetadata
+  object (one per turn) and some carry serverContent.groundingMetadata. The handler turns the frames of one finished session into one
+  usage record, one session cost and one stand-in chat response for the spend row. The module sits in betterlite-server and not in
+  betterlite-vertex because it must price through B1717's cost recorder and write B1682's cost breakdown, and betterlite-vertex is a
+  leaf that never imports core, provider or logging. It reuses B1322's grounding request counter from betterlite-vertex, which the
+  server crate may import.
+
+  Public name that B3606 calls, fixed here. The full path is
+  betterlite_server::pass_through_logging::vertex_ai_live_logging::VertexAiLiveLogger. `VertexAiLiveLogger::new(cost: Arc<CostRecorder>)`
+  takes B1717's CostRecorder handle (read the merged code for the exact type and use it as is) and keeps it. No module-level state.
+  `pub fn vertex_ai_live_passthrough_handler(&self, input: VertexAiLiveInput<'_>) -> HandlerOutcome` is synchronous and cannot fail
+  (LiteLLM catches every exception in it). `pub struct VertexAiLiveInput<'a> { pub websocket_messages: &'a [serde_json::Value],
+  pub logging_obj: &'a <the logging object handle type of B3608's CollectedChunksCall>, pub url_route: &'a str, pub start_time:
+  <the type of CollectedChunksCall.start_time>, pub end_time: <same>, pub request_body: &'a serde_json::Map<String, serde_json::Value>,
+  pub kwargs: <B3605's typed kwargs map> }`. HandlerOutcome is B3608's type (optional result plus kwargs map), and the result is B3605's
+  response-object enum. url_route and end_time are unused by the logic (LiteLLM only accepts them); keep them in the struct so the
+  signature stays LiteLLM's. B3606 builds the adapter and passes the list body as websocket_messages (an empty slice when the body is
+  not a list). B102 builds the logger once.
+
+  Types you use and do not define: Usage with its prompt and completion token detail records (B2214), ModelResponse (B031), the
+  grounding request counter and its GroundingRequests record (B1322, betterlite-vertex, grounding_requests), CostBreakdown (B1667) and
+  the logging-object cost-breakdown writer set_cost_breakdown (B1682, betterlite-logging, cost_breakdown). Read the merged code for
+  the exact Rust names and signatures and call them. If one is missing, or CostRecorder has no way to pass LiteLLM's
+  litellm_model_name argument (the model string the handler passes so the call's own pricing identity is overridden), report it in
+  notes and stop.
+
+  Step 1, the handler (vertex_ai_live_passthrough_handler L363-L450). Everything below runs inside one error boundary: any internal
+  failure logs at the tracing error level "Error in Vertex AI Live API passthrough handler: <error>" and returns no result with the
+  kwargs exactly as they came in. model = kwargs["model"] when it is a string (an empty string counts), else
+  "gemini-2.0-flash-live-preview-04-09". custom_llm_provider = kwargs["custom_llm_provider"] when the key exists (even with a null
+  value), else "vertex_ai". Log at debug "Vertex AI Live API model: <model>, custom_llm_provider: <provider>". Build the session
+  usage (step 2). When there is none, log at warn "No usage metadata found in Vertex AI Live API WebSocket messages" and return no
+  result with the input kwargs unchanged (model is not written into them in this case). Otherwise compute the session cost (step 4),
+  build the stand-in response: id "vertex-ai-live-<start_time as epoch seconds in Python float repr>" (whole seconds print as
+  "1730000000.0", otherwise the shortest round-trip digits, microsecond precision), object "chat.completion", created = the epoch
+  seconds cut toward zero to an integer, the model, the usage and empty choices. When the cost is Some, store it as the response's
+  hidden response_cost. Set kwargs["model"] and kwargs["custom_llm_provider"] (keeping all other keys) and log at debug the
+  cost-tracking line "Vertex AI Live API passthrough cost tracking - Model: <safe_model>, Prompt tokens: <n> <details>, Completion
+  tokens: <n> <details>", where safe_model is the model when it matches ^[A-Za-z0-9._\-:]+$ and "[REDACTED]" otherwise. Return the
+  response and the kwargs.
+
+  Step 2, session usage (_session_usage L291-L299, _extract_usage_metadata_from_websocket_messages L188-L235). Take every frame that
+  is a JSON object whose "usageMetadata" is a JSON object, in order; these are the snapshots. Frames that are not objects, and
+  usageMetadata values that are not objects, are skipped. No snapshots means no usage. Count fields are promptTokenCount,
+  candidatesTokenCount, totalTokenCount and toolUsePromptTokenCount; each is read as an integer, an absent key is 0, and a present
+  value that is not a JSON integer (null, string, float) is the error boundary of step 1. Sum each count over all snapshots. For
+  promptTokensDetails and candidatesTokensDetails, resolve each snapshot's entries first (step 3), then total the pairs per modality
+  across snapshots in order of first appearance, and keep only modalities whose total is above zero. The aggregate is one record with
+  the four sums and the two detail lists. LiteLLM also copies the first snapshot's other keys into it, but nothing reads them, so the
+  Rust record does not carry them.
+
+  Step 3, resolving one snapshot's detail entries (_detail_entries L46-L48, _resolve_detail_counts L138-L163, _sum_by_modality
+  L165-L168). A details value that is not a list yields no entries, and list items that are not objects are skipped. An entry is
+  priced when its "tokenCount" is a JSON integer; its modality is its "modality" string, "TEXT" when absent. An entry with no integer
+  tokenCount is unpriced. When exactly one entry is unpriced and the snapshot's own count (promptTokenCount for prompt details,
+  candidatesTokenCount for candidate details) is an integer, that entry gets the count minus the sum of the priced entries, added
+  only when the difference is above zero. With two or more unpriced entries none of them is counted; the cost calculator then
+  charges the remainder as text. The residual is worked out per snapshot, before the snapshots are summed. Modality names are
+  matched exactly and case-sensitively, so "text" is not "TEXT".
+
+  Step 3b, the usage record (_create_usage_object_from_metadata L237-L289). Run step 3 and the per-modality totals again over the
+  aggregate's own lists and counts. prompt_tokens = promptTokenCount when it is not 0, else the sum of the prompt modality totals;
+  completion_tokens the same with candidatesTokenCount; total_tokens = totalTokenCount when not 0, else prompt plus completion.
+  Prompt details: text, audio, image, video from the modalities "TEXT", "AUDIO", "IMAGE", "VIDEO" (None when the modality is absent;
+  any other modality, such as "DOCUMENT", is dropped), tool_use_tokens = toolUsePromptTokenCount when not 0 else None, and
+  web_search_requests and google_maps_grounding_requests from the grounding counts. Completion details: the same four modalities.
+
+  Step 3c, grounding (_grounding_metadata L51-L65, _turns L68-L75, _session_grounding_requests L78-L101). A turn ends at each
+  usageMetadata frame (the same test as the snapshots). Turn i holds the frames after the previous usageMetadata frame up to and
+  including its own. Frames after the last usageMetadata frame belong to no turn, so their grounding is never counted or priced. For
+  each turn collect every frame's serverContent.groundingMetadata that is an object, run B1322's calculator over that list, then add
+  the per-turn web search counts and the per-turn Maps counts across turns; a total of 0 becomes None. Counting per turn (not over the
+  whole session) is the point: two turns that both searched the same query are charged twice.
+
+  Step 4, session cost (_turn_cost L301-L317, _session_cost L319-L361, _summed L104-L106). For each turn build the turn's usage with
+  steps 2 and 3b over that turn's frames only, wrap it in a ModelResponse with the model, and ask the cost recorder for the response
+  cost with the model string as the litellm_model_name override and the stored cache flag. The calculator writes a cost breakdown
+  into the logging object as a side effect; read that breakdown back right after. A turn with no usage, a None cost, or no
+  breakdown makes that turn unpriced. If there are no turns, or any turn is unpriced, the session cost is None (and the breakdown
+  the logging object holds is whatever the last priced turn left; do not restore it). Otherwise: fixed = first breakdown's
+  margin_fixed_amount or 0; duplicated = fixed * (turn count - 1), because the fixed margin is a flat per-request fee and the
+  session has one spend row; total_cost = sum of turn costs - duplicated. For each of input_cost, output_cost, tool_usage_cost,
+  cache_read_cost, cache_creation_cost, reasoning_cost, original_cost, discount_amount, margin_fixed_amount, margin_total_amount the
+  summed value is the sum over turn breakdowns that have the field, or None when none has it. margin_total_amount is that sum minus
+  duplicated, or None. Then call set_cost_breakdown on the logging object with: input_cost, output_cost and tool_usage_cost summed
+  (0.0 when None; the tool value goes in the cost_for_built_in_tools_cost_usd_dollar slot), total_cost, original_cost summed,
+  discount_percent, margin_percent, service_tier, data_residency and vertex_location taken from the first turn's breakdown,
+  discount_amount summed, margin_fixed_amount taken from the first turn (not summed), margin_total_amount as above, and cache_read,
+  cache_creation and reasoning summed. additional_costs and billed_token_rates are not passed, so the stored breakdown has none of
+  them. Return total_cost. Money stays f64 here because LiteLLM sums Python floats and B1667's record is what the recorder gives
+  back; sum in turn order so the float result matches.
+
+  Why the oracle only covers usage. Pricing needs the call's logging object, the catalog and the clock, so it gets native tests with
+  a fake cost recorder. The pure parts (snapshots, residual rule, modality totals, usage record, turn split, grounding sums) get
+  helper cases through the b3643 helper, and the booted proxy has no route to this handler yet (B3606 wires it, B3607 adds the HTTP
+  cases).
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_logging/vertex_ai_live_logging.rs
+    - crates/betterlite-server/src/pass_through_logging/vertex_ai_live_logging/**
+    - tools/oracle/cases/server/pass-through-logging/vertex-ai-live/**
+    - "tools/oracle/fuzz/corpus/helper_case/vertex_ai_live-*"
+    - tools/oracle/helpers/b3643.py
+    - tools/oracle/helpers/b3643/**
+    - tools/oracle/src/helpers/server/b3643.rs
+    - tools/oracle/src/helpers/server/b3643/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_ai_live_passthrough_logging_handler.py#L25-L106
+    why: The aggregated field set, detail narrowing, grounding collection, the turn split, the per-turn grounding sum and the summed-field helper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_ai_live_passthrough_logging_handler.py#L138-L289
+    why: The lone-unpriced residual rule, per-modality totals, snapshot aggregation and the Usage record.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_ai_live_passthrough_logging_handler.py#L291-L361
+    why: Per-turn pricing through the call's own calculator and the session merge with the fixed-margin correction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_ai_live_passthrough_logging_handler.py#L363-L450
+    why: The handler, its defaults, log lines, stand-in response and error boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L359-L379
+    why: The only call site, which passes the list body as websocket_messages and spreads kwargs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/grounding_requests.py#L7-L56
+    why: calculate_grounding_requests, which this handler runs once per turn.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1798-L1860
+    why: _response_cost_calculator, the cache_hit default and the litellm_model_name argument the handler uses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1719-L1796
+    why: set_cost_breakdown, whose argument list the session merge fills.
+dod:
+  - text: Snapshots are the object frames whose usageMetadata is an object, the counts are summed over all of them, an absent count is 0 and a non-integer count takes the error boundary.
+    proof: [usage-tests, live-oracle]
+  - text: A lone detail entry without tokenCount takes the snapshot's declared count minus the priced entries when that is above zero, and two or more such entries are left out.
+    proof: [usage-tests, live-oracle]
+  - text: Modality totals keep first-appearance order and only totals above zero, and the usage record maps TEXT, AUDIO, IMAGE and VIDEO exactly, drops other modalities, and falls back to the modality sum or to prompt plus completion when a count is 0.
+    proof: [usage-tests, live-oracle]
+  - text: Turns end at each usageMetadata frame, frames after the last one are ignored, and Search and Maps grounding is counted per turn and then added, with 0 becoming None.
+    proof: [turn-tests, live-oracle]
+  - text: Each turn is priced on its own usage through the cost recorder with the model override, and one unpriced turn or a turn without a breakdown makes the session cost None.
+    proof: [cost-tests]
+  - text: The session total subtracts the repeated fixed margin, margin_total_amount loses the same amount, and the summed and first-turn fields go into set_cost_breakdown as listed.
+    proof: [cost-tests]
+  - text: The handler returns no result and unchanged kwargs for a session without usage or after an internal error, and otherwise returns the stand-in response with its id, created, hidden response_cost and the model and provider written into kwargs.
+    proof: [handler-tests]
+  - text: Newly added helper cases replay through the shared helper-case parser, the strict Python adapter lints clean and betterlite agrees with LiteLLM on the cases.
+    proof: [helper-python, helper-case-corpus, live-oracle]
+checks:
+  optional: []
+  commands:
+    - id: usage-tests
+      why: snapshot sums, the residual rule, modality totals or the usage record are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_ai_live_logging::tests::usage_/)'
+    - id: turn-tests
+      why: the turn split or the per-turn grounding sum is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_ai_live_logging::tests::turn_/)'
+    - id: cost-tests
+      why: per-turn pricing, the unpriced-turn rule or the fixed-margin merge is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_ai_live_logging::tests::cost_/)'
+    - id: handler-tests
+      why: the handler defaults, error boundary, stand-in response or kwargs writes are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_ai_live_logging::tests::handler_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3643)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3643 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3643/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/vertex_ai_live-*")" &&
+        grep -lE '^[[:space:]]+b3643:' tools/oracle/fuzz/corpus/helper_case/vertex_ai_live-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: live-oracle
+      why: newly added helper cases are absent or betterlite and LiteLLM disagree on them
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/server/pass-through-logging/vertex-ai-live)" &&
+        grep -rlE '^[[:space:]]+b3643:' tools/oracle/cases/server/pass-through-logging/vertex-ai-live &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/server/pass-through-logging/vertex-ai-live
+oracle_cases:
+  - tools/oracle/cases/server/pass-through-logging/vertex-ai-live/usage-sums-turns.yaml
+  - tools/oracle/cases/server/pass-through-logging/vertex-ai-live/usage-residual-lone-unpriced.yaml
+  - tools/oracle/cases/server/pass-through-logging/vertex-ai-live/usage-two-unpriced-left-out.yaml
+  - tools/oracle/cases/server/pass-through-logging/vertex-ai-live/usage-modality-names-and-document.yaml
+  - tools/oracle/cases/server/pass-through-logging/vertex-ai-live/usage-zero-count-fallbacks.yaml
+  - tools/oracle/cases/server/pass-through-logging/vertex-ai-live/usage-none-without-snapshots.yaml
+  - tools/oracle/cases/server/pass-through-logging/vertex-ai-live/turn-grounding-counted-per-turn.yaml
+  - tools/oracle/cases/server/pass-through-logging/vertex-ai-live/turn-grounding-after-last-usage-ignored.yaml
+deviations:
+  - what: The handler returns HandlerOutcome directly and logs an internal failure instead of catching an exception.
+    why: LiteLLM wraps the whole body in try/except Exception and returns no result; a count field that is not an integer is the Rust version of the TypeError that sum() would raise there.
+  - what: The aggregated usage record does not carry the first snapshot's unrelated keys.
+    why: LiteLLM copies them into a dict that nothing reads; the typed record keeps only what the usage builder uses.
+  - what: The cost recorder is injected as a constructor argument and the logging object's breakdown is read through the typed logging handle.
+    why: The module has no logging object attribute access and no module-level state; the order of calls and the reads stay LiteLLM's.
+out_of_scope:
+  - "BasePassthroughLoggingHandler's llm_provider_name, get_provider_config and _build_complete_streaming_response overrides (L121-L136): no caller at the pin on the Live path, since this handler never calls passthrough_chat_handler or the stream seam. B3604 owns the base class."
+  - "is_vertex_ai_live_route and the choice of this handler in the elif chain belong to B3605 and B3606 (success_handler.py L572-L578 and L359-L379)."
+  - "The WebSocket proxy route that collects the frames and the rest of the Live route (vertex_ai_live_passthrough_endpoint) belong to the realtime and pass-through route tasks, not here."
+  - "completion_cost, the calculator behind _response_cost_calculator, and the cost breakdown store belong to B068, B1717 and B1682; this task calls them."
+  - "Dispatching the result to callbacks and writing the spend row belong to B3607."
+pitfalls:
+  - "Grounding in a Live session sits in serverContent.groundingMetadata frames, never in usageMetadata, so the Search and Maps charge comes from the frame scan in the turn split and not from the token counts."
+  - "The session usage is built from all snapshots, but the grounding sum and the cost use turns, so a groundingMetadata frame after the last usageMetadata frame is missing from both the usage grounding fields and the priced turns."
+  - "The residual for a lone entry without tokenCount is worked out per snapshot against that snapshot's own declared count, before summing; resolving it against the summed count gives a different answer when turns differ."
+  - "promptTokenCount 0 is falsy in LiteLLM, so prompt_tokens falls back to the sum of the TEXT/AUDIO/IMAGE/VIDEO totals and total_tokens falls back to prompt plus completion; the same for toolUsePromptTokenCount 0 becoming None."
+  - "A modality outside TEXT, AUDIO, IMAGE and VIDEO (DOCUMENT, or lowercase 'text') is summed into the aggregate list but never reaches the usage record's detail fields."
+  - "The calculator rewrites logging_obj.cost_breakdown on every turn, so after a failed session merge the logging object holds the last priced turn's breakdown, not the merged one."
+  - "margin_fixed_amount in the merged breakdown is the first turn's value (a flat fee), while margin_total_amount is the sum minus the duplicated fixed fees; summing both would charge the fee once per turn."
+  - "additional_costs and billed_token_rates are not passed to set_cost_breakdown, so a turn's extra costs vanish from the stored session breakdown."
+  - "kwargs gets model and custom_llm_provider only on the path that returns a response; the no-usage and error paths hand back the kwargs untouched."
+  - "The safe-model regex ends in $, which in Python also matches before a trailing newline, so a model name ending in a newline is logged as is; it only affects the debug line."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -7,8 +7,8 @@ description: 'Implement the Redis adapter for B390 typed routing state using a m
   money. Keep this transport available before B016 and independent of response-cache tasks B125/B126.
   Preserve redis_host/redis_port/redis_password/redis_url, redis_kwargs.namespace and socket_timeout precedence.
   RedisCache defaults socket_timeout to 5 seconds; shared client fallbacks use REDIS_SOCKET_TIMEOUT=0.1
-  and REDIS_CONNECTION_POOL_TIMEOUT=5 only when not overridden. Reuse B393 breaker policy. Integration
-  tests start test-owned Redis with a 5-second startup/shutdown deadline and fail if unavailable. Configuration
+  and REDIS_CONNECTION_POOL_TIMEOUT=5 only when not overridden. Reuse B393 breaker policy. Redis tests
+  run against a small in-process fake server on a tokio TcpListener, because CI has no Redis service and the sandbox has no Docker. Configuration
   boundary keys introduced or consumed here: redis_url, redis_host, redis_port, redis_password, redis_kwargs.
   Pinned declaration defaults: redis_url=None; redis_host=None; redis_port=None; redis_password=None.
   Resolve env values once in betterlite-config, never in router code. Implement the owned native service
@@ -160,8 +160,9 @@ out_of_scope:
   (L574-L593), _redis_circuit_breaker_guard.wrapper (L588-L591), _redis_circuit_breaker_guard_sync (L596-L601).'
 pitfalls:
 - Redis transport failures must remain distinguishable from missing values.
-- Use a test-owned Redis process with a deadline, clean shutdown and a failing check if the required integration
-  test did not run.
+- "Test against an in-process fake server on a tokio TcpListener, never a test-owned Redis process. CI has no Redis service and the sandbox has no Docker. B5220's fake is pub(crate) at crate::redis_live_client::tests::fake_server, so this task needs its own small one."
+- "Open Redis through B5220's client in betterlite-redis. Add no second Redis client or version, since deny.toml rejects duplicates."
+- "async_increment and async_increment_pipeline use B4328's incr_by_float_with_ttl and pipeline_increment."
 - Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
   a hard request error.
 - The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules

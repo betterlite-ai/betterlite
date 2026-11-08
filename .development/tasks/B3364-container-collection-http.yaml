@@ -19,6 +19,7 @@ description: >-
   type checking when not supplied. Clients must be pooled instances supplied from B173; the
   handler selects between them by sync/async type. Header overlays use the map after provider
   validation, including any in-place auth mutation.
+  Fixed Rust names: container_create_handler (blocking) and acontainer_create_handler (async) take name, the create request params, config, litellm_params, logging_obj, extra_headers and timeout, plus the optional client. container_list_handler (blocking) and acontainer_list_handler (async) take config, litellm_params, logging_obj, after, limit, order, extra_headers, extra_query and timeout, plus the optional client. B3369 calls these four names.
 scope:
   paths:
     - crates/betterlite-core/src/api/container_collection_http.rs

@@ -8,6 +8,7 @@ description: >-
   B1131 request records. B003/B732 authenticate, then B864 checks feature vector_stores outside each
   handler try. Its general_settings.disable_vector_stores_for_internal_users and
   allow_vector_stores_for_team_admins both default false and remain B864-owned settings.
+  `create_vector_store_in_db` is `pub` and reachable as `betterlite_server::api::vector_management_write::create_vector_store_in_db`, because B3464 calls it from the top crate.
 
   Create's optional name,description,metadata,params,credential,team_id,user_id default null. Store raw
   litellm_embedding_model references; never resolve deployment embedding credentials into a row.
