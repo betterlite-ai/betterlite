@@ -23,6 +23,7 @@ enum Scenario {
     Details,
     Dependencies,
     DebugOutput,
+    DebugIdentifiers,
     CopyTiming,
     Correlation(CorrelationSettings, &'static str),
     OmittedSettings(&'static str),
@@ -126,20 +127,26 @@ fn dependencies_outcome() -> String {
     )
 }
 
-fn debug_outcome() -> String {
-    let secrets = ["sk-param", "lf-param", "dd-trusted"];
+const DEBUG_SECRETS: [&str; 3] = ["sk-param", "lf-param", "dd-trusted"];
+
+fn debug_text() -> String {
     let mut fixture = init();
     fixture
         .litellm_params
-        .insert("api_key".to_owned(), text(secrets[0]));
+        .insert("api_key".to_owned(), text(DEBUG_SECRETS[0]));
     fixture
         .callback_dynamic_params
-        .insert("langfuse_secret_key".to_owned(), text(secrets[1]));
-    fixture
-        .trusted_callback_vars
-        .push(("dd_api_key".to_owned(), SecretString::from(secrets[2])));
-    let printed = format!("{fixture:?} {:?}", build(fixture.clone()));
-    secrets
+        .insert("langfuse_secret_key".to_owned(), text(DEBUG_SECRETS[1]));
+    fixture.trusted_callback_vars.push((
+        "dd_api_key".to_owned(),
+        SecretString::from(DEBUG_SECRETS[2]),
+    ));
+    format!("{fixture:?} {:?}", build(fixture.clone()))
+}
+
+fn debug_outcome() -> String {
+    let printed = debug_text();
+    DEBUG_SECRETS
         .iter()
         .any(|secret| printed.contains(secret))
         .to_string()
@@ -217,6 +224,7 @@ fn outcome(scenario: &Scenario) -> String {
         Scenario::Details => details_outcome(),
         Scenario::Dependencies => dependencies_outcome(),
         Scenario::DebugOutput => debug_outcome(),
+        Scenario::DebugIdentifiers => debug_text(),
         Scenario::CopyTiming => timing_outcome(),
         Scenario::Correlation(settings, trace_id) => correlation_outcome(*settings, trace_id),
         Scenario::OmittedSettings(settings) => omitted_settings_outcome(settings),
@@ -249,6 +257,10 @@ fn outcome(scenario: &Scenario) -> String {
 #[case::initial_details_keep_the_original_input(Scenario::Details, r#"{"litellm_trace_id":"trace-1","litellm_call_id":"call-1","input":null,"litellm_params":{"api_base":"http://proxy"},"applied_guardrails":["guard"],"model":"gpt-4o"}"#)]
 #[case::injected_dependencies_are_stored(Scenario::Dependencies, r#"{"litellm_params":{"api_base":"http://proxy"},"standard_callback_dynamic_params":{"langfuse_host":"h"},"trusted_callback_vars":[["dd_api_key","k"]],"standard_built_in_tools_params":{"web_search_options":null},"custom_pricing":false}/{"log_raw_request_response":true,"raw_request_only":true}/null/{}"#)]
 #[case::debug_output_hides_credentials(Scenario::DebugOutput, "false")]
+#[case::debug_output_names_the_call(
+    Scenario::DebugIdentifiers,
+    r#"LoggingInit { model: "gpt-4o", call_type: "completion", litellm_call_id: "call-1", .. } LoggingState { model: "gpt-4o", call_type: "completion", litellm_call_id: "call-1", litellm_trace_id: "trace-1", .. }"#
+)]
 #[case::disabled_correlation_leaves_the_context_alone(
     Scenario::Correlation(CorrelationSettings {
         supports_correlation_logging: true,
