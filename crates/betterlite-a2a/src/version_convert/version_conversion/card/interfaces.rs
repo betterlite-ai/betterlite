@@ -45,7 +45,7 @@ pub(super) fn upgrade(card: &Card) -> Vec<Interface> {
         .protocol_version
         .clone()
         .filter(|text| !text.is_empty())
-        .unwrap_or_else(|| "0.3".to_owned());
+        .unwrap_or_else(|| "0.3.0".to_owned());
     let mut interfaces = vec![Interface {
         url: Some(url),
         protocol_binding: Some(transport),

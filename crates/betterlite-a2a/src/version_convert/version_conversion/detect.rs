@@ -30,8 +30,8 @@ pub(super) fn task_version(result: &AgentJson) -> ProtocolVersion {
 
 pub(super) fn list_tasks_version(result: &AgentJson) -> Option<ProtocolVersion> {
     let tasks = result.get("tasks")?.as_array()?;
-    let first = tasks.first()?;
-    Some(if first.get("kind").is_some() {
+    let first = tasks.first()?.as_object()?;
+    Some(if first.contains_key("kind") {
         ProtocolVersion::V0_3
     } else {
         ProtocolVersion::V1_0

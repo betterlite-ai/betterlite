@@ -1,12 +1,14 @@
+use betterlite_core::agents::json::AgentJson;
 use serde::{Deserialize, Serialize};
 
 use crate::version_convert::JsonObject;
+use crate::version_convert::version_conversion::error::ConvertError;
 
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub(super) struct GetTaskRequest {
     pub id: String,
-    pub history_length: Option<i64>,
+    pub history_length: Option<IntegerRepr>,
 }
 
 #[derive(Default, Deserialize)]
@@ -48,11 +50,29 @@ pub(super) struct ListTasksRequest {
     pub tenant: String,
     pub context_id: String,
     pub status: Option<TaskState>,
-    pub page_size: Option<i64>,
+    pub page_size: Option<IntegerRepr>,
     pub page_token: String,
-    pub history_length: Option<i64>,
+    pub history_length: Option<IntegerRepr>,
     pub status_timestamp_after: Option<String>,
-    pub include_artifacts: bool,
+    pub include_artifacts: Option<bool>,
+}
+
+// ProtoJSON accepts an integer either as a number or as a decimal string
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub(super) enum IntegerRepr {
+    Number(i64),
+    Text(String),
+}
+
+pub(super) fn integer_value(value: IntegerRepr, field: &'static str) -> Result<i64, ConvertError> {
+    match value {
+        IntegerRepr::Number(number) => Ok(number),
+        IntegerRepr::Text(text) => text
+            .trim()
+            .parse::<i64>()
+            .map_err(|source| ConvertError::Integer { field, source }),
+    }
 }
 
 #[derive(Deserialize)]
@@ -65,8 +85,8 @@ pub(super) enum TaskState {
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub(super) struct PushConfigEnvelope {
-    pub config: Option<PushConfigRequest>,
-    pub push_notification_config: Option<PushConfigRequest>,
+    pub config: Option<AgentJson>,
+    pub push_notification_config: Option<AgentJson>,
     pub parent: Option<String>,
     pub config_id: Option<String>,
     pub task_id: Option<String>,
@@ -80,6 +100,7 @@ pub(super) struct PushConfigEnvelope {
 #[serde(rename_all = "camelCase", default)]
 pub(super) struct PushConfigRequest {
     pub id: Option<String>,
+    pub task_id: Option<String>,
     pub url: Option<String>,
     pub token: Option<String>,
     pub authentication: Option<AuthenticationRequest>,

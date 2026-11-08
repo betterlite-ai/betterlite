@@ -166,7 +166,7 @@ fn status_update_to_v1(update: &compat::TaskStatusUpdate) -> Result<StatusUpdate
 fn artifact_update_to_v1(update: &compat::TaskArtifactUpdate) -> Result<ArtifactUpdate, ConvertError> {
     let artifact = artifact_to_v1(update.artifact.clone())?;
     let context_id = Some(update.context_id.clone()).filter(|text| !text.is_empty());
-    Ok(ArtifactUpdate { task_id: update.task_id.clone(), context_id, artifact, append: update.append, last_chunk: update.last_chunk, metadata: update.metadata.clone() })
+    Ok(ArtifactUpdate { task_id: update.task_id.clone(), context_id, artifact, append: update.append.filter(|flag| *flag), last_chunk: update.last_chunk.filter(|flag| *flag), metadata: update.metadata.clone() })
 }
 
 const fn core_state(state: compat::TaskState) -> Option<&'static str> {

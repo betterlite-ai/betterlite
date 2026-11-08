@@ -211,7 +211,8 @@ fn converts_a_03_task_result_to_10() {
         r#"{"jsonrpc":"2.0","result":{"kind":"task","id":"t1","contextId":"c1","status":{"state":"input-required"},"history":[{"kind":"message","messageId":"m1","role":"user","parts":[{"kind":"text","text":"hi"}]}]}}"#,
     );
     let converted = normalize_jsonrpc_response(content, ProtocolVersion::V1_0, "tasks/get");
-    let task = member(result_of(&converted), "task");
+    let task = result_of(&converted);
+    assert!(task.get("task").is_none());
     assert_eq!(member(task, "id"), &text_value("t1"));
     assert_eq!(member(task, "contextId"), &text_value("c1"));
     assert_eq!(
@@ -308,6 +309,18 @@ fn converts_a_10_artifact_update_event_to_03() {
 }
 
 #[test]
+fn converts_a_03_artifact_update_event_to_10() {
+    let event = object(
+        r#"{"jsonrpc":"2.0","result":{"kind":"artifact-update","taskId":"t1","contextId":"c1","artifact":{"artifactId":"a1","parts":[{"kind":"text","text":"hi"}]},"append":false,"lastChunk":false}}"#,
+    );
+    let converted = normalize_stream_event(event, ProtocolVersion::V1_0, None);
+    let update = member(result_of(&converted), "artifactUpdate");
+    assert_eq!(member(update, "taskId"), &text_value("t1"));
+    assert!(update.get("append").is_none());
+    assert!(update.get("lastChunk").is_none());
+}
+
+#[test]
 fn passes_an_error_stream_event_through_untouched() {
     let event = object(r#"{"jsonrpc":"2.0","error":{"code":-1,"message":"no"}}"#);
     assert_eq!(
@@ -318,7 +331,7 @@ fn passes_an_error_stream_event_through_untouched() {
 
 #[test]
 fn keeps_a_stream_event_whose_envelope_cannot_be_converted() {
-    let event = object(r#"{"jsonrpc":"2.0","result":{"task":{"status":{}}}}}"#);
+    let event = object(r#"{"jsonrpc":"2.0","result":{"task":{"id":"t1","status":"broken"}}}"#);
     assert_eq!(
         normalize_stream_event(event.clone(), ProtocolVersion::V0_3, None),
         event
@@ -344,6 +357,21 @@ fn keeps_a_stream_event_whose_envelope_cannot_be_converted() {
 )]
 #[case::cancel_defaults_id("tasks/cancel", "{}", r#"{"id":""}"#)]
 #[case::resubscribe("tasks/resubscribe", r#"{"id":"t1","tenant":""}"#, r#"{"id":"t1"}"#)]
+#[case::set_from_flat_fields(
+    "tasks/pushNotificationConfig/set",
+    r#"{"taskId":"T1","url":"https://flat","id":"c1"}"#,
+    r#"{"taskId":"T1","pushNotificationConfig":{"url":"https://flat","id":"c1"}}"#
+)]
+#[case::set_accepts_a_non_object_config(
+    "tasks/pushNotificationConfig/set",
+    r#"{"config":"x","taskId":"T2","url":"https://flat"}"#,
+    r#"{"taskId":"T2","pushNotificationConfig":{"url":"https://flat"}}"#
+)]
+#[case::get_from_string_integer(
+    "tasks/get",
+    r#"{"id":"t","historyLength":"4"}"#,
+    r#"{"id":"t","historyLength":4}"#
+)]
 #[case::set_from_parent(
     "tasks/pushNotificationConfig/set",
     r#"{"parent":"tasks/T1/config","configId":"c1","config":{"url":"https://cb","token":"tok"}}"#,
@@ -389,8 +417,11 @@ fn lowers_request_params(#[case] method: &str, #[case] input: &str, #[case] expe
 #[rstest]
 #[case::status(
     r#"{"contextId":"c","status":"TASK_STATE_WORKING","pageSize":0,"includeArtifacts":true}"#,
-    r#"{"contextId":"c","status":"working","includeArtifacts":true}"#
+    r#"{"contextId":"c","status":"working","pageSize":0,"includeArtifacts":true}"#
 )]
+#[case::include_artifacts_false(r#"{"includeArtifacts":false}"#, r#"{"includeArtifacts":false}"#)]
+#[case::string_page_size(r#"{"pageSize":"5"}"#, r#"{"pageSize":5}"#)]
+#[case::non_proto_status_name(r#"{"status":"working"}"#, "{}")]
 #[case::numeric_status(r#"{"status":2}"#, r#"{"status":"working"}"#)]
 #[case::unmapped_status(r#"{"status":"TASK_STATE_BOGUS","tenant":"x"}"#, r#"{"tenant":"x"}"#)]
 #[case::history_and_timestamp(
@@ -468,6 +499,30 @@ fn upgrades_a_03_card_to_the_10_shape() {
     );
     let skills = field(&converted, "skills").as_array().expect("skills");
     assert_eq!(member(&skills[0], "security"), &value(r#"[{"k":[]}]"#));
+}
+
+#[test]
+fn keeps_a_card_that_lacks_required_03_members() {
+    let card = object(r#"{"name":"agent","url":"https://a","capabilities":{}}"#);
+    assert_eq!(
+        normalize_agent_card(card.clone(), ProtocolVersion::V1_0),
+        card
+    );
+}
+
+#[test]
+fn omits_empty_repeated_fields_from_the_upgraded_card() {
+    let card = object(
+        r#"{"name":"agent","description":"d","version":"1","url":"https://a","protocolVersion":"0.3","capabilities":{"streaming":true,"extensions":[]},"defaultInputModes":[],"defaultOutputModes":[],"skills":[],"security":[],"signatures":[]}"#,
+    );
+    let converted = normalize_agent_card(card, ProtocolVersion::V1_0);
+    assert!(!converted.contains_key("defaultInputModes"));
+    assert!(!converted.contains_key("defaultOutputModes"));
+    assert!(!converted.contains_key("skills"));
+    assert!(!converted.contains_key("securityRequirements"));
+    assert!(!converted.contains_key("signatures"));
+    let capabilities = field(&converted, "capabilities");
+    assert!(capabilities.get("extensions").is_none());
 }
 
 #[test]

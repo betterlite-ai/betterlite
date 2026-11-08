@@ -35,3 +35,8 @@ deviations:
     why: >-
       The task requires the upgrade to keep all fields, and dropping a field the schema does not know loses data an upstream agent may rely on.
     link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L299-L317'
+  - what: >-
+      A 1.0 task or artifact record that omits a proto3 default string such as its id keeps the original payload, where LiteLLM's ParseDict fills the empty value and the conversion emits the defaulted record.
+    why: >-
+      The core records the client transport exposes require the id, and re-deriving them here would duplicate the client transport's models; no working agent omits it.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/version_convert.py#L238-L254'

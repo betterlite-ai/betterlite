@@ -11,7 +11,7 @@ mod records;
 use records::{
     CancelTaskRequest, DeletePushConfigParams, DeletePushConfigRequest, GetPushConfigRequest,
     GetTaskRequest, ListPushConfigsRequest, ListTasksParams, ListTasksRequest, PushConfigParams,
-    SubscribeToTaskRequest, TaskIdParams, TaskQueryParams, TaskState,
+    SubscribeToTaskRequest, TaskIdParams, TaskQueryParams, TaskState, integer_value,
 };
 
 const V0_3_TASK_STATES: [&str; 9] = [
@@ -66,7 +66,8 @@ pub(super) fn map_task_state(name: &str) -> Option<String> {
 #[rustfmt::skip]
 fn lower_get(request: &AgentJson) -> Result<JsonObject, ConvertError> {
     let query: GetTaskRequest = serde_json::from_value(request.clone()).map_err(ConvertError::Decode)?;
-    let params = TaskQueryParams { id: query.id, history_length: query.history_length };
+    let history_length = query.history_length.map(|value| integer_value(value, "historyLength")).transpose()?;
+    let params = TaskQueryParams { id: query.id, history_length };
     encode(&params)
 }
 
@@ -108,22 +109,35 @@ fn lower_delete_push_config(request: &AgentJson) -> Result<JsonObject, ConvertEr
 fn lower_list_tasks(request: &AgentJson) -> Result<JsonObject, ConvertError> {
     let query: ListTasksRequest =
         serde_json::from_value(request.clone()).map_err(ConvertError::Decode)?;
+    let page_size = query
+        .page_size
+        .map(|value| integer_value(value, "pageSize"))
+        .transpose()?;
+    let history_length = query
+        .history_length
+        .map(|value| integer_value(value, "historyLength"))
+        .transpose()?;
     let params = ListTasksParams {
         tenant: Some(query.tenant).filter(|text| !text.is_empty()),
         context_id: Some(query.context_id).filter(|text| !text.is_empty()),
         status: query.status.and_then(task_state),
-        page_size: query.page_size.filter(|number| *number != 0),
+        page_size,
         page_token: Some(query.page_token).filter(|text| !text.is_empty()),
-        history_length: query.history_length,
+        history_length,
         status_timestamp_after: query.status_timestamp_after.filter(|text| !text.is_empty()),
-        include_artifacts: query.include_artifacts.then_some(true),
+        include_artifacts: query.include_artifacts,
     };
     encode(&params)
 }
 
 fn task_state(value: TaskState) -> Option<String> {
     match value {
-        TaskState::Name(name) => map_task_state(&name),
+        TaskState::Name(name) => {
+            if !PROTO_TASK_STATES.contains(&name.as_str()) {
+                return None;
+            }
+            map_task_state(&name)
+        }
         TaskState::Number(index) => {
             let position = usize::try_from(index).ok()?;
             let name = PROTO_TASK_STATES.get(position)?;
