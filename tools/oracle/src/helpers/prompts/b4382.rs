@@ -111,61 +111,19 @@ async fn index_fallback(input: &Input) -> HelperResult {
     Ok(json!({ "chosen": built.name, "attempts": index.attempts() }))
 }
 
-async fn run_lookup(input: &Input) -> HelperResult {
-    let key = required(&input.key, "key")?;
-    let (cache, index, kwargs) =
-        scripted_call(input, input.hits.iter().map(to_hit).collect(), None)?;
-    let mut metadata = input.metadata.as_ref().and_then(Json::as_object).cloned();
-    let value = cache
-        .async_get_cache(&key, &kwargs, metadata.as_mut())
-        .await
-        .map_err(|error| helper_error("ValueError", error))?;
-    let value = value
-        .map(to_value)
-        .transpose()
-        .map_err(|error| helper_error("SerializationError", error))?;
-    let similarity = similarity_of(metadata.as_ref())?;
-    let search = index.searches().into_iter().next();
-    Ok(json!({
-        "value": value,
-        "similarity": similarity,
-        "search": search.map(|(_, query)| json!({
-            "cache_key": query.cache_key,
-            "vector": query.vector.iter().copied().map(f64::from).collect::<Vec<f64>>(),
-            "distance_threshold": query.distance_threshold,
-        })),
-    }))
-}
-
-async fn run_store(input: &Input) -> HelperResult {
-    let key = required(&input.key, "key")?;
-    let value = required(&input.value, "value")?;
-    let (cache, index, kwargs) = scripted_call(input, Vec::new(), input.ttl)?;
-    cache.async_set_cache(&key, &value, &kwargs).await;
-    let store = index.stores().into_iter().next().map(|(_, fields, ttl)| {
-        let vector: Vec<f64> = fields
-            .prompt_vector
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|bytes| f64::from(f32::from_le_bytes(*bytes)))
-            .collect();
-        json!({
-            "prompt": fields.prompt,
-            "response": fields.response,
-            "vector": vector,
-            "filters": { CACHE_KEY_FIELD_NAME: fields.litellm_cache_key },
-            "ttl": ttl,
-        })
-    });
-    Ok(json!({ "store": store }))
+struct ScriptedCall {
+    key: String,
+    cache: RedisSemanticCache,
+    index: Arc<HelperIndex>,
+    kwargs: SemanticCacheKwargs,
 }
 
 fn scripted_call(
     input: &Input,
     hits: Vec<Hit>,
     ttl: Option<i64>,
-) -> Result<(RedisSemanticCache, Arc<HelperIndex>, SemanticCacheKwargs), Box<HelperError>> {
+) -> Result<ScriptedCall, Box<HelperError>> {
+    let key = required(&input.key, "key")?;
     let vector = required(&input.vector, "vector")?;
     let index = Arc::new(HelperIndex::with_hits(hits));
     let embedder = ConstantEmbedder { vector };
@@ -178,7 +136,64 @@ fn scripted_call(
         input.metadata.as_ref(),
         ttl,
     );
-    Ok((cache, index, kwargs))
+    Ok(ScriptedCall {
+        key,
+        cache,
+        index,
+        kwargs,
+    })
+}
+
+async fn run_lookup(input: &Input) -> HelperResult {
+    let call = scripted_call(input, input.hits.iter().map(to_hit).collect(), None)?;
+    let mut metadata = input.metadata.as_ref().and_then(Json::as_object).cloned();
+    let value = call
+        .cache
+        .async_get_cache(&call.key, &call.kwargs, metadata.as_mut())
+        .await
+        .map_err(|error| helper_error("ValueError", error))?;
+    let value = value
+        .map(to_value)
+        .transpose()
+        .map_err(|error| helper_error("SerializationError", error))?;
+    let similarity = similarity_of(metadata.as_ref())?;
+    let search = call.index.searches().into_iter().next();
+    Ok(json!({
+        "value": value,
+        "similarity": similarity,
+        "search": search.map(|(_, query)| json!({
+            "cache_key": query.cache_key,
+            "vector": query.vector.iter().copied().map(f64::from).collect::<Vec<f64>>(),
+            "distance_threshold": query.distance_threshold,
+        })),
+    }))
+}
+
+async fn run_store(input: &Input) -> HelperResult {
+    let call = scripted_call(input, Vec::new(), input.ttl)?;
+    let value = required(&input.value, "value")?;
+    call.cache
+        .async_set_cache(&call.key, &value, &call.kwargs)
+        .await;
+    Ok(json!({ "store": store_record(&call.index) }))
+}
+
+fn store_record(index: &HelperIndex) -> Option<Value> {
+    let (_, fields, ttl) = index.stores().into_iter().next()?;
+    let vector: Vec<f64> = fields
+        .prompt_vector
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|bytes| f64::from(f32::from_le_bytes(*bytes)))
+        .collect();
+    Some(json!({
+        "prompt": fields.prompt,
+        "response": fields.response,
+        "vector": vector,
+        "filters": { CACHE_KEY_FIELD_NAME: fields.litellm_cache_key },
+        "ttl": ttl,
+    }))
 }
 
 fn similarity_of(metadata: Option<&Object>) -> Result<Option<Value>, Box<HelperError>> {
