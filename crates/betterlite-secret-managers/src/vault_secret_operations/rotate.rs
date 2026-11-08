@@ -14,6 +14,18 @@ use super::error::VaultOperationError;
 use super::result::VaultOperationResult;
 use super::{delete, write};
 
+struct Stage {
+    not_found: String,
+    failed_message: &'static str,
+    missing_log: &'static str,
+    failed_log: &'static str,
+}
+
+enum FetchProblem {
+    Timeout,
+    Status(VaultOperationResult),
+}
+
 pub(super) async fn rotate<T>(
     manager: &HashicorpSecretManager<T>,
     rotation: SecretRotation<'_, VaultSecretParams>,
@@ -92,23 +104,16 @@ async fn check_current<T>(
 where
     T: VaultTransport,
 {
-    match fetch(manager, &target.url, timeout).await {
+    let stage = Stage {
+        not_found: format!("Current secret {} not found", rotation.current_secret_name),
+        failed_message: "Error checking current secret",
+        missing_log: "current secret not found in Hashicorp Vault",
+        failed_log: "error checking current secret in Hashicorp Vault",
+    };
+    match fetch_staged(manager, target, timeout, &stage).await {
         Ok(_response) => Ok(None),
-        Err(VaultOperationError::Status { status: 404 }) => {
-            tracing::error!("current secret not found in Hashicorp Vault");
-            Ok(Some(VaultOperationResult::Status(SecretOperation {
-                status: OperationStatus::Error,
-                message: format!("Current secret {} not found", rotation.current_secret_name),
-            })))
-        }
-        Err(VaultOperationError::Timeout) => Err(VaultOperationError::Timeout),
-        Err(error) => {
-            tracing::error!("error checking current secret in Hashicorp Vault: {error}");
-            Ok(Some(VaultOperationResult::Status(SecretOperation {
-                status: OperationStatus::Error,
-                message: format!("Error checking current secret: {error}"),
-            })))
-        }
+        Err(FetchProblem::Timeout) => Err(VaultOperationError::Timeout),
+        Err(FetchProblem::Status(result)) => Ok(Some(result)),
     }
 }
 
@@ -121,23 +126,16 @@ async fn verify<T>(
 where
     T: VaultTransport,
 {
-    let response = match fetch(manager, &target.url, timeout).await {
+    let stage = Stage {
+        not_found: format!("Failed to verify new secret {}", rotation.new_secret_name),
+        failed_message: "Error verifying new secret",
+        missing_log: "failed to verify new secret in Hashicorp Vault",
+        failed_log: "error verifying new secret in Hashicorp Vault",
+    };
+    let response = match fetch_staged(manager, target, timeout, &stage).await {
         Ok(response) => response,
-        Err(VaultOperationError::Timeout) => return Err(VaultOperationError::Timeout),
-        Err(VaultOperationError::Status { status: 404 }) => {
-            tracing::error!("failed to verify new secret in Hashicorp Vault");
-            return Ok(Some(VaultOperationResult::Status(SecretOperation {
-                status: OperationStatus::Error,
-                message: format!("Failed to verify new secret {}", rotation.new_secret_name),
-            })));
-        }
-        Err(error) => {
-            tracing::error!("error verifying new secret in Hashicorp Vault: {error}");
-            return Ok(Some(VaultOperationResult::Status(SecretOperation {
-                status: OperationStatus::Error,
-                message: format!("Error verifying new secret: {error}"),
-            })));
-        }
+        Err(FetchProblem::Timeout) => return Err(VaultOperationError::Timeout),
+        Err(FetchProblem::Status(result)) => return Ok(Some(result)),
     };
     let parsed =
         match super::response::vault_secret_read_body(response.body.expose_secret().as_bytes()) {
@@ -186,6 +184,39 @@ async fn finish<T>(
         }
     }
     manager.body_cache().delete(&new_target.url);
+}
+
+async fn fetch_staged<T>(
+    manager: &HashicorpSecretManager<T>,
+    target: &VaultSecretTarget,
+    timeout: Duration,
+    stage: &Stage,
+) -> Result<VaultResponse, FetchProblem>
+where
+    T: VaultTransport,
+{
+    match fetch(manager, &target.url, timeout).await {
+        Ok(response) => Ok(response),
+        Err(VaultOperationError::Timeout) => Err(FetchProblem::Timeout),
+        Err(VaultOperationError::Status { status: 404 }) => {
+            tracing::error!("{}", stage.missing_log);
+            Err(FetchProblem::Status(VaultOperationResult::Status(
+                SecretOperation {
+                    status: OperationStatus::Error,
+                    message: stage.not_found.clone(),
+                },
+            )))
+        }
+        Err(error) => {
+            tracing::error!("{}: {error}", stage.failed_log);
+            Err(FetchProblem::Status(VaultOperationResult::Status(
+                SecretOperation {
+                    status: OperationStatus::Error,
+                    message: format!("{}: {error}", stage.failed_message),
+                },
+            )))
+        }
+    }
 }
 
 async fn fetch<T>(

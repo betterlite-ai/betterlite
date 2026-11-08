@@ -258,10 +258,6 @@ def operation_outcome(result: Object) -> Json:
     return {"body": result}
 
 
-def deletion_outcome(result: Object) -> Json:
-    if result.get("status") != "success":
-        return {"status": "error"}
-    return {"status": "success", "message": result.get("message")}
 
 
 async def run_step(manager: Manager, step: Object) -> Json:
@@ -291,7 +287,7 @@ async def run_step(manager: Manager, step: Object) -> Json:
             deleted = await manager.async_delete_secret(
                 expect_text(step["name"]), 7, params, timeout
             )
-            return deletion_outcome(deleted)
+            return {"status": expect_text(deleted.get("status"))}
         case "rotate":
             rotated = await manager.async_rotate_secret(
                 expect_text(step["current"]),

@@ -6,6 +6,7 @@ use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 use betterlite_secret_managers::secret_contracts::BaseSecretManager as _;
+use betterlite_secret_managers::secret_contracts::RotationError;
 use betterlite_secret_managers::secret_contracts::options::{
     DeleteOptions, SecretOptions, SecretRotation, SecretTimeout, SecretWrite,
 };
@@ -16,7 +17,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
-use outcome::{deletion_outcome, infallible, operation_outcome, read_outcome, rotation_outcome};
+use outcome::{infallible, operation_outcome, read_outcome};
 use script::{Requests, Route, Script};
 
 pub(crate) struct Op;
@@ -153,35 +154,78 @@ async fn run_step(manager: &HashicorpSecretManager<Script>, step: &Step) -> Help
             value,
             description,
             ..
-        } => write_step(manager, name, value, description.as_deref(), options).await,
+        } => {
+            let mutation = Mutation::Write {
+                name,
+                description: description.as_deref(),
+            };
+            mutation_step(manager, value, mutation, options).await
+        }
         Step::Delete { name, .. } => delete_step(manager, name, options).await,
         Step::Rotate {
             current,
             new,
             value,
             ..
-        } => rotate_step(manager, current, new, value, options).await,
+        } => {
+            let mutation = Mutation::Rotate { current, new };
+            mutation_step(manager, value, mutation, options).await
+        }
     }
 }
 
-async fn write_step(
+enum Mutation<'borrowed> {
+    Write {
+        name: &'borrowed str,
+        description: Option<&'borrowed str>,
+    },
+    Rotate {
+        current: &'borrowed str,
+        new: &'borrowed str,
+    },
+}
+
+async fn mutation_step(
     manager: &HashicorpSecretManager<Script>,
-    name: &str,
     value: &str,
-    description: Option<&str>,
+    mutation: Mutation<'_>,
     options: SecretOptions<'_, VaultSecretParams>,
 ) -> HelperResult {
     let secret_value = SecretString::from(value);
-    let written = manager
-        .async_write_secret(SecretWrite {
-            secret_name: name,
-            secret_value: &secret_value,
-            description,
-            options,
-            tags: None,
-        })
-        .await;
-    Ok(operation_outcome(&infallible(written)))
+    let outcome = match mutation {
+        Mutation::Write { name, description } => {
+            let written = manager
+                .async_write_secret(SecretWrite {
+                    secret_name: name,
+                    secret_value: &secret_value,
+                    description,
+                    options,
+                    tags: None,
+                })
+                .await;
+            operation_outcome(&infallible(written))
+        }
+        Mutation::Rotate { current, new } => {
+            let rotated = manager
+                .async_rotate_secret(SecretRotation {
+                    current_secret_name: current,
+                    new_secret_name: new,
+                    new_secret_value: &secret_value,
+                    options,
+                })
+                .await;
+            match rotated {
+                Ok(result) => operation_outcome(&result),
+                Err(RotationError::Operation { source }) => match source {},
+                Err(
+                    RotationError::CurrentSecretNotFound
+                    | RotationError::NewSecretNotVerified
+                    | RotationError::SameName,
+                ) => json!({"status": "error"}),
+            }
+        }
+    };
+    Ok(outcome)
 }
 
 async fn delete_step(
@@ -198,26 +242,7 @@ async fn delete_step(
             },
         )
         .await;
-    Ok(deletion_outcome(&infallible(deleted)))
-}
-
-async fn rotate_step(
-    manager: &HashicorpSecretManager<Script>,
-    current: &str,
-    new: &str,
-    value: &str,
-    options: SecretOptions<'_, VaultSecretParams>,
-) -> HelperResult {
-    let secret_value = SecretString::from(value);
-    let rotated = manager
-        .async_rotate_secret(SecretRotation {
-            current_secret_name: current,
-            new_secret_name: new,
-            new_secret_value: &secret_value,
-            options,
-        })
-        .await;
-    Ok(rotation_outcome(rotated))
+    Ok(operation_outcome(&infallible(deleted)))
 }
 
 fn timeout_limit(seconds: Option<f64>) -> Result<Option<SecretTimeout>, Box<HelperError>> {

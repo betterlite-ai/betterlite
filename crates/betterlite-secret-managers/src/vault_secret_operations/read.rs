@@ -4,14 +4,22 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::secret_contracts::options::SecretOptions;
 use crate::vault::HashicorpSecretManager;
+use crate::vault::error::VaultError;
 use crate::vault::response::{json_object_body, secret_value};
-use crate::vault::target::VaultSecretParams;
+use crate::vault::target::{VaultSecretParams, VaultSecretTarget};
 use crate::vault::transport::{
     MAX_RESPONSE_BYTES, VaultMethod, VaultRequest, VaultResponse, VaultTransport,
 };
 
+use super::error::VaultOperationError;
+
 // LiteLLM builds the read client without a timeout parameter, so reads keep the client's 600 second default
 const READ_TIMEOUT: Duration = Duration::from_secs(600);
+
+enum CachedLookup {
+    Hit(Option<SecretString>),
+    Miss,
+}
 
 pub(super) async fn async_read<T>(
     manager: &HashicorpSecretManager<T>,
@@ -21,30 +29,13 @@ pub(super) async fn async_read<T>(
 where
     T: VaultTransport,
 {
-    let target = match manager.build_secret_target(secret_name, options.optional_params) {
-        Ok(target) => target,
-        Err(error) => {
-            tracing::error!("error reading secret from Hashicorp Vault: {error}");
-            return None;
-        }
-    };
-    if let Some(cached) = manager.body_cache().get(&target.url) {
-        return secret_value(cached.expose_secret().as_bytes(), &target.data_key);
+    let target = target_for(manager, secret_name, options.optional_params)?;
+    if let CachedLookup::Hit(value) = cached_lookup(manager, &target) {
+        return value;
     }
-    let token = match manager.request_token().await {
-        Ok(token) => token,
-        Err(error) => {
-            tracing::error!("error reading secret from Hashicorp Vault: {error}");
-            return None;
-        }
-    };
-    match super::send(manager, read_request(target.url.clone(), token)).await {
-        Ok(response) => cached_value(manager, &target.url, &target.data_key, &response),
-        Err(error) => {
-            tracing::error!("error reading secret from Hashicorp Vault: {error}");
-            None
-        }
-    }
+    let token = token_of(manager.request_token().await)?;
+    let request = read_request(target.url.clone(), token);
+    finish(manager, &target, super::send(manager, request).await)
 }
 
 pub(super) fn sync_read<T>(
@@ -55,27 +46,69 @@ pub(super) fn sync_read<T>(
 where
     T: VaultTransport,
 {
-    let target = match manager.build_secret_target(secret_name, options.optional_params) {
-        Ok(target) => target,
-        Err(error) => {
-            tracing::error!("error reading secret from Hashicorp Vault: {error}");
-            return None;
+    let target = target_for(manager, secret_name, options.optional_params)?;
+    match cached_lookup(manager, &target) {
+        CachedLookup::Hit(value) => value,
+        CachedLookup::Miss => {
+            let token = token_of(manager.request_token_blocking())?;
+            let request = read_request(target.url.clone(), token);
+            let reply = super::checked_reply::<T>(manager.transport.send_blocking(request));
+            finish(manager, &target, reply)
         }
-    };
-    if let Some(cached) = manager.body_cache().get(&target.url) {
-        return secret_value(cached.expose_secret().as_bytes(), &target.data_key);
     }
-    let token = match manager.request_token_blocking() {
-        Ok(token) => token,
+}
+
+fn target_for<T>(
+    manager: &HashicorpSecretManager<T>,
+    secret_name: &str,
+    params: Option<&VaultSecretParams>,
+) -> Option<VaultSecretTarget>
+where
+    T: VaultTransport,
+{
+    match manager.build_secret_target(secret_name, params) {
+        Ok(target) => Some(target),
         Err(error) => {
             tracing::error!("error reading secret from Hashicorp Vault: {error}");
-            return None;
+            None
         }
-    };
-    let reply = manager
-        .transport
-        .send_blocking(read_request(target.url.clone(), token));
-    match super::checked_reply::<T>(reply) {
+    }
+}
+
+fn cached_lookup<T>(manager: &HashicorpSecretManager<T>, target: &VaultSecretTarget) -> CachedLookup
+where
+    T: VaultTransport,
+{
+    manager.body_cache().get(&target.url).map_or_else(
+        || CachedLookup::Miss,
+        |cached| {
+            CachedLookup::Hit(secret_value(
+                cached.expose_secret().as_bytes(),
+                &target.data_key,
+            ))
+        },
+    )
+}
+
+fn token_of<E>(outcome: Result<SecretString, VaultError<E>>) -> Option<SecretString> {
+    match outcome {
+        Ok(token) => Some(token),
+        Err(error) => {
+            tracing::error!("error reading secret from Hashicorp Vault: {error}");
+            None
+        }
+    }
+}
+
+fn finish<T>(
+    manager: &HashicorpSecretManager<T>,
+    target: &VaultSecretTarget,
+    reply: Result<VaultResponse, VaultOperationError<T::Error>>,
+) -> Option<SecretString>
+where
+    T: VaultTransport,
+{
+    match reply {
         Ok(response) => cached_value(manager, &target.url, &target.data_key, &response),
         Err(error) => {
             tracing::error!("error reading secret from Hashicorp Vault: {error}");
