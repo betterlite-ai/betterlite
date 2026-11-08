@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::time::Duration;
 
 use rstest::rstest;
@@ -13,15 +14,18 @@ use crate::ocr_config::connection::{
 };
 use crate::ocr_config::decode::{OcrFieldKind, compose_body, decode_response, decode_value};
 use crate::ocr_config::{
-    DecodedOcrResponse, OCR_RESPONSE_MAX_BYTES, OcrProviderConfig as _, OcrRequestContext,
-    OcrTransform, Secrets, has_header,
+    DecodedOcrResponse, OCR_INLINE_MAX_BYTES, OCR_RESPONSE_MAX_BYTES, OcrProviderConfig,
+    OcrRequestContext, OcrTransform, PreparedOcrRequest, Secrets, has_header,
 };
 use crate::ocr_document::{OcrDocument, validate_inline_document};
 use crate::ocr_error::OcrError;
+use crate::ocr_http::OcrClient;
 use crate::ocr_http::tests::support::{
     TestBody, TestConfig, TestPayload, connection, object, ocr_client,
 };
 use crate::ocr_settings::OcrSettings;
+use crate::request_format::RequestFormat;
+use crate::response::OCRResponse;
 
 fn document() -> OcrDocument {
     OcrDocument::DocumentUrl {
@@ -98,6 +102,85 @@ fn connection_inputs_drop_blank_values() {
     assert_eq!(key.value.expose_secret(), "key");
     assert_eq!(key.source, OcrInputSource::Request);
     assert!(inputs.api_base.is_none());
+}
+
+#[test]
+fn connection_inputs_trim_a_nonblank_api_base() {
+    let inputs = OcrCredentialInputs::new(
+        None,
+        OcrInputSource::Deployment,
+        Some(" https://example.com ".to_owned()),
+        OcrInputSource::Environment,
+    );
+    let base = inputs.api_base.expect("the base survives");
+    assert_eq!(base.value, "https://example.com");
+    assert_eq!(base.source, OcrInputSource::Environment);
+}
+
+#[test]
+fn the_shared_limits_match_litellm() {
+    assert_eq!(OCR_RESPONSE_MAX_BYTES, 64 * 1024 * 1024);
+    assert_eq!(OCR_INLINE_MAX_BYTES, 50 * 1024 * 1024);
+}
+
+struct DefaultsConfig;
+
+impl OcrProviderConfig for DefaultsConfig {
+    type OcrParams = ();
+    type ProviderRequest = Json;
+    type Environment = Vec<(String, String)>;
+
+    fn secret_names(&self) -> Vec<&'static str> {
+        Vec::new()
+    }
+
+    fn map_ocr_params(
+        &self,
+        _non_default_params: &Object,
+        _model: &str,
+    ) -> Result<Self::OcrParams, OcrError> {
+        Ok(())
+    }
+
+    fn validate_environment(
+        &self,
+        _request: &PreparedOcrRequest,
+        _client: &OcrClient,
+    ) -> impl Future<Output = Result<Self::Environment, OcrError>> + Send {
+        ready(Ok(Vec::new()))
+    }
+
+    fn get_complete_url(
+        &self,
+        _request: &PreparedOcrRequest,
+        _optional_params: &Self::OcrParams,
+        _environment: &Self::Environment,
+    ) -> Result<String, OcrError> {
+        Ok("http://example.com/v1/ocr".to_owned())
+    }
+
+    fn transform_ocr_request(
+        &self,
+        _document: OcrDocument,
+        _transform: OcrTransform<'_, Self::OcrParams>,
+    ) -> Result<Self::ProviderRequest, OcrError> {
+        Ok(Json::Null)
+    }
+
+    fn transform_ocr_response(
+        &self,
+        _model: &str,
+        _raw_response: &[u8],
+        _request_format: RequestFormat,
+    ) -> Result<OCRResponse, OcrError> {
+        Err(OcrError::Unsupported("no response in this test"))
+    }
+}
+
+#[test]
+fn the_trait_defaults_are_empty() {
+    assert!(DefaultsConfig.get_supported_ocr_params("model").is_empty());
+    assert_eq!(DefaultsConfig.get_api_key_env_var(), None);
 }
 
 #[test]

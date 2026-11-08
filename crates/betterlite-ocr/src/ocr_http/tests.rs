@@ -9,6 +9,10 @@ use async_trait::async_trait;
 use betterlite_http::proxy::StreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use http::{HeaderMap, Method};
+use tokio::io::AsyncWriteExt as _;
+use tokio::net::TcpListener;
+use tokio::task::JoinSet;
+use tokio::time::sleep;
 use url::Url;
 
 use crate::json::{Json, Object};
@@ -184,9 +188,9 @@ async fn native_format_keeps_the_provider_json_in_the_native_slot() {
     assert_eq!(server.requests().await.len(), 2);
 }
 
-async fn send_to(base: &str) -> StreamResponse {
+async fn fetch_url(text: &str) -> StreamResponse {
     let client = http_client(Duration::from_secs(5));
-    let url = Url::parse(&format!("{base}/document")).expect("the test URL parses");
+    let url = Url::parse(text).expect("the test URL parses");
     let request = OutboundRequest {
         method: Method::POST,
         url,
@@ -195,7 +199,95 @@ async fn send_to(base: &str) -> StreamResponse {
         body: RequestBody::Json(Vec::new()),
         deadline: Duration::from_secs(5),
     };
-    client.send(request).await.expect("the mock server answers")
+    client.send(request).await.expect("the test server answers")
+}
+
+#[tokio::test]
+async fn a_declared_length_exactly_at_the_limit_is_accepted() {
+    let server = MockServer::start(vec![reply("200 OK", &[], b"012345")]).await;
+    let response = fetch_url(&format!("{}/document", server.base)).await;
+    let bytes = read_response_bytes(response, 6)
+        .await
+        .expect("an exact declared length is accepted");
+    assert_eq!(bytes, b"012345");
+}
+
+#[tokio::test]
+async fn a_streamed_body_exactly_at_the_limit_is_accepted() {
+    let server = MockServer::start(vec![chunked(&[b"012", b"345"])]).await;
+    let response = fetch_url(&format!("{}/document", server.base)).await;
+    let bytes = read_response_bytes(response, 6)
+        .await
+        .expect("an exact streamed body is accepted");
+    assert_eq!(bytes, b"012345");
+}
+
+#[tokio::test]
+async fn a_declared_length_over_the_limit_fails_before_the_body_arrives() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the lying server binds");
+    let address = listener
+        .local_addr()
+        .expect("the lying server has an address");
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("the lying server accepts");
+        socket
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\nConnection: close\r\n\r\nabc")
+            .await
+            .expect("the lying server writes");
+        socket.shutdown().await.expect("the lying server closes");
+    });
+    let response = fetch_url(&format!("http://{address}/lying")).await;
+    let error = read_response_bytes(response, 3)
+        .await
+        .expect_err("the declared length over the cap fails");
+    assert!(matches!(error, OcrError::TooLarge { limit: 3 }));
+    tasks
+        .join_next()
+        .await
+        .expect("the lying server task runs")
+        .expect("the lying server task does not panic");
+}
+
+#[tokio::test]
+async fn a_failed_body_is_read_only_up_to_the_limit() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the failing server binds");
+    let address = listener
+        .local_addr()
+        .expect("the failing server has an address");
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        let (mut socket, _) = listener.accept().await.expect("the failing server accepts");
+        socket
+            .write_all(b"HTTP/1.1 500 Internal Server Error\r\nContent-Length: 10\r\n\r\n0123")
+            .await
+            .expect("the failing server writes");
+        sleep(Duration::from_millis(100)).await;
+        socket
+            .write_all(b"45")
+            .await
+            .expect("the failing server writes");
+        sleep(Duration::from_millis(300)).await;
+        socket.shutdown().await.expect("the failing server closes");
+    });
+    let response = fetch_url(&format!("http://{address}/failed")).await;
+    let error = read_response_bytes(response, 6)
+        .await
+        .expect_err("the failed answer is an error");
+    let OcrError::Transport(OcrTransportError::Http { status, body }) = error else {
+        panic!("the failed answer keeps its status");
+    };
+    assert_eq!(status, 500);
+    assert_eq!(body, "012345");
+    tasks
+        .join_next()
+        .await
+        .expect("the failing server task runs")
+        .expect("the failing server task does not panic");
 }
 
 #[tokio::test]
@@ -206,7 +298,7 @@ async fn read_response_bytes_decodes_success_and_reports_failed_statuses() {
         br#"{"pages":[{"index":0,"markdown":"hello"}]}"#,
     )])
     .await;
-    let response = send_to(&server.base).await;
+    let response = fetch_url(&format!("{}/document", server.base)).await;
     let bytes = read_response_bytes(response, 1024)
         .await
         .expect("the success body reads");
@@ -218,7 +310,7 @@ async fn read_response_bytes_decodes_success_and_reports_failed_statuses() {
     assert!(decoded.text.contains("hello"));
 
     let failed_server = MockServer::start(vec![reply("404 Not Found", &[], b"missing")]).await;
-    let failed_response = send_to(&failed_server.base).await;
+    let failed_response = fetch_url(&format!("{}/document", failed_server.base)).await;
     let error = read_response_bytes(failed_response, 1024)
         .await
         .expect_err("a failed status is an error");

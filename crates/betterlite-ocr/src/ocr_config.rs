@@ -85,6 +85,8 @@ pub trait OcrProviderConfig: Send + Sync + Sized + 'static {
     type OcrParams: Send + Sync;
     type ProviderRequest: Serialize + Send;
     type Environment: OcrEnvironment;
+    // the empty default is an equivalent mutant: leaking an empty Vec returns the same slice
+    #[cfg_attr(test, mutants::skip)]
     fn get_supported_ocr_params(&self, _model: &str) -> &'static [&'static str] {
         &[]
     }

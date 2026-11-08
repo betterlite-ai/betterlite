@@ -181,6 +181,20 @@ async fn an_oversized_download_is_download_too_large() {
 }
 
 #[tokio::test]
+async fn a_download_exactly_at_the_limit_is_accepted() {
+    let server = MockServer::start(vec![reply("200 OK", &[], b"abc")]).await;
+    let client = ocr_client(settings(3), Duration::from_secs(5));
+    let exact = document(&format!("{}/document", server.base));
+    let converted = inline_remote_document(&client, exact, &connection(settings(3)))
+        .await
+        .expect("an exact-limit download succeeds");
+    assert_eq!(
+        converted.source(),
+        "data:application/octet-stream;base64,YWJj"
+    );
+}
+
+#[tokio::test]
 async fn a_blocked_redirect_target_is_blocked_document_url() {
     let server = MockServer::start(vec![reply(
         "302 Found",

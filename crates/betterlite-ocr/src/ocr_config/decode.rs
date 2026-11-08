@@ -110,17 +110,16 @@ where
         Some(_) => return Err(OcrError::Params(OcrParamsError::ExtraBody)),
     };
     for (name, value) in params {
-        if consumed.contains(&name.as_str())
-            || name.as_str() == "model"
-            || name.as_str() == "extra_body"
-            || is_control_param(name)
-        {
+        if consumed.contains(&name.as_str()) {
+            continue;
+        }
+        if is_control_param(name) || matches!(name.as_str(), "model" | "extra_body") {
             continue;
         }
         let _previous = fields.insert(name.clone(), value.clone());
     }
     for (name, value) in overrides.into_iter().flatten() {
-        if name.as_str() == "model" || name.as_str() == "extra_body" || is_control_param(&name) {
+        if is_control_param(&name) || matches!(name.as_str(), "model" | "extra_body") {
             continue;
         }
         let _previous = fields.insert(name, value);
