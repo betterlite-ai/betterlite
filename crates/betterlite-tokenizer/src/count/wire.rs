@@ -10,9 +10,11 @@ use super::error::CountError;
 use super::request::{Message, SelectedTokenizer, TextInput, TokenRequest, ToolChoice};
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type")]
 pub enum CustomTokenizerWire {
+    #[serde(rename = "openai_tokenizer")]
     OpenAi,
+    #[serde(rename = "huggingface_tokenizer")]
     HuggingFace { tokenizer_json: String },
 }
 

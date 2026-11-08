@@ -266,6 +266,14 @@ enum Expected {
     Expected::Tokens(9)
 )]
 #[case::developer_message_does_not_discount_tools(r#"{"model":"gpt-3.5-turbo","messages":[{"role":"developer","content":"s"},{"role":"user","content":"hi"}],"tools":[{"type":"function","function":{"name":"f"}}]}"#, 4_000_000, 1024, Expected::Tokens(36))]
+#[case::custom_openai_handle_by_tag(r#"{"model":"gpt-3.5-turbo","text":"hello world","custom_tokenizer":{"type":"openai_tokenizer"}}"#, 4_000_000, 1024, Expected::Tokens(2))]
+#[case::custom_huggingface_handle_by_tag_fails_on_bad_json(r#"{"model":"gpt-4o","text":"hello world","custom_tokenizer":{"type":"huggingface_tokenizer","tokenizer_json":"{}"}}"#, 4_000_000, 1024, Expected::Fails)]
+#[case::custom_huggingface_handle_by_unknown_tag_fails(
+    r#"{"model":"gpt-4o","text":"hello world","custom_tokenizer":{"type":"other_tokenizer"}}"#,
+    4_000_000,
+    1024,
+    Expected::Fails
+)]
 #[case::disabled_text(
     r#"{"model":"gpt-3.5-turbo","text":"hello world"}"#,
     4_000_000,
