@@ -115,8 +115,8 @@ impl Helper for Op {
             Input::FunctionInvoke(call) => calls::function_invoke(call),
             Input::ServerToolResult(call) => calls::server_tool_result(call),
             Input::ImageChunkObject(call) => calls::ok_value(to_openai_image_url(&call.chunk)),
-            Input::AnthropicImageChunk(call) => calls::anthropic_image_chunk(call),
-            Input::ImageParam(call) => calls::image_param(call),
+            Input::AnthropicImageChunk(call) => calls::image_call(&calls::ImageCall::Chunk(call)),
+            Input::ImageParam(call) => calls::image_call(&calls::ImageCall::Param(call)),
         }
     }
 }

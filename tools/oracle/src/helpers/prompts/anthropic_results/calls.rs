@@ -62,12 +62,12 @@ pub(super) fn sanitize_ids(call: &ValueList) -> HelperResult {
 
 pub(super) fn replace_ids(call: &ReplaceIds) -> HelperResult {
     let is_invalid = predicate(call.alphabet);
-    ok_value(
-        call.values
-            .iter()
-            .map(|value| replace_invalid_id_chars(value, is_invalid))
-            .collect::<Vec<_>>(),
-    )
+    let replaced = call
+        .values
+        .iter()
+        .map(|value| replace_invalid_id_chars(value, is_invalid))
+        .collect::<Vec<_>>();
+    ok_value(replaced)
 }
 
 pub(super) fn document_uris(call: &ValueList) -> HelperResult {
@@ -106,27 +106,39 @@ pub(super) fn server_tool_result(call: &ServerResultCall) -> HelperResult {
     ))
 }
 
-pub(super) fn anthropic_image_chunk(call: &ImageChunkCall) -> HelperResult {
-    let source = CaseSource {
-        data_urls: &call.data_urls,
-    };
-    block_on(
-        to_anthropic_image_chunk(&call.openai_image_url, call.format.as_deref(), &source),
-        image_failure,
-    )
+pub(super) enum ImageCall<'call> {
+    Chunk(&'call ImageChunkCall),
+    Param(&'call ImageParamCall),
 }
 
-pub(super) fn image_param(call: &ImageParamCall) -> HelperResult {
-    let source = CaseSource {
-        data_urls: &call.data_urls,
-    };
-    block_on(
-        create_anthropic_image_param(
-            &call.image_url_input,
-            call.format.as_deref(),
-            call.is_bedrock_invoke,
-            &source,
-        ),
-        image_failure,
-    )
+pub(super) fn image_call(call: &ImageCall<'_>) -> HelperResult {
+    match call {
+        ImageCall::Chunk(chunk_call) => {
+            let source = CaseSource {
+                data_urls: &chunk_call.data_urls,
+            };
+            block_on(
+                to_anthropic_image_chunk(
+                    &chunk_call.openai_image_url,
+                    chunk_call.format.as_deref(),
+                    &source,
+                ),
+                image_failure,
+            )
+        }
+        ImageCall::Param(param_call) => {
+            let source = CaseSource {
+                data_urls: &param_call.data_urls,
+            };
+            block_on(
+                create_anthropic_image_param(
+                    &param_call.image_url_input,
+                    param_call.format.as_deref(),
+                    param_call.is_bedrock_invoke,
+                    &source,
+                ),
+                image_failure,
+            )
+        }
+    }
 }
