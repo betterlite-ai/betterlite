@@ -101,6 +101,7 @@ impl SemanticClock for FixedClock {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct FakeIndex {
     infos: Mutex<BTreeMap<String, Json>>,
     pub(crate) info_failure: Mutex<Option<RedisSemanticError>>,
@@ -114,20 +115,6 @@ pub(crate) struct FakeIndex {
 }
 
 impl FakeIndex {
-    pub(crate) fn new() -> Self {
-        Self {
-            infos: Mutex::new(BTreeMap::new()),
-            info_failure: Mutex::new(None),
-            create_failure: Mutex::new(None),
-            store_failure: Mutex::new(None),
-            creates: Mutex::new(Vec::new()),
-            drops: Mutex::new(Vec::new()),
-            searches: Mutex::new(Vec::new()),
-            stores: Mutex::new(Vec::new()),
-            hits: Mutex::new(Vec::new()),
-        }
-    }
-
     pub(crate) fn with_info(self, name: &str, reply: Json) -> Self {
         self.infos
             .lock()
@@ -279,7 +266,7 @@ pub(crate) fn cache_with(
 }
 
 pub(crate) fn stored_cache() -> (RedisSemanticCache, Arc<FakeIndex>) {
-    let index = Arc::new(FakeIndex::new());
+    let index = Arc::new(FakeIndex::default());
     let (cache, _connector) = cache_with(FakeEmbedder::new(), Arc::clone(&index));
     (cache, index)
 }

@@ -26,7 +26,7 @@ fn options_missing_threshold_fails_with_litellms_message() {
         settings,
         empty_env(),
         Arc::new(FakeEmbedder::new()),
-        Arc::new(FakeConnector::new(Arc::new(FakeIndex::new()))),
+        Arc::new(FakeConnector::new(Arc::new(FakeIndex::default()))),
     );
     let Err(error) = result else {
         panic!("a cache without a threshold must fail");
@@ -52,7 +52,7 @@ fn options_env_values_fill_the_missing_host_port_and_password() {
         settings,
         env,
         Arc::new(FakeEmbedder::new()),
-        Arc::new(FakeConnector::new(Arc::new(FakeIndex::new()))),
+        Arc::new(FakeConnector::new(Arc::new(FakeIndex::default()))),
     )
     .expect("the environment settings");
     assert_eq!(
@@ -79,7 +79,7 @@ fn options_missing_configuration_names_the_variable(
         settings,
         empty_env(),
         Arc::new(FakeEmbedder::new()),
-        Arc::new(FakeConnector::new(Arc::new(FakeIndex::new()))),
+        Arc::new(FakeConnector::new(Arc::new(FakeIndex::default()))),
     );
     let Err(error) = result else {
         panic!("missing configuration must fail");
@@ -105,7 +105,7 @@ fn options_explicit_and_empty_values_lose_to_a_non_empty_environment_value() {
         settings,
         env,
         Arc::new(FakeEmbedder::new()),
-        Arc::new(FakeConnector::new(Arc::new(FakeIndex::new()))),
+        Arc::new(FakeConnector::new(Arc::new(FakeIndex::default()))),
     )
     .expect("the environment host");
     assert_eq!(cache.redis_url.expose_secret(), "redis://:pw@envhost:6379");
@@ -120,7 +120,7 @@ fn options_redis_url_wins_over_host_port_and_password() {
         settings,
         empty_env(),
         Arc::new(FakeEmbedder::new()),
-        Arc::new(FakeConnector::new(Arc::new(FakeIndex::new()))),
+        Arc::new(FakeConnector::new(Arc::new(FakeIndex::default()))),
     )
     .expect("the url setting");
     assert_eq!(
@@ -137,7 +137,7 @@ fn options_distance_threshold_is_one_minus_the_similarity() {
         settings,
         empty_env(),
         Arc::new(FakeEmbedder::new()),
-        Arc::new(FakeConnector::new(Arc::new(FakeIndex::new()))),
+        Arc::new(FakeConnector::new(Arc::new(FakeIndex::default()))),
     )
     .expect("the threshold");
     assert!(cache.similarity_threshold.total_cmp(&0.25_f64).is_eq());
@@ -189,7 +189,7 @@ fn filter_key_match_requires_the_same_scope(#[case] stored: Option<&str>, #[case
 
 #[tokio::test]
 async fn index_create_uses_the_base_name_and_the_probed_dimension() {
-    let index = Arc::new(FakeIndex::new());
+    let index = Arc::new(FakeIndex::default());
     let (cache, _connector) = cache_with(FakeEmbedder::new(), Arc::clone(&index));
     cache
         .async_set_cache("scope-1", &Json::Null, &kwargs_with_message("hi"))
@@ -204,7 +204,7 @@ async fn index_create_uses_the_base_name_and_the_probed_dimension() {
 #[tokio::test]
 async fn index_mismatch_uses_the_isolated_index() {
     let index = Arc::new(
-        FakeIndex::new().with_info("litellm_semantic_cache_index", info_reply("other", 2)),
+        FakeIndex::default().with_info("litellm_semantic_cache_index", info_reply("other", 2)),
     );
     let (cache, _connector) = cache_with(FakeEmbedder::new(), Arc::clone(&index));
     cache
@@ -224,7 +224,7 @@ async fn index_mismatch_uses_the_isolated_index() {
 #[tokio::test]
 async fn index_second_mismatch_drops_and_recreates_the_isolated_index() {
     let index = Arc::new(
-        FakeIndex::new()
+        FakeIndex::default()
             .with_info("litellm_semantic_cache_index", info_reply("other", 2))
             .with_info(
                 "litellm_semantic_cache_index_isolated",
@@ -244,7 +244,7 @@ async fn index_second_mismatch_drops_and_recreates_the_isolated_index() {
 
 #[tokio::test]
 async fn index_other_errors_are_returned_without_the_isolated_fallback() {
-    let index = Arc::new(FakeIndex::new());
+    let index = Arc::new(FakeIndex::default());
     *index.info_failure.lock().expect("the info failure") = Some(alternative_error());
     let (cache, _connector) = cache_with(FakeEmbedder::new(), Arc::clone(&index));
     let error = cache.index_info().await.expect_err("the backend error");
@@ -255,7 +255,7 @@ async fn index_other_errors_are_returned_without_the_isolated_fallback() {
 
 #[tokio::test]
 async fn index_existing_matching_schema_is_reused() {
-    let index = Arc::new(FakeIndex::new().with_info(
+    let index = Arc::new(FakeIndex::default().with_info(
         "litellm_semantic_cache_index",
         info_reply("litellm_semantic_cache_index", PROBE.len()),
     ));
@@ -269,7 +269,7 @@ async fn index_existing_matching_schema_is_reused() {
 
 #[tokio::test]
 async fn index_build_is_retried_after_a_failed_connect() {
-    let index = Arc::new(FakeIndex::new());
+    let index = Arc::new(FakeIndex::default());
     let (cache, connector) = cache_with(FakeEmbedder::new(), Arc::clone(&index));
     *connector.failure.lock().expect("the connect failure") = Some(alternative_error());
     cache
@@ -357,7 +357,7 @@ async fn store_empty_messages_fall_through_to_the_responses_input() {
 
 #[tokio::test]
 async fn store_swallows_embedding_and_backend_failures() {
-    let index = Arc::new(FakeIndex::new());
+    let index = Arc::new(FakeIndex::default());
     let (cache, _connector) = cache_with(FakeEmbedder::failing(), Arc::clone(&index));
     cache
         .async_set_cache("scope-1", &Json::Null, &kwargs_with_message("hi"))
@@ -493,7 +493,7 @@ async fn lookup_decode_failure_keeps_the_real_similarity() {
 
 #[tokio::test]
 async fn lookup_embedding_failure_is_a_miss_with_zero_similarity() {
-    let index = Arc::new(FakeIndex::new());
+    let index = Arc::new(FakeIndex::default());
     let (cache, _connector) = cache_with(FakeEmbedder::failing(), Arc::clone(&index));
     let mut metadata = Object::new();
     let value = cache
@@ -532,7 +532,7 @@ async fn lookup_sends_the_scoped_query_with_the_similarity_threshold() {
 
 #[tokio::test]
 async fn lookup_dimension_mismatch_is_a_miss_before_the_search() {
-    let index = Arc::new(FakeIndex::new());
+    let index = Arc::new(FakeIndex::default());
     let mut embedder = FakeEmbedder::new();
     embedder.vector = vec![0.5, 0.5];
     let (cache, _connector) = cache_with(embedder, Arc::clone(&index));
@@ -602,7 +602,7 @@ fn info_reply_becomes_ordered_objects_and_plain_lists() {
 
 #[tokio::test]
 async fn info_passes_the_redis_error_text_through() {
-    let index = Arc::new(FakeIndex::new());
+    let index = Arc::new(FakeIndex::default());
     *index.info_failure.lock().expect("the info failure") = Some(alternative_error());
     let (cache, _connector) = cache_with(FakeEmbedder::new(), Arc::clone(&index));
     let error = cache.index_info().await.expect_err("the backend error");

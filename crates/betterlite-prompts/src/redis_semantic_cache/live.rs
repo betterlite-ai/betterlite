@@ -107,36 +107,39 @@ impl SemanticIndexConnector for LiveSemanticIndexConnector {
     }
 }
 
+const CREATE_SCHEMA: [&str; 10] = [
+    "SCHEMA",
+    "prompt",
+    "TEXT",
+    "response",
+    "TEXT",
+    "inserted_at",
+    "NUMERIC",
+    "updated_at",
+    "NUMERIC",
+    "prompt_vector",
+];
+
+const CREATE_VECTOR: [&str; 6] = ["VECTOR", "FLAT", "6", "TYPE", "FLOAT32", "DIM"];
+
+const RETURN_FIELDS: [&str; 8] = [
+    "entry_id",
+    "prompt",
+    "response",
+    "inserted_at",
+    "updated_at",
+    "metadata",
+    "litellm_cache_key",
+    "vector_distance",
+];
+
 pub(crate) fn create_command(schema: &IndexSchema) -> redis::Cmd {
     let mut command = cmd("FT.CREATE");
-    command
-        .arg(&schema.name)
-        .arg("ON")
-        .arg("HASH")
-        .arg("PREFIX")
-        .arg(1_usize)
-        .arg(&schema.prefix)
-        .arg("SCHEMA")
-        .arg("prompt")
-        .arg("TEXT")
-        .arg("response")
-        .arg("TEXT")
-        .arg("inserted_at")
-        .arg("NUMERIC")
-        .arg("updated_at")
-        .arg("NUMERIC")
-        .arg("prompt_vector")
-        .arg("VECTOR")
-        .arg("FLAT")
-        .arg(6_usize)
-        .arg("TYPE")
-        .arg("FLOAT32")
-        .arg("DIM")
-        .arg(schema.dimension)
-        .arg("DISTANCE_METRIC")
-        .arg("COSINE")
-        .arg("litellm_cache_key")
-        .arg("TAG");
+    command.arg(&schema.name).arg(&["ON", "HASH", "PREFIX"]);
+    command.arg(1_usize).arg(schema.prefix.as_str());
+    command.arg(&CREATE_SCHEMA);
+    command.arg(&CREATE_VECTOR).arg(schema.dimension);
+    command.arg(&["DISTANCE_METRIC", "COSINE", "litellm_cache_key", "TAG"]);
     command
 }
 
@@ -146,55 +149,30 @@ pub(crate) fn search_command(index: &str, query: &SemanticSearchQuery) -> redis:
         .iter()
         .flat_map(|value| value.to_le_bytes())
         .collect();
+    let threshold = query.distance_threshold.to_string();
     let mut command = cmd("FT.SEARCH");
-    command
-        .arg(index)
-        .arg(query.query_string())
-        .arg("PARAMS")
-        .arg(4_usize)
-        .arg("vector")
-        .arg(vector)
-        .arg("distance_threshold")
-        .arg(query.distance_threshold)
-        .arg("RETURN")
-        .arg(7_usize)
-        .arg("entry_id")
-        .arg("prompt")
-        .arg("response")
-        .arg("inserted_at")
-        .arg("updated_at")
-        .arg("metadata")
-        .arg("litellm_cache_key")
-        .arg("vector_distance")
-        .arg("SORTBY")
-        .arg("vector_distance")
-        .arg("ASC")
-        .arg("LIMIT")
-        .arg(0_usize)
-        .arg(1_usize)
-        .arg("DIALECT")
-        .arg(2_usize);
+    command.arg(index).arg(query.query_string());
+    command.arg(&["PARAMS", "4", "vector"]).arg(vector);
+    command.arg(&["distance_threshold", threshold.as_str()]);
+    command.arg(&["RETURN", "7"]).arg(&RETURN_FIELDS);
+    command.arg(&["SORTBY", "vector_distance", "ASC"]);
+    command.arg(&["LIMIT", "0", "1", "DIALECT", "2"]);
     command
 }
 
 pub(crate) fn store_command(key: &str, fields: &CacheEntryFields) -> redis::Cmd {
+    let inserted_at = fields.inserted_at.to_string();
+    let updated_at = fields.updated_at.to_string();
     let mut command = cmd("HSET");
-    command
-        .arg(key)
-        .arg("entry_id")
-        .arg(&fields.entry_id)
-        .arg("prompt")
-        .arg(&fields.prompt)
-        .arg("response")
-        .arg(&fields.response)
-        .arg("prompt_vector")
-        .arg(fields.prompt_vector.as_slice())
-        .arg("inserted_at")
-        .arg(fields.inserted_at.to_string())
-        .arg("updated_at")
-        .arg(fields.updated_at.to_string())
-        .arg("litellm_cache_key")
-        .arg(&fields.litellm_cache_key);
+    command.arg(key);
+    command.arg(&["entry_id", fields.entry_id.as_str()]);
+    command.arg(&["prompt", fields.prompt.as_str()]);
+    command.arg(&["response", fields.response.as_str()]);
+    command.arg("prompt_vector");
+    command.arg(fields.prompt_vector.as_slice());
+    command.arg(&["inserted_at", inserted_at.as_str()]);
+    command.arg(&["updated_at", updated_at.as_str()]);
+    command.arg(&["litellm_cache_key", fields.litellm_cache_key.as_str()]);
     command
 }
 

@@ -1,22 +1,20 @@
-use std::sync::{Arc, Mutex, PoisonError};
+mod fakes;
 
-use async_trait::async_trait;
+use std::sync::Arc;
+
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json, to_value};
 
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::{Content, Message};
-use betterlite_prompts::redis_semantic_cache::error::RedisSemanticError;
 use betterlite_prompts::redis_semantic_cache::options::{RedisEnv, RedisSemanticOptions};
-use betterlite_prompts::redis_semantic_cache::ports::{
-    CacheEntryFields, Hit, IndexSchema, SemanticEmbedError, SemanticEmbedder,
-    SemanticIndexConnector, SemanticRedisIndex, SemanticSearchQuery,
-};
+use betterlite_prompts::redis_semantic_cache::ports::{Hit, SemanticRedisIndex};
 use betterlite_prompts::redis_semantic_cache::{
     CACHE_KEY_FIELD_NAME, RedisSemanticCache, SIMILARITY_FIELD, SemanticCacheKwargs,
 };
 
+use self::fakes::{ConstantEmbedder, HelperConnector, HelperIndex};
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 #[derive(Debug, Deserialize)]
@@ -165,11 +163,13 @@ fn constructor(input: &ConstructorInput) -> HelperResult {
         redis_port: input.env.redis_port.clone(),
         redis_password: input.env.redis_password.clone(),
     };
+    let embedder = ConstantEmbedder { vector: Vec::new() };
+    let backend: Arc<dyn SemanticRedisIndex> = Arc::new(HelperIndex::recording());
     let cache = RedisSemanticCache::new(
         options,
         env,
-        Arc::new(UnusedEmbedder),
-        Arc::new(UnusedConnector),
+        Arc::new(embedder),
+        Arc::new(HelperConnector { index: backend }),
     )
     .map_err(|error| helper_error("ValueError", error))?;
     Ok(json!({
@@ -197,18 +197,16 @@ fn key_scope(input: &KeyScopeInput) -> Value {
 }
 
 async fn index_fallback(input: &IndexFallbackInput) -> HelperResult {
-    let index = Arc::new(ScriptedIndex {
-        dimension: input.dimension,
-        mismatch_attempts: input.mismatch_attempts.clone(),
-        info_calls: Mutex::new(0),
-        ops: Mutex::new(Vec::new()),
-    });
-    let cache = helper_cache(
-        Arc::new(ConstantEmbedder {
-            vector: vec![0.5; input.dimension],
-        }),
-        index.clone(),
-    )?;
+    let index = Arc::new(HelperIndex::scripted(
+        input.dimension,
+        input.mismatch_attempts.clone(),
+    ));
+    let embedder = ConstantEmbedder {
+        vector: vec![0.5; input.dimension],
+    };
+    let concrete = Arc::clone(&index);
+    let backend: Arc<dyn SemanticRedisIndex> = concrete;
+    let cache = helper_cache(Arc::new(embedder), backend, Some(input.index_name.clone()))?;
     let messages = [user_message("fallback")];
     let kwargs = helper_kwargs(Some(&messages), None, None, None);
     cache.async_set_cache("scope-1", &Json::Null, &kwargs).await;
@@ -219,17 +217,15 @@ async fn index_fallback(input: &IndexFallbackInput) -> HelperResult {
 }
 
 async fn run_lookup(input: &LookupInput) -> HelperResult {
-    let index = Arc::new(RecordingIndex {
-        hits: input.hits.iter().map(to_hit).collect(),
-        searches: Mutex::new(Vec::new()),
-        stores: Mutex::new(Vec::new()),
-    });
-    let cache = helper_cache(
-        Arc::new(ConstantEmbedder {
-            vector: input.vector.clone(),
-        }),
-        index.clone(),
-    )?;
+    let index = Arc::new(HelperIndex::with_hits(
+        input.hits.iter().map(to_hit).collect(),
+    ));
+    let embedder = ConstantEmbedder {
+        vector: input.vector.clone(),
+    };
+    let concrete = Arc::clone(&index);
+    let backend: Arc<dyn SemanticRedisIndex> = concrete;
+    let cache = helper_cache(Arc::new(embedder), backend, None)?;
     let mut metadata = input.metadata.as_ref().and_then(Json::as_object).cloned();
     let kwargs = helper_kwargs(
         input.messages.as_deref(),
@@ -259,17 +255,13 @@ async fn run_lookup(input: &LookupInput) -> HelperResult {
 }
 
 async fn run_store(input: &StoreInput) -> HelperResult {
-    let index = Arc::new(RecordingIndex {
-        hits: Vec::new(),
-        searches: Mutex::new(Vec::new()),
-        stores: Mutex::new(Vec::new()),
-    });
-    let cache = helper_cache(
-        Arc::new(ConstantEmbedder {
-            vector: input.vector.clone(),
-        }),
-        index.clone(),
-    )?;
+    let index = Arc::new(HelperIndex::recording());
+    let embedder = ConstantEmbedder {
+        vector: input.vector.clone(),
+    };
+    let concrete = Arc::clone(&index);
+    let backend: Arc<dyn SemanticRedisIndex> = concrete;
+    let cache = helper_cache(Arc::new(embedder), backend, None)?;
     let kwargs = helper_kwargs(
         input.messages.as_deref(),
         input.responses_input.as_ref(),
@@ -324,6 +316,7 @@ fn helper_kwargs(
 fn helper_cache(
     embedder: Arc<ConstantEmbedder>,
     index: Arc<dyn SemanticRedisIndex>,
+    index_name: Option<String>,
 ) -> Result<RedisSemanticCache, Box<HelperError>> {
     let options = RedisSemanticOptions {
         host: Some("localhost".to_owned()),
@@ -332,7 +325,7 @@ fn helper_cache(
         redis_url: None,
         similarity_threshold: Some(0.25),
         embedding_model: None,
-        index_name: None,
+        index_name,
         embedding_max_input_tokens: None,
         embedding_timeout: 5.0,
     };
@@ -365,258 +358,6 @@ fn to_hit(input: &HitInput) -> Hit {
         litellm_cache_key: input.litellm_cache_key.clone(),
         vector_distance: input.vector_distance,
     }
-}
-
-struct ConstantEmbedder {
-    vector: Vec<f32>,
-}
-
-#[async_trait]
-impl SemanticEmbedder for ConstantEmbedder {
-    async fn embed(
-        &self,
-        _prompt: &str,
-        _metadata: Option<&Object>,
-    ) -> Result<Vec<f32>, SemanticEmbedError> {
-        Ok(self.vector.clone())
-    }
-}
-
-struct UnusedEmbedder;
-
-#[async_trait]
-impl SemanticEmbedder for UnusedEmbedder {
-    async fn embed(
-        &self,
-        _prompt: &str,
-        _metadata: Option<&Object>,
-    ) -> Result<Vec<f32>, SemanticEmbedError> {
-        Err(SemanticEmbedError::Failed {
-            message: "the constructor helper embeds nothing".to_owned(),
-        })
-    }
-}
-
-struct HelperConnector {
-    index: Arc<dyn SemanticRedisIndex>,
-}
-
-#[async_trait]
-impl SemanticIndexConnector for HelperConnector {
-    async fn connect(
-        &self,
-        _redis_url: &str,
-    ) -> Result<Arc<dyn SemanticRedisIndex>, RedisSemanticError> {
-        Ok(Arc::clone(&self.index))
-    }
-}
-
-struct UnusedConnector;
-
-#[async_trait]
-impl SemanticIndexConnector for UnusedConnector {
-    async fn connect(
-        &self,
-        _redis_url: &str,
-    ) -> Result<Arc<dyn SemanticRedisIndex>, RedisSemanticError> {
-        Err(RedisSemanticError::MissingIndex {
-            index: "the constructor helper connects nowhere".to_owned(),
-        })
-    }
-}
-
-struct RecordingIndex {
-    hits: Vec<Hit>,
-    searches: Mutex<Vec<(String, SemanticSearchQuery)>>,
-    stores: Mutex<Vec<(String, CacheEntryFields, Option<i64>)>>,
-}
-
-impl RecordingIndex {
-    fn searches(&self) -> Vec<(String, SemanticSearchQuery)> {
-        self.searches
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    fn stores(&self) -> Vec<(String, CacheEntryFields, Option<i64>)> {
-        self.stores
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-#[async_trait]
-impl SemanticRedisIndex for RecordingIndex {
-    async fn ft_info(&self, _index: &str) -> Result<Option<Json>, RedisSemanticError> {
-        Ok(None)
-    }
-
-    async fn ft_create(&self, _schema: &IndexSchema) -> Result<(), RedisSemanticError> {
-        Ok(())
-    }
-
-    async fn ft_dropindex(&self, _index: &str) -> Result<(), RedisSemanticError> {
-        Ok(())
-    }
-
-    async fn ft_search(
-        &self,
-        index: &str,
-        query: &SemanticSearchQuery,
-    ) -> Result<Vec<Hit>, RedisSemanticError> {
-        self.searches
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((index.to_owned(), query.clone()));
-        Ok(self.hits.clone())
-    }
-
-    async fn store_hash(
-        &self,
-        key: &str,
-        fields: &CacheEntryFields,
-        ttl: Option<i64>,
-    ) -> Result<(), RedisSemanticError> {
-        self.stores
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((key.to_owned(), fields.clone(), ttl));
-        Ok(())
-    }
-}
-
-enum FallbackOp {
-    Info(String),
-    Drop(String),
-}
-
-struct ScriptedIndex {
-    dimension: usize,
-    mismatch_attempts: Vec<usize>,
-    info_calls: Mutex<usize>,
-    ops: Mutex<Vec<FallbackOp>>,
-}
-
-impl ScriptedIndex {
-    fn attempts(&self) -> Vec<Value> {
-        self.ops
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .map(|operation| match operation {
-                FallbackOp::Info(name) => json!({ "name": name, "overwrite": false }),
-                FallbackOp::Drop(name) => json!({ "name": name, "overwrite": true }),
-            })
-            .collect()
-    }
-}
-
-#[async_trait]
-impl SemanticRedisIndex for ScriptedIndex {
-    async fn ft_info(&self, index: &str) -> Result<Option<Json>, RedisSemanticError> {
-        let call = {
-            let mut calls = self
-                .info_calls
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            let call = *calls;
-            *calls += 1;
-            call
-        };
-        self.ops
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(FallbackOp::Info(index.to_owned()));
-        if self.mismatch_attempts.contains(&call) {
-            return Ok(Some(info_reply("another-index", self.dimension)));
-        }
-        Ok(Some(info_reply(index, self.dimension)))
-    }
-
-    async fn ft_create(&self, _schema: &IndexSchema) -> Result<(), RedisSemanticError> {
-        Ok(())
-    }
-
-    async fn ft_dropindex(&self, index: &str) -> Result<(), RedisSemanticError> {
-        self.ops
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(FallbackOp::Drop(index.to_owned()));
-        Ok(())
-    }
-
-    async fn ft_search(
-        &self,
-        _index: &str,
-        _query: &SemanticSearchQuery,
-    ) -> Result<Vec<Hit>, RedisSemanticError> {
-        Ok(Vec::new())
-    }
-
-    async fn store_hash(
-        &self,
-        _key: &str,
-        _fields: &CacheEntryFields,
-        _ttl: Option<i64>,
-    ) -> Result<(), RedisSemanticError> {
-        Ok(())
-    }
-}
-
-fn info_reply(name: &str, dimension: usize) -> Json {
-    let base_fields = [
-        ("prompt", "TEXT"),
-        ("response", "TEXT"),
-        ("inserted_at", "NUMERIC"),
-        ("updated_at", "NUMERIC"),
-    ];
-    let mut attributes = Vec::new();
-    for (field, kind) in base_fields {
-        attributes.push(field_attribute(field, kind));
-    }
-    attributes.push(vector_attribute(dimension));
-    attributes.push(field_attribute(CACHE_KEY_FIELD_NAME, "TAG"));
-    Json::List(vec![
-        Json::Text("index_name".to_owned()),
-        Json::Text(name.to_owned()),
-        Json::Text("index_definition".to_owned()),
-        Json::List(vec![
-            Json::Text("key_type".to_owned()),
-            Json::Text("HASH".to_owned()),
-            Json::Text("prefixes".to_owned()),
-            Json::List(vec![Json::Text(name.to_owned())]),
-        ]),
-        Json::Text("attributes".to_owned()),
-        Json::List(attributes),
-    ])
-}
-
-fn field_attribute(field: &str, kind: &str) -> Json {
-    Json::List(vec![
-        Json::Text("identifier".to_owned()),
-        Json::Text(field.to_owned()),
-        Json::Text("type".to_owned()),
-        Json::Text(kind.to_owned()),
-    ])
-}
-
-fn vector_attribute(dimension: usize) -> Json {
-    Json::List(vec![
-        Json::Text("identifier".to_owned()),
-        Json::Text("prompt_vector".to_owned()),
-        Json::Text("type".to_owned()),
-        Json::Text("VECTOR".to_owned()),
-        Json::Text("algorithm".to_owned()),
-        Json::Text("FLAT".to_owned()),
-        Json::Text("data_type".to_owned()),
-        Json::Text("FLOAT32".to_owned()),
-        Json::Text("dim".to_owned()),
-        Json::Text(dimension.to_string()),
-        Json::Text("distance_metric".to_owned()),
-        Json::Text("COSINE".to_owned()),
-    ])
 }
 
 fn helper_error<M>(class: &str, message: M) -> Box<HelperError>
