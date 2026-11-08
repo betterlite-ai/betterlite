@@ -1,0 +1,15 @@
+model_list:
+  - model_name: fast
+    litellm_params:
+      model: openai/gpt-4o
+      timeout: 12.5
+      stream_timeout: 14
+      request_timeout: 7
+router_settings:
+  timeout: 30
+  stream_timeout: 20
+  default_litellm_params:
+    timeout: 40
+    stream_timeout: 25
+litellm_settings:
+  request_timeout: 6000
