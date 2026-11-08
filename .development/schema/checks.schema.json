@@ -81,7 +81,9 @@
         "diff-budget",
         "expect-budget",
         "file-size",
-        "crates"
+        "crates",
+        "module-tree",
+        "case-ignores"
       ]
     },
     "Command": {
