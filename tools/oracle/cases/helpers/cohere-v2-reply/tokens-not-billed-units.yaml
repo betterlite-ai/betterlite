@@ -1,0 +1,29 @@
+kind: helper
+name: cohere-v2-reply-tokens-not-billed-units
+call:
+  cohere_v2_reply:
+    function: reply
+    requests:
+      - body: '{"message":{"content":[{"text":"a"},null,{"text":"b"}]},"usage":{"tokens":{"input_tokens":7,"output_tokens":9},"billed_units":{"input_tokens":100,"output_tokens":100}}}'
+        status: 200
+        model: command-r
+        created: 42
+        id: chatcmpl-template
+        finish_reason: stop
+        message: {content: discarded}
+      - body: '{"message":{},"usage":{"tokens":{}}}'
+        status: 200
+        model: command-r
+        created: 43
+        id: chatcmpl-template
+        finish_reason: stop
+        message: {content: kept}
+      - body: '{"message":{"content":[]},"usage":{"tokens":{"input_tokens":5}}}'
+        status: 200
+        model: command-r
+        created: 44
+        id: chatcmpl-template
+        finish_reason: null
+        message: {}
+compare: {ignore: []}
+env: {}

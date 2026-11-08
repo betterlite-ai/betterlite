@@ -12,48 +12,27 @@ pub mod citations;
 pub mod tool_calls;
 
 #[derive(Debug, Error)]
-pub enum CohereV2Error {
-    #[error("the Cohere response is not valid JSON: {source}")]
-    Json {
-        status: u16,
-        #[source]
-        source: JsonError,
-    },
+pub enum ReplyError {
+    #[error("the Cohere response is not valid JSON: {1}")]
+    Json(u16, #[source] JsonError),
     #[error("the Cohere response is not a JSON object")]
     NotAMapping,
-    #[error("the Cohere response has no {field} field")]
-    Missing { field: &'static str },
-    #[error("the Cohere {field} field is not an object")]
-    NotAnObject { field: &'static str },
-    #[error("the Cohere {field} field is not a list")]
-    NotAList { field: &'static str },
-    #[error("the Cohere {field} field is not an integer")]
-    NotAnInteger { field: &'static str },
-    #[error("the Cohere {field} field is not a string")]
-    NotText { field: &'static str },
-    #[error("the Cohere tool arguments could not be written as JSON: {source}")]
-    Encode {
-        #[source]
-        source: JsonError,
-    },
+    #[error("the Cohere {0} field {1}")]
+    Field(&'static str, &'static str),
+    #[error("the Cohere tool arguments could not be written as JSON: {0}")]
+    Encode(#[source] JsonError),
     #[error("the Cohere token usage exceeds the supported range")]
     UsageOverflow,
 }
 
-impl CohereV2Error {
+impl ReplyError {
     // the two stages LiteLLM tags with a status keep it; field access failures carry none
     #[must_use]
     pub const fn status_code(&self) -> Option<u16> {
         match self {
-            Self::Json { status, .. } => Some(*status),
+            Self::Json(status, _) => Some(*status),
             Self::NotAMapping => Some(422),
-            Self::Missing { .. }
-            | Self::NotAnObject { .. }
-            | Self::NotAList { .. }
-            | Self::NotAnInteger { .. }
-            | Self::NotText { .. }
-            | Self::Encode { .. }
-            | Self::UsageOverflow => None,
+            Self::Field(..) | Self::Encode(_) | Self::UsageOverflow => None,
         }
     }
 }
@@ -64,15 +43,6 @@ pub struct AssistantReply {
     pub content: Option<String>,
     pub tool_calls: Option<Vec<ReplyToolCall>>,
     pub annotations: Option<Vec<Annotation>>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ReplyTemplate {
-    pub id: String,
-    pub finish_reason: Option<String>,
-    #[serde(default)]
-    pub message: AssistantReply,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -90,67 +60,54 @@ pub struct ReplyInput<'request> {
     pub status: u16,
     pub model: &'request str,
     pub created: u64,
-    pub template: ReplyTemplate,
+    pub id: String,
+    pub finish_reason: Option<String>,
+    pub message: AssistantReply,
 }
 
-pub fn decode_cohere_chat_v2(input: ReplyInput<'_>) -> Result<CohereV2Reply, CohereV2Error> {
-    let decoded: Json =
-        serde_json::from_slice(input.body).map_err(|source| CohereV2Error::Json {
-            status: input.status,
-            source,
-        })?;
+pub fn decode_cohere_chat_v2(input: ReplyInput<'_>) -> Result<CohereV2Reply, ReplyError> {
+    let decoded: Json = serde_json::from_slice(input.body)
+        .map_err(|source| ReplyError::Json(input.status, source))?;
     // CohereV2ChatResponse is a TypedDict: only keyword expansion of a non-mapping root fails here
     let Json::Object(response) = decoded else {
-        return Err(CohereV2Error::NotAMapping);
+        return Err(ReplyError::NotAMapping);
     };
     let fields = match response.get("message") {
         Some(Json::Object(fields)) => fields,
-        Some(_) => return Err(CohereV2Error::NotAnObject { field: "message" }),
-        None => return Err(CohereV2Error::Missing { field: "message" }),
+        Some(_) => return Err(ReplyError::Field("message", "is not an object")),
+        None => return Err(ReplyError::Field("message", "is missing")),
     };
-    let ReplyTemplate {
-        id,
-        finish_reason,
-        message,
-    } = input.template;
     Ok(CohereV2Reply {
-        id,
+        id: input.id,
         created: input.created,
         model: input.model.to_owned(),
-        finish_reason,
-        message: reply_message(message, fields)?,
+        finish_reason: input.finish_reason,
+        message: reply_message(input.message, fields)?,
         usage: usage(&response)?,
     })
 }
 
-fn reply_message(
-    mut reply: AssistantReply,
-    fields: &Object,
-) -> Result<AssistantReply, CohereV2Error> {
+fn reply_message(mut reply: AssistantReply, fields: &Object) -> Result<AssistantReply, ReplyError> {
     match fields.get("content") {
         None | Some(Json::Null) => {}
         Some(Json::List(parts)) => reply.content = Some(concatenate(parts)?),
-        Some(_) => {
-            return Err(CohereV2Error::NotAList {
-                field: "message.content",
-            });
-        }
+        Some(_) => return Err(ReplyError::Field("message.content", "is not a list")),
     }
     let annotations = field_annotations(fields)?;
-    let Some(tools) = tool_calls::field_tool_calls(fields)? else {
-        if annotations.is_some() {
-            reply.annotations = annotations;
-        }
-        return Ok(reply);
-    };
-    Ok(AssistantReply {
-        content: None,
-        tool_calls: Some(tools),
-        annotations,
-    })
+    if let Some(tools) = tool_calls::field_tool_calls(fields)? {
+        return Ok(AssistantReply {
+            content: None,
+            tool_calls: Some(tools),
+            annotations,
+        });
+    }
+    if annotations.is_some() {
+        reply.annotations = annotations;
+    }
+    Ok(reply)
 }
 
-fn concatenate(parts: &[Json]) -> Result<String, CohereV2Error> {
+fn concatenate(parts: &[Json]) -> Result<String, ReplyError> {
     let mut text = String::new();
     for part in parts {
         match part {
@@ -159,48 +116,38 @@ fn concatenate(parts: &[Json]) -> Result<String, CohereV2Error> {
                 None | Some(Json::Null) => {}
                 Some(Json::Text(value)) => text.push_str(value),
                 Some(_) => {
-                    return Err(CohereV2Error::NotText {
-                        field: "message.content.text",
-                    });
+                    return Err(ReplyError::Field("message.content.text", "is not a string"));
                 }
             },
             Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-                return Err(CohereV2Error::NotAnObject {
-                    field: "message.content",
-                });
+                return Err(ReplyError::Field("message.content", "is not an object"));
             }
         }
     }
     Ok(text)
 }
 
-fn field_annotations(fields: &Object) -> Result<Option<Vec<Annotation>>, CohereV2Error> {
+fn field_annotations(fields: &Object) -> Result<Option<Vec<Annotation>>, ReplyError> {
     match fields.get("citations").filter(|value| value.is_truthy()) {
         Some(Json::List(entries)) => {
             let found = citations::annotations(entries)?;
             Ok((!found.is_empty()).then_some(found))
         }
-        Some(_) => Err(CohereV2Error::NotAList {
-            field: "message.citations",
-        }),
+        Some(_) => Err(ReplyError::Field("message.citations", "is not a list")),
         None => Ok(None),
     }
 }
 
-fn usage(response: &Object) -> Result<CohereUsage, CohereV2Error> {
+fn usage(response: &Object) -> Result<CohereUsage, ReplyError> {
     let usage = match response.get("usage") {
         Some(Json::Object(fields)) => fields,
-        Some(_) => return Err(CohereV2Error::NotAnObject { field: "usage" }),
-        None => return Err(CohereV2Error::Missing { field: "usage" }),
+        Some(_) => return Err(ReplyError::Field("usage", "is not an object")),
+        None => return Err(ReplyError::Field("usage", "is missing")),
     };
     let tokens = match usage.get("tokens") {
         None | Some(Json::Null) => None,
         Some(Json::Object(fields)) => Some(fields),
-        Some(_) => {
-            return Err(CohereV2Error::NotAnObject {
-                field: "usage.tokens",
-            });
-        }
+        Some(_) => return Err(ReplyError::Field("usage.tokens", "is not an object")),
     };
     let prompt_tokens = integer(
         tokens.and_then(|fields| fields.get("input_tokens")),
@@ -210,19 +157,22 @@ fn usage(response: &Object) -> Result<CohereUsage, CohereV2Error> {
         tokens.and_then(|fields| fields.get("output_tokens")),
         "usage.tokens.output_tokens",
     )?;
+    let total_tokens = prompt_tokens
+        .checked_add(completion_tokens)
+        .ok_or(ReplyError::UsageOverflow)?;
     Ok(CohereUsage {
         prompt_tokens,
         completion_tokens,
-        total_tokens: prompt_tokens
-            .checked_add(completion_tokens)
-            .ok_or(CohereV2Error::UsageOverflow)?,
+        total_tokens,
     })
 }
 
-pub(super) fn integer(value: Option<&Json>, field: &'static str) -> Result<i64, CohereV2Error> {
+pub(super) fn integer(value: Option<&Json>, field: &'static str) -> Result<i64, ReplyError> {
     match value {
         None | Some(Json::Null) => Ok(0),
-        Some(Json::Number(number)) => number.as_i64().ok_or(CohereV2Error::NotAnInteger { field }),
-        Some(_) => Err(CohereV2Error::NotAnInteger { field }),
+        Some(Json::Number(number)) => number
+            .as_i64()
+            .ok_or(ReplyError::Field(field, "is not an integer")),
+        Some(_) => Err(ReplyError::Field(field, "is not an integer")),
     }
 }

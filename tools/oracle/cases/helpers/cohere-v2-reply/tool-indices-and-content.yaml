@@ -1,0 +1,18 @@
+kind: helper
+name: cohere-v2-reply-tool-indices-and-content
+call:
+  cohere_v2_reply:
+    function: reply
+    requests:
+      - body: '{"id":"provider-id","finish_reason":"COMPLETE","message":{"role":"assistant","content":[{"type":"text","text":"hello "},{"type":"text","text":"world"}],"tool_calls":[{"id":"call_a","type":"function","index":9,"function":{"name":"lookup","parameters":{}}},{"id":"call_b","type":"function","function":{"name":"weather","parameters":{"city":"Paris"}}}],"citations":[{"start":2,"end":3,"sources":[{"type":"document","document":{"title":"Doc"},"id":"s"}]}]},"usage":{"tokens":{"input_tokens":1,"output_tokens":2}}}'
+        status: 200
+        model: command-r
+        created: 1234
+        id: chatcmpl-template
+        finish_reason: stop
+        message: {content: existing}
+compare:
+  ignore:
+    - pointer: /value/0/value/tool_calls/1/function/arguments
+      why: betterlite writes compact JSON where Python's json.dumps adds spaces
+env: {}

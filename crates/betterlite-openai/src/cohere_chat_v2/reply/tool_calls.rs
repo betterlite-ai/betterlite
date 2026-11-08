@@ -1,7 +1,7 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::{Deserialize, Serialize};
 
-use super::CohereV2Error;
+use super::ReplyError;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ReplyToolCall {
@@ -18,31 +18,25 @@ pub struct ReplyFunction {
     pub arguments: String,
 }
 
-pub(super) fn field_tool_calls(
-    fields: &Object,
-) -> Result<Option<Vec<ReplyToolCall>>, CohereV2Error> {
+pub(super) fn field_tool_calls(fields: &Object) -> Result<Option<Vec<ReplyToolCall>>, ReplyError> {
     match fields.get("tool_calls") {
         Some(Json::List(entries)) if !entries.is_empty() => Ok(Some(tool_calls(entries)?)),
         Some(Json::Null | Json::List(_)) | None => Ok(None),
-        Some(_) => Err(CohereV2Error::NotAList {
-            field: "message.tool_calls",
-        }),
+        Some(_) => Err(ReplyError::Field("message.tool_calls", "is not a list")),
     }
 }
 
-fn tool_calls(entries: &[Json]) -> Result<Vec<ReplyToolCall>, CohereV2Error> {
-    let mut calls = Vec::with_capacity(entries.len());
-    for (index, entry) in entries.iter().enumerate() {
-        calls.push(tool_call(index, entry)?);
-    }
-    Ok(calls)
+fn tool_calls(entries: &[Json]) -> Result<Vec<ReplyToolCall>, ReplyError> {
+    entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| tool_call(index, entry))
+        .collect()
 }
 
-fn tool_call(index: usize, entry: &Json) -> Result<ReplyToolCall, CohereV2Error> {
+fn tool_call(index: usize, entry: &Json) -> Result<ReplyToolCall, ReplyError> {
     let Json::Object(tool) = entry else {
-        return Err(CohereV2Error::NotAnObject {
-            field: "message.tool_calls",
-        });
+        return Err(ReplyError::Field("message.tool_calls", "is not an object"));
     };
     Ok(ReplyToolCall {
         index,
@@ -52,57 +46,63 @@ fn tool_call(index: usize, entry: &Json) -> Result<ReplyToolCall, CohereV2Error>
     })
 }
 
-fn tool_id(tool: &Object) -> Result<String, CohereV2Error> {
+fn tool_id(tool: &Object) -> Result<String, ReplyError> {
     match tool.get("id") {
         Some(Json::Text(id)) => Ok(id.clone()),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => Err(CohereV2Error::NotText {
-            field: "message.tool_calls.id",
-        }),
+        | None => Err(ReplyError::Field(
+            "message.tool_calls.id",
+            "is not a string",
+        )),
     }
 }
 
-fn tool_kind(tool: &Object) -> Result<String, CohereV2Error> {
+fn tool_kind(tool: &Object) -> Result<String, ReplyError> {
     match tool.get("type") {
         None | Some(Json::Null) => Ok(String::from("function")),
         Some(Json::Text(kind)) => Ok(kind.clone()),
-        Some(_) => Err(CohereV2Error::NotText {
-            field: "message.tool_calls.type",
-        }),
+        Some(_) => Err(ReplyError::Field(
+            "message.tool_calls.type",
+            "is not a string",
+        )),
     }
 }
 
-fn tool_function(tool: &Object) -> Result<ReplyFunction, CohereV2Error> {
+fn tool_function(tool: &Object) -> Result<ReplyFunction, ReplyError> {
     match tool.get("function") {
         Some(Json::Object(fields)) => function(fields),
-        Some(_) => Err(CohereV2Error::NotAnObject {
-            field: "message.tool_calls.function",
-        }),
-        None => Err(CohereV2Error::Missing {
-            field: "message.tool_calls.function",
-        }),
+        Some(_) => Err(ReplyError::Field(
+            "message.tool_calls.function",
+            "is not an object",
+        )),
+        None => Err(ReplyError::Field(
+            "message.tool_calls.function",
+            "is missing",
+        )),
     }
 }
 
-fn function(fields: &Object) -> Result<ReplyFunction, CohereV2Error> {
+fn function(fields: &Object) -> Result<ReplyFunction, ReplyError> {
     let name = match fields.get("name") {
         None | Some(Json::Null) => None,
         Some(Json::Text(name)) => Some(name.clone()),
         Some(_) => {
-            return Err(CohereV2Error::NotText {
-                field: "message.tool_calls.function.name",
-            });
+            return Err(ReplyError::Field(
+                "message.tool_calls.function.name",
+                "is not a string",
+            ));
         }
     };
     let arguments = match fields.get("parameters") {
         None | Some(Json::Null) => String::new(),
         Some(Json::Object(parameters)) => {
-            serde_json::to_string(parameters).map_err(|source| CohereV2Error::Encode { source })?
+            serde_json::to_string(parameters).map_err(ReplyError::Encode)?
         }
         Some(_) => {
-            return Err(CohereV2Error::NotAnObject {
-                field: "message.tool_calls.function.parameters",
-            });
+            return Err(ReplyError::Field(
+                "message.tool_calls.function.parameters",
+                "is not an object",
+            ));
         }
     };
     Ok(ReplyFunction { name, arguments })

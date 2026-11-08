@@ -9,9 +9,7 @@ use rstest::rstest;
 
 use super::reply::citations::{Annotation, UrlCitation, annotations};
 use super::reply::tool_calls::{ReplyFunction, ReplyToolCall};
-use super::reply::{
-    AssistantReply, CohereV2Error, CohereV2Reply, ReplyInput, ReplyTemplate, decode_cohere_chat_v2,
-};
+use super::reply::{AssistantReply, CohereV2Reply, ReplyError, ReplyInput, decode_cohere_chat_v2};
 use super::{CohereV2ChatConfig, SUPPORTED_OPENAI_PARAMS, complete_url, map_openai_params};
 use crate::chat::ChatMessage;
 use crate::chat_content::RefuseDownloads;
@@ -25,8 +23,17 @@ fn json_list(text: &str) -> Vec<Json> {
     serde_json::from_str(text).unwrap()
 }
 
-fn template(content: Option<&str>) -> ReplyTemplate {
-    ReplyTemplate {
+fn reply_input<'body>(
+    body: &'body [u8],
+    status: u16,
+    created: u64,
+    content: Option<&str>,
+) -> ReplyInput<'body> {
+    ReplyInput {
+        body,
+        status,
+        model: "command-r",
+        created,
         id: String::from("chatcmpl-template"),
         finish_reason: Some(String::from("stop")),
         message: AssistantReply {
@@ -37,24 +44,12 @@ fn template(content: Option<&str>) -> ReplyTemplate {
     }
 }
 
-fn decode(body: &str) -> Result<CohereV2Reply, CohereV2Error> {
-    decode_cohere_chat_v2(ReplyInput {
-        body: body.as_bytes(),
-        status: 200,
-        model: "command-r",
-        created: 1234,
-        template: template(None),
-    })
+fn decode(body: &str) -> Result<CohereV2Reply, ReplyError> {
+    decode_cohere_chat_v2(reply_input(body.as_bytes(), 200, 1234, None))
 }
 
-fn decode_preserving(body: &str, content: &str) -> Result<CohereV2Reply, CohereV2Error> {
-    decode_cohere_chat_v2(ReplyInput {
-        body: body.as_bytes(),
-        status: 200,
-        model: "command-r",
-        created: 1234,
-        template: template(Some(content)),
-    })
+fn decode_preserving(body: &str, content: &str) -> Result<CohereV2Reply, ReplyError> {
+    decode_cohere_chat_v2(reply_input(body.as_bytes(), 200, 1234, Some(content)))
 }
 
 fn url_annotation(start_index: i64, end_index: i64, title: &str, url: &str) -> Annotation {
@@ -126,30 +121,25 @@ fn map_openai_params_renames_and_leaves_unmapped_names_alone() {
 #[test]
 fn config_defaults_to_nothing_and_keeps_explicit_values() {
     assert!(CohereV2ChatConfig::default().get_config().is_empty());
-    let config = CohereV2ChatConfig {
-        preamble: Some(Json::Text(String::from("hello"))),
-        chat_history: None,
-        generation_id: None,
-        response_id: None,
-        conversation_id: None,
-        prompt_truncation: None,
-        connectors: None,
-        search_queries_only: None,
-        documents: None,
-        temperature: Some(Json::Number(serde_json::Number::from(0_i32))),
-        max_tokens: None,
-        top_k: None,
-        top_p: None,
-        frequency_penalty: None,
-        presence_penalty: None,
-        tools: Some(Json::List(Vec::new())),
-        tool_results: None,
-        seed: Some(Json::Number(serde_json::Number::from(0_i32))),
-    };
+    let config = CohereV2ChatConfig::with_settings(object(
+        r#"{"preamble": "hello", "temperature": 0, "tools": [], "seed": 0, "max_tokens": null}"#,
+    ))
+    .unwrap();
     assert_eq!(
         config.get_config(),
         object(r#"{"preamble": "hello", "temperature": 0, "tools": [], "seed": 0}"#)
     );
+}
+
+#[test]
+fn config_rejects_an_undeclared_setting() {
+    let error =
+        CohereV2ChatConfig::with_settings(object(r#"{"preamble": "hello", "temperaturez": 1}"#))
+            .unwrap_err();
+    assert!(matches!(
+        error,
+        super::CohereV2ConfigError::UnknownSetting { key } if key == "temperaturez"
+    ));
 }
 
 #[test]
@@ -371,18 +361,12 @@ fn usage_reads_tokens_and_ignores_billed_units() {
 
 #[test]
 fn json_failures_keep_the_upstream_status_and_mapping_failures_are_422() {
-    let input = |body: &'static [u8], status: u16| ReplyInput {
-        body,
-        status,
-        model: "m",
-        created: 0,
-        template: template(None),
-    };
-    let invalid = decode_cohere_chat_v2(input(b"{not json", 502)).unwrap_err();
+    let input = reply_input;
+    let invalid = decode_cohere_chat_v2(input(b"{not json", 502, 0, None)).unwrap_err();
     assert_eq!(invalid.status_code(), Some(502));
-    let array = decode_cohere_chat_v2(input(b"[1,2]", 200)).unwrap_err();
+    let array = decode_cohere_chat_v2(input(b"[1,2]", 200, 0, None)).unwrap_err();
     assert_eq!(array.status_code(), Some(422));
-    assert!(matches!(array, CohereV2Error::NotAMapping));
+    assert!(matches!(array, ReplyError::NotAMapping));
 }
 
 #[rstest]
@@ -436,20 +420,15 @@ fn token_total_overflow_is_its_own_failure() {
         i64::MAX
     );
     let error = decode(&body).unwrap_err();
-    assert!(matches!(error, CohereV2Error::UsageOverflow));
+    assert!(matches!(error, ReplyError::UsageOverflow));
     assert_eq!(error.status_code(), None);
 }
 
 #[rstest]
 fn replays_the_cohere_chat_v2_corpus(#[files("fuzz/corpus/cohere_chat_v2/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
-    let _decoded: Result<CohereV2Reply, CohereV2Error> = decode_cohere_chat_v2(ReplyInput {
-        body: &bytes,
-        status: 200,
-        model: "command-r",
-        created: 0,
-        template: ReplyTemplate::default(),
-    });
+    let _decoded: Result<CohereV2Reply, ReplyError> =
+        decode_cohere_chat_v2(reply_input(&bytes, 200, 0, None));
 }
 
 #[test]

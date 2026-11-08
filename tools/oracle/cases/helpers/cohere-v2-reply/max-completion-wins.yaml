@@ -1,0 +1,25 @@
+kind: helper
+name: cohere-v2-reply-max-completion-wins
+call:
+  cohere_v2_reply:
+    function: options
+    supported_model: command-r
+    mappings:
+      - non_default_params: {max_tokens: 10, max_completion_tokens: 20}
+        optional_params: {kept: 1}
+      - non_default_params: {max_completion_tokens: 20, max_tokens: 10}
+        optional_params: {}
+      - non_default_params:
+          n: 2
+          top_p: 0.5
+          stop: [x, y]
+          stream: true
+          temperature: 0.1
+          frequency_penalty: 0.2
+          presence_penalty: 0.3
+          tools: []
+          seed: 5
+          tool_choice: auto
+          extra_headers: {x-test: "1"}
+compare: {ignore: []}
+env: {}

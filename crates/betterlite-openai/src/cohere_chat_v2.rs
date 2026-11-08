@@ -29,57 +29,33 @@ pub const SUPPORTED_OPENAI_PARAMS: [&str; 13] = [
     "extra_headers",
 ];
 
+// LiteLLM's CohereV2ChatConfig constructor declares these settings, and every one starts absent
+const SETTINGS: &str = "preamble chat_history generation_id response_id conversation_id prompt_truncation connectors search_queries_only documents temperature max_tokens k p frequency_penalty presence_penalty tools tool_results seed";
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CohereV2ChatConfig {
-    pub preamble: Option<Json>,
-    pub chat_history: Option<Json>,
-    pub generation_id: Option<Json>,
-    pub response_id: Option<Json>,
-    pub conversation_id: Option<Json>,
-    pub prompt_truncation: Option<Json>,
-    pub connectors: Option<Json>,
-    pub search_queries_only: Option<Json>,
-    pub documents: Option<Json>,
-    pub temperature: Option<Json>,
-    pub max_tokens: Option<Json>,
-    pub top_k: Option<Json>,
-    pub top_p: Option<Json>,
-    pub frequency_penalty: Option<Json>,
-    pub presence_penalty: Option<Json>,
-    pub tools: Option<Json>,
-    pub tool_results: Option<Json>,
-    pub seed: Option<Json>,
+    settings: Object,
 }
 
 impl CohereV2ChatConfig {
+    pub fn with_settings(settings: Object) -> Result<Self, CohereV2ConfigError> {
+        if let Some(key) = settings
+            .keys()
+            .find(|key| !SETTINGS.split_whitespace().any(|name| name == key.as_str()))
+        {
+            return Err(CohereV2ConfigError::UnknownSetting { key: key.clone() });
+        }
+        Ok(Self { settings })
+    }
+
+    // a null setting is an absent one, as the project's compatibility policy says for every value
     #[must_use]
     pub fn get_config(&self) -> Object {
-        let mut config = Object::new();
-        for (key, value) in [
-            ("preamble", &self.preamble),
-            ("chat_history", &self.chat_history),
-            ("generation_id", &self.generation_id),
-            ("response_id", &self.response_id),
-            ("conversation_id", &self.conversation_id),
-            ("prompt_truncation", &self.prompt_truncation),
-            ("connectors", &self.connectors),
-            ("search_queries_only", &self.search_queries_only),
-            ("documents", &self.documents),
-            ("temperature", &self.temperature),
-            ("max_tokens", &self.max_tokens),
-            ("k", &self.top_k),
-            ("p", &self.top_p),
-            ("frequency_penalty", &self.frequency_penalty),
-            ("presence_penalty", &self.presence_penalty),
-            ("tools", &self.tools),
-            ("tool_results", &self.tool_results),
-            ("seed", &self.seed),
-        ] {
-            if let Some(setting) = value {
-                config.insert(key.to_owned(), setting.clone());
-            }
-        }
-        config
+        self.settings
+            .iter()
+            .filter(|(_, value)| !matches!(value, Json::Null))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect()
     }
 }
 
@@ -106,6 +82,8 @@ pub fn map_openai_params(non_default_params: &Object, mut optional_params: Objec
 
 #[derive(Debug, Error)]
 pub enum CohereV2ConfigError {
+    #[error("Cohere v2 chat has no {key} setting")]
+    UnknownSetting { key: String },
     #[error("api_base is required")]
     MissingApiBase,
 }
