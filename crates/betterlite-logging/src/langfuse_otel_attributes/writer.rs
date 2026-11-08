@@ -14,7 +14,7 @@ use super::metadata::{extract_langfuse_metadata, set_metadata_attributes};
 use super::observation::set_observation_output;
 use super::wire::{field, json_from_metadata, json_value, object, text};
 
-// litellm.integrations.langfuse.langfuse_otel.LangfuseOtelLogger.set_langfuse_otel_attributes
+// litellm.integrations.langfuse.langfuse_otel.LangfuseOtelLogger.set_langfuse_otel_attributes; the redaction answer is never read
 pub fn set_langfuse_otel_attributes<S>(
     span: &mut S,
     kwargs: &MetadataMap,
