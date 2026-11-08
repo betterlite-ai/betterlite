@@ -34,12 +34,8 @@ pub enum VaultResponseError {
     InvalidJson,
     #[error("the Vault response body is not a JSON object")]
     NotAnObject,
-    #[error("the Vault login response has no auth block")]
-    MissingAuth,
-    #[error("the Vault login response has no auth.client_token")]
-    MissingToken,
-    #[error("the Vault login response has no usable auth.lease_duration")]
-    MissingLease,
+    #[error("the Vault login response has no usable auth.client_token and auth.lease_duration")]
+    InvalidLogin,
 }
 
 #[derive(Debug, Error)]

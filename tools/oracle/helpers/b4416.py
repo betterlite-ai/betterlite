@@ -202,7 +202,7 @@ def init_tag(error: ValueError) -> str:
 def token_result(manager: Manager) -> Json:
     try:
         headers = manager._get_request_headers()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    except Exception:  # noqa: BLE001 - LiteLLM wraps every login failure in RuntimeError
+    except RuntimeError:
         return {"error": "login_failed"}
     return {"token": headers["X-Vault-Token"]}
 

@@ -7,7 +7,8 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use crate::vault::error::VaultResponseError;
-use crate::vault::response::{decode_login_response, json_object_body, secret_value};
+use crate::vault::response::login::decode_login_response;
+use crate::vault::response::{json_object_body, secret_value};
 
 const LOGIN: &str = r#"{"auth":{"client_token":"hvs.token","lease_duration":3600}}"#;
 
@@ -19,26 +20,26 @@ fn a_login_response_yields_the_token_and_the_lease() {
 }
 
 #[rstest]
-#[case::not_json("not a login response", VaultResponseError::InvalidJson)]
-#[case::array_body("[]", VaultResponseError::MissingAuth)]
-#[case::missing_auth("{}", VaultResponseError::MissingAuth)]
-#[case::auth_not_an_object(r#"{"auth":"token"}"#, VaultResponseError::MissingAuth)]
-#[case::missing_token(r#"{"auth":{"lease_duration":60}}"#, VaultResponseError::MissingToken)]
+#[case::not_json("not a login response", VaultResponseError::InvalidLogin)]
+#[case::array_body("[]", VaultResponseError::InvalidLogin)]
+#[case::missing_auth("{}", VaultResponseError::InvalidLogin)]
+#[case::auth_not_an_object(r#"{"auth":"token"}"#, VaultResponseError::InvalidLogin)]
+#[case::missing_token(r#"{"auth":{"lease_duration":60}}"#, VaultResponseError::InvalidLogin)]
 #[case::token_not_a_string(
     r#"{"auth":{"client_token":12,"lease_duration":60}}"#,
-    VaultResponseError::MissingToken
+    VaultResponseError::InvalidLogin
 )]
 #[case::missing_lease(
     r#"{"auth":{"client_token":"hvs.token"}}"#,
-    VaultResponseError::MissingLease
+    VaultResponseError::InvalidLogin
 )]
 #[case::negative_lease(
     r#"{"auth":{"client_token":"hvs.token","lease_duration":-1}}"#,
-    VaultResponseError::MissingLease
+    VaultResponseError::InvalidLogin
 )]
 #[case::fractional_lease(
     r#"{"auth":{"client_token":"hvs.token","lease_duration":1.5}}"#,
-    VaultResponseError::MissingLease
+    VaultResponseError::InvalidLogin
 )]
 fn a_broken_login_response_is_refused(#[case] body: &str, #[case] expected: VaultResponseError) {
     assert_eq!(

@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Mutex, PoisonError};
-use std::time::Duration;
+use std::sync::Mutex;
 
 use secrecy::SecretString;
 use tokio::time::Instant;
@@ -8,10 +7,10 @@ use tokio::time::Instant;
 use crate::cyberark::Clock;
 use crate::cyberark::ttl_cache::TtlCache;
 use crate::secret_name::{UnsafeSecretNameError, raise_if_unsafe_secret_name};
-use error::{LoginMethod, VaultError, VaultInitError};
-use settings::{DEFAULT_MOUNT, VaultAuth, VaultSettings};
+use error::{VaultError, VaultInitError};
+use settings::VaultSettings;
 use target::{VaultSecretParams, VaultSecretSettings, VaultSecretTarget};
-use transport::{MAX_RESPONSE_BYTES, VaultRequest, VaultResponse, VaultTransport};
+use transport::VaultTransport;
 
 mod auth;
 pub mod error;
@@ -36,16 +35,6 @@ pub struct HashicorpSecretManager<T> {
 struct CachedToken {
     token: SecretString,
     expiry: Instant,
-}
-
-enum PendingLogin {
-    Ready(SecretString),
-    Send(LoginPlan),
-}
-
-struct LoginPlan {
-    method: LoginMethod,
-    request: VaultRequest,
 }
 
 impl<T: VaultTransport> HashicorpSecretManager<T> {
@@ -97,19 +86,23 @@ impl<T: VaultTransport> HashicorpSecretManager<T> {
     }
 
     pub async fn request_token(&self) -> Result<SecretString, VaultError<T::Error>> {
-        let plan = match self.pending_login()? {
-            PendingLogin::Ready(token) => return Ok(token),
-            PendingLogin::Send(plan) => plan,
+        let plan = match auth::pending_login(self)? {
+            auth::PendingLogin::Ready(token) => return Ok(token),
+            auth::PendingLogin::Send(plan) => plan,
         };
-        self.login_outcome(plan.method, self.transport.send(plan.request).await)
+        auth::login_outcome(self, plan.method, self.transport.send(plan.request).await)
     }
 
     pub fn request_token_blocking(&self) -> Result<SecretString, VaultError<T::Error>> {
-        let plan = match self.pending_login()? {
-            PendingLogin::Ready(token) => return Ok(token),
-            PendingLogin::Send(plan) => plan,
+        let plan = match auth::pending_login(self)? {
+            auth::PendingLogin::Ready(token) => return Ok(token),
+            auth::PendingLogin::Send(plan) => plan,
         };
-        self.login_outcome(plan.method, self.transport.send_blocking(plan.request))
+        auth::login_outcome(
+            self,
+            plan.method,
+            self.transport.send_blocking(plan.request),
+        )
     }
 
     pub fn get_url(
@@ -118,31 +111,7 @@ impl<T: VaultTransport> HashicorpSecretManager<T> {
         settings: &VaultSecretSettings,
     ) -> Result<String, UnsafeSecretNameError> {
         raise_if_unsafe_secret_name(secret_name)?;
-        let manager_namespace = self.vault_secret_namespace();
-        let namespace_source = settings.namespace.as_deref().or(manager_namespace);
-        let namespace = target::sanitize_path_component(namespace_source);
-        let mount_source = settings
-            .mount
-            .as_deref()
-            .unwrap_or(self.settings.mount.as_str());
-        let mount = target::sanitize_path_component(Some(mount_source))
-            .unwrap_or_else(|| DEFAULT_MOUNT.to_owned());
-        let manager_prefix = self.settings.path_prefix.as_deref();
-        let prefix_source = settings.path_prefix.as_deref().or(manager_prefix);
-        let prefix = target::sanitize_path_component(prefix_source);
-        let mut url = format!("{}/v1/", self.vault_addr());
-        if let Some(segment) = namespace {
-            url.push_str(&segment);
-            url.push('/');
-        }
-        url.push_str(&mount);
-        url.push_str("/data/");
-        if let Some(segment) = prefix {
-            url.push_str(&segment);
-            url.push('/');
-        }
-        url.push_str(secret_name);
-        Ok(url)
+        Ok(target::secret_url(self, secret_name, settings))
     }
 
     pub fn build_secret_target(
@@ -158,97 +127,10 @@ impl<T: VaultTransport> HashicorpSecretManager<T> {
                 .unwrap_or(&provided.flat)
         });
         let url = self.get_url(secret_name, settings)?;
-        let data_key = settings
-            .data
-            .as_deref()
-            .map(str::trim)
-            .filter(|key| !key.is_empty());
         Ok(VaultSecretTarget {
             url,
-            data_key: data_key.unwrap_or("key").to_owned(),
+            data_key: settings.data_key(),
             secret_name: secret_name.to_owned(),
         })
-    }
-
-    fn pending_login(&self) -> Result<PendingLogin, VaultError<T::Error>> {
-        match &self.settings.auth {
-            VaultAuth::Token(token) => Ok(PendingLogin::Ready(token.clone())),
-            VaultAuth::AppRole {
-                role_id,
-                secret_id,
-                mount_path,
-            } => {
-                tracing::debug!("Using AppRole auth for Hashicorp Vault");
-                if let Some(token) = self.cached_token() {
-                    tracing::debug!("Using cached Vault token from AppRole auth");
-                    return Ok(PendingLogin::Ready(token));
-                }
-                let channel = auth::LoginChannel::AppRole {
-                    role_id,
-                    secret_id,
-                    mount_path,
-                };
-                let request = auth::login_request(self, channel)?;
-                Ok(PendingLogin::Send(LoginPlan {
-                    method: LoginMethod::AppRole,
-                    request,
-                }))
-            }
-            VaultAuth::TlsCert {
-                client_certificate,
-                role,
-            } => {
-                tracing::debug!("Using TLS cert auth for Hashicorp Vault");
-                let channel = auth::LoginChannel::TlsCert {
-                    client_certificate,
-                    role: role.as_deref(),
-                };
-                let request = auth::login_request(self, channel)?;
-                Ok(PendingLogin::Send(LoginPlan {
-                    method: LoginMethod::TlsCert,
-                    request,
-                }))
-            }
-        }
-    }
-
-    fn login_outcome(
-        &self,
-        method: LoginMethod,
-        reply: Result<VaultResponse, T::Error>,
-    ) -> Result<SecretString, VaultError<T::Error>> {
-        let login = auth::finish_login::<T>(reply, method, MAX_RESPONSE_BYTES)?;
-        match method {
-            LoginMethod::AppRole => {
-                tracing::debug!(
-                    "Successfully obtained Vault token via AppRole auth. Lease duration: {}s",
-                    login.lease_duration
-                );
-                self.store_token(login.client_token.clone(), login.lease_duration);
-            }
-            LoginMethod::TlsCert => {
-                tracing::debug!("Successfully obtained Vault token via TLS cert auth.");
-            }
-        }
-        Ok(login.client_token)
-    }
-
-    fn cached_token(&self) -> Option<SecretString> {
-        let now = (self.clock)();
-        let slot = self.token.lock().unwrap_or_else(PoisonError::into_inner);
-        let cached = slot
-            .as_ref()
-            .filter(|entry| now <= entry.expiry)
-            .map(|entry| entry.token.clone());
-        drop(slot);
-        cached
-    }
-
-    fn store_token(&self, token: SecretString, lease_seconds: u64) {
-        let Some(expiry) = (self.clock)().checked_add(Duration::from_secs(lease_seconds)) else {
-            return;
-        };
-        let mut slot = self.token.lock().unwrap_or_else(PoisonError::into_inner);
-        *slot = Some(CachedToken { token, expiry });
     }
 }

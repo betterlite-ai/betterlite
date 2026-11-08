@@ -7,34 +7,8 @@ use serde_json::{Map, Value};
 
 use super::error::VaultResponseError;
 
+pub mod login;
 mod tests;
-
-#[derive(Debug, Clone)]
-pub struct VaultLogin {
-    pub client_token: SecretString,
-    pub lease_duration: u64,
-}
-
-pub fn decode_login_response(body: &[u8]) -> Result<VaultLogin, VaultResponseError> {
-    let value: Value =
-        serde_json::from_slice(body).map_err(|_source| VaultResponseError::InvalidJson)?;
-    let auth = value
-        .get("auth")
-        .and_then(Value::as_object)
-        .ok_or(VaultResponseError::MissingAuth)?;
-    let client_token = auth
-        .get("client_token")
-        .and_then(Value::as_str)
-        .ok_or(VaultResponseError::MissingToken)?;
-    let lease_duration = auth
-        .get("lease_duration")
-        .and_then(Value::as_u64)
-        .ok_or(VaultResponseError::MissingLease)?;
-    Ok(VaultLogin {
-        client_token: SecretString::from(client_token),
-        lease_duration,
-    })
-}
 
 pub fn json_object_body(body: &[u8]) -> Result<Map<String, Value>, VaultResponseError> {
     let value: Value =
