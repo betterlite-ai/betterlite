@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_models::projections::service_tier::resolved_service_tier;
 use opentelemetry::trace::Span;
 
+use crate::otel::legacy_policy::text_field;
 use crate::otel::model::baggage::{filtered_team_metadata_json, promoted_metadata};
 use crate::otel::model::metadata::helpers::flatten_metadata;
 use crate::otel::model::utils::coercion::OtelModelValue;
@@ -30,17 +31,10 @@ where
     S: Span,
 {
     let metadata = payload.get("metadata").and_then(OtelModelValue::as_object);
-    let team_id = metadata
-        .and_then(|fields| fields.get("user_api_key_team_id"))
-        .and_then(OtelModelValue::as_str);
-    let team_alias = metadata
-        .and_then(|fields| fields.get("user_api_key_team_alias"))
-        .and_then(OtelModelValue::as_str);
-    let attributes = [
-        (TEAM_ID_ATTRIBUTE, team_id),
-        (TEAM_ALIAS_ATTRIBUTE, team_alias),
-    ];
-    write_optional(span, attributes);
+    let team_id = metadata.and_then(|fields| text_field(fields, "user_api_key_team_id"));
+    let team_alias = metadata.and_then(|fields| text_field(fields, "user_api_key_team_alias"));
+    write_text(span, TEAM_ID_ATTRIBUTE, team_id);
+    write_text(span, TEAM_ALIAS_ATTRIBUTE, team_alias);
 }
 
 pub fn write_identity_attributes<S>(
@@ -53,23 +47,19 @@ pub fn write_identity_attributes<S>(
     S: Span,
 {
     let metadata = payload.get("metadata").and_then(OtelModelValue::as_object);
-    let route = metadata
-        .and_then(|fields| fields.get("user_api_key_request_route"))
-        .and_then(OtelModelValue::as_str);
+    let route = metadata.and_then(|fields| text_field(fields, "user_api_key_request_route"));
     write_text(span, http::ROUTE, route);
     write_team_metadata(span, litellm_params, baggage_team_metadata_keys);
     let flat = flatten_metadata(metadata);
     for (key, value) in promoted_metadata(&flat, baggage_metadata_keys) {
         span.safe_set_attribute(&key, &OtelModelValue::String(value));
     }
-    let model_group = payload.get("model_group").and_then(OtelModelValue::as_str);
+    let model_group = text_field(payload, "model_group");
     let hidden_model = payload
         .get("hidden_params")
         .and_then(OtelModelValue::as_object)
-        .and_then(|fields| fields.get("litellm_model_name"))
-        .and_then(OtelModelValue::as_str);
-    let provider_model =
-        hidden_model.or_else(|| payload.get("model").and_then(OtelModelValue::as_str));
+        .and_then(|fields| text_field(fields, "litellm_model_name"));
+    let provider_model = hidden_model.or_else(|| text_field(payload, "model"));
     write_text(span, MODEL_GROUP_ATTRIBUTE, model_group);
     write_text(span, litellm::PROVIDER_MODEL, provider_model);
 }
@@ -83,13 +73,10 @@ fn write_team_metadata<S>(
 {
     let raw_metadata = non_empty_map(litellm_params.get("metadata"))
         .or_else(|| non_empty_map(litellm_params.get("litellm_metadata")));
-    let team_metadata = filtered_team_metadata_json(
-        raw_metadata
-            .and_then(|fields| fields.get("user_api_key_team_metadata"))
-            .and_then(OtelModelValue::as_object),
-        baggage_team_metadata_keys,
-    );
-    if let Some(encoded) = team_metadata {
+    let team = raw_metadata
+        .and_then(|fields| fields.get("user_api_key_team_metadata"))
+        .and_then(OtelModelValue::as_object);
+    if let Some(encoded) = filtered_team_metadata_json(team, baggage_team_metadata_keys) {
         span.safe_set_attribute(litellm::TEAM_METADATA, &OtelModelValue::String(encoded));
     }
 }
@@ -105,15 +92,6 @@ where
     let usage = object_text(payload, &["metadata", "usage_object", "service_tier"]);
     let served_tier = resolved_service_tier(response, usage, None);
     write_text(span, SERVED_TIER_ATTRIBUTE, served_tier);
-}
-
-fn write_optional<S>(span: &mut S, attributes: [(&str, Option<&str>); 2])
-where
-    S: Span,
-{
-    for (key, value) in attributes {
-        write_text(span, key, value);
-    }
 }
 
 fn write_text<S>(span: &mut S, key: &str, value: Option<&str>)
@@ -136,12 +114,8 @@ fn object_text<'source>(
     path: &[&str],
 ) -> Option<&'source str> {
     let (last, parents) = path.split_last()?;
-    let mut current = payload;
-    for key in parents {
-        current = current.get(*key)?.as_object()?;
-    }
-    current
-        .get(*last)
-        .and_then(OtelModelValue::as_str)
-        .filter(|text| !text.is_empty())
+    let fields = parents
+        .iter()
+        .try_fold(payload, |current, key| current.get(*key)?.as_object())?;
+    text_field(fields, last)
 }

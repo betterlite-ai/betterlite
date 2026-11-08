@@ -4,7 +4,6 @@ call:
   b3854:
     function: capture_resolve
     config: {capture_message_content: SPAN_AND_EVENT}
-    turn_off_message_logging: true
-    message_logging: true
+    flags: {turn_off_message_logging: true, message_logging: true}
 env: {}
 compare: {ignore: []}

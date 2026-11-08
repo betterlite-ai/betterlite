@@ -21,7 +21,7 @@ pub enum Exporter {
     Named(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize)]
 pub struct Signals {
     pub enable_metrics: bool,
     pub enable_events: bool,
@@ -51,8 +51,22 @@ pub enum MetadataKeys<'source> {
     List(&'source [String]),
 }
 
-const IN_MEMORY_CONFIG: OpenTelemetryConfig = OpenTelemetryConfig {
-    exporter: Exporter::InMemory,
+#[must_use]
+pub fn normalize_metadata_keys(keys: MetadataKeys<'_>) -> Vec<String> {
+    let parts: Vec<&str> = match keys {
+        MetadataKeys::Text(text) => text.split(',').collect(),
+        MetadataKeys::List(items) => items.iter().map(String::as_str).collect(),
+    };
+    parts
+        .into_iter()
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+const EMPTY: OpenTelemetryConfig = OpenTelemetryConfig {
+    exporter: Exporter::Console,
     endpoint: None,
     headers: None,
     signals: Signals {
@@ -71,59 +85,35 @@ const IN_MEMORY_CONFIG: OpenTelemetryConfig = OpenTelemetryConfig {
     attributes: None,
 };
 
-#[must_use]
-pub fn normalize_metadata_keys(keys: MetadataKeys<'_>) -> Vec<String> {
-    match keys {
-        MetadataKeys::Text(text) => split_keys(text),
-        MetadataKeys::List(items) => items
-            .iter()
-            .map(|item| item.trim())
-            .filter(|item| !item.is_empty())
-            .map(str::to_owned)
-            .collect(),
-    }
-}
-
-fn split_keys(text: &str) -> Vec<String> {
-    text.split(',')
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
 impl OpenTelemetryConfig {
     #[must_use]
     pub fn from_env(env: &BTreeMap<String, String>) -> Self {
-        let exporter_text = first_present(env, &["OTEL_EXPORTER_OTLP_PROTOCOL", "OTEL_EXPORTER"])
+        let exporter = first_present(env, &["OTEL_EXPORTER_OTLP_PROTOCOL", "OTEL_EXPORTER"])
             .unwrap_or_else(|| CONSOLE_EXPORTER.to_owned());
-        if exporter_text == IN_MEMORY_EXPORTER {
-            return IN_MEMORY_CONFIG;
+        if exporter == IN_MEMORY_EXPORTER {
+            let mut config = EMPTY;
+            config.exporter = Exporter::InMemory;
+            return config;
         }
-        let service_name = first_present(env, &["OTEL_SERVICE_NAME"])
+        let mut config = EMPTY;
+        config.exporter = match exporter.as_str() {
+            CONSOLE_EXPORTER => Exporter::Console,
+            IN_MEMORY_EXPORTER => Exporter::InMemory,
+            _ => Exporter::Named(exporter.clone()),
+        };
+        config.endpoint = first_present(env, &["OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_ENDPOINT"]);
+        config.headers = first_present(env, &["OTEL_EXPORTER_OTLP_HEADERS", "OTEL_HEADERS"]);
+        config.service_name = first_present(env, &["OTEL_SERVICE_NAME"])
             .unwrap_or_else(|| DEFAULT_SERVICE_NAME.to_owned());
-        let model_id =
-            first_present(env, &["OTEL_MODEL_ID"]).unwrap_or_else(|| service_name.clone());
-        Self {
-            exporter: named_exporter(&exporter_text),
-            endpoint: first_present(env, &["OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_ENDPOINT"]),
-            headers: first_present(env, &["OTEL_EXPORTER_OTLP_HEADERS", "OTEL_HEADERS"]),
-            signals: Signals {
-                enable_metrics: enabled(env, "LITELLM_OTEL_INTEGRATION_ENABLE_METRICS"),
-                enable_events: enabled(env, "LITELLM_OTEL_INTEGRATION_ENABLE_EVENTS"),
-            },
-            service_name,
-            deployment_environment: first_present(env, &["OTEL_ENVIRONMENT_NAME"])
-                .unwrap_or_else(|| DEFAULT_ENVIRONMENT.to_owned()),
-            model_id,
-            ignore_context_propagation: false,
-            skip_set_global: false,
-            capture_message_content: None,
-            semconv_stability_opt_in: BTreeSet::new(),
-            baggage_team_metadata_keys: Vec::new(),
-            baggage_metadata_keys: Vec::new(),
-            attributes: None,
-        }
+        config.signals = Signals {
+            enable_metrics: enabled(env, "LITELLM_OTEL_INTEGRATION_ENABLE_METRICS"),
+            enable_events: enabled(env, "LITELLM_OTEL_INTEGRATION_ENABLE_EVENTS"),
+        };
+        config.model_id =
+            first_present(env, &["OTEL_MODEL_ID"]).unwrap_or_else(|| config.service_name.clone());
+        config.deployment_environment = first_present(env, &["OTEL_ENVIRONMENT_NAME"])
+            .unwrap_or_else(|| DEFAULT_ENVIRONMENT.to_owned());
+        config
     }
 
     pub fn normalize(&mut self, env: &BTreeMap<String, String>) {
@@ -143,7 +133,9 @@ impl OpenTelemetryConfig {
                 first_present(env, &["OTEL_MODEL_ID"]).unwrap_or_else(|| self.service_name.clone());
         }
         if !self.ignore_context_propagation {
-            self.ignore_context_propagation = ignore_context_propagation(env);
+            self.ignore_context_propagation = env
+                .get("OTEL_IGNORE_CONTEXT_PROPAGATION")
+                .is_some_and(|value| value.trim().to_lowercase() == "true");
         }
         let opt_in = env.get(STABILITY_OPT_IN_ENV).map_or("", String::as_str);
         self.semconv_stability_opt_in
@@ -170,13 +162,6 @@ fn normalize_baggage_keys(keys: &mut Vec<String>, from_env: Option<&String>) {
     }
 }
 
-fn named_exporter(text: &str) -> Exporter {
-    if text == CONSOLE_EXPORTER {
-        return Exporter::Console;
-    }
-    Exporter::Named(text.to_owned())
-}
-
 fn first_present(env: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
     names
         .iter()
@@ -186,10 +171,4 @@ fn first_present(env: &BTreeMap<String, String>, names: &[&str]) -> Option<Strin
 fn enabled(env: &BTreeMap<String, String>, name: &str) -> bool {
     env.get(name)
         .is_some_and(|value| value.to_lowercase() == "true")
-}
-
-// LiteLLM's str_to_bool knows only true and false, and its unset answer reads as false
-fn ignore_context_propagation(env: &BTreeMap<String, String>) -> bool {
-    env.get("OTEL_IGNORE_CONTEXT_PROPAGATION")
-        .is_some_and(|value| value.trim().to_lowercase() == "true")
 }

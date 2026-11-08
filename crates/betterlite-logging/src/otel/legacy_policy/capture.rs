@@ -60,18 +60,16 @@ pub struct LoggingFlags {
 impl CapturePolicy {
     #[must_use]
     pub fn from_init_state(config: &OpenTelemetryConfig, env: &BTreeMap<String, String>) -> Self {
-        let configured = config
+        let from_config = config
             .capture_message_content
             .as_deref()
             .filter(|text| !text.is_empty());
-        // a non-empty config value wins even when it names no mode, so the env var is not consulted
-        let candidate = configured.or_else(|| {
-            env.get(CAPTURE_MESSAGE_CONTENT_ENV)
-                .map(String::as_str)
-                .filter(|text| !text.is_empty())
-        });
+        let from_env = env
+            .get(CAPTURE_MESSAGE_CONTENT_ENV)
+            .map(String::as_str)
+            .filter(|text| !text.is_empty());
         Self {
-            explicit: candidate.and_then(parse_mode),
+            explicit: from_config.or(from_env).and_then(parse_mode),
         }
     }
 
@@ -80,13 +78,11 @@ impl CapturePolicy {
         if flags.turn_off_message_logging {
             return CaptureMode::NoContent;
         }
-        if let Some(mode) = self.explicit {
-            return mode;
+        match self.explicit {
+            Some(mode) => mode,
+            None if flags.message_logging => CaptureMode::SpanAndEvent,
+            None => CaptureMode::NoContent,
         }
-        if flags.message_logging {
-            return CaptureMode::SpanAndEvent;
-        }
-        CaptureMode::NoContent
     }
 }
 

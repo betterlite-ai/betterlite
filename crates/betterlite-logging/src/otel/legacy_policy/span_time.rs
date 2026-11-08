@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 
+use crate::otel::legacy_policy::text_field;
 use crate::otel::model::utils::coercion::OtelModelValue;
 
 mod tests;
@@ -44,9 +45,7 @@ pub fn span_name(
     let generation_name = litellm_params
         .get("metadata")
         .and_then(OtelModelValue::as_object)
-        .and_then(|metadata| metadata.get("generation_name"))
-        .and_then(OtelModelValue::as_str)
-        .filter(|name| !name.is_empty());
+        .and_then(|metadata| text_field(metadata, "generation_name"));
     if let Some(name) = generation_name {
         return name.to_owned();
     }

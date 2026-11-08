@@ -16,16 +16,11 @@ pub const REQUEST_STREAM: &str = "gen_ai.request.stream";
 
 #[must_use]
 pub fn gen_ai_operation_name(call_type: Option<&str>) -> &'static str {
-    let Some(name) = call_type else {
-        return "chat";
-    };
-    if name.contains("embedding") {
-        return "embeddings";
+    match call_type.unwrap_or_default() {
+        name if name.contains("embedding") => "embeddings",
+        name if name.contains("text_completion") => "text_completion",
+        _ => "chat",
     }
-    if name.contains("text_completion") {
-        return "text_completion";
-    }
-    "chat"
 }
 
 #[must_use]
@@ -104,12 +99,12 @@ pub fn set_cache_token_attributes<S>(span: &mut S, payload: &BTreeMap<String, Ot
 where
     S: Span,
 {
-    let usage = payload
+    let Some(usage_object) = payload
         .get("metadata")
         .and_then(OtelModelValue::as_object)
         .and_then(|metadata| metadata.get("usage_object"))
-        .and_then(OtelModelValue::as_object);
-    let Some(usage_object) = usage else {
+        .and_then(OtelModelValue::as_object)
+    else {
         return;
     };
     for (source, target) in [
@@ -122,7 +117,10 @@ where
             gen_ai::USAGE_CACHE_READ_INPUT_TOKENS,
         ),
     ] {
-        if let Some(value) = usage_object.get(source).filter(|value| !is_zero(value)) {
+        if let Some(value) = usage_object
+            .get(source)
+            .filter(|value| value.as_decimal().is_some_and(|number| !number.is_zero()))
+        {
             span.safe_set_attribute(target, value);
         }
     }
@@ -136,17 +134,6 @@ fn integer(value: &OtelModelValue) -> Option<i64> {
         | OtelModelValue::String(_)
         | OtelModelValue::Array(_)
         | OtelModelValue::Object(_) => None,
-    }
-}
-
-fn is_zero(value: &OtelModelValue) -> bool {
-    match value {
-        OtelModelValue::Null(()) => true,
-        OtelModelValue::Bool(flag) => !flag,
-        OtelModelValue::Number(_)
-        | OtelModelValue::String(_)
-        | OtelModelValue::Array(_)
-        | OtelModelValue::Object(_) => value.as_decimal().is_some_and(|number| number.is_zero()),
     }
 }
 

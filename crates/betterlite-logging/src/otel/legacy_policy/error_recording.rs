@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use opentelemetry::KeyValue;
 use opentelemetry::trace::Span;
 
+use crate::otel::legacy_policy::text_field;
 use crate::otel::model::utils::coercion::{OtelModelValue, as_int};
 use crate::otel::span_attributes::SafeSetAttribute as _;
 use crate::otel::vocabulary::constants::attribute_keys::{error, exception_event, http};
@@ -42,12 +43,7 @@ pub fn record_exception_on_span<S>(
     }
     match payload.get("error_information") {
         None | Some(OtelModelValue::Null(())) => {
-            if let Some(message) = text_field(payload, "error_str") {
-                span.safe_set_attribute(
-                    error::MESSAGE,
-                    &OtelModelValue::String(message.to_owned()),
-                );
-            }
+            write_text(span, payload, "error_str", error::MESSAGE);
         }
         Some(value) => {
             let Some(fields) = value.as_object() else {
@@ -65,37 +61,26 @@ where
     if let Some(code) = text_field(fields, "error_code") {
         let value = OtelModelValue::String(code.to_owned());
         span.safe_set_attribute(ERROR_CODE, &value);
-        // LiteLLM also exposes the code under the OTel name only when Python's int() reads it
+        // LiteLLM exposes the code under the OTel name only when Python's int() reads it
         if let Some(status) = as_int(&value) {
             span.set_attribute(KeyValue::new(http::RESPONSE_STATUS_CODE, status));
         }
     }
-    if let Some(error_type) = text_field(fields, "error_class") {
-        span.safe_set_attribute(error::TYPE, &OtelModelValue::String(error_type.to_owned()));
-    }
-    if let Some(message) = text_field(fields, "error_message") {
-        span.safe_set_attribute(error::MESSAGE, &OtelModelValue::String(message.to_owned()));
-    }
-    if let Some(provider) = text_field(fields, "llm_provider") {
-        span.safe_set_attribute(
-            ERROR_LLM_PROVIDER,
-            &OtelModelValue::String(provider.to_owned()),
-        );
-    }
-    if let Some(stacktrace) = text_field(fields, "traceback") {
-        span.safe_set_attribute(
-            ERROR_STACK_TRACE,
-            &OtelModelValue::String(stacktrace.to_owned()),
-        );
-    }
+    write_text(span, fields, "error_class", error::TYPE);
+    write_text(span, fields, "error_message", error::MESSAGE);
+    write_text(span, fields, "llm_provider", ERROR_LLM_PROVIDER);
+    write_text(span, fields, "traceback", ERROR_STACK_TRACE);
 }
 
-fn text_field<'source>(
-    fields: &'source BTreeMap<String, OtelModelValue>,
+fn write_text<S>(
+    span: &mut S,
+    fields: &BTreeMap<String, OtelModelValue>,
     key: &str,
-) -> Option<&'source str> {
-    fields
-        .get(key)
-        .and_then(OtelModelValue::as_str)
-        .filter(|text| !text.is_empty())
+    attribute: &str,
+) where
+    S: Span,
+{
+    if let Some(text) = text_field(fields, key) {
+        span.safe_set_attribute(attribute, &OtelModelValue::String(text.to_owned()));
+    }
 }
