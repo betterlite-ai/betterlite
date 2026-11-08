@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
+use std::fs;
+use std::path::Path;
 
 use betterlite_bedrock::aws_endpoints::model_id::bedrock_model_id;
 use betterlite_bedrock::aws_endpoints::provider::{
@@ -64,8 +66,60 @@ fn model_arn_region(models: &[Option<String>]) -> Value {
     json!({"regions": regions})
 }
 
+fn load_case(case: &LlmRegionCase) -> Result<Config, Box<HelperError>> {
+    if case.aws_config.is_none() && case.aws_credentials.is_none() {
+        return load(&case.environment);
+    }
+    let folder = tempfile::tempdir().map_err(failure)?;
+    let mut environment = case.environment.clone();
+    let home = folder
+        .path()
+        .to_str()
+        .ok_or_else(|| failure("fixture path is not UTF-8"))?;
+    environment.insert("HOME".to_owned(), home.to_owned());
+    if let Some(text) = &case.aws_config {
+        write_fixture(
+            folder.path(),
+            "config",
+            "AWS_CONFIG_FILE",
+            text,
+            &mut environment,
+        )?;
+    }
+    if let Some(text) = &case.aws_credentials {
+        write_fixture(
+            folder.path(),
+            "credentials",
+            "AWS_SHARED_CREDENTIALS_FILE",
+            text,
+            &mut environment,
+        )?;
+    }
+    load(&environment)
+}
+
+fn write_fixture(
+    folder: &Path,
+    name: &str,
+    variable: &str,
+    text: &str,
+    environment: &mut BTreeMap<String, String>,
+) -> Result<(), Box<HelperError>> {
+    let directory = folder.join(".aws");
+    fs::create_dir_all(&directory).map_err(failure)?;
+    let path = directory.join(name);
+    fs::write(&path, text).map_err(failure)?;
+    if !environment.contains_key(variable) {
+        let path_text = path
+            .to_str()
+            .ok_or_else(|| failure("fixture path is not UTF-8"))?;
+        environment.insert(variable.to_owned(), path_text.to_owned());
+    }
+    Ok(())
+}
+
 fn llm_region_name(case: &LlmRegionCase) -> HelperResult {
-    let config = load(&case.environment)?;
+    let config = load_case(case)?;
     let settings = &config.sections.bedrock_aws_endpoints;
     let explicit = case
         .optional_params

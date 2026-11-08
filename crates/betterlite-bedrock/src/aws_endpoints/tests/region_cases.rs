@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fs;
 
 use betterlite_config::loader::ConfigLoader;
 
@@ -88,9 +89,29 @@ fn config_session_region(environment: &[(&str, &str)]) -> Option<String> {
 }
 
 pub(super) fn environment_profile_fallback() {
-    let profile = config_session_region(&[("AWS_DEFAULT_REGION", "ap-south-1")]);
+    let folder = tempfile::tempdir().unwrap();
+    let path = folder.path().join("config");
+    fs::write(
+        &path,
+        "[default]\nregion = eu-west-1\n[profile prod]\nregion = ap-south-1\n",
+    )
+    .unwrap();
+    let config = path.to_str().unwrap();
+
+    let default_profile = config_session_region(&[("AWS_CONFIG_FILE", config)]);
+    let mut profile_input = input(None, None, None);
+    profile_input.session_region = default_profile.as_deref();
+    assert_eq!(region::llm_region_name(profile_input).unwrap(), "eu-west-1");
+
+    let named_profile =
+        config_session_region(&[("AWS_CONFIG_FILE", config), ("AWS_PROFILE", "prod")]);
+    let mut named_input = input(None, None, None);
+    named_input.session_region = named_profile.as_deref();
+    assert_eq!(region::llm_region_name(named_input).unwrap(), "ap-south-1");
+
+    let environment = config_session_region(&[("AWS_DEFAULT_REGION", "ap-south-1")]);
     let mut configured = input(None, None, None);
-    configured.session_region = profile.as_deref();
+    configured.session_region = environment.as_deref();
     assert_eq!(region::llm_region_name(configured).unwrap(), "ap-south-1");
 
     let missing = config_session_region(&[]);
@@ -102,14 +123,6 @@ pub(super) fn environment_profile_fallback() {
     let mut empty_session = input(None, None, None);
     empty_session.session_region = empty.as_deref();
     assert_eq!(region::llm_region_name(empty_session).unwrap(), "us-west-2");
-
-    let mut name_beats_session = input(None, None, None);
-    name_beats_session.environment_region_name = Some("eu-west-1");
-    name_beats_session.session_region = profile.as_deref();
-    assert_eq!(
-        region::llm_region_name(name_beats_session).unwrap(),
-        "eu-west-1"
-    );
 }
 
 pub(super) fn non_llm_region_precedence() {
@@ -224,6 +237,14 @@ fn session_and_explicit_region() {
     let mut session = input(None, None, None);
     session.session_region = Some("us-west-1");
     assert_eq!(region::llm_region_name(session).unwrap(), "us-west-1");
+
+    let mut name_beats_session = input(None, None, None);
+    name_beats_session.environment_region_name = Some("eu-west-1");
+    name_beats_session.session_region = Some("ap-south-1");
+    assert_eq!(
+        region::llm_region_name(name_beats_session).unwrap(),
+        "eu-west-1"
+    );
 
     let mut empty_session = input(None, None, None);
     empty_session.session_region = Some("");

@@ -57,6 +57,10 @@ pub(crate) struct LlmRegionCase {
     pub(super) model_id: Option<String>,
     #[serde(default)]
     pub(super) environment: BTreeMap<String, String>,
+    #[serde(default)]
+    pub(super) aws_config: Option<String>,
+    #[serde(default)]
+    pub(super) aws_credentials: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

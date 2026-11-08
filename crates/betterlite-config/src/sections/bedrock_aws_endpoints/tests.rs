@@ -2,16 +2,17 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::path::Path;
 
 use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::bedrock_aws_endpoints::Settings;
 
-use super::aws_config::region_in_section;
+use super::aws_config::region_from_texts;
 
-const AWS_CONFIG: &str =
-    "# AWS config\n[default]\nregion = eu-west-1\n\n[profile prod]\nregion = ap-south-1\n";
+const CONFIG_WITH_PROFILES: &str =
+    "[default]\nregion = eu-west-1\n[profile prod]\nregion = ap-south-1\n";
 
 type Read = fn(&Settings) -> Option<String>;
 
@@ -33,6 +34,16 @@ fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigEr
         .load(source)?
         .sections
         .bedrock_aws_endpoints)
+}
+
+fn session_region(environment: &[(&str, &str)]) -> Option<String> {
+    load("", environment).unwrap().session_region
+}
+
+fn write(folder: &Path, name: &str, text: &str) -> String {
+    let path = folder.join(name);
+    fs::write(&path, text).unwrap();
+    path.to_str().unwrap().to_owned()
 }
 
 #[rstest]
@@ -87,62 +98,215 @@ fn loads_field(field: Field) {
 }
 
 fn session_region_cases() {
-    let folder = tempfile::tempdir().unwrap();
-    let path = folder.path().join("config");
-    fs::write(&path, AWS_CONFIG).unwrap();
-    let file = path.to_str().unwrap();
-    let default = load("", &[]).unwrap();
-    assert_eq!(default.session_region, None);
-    let profile = load("", &[("AWS_CONFIG_FILE", file)]).unwrap();
-    assert_eq!(profile.session_region.as_deref(), Some("eu-west-1"));
-    let named = load("", &[("AWS_CONFIG_FILE", file), ("AWS_PROFILE", "prod")]).unwrap();
-    assert_eq!(named.session_region.as_deref(), Some("ap-south-1"));
-    let environment_wins = load(
-        "",
-        &[
-            ("AWS_CONFIG_FILE", file),
-            ("AWS_PROFILE", "prod"),
-            ("AWS_DEFAULT_REGION", "us-east-1"),
-        ],
-    )
-    .unwrap();
-    assert_eq!(
-        environment_wins.session_region.as_deref(),
-        Some("us-east-1")
-    );
-    let empty_environment =
-        load("", &[("AWS_CONFIG_FILE", file), ("AWS_DEFAULT_REGION", "")]).unwrap();
-    assert_eq!(empty_environment.session_region.as_deref(), Some(""));
-    let missing = load(
-        "",
-        &[("AWS_CONFIG_FILE", "/nonexistent/betterlite/aws-config")],
-    )
-    .unwrap();
-    assert_eq!(missing.session_region, None);
+    default_region_cases();
+    profile_selection_cases();
+    config_file_path_cases();
+    profile_section_cases();
+    parser_failure_cases();
+    credentials_cases();
 }
 
-#[test]
-fn reads_the_default_and_named_profile_regions() {
+fn default_region_cases() {
+    assert_eq!(session_region(&[]), None);
     assert_eq!(
-        region_in_section(AWS_CONFIG, "default").as_deref(),
+        session_region(&[("AWS_DEFAULT_REGION", "ap-south-1")]).as_deref(),
+        Some("ap-south-1")
+    );
+    assert_eq!(
+        session_region(&[("AWS_DEFAULT_REGION", "")]).as_deref(),
+        Some("")
+    );
+    assert_eq!(session_region(&[("AWS_REGION_NAME", "eu-west-1")]), None);
+}
+
+fn profile_selection_cases() {
+    let folder = tempfile::tempdir().unwrap();
+    let config = write(folder.path(), "config", CONFIG_WITH_PROFILES);
+    let file = config.as_str();
+    assert_eq!(
+        session_region(&[("AWS_CONFIG_FILE", file)]).as_deref(),
         Some("eu-west-1")
     );
     assert_eq!(
-        region_in_section(AWS_CONFIG, "prod").as_deref(),
+        session_region(&[("AWS_CONFIG_FILE", file), ("AWS_PROFILE", "prod")]).as_deref(),
         Some("ap-south-1")
     );
-    assert_eq!(region_in_section(AWS_CONFIG, "missing"), None);
     assert_eq!(
-        region_in_section("[prod]\nregion = us-east-1\n", "prod"),
+        session_region(&[
+            ("AWS_CONFIG_FILE", file),
+            ("AWS_DEFAULT_PROFILE", "prod"),
+            ("AWS_PROFILE", "default"),
+        ])
+        .as_deref(),
+        Some("ap-south-1")
+    );
+    assert_eq!(
+        session_region(&[("AWS_CONFIG_FILE", file), ("AWS_PROFILE", "ghost")]),
         None
     );
     assert_eq!(
-        region_in_section("[profile p]\nregion: us-west-2\n", "p").as_deref(),
-        Some("us-west-2")
+        session_region(&[("AWS_CONFIG_FILE", file), ("AWS_PROFILE", "")]),
+        None
     );
     assert_eq!(
-        region_in_section("[profile p]\nregion = \n", "p").as_deref(),
-        Some("")
+        session_region(&[("AWS_CONFIG_FILE", file), ("AWS_DEFAULT_PROFILE", "")]),
+        None
+    );
+}
+
+fn config_file_path_cases() {
+    let folder = tempfile::tempdir().unwrap();
+    let aws = folder.path().join(".aws");
+    fs::create_dir_all(&aws).unwrap();
+    write(&aws, "config", CONFIG_WITH_PROFILES);
+    let home = folder.path().to_str().unwrap();
+    assert_eq!(
+        session_region(&[("HOME", home), ("AWS_CONFIG_FILE", "~/.aws/config")]).as_deref(),
+        Some("eu-west-1")
+    );
+    assert_eq!(
+        session_region(&[("HOME", home), ("AWS_CONFIG_FILE", "$HOME/.aws/config")]).as_deref(),
+        Some("eu-west-1")
+    );
+    assert_eq!(
+        session_region(&[
+            ("AWS_DIR", home),
+            ("AWS_CONFIG_FILE", "$AWS_DIR/.aws/config")
+        ])
+        .as_deref(),
+        Some("eu-west-1")
+    );
+    assert_eq!(
+        session_region(&[("HOME", home), ("AWS_CONFIG_FILE", "")]),
+        None
+    );
+    assert_eq!(
+        session_region(&[("HOME", home), ("AWS_CONFIG_FILE", "$UNSET/.aws/config")]),
+        None
+    );
+}
+
+fn profile_section_cases() {
+    let cases = [
+        ("[profile default]\nregion = eu-west-1\n", None, "eu-west-1"),
+        (
+            "[default]\nregion = us-east-1\n[profile default]\nregion = eu-west-1\n",
+            None,
+            "eu-west-1",
+        ),
+        (
+            "[profile \"my prod\"]\nregion = eu-west-1\n",
+            Some("my prod"),
+            "eu-west-1",
+        ),
+        (
+            "[profile   prod]\nregion = eu-west-1\n",
+            Some("prod"),
+            "eu-west-1",
+        ),
+        ("[default]\nRegion = eu-west-1\n", None, "eu-west-1"),
+        ("[default]\nregion: eu-west-1\n", None, "eu-west-1"),
+        (
+            "[DEFAULT]\nregion = eu-west-1\n[default]\nother = 1\n",
+            None,
+            "eu-west-1",
+        ),
+        (
+            "[default]\ns3 =\n  region = eu-west-1\nregion = us-east-1\n",
+            None,
+            "us-east-1",
+        ),
+    ];
+    for (source, profile, expected) in cases {
+        assert_eq!(
+            region_from_texts(Some(source), None, profile).as_deref(),
+            Some(expected),
+            "{source:?}"
+        );
+    }
+}
+
+fn parser_failure_cases() {
+    let cases = [
+        ("[default]\nother = x\n  region = eu-west-1\n", None),
+        (
+            "[default]\ns3 =\n  notakeyvalue\nregion = us-east-1\n",
+            None,
+        ),
+        ("[default]\nregion = us-east-1\nregion = eu-west-1\n", None),
+        (
+            "[default]\nregion = us-east-1\n[default]\nregion = eu-west-1\n",
+            None,
+        ),
+        ("[default]\nregion eu-west-1\n", None),
+        ("region = eu-west-1\n", None),
+        ("[profile \"prod]\nregion = eu-west-1\n", Some("prod")),
+    ];
+    for (source, profile) in cases {
+        assert_eq!(
+            region_from_texts(Some(source), None, profile),
+            None,
+            "{source:?}"
+        );
+    }
+}
+
+fn credentials_cases() {
+    credentials_override_cases();
+    credentials_path_cases();
+}
+
+fn credentials_override_cases() {
+    let folder = tempfile::tempdir().unwrap();
+    let config = write(folder.path(), "config", "[default]\nregion = us-east-1\n");
+    let credentials = write(
+        folder.path(),
+        "credentials",
+        "[default]\nregion = eu-west-1\n",
+    );
+    assert_eq!(
+        session_region(&[
+            ("AWS_CONFIG_FILE", config.as_str()),
+            ("AWS_SHARED_CREDENTIALS_FILE", credentials.as_str()),
+        ])
+        .as_deref(),
+        Some("eu-west-1")
+    );
+    let empty_config = write(folder.path(), "empty", "");
+    let named = write(folder.path(), "named", "[p]\nregion = sa-east-1\n");
+    assert_eq!(
+        session_region(&[
+            ("AWS_CONFIG_FILE", empty_config.as_str()),
+            ("AWS_SHARED_CREDENTIALS_FILE", named.as_str()),
+            ("AWS_PROFILE", "p"),
+        ])
+        .as_deref(),
+        Some("sa-east-1")
+    );
+}
+
+fn credentials_path_cases() {
+    let folder = tempfile::tempdir().unwrap();
+    let empty_config = write(folder.path(), "empty", "");
+    let aws = folder.path().join(".aws");
+    fs::create_dir_all(&aws).unwrap();
+    write(&aws, "credentials", "[default]\nregion = ap-south-1\n");
+    let home = folder.path().to_str().unwrap();
+    assert_eq!(
+        session_region(&[
+            ("HOME", home),
+            ("AWS_CONFIG_FILE", empty_config.as_str()),
+            ("AWS_SHARED_CREDENTIALS_FILE", "~/.aws/credentials"),
+        ])
+        .as_deref(),
+        Some("ap-south-1")
+    );
+    assert_eq!(
+        session_region(&[
+            ("AWS_CONFIG_FILE", empty_config.as_str()),
+            ("AWS_SHARED_CREDENTIALS_FILE", ""),
+        ]),
+        None
     );
 }
 

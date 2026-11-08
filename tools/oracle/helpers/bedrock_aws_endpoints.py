@@ -1,5 +1,7 @@
 import os
+import tempfile
 from collections.abc import Callable
+from pathlib import Path
 from typing import Literal, TypeAlias, cast
 from unittest.mock import patch
 
@@ -33,6 +35,30 @@ def optional_string(params: Params, name: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def write_fixture(folder: str, name: str, text: str) -> str:
+    directory = Path(folder) / ".aws"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / name
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
+def fixture_environment(params: Params, folder: str) -> dict[str, str]:
+    environment = dict(environment_of(params))
+    config = params.get("aws_config")
+    credentials = params.get("aws_credentials")
+    if not isinstance(config, str) and not isinstance(credentials, str):
+        return environment
+    environment["HOME"] = folder
+    if isinstance(config, str):
+        environment.setdefault("AWS_CONFIG_FILE", write_fixture(folder, "config", config))
+    if isinstance(credentials, str):
+        environment.setdefault(
+            "AWS_SHARED_CREDENTIALS_FILE", write_fixture(folder, "credentials", credentials)
+        )
+    return environment
+
+
 def model_arn_region(params: Params) -> Json:
     instance = BaseAWSLLM()
     return {
@@ -48,15 +74,17 @@ def model_arn_region(params: Params) -> Json:
 def llm_region_name_case(params: Params) -> Json:
     optional = cast(dict[str, Json], params.get("optional_params", {}))
     instance = BaseAWSLLM()
-    with patch.dict(os.environ, environment_of(params), clear=True):
-        try:
-            region = instance._get_aws_region_name(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
-                optional,
-                model=optional_string(params, "model"),
-                model_id=optional_string(params, "model_id"),
-            )
-        except ValueError:
-            return {"error": True}
+    with tempfile.TemporaryDirectory() as folder:
+        environment = fixture_environment(params, folder)
+        with patch.dict(os.environ, environment, clear=True):
+            try:
+                region = instance._get_aws_region_name(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
+                    optional,
+                    model=optional_string(params, "model"),
+                    model_id=optional_string(params, "model_id"),
+                )
+            except ValueError:
+                return {"error": True}
     return {"region": region}
 
 

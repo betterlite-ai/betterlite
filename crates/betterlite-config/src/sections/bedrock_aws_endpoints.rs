@@ -30,7 +30,7 @@ impl Section for Raw {
         let aws_default_region = lookup.lookup("AWS_DEFAULT_REGION");
         let session_region = aws_default_region
             .clone()
-            .or_else(|| aws_config::profile_region(lookup));
+            .or_else(|| aws_config::session_region(lookup));
         Ok(Settings {
             aws_region_name: lookup.lookup("AWS_REGION_NAME"),
             aws_region: lookup.lookup("AWS_REGION"),
