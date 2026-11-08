@@ -1,0 +1,32 @@
+kind: helper
+name: team-model-check
+call:
+  b8400:
+    calls:
+      - do: team_models
+        team_id: team-1
+        team_config:
+          models: [gpt-4o, gpt-4o-mini]
+          max_budget: 100.0
+        request_data:
+          model: gpt-4o
+      - do: team_models
+        team_id: team-1
+        team_config:
+          models: [gpt-4o]
+        request_data:
+          model: claude-haiku
+      - do: team_models
+        team_id: team-1
+        team_config:
+          max_budget: 100.0
+        request_data:
+          model: anything
+      - do: team_models
+        team_id: null
+        team_config:
+          models: [only-this]
+        request_data:
+          model: anything-else
+env: {}
+compare: {ignore: []}
