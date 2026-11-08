@@ -1,0 +1,15 @@
+id: B7870
+milestone: M12 python
+title: Python file_content, afile_content and the streaming file response
+status: todo
+depends_on: [B6040, B158, B167, B1030, B1080]
+file: tasks/B7870-python-file-content.yaml
+covers:
+  - "litellm/files/{streaming,utils,types}.py"
+  - "litellm/files/main.py"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

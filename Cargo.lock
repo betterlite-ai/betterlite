@@ -1509,6 +1509,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-compression",
  "betterlite-config",
+ "betterlite-env",
  "betterlite-http",
  "betterlite-prompts",
  "betterlite-redact",
@@ -1516,6 +1517,7 @@ dependencies = [
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",
+ "hyper",
  "indexmap 2.14.2",
  "lru",
  "mime_guess",
@@ -2095,6 +2097,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "tempfile",
  "thiserror",
@@ -2164,6 +2167,10 @@ dependencies = [
  "tracing",
  "url",
 ]
+
+[[package]]
+name = "betterlite-pyhost"
+version = "0.1.0"
 
 [[package]]
 name = "betterlite-rag"
@@ -2570,6 +2577,16 @@ dependencies = [
 [[package]]
 name = "betterlite-vertex"
 version = "0.1.0"
+dependencies = [
+ "betterlite-models",
+ "regex",
+ "rstest",
+ "rust_decimal",
+ "serde_json",
+ "thiserror",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "betterlite-websearch"

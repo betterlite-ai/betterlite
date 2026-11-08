@@ -1,11 +1,15 @@
+pub mod banner;
 pub mod collector;
+pub mod diagnostic_commands;
 pub mod guardrails;
 pub mod metrics_listener;
 pub mod prometheus_mount;
 pub mod provider_selection;
 pub mod proxy_state;
 pub mod scheduled_job_stagger;
+pub mod startup_input;
 pub mod styled_input;
 pub mod terminal_styling;
+pub mod verbose_levels;
 pub mod welcome;
 pub mod yaml_escape;

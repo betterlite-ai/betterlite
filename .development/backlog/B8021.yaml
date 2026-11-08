@@ -1,0 +1,14 @@
+id: B8021
+milestone: M3 providers
+title: Map Tavily and You.com search requests, endpoints and replies
+status: todo
+depends_on: [B002, B3270, B171]
+file: tasks/B8021-tavily-youcom-search.yaml
+covers:
+  - "litellm/llms/{tavily,you_com}/**"
+parent: B048
+split_from: B048
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

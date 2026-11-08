@@ -1,3 +1,4 @@
+pub mod docker;
 pub mod local;
 
 use std::collections::BTreeMap;

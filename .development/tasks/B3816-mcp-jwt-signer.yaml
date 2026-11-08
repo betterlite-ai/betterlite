@@ -1,0 +1,154 @@
+id: B3816
+title: Configure MCP signing keys and verify incoming identity tokens
+description: >-
+  Build the signer that sits in front of every outbound MCP call. It owns the signing key, the public JWKS document, the settings with their env defaults, the check of the caller's own bearer token against an identity provider (IdP), and the pre-call flow that signs the outbound tokens and puts them in the request headers. The claim-building helpers already exist in crates/betterlite-guardrails/src/mcp_token_claims (B3817): call `validate_required_claims`, `build_claims` (in `build_claims.rs`), `build_channel_token_claims` and `build_debug_header` from there and do not rewrite them. This task is the rest of mcp_jwt_signer.py.
+
+
+  Settings (module `signer_settings`). `SignerSettings` is built from the guardrail options: issuer, audience, ttl_seconds, access_token_discovery_uri, token_introspection_endpoint, verify_issuer, verify_audience, end_user_claim_sources, add_claims, set_claims, remove_claims, channel_token_audience, channel_token_ttl, required_claims, optional_claims, debug_headers (default false), allowed_scopes and the guardrail timeout. Defaults follow Python's `or` chains, so an empty string counts as unset. issuer: option, then env MCP_JWT_ISSUER, then env LITELLM_EXTERNAL_URL, then "litellm". audience: option, then env MCP_JWT_AUDIENCE, then "mcp". ttl_seconds: option when given (zero is given), else env MCP_JWT_TTL_SECONDS, else 300; a value that is zero or negative fails with the message "ttl_seconds must be > 0, got <n>". channel_token_ttl defaults to the resolved ttl. end_user_claim_sources defaults to `["token:sub", "litellm:user_id"]` when absent or empty. add_claims, set_claims, remove_claims, required_claims and optional_claims default to empty. allowed_scopes stays `None` when absent, because an explicit empty list means an empty scope. Convert it into B3817's `ClaimSettings` with one plain method. Env values come in through an injected env lookup so tests do not touch the process env.
+
+
+  Signing key (module `signing_key`). Env MCP_JWT_SIGNING_KEY holds an RSA private key as PEM text or as `file://<path>` (the path is everything after `file://`, read as bytes). An unset or empty variable means no key. With a key, load it unencrypted, mark it persistent and log at info that the key came from the env var. Without one, generate an RSA-2048 key (public exponent 65537), mark it not persistent and log at info that a key was generated and that MCP_JWT_SIGNING_KEY sets your own. A bad PEM or an unreadable file is an error of this module, not a fallback to a generated key. The key id (`kid`) is the first 16 lowercase hex characters of the SHA-256 of the public key in DER SubjectPublicKeyInfo form. Tokens are signed RS256 with the header `kid`.
+
+
+  JWKS document (module `jwks_document`). `get_jwks` returns `{"keys": [one key]}` with kty "RSA", alg "RS256", use "sig", the kid, and n and e as base64url without padding of the minimal big-endian bytes. `jwks_max_age` is 3600 when the key is persistent and 300 when generated, so MCP servers re-fetch quickly after a restart. The routes that serve /.well-known/jwks.json and the OIDC document are not built here; they call these two accessors.
+
+
+  IdP documents (module `idp_documents`). `IdpClient` takes an injected `reqwest::Client`, the timeout and a `now` seconds value on every call. `fetch_jwks(uri)` does a GET with header `Accept: application/json`, fails on a non-2xx status, takes the `keys` array of the body (empty when absent) and caches it per URI for 3600 seconds. `fetch_oidc_discovery(uri)` is the same GET without the cache. `get_oidc_discovery` caches the document for 86400 seconds, and only when it holds a `jwks_uri`, so one bad response does not disable verification for a day; a document without `jwks_uri` is returned uncached. Without access_token_discovery_uri it returns an empty document. Introspection is a POST of the form field `token` with `Accept: application/json` to token_introspection_endpoint; a non-2xx status fails, and a body whose `active` is missing or false fails with "incoming token is inactive (introspection returned active=false)". With no endpoint configured it fails with "token_introspection_endpoint is required for opaque token verification but is not configured". The decoder for outside bytes is `decode_idp_document(&[u8])`, which parses a discovery document, a JWKS body or an introspection response into typed structs without panicking; the fuzz target feeds it.
+
+
+  Incoming token (module `incoming_token`). `verify_incoming_jwt(raw_token)` resolves `jwks_uri` from the discovery document (error "discovery document at <uri> has no 'jwks_uri'" when absent), fetches the keys, and reads only `kid` from the unverified header, never `alg`, to stop algorithm confusion. It takes the first key when the token has no kid, else the first key whose kid matches, else fails with "No JWKS key matching kid=<kid> at <uri>". The algorithm comes from the key's own `alg`, else from its key type (RSA gives RS256). Expiry is always checked. The audience is checked only when verify_audience is set, the issuer only when verify_issuer is set, with zero leeway, and the nbf claim is checked when present. No claim is required to exist, because Python's PyJWT requires none. A key set that cannot be parsed fails with "Failed to parse JWKS from <uri>: <error>". It returns the verified payload as B3817's `Claims`.
+
+
+  Pre-call flow (module `sign_request`). `sign` takes the signer, the auth fields, the hook data, the call type and `now`, and returns the data with the new headers. Rules in order: a call type other than call_mcp_tool or list_mcp_tools returns the data unchanged. A list_mcp_tools call whose data has no `extra_headers` key returns the data unchanged. For list_mcp_tools the tool name is cleared. When access_token_discovery_uri is set and the data has an `incoming_bearer_token`, a token with exactly two dots is verified as a JWT; any other token is introspected when an endpoint is configured; otherwise log a warning and go on without verifying. Any verification error is logged at error level and becomes HTTP 401 with detail `{"error": "MCPJWTSigner: incoming token verification failed: <error>"}`. With the discovery uri set but no token, log at debug and skip verification. When no claims were verified, use the `jwt_claims` the proxy's own JWT auth already decoded for the caller. Then call `validate_required_claims` (HTTP 403 from B3817), `build_claims`, and sign the access token. Headers merge into any existing `extra_headers` so a guardrail earlier in the chain keeps its headers: `Authorization` is "Bearer <token>". When channel_token_audience is set, `x-mcp-channel-token` is "Bearer <channel token>" built by `build_channel_token_claims`. When debug_headers is true, `x-litellm-mcp-debug` is `build_debug_header(claims, kid)`. Log one debug line with sub, act sub, tool, exp, verified flag, channel flag and call type, and never log a token.
+
+
+  Upstream helper (module `upstream_headers`). `inject_upstream_headers` is the code path for tools/list requests that skip the pre-call hook. It takes the signer, the auth fields, existing extra headers, raw request headers, `for_list_tools` and the tool name. With no auth fields it returns a copy of the extra headers. Header names are lowercased; an `authorization` value that starts with "bearer " (any case) gives the incoming token, which is everything after those 7 characters. It builds the hook data (tool name empty for list, the incoming token, the extra headers), calls `sign` with call type list_mcp_tools or call_mcp_tool, and merges the returned `extra_headers` over the copy.
+
+
+  The worker adds the crate dependencies in crates/betterlite-guardrails/Cargo.toml and relocks Cargo.lock. RSA keys come from aws-lc-rs (already in Cargo.lock at 1.19.0, and crates/betterlite-mcp already depends on it), not the rsa crate (RUSTSEC-2023-0071). JWT signing and checking use jsonwebtoken. Cargo.lock has no jsonwebtoken yet, so add the newest release that cargo deny accepts, with default features off and the `aws_lc_rs` backend feature on, so no second crypto backend enters the tree. Base64 and sha2 stay as they are in the workspace. Keep every Rust file under 300 lines, one named domain submodule per section above with an adjacent tests.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/mcp_jwt_signer.rs
+    - crates/betterlite-guardrails/src/mcp_jwt_signer/**
+    - crates/betterlite-guardrails/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-guardrails/fuzz/Cargo.toml
+    - crates/betterlite-guardrails/fuzz/fuzz_targets/mcp_jwt_idp_document.rs
+    - crates/betterlite-guardrails/fuzz/corpus/mcp_jwt_idp_document/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L128-L137
+    why: call types the signer handles, the JWKS cache constants and the singleton accessor (accessor stays out of scope)
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L140-L174
+    why: signing key loading from PEM or file://, RSA-2048 generation and the kid derivation
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L177-L217
+    why: cached JWKS fetch and OIDC discovery fetch, with the Accept header and status check
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L246-L249
+    why: algorithm, default ttl, default audience and the MCP_JWT_SIGNING_KEY env name
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L283-L371
+    why: key setup and every setting default, including the ttl check and the end_user_claim_sources default
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L377-L404
+    why: jwks_max_age and the JWKS document shape
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L410-L525
+    why: discovery cache with 24 hour ttl, incoming JWT verification and RFC 7662 introspection
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L793-L914
+    why: the pre-call hook flow, error mapping and header injection
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L917-L964
+    why: inject_mcp_jwt_headers_for_upstream for tools/list paths without the hook
+  - url: https://datatracker.ietf.org/doc/html/rfc7662#section-2.2
+    why: introspection response and the active field
+
+dod:
+  - text: >-
+      Settings resolve issuer, audience and ttl through option, env, default; empty strings count as unset; a ttl of zero or below fails; channel_token_ttl follows ttl; empty end_user_claim_sources falls back to the two defaults; allowed_scopes stays None when absent and Some(empty) when given empty.
+    proof: [settings-tests]
+  - text: >-
+      The signing key loads from MCP_JWT_SIGNING_KEY as PEM or file:// path, is generated as RSA-2048 when the variable is unset or empty, a bad key is an error, and the kid is the first 16 hex characters of the SHA-256 of the SPKI DER.
+    proof: [key-tests]
+  - text: >-
+      The JWKS document has one RS256 sig key with kid, n and e in unpadded base64url, and a token signed by the signer verifies against it; max age is 3600 for a persistent key and 300 for a generated one.
+    proof: [jwks-tests]
+  - text: >-
+      JWKS bodies are cached per URI for 3600 seconds and discovery documents for 86400 seconds only when they hold jwks_uri; introspection posts the token form field and rejects an inactive token or a missing endpoint.
+    proof: [idp-tests]
+  - text: >-
+      Incoming JWTs verify against the IdP key chosen by kid (first key when the token has none), use the key's algorithm and not the header's, check expiry always, check audience and issuer only when configured, and fail for an unknown kid, a bad signature and an expired token.
+    proof: [incoming-tests]
+  - text: >-
+      The pre-call flow skips other call types and kid-less list calls, verifies JWT or opaque tokens, maps verification failure to 401 and missing required claims to 403, falls back to the proxy-decoded jwt_claims, merges headers, adds the channel and debug headers when configured and never logs a token.
+    proof: [sign-tests]
+  - text: >-
+      The upstream helper reads the bearer token from the raw authorization header case-insensitively, signs list or call requests, and returns the extra headers unchanged without auth fields.
+    proof: [upstream-tests]
+  - text: >-
+      The cargo-fuzz target mcp_jwt_idp_document exists with seed files added on this branch, and the corpus replays through decode_idp_document without a panic.
+    proof: [idp-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: settings-tests
+      why: fails while the env defaults, ttl check or empty-string handling are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_jwt_signer::signer_settings::/)'
+    - id: key-tests
+      why: fails while key loading, generation or the kid derivation are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_jwt_signer::signing_key::/)'
+    - id: jwks-tests
+      why: fails while the JWKS document or max age are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_jwt_signer::jwks_document::/)'
+    - id: idp-tests
+      why: fails while the cached IdP fetches or introspection are missing; tests run a local axum server and a test clock
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_jwt_signer::idp_documents::/) - test(replays_the_mcp_jwt_idp_corpus)'
+    - id: incoming-tests
+      why: fails while incoming JWT verification is missing or accepts a token it should reject
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_jwt_signer::incoming_token::/)'
+    - id: sign-tests
+      why: fails while the pre-call flow, its error mapping or its headers are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_jwt_signer::sign_request::/)'
+    - id: upstream-tests
+      why: fails while the tools/list helper is missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_jwt_signer::upstream_headers::/)'
+    - id: idp-corpus
+      why: the fuzz target or its fresh seed corpus is missing or does not replay
+      run: >-
+        test -f crates/betterlite-guardrails/fuzz/fuzz_targets/mcp_jwt_idp_document.rs &&
+        grep -q 'name = "mcp_jwt_idp_document"' crates/betterlite-guardrails/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-guardrails/fuzz/corpus/mcp_jwt_idp_document)" &&
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(replays_the_mcp_jwt_idp_corpus)'
+
+oracle_cases: []
+
+deviations:
+  - what: There is no process-wide signer singleton and no "replacing existing singleton" warning. The caller that wires the guardrail holds the signer and hands it to the routes and to the upstream helper.
+    why: The repo rules forbid module-level state; LiteLLM's global only exists so the JWKS route can find the signer.
+  - what: The 401 text after the colon is betterlite's own verification error, not PyJWT's wording. Status, the "error" key and the prefix are the same.
+    why: PyJWT exception text cannot be reproduced by a Rust JWT library.
+  - what: Key PEM files must be unencrypted RSA private keys (PKCS#8 or PKCS#1); LiteLLM's loader has the same limit by passing password None.
+    why: Keeps parity; an encrypted key is a startup error in both.
+
+out_of_scope:
+  - "initialize_guardrail and the guardrail_initializer_registry in __init__.py (option precedence, mode must be pre_mcp_call, callback registration): B109 wires them."
+  - "get_mcp_jwt_signer and the module singleton: B109 holds the signer; no caller needs the global."
+  - "The routes for /.well-known/jwks.json and the OIDC document in mcp_server_manager.py and discoverable_endpoints.py: their owners call get_jwks and jwks_max_age."
+  - "Claim validation, identity, scope, claim operations, channel claims and the debug header string: B3817 (done)."
+  - "The proxy_logging shared cache lookup in inject_mcp_jwt_headers_for_upstream: the hook never reads its cache argument, so betterlite drops it."
+  - "Signature of CustomGuardrail, log_guardrail_information and supported_event_hooks: the guardrail framework tasks own them."
+
+pitfalls:
+  - Read only `kid` from the unverified header; taking `alg` from the token allows alg:none and HS256-with-public-key attacks, so the algorithm must come from the JWKS key entry.
+  - MCP_JWT_SIGNING_KEY set to an empty string means no key, so a generated key is used and jwks_max_age is 300, not an error.
+  - The OIDC document is cached only when it has `jwks_uri`; the JWKS cache has no such guard and stores whatever `keys` array came back, including an empty one.
+  - A token with exactly two dots is a JWT; a token with any other count goes to introspection, and with no endpoint it is logged and let through unverified.
+  - A list_mcp_tools call without an `extra_headers` key in its data is not signed at all; one with an empty `extra_headers` is signed.
+  - The tools/list helper strips only the prefix "bearer " (7 characters) after matching case-insensitively, and raw header names are lowercased first.
+  - Introspection answers with `active` false or absent are an error, and that error is mapped to 401 like a failed signature.
+  - Verified IdP claims win over the proxy-decoded `jwt_claims`; the proxy ones are used only when verification produced none.
+  - The 403 for missing required claims is raised after verification and before signing, so a failed verification always shows 401 first.
+  - jsonwebtoken requires `exp` and rejects nothing on `nbf` by default; set the validation to require no claims and to check nbf, or tokens PyJWT accepts will fail.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

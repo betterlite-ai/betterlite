@@ -1,0 +1,54 @@
+id: B7951
+title: Python types for vector stores, vector store files, RAG and search tools
+description: >-
+  This task ports `vector_stores.py` (235 lines), `vector_store_files.py`, `rag.py` (184 lines) and `search.py` into `crates/betterlite-python/python/betterlite/types/vector_stores.py`,
+  `crates/betterlite-python/python/betterlite/types/vector_store_files.py`, `crates/betterlite-python/python/betterlite/types/rag.py` and `crates/betterlite-python/python/betterlite/types/search.py`. It is Python only.
+
+
+  `vector_stores.py` has the `SupportedVectorStoreIntegrations` string Enum, the managed vector store TypedDicts and pydantic update and
+  delete requests. `vector_store_files.py` has two string Enums (`VectorStoreFileStatus`, `VectorStoreFileChunkingStrategyType`) and
+  TypedDicts. `rag.py` has TypedDicts for chunking, OCR, embedding options and the OpenAI, Bedrock and Vertex vector store options.
+  `search.py` has five TypedDicts for search tools.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/vector_stores.py
+  - crates/betterlite-python/python/betterlite/types/vector_store_files.py
+  - crates/betterlite-python/python/betterlite/types/rag.py
+  - crates/betterlite-python/python/betterlite/types/search.py
+  - crates/betterlite-python/tests/test_types_vector_rag_search.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L1-L235
+  why: Vector store Enum, TypedDicts and requests.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rag.py#L1-L184
+  why: RAG ingest option TypedDicts.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_store_files.py#L1-L60
+  why: Vector store file types.
+out_of_scope:
+- >-
+  Vector store provider tasks (B049) own the Rust side.
+pitfalls:
+- >-
+  `SupportedVectorStoreIntegrations` is the list a user passes as a provider name. Compare every member and value.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_vector_rag_search.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

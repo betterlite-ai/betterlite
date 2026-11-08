@@ -1,0 +1,98 @@
+id: B7761
+title: Terraform provider endpoint audit against betterlite's OpenAPI document
+description: >-
+  LiteLLM's CI proves its provider cannot drift from the proxy: tools/endpointaudit parses the provider's Go code, collects
+  every METHOD and path it sends, and fails when one is missing from the proxy's OpenAPI document. This task keeps that tool
+  and points it at betterlite's document, so "the provider works against betterlite" is a check that needs no release.
+  Copy the tool from the pin into packaging/terraform-provider/tools/endpointaudit/ (main.go, coverage.go, main_test.go,
+  coverage_test.go, coverage_allowlist.txt). Do not copy tools/dump_openapi.py: it imports LiteLLM's Python app.
+  Part 1, the document. Add a Rust module crates/betterlite-server/src/terraform_openapi.rs with its tests in
+  terraform_openapi/tests.rs. One test, named writes_gateway_document, builds the gateway router the way the server's other
+  route tests do, sends GET /openapi.json with the master key and writes the response body to
+  target/terraform-openapi/openapi.json under the workspace root. It fails when the status is not 200 or the body is not JSON
+  with a "paths" object. The route itself belongs to B123; this task never registers a route.
+  Part 2, the tool change. betterlite serves only the routes whose tasks have landed, while the provider calls routes from
+  many tasks. Add one flag, -known-gaps <file>, to endpointaudit. The file lists one "METHOD /path" per line ("#" starts a comment,
+  same format as coverage_allowlist.txt). With the flag: a provider call that is missing from the document passes only if
+  it is listed in the file; a listed entry that the document now serves fails as stale, so the file only shrinks; and a
+  coverage_allowlist.txt entry that is missing from the document is ignored instead of failing as stale. Without the flag
+  the tool behaves exactly as LiteLLM's. Add Go tests for the flag rules: TestKnownGapsAllowsListedCall, TestKnownGapsRejectsUnlistedCall, TestKnownGapsRejectsStaleEntry (in main_test.go) and TestKnownGapsIgnoresAllowlistGap (in coverage_test.go).
+  Part 3, the gap file. Write tools/endpointaudit/betterlite_gaps.txt by running the audit once against the document the
+  Rust test wrote. The file lists every provider call betterlite does not serve at this commit, each under a comment that
+  names the LiteLLM source file of its route. Calls for the key routes (B055) and the organization routes (B058)
+  must not be in it: those two tasks are this task's dependencies, so a missing one is a bug to report.
+  Path matching is LiteLLM's: a {param} segment in the document matches any one segment of the provider path.
+  This proves method and path only. Request bodies and response shapes rest on the oracle cases of the route tasks (for example
+  the nested "info" object of GET /key/info that litellm/client.go unwraps).
+scope:
+  paths:
+    - packaging/terraform-provider/tools/**
+    - crates/betterlite-server/src/terraform_openapi.rs
+    - crates/betterlite-server/src/terraform_openapi/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/tools/endpointaudit/main.go#L240-L356
+    why: loadSpecPaths, pathMatches, auditCalls, run and main with the -provider-dir, -spec and -coverage-allowlist flags to extend.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/tools/endpointaudit/coverage.go#L1-L106
+    why: The management prefixes, allowlist parser and the stale-entry rule that the new flag relaxes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/tools/endpointaudit/coverage_allowlist.txt
+    why: The 162-line allowlist that is copied unchanged.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/.github/workflows/test-terraform-provider.yml#L57-L127
+    why: LiteLLM's endpoint-drift job, which dumps the schema and runs the audit with the allowlist.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/tools/dump_openapi.py
+    why: Shows the document is app.openapi() as plain JSON; betterlite serves the same document over GET /openapi.json.
+dod:
+  - text: The tool, its tests and the coverage allowlist are copied, and the tool has the -known-gaps flag.
+    proof: [tool-files, go-tool-tests]
+  - text: Without -known-gaps the tool fails on a provider call missing from the document and on a stale allowlist entry, as LiteLLM's does.
+    proof: [go-tool-tests]
+  - text: With -known-gaps, a listed missing call passes, an unlisted missing call fails, a listed call the document serves fails as stale, and an allowlist entry missing from the document is ignored.
+    proof: [go-tool-tests]
+  - text: The Rust test writes the gateway's /openapi.json body to target/terraform-openapi/openapi.json and fails on a non-200 status.
+    proof: [openapi-dump-test]
+  - text: The audit passes against that document with betterlite_gaps.txt and the copied allowlist, and no /key/ or /organization/ call is in the gap file.
+    proof: [endpoint-audit]
+checks:
+  optional: []
+  commands:
+    - id: tool-files
+      why: the audit tool, its tests, the allowlist or the gap file is missing, or the flag is not implemented
+      run: test -f packaging/terraform-provider/tools/endpointaudit/main.go && test -f packaging/terraform-provider/tools/endpointaudit/coverage.go && test -f packaging/terraform-provider/tools/endpointaudit/coverage_allowlist.txt && test -f packaging/terraform-provider/tools/endpointaudit/betterlite_gaps.txt && /usr/bin/grep -a -q 'known-gaps' packaging/terraform-provider/tools/endpointaudit/main.go && test ! -e packaging/terraform-provider/tools/dump_openapi.py
+    - id: go-tool-tests
+      why: the audit tool's Go tests fail, including the tests of the three -known-gaps rules
+      run: >-
+        mkdir -p target && cd packaging/terraform-provider && go test -count=1 -timeout 120s ./tools/... &&
+        go test -count=1 -v -run KnownGaps ./tools/endpointaudit > ../../target/known-gaps.log &&
+        for name in TestKnownGapsAllowsListedCall TestKnownGapsRejectsUnlistedCall TestKnownGapsRejectsStaleEntry TestKnownGapsIgnoresAllowlistGap; do /usr/bin/grep -a -q -- "--- PASS: $name" ../../target/known-gaps.log || exit 1; done
+    - id: openapi-dump-test
+      why: the gateway's OpenAPI document is not written, or the route does not answer 200
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^terraform_openapi::/)'
+    - id: endpoint-audit
+      why: the provider calls a route betterlite does not serve and the gap file does not list it, or the gap file is stale
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^terraform_openapi::/)' &&
+        ! /usr/bin/grep -a -E '^(GET|POST|PUT|PATCH|DELETE) /(key|organization)\b' packaging/terraform-provider/tools/endpointaudit/betterlite_gaps.txt &&
+        cd packaging/terraform-provider &&
+        go run ./tools/endpointaudit -provider-dir ./litellm -spec ../../target/terraform-openapi/openapi.json -coverage-allowlist ./tools/endpointaudit/coverage_allowlist.txt -known-gaps ./tools/endpointaudit/betterlite_gaps.txt
+oracle_cases: []
+deviations:
+  - what: endpointaudit gets a -known-gaps flag and tolerates coverage_allowlist entries that betterlite's document lacks; LiteLLM's tool has neither.
+    why: betterlite lands its routes task by task, so the audit has to pass while some routes are missing and still force the gap file to shrink as they land. Without the flag the tool is unchanged.
+  - what: The audit reads the document the gateway serves at GET /openapi.json, written by a Rust test, and not a file dumped from LiteLLM's Python app.
+    why: dump_openapi.py needs LiteLLM's proxy code, which betterlite does not ship, and a stored LiteLLM document would not test betterlite.
+out_of_scope:
+  - "B7760 owns the provider Go source in litellm/, main.go, go.mod and go.sum; this task never edits them."
+  - "B123 owns GET /openapi.json and the document's content. If the route does not exist when this task runs, report blocked with the command and status."
+  - "Oracle cases for each route the provider calls belong to the route tasks (B055, B057, B058, B060 and the others); this task adds no oracle case."
+  - "A real terraform plan or apply against a booted gateway needs a database and is not part of the gate."
+pitfalls:
+  - The provider writes paths with fmt.Sprintf verbs such as /team/%s/info, and normalizePath turns %s, %d and %v into {param}, so a gap line must use the document's own form, for example GET /access_group/{access_group}/info.
+  - The audit compares method and path only; a route that exists with the wrong body still passes, which is why the oracle cases of the route tasks stay the proof for bodies.
+  - A path in the document may carry several methods; the gap file is per METHOD and path, so GET /team/info being served does not cover POST /team/info.
+  - coverage.go only treats paths whose first segment is in managementPrefixes (access_group, agent, budget, cache, config, credentials, customer, fallback, guardrails, jwt, key, model, organization, project, prompts, router, search_tools, tag, team, user, vector_store and two more) as management endpoints; do not widen the list.
+  - The Rust test writes into the workspace target/ folder; it must create target/terraform-openapi/ itself and never write under packaging/.
+  - The master key for the test request is the one the server's other route tests use; read it from there and do not invent a second constant.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

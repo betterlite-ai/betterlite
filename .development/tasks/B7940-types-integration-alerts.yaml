@@ -1,0 +1,58 @@
+id: B7940
+title: Python types for Slack alerting, interception configs and the Bedrock knowledge base (types/integrations)
+description: >-
+  This task ports `slack_alerting.py`, `anthropic_cache_control_hook.py`, `code_interpreter_interception.py`,
+  `compression_interception.py`, `websearch_interception.py` and `rag/bedrock_knowledgebase.py` into `crates/betterlite-python/python/betterlite/types/integrations/` and
+  `crates/betterlite-python/python/betterlite/types/integrations/rag/`. It is Python only.
+
+
+  `slack_alerting.py` (293 lines) has the outage TypedDicts (`BaseOutageModel`, `OutageModel`, `ProviderRegionOutageModel`), two
+  Enums (`SlackAlertingArgsEnum`, `SlackAlertingCacheKeys`), `SlackAlertingArgs` and `DeploymentMetrics` (pydantic, on
+  `LiteLLMPydanticObjectBase` from B7929) and more below. `websearch_interception.py` has two pydantic models
+  (`AnthropicSearchQuery`, `AnthropicServerToolUseBlock`), a TypedDict and the plain classes `SearchSucceeded` and `SearchFailed`. The
+  Bedrock knowledge base file has seven TypedDicts for locations, rows, content, results, the response and filters.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/integrations/slack_alerting.py
+  - crates/betterlite-python/python/betterlite/types/integrations/anthropic_cache_control_hook.py
+  - crates/betterlite-python/python/betterlite/types/integrations/code_interpreter_interception.py
+  - crates/betterlite-python/python/betterlite/types/integrations/compression_interception.py
+  - crates/betterlite-python/python/betterlite/types/integrations/websearch_interception.py
+  - crates/betterlite-python/python/betterlite/types/integrations/rag/**
+  - crates/betterlite-python/tests/test_types_integration_alerts.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/slack_alerting.py#L1-L293
+  why: Outage, args and metrics classes and the cache key Enum.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/websearch_interception.py#L1-L94
+  why: Web search interception classes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/rag/bedrock_knowledgebase.py#L1-L146
+  why: Bedrock knowledge base TypedDicts.
+out_of_scope:
+- >-
+  The logger integration files are in B7939.
+pitfalls:
+- >-
+  `slack_alerting.py` starts with `Final` module constants (`DEFAULT_DIGEST_INTERVAL = 86400`, the 5 and 15 percent thresholds, `MAX_OLDEST_HANGING_REQUESTS_TO_CHECK`, `HANGING_ALERT_BUFFER_TIME_SECONDS`) and `SlackAlertingArgs` holds time defaults such as `daily_report_frequency = 12 * 60 * 60`. Port the constants with the same values.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_integration_alerts.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

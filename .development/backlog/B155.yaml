@@ -1,14 +1,23 @@
 id: B155
 milestone: M11 distribution
 title: LiteLLM's Terraform provider working against betterlite
-status: todo
-depends_on: [B055, B057, B058, B060]
-file: null
+status: blocked
+depends_on: [B7760, B7761]
+file: tasks/B155-terraform-provider-release.yaml
 covers:
-  - "terraform/provider/**"
+  - "terraform/provider/docs/**"
+  - "terraform/provider/examples/**"
+  - "terraform/provider/.goreleaser.yml"
+  - "terraform/provider/.gitignore"
+  - "terraform/provider/Makefile"
+  - "terraform/provider/README.md"
+  - "terraform/provider/RELEASING.md"
+  - "terraform/provider/CHANGELOG.md"
+  - "terraform/provider/LICENSE"
+  - "terraform/provider/terraform-registry-manifest.json"
 parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: null
+blocked_reason: "waits for Max: the gate has no pinned go or terraform toolchain and the provider tree needs a budget exclude"
 pr: null

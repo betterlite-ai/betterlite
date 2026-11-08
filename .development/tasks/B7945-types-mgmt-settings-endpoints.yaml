@@ -1,0 +1,53 @@
+id: B7945
+title: Python types for cache, coordination Redis and router settings endpoints (types/management_endpoints)
+description: >-
+  This task ports `cache_settings_endpoints.py` (270 lines), `coordination_redis_endpoints.py` (134 lines) and
+  `router_settings_endpoints.py` (244 lines) into `crates/betterlite-python/python/betterlite/types/management_endpoints/`. It is Python only.
+
+
+  The cache and coordination files each define one pydantic model (`CacheSettingsField`, `CoordinationRedisSettingsField`) and a long
+  module level list of field definitions as data. The router settings file has the fallback create, response, get and delete models and
+  `RouterSettingsField`, also followed by field data. The field data is the point of these files: the settings UI reads the lists as they
+  are, so copy every entry.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/management_endpoints/cache_settings_endpoints.py
+  - crates/betterlite-python/python/betterlite/types/management_endpoints/coordination_redis_endpoints.py
+  - crates/betterlite-python/python/betterlite/types/management_endpoints/router_settings_endpoints.py
+  - crates/betterlite-python/tests/test_types_mgmt_settings_endpoints.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/cache_settings_endpoints.py#L1-L270
+  why: Cache settings model and field list.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/coordination_redis_endpoints.py#L1-L134
+  why: Coordination Redis field list.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/router_settings_endpoints.py#L1-L244
+  why: Fallback models and router settings field list.
+out_of_scope:
+- >-
+  B7944 has the other management endpoint types.
+pitfalls:
+- >-
+  The tests compare each module level field list entry by entry (same order, same values), because the lists are the data and the models are small.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_mgmt_settings_endpoints.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,65 @@
+id: B7923
+title: Python types for the Bedrock Converse request, response and streaming blocks (types/llms/bedrock L1-L494)
+description: >-
+  Bedrock code in user callbacks reads Converse blocks like `ContentBlock`, `ToolBlock` and `ConverseResponseBlock`. This task
+  ports the first 494 lines of litellm/types/llms/bedrock.py into `crates/betterlite-python/python/betterlite/types/llms/bedrock/converse/`. It is Python only. B7924 owns
+  L495 on, and the umbrella B167 writes the package `__init__.py`.
+
+
+  The content is TypedDicts. Blocks for cache points, system content, images, video, documents and search results come first
+  (L12-L64), then tool results and tool use, the reasoning blocks (`BedrockConverseReasoningTextBlock`,
+  `BedrockConverseReasoningContentBlock`, its delta, and the GPT reasoning effort block), the guardrail content blocks, the
+  citation blocks (L115-L198: web location, search result location, location union, reference, generated content), `ContentBlock`,
+  `MessageBlock`, metrics, token usage with `CacheDetailBlock`, `ServiceTierBlock`, `ConverseResponseBlock`, the tool schema and
+  spec blocks, `BedrockToolSpec`, tool choice and tool config, `GuardrailConfigBlock`, `InferenceConfig`, the stream event blocks
+  (`ToolBlockDeltaEvent` to `ContentBlockDeltaEvent`), `PerformanceConfigBlock`, the output format and output config blocks,
+  `CommonRequestObject`, `RequestObject`, `BedrockInvokeNovaRequest`, `GenericStreamingChunk`, `Document` and `ServerSentEvent`.
+
+
+  `ServerSentEvent` (L454-L494) is a real class: it has `event`, `id`, `retry`, `data`, `json` and `__repr__`. Port it by hand and
+  test each member. `GenericStreamingChunk` (L440) has `text` and `is_finished` and `finish_reason` as Required keys and `tool_use`, `usage`, `index` as plain keys; copy that mix.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/llms/bedrock/converse/**
+  - crates/betterlite-python/tests/test_types_bedrock_converse.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L1-L255
+  why: Content, reasoning, citation and response blocks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L256-L494
+  why: Tool, inference, stream event, request and ServerSentEvent definitions.
+dod:
+- text: Every name listed exists with the same keys, required keys and Literal values as LiteLLM.
+  proof: [names]
+- text: '`ServerSentEvent` parses its fields and gives `json()` and `repr` like LiteLLM for the same lines.'
+  proof: [sse]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A block name or key is missing.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_bedrock_converse.py -k names
+  - id: sse
+    why: Server sent events parse differently.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_bedrock_converse.py -k sse
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+- >-
+  Embedding, image, batch, rerank and agent shapes from L495 on belong to B7924.
+pitfalls:
+- >-
+  `ContentBlock` (L199) is a TypedDict with many optional keys, one per block kind, so every key is optional; do not make `text` required.
+- >-
+  `CitationsContentBlock` and the four citation location classes nest two levels deep. A test builds one citation of each kind.
+- >-
+  `Document` (L449) has only `title` and `snippet`, both required, and is not the Converse `DocumentBlock`; keep both.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

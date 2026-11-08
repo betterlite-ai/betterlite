@@ -1,0 +1,51 @@
+id: B7938
+title: Python types for Prometheus part two, PrometheusMetricLabels, label values and settings (L411-L1162)
+description: >-
+  This task ports L411-L1162 of `litellm/types/integrations/prometheus.py` into `crates/betterlite-python/python/betterlite/types/integrations/prometheus/metric_labels.py`,
+  `values.py` and `settings.py`. It is Python only.
+
+
+  `PrometheusMetricLabels` (L411-L1034, 620 lines) is a class of class-level lists that map each metric name to its label names, plus
+  class methods that read them. `UserAPIKeyLabelValues` (L1035) is a pydantic model with one optional field per label.
+  `PrometheusMetricsConfig` (L1131), `PrometheusSettings` (L1140) and `NoOpMetric` (L1146) close the file. The label names come from
+  B7937.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/integrations/prometheus/metric_labels.py
+  - crates/betterlite-python/python/betterlite/types/integrations/prometheus/values.py
+  - crates/betterlite-python/python/betterlite/types/integrations/prometheus/settings.py
+  - crates/betterlite-python/tests/test_types_prometheus_labels_b.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L411-L1034
+  why: Per metric label lists and the class methods.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L1035-L1162
+  why: Label values, config, settings and the no-op metric.
+out_of_scope:
+- >-
+  L1-L410 belongs to B7937.
+pitfalls:
+- >-
+  The order of each label list is part of the Prometheus metric definition. A test compares every list with `==` for every metric name, not as sets.
+- >-
+  `NoOpMetric` stands in for a metric when Prometheus is off. A test calls each of its methods and checks that it returns without error.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_prometheus_labels_b.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations: []
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard
