@@ -22,17 +22,20 @@ pub enum SpanTime {
 
 #[must_use]
 pub fn to_ns(time: SpanTime, now: i64) -> i64 {
-    match time {
-        SpanTime::Missing => now,
-        SpanTime::Seconds(seconds) => {
-            saturating_i64(seconds.mul_add(NANOS_PER_SECOND, 0.0).trunc())
-        }
-        SpanTime::DateTime(datetime) => saturating_i64(
-            datetime_seconds(datetime)
-                .mul_add(NANOS_PER_SECOND, 0.0)
-                .trunc(),
-        ),
-    }
+    let nanoseconds = match time {
+        SpanTime::Missing => return now,
+        SpanTime::Seconds(seconds) => seconds.mul_add(NANOS_PER_SECOND, 0.0).trunc(),
+        SpanTime::DateTime(datetime) => datetime_seconds(datetime)
+            .mul_add(NANOS_PER_SECOND, 0.0)
+            .trunc(),
+    };
+    // a JSON time is finite and inside the range, so only a hand-built f64 saturates here
+    let converted = Decimal::from_f64_retain(nanoseconds).and_then(|decimal| decimal.to_i64());
+    converted.unwrap_or(if nanoseconds < 0.0_f64 {
+        i64::MIN
+    } else {
+        i64::MAX
+    })
 }
 
 #[must_use]
@@ -65,10 +68,4 @@ fn datetime_seconds(datetime: DateTime<Utc>) -> f64 {
         .checked_add(nanos)
         .and_then(|total| total.to_f64())
         .unwrap_or_default()
-}
-
-fn saturating_i64(value: f64) -> i64 {
-    let converted = Decimal::from_f64_retain(value).and_then(|decimal| decimal.to_i64());
-    // a JSON time is finite and inside the range, so only a hand-built f64 saturates here
-    converted.unwrap_or(if value < 0.0_f64 { i64::MIN } else { i64::MAX })
 }
