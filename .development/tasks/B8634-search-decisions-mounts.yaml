@@ -1,0 +1,89 @@
+id: B8634
+title: Search and decisions mounts with provider selection chains
+description: >-
+  Three groups of inference duties end at a trait or an unmounted router. B8275 (crates/betterlite-server/src/search_call_routes.rs) and B8276 (decisions_routes.rs) each export `pub fn routes()` and leave the mount; B4114 declares `SearchToolGrants` and `SearchMetadataSource` in crates/betterlite-websearch/src/search_tool_access.rs and says no entry owns their server implementation; B982 and B8580 leave the order of the Anthropic messages config selectors to the wiring, and B7320 leaves the `ApiBaseHooks` implementation to it. This task does all of them. Every name stays at 30 characters or fewer.
+
+
+  Mounts. `app::inference` (crates/betterlite-server/src/app/inference.rs) gets its `mount(router, state)` body: merge B8275's and B8276's routers, built with the state each route module takes by constructor. Code for that state goes in module `app::inference::search_routes` (crates/betterlite-server/src/app/inference/search_routes.rs and search_routes/). B8275 needs a `SearchToolSource` that returns the startup router's search tools (B3273's entry type, read from the current router of `state.shared.router`, an `Arc<RouterHandle>`, on each request), B749's `can_key_call_search_tool` and `can_team_call_search_tool` (betterlite-auth auth_resource_grants) and B737's `get_team_object` (betterlite-auth auth_team_lookup) behind the traits it declares, B1103's request preparation and B085's dispatch handle. Both routes dispatch through B8354's call type table, so build the dispatch handle with `RouterCalls.call_types` from B8631's `router_calls(state)`; with no deployments in the startup router, B085's handle takes its no-router branch (B3272's asearch, B3515's adecisions and asystemone). B8276 also takes B003's shared exception handler. The search tool adapters read `state.shared.auth_cache` and `state.shared.db` for the team lookup, as B737 does.
+
+
+  Search tool access. `KeySearchGrants` implements B4114's `SearchToolGrants`: check_key calls B749's can_key_call_search_tool, load_team calls B737's get_team_object with the parent span B4114 converts from the tracing span handle, check_team calls can_team_call_search_tool. `KeySearchMetadata` implements `SearchMetadataSource` over B1106's get_sanitized_user_information_from_key and get_logged_api_key (betterlite-core api/request_principal_metadata.rs). Both go in search_routes/access.rs and are `pub` so B4114's `SearchToolAuthorizer` can be built by whoever runs the web search interception.
+
+
+  Messages selector chain. `MessagesSelectorChain<C>` in crates/betterlite-core/src/messages_selector_chain.rs (and its folder) implements B982's `MessagesConfigSelector` by asking each link in order and returning the first Some. `messages_selector_chain()` builds the chain in the order of LiteLLM's ProviderConfigManager.get_provider_anthropic_messages_config (utils.py L8931-L9010): anthropic, bedrock, bedrock_mantle (claude models only), vertex_ai (claude), azure_ai (claude), then B8580's `MessagesHostSelector` (minimax, deepseek, tencent and edenai, each matching a different provider, so one link covers its four arms), github_copilot (claude), and last B1440's JSON tail. The provider arms are each provider task's selector; where a provider has not merged one, its link is absent and the chain still keeps the order of the rest. B8580 returns `MessagesHostConfig` and B1440 returns policy identifiers, so wrap each in a small adapter that lifts its answer into the `C` that B982's anthropic_messages_handler takes. A claude-only arm with a non-claude model answers None so the JSON tail decides.
+
+
+  Api base hooks. `ProviderApiBaseHooks` in crates/betterlite-core/src/api_base_hooks.rs (and its folder) implements B7320's `ApiBaseHooks` (betterlite-models api_base_lookup.rs). login_free_api_base(GithubCopilot) gives B1514's Copilot base without an explicit base (the cached endpoint, then GITHUB_COPILOT_API_BASE, then https://api.githubcopilot.com), read without a network call; login_free_api_base(Chatgpt) gives B1510's `Authenticator::api_base` for the ChatGPT login (betterlite-openai chatgpt/chat.rs). vertex_claude_url calls B1304's create_vertex_url (betterlite-vertex endpoint_target.rs) after B1305's validate_vertex_location, with the stream flag. Both the chain and the hooks are `pub` in betterlite-core so the code that calls get_api_base and builds anthropic_messages_handler passes them in.
+
+
+  Proof. HTTP oracle cases through the booted proxy: tools/oracle/cases/search/wiring/tools-list.yaml (config `search_tools` with two tools, one with `search_tool_info.description`, GET /v1/search/tools with the master key), tools-list-empty.yaml (no search_tools, GET /search/tools gives `data: []`), call-unknown-tool.yaml (POST /v1/search/not-configured with a query body), and tools/oracle/cases/decisions/wiring/systemone-invalid-body.yaml (POST /systemone with an object missing the required fields). B8275 and B8276 cannot run HTTP cases at their own gates because this task mounts their routes, so their cases live here too, as their descriptions list them: tools/oracle/cases/search-call/ auth-required-search, auth-required-named and auth-required-list (each search path without a valid key gets LiteLLM's 401 body), and tools/oracle/cases/decisions-routes/ auth-required-systemone, auth-required-decisions and invalid-body-decisions (POST /v1/decisions with a JSON list body gets the 400 "Invalid Decisions request" error). Unit tests: the chain's order with fake links, the claude-only fall-through, the hooks against fixed env values, and both mounts answering their paths in search_routes/tests.rs.
+scope:
+  paths:
+  - crates/betterlite-server/src/app/inference.rs
+  - crates/betterlite-server/src/app/inference/search_routes.rs
+  - crates/betterlite-server/src/app/inference/search_routes/**
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/messages_selector_chain.rs
+  - crates/betterlite-core/src/messages_selector_chain/**
+  - crates/betterlite-core/src/api_base_hooks.rs
+  - crates/betterlite-core/src/api_base_hooks/**
+  - tools/oracle/cases/search/wiring/**
+  - tools/oracle/cases/decisions/wiring/**
+  - tools/oracle/cases/search-call/**
+  - tools/oracle/cases/decisions-routes/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/endpoints.py#L17-L40
+  why: The four search call paths this task mounts through B8275.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/endpoints.py#L241-L252
+  why: The two search tool list paths.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/decisions_endpoints/endpoints.py#L173-L230
+  why: The systemone and decisions paths this task mounts through B8276.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8931-L9010
+  why: get_provider_anthropic_messages_config, the order of the selector chain.
+dod:
+- text: The search call and search tool list paths and the decisions and systemone paths answer through the booted proxy as LiteLLM does.
+  proof: [search-mount-tests, mount-cases, oracle]
+- text: KeySearchGrants and KeySearchMetadata forward to B749, B737 and B1106.
+  proof: [search-mount-tests]
+- text: messages_selector_chain asks the links in LiteLLM's order and lets a non-claude model on a claude-only arm fall through to the JSON tail.
+  proof: [chain-tests]
+- text: ProviderApiBaseHooks gives the Copilot and ChatGPT bases without a login and the Vertex Claude URL from B1304.
+  proof: [chain-tests]
+checks:
+  optional: []
+  commands:
+  - id: search-mount-tests
+    why: a mount, the route state or a search tool adapter is missing or wrong
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::search_routes::/)'
+  - id: chain-tests
+    why: the selector chain order, the fall-through or an api base hook is wrong
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^messages_selector_chain::/) | test(/^api_base_hooks::/)'
+  - id: mount-cases
+    why: without new case files the oracle compares nothing for these mounts
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/search/wiring tools/oracle/cases/decisions/wiring tools/oracle/cases/search-call tools/oracle/cases/decisions-routes)"
+oracle_cases:
+- tools/oracle/cases/search/wiring/tools-list.yaml
+- tools/oracle/cases/search/wiring/tools-list-empty.yaml
+- tools/oracle/cases/search/wiring/call-unknown-tool.yaml
+- tools/oracle/cases/decisions/wiring/systemone-invalid-body.yaml
+- tools/oracle/cases/search-call/auth-required-search.yaml
+- tools/oracle/cases/search-call/auth-required-named.yaml
+- tools/oracle/cases/search-call/auth-required-list.yaml
+- tools/oracle/cases/decisions-routes/auth-required-systemone.yaml
+- tools/oracle/cases/decisions-routes/auth-required-decisions.yaml
+- tools/oracle/cases/decisions-routes/invalid-body-decisions.yaml
+deviations: []
+out_of_scope:
+- "Route behavior: B8275 and B8276. The search, tool pick and decisions calls: B3272, B3273, B3515. The authorization checks: B749, B737, B4114."
+- "The provider arms of the messages selector chain (anthropic, bedrock, vertex_ai, azure_ai, github_copilot): each provider's task. The api base lookup itself: B7320."
+- "The container and /utils mounts and the inference mount order after this task: B8635."
+pitfalls:
+- 'GET /v1/search/tools has no role or visibility filter; do not reuse B3275''s /search_tools/list filter here.'
+- 'The search tool list comes from the router''s search_tools, so with no router or no tools the answer is data: [] and never a 500.'
+- 'Every arm matches a different provider, so MessagesHostSelector may sit anywhere before the JSON tail; the JSON tail must be last, and a claude-only arm must answer None for other models so the tail sees them.'
+- 'The Copilot hook is a sync &self method while B1513''s Authenticator::get_api_base is async &mut; use B1514''s resolution order without a token refresh, never block on the async call.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

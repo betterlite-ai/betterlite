@@ -1,0 +1,1 @@
+{"request_id":"036ba77c-018b-31dd-047b-323bcd0cd332","lease_id":"","renewable":false,"lease_duration":0,"data":{"data":{"key":"Vault Is The Way"},"metadata":{"created_time":"2025-01-01T22:13:50.93942388Z","custom_metadata":null,"deletion_time":"","destroyed":false,"version":1}},"wrap_info":null,"warnings":null,"auth":null,"mount_type":"kv"}

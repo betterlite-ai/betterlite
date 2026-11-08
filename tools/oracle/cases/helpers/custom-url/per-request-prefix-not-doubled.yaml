@@ -1,0 +1,7 @@
+kind: helper
+name: per-request-prefix-not-doubled
+call:
+  b7323: {"function":"get_custom_url","proxy_base_url":null,"request_base_url":"https://request.example.com/tenant-a/","request_root_path":"/tenant-a","route":"/v1/chat"}
+env: {}
+compare:
+  ignore: []

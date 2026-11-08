@@ -1,0 +1,48 @@
+id: B8636
+title: Production stream generator and router calls for responses, cursor and rerank routes
+description: >-
+  Three B1100 route modules cannot depend on the inference wiring parts, because those parts sit above the server lifespan and the lifespan already reaches the routes. So each route keeps a port in its route state and builds a stand-in, and this task swaps in the production value after the routes are done. B080 (crates/betterlite-server/src/routes/responses.rs) and B940 (routes/cursor_responses_compat.rs) hold the SSE data generator behind B7324's AsyncDataGenerator port and build B8604's SseDataGenerator with pass-through hooks and a cleanup that does nothing. B085 (routes/rerank.rs) holds the router side of its arerank dispatch, B8352's RouterSingleCalls, as an Option port and passes None, so every call takes the no-router branch. Every name stays at 30 characters or fewer.
+
+
+  Edits. In each of the three routes(state) functions, change only the construction of that one value and nothing else; the handlers and their tests stay as their owners wrote them. In routes/responses.rs and routes/cursor_responses_compat.rs, build the generator with B8632's `app::inference::stream_generator(state, cleanup)`, where `cleanup` is the per-request B8605 `DisconnectCleanup` that B8633 builds for the chat route (reuse its constructor from app::inference::chat_stream, do not write a second one); the Responses route keeps `responses_stream_errors` true as B080 sets it. In routes/rerank.rs, pass `Some(calls.single.clone())` where `calls` is B8631's `app::inference::router_calls(state)`, built once when the routes function runs; with no deployments in the startup router, keep passing None, which is LiteLLM's no-router branch (litellm.arerank directly). B8635 also edits routes/cursor_responses_compat.rs (the router views hand-over), so this task runs after it and keeps that edit.
+
+
+  Tests go in crates/betterlite-server, module `app::inference::route_ports` (crates/betterlite-server/src/app/inference/route_ports.rs and route_ports/tests.rs), and drive the real routers through tower's oneshot against a local upstream: a /v1/responses stream from a deployment with `keepalive_seconds: 1` and an upstream that pauses 1.5 seconds gets a `: ping` frame (only the production generator has the keepalive router), a /cursor/chat/completions stream does the same, and a /v1/rerank call against a model group whose first deployment answers 500 is retried on the second (only the router side does that). The routes' own HTTP oracle cases already cover the wire shape and keep passing, so this task lists them by folder in a check instead of adding cases.
+scope:
+  paths:
+  - crates/betterlite-server/src/routes/responses.rs
+  - crates/betterlite-server/src/routes/cursor_responses_compat.rs
+  - crates/betterlite-server/src/routes/rerank.rs
+  - crates/betterlite-server/src/app/inference/route_ports.rs
+  - crates/betterlite-server/src/app/inference/route_ports/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10082-L10096
+  why: select_data_generator, the generator every streaming route passes to base_process_llm_request.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9744-L9827
+  why: The keepalive resolve that needs the router, which the stand-in generator does not have.
+dod:
+- text: /v1/responses and /cursor/chat/completions stream through the production generator from stream_generator, so a quiet upstream gets keepalive pings.
+  proof: [route-port-tests]
+- text: /v1/rerank dispatches through B8631's RouterSingleCalls when the startup router has deployments, so a failing deployment is retried on the next one, and through the no-router branch otherwise.
+  proof: [route-port-tests]
+- text: The three route modules' own tests still pass with only the value construction changed.
+  proof: [route-port-tests]
+checks:
+  optional: []
+  commands:
+  - id: route-port-tests
+    why: a route still uses its stand-in generator or its None router side
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::route_ports::/) | test(/^api::rerank_routes::/) | test(/^api::cursor_responses_compat::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- "Route behavior: B080, B940 and B085. The generator and its ports: B8604 and B8632. The router calls: B8631. The router views on the cursor routes: B8635."
+pitfalls:
+- 'Build RouterCalls once per routes() call, not per request; the Arc<RouterHandle> inside reads the current router on every call.'
+- 'The cleanup holds per-request logging, so build it inside the handler for each streamed request, never once in routes().'
+- 'Keep responses_stream_errors true on the Responses route and false on the cursor route, as their owners set them.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

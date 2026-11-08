@@ -3,7 +3,7 @@ title: Onboarding invitation, logo, image and favicon routes
 description: >-
   Five unauthenticated routes in proxy_server.py serve the admin UI before anyone has logged in: the two invitation
   onboarding steps and the logo, image and favicon lookups. Build crates/betterlite-server/src/onboarding_routes.rs
-  (declared by the skeleton) with `pub fn routes()` like the sibling route modules; the architect's skeleton mounts it.
+  (declared by the skeleton) with `pub fn routes()` like the sibling route modules; B8671 mounts it outside the auth layers.
   None of them is in the OpenAPI schema. Error enum OnboardingError.
 
   GET `/onboarding/get_token?invite_link=`: no master key is a ProxyException ("Master Key not set for Proxy. Please
@@ -44,14 +44,13 @@ description: >-
   the dashboard's favicon.ico (image/x-icon) or 404 "Default favicon not found"; an http(s) value redirects; a local
   value is served when it validates, otherwise it warns and falls back to the default, or 404 "Favicon not found".
 
-  Tests cover each branch with in-memory repositories and a temporary assets directory. HTTP oracle cases under
+  Tests cover each branch with in-memory repositories and a temporary assets directory, through tower's oneshot over this module's Router and fake ports. B8671 mounts the routes, and its HTTP oracle cases under
   tools/oracle/cases/onboarding/ cover both onboarding routes without a database, /get_logo_url with a URL and with a
   local path, and the /get_image and /get_favicon redirects.
 scope:
   paths:
     - crates/betterlite-server/src/onboarding_routes.rs
     - crates/betterlite-server/src/onboarding_routes/**
-    - tools/oracle/cases/onboarding/**
     - tools/oracle/helpers/b8387.py
     - tools/oracle/helpers/b8387/**
     - tools/oracle/src/helpers/server/b8387.rs
@@ -64,11 +63,13 @@ references:
     why: Logo URL, image and favicon lookups.
 dod:
   - text: get_token checks the master key, database, link and user in LiteLLM's order and returns the onboarding login URL and UI token.
-    proof: [onboarding-tests, oracle]
+    proof: [onboarding-tests]
   - text: claim_token verifies the onboarding session, accepts the link once inside a transaction, and rolls the claim back when the session key cannot be minted.
-    proof: [onboarding-tests, oracle]
+    proof: [onboarding-tests]
   - text: Logo, image and favicon lookups redirect URLs, serve only validated local images, fall back in LiteLLM's order and never return a local path.
-    proof: [onboarding-tests, oracle]
+    proof: [onboarding-tests]
+  - text: The handlers are tested with tower's oneshot over this module's Router and fake ports; B8671 mounts the routes and proves them over HTTP.
+    proof: [onboarding-tests]
 checks:
   optional: [mutants]
   commands:
@@ -76,13 +77,7 @@ checks:
       why: An onboarding check, the claim transaction, the rollback or a logo or favicon fallback is missing or differs from LiteLLM
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^onboarding_routes::/)'
-oracle_cases:
-  - tools/oracle/cases/onboarding/get-token-no-database.yaml
-  - tools/oracle/cases/onboarding/claim-token-no-database.yaml
-  - tools/oracle/cases/onboarding/logo-url-http.yaml
-  - tools/oracle/cases/onboarding/logo-url-local-path-hidden.yaml
-  - tools/oracle/cases/onboarding/image-redirect.yaml
-  - tools/oracle/cases/onboarding/favicon-redirect.yaml
+oracle_cases: []
 deviations:
   - what: The bundled logos and default favicon are betterlite's rebranded dashboard files, so /get_image and /get_favicon without a custom value return different bytes.
     why: The dashboard is kept and rebranded (README decisions, 2026-10-24); the bundled directory is an input this task takes, not files it adds.

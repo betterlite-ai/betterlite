@@ -1,0 +1,8 @@
+kind: helper
+name: token-formatting-legacy-accounting
+call:
+  token_formatting:
+    function: legacy_accounting
+    model: gpt-3.5-turbo-0301
+env: {}
+compare: {ignore: []}

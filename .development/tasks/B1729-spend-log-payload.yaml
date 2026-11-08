@@ -56,7 +56,6 @@ scope:
     - tools/oracle/helpers/log_payload/**
     - tools/oracle/cases/helpers/log-payload/**
     - tools/oracle/fuzz/corpus/helper_case/log-payload-*
-    - tools/oracle/cases/http/spend-log-payload/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L285-L342
@@ -66,12 +65,14 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cold_storage_handler.py#L1-L61
     why: Entire configured/injected cold-storage logger resolver.
 dod:
-  - text: Detail reads authorize before accessing callbacks and reject foreign payloads sharing a client call ID.
-    proof: [log-payload-tests, log-metadata-corpus, oracle]
+  - text: Detail reads authorize before accessing callbacks and reject foreign payloads sharing a client call ID. B8663 proves it over HTTP.
+    proof: [log-payload-tests, log-metadata-corpus]
   - text: Database versus cold content and classifier audit recovery preserve the pinned fallback behavior.
     proof: [log-payload-tests, cold-storage-settings, cold-storage-corpus, oracle, log-payload-python]
   - text: Metadata and daily-summary projections retain JSON presence, nullable users and reserved output keys.
     proof: [log-payload-tests, log-metadata-corpus, oracle, log-payload-python, log-payload-corpus]
+  - text: The handlers answer through tower's oneshot over the module's own Router with fake ports; B8663 merges them through B069's spend routes and proves them over HTTP.
+    proof: [log-payload-tests]
 checks:
   optional: [mutants]
   commands:
@@ -94,8 +95,6 @@ checks:
       why: Payload projection operations have no helper replay seed.
       run: grep -rlq 'log_payload:' tools/oracle/fuzz/corpus/helper_case/log-payload-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-  - tools/oracle/cases/http/spend-log-payload/owner-and-colliding-call-id.yaml
-  - tools/oracle/cases/http/spend-log-payload/authorization-before-dates-and-null-row.yaml
   - tools/oracle/cases/helpers/log-payload/empty-json-content-and-cold-key.yaml
   - tools/oracle/cases/helpers/log-payload/metadata-scalar-and-malformed-json.yaml
   - tools/oracle/cases/helpers/log-payload/daily-summary-null-users-and-key-collision.yaml

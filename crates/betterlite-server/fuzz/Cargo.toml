@@ -73,6 +73,20 @@ doc = false
 bench = false
 
 [[bin]]
+name = "mcp_jsonrpc_message"
+path = "fuzz_targets/mcp_jsonrpc_message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mcp_routing_peek"
+path = "fuzz_targets/mcp_routing_peek.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "route_pattern"
 path = "fuzz_targets/route_pattern.rs"
 test = false

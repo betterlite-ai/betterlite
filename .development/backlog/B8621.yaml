@@ -1,0 +1,13 @@
+id: B8621
+milestone: M9 agents and mcp
+title: Build the MCP caller identity and request admission state
+status: todo
+depends_on: [B8620, B8610, B8612, B8724, B4653, B4658, B4659, B4666, B4668, B4670, B4671, B4672, B4673, B4679, B4681, B6591, B4711, B4713, B052, B737, B752, B887, B756, B736, B760, B766, B877, B883, B1221, B1223, B173]
+file: tasks/B8621-mcp-identity-wiring.yaml
+covers: []
+parent: B137
+split_from: B137
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

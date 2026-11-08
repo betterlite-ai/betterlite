@@ -1,7 +1,7 @@
 id: B8275
 title: Serve the search call and search tool list routes
 description: >-
-  Register LiteLLM's search call routes from proxy/search_endpoints/endpoints.py in betterlite-server: `POST /v1/search/{search_tool_name}`, `POST /search/{search_tool_name}`, `POST /v1/search`, `POST /search`, and `GET /v1/search/tools`, `GET /search/tools`. All six sit behind the normal key check. The code goes in `crates/betterlite-server/src/search_call_routes.rs` and its folder; `pub fn routes()` is built like the sibling route modules and the architect mounts it. The `/search_tools` management routes are B3275's, not these. The search itself is B3272 (`asearch`) and the tool pick and fallback is B3273; this task is the HTTP layer in front of them. Route type for dispatch is `asearch`; B014's dispatch has no search entry, so step (4) names the real targets.
+  Register LiteLLM's search call routes from proxy/search_endpoints/endpoints.py in betterlite-server: `POST /v1/search/{search_tool_name}`, `POST /search/{search_tool_name}`, `POST /v1/search`, `POST /search`, and `GET /v1/search/tools`, `GET /search/tools`. All six sit behind the normal key check. The code goes in `crates/betterlite-server/src/search_call_routes.rs` and its folder; `pub fn routes()` is built like the sibling route modules and B8634 mounts it. The `/search_tools` management routes are B3275's, not these. The search itself is B3272 (`asearch`) and the tool pick and fallback is B3273; this task is the HTTP layer in front of them. Route type for dispatch is `asearch`; B014's dispatch has no search entry, so step (4) names the real targets.
 
   Search call. Read the raw body and parse it as JSON. Bad JSON, or a body that is not an object, is an unhandled error in LiteLLM (it happens before the try block), so it answers the server's generic 500 from B003, not a typed error. Then:
   (1) If the URL has `search_tool_name`, it overwrites the body's `search_tool_name` (the URL wins).
@@ -16,7 +16,6 @@ scope:
   paths:
     - crates/betterlite-server/src/search_call_routes.rs
     - crates/betterlite-server/src/search_call_routes/**
-    - tools/oracle/cases/search-call/**
     - tools/oracle/helpers/b8275.py
     - tools/oracle/helpers/b8275/**
     - tools/oracle/src/helpers/server/b8275.rs
@@ -30,8 +29,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5351-L5403
     why: The key and team checks the handler calls (B749 owns them).
 dod:
-  - text: The six routes exist on exactly their paths and methods, each behind the key check, and a request with no valid key gets the usual 401 body.
-    proof: [route-tests, oracle]
+  - text: The six routes exist on exactly their paths and methods, each behind the key check, and a request with no valid key gets the usual 401 body. Tests drive the handlers with tower's oneshot over the module's own Router and fake ports; B8634 mounts the routes and proves them over HTTP.
+    proof: [route-tests]
   - text: A URL tool name overrides the body's, and a non-empty name sets model, runs the key check, and runs the team check only when the key has a team.
     proof: [call-tests]
   - text: A matching router tool sets custom_llm_provider (when its provider is truthy) and metadata.model_group; no match leaves the body alone.
@@ -56,13 +55,7 @@ checks:
     - id: list-tests
       why: the search tool list route is missing or wrong
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^search_call_routes::tests::list_/)'
-    - id: new-cases
-      why: the search call routes have no HTTP parity case on this branch
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/search-call)"
-oracle_cases:
-  - tools/oracle/cases/search-call/auth-required-search.yaml
-  - tools/oracle/cases/search-call/auth-required-named.yaml
-  - tools/oracle/cases/search-call/auth-required-list.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - "asearch and the provider call: B3272. Tool selection, retries and fallbacks: B3273. The /search_tools management routes: B3275."

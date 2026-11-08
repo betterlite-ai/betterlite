@@ -1,0 +1,13 @@
+id: B8672
+milestone: M8 platform
+title: Mount the prompt read and write routes over the shared prompt registry
+status: todo
+depends_on: [B8610, B4061, B4062, B4059]
+file: tasks/B8672-prompt-routes-mount.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

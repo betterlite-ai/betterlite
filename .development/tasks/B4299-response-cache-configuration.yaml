@@ -184,7 +184,7 @@ out_of_scope:
     and Azure Blob cache backend (owned by B4351).
   - Native Rust backend integration (blocker F).
 
-  - "B8296 builds the Valkey semantic cache; for type 'valkey-semantic' this task builds B8296's cache from the same cache params instead of raising CacheTypeNotSupportedError."
+  - "B8296 builds the Valkey semantic cache and B8651 builds it from the cache params with the router embedder, then passes it in as the injected backend. Without one, type 'valkey-semantic' raises CacheTypeNotSupportedError here like the other semantic types."
 pitfalls:
   - >-
     REDIS_CLUSTER_NODES is expected as valid JSON (an array of node objects). If it is malformed or set to the string "[]",

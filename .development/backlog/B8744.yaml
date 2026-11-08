@@ -1,0 +1,13 @@
+id: B8744
+milestone: M8 platform
+title: Catalog adapters for the argilla, galileo and helicone loggers
+status: todo
+depends_on: [B8741, B3960, B3963, B3964, B3965, B3966, B173]
+file: tasks/B8744-trace-logger-adapters.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

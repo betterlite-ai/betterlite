@@ -1,0 +1,247 @@
+id: B8680
+title: Edge layers, the outer error handlers, CORS, the metrics endpoint and the admin UI static mounts
+description: >-
+  Several finished or planned tasks built a layer, a handler or a job that sits around every route, and none installs it
+  on the app: B8591's exception handlers, CORS settings and UI folder setup, B3889's billable request metrics middleware
+  (merged, never installed), B8270's budget reservation release layer, B3886's PrometheusAuthMiddleware and /metrics
+  router and B8250's server span policy. This task installs them
+  in crates/betterlite-server/src/app/edge.rs and its modules app/edge/layers.rs, app/edge/layers/, app/edge/ui.rs and
+  app/edge/ui/ (declared by the skeleton), in the order LiteLLM's proxy applies them. It edits no other file of another
+  area, and never routes.rs, server.rs or app.rs.
+
+
+  The order in LiteLLM. Starlette builds its stack as ServerErrorMiddleware (the `Exception` handler,
+  otel_unhandled_exception_handler) outside everything, then the user middleware with the last added outermost, then
+  ExceptionMiddleware (the ProxyException, HTTPException, ManagementProblem and RequestValidationError handlers) right
+  around the routes. proxy_server.py adds CORSMiddleware first (L2430-L2437), then PrometheusAuthMiddleware,
+  BillableRequestMetricsMiddleware, BudgetReservationReleaseMiddleware, RedisRequestBatchMiddleware,
+  InFlightRequestsMiddleware, SecurityHeadersMiddleware and GZipBufferedResponseMiddleware (L2439-L2474), and later
+  RequestSizeLimitMiddleware, AdmissionControlMiddleware and the root path middleware (L20014-L20039).
+  instrument_fastapi_app (L1744-L1746) wraps the whole stack in the OpenTelemetry server middleware. In betterlite,
+  server.rs wraps router() in B4200's root path layer and B122's request_stack (size limit, gzip, security headers, Redis
+  batch), and router() calls `app::wrap` last, so everything edge::wrap adds sits inside B122's Redis batch layer and
+  outside the auth layers and every route. That matches LiteLLM for every layer below except the server span (see
+  deviations).
+
+
+  `wrap(router, state)` in app/edge.rs applies, from the innermost to the outermost, so each later `.layer` call wraps
+  the earlier ones:
+
+  1. `layers::error_map`, the ExceptionMiddleware place. A middleware fn that keeps the request's method, path and
+  headers, runs the inner service and rewrites three kinds of answer. A response whose extensions hold a
+  `layers::error_map::ProxyFailure` (a pub struct holding a B8410 ProxyException; its IntoResponse renders
+  `{"error": exception.to_body()}` with the status from the code, or 500 when the code is absent, and puts the exception
+  into the extensions) is answered again by B8591's `proxy_exception_response` with the request, so the call id header,
+  the access denial log, the span close and the OTLP answer for ingest requests all apply. A response holding B8591's
+  management problem is answered by `management_problem_response`. An empty-bodied 405 that axum's router produced (no
+  content type, the `allow` header set) becomes B8591's `http_exception_response` for status 405 and detail
+  "Method Not Allowed" with the same `allow` header, which is Starlette's `{"detail": "Method Not Allowed"}` answer.
+  Every other response passes unchanged.
+
+  2. CORS. `cors_config(LITELLM_CORS_ORIGINS, LITELLM_CORS_ALLOW_CREDENTIALS)` from B8591 with both values read from the
+  process environment once in wrap, then B8591's `cors_layer`. Starlette answers a preflight (OPTIONS with Origin and
+  Access-Control-Request-Method) itself, before routing and auth, with 200, body "OK", content type
+  text/plain; charset=utf-8, access-control-allow-methods "DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT",
+  access-control-max-age "600", the requested headers echoed in access-control-allow-headers, and 400 "Disallowed CORS
+  origin" (also "Disallowed CORS method" and "Disallowed CORS headers" joined by ", ") for a refused origin. On a simple
+  request it adds access-control-allow-origin ("*" for the wildcard without credentials, else the request's Origin with
+  vary: Origin), access-control-allow-credentials "true" when on, and access-control-expose-headers with
+  LITELLM_UI_ALLOW_HEADERS. Run the cases below against B8591's cors_layer; where tower-http's CorsLayer answers a
+  preflight differently (it sends an empty body and no max-age by default), write the preflight answer in
+  layers/cors.rs so the cases match, and keep B8591's cors_config as the only source of the settings.
+
+  3. Prometheus auth. B3886's PrometheusAuthMiddleware (crates/betterlite-server/src/prometheus_auth_middleware.rs),
+  built with the settings it reads (require_auth_for_metrics_endpoint, default true) and B052's virtual key auth from
+  the server state, exactly as B3886's constructor asks. It acts only on /metrics and paths under /metrics/.
+
+  4. Billable request metrics. `middleware::from_fn_with_state(Arc<BillableRequestMetrics>, record_billable_request)`
+  from B3889 (crates/betterlite-server/src/middleware/billable_request_metrics.rs on main). The sink factory returns a
+  `layers::billable::AccumulatorSink` over `state.shared.gateway_requests` (B3102's GatewayRequestAccumulator, the one
+  instance B8372's periodic flush job and B8613's shutdown drain use) when `state.shared.db` is Some, and None otherwise,
+  as LiteLLM's `sink_factory=lambda: gateway_request_accumulator if prisma_client is not None else None` (L2468) does.
+  AccumulatorSink implements B3889's GatewayRequestSink by calling the accumulator's record with the category, route and
+  status code, and maps the accumulator's error into GatewayRequestSinkError::Failed. The recorder factory is None: the
+  enterprise billing recorder is not built (B3889's deviation).
+
+  5. Budget reservation release. B8270's release layer (crates/betterlite-server/src/middleware/budget_release.rs) with
+  the ReservationReleaser that `state.shared.budget` (B8481's BudgetServices) holds; read budget_services.rs for the
+  accessor. L2470-L2471 add it just before RedisRequestBatchMiddleware, so it sits directly inside B122's Redis batch
+  layer and outside billable metrics. It must stay outside the auth layers, because B1225 writes the reservation into
+  the slot this layer creates for the request.
+
+  6. The outer 500 handler. tower-http's CatchPanicLayer with a custom handler that returns B8591's
+  `unhandled_error_response` for the panic: 500 {"error": {"message": "Internal server error", "type":
+  "internal_server_error"}}, the "Unhandled exception in request: <type>" log with the panic message as the type text,
+  and the span closed with 500. B789 and every other route rely on this envelope for unexpected failures. The
+  database-unavailable branch of unhandled_error_response applies to errors, not panics, so it stays in B8591's function
+  for routes that call it.
+
+  7. Server span, outermost of wrap. `ServerSpanPolicy::from_gate(is_otel_v2_enabled(), env)` from B8250 and B3842, read
+  once in wrap; None installs nothing, and an invalid OTEL_PYTHON_FASTAPI_EXCLUDED_URLS entry logs the error at debug
+  and installs nothing, as instrument_fastapi_app's outer except does. With a policy, `layers::server_span` opens one
+  SERVER span per HTTP request whose path is not excluded, through the global tracer provider the proxy publishes after
+  config load. It extracts the inbound traceparent and tracestate with the global propagator as the parent context,
+  names the span "{METHOD} {path}", sets http.request.method, url.path and http.route, applies
+  `passthrough_span_name(method, path)` (name and http.route) when the span is recording, anchors the span in B3847's
+  request root slot for the request's task so later callbacks parent under it, sets http.response.status_code and an
+  error status on a 5xx answer, and ends the span when the response body is finished or dropped. WebSocket upgrades are
+  spanned like any GET.
+
+
+  Public mounts, merged by `mount_public` (none of them has a key dependency in LiteLLM). The /metrics endpoint is B3886's
+  `metrics_router(state.shared.prometheus_registry.clone())`, merged only when `prometheus` is in config.sections.callback_settings.callbacks, since LiteLLM mounts it only then (callback_utils.py L407-L410); the Prometheus auth layer above decides whether it needs a key, so it must not sit behind
+  the key auth layers. The admin UI static mounts live in app/edge/ui.rs. At mount time, with the env read once: B8591's
+  `select_ui_folder(env, packaged)` where packaged is the `ui` folder next to the running executable
+  (std::env::current_exe), then B8591's restructure step and root path rewrite with the server root path from B4200's
+  request_root_paths section, then three tower-http ServeDir services: `/_next` and `/litellm-asset-prefix/_next` over
+  `<folder>/_next`, and `/ui` over the folder with index.html served for a directory (StaticFiles html=True). When the
+  chosen folder fails B8591's validate_ui_folder, or any step fails, log it and mount nothing, as LiteLLM's outer try at
+  L2125-L2427 swallows the error; those paths then answer the app's 404. Use nest_service, never a router fallback
+  (B8610: only pass_through sets the fallback).
+
+
+  start(state) stays the empty stub. The periodic gateway request flush (update_gateway_requests_job, L10679-L10686)
+  is B8372's background job over the same `state.shared.gateway_requests`, and the final drain at shutdown (L1132) is
+  B8613's stop.
+
+
+  Tests, in app/edge/layers/tests.rs (names start with `layers_`) and app/edge/ui/tests.rs (names start with `ui_`),
+  build a Router with test routes, call wrap or mount_public and send requests with tower's oneshot: a
+  ProxyFailure answer is re-rendered with the call id header when general_settings asks for it; a 405 gets the JSON
+  detail and the allow header; any other response passes byte for byte; the preflight and simple CORS answers for unset,
+  listed and refused origins; /metrics with require_auth_for_metrics_endpoint on answers 401 without a key and the scrape
+  with one, while /v1/models is never touched by the Prometheus layer; a panicking route answers the 500 envelope and the
+  server still answers the next request; the sink gets category, route and status once per billable request and is never
+  called without a database; a reservation stamped by an inner handler reaches the releaser after the response; the span
+  layer with an in-memory exporter makes one SERVER span with the passthrough name for /openai/v1/models, none for
+  /health/readiness, a remote parent from a traceparent header and an error status on 500, and none at all when the gate
+  is off; the UI mounts serve index.html at /ui/, an asset under /_next and under
+  /litellm-asset-prefix/_next from a temp folder, and nothing when the folder has no index.html.
+
+
+  HTTP oracle cases through the booted proxy, master key set, no database. New, in tools/oracle/cases/edge/layers/:
+  cors-preflight-wildcard (OPTIONS /v1/chat/completions, Origin http://client.example, Access-Control-Request-Method
+  POST, Access-Control-Request-Headers authorization,content-type, no key), cors-preflight-listed-origin
+  (LITELLM_CORS_ORIGINS "http://client.example, http://other.example", same request), cors-preflight-refused-origin
+  (same env, Origin http://evil.example), cors-simple-request-headers (GET /health/liveliness with Origin, no key),
+  cors-on-unauthorized (POST /v1/chat/completions with Origin and no key: the 401 carries the CORS headers),
+  cors-credentials-env-false (LITELLM_CORS_ALLOW_CREDENTIALS "false" with a listed origin) and
+  method-not-allowed-detail (GET /v1/embeddings with the master key: 405, the JSON detail and the allow header). Moved
+  here from B3886, which could not pass them before this mount: the 14 cases in tools/oracle/cases/prometheus-scrape/
+  listed under oracle_cases; write each from B3886's text.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/app/edge.rs
+    - crates/betterlite-server/src/app/edge/layers.rs
+    - crates/betterlite-server/src/app/edge/layers/**
+    - crates/betterlite-server/src/app/edge/ui.rs
+    - crates/betterlite-server/src/app/edge/ui/**
+    - tools/oracle/cases/edge/layers/**
+    - tools/oracle/cases/prometheus-scrape/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1731-L1746
+    why: The FastAPI app and the OTel instrumentation call made before any middleware is added.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
+    why: openai_exception_handler and otlp_http_exception_handler, which error_map routes answers through.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2034-L2080
+    why: The validation and unhandled exception handlers; the unhandled one is the outer 500 handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2125-L2437
+    why: UI folder selection, the three static mounts and the CORSMiddleware arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2439-L2474
+    why: The middleware order, with the comment on why billable metrics sits inside the in-flight tracker.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2656-L2670
+    why: The one gateway_request_accumulator and _gateway_request_redis_buffer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10563-L10614
+    why: initialize_scheduled_background_jobs and batch_writing_interval.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10678-L10686
+    why: The update_gateway_requests_job interval job.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20010-L20039
+    why: The size limit, admission control and root path middleware added last, which betterlite's server.rs owns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/mount.py
+    why: instrument_fastapi_app, the excluded URL list and the passthrough span name hook.
+  - url: https://github.com/encode/starlette/blob/master/starlette/middleware/cors.py
+    why: The preflight and simple request answers the CORS cases compare.
+  - url: https://github.com/encode/starlette/blob/master/starlette/applications.py
+    why: build_middleware_stack, which puts ServerErrorMiddleware outside and ExceptionMiddleware inside the user middleware.
+dod:
+  - text: wrap applies error_map, CORS, Prometheus auth, billable metrics, budget release, the panic handler and the server span in that order from the innermost, and mount_public merges /metrics and the UI mounts without a fallback.
+    proof: [layers-tests, ui-tests]
+  - text: A ProxyFailure, a management problem and axum's empty 405 are answered by B8591's handlers with the request in hand, and other responses pass unchanged.
+    proof: [layers-tests, oracle]
+  - text: CORS preflight and simple answers match Starlette for the wildcard, listed, refused and credentials settings, also on a 401.
+    proof: [layers-tests, oracle]
+  - text: /metrics answers through the Prometheus auth layer and B3886's router as LiteLLM does, with and without require_auth_for_metrics_endpoint, and is not mounted when prometheus is not in litellm_settings.callbacks.
+    proof: [layers-tests, oracle]
+  - text: A panic in a route answers LiteLLM's 500 internal_server_error envelope.
+    proof: [layers-tests]
+  - text: Billable requests reach the shared gateway request accumulator only with a database, and the release layer gets the shared budget releaser.
+    proof: [layers-tests]
+  - text: The span layer opens one named SERVER span per request outside the excluded paths only when the OTel V2 gate is on.
+    proof: [layers-tests]
+  - text: The UI folder is served at /ui, /_next and /litellm-asset-prefix/_next without a key, and nothing is mounted when the folder is invalid.
+    proof: [ui-tests]
+  - text: The seven edge layer cases and the fourteen /metrics cases moved from B3886 match LiteLLM through the booted proxy.
+    proof: [layer-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: layers-tests
+      why: a layer is missing, sits in the wrong order or answers differently from the LiteLLM handler it installs
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::edge::layers::/)'
+    - id: ui-tests
+      why: the UI static mounts serve the wrong files, need a key or mount a broken folder
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::edge::ui::/)'
+    - id: layer-cases
+      why: without new case files the oracle proof compares nothing for the installed layers and the metrics endpoint
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/edge/layers tools/oracle/cases/prometheus-scrape)"
+oracle_cases:
+  - tools/oracle/cases/edge/layers/cors-preflight-wildcard.yaml
+  - tools/oracle/cases/edge/layers/cors-preflight-listed-origin.yaml
+  - tools/oracle/cases/edge/layers/cors-preflight-refused-origin.yaml
+  - tools/oracle/cases/edge/layers/cors-simple-request-headers.yaml
+  - tools/oracle/cases/edge/layers/cors-on-unauthorized.yaml
+  - tools/oracle/cases/edge/layers/cors-credentials-env-false.yaml
+  - tools/oracle/cases/edge/layers/method-not-allowed-detail.yaml
+  - tools/oracle/cases/prometheus-scrape/auth-disabled.yaml
+  - tools/oracle/cases/prometheus-scrape/auth-missing-key.yaml
+  - tools/oracle/cases/prometheus-scrape/auth-wrong-key.yaml
+  - tools/oracle/cases/prometheus-scrape/header-authorization.yaml
+  - tools/oracle/cases/prometheus-scrape/header-api-key.yaml
+  - tools/oracle/cases/prometheus-scrape/header-x-api-key.yaml
+  - tools/oracle/cases/prometheus-scrape/content-negotiation-text.yaml
+  - tools/oracle/cases/prometheus-scrape/content-negotiation-proto.yaml
+  - tools/oracle/cases/prometheus-scrape/gzip-accept.yaml
+  - tools/oracle/cases/prometheus-scrape/gzip-no-accept.yaml
+  - tools/oracle/cases/prometheus-scrape/metric-name-filtering.yaml
+  - tools/oracle/cases/prometheus-scrape/unknown-metric-name.yaml
+  - tools/oracle/cases/prometheus-scrape/concurrent-identical-requests.yaml
+  - tools/oracle/cases/prometheus-scrape/large-response-chunking.yaml
+deviations:
+  - what: The server span starts inside the root path, admission control, size limit, gzip, security header and Redis batch layers, so a 413 from the size limit or a request refused by admission control has no SERVER span.
+    why: Those layers are applied in server.rs outside router(), and app::wrap is the outermost hook an area part has. LiteLLM's FastAPIInstrumentor wraps the whole middleware stack.
+  - what: The SERVER span name and http.route use the request path, not the route template, for routes outside the sixteen passthrough prefixes.
+    why: axum resolves the matched route inside the router, after an outer layer has to name the span.
+  - what: The admin UI is read from the ui folder next to the betterlite executable or LITELLM_UI_PATH, not from a folder inside the Python package.
+    why: betterlite ships no packaged UI build; with no valid folder nothing is mounted, as LiteLLM does when its folder is missing.
+  - what: A panic is the only failure the outer 500 handler catches; a route error that is not a ProxyFailure keeps the response its route built.
+    why: Rust handlers return responses instead of raising, so only a panic reaches the outermost layer unhandled.
+out_of_scope:
+  - "The handlers, CORS settings and UI folder logic themselves: B8591. ProxyException: B8410. The span policy and passthrough name: B8250. The request root slot: B3847. The metrics middleware: B3889. The accumulator and flush_gateway_requests: B3102. The release layer: B8270, its releaser: B8481. PrometheusAuthMiddleware and metrics_router: B3886."
+  - "The root path, admission control, size limit, gzip, security header and Redis batch layers: B4200, B022, B122 and B8295, installed in server.rs. The periodic gateway request flush: B8372. The final drain at shutdown: B8613's stop. The Shared fields gateway_requests and budget: B8610."
+  - "Public routes, docs pages and the OpenAPI document: B8681. Lens routes: B8682. Health routes and the background health loop: B8540."
+pitfalls:
+  - axum applies a layer only to routes added before it; wrap runs after mount_public, so the layers cover public routes too, while a layer added in edge::mount would miss them.
+  - CORS must sit outside the auth layers, otherwise a browser preflight without a key gets 401 and the admin UI cannot call the API.
+  - Billable metrics sits inside the budget release layer and outside Prometheus auth and CORS in LiteLLM; a different order would count CORS preflights or miss the budget release.
+  - The release layer must sit outside the auth layers; inside them, B1225's write into its slot happens before the slot exists.
+  - /metrics merged through mount would hit the key layer, so require_auth_for_metrics_endpoint false would still answer 401.
+  - With LITELLM_CORS_ORIGINS unset and no credentials variable, credentials are off and the origin header is "*"; any explicit list turns credentials on unless LITELLM_CORS_ALLOW_CREDENTIALS says otherwise.
+  - error_map must not touch a 405 a route built itself with a body; only axum's empty router answer becomes the Starlette detail.
+  - CatchPanicLayer must sit inside the span layer, or a panicking request leaves its span without the 500 status.
+  - Build no second GatewayRequestAccumulator; the sink, B8372's flush job and B8613's shutdown drain must see one instance, or counts recorded between flushes are lost.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
