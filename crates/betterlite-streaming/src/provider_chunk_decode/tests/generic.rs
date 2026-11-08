@@ -76,6 +76,16 @@ fn generic_provider_fields_keep_an_empty_chunk_after_a_finish_reason() {
 }
 
 #[test]
+fn generic_empty_chunk_before_a_finish_reason_is_accepted() {
+    let mut decode_state = state("gpt-4");
+    let chunk =
+        generic_chunk(r#"{"text": "", "is_finished": false, "finish_reason": "", "usage": null}"#);
+    let decoded = decode("openai", &chunk, &mut decode_state);
+    assert_eq!(decoded.text, "");
+    assert!(decode_state.received_finish_reason.is_none());
+}
+
+#[test]
 fn generic_content_after_a_finish_reason_is_accepted() {
     let mut decode_state = state("gpt-4");
     decode_state.received_finish_reason = Some("stop".to_owned());

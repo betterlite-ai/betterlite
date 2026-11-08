@@ -31,6 +31,15 @@ fn openai_azure_ai_reads_the_model_too() {
 }
 
 #[test]
+fn openai_azure_empty_model_keeps_the_model() {
+    let mut decode_state = state("gpt-4");
+    let chunk =
+        json_chunk(r#"{"model": "", "choices": [{"index": 0, "delta": {"content": "hi"}}]}"#);
+    decode("azure", &chunk, &mut decode_state);
+    assert_eq!(decode_state.model, "gpt-4");
+}
+
+#[test]
 fn openai_plain_provider_keeps_the_model() {
     let mut decode_state = state("gpt-4");
     let chunk =
