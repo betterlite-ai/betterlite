@@ -5,7 +5,7 @@ import datetime as dt
 import uuid
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import litellm
 from litellm import _logging
@@ -24,17 +24,6 @@ Operation: TypeAlias = Callable[[Logging, "dict[str, Json]"], Json]
 
 DEFAULT_GENERATED_TRACE_ID = "00000000-0000-4000-8000-000000000000"
 ProxySpendLogger = cast("type[CustomLogger]", type("_PROXY_SpendLogger", (CustomLogger,), {}))
-
-
-class _Clock:
-    def __init__(self, step_seconds: float) -> None:
-        self._step_seconds = step_seconds
-        self._ticks = 0
-
-    def time(self) -> float:
-        now = self._ticks * self._step_seconds
-        self._ticks += 1
-        return now
 
 
 def run(input_value: dict[str, Json]) -> Json:
@@ -64,7 +53,7 @@ def _instance(value: dict[str, Json]) -> Json:
     generated = correlation.get("generated_trace_id")
     generated_id = DEFAULT_GENERATED_TRACE_ID if generated is None else _string(generated)
     try:
-        logging_obj = _build(init, settings, generated_id, _Clock(step_millis / 1000))
+        logging_obj = _build(init, settings, generated_id, step_millis / 1000)
         snapshot = _snapshot(logging_obj)
         results = [
             _operation(logging_obj, cast("dict[str, Json]", operation))
@@ -79,7 +68,7 @@ def _instance(value: dict[str, Json]) -> Json:
 
 
 def _build(
-    init: dict[str, Json], settings: dict[str, Json], generated: str, clock: _Clock
+    init: dict[str, Json], settings: dict[str, Json], generated: str, step_seconds: float
 ) -> Logging:
     dynamic = _object(init.get("dynamic_callbacks"))
     flags = _object(init.get("request_logging"))
@@ -107,7 +96,7 @@ def _build(
             return_value=_object(init.get("standard_built_in_tools_params")),
         ),
         patch.object(litellm_logging.uuid, "uuid4", return_value=uuid.UUID(generated)),
-        patch.object(litellm_logging, "time", clock),
+        patch.object(litellm_logging, "time", Mock(time=Mock(side_effect=[0.0, step_seconds]))),
         patch.object(
             _logging, "_ENABLE_SECRET_REDACTION", settings.get("secret_redaction") != "disabled"
         ),
