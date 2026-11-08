@@ -215,7 +215,12 @@ where
             let notified = self.settled.notified();
             pin!(notified);
             notified.as_mut().enable();
-            if self.counters.settled() >= target || self.closed() {
+            let closed = self
+                .admission
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .is_none();
+            if self.counters.settled() >= target || closed {
                 break;
             }
             notified.await;
@@ -253,13 +258,11 @@ where
             }
             Err(_) => {
                 self.shutdown.cancel();
-                match running.await {
-                    Ok(()) => shutdown_report(self.stats(), false),
-                    Err(error) => {
-                        tracing::error!(%error, "the logging worker task ended unexpectedly");
-                        shutdown_report(self.stats(), false)
-                    }
+                let outcome = running.await;
+                if let Err(error) = outcome {
+                    tracing::error!(%error, "the logging worker task ended unexpectedly");
                 }
+                shutdown_report(self.stats(), false)
             }
         };
         self.settled.notify_waiters();
@@ -289,12 +292,5 @@ where
             cancelled,
             pending: accepted.saturating_sub(settled),
         }
-    }
-
-    fn closed(&self) -> bool {
-        self.admission
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .is_none()
     }
 }

@@ -135,17 +135,6 @@ fn callback(
     }
 }
 
-fn blocked(
-    record: &Arc<Record>,
-    name: &'static str,
-    release: Arc<Notify>,
-    spans: &Arc<SpanContexts>,
-) -> ScriptedCallback {
-    let mut callback = callback(record, name, Outcome::Blocked, spans);
-    callback.release = Some(release);
-    callback
-}
-
 fn settings(max_queue_size: usize, concurrency: usize) -> WorkerSettings {
     WorkerSettings {
         max_queue_size,
@@ -361,7 +350,9 @@ async fn a_full_queue_rejects_only_the_new_event() {
     let spans = Arc::new(SpanContexts::default());
     let release = Arc::new(Notify::new());
     let worker = LoggingWorker::start(settings(3, 1)).unwrap();
-    let _blocker = worker.enqueue(blocked(&record, "blocker", Arc::clone(&release), &spans));
+    let mut blocker = callback(&record, "blocker", Outcome::Blocked, &spans);
+    blocker.release = Some(Arc::clone(&release));
+    let _blocker = worker.enqueue(blocker);
     wait_for_names(&record, &["blocker"]).await;
     let _queued = worker.enqueue(callback(&record, "first", Outcome::Success, &spans));
     wait_for_dequeued(&worker, 2).await;
@@ -393,18 +384,12 @@ async fn at_most_the_configured_callbacks_run_at_once() {
     let first_release = Arc::new(Notify::new());
     let second_release = Arc::new(Notify::new());
     let worker = LoggingWorker::start(settings(4, 1)).unwrap();
-    let _first = worker.enqueue(blocked(
-        &record,
-        "first",
-        Arc::clone(&first_release),
-        &spans,
-    ));
-    let _second = worker.enqueue(blocked(
-        &record,
-        "second",
-        Arc::clone(&second_release),
-        &spans,
-    ));
+    let mut first = callback(&record, "first", Outcome::Blocked, &spans);
+    first.release = Some(Arc::clone(&first_release));
+    let _first = worker.enqueue(first);
+    let mut second = callback(&record, "second", Outcome::Blocked, &spans);
+    second.release = Some(Arc::clone(&second_release));
+    let _second = worker.enqueue(second);
     wait_for_names(&record, &["first"]).await;
     wait_for_dequeued(&worker, 2).await;
     yield_now().await;

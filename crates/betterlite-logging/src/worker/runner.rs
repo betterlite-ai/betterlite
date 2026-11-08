@@ -102,6 +102,9 @@ where
     }
 
     async fn next(&mut self, closed: bool) -> Event<C> {
+        if self.shutdown.is_cancelled() {
+            return Event::Shutdown;
+        }
         let has_tasks = !self.tasks.is_empty();
         let mut pending: Vec<NextEvent<'_, C>> = Vec::new();
         if !closed {
@@ -125,6 +128,9 @@ where
     }
 
     async fn acquire_permit(&self) -> Option<OwnedSemaphorePermit> {
+        if self.shutdown.is_cancelled() {
+            return None;
+        }
         let semaphore = Arc::clone(&self.semaphore);
         let granted = async move { semaphore.acquire_owned().await.ok() };
         let shutdown = self.shutdown.clone();
