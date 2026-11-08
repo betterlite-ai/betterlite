@@ -7,9 +7,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use http::{HeaderMap, HeaderName, HeaderValue};
+use secrecy::SecretString;
 
 use crate::gcs_mock::auth::{
-    AccessToken, EnsureAccessToken, GetTokenAndUrl, TokenAndUrl, VertexAuth,
+    AccessToken, EnsureAccessToken, GetTokenAndUrl, TokenAndUrl, VertexAuth, VertexAuthProvider,
 };
 use crate::gcs_mock::client::{GcsHttpClient, GcsHttpResponse};
 use crate::gcs_mock::request::{GcsMethod, GcsReadRequest, GcsRequest, GcsWriteRequest};
@@ -136,7 +137,7 @@ impl VertexAuth for FakeAuth {
     ) -> Result<AccessToken, Infallible> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(AccessToken {
-            token: "original-token".to_owned(),
+            token: SecretString::from("original-token"),
             project_id: "original-project".to_owned(),
         })
     }
@@ -144,7 +145,7 @@ impl VertexAuth for FakeAuth {
     fn ensure_access_token(&self, _request: EnsureAccessToken) -> Result<AccessToken, Infallible> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(AccessToken {
-            token: "original-token".to_owned(),
+            token: SecretString::from("original-token"),
             project_id: "original-project".to_owned(),
         })
     }
@@ -152,7 +153,7 @@ impl VertexAuth for FakeAuth {
     fn get_token_and_url(&self, _request: GetTokenAndUrl) -> Result<TokenAndUrl, Infallible> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(TokenAndUrl {
-            token: "original-token".to_owned(),
+            token: SecretString::from("original-token"),
             url: "https://original.example.com".to_owned(),
         })
     }
@@ -162,7 +163,7 @@ pub(crate) fn ensure_request() -> EnsureAccessToken {
     EnsureAccessToken {
         credentials: None,
         project_id: None,
-        custom_llm_provider: "vertex_ai".to_owned(),
+        custom_llm_provider: VertexAuthProvider::VertexAi,
     }
 }
 
@@ -175,7 +176,7 @@ pub(crate) fn token_request() -> GetTokenAndUrl {
         vertex_location: None,
         gemini_api_key: None,
         stream: None,
-        custom_llm_provider: "vertex_ai".to_owned(),
+        custom_llm_provider: VertexAuthProvider::VertexAi,
         api_base: None,
     }
 }

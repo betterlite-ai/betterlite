@@ -1,6 +1,8 @@
 use std::error::Error;
 
 use async_trait::async_trait;
+use betterlite_models::identity::provider_id::ProviderId;
+use secrecy::SecretString;
 
 use super::installation::Installation;
 
@@ -8,35 +10,52 @@ pub const MOCK_TOKEN: &str = "mock-gcs-token";
 pub const MOCK_PROJECT_ID: &str = "mock-project-id";
 pub const MOCK_STORAGE_URL: &str = "https://storage.googleapis.com";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EnsureAccessToken {
-    pub credentials: Option<String>,
-    pub project_id: Option<String>,
-    pub custom_llm_provider: String,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum VertexAuthProvider {
+    VertexAi,
+    VertexAiBeta,
+    Gemini,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+impl From<VertexAuthProvider> for ProviderId {
+    fn from(provider: VertexAuthProvider) -> Self {
+        match provider {
+            VertexAuthProvider::VertexAi => Self::VertexAi,
+            VertexAuthProvider::VertexAiBeta => Self::VertexAiBeta,
+            VertexAuthProvider::Gemini => Self::Gemini,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct EnsureAccessToken {
+    pub credentials: Option<SecretString>,
+    pub project_id: Option<String>,
+    pub custom_llm_provider: VertexAuthProvider,
+}
+
+#[derive(Debug, Clone)]
 pub struct GetTokenAndUrl {
     pub model: String,
-    pub auth_header: Option<String>,
-    pub vertex_credentials: Option<String>,
+    pub auth_header: Option<SecretString>,
+    pub vertex_credentials: Option<SecretString>,
     pub vertex_project: Option<String>,
     pub vertex_location: Option<String>,
-    pub gemini_api_key: Option<String>,
+    pub gemini_api_key: Option<SecretString>,
     pub stream: Option<bool>,
-    pub custom_llm_provider: String,
+    pub custom_llm_provider: VertexAuthProvider,
     pub api_base: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct AccessToken {
-    pub token: String,
+    pub token: SecretString,
     pub project_id: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct TokenAndUrl {
-    pub token: String,
+    pub token: SecretString,
     pub url: String,
 }
 
@@ -67,18 +86,6 @@ impl<Real> GcsMockAuth<Real> {
         self.installed = true;
         Installation::Installed
     }
-}
-
-pub const fn mock_vertex_auth_methods<Real>(real: Real) -> GcsMockAuth<Real>
-where
-    Real: VertexAuth,
-{
-    let mut auth = GcsMockAuth {
-        real,
-        installed: false,
-    };
-    let _installation = auth.install();
-    auth
 }
 
 #[async_trait]
@@ -115,7 +122,7 @@ where
 
 fn mock_access_token(installed: bool) -> Option<AccessToken> {
     installed.then(|| AccessToken {
-        token: MOCK_TOKEN.to_owned(),
+        token: SecretString::from(MOCK_TOKEN),
         project_id: MOCK_PROJECT_ID.to_owned(),
     })
 }

@@ -3,12 +3,14 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_logging::gcs_mock::auth::{
     AccessToken, EnsureAccessToken, GcsMockAuth, GetTokenAndUrl, TokenAndUrl, VertexAuth as _,
+    VertexAuthProvider,
 };
 use betterlite_logging::gcs_mock::client::{
     GcsHttpClient as _, GcsHttpResponse, create_mock_gcs_client,
 };
 use betterlite_logging::gcs_mock::request::GcsRequest;
 use betterlite_logging::gcs_mock::settings::should_use_gcs_mock;
+use secrecy::ExposeSecret as _;
 use serde_json::{Map, Value, json};
 
 use crate::helpers::{Helper, HelperError, HelperResult};
@@ -116,9 +118,9 @@ async fn run_auth(input: &AuthInput) -> Result<Value, Box<HelperError>> {
     let tokens = authenticate(&auth).await?;
     Ok(json!({
         "installs": installs,
-        "async_token": {"token": tokens.asynchronous.token, "project_id": tokens.asynchronous.project_id},
-        "sync_token": {"token": tokens.synchronous.token, "project_id": tokens.synchronous.project_id},
-        "token_and_url": {"token": tokens.token_and_url.token, "url": tokens.token_and_url.url},
+        "async_token": {"token": tokens.asynchronous.token.expose_secret(), "project_id": tokens.asynchronous.project_id},
+        "sync_token": {"token": tokens.synchronous.token.expose_secret(), "project_id": tokens.synchronous.project_id},
+        "token_and_url": {"token": tokens.token_and_url.token.expose_secret(), "url": tokens.token_and_url.url},
     }))
 }
 
@@ -126,7 +128,7 @@ async fn authenticate(auth: &GcsMockAuth<FakeAuth>) -> Result<Tokens, Box<Helper
     let ensure = EnsureAccessToken {
         credentials: None,
         project_id: None,
-        custom_llm_provider: "vertex_ai".to_owned(),
+        custom_llm_provider: VertexAuthProvider::VertexAi,
     };
     let asynchronous = auth
         .ensure_access_token_async(ensure.clone())
@@ -143,7 +145,7 @@ async fn authenticate(auth: &GcsMockAuth<FakeAuth>) -> Result<Tokens, Box<Helper
         vertex_location: None,
         gemini_api_key: None,
         stream: None,
-        custom_llm_provider: "vertex_ai".to_owned(),
+        custom_llm_provider: VertexAuthProvider::VertexAi,
         api_base: None,
     };
     let token_and_url = auth

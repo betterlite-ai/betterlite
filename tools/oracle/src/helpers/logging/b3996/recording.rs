@@ -9,6 +9,7 @@ use betterlite_logging::gcs_mock::auth::{
 use betterlite_logging::gcs_mock::client::{GcsHttpClient, GcsHttpResponse};
 use betterlite_logging::gcs_mock::request::{GcsRequest, GcsWriteRequest};
 use http::HeaderMap;
+use secrecy::SecretString;
 use serde_json::{Map, Value, json};
 
 pub(crate) struct RecordingClient {
@@ -58,21 +59,21 @@ impl VertexAuth for FakeAuth {
         _request: EnsureAccessToken,
     ) -> Result<AccessToken, Infallible> {
         Ok(AccessToken {
-            token: "original-token".to_owned(),
+            token: SecretString::from("original-token"),
             project_id: "original-project".to_owned(),
         })
     }
 
     fn ensure_access_token(&self, _request: EnsureAccessToken) -> Result<AccessToken, Infallible> {
         Ok(AccessToken {
-            token: "original-token".to_owned(),
+            token: SecretString::from("original-token"),
             project_id: "original-project".to_owned(),
         })
     }
 
     fn get_token_and_url(&self, _request: GetTokenAndUrl) -> Result<TokenAndUrl, Infallible> {
         Ok(TokenAndUrl {
-            token: "original-token".to_owned(),
+            token: SecretString::from("original-token"),
             url: "https://original.example.com".to_owned(),
         })
     }
