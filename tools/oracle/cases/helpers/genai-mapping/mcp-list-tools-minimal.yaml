@@ -1,0 +1,20 @@
+{
+  "kind": "helper",
+  "name": "genai-mapping-mcp-list-tools-minimal",
+  "call": {
+    "b3845": {
+      "function": "genai_mcp_list_tools",
+      "payload": {
+        "id": "call-2",
+        "call_type": "list_mcp_tools",
+        "metadata": {
+          "mcp_session_id": "session-9"
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

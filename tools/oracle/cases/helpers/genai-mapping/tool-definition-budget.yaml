@@ -1,0 +1,57 @@
+{
+  "kind": "helper",
+  "name": "genai-mapping-tool-definition-budget",
+  "call": {
+    "b3845": {
+      "function": "tool_definition_budget",
+      "vocabularies": 4,
+      "payload": {
+        "id": "call-3",
+        "model": "gpt-4o",
+        "custom_llm_provider": "openai",
+        "call_type": "completion",
+        "model_parameters": {
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "t0",
+                "description": "d0",
+                "parameters": {
+                  "type": "object",
+                  "properties": { "a": { "type": "string" } }
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "t1",
+                "description": "d1",
+                "parameters": { "type": "object" }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "t2",
+                "parameters": { "type": "object" }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "t3",
+                "parameters": { "type": "object" }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "kind": "helper",
+  "name": "genai-mapping-llm-call-genai-attributes",
+  "call": {
+    "b3845": {
+      "function": "genai_llm_call",
+      "payload": {
+        "id": "call-1",
+        "model": "gpt-4o",
+        "model_group": "chat-group",
+        "api_base": "https://api.openai.com/v1",
+        "prompt_tokens": 10,
+        "completion_tokens": 4,
+        "total_tokens": 14,
+        "response_cost": 0.0015,
+        "custom_llm_provider": "openai",
+        "call_type": "completion",
+        "stream": true,
+        "model_parameters": {
+          "temperature": 0.2,
+          "top_p": 0.9,
+          "top_k": 5,
+          "max_tokens": 32,
+          "frequency_penalty": 0.1,
+          "presence_penalty": 0.2,
+          "stop": ["END", "STOP"],
+          "seed": 7,
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "get_weather",
+                "description": "Weather",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "city": { "type": "string" }
+                  }
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "no_description",
+                "parameters": { "type": "object" }
+              }
+            }
+          ]
+        },
+        "cost_breakdown": {
+          "input_cost": 0.001,
+          "output_cost": 0.0005,
+          "cache_read_cost": 0.0001,
+          "cache_creation_cost": 0.0002,
+          "tool_usage_cost": 0.0003
+        },
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              { "type": "text", "text": "hi" },
+              {
+                "type": "image_url",
+                "image_url": { "url": "https://example.com/x.png" }
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": "hello",
+            "tool_calls": [
+              {
+                "id": "t1",
+                "type": "function",
+                "function": { "name": "get_weather", "arguments": "{}" }
+              }
+            ],
+            "tool_call_id": "t1"
+          }
+        ],
+        "response": {
+          "id": "resp-1",
+          "model": "gpt-4o-2024",
+          "system_fingerprint": "fp-1",
+          "choices": [
+            {
+              "message": {
+                "role": "assistant",
+                "content": [{ "type": "text", "text": "done" }]
+              },
+              "finish_reason": "stop"
+            }
+          ]
+        }
+      },
+      "capture_content": true,
+      "time_to_first_chunk_seconds": 1.5,
+      "request_route": "/v1/chat/completions",
+      "session_id": "session-1"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
