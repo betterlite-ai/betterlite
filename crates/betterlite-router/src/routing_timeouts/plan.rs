@@ -125,19 +125,13 @@ impl TimeoutPlan {
     }
 
     pub fn attempt_deadline(&self, now: Instant) -> Result<Instant, TimeoutError> {
-        if self.cancellation.is_cancelled() {
-            return Err(TimeoutError::Cancelled);
-        }
-        if now >= self.deadline {
-            return Err(TimeoutError::DeadlineExpired);
-        }
-        let expires = now
-            .checked_add(self.attempt.duration("the attempt timeout")?)
+        let remaining = self.remaining(now)?;
+        let wait = self.attempt.duration("the attempt timeout")?;
+        now.checked_add(remaining.min(wait))
             .ok_or_else(|| TimeoutError::OutOfRange {
                 field: "the attempt timeout".to_owned(),
                 seconds: self.attempt.0,
-            })?;
-        Ok(expires.min(self.deadline))
+            })
     }
 
     pub fn remaining(&self, now: Instant) -> Result<Duration, TimeoutError> {
