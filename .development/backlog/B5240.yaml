@@ -1,14 +1,14 @@
 id: B5240
 milestone: M7 observability
 title: OTel response output choices
-status: todo
+status: done
 depends_on: [B3841, B3843, B3892]
 file: tasks/B5240-otel-output-choices.yaml
 covers:
   - "litellm/integrations/otel/model/payloads.py"
 parent: B110
 split_from: B3844
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 868

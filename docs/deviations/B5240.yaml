@@ -1,0 +1,6 @@
+task: B5240
+deviations:
+  - what: The hit list in a flagged moderation verdict names categories in sorted order, where LiteLLM keeps the order of the response's `categories` object.
+    why: >-
+      `OtelModelValue::Object` is a `BTreeMap`, so the key order is gone by the time the payload reaches this code. The verdict text exists only on the captured output attribute. Keeping the order would mean changing the shared value type that B3892 merged. The oracle case sends its categories in sorted order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L839-L847

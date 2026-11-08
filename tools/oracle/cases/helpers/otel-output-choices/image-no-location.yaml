@@ -1,0 +1,9 @@
+kind: helper
+name: image-no-location
+call:
+  b5240:
+    function: "output_choices"
+    response: {"data": [{"revised_prompt": "better"}]}
+env: {}
+compare:
+  ignore: []

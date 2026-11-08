@@ -2572,6 +2572,16 @@ dependencies = [
 [[package]]
 name = "betterlite-vertex"
 version = "0.1.0"
+dependencies = [
+ "betterlite-models",
+ "regex",
+ "rstest",
+ "rust_decimal",
+ "serde_json",
+ "thiserror",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "betterlite-websearch"
