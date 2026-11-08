@@ -66,12 +66,13 @@ fn a_present_exception_becomes_an_exception_event() {
                 "exception.stacktrace".to_owned(),
                 Value::from("Traceback (most recent call last)")
             ),
+            ("exception.escaped".to_owned(), Value::from("False")),
         ]
     );
 }
 
 #[test]
-fn an_exception_without_a_stacktrace_omits_the_attribute() {
+fn an_exception_without_a_stacktrace_uses_the_formatted_exception() {
     let payload = payload_map("{}");
     let recorded = RecordedException {
         type_name: "ValueError".to_owned(),
@@ -80,12 +81,23 @@ fn an_exception_without_a_stacktrace_omits_the_attribute() {
     };
     let (_attributes, events) = record(Some(&recorded), &payload);
     let event = events.first().expect("one event");
-    let names: Vec<&str> = event
+    let pairs: Vec<(String, Value)> = event
         .attributes
         .iter()
-        .map(|pair| pair.key.as_str())
+        .map(|pair| (pair.key.to_string(), pair.value.clone()))
         .collect();
-    assert_eq!(names, vec!["exception.type", "exception.message"]);
+    assert_eq!(
+        pairs,
+        vec![
+            ("exception.type".to_owned(), Value::from("ValueError")),
+            ("exception.message".to_owned(), Value::from("boom")),
+            (
+                "exception.stacktrace".to_owned(),
+                Value::from("ValueError: boom\n")
+            ),
+            ("exception.escaped".to_owned(), Value::from("False")),
+        ]
+    );
 }
 
 #[test]

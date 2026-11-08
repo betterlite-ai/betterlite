@@ -214,9 +214,6 @@ fn normalize_unions_the_semconv_opt_in() {
         "http, gen_ai_latest_experimental",
     )]);
     let mut config = base_config();
-    config
-        .semconv_stability_opt_in
-        .insert(OTELSemconvCategory::GenAiLatestExperimental);
     config.normalize(&environment);
     assert_eq!(
         config.semconv_stability_opt_in,

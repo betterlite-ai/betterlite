@@ -1,5 +1,6 @@
 import json
 import sys
+import traceback
 from datetime import datetime
 from types import ModuleType
 from typing import TYPE_CHECKING, TypeAlias, cast
@@ -63,8 +64,12 @@ class RecordingSpan:
     def record_exception(self, exception: BaseException) -> None:
         if exception.__traceback__ is not None:
             raise ValueError("the helper builds exceptions without a traceback")
-        attributes: list[list[Json]] = [["exception.type", type(exception).__qualname__],
-                                        ["exception.message", str(exception)]]
+        stacktrace = "".join(traceback.format_exception(type(exception), exception, None))
+        attributes: list[list[Json]] = [
+            ["exception.type", type(exception).__qualname__],
+            ["exception.message", str(exception)],
+            ["exception.stacktrace", stacktrace], ["exception.escaped", "False"],
+        ]
         self.events.append({"name": "exception", "attributes": cast(Json, attributes)})
 
 

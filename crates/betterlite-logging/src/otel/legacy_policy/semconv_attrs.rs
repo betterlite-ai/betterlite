@@ -127,14 +127,10 @@ where
 }
 
 fn integer(value: &OtelModelValue) -> Option<i64> {
-    match value {
-        OtelModelValue::Number(number) => number.as_i64(),
-        OtelModelValue::Null(())
-        | OtelModelValue::Bool(_)
-        | OtelModelValue::String(_)
-        | OtelModelValue::Array(_)
-        | OtelModelValue::Object(_) => None,
+    if let OtelModelValue::Number(number) = value {
+        return number.as_i64();
     }
+    None
 }
 
 fn stop_text(value: &OtelModelValue) -> String {

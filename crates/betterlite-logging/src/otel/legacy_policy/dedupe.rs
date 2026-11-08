@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::FpCategory;
 
+use crate::otel::model::utils::coercion::OtelModelValue;
+
 mod tests;
 
 pub const MAX_FREEZE_DEPTH: u32 = 16;
@@ -67,7 +69,7 @@ impl EmittedSpans {
 pub fn freeze_scope(value: &ScopeValue, depth: u32) -> FrozenScope {
     if depth >= MAX_FREEZE_DEPTH {
         // past the depth limit the remaining value keeps its compact JSON shape
-        return FrozenScope::Json(serde_json::to_string(value).unwrap_or_default());
+        return FrozenScope::Json(serde_json::to_string(&scope_json(value)).unwrap_or_default());
     }
     let next = depth.saturating_add(1);
     match value {
@@ -86,6 +88,26 @@ pub fn freeze_scope(value: &ScopeValue, depth: u32) -> FrozenScope {
             fields
                 .iter()
                 .map(|(key, item)| (key.clone(), freeze_scope(item, next)))
+                .collect(),
+        ),
+    }
+}
+
+fn scope_json(value: &ScopeValue) -> OtelModelValue {
+    match value {
+        ScopeValue::Null => OtelModelValue::Null(()),
+        ScopeValue::Bool(flag) => OtelModelValue::Bool(*flag),
+        ScopeValue::Int(number) => OtelModelValue::Number(serde_json::Number::from(*number)),
+        ScopeValue::Float(number) => serde_json::Number::from_f64(*number)
+            .map_or(OtelModelValue::Null(()), OtelModelValue::Number),
+        ScopeValue::Text(text) => OtelModelValue::String(text.clone()),
+        ScopeValue::List(items) | ScopeValue::Set(items) => {
+            OtelModelValue::Array(items.iter().map(scope_json).collect())
+        }
+        ScopeValue::Map(fields) => OtelModelValue::Object(
+            fields
+                .iter()
+                .map(|(key, item)| (key.clone(), scope_json(item)))
                 .collect(),
         ),
     }

@@ -3,10 +3,9 @@
 use std::collections::BTreeMap;
 use std::slice;
 
-use rstest::rstest;
-
 use super::{
-    EmittedSpans, FrozenScope, HandlerIdentity, MAX_FREEZE_DEPTH, ScopeValue, freeze_scope,
+    EmittedSpans, FloatKey, FrozenScope, HandlerIdentity, MAX_FREEZE_DEPTH, ScopeValue,
+    freeze_scope,
 };
 
 fn handler(class_name: &str, instance: u64) -> HandlerIdentity {
@@ -134,14 +133,20 @@ fn a_collapsed_value_still_keys_on_its_content() {
     assert!(spans.emit_once(&handler, slice::from_ref(&other)));
 }
 
-#[rstest]
-#[case::null(ScopeValue::Null, ScopeValue::Null)]
-#[case::bool(ScopeValue::Bool(true), ScopeValue::Bool(true))]
-#[case::int(ScopeValue::Int(7), ScopeValue::Int(7))]
-#[case::float(ScopeValue::Float(1.5), ScopeValue::Float(1.5))]
-#[case::text(text("value"), text("value"))]
-fn scalars_freeze_to_themselves(#[case] value: ScopeValue, #[case] equivalent: ScopeValue) {
-    let frozen = freeze_scope(&value, 0);
-    let expected = freeze_scope(&equivalent, 0);
-    assert_eq!(frozen, expected);
+#[test]
+fn scalars_freeze_to_themselves() {
+    assert_eq!(freeze_scope(&ScopeValue::Null, 0), FrozenScope::Null);
+    assert_eq!(
+        freeze_scope(&ScopeValue::Bool(true), 0),
+        FrozenScope::Bool(true)
+    );
+    assert_eq!(freeze_scope(&ScopeValue::Int(7), 0), FrozenScope::Int(7));
+    assert_eq!(
+        freeze_scope(&ScopeValue::Float(1.5), 0),
+        FrozenScope::Float(FloatKey::from(1.5_f64))
+    );
+    assert_eq!(
+        freeze_scope(&text("value"), 0),
+        FrozenScope::Text("value".to_owned())
+    );
 }

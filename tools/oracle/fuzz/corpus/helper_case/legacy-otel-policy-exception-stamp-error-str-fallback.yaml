@@ -3,7 +3,7 @@ name: exception-stamp-error-str-fallback
 call:
   b3854:
     function: exception_stamp
-    exception: {type_name: ValueError, message: boom, stacktrace: ""}
+    exception: {type_name: ValueError, message: boom, stacktrace: "ValueError: boom\n"}
     payload:
       error_str: upstream failed
 env: {}

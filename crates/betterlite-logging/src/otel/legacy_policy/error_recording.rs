@@ -29,17 +29,20 @@ pub fn record_exception_on_span<S>(
     S: Span,
 {
     if let Some(recorded) = exception {
-        let mut attributes = vec![
-            KeyValue::new(exception_event::TYPE, recorded.type_name.clone()),
-            KeyValue::new(exception_event::MESSAGE, recorded.message.clone()),
-        ];
-        if !recorded.stacktrace.is_empty() {
-            attributes.push(KeyValue::new(
-                exception_event::STACKTRACE,
-                recorded.stacktrace.clone(),
-            ));
-        }
-        span.add_event(exception_event::NAME, attributes);
+        let stacktrace = if recorded.stacktrace.is_empty() {
+            format!("{}: {}\n", recorded.type_name, recorded.message)
+        } else {
+            recorded.stacktrace.clone()
+        };
+        span.add_event(
+            exception_event::NAME,
+            vec![
+                KeyValue::new(exception_event::TYPE, recorded.type_name.clone()),
+                KeyValue::new(exception_event::MESSAGE, recorded.message.clone()),
+                KeyValue::new(exception_event::STACKTRACE, stacktrace),
+                KeyValue::new("exception.escaped", "False"),
+            ],
+        );
     }
     match payload.get("error_information") {
         None | Some(OtelModelValue::Null(())) => {
