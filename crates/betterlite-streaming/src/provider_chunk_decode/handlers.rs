@@ -1,6 +1,7 @@
-use crate::provider_chunk_decode::chunk::{
-    DecodeState, DecodedChunk, ProviderChunk, as_object, json_text, text_at,
-};
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
+
+use crate::provider_chunk_decode::chunk::{DecodeState, DecodedChunk, ProviderChunk, as_object};
 use crate::provider_chunk_decode::error::ProviderChunkError;
 use crate::stream_chunk_shaping::records::{JsonObject, JsonValue, Usage};
 
@@ -16,6 +17,31 @@ pub fn process_chunk(state: &mut DecodeState, chunk: &str) -> String {
     delta.to_owned()
 }
 
+// LiteLLM's _PredibaseStreamData: the keys the reader looks at.
+#[derive(Deserialize)]
+struct PredibaseStream {
+    token: Option<PredibaseToken>,
+    details: Option<PredibaseDetails>,
+    generated_text: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct PredibaseToken {
+    text: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct PredibaseDetails {
+    finish_reason: Option<String>,
+}
+
+// LiteLLM's _NlpCloudStreamData.
+#[derive(Deserialize)]
+struct NlpCloudStream {
+    generated_text: Option<String>,
+}
+
 pub fn handle_predibase_chunk(
     chunk: &ProviderChunk,
     decoded: &mut DecodedChunk,
@@ -29,61 +55,37 @@ pub fn handle_predibase_chunk(
         }
         return Ok(());
     };
-    let parsed =
-        serde_json::from_str(payload).map_err(|source| ProviderChunkError::ParseResponse {
-            chunk: line.to_owned(),
-            source,
-        })?;
-    let JsonValue::Object(fields) = parsed else {
-        return Err(ProviderChunkError::UnexpectedChunk {
-            expected: "a JSON object",
-        });
-    };
-    if let Some(text) = fields.get("token").and_then(|token| text_at(token, "text")) {
-        text.clone_into(&mut decoded.text);
+    let data: PredibaseStream = parse_line(payload, line)?;
+    if let Some(text) = data.token.and_then(|token| token.text) {
+        decoded.text = text;
     }
-    let details_reason = fields
-        .get("details")
-        .and_then(|details| text_at(details, "finish_reason"))
+    let details_reason = data
+        .details
+        .and_then(|details| details.finish_reason)
         .filter(|reason| !reason.is_empty());
-    match details_reason {
-        Some(reason) => {
-            decoded.is_finished = true;
-            decoded.finish_reason = Some(reason.to_owned());
-            Ok(())
-        }
-        None => predibase_fallback(&fields, decoded),
+    if let Some(reason) = details_reason {
+        decoded.is_finished = true;
+        decoded.finish_reason = Some(reason);
+        return Ok(());
     }
-}
-
-fn predibase_fallback(
-    fields: &JsonObject,
-    decoded: &mut DecodedChunk,
-) -> Result<(), ProviderChunkError> {
-    if fields
-        .get("generated_text")
-        .and_then(JsonValue::as_str)
-        .is_some_and(|text| !text.is_empty())
-    {
+    if data.generated_text.is_some_and(|text| !text.is_empty()) {
         decoded.text.clear();
         decoded.is_finished = true;
         decoded.finish_reason = Some("stop".to_owned());
         return Ok(());
     }
-    if let Some(error) = fields
-        .get("error")
-        .and_then(JsonValue::as_str)
-        .filter(|error| !error.is_empty())
-    {
-        return Err(ProviderChunkError::ProviderReported {
-            message: error.to_owned(),
-        });
+    if let Some(message) = data.error.filter(|error| !error.is_empty()) {
+        return Err(ProviderChunkError::ProviderReported { message });
     }
     Ok(())
 }
 
-pub(super) fn parse_line(line: &str) -> Result<JsonValue, ProviderChunkError> {
-    serde_json::from_str(line).map_err(|source| ProviderChunkError::ParseResponse {
+// Parses a provider line into its declared shape; `line` is what the error reports.
+pub(super) fn parse_line<T>(payload: &str, line: &str) -> Result<T, ProviderChunkError>
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_str(payload).map_err(|source| ProviderChunkError::ParseResponse {
         chunk: line.to_owned(),
         source,
     })
@@ -99,12 +101,13 @@ pub fn handle_nlp_cloud_chunk(
         fill_nlp_cloud(decoded, &process_chunk(state, line));
         return Ok(());
     }
-    let parsed = parse_line(line)?;
-    let generated =
-        text_at(&parsed, "generated_text").ok_or_else(|| ProviderChunkError::RejectedResponse {
+    let data: NlpCloudStream = parse_line(line, line)?;
+    let generated = data
+        .generated_text
+        .ok_or_else(|| ProviderChunkError::RejectedResponse {
             chunk: line.to_owned(),
         })?;
-    fill_nlp_cloud(decoded, generated);
+    fill_nlp_cloud(decoded, &generated);
     Ok(())
 }
 
@@ -121,7 +124,7 @@ fn fill_nlp_cloud(decoded: &mut DecodedChunk, text: &str) {
 #[must_use]
 pub fn rejected_text(chunk: &ProviderChunk) -> String {
     match chunk {
-        ProviderChunk::Json(value) => json_text(value),
+        ProviderChunk::Json(value) => serde_json::to_string(value).unwrap_or_default(),
         ProviderChunk::Text(text) => text.clone(),
         ProviderChunk::Generic(_) => String::new(),
         ProviderChunk::Bytes(bytes) => format!("{bytes:?}"),

@@ -41,6 +41,11 @@ call:
         chunk:
           kind: json
           value: {id: chatcmpl-7, choices: [{index: 0, delta: {content: counted}}], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}}
+      - op: decode
+        provider: openai
+        chunk:
+          kind: json
+          value: {id: chatcmpl-8, choices: [{index: 0, delta: {content: failed}, finish_reason: error}]}
 env: {}
 compare:
   ignore: []

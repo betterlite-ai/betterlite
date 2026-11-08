@@ -167,6 +167,19 @@ fn creator_finish_only_chunk_is_the_terminal_chunk() {
 }
 
 #[test]
+fn creator_codestral_finish_chunk_carries_no_logprobs() {
+    let mut decode_state = state("codestral-latest");
+    let chunk = text(
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"content": ""}, "finish_reason": "stop", "logprobs": {"a": 1}}]}"#,
+    );
+    let created_chunk = created("text-completion-codestral", &mut decode_state, &chunk)
+        .expect("a chunk is emitted");
+    let choice = first_choice(&created_chunk);
+    assert_eq!(choice.finish_reason.as_deref(), Some("stop"));
+    assert!(choice.logprobs.is_none());
+}
+
+#[test]
 fn creator_repetition_limit_is_honoured() {
     let mut decode_state = state("gpt-4");
     decode_state.repeated_chunk_limit = 2;

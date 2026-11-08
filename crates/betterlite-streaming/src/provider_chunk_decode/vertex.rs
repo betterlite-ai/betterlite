@@ -1,10 +1,12 @@
 use uuid::Uuid;
 
 use crate::provider_chunk_decode::chunk::{
-    DecodeState, DecodedChunk, ProviderChunk, as_array, as_object, at, first, json_text, object,
+    DecodeState, DecodedChunk, ProviderChunk, as_array, as_object, object,
 };
 use crate::provider_chunk_decode::error::ProviderChunkError;
-use crate::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamChoice, StreamChunk};
+use crate::stream_chunk_shaping::records::{
+    JsonObject, JsonValue, StreamChoice, StreamChunk, StreamDelta,
+};
 use crate::stream_chunk_shaping::tokens::mapped_finish_reason;
 
 // A vertex ai chunk arrives as the proto object's JSON, candidates and all.
@@ -24,10 +26,11 @@ pub fn handle_vertex_chunk(
         });
     };
     let Some(listed) = fields.get("candidates") else {
-        decoded.text = json_text(value);
+        decoded.text = serde_json::to_string(value).unwrap_or_default();
         return Ok(decoded);
     };
-    let candidate = first(listed)
+    let candidate = as_array(listed)
+        .and_then(<[JsonValue]>::first)
         .and_then(as_object)
         .ok_or(ProviderChunkError::MissingField {
             field: "candidates",
@@ -35,9 +38,15 @@ pub fn handle_vertex_chunk(
     let finish_name = candidate.get("finish_reason").and_then(JsonValue::as_str);
     let parts = candidate
         .get("content")
-        .and_then(|content| at(content, "parts"))
+        .and_then(|content| as_object(content)?.get("parts"))
         .and_then(as_array);
-    fill_vertex(text_of(parts), parts, candidate, &mut decoded)?;
+    fill_vertex(
+        text_of(parts),
+        parts,
+        candidate,
+        state.next_id,
+        &mut decoded,
+    )?;
     if let Some(name) = finish_name.filter(|name| *name != "FINISH_REASON_UNSPECIFIED") {
         state.received_finish_reason = Some(mapped_finish_reason(name).to_owned());
     }
@@ -48,6 +57,7 @@ fn fill_vertex(
     chunk_text: Option<String>,
     parts: Option<&[JsonValue]>,
     candidate: &JsonObject,
+    next_id: fn() -> Uuid,
     decoded: &mut DecodedChunk,
 ) -> Result<(), ProviderChunkError> {
     if let Some(text) = chunk_text {
@@ -55,9 +65,9 @@ fn fill_vertex(
         return Ok(());
     }
     if let Some(call) = parts.and_then(vertex_tool_call) {
-        let calls = JsonValue::Array(vec![vertex_tool_call_value(&call)?]);
+        let calls = JsonValue::Array(vec![vertex_tool_call_value(&call, next_id())?]);
         decoded.tool_calls = Some(calls.clone());
-        decoded.original = Some(vertex_tool_chunk(&calls));
+        decoded.original = Some(vertex_tool_chunk(&calls, next_id()));
         return Ok(());
     }
     if candidate.get("finish_reason").and_then(JsonValue::as_str) == Some("SAFETY") {
@@ -82,12 +92,13 @@ fn text_of(parts: Option<&[JsonValue]>) -> Option<String> {
 }
 
 fn vertex_tool_call(parts: &[JsonValue]) -> Option<JsonObject> {
-    at(parts.first()?, "function_call")
+    as_object(parts.first()?)?
+        .get("function_call")
         .and_then(as_object)
         .cloned()
 }
 
-fn vertex_tool_call_value(call: &JsonObject) -> Result<JsonValue, ProviderChunkError> {
+fn vertex_tool_call_value(call: &JsonObject, id: Uuid) -> Result<JsonValue, ProviderChunkError> {
     let name = call
         .get("name")
         .and_then(JsonValue::as_str)
@@ -102,21 +113,21 @@ fn vertex_tool_call_value(call: &JsonObject) -> Result<JsonValue, ProviderChunkE
         ("name", JsonValue::String(name.to_owned())),
     ]);
     Ok(object(vec![
-        ("id", JsonValue::String(format!("call_{}", Uuid::new_v4()))),
+        ("id", JsonValue::String(format!("call_{id}"))),
         ("function", function),
         ("type", JsonValue::String("function".to_owned())),
     ]))
 }
 
-fn vertex_tool_chunk(calls: &JsonValue) -> StreamChunk {
+fn vertex_tool_chunk(calls: &JsonValue, id: Uuid) -> StreamChunk {
     let mut chunk = StreamChunk::default();
-    fill_tool_chunk(&mut chunk, calls);
+    fill_tool_chunk(&mut chunk, calls, id);
     chunk
 }
 
-fn fill_tool_chunk(chunk: &mut StreamChunk, calls: &JsonValue) {
+fn fill_tool_chunk(chunk: &mut StreamChunk, calls: &JsonValue, id: Uuid) {
     let mut choice = StreamChoice::default();
     choice.delta.tool_calls = Some(calls.clone());
-    chunk.id = format!("chatcmpl-{}", Uuid::new_v4());
+    chunk.id = format!("chatcmpl-{id}");
     chunk.choices = vec![choice];
 }

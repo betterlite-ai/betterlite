@@ -355,8 +355,74 @@ fn text_providers_codestral_finish_reason_finishes() {
     let decoded = decode("text-completion-codestral", &chunk, &mut decode_state);
     assert!(decoded.is_finished);
     assert_eq!(decoded.finish_reason.as_deref(), Some("stop"));
-    assert!(decoded.logprobs.is_some());
+    assert!(decoded.logprobs.is_none());
     assert_eq!(decode_state.received_finish_reason.as_deref(), Some("stop"));
+}
+
+#[test]
+fn text_providers_predibase_wrong_typed_token_is_a_parse_error() {
+    let mut decode_state = state("gpt-4");
+    let chunk = text(r#"data:{"token": "hi"}"#);
+    let error = decode_error("predibase", &chunk, &mut decode_state);
+    assert!(matches!(error, ProviderChunkError::ParseResponse { .. }));
+}
+
+#[test]
+fn text_providers_predibase_empty_finish_reason_falls_through_to_generated_text() {
+    let mut decode_state = state("gpt-4");
+    let chunk = text(r#"data:{"details": {"finish_reason": ""}, "generated_text": "done"}"#);
+    let decoded = decode("predibase", &chunk, &mut decode_state);
+    assert!(decoded.is_finished);
+    assert_eq!(decoded.finish_reason.as_deref(), Some("stop"));
+}
+
+#[test]
+fn text_providers_predibase_empty_generated_text_falls_through_to_the_error() {
+    let mut decode_state = state("gpt-4");
+    let chunk = text(r#"data:{"generated_text": "", "error": "late"}"#);
+    let error = decode_error("predibase", &chunk, &mut decode_state);
+    assert_eq!(error.to_string(), "late");
+}
+
+#[test]
+fn text_providers_predibase_empty_error_is_no_error() {
+    let mut decode_state = state("gpt-4");
+    let decoded = decode(
+        "predibase",
+        &text(r#"data:{"error": ""}"#),
+        &mut decode_state,
+    );
+    assert!(!decoded.is_finished);
+    assert_eq!(decoded.text, "");
+}
+
+#[test]
+fn text_providers_nlp_cloud_without_generated_text_is_rejected() {
+    let mut decode_state = state("gpt-4");
+    let error = decode_error("nlp_cloud", &text(r#"{"other": 1}"#), &mut decode_state);
+    assert!(matches!(error, ProviderChunkError::RejectedResponse { .. }));
+}
+
+#[test]
+fn text_providers_aleph_alpha_invalid_json_is_a_parse_error() {
+    let mut decode_state = state("gpt-4");
+    let error = decode_error("aleph_alpha", &text("not json"), &mut decode_state);
+    assert!(matches!(error, ProviderChunkError::ParseResponse { .. }));
+}
+
+#[test]
+fn text_providers_triton_wrong_typed_object_is_refused() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(r#"{"text_output": 5}"#);
+    let error = decode_error("triton", &chunk, &mut decode_state);
+    assert!(matches!(error, ProviderChunkError::InvalidChunk { .. }));
+}
+
+#[test]
+fn text_providers_triton_line_that_is_not_json_is_a_parse_error() {
+    let mut decode_state = state("gpt-4");
+    let error = decode_error("triton", &text("data: {text_output"), &mut decode_state);
+    assert!(matches!(error, ProviderChunkError::ParseResponse { .. }));
 }
 
 #[test]

@@ -1,5 +1,7 @@
 use std::str::from_utf8;
 
+use uuid::Uuid;
+
 use crate::provider_chunk_decode::error::ProviderChunkError;
 use crate::stream_chunk_shaping::records::{
     GenericChunk, JsonObject, JsonValue, StreamChunk, Usage,
@@ -142,6 +144,7 @@ pub struct DecodeState {
     pub completion_stream: Option<String>,
     pub options: RequestOptions,
     pub repeated_chunk_limit: usize,
+    pub next_id: fn() -> Uuid,
 }
 
 #[must_use]
@@ -165,16 +168,8 @@ pub fn as_array(value: &JsonValue) -> Option<&[JsonValue]> {
 }
 
 #[must_use]
-pub fn at<'node>(value: &'node JsonValue, key: &str) -> Option<&'node JsonValue> {
-    if let Some(fields) = as_object(value) {
-        return fields.get(key);
-    }
-    None
-}
-
-#[must_use]
 pub fn text_at<'node>(value: &'node JsonValue, key: &str) -> Option<&'node str> {
-    match at(value, key)? {
+    match as_object(value)?.get(key)? {
         JsonValue::String(text) => Some(text.as_str()),
         JsonValue::Null
         | JsonValue::Bool(_)
@@ -182,22 +177,6 @@ pub fn text_at<'node>(value: &'node JsonValue, key: &str) -> Option<&'node str> 
         | JsonValue::Array(_)
         | JsonValue::Object(_) => None,
     }
-}
-
-#[must_use]
-pub fn first(value: &JsonValue) -> Option<&JsonValue> {
-    if let Some(items) = as_array(value) {
-        return items.first();
-    }
-    None
-}
-
-#[must_use]
-pub fn json_text(value: &JsonValue) -> String {
-    if let Ok(text) = serde_json::to_string(value) {
-        return text;
-    }
-    String::new()
 }
 
 #[must_use]

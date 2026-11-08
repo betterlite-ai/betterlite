@@ -35,8 +35,6 @@ pub enum ProviderChunkError {
         #[from]
         source: Utf8Error,
     },
-    #[error("{provider} raised a streaming error - finish_reason: error, no content string given")]
-    StreamingFailure { provider: String },
     #[error("the provider chunk does not match the OpenAI chunk shape: {source}")]
     InvalidChunk {
         #[from]
@@ -59,10 +57,9 @@ impl ProviderChunkError {
             | Self::RejectedResponse { .. }
             | Self::NotAString { .. }
             | Self::Shape { .. } => "ValueError",
-            Self::ProviderReported { .. }
-            | Self::UnknownStream
-            | Self::VertexBlocked
-            | Self::StreamingFailure { .. } => "Exception",
+            Self::ProviderReported { .. } | Self::UnknownStream | Self::VertexBlocked => {
+                "Exception"
+            }
             Self::UnexpectedChunk { .. }
             | Self::MissingField { .. }
             | Self::InvalidField { .. }

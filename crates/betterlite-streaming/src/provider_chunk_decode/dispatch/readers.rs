@@ -1,8 +1,9 @@
 use crate::provider_chunk_decode::chunk::{
-    DecodeState, DecodedChunk, ProviderChunk, as_array, at, first, text_at,
+    DecodeState, DecodedChunk, ProviderChunk, as_array, as_object, text_at,
 };
 use crate::provider_chunk_decode::error::ProviderChunkError;
 use crate::provider_chunk_decode::handlers::openai::handle_openai_chat_chunk;
+use crate::stream_chunk_shaping::records::JsonValue;
 
 pub(super) fn fill_petals(state: &mut DecodeState) -> Result<DecodedChunk, ProviderChunkError> {
     let mut decoded = DecodedChunk::default();
@@ -35,11 +36,6 @@ pub(super) fn fill_openai(
         .intermittent_finish_reason
         .clone_from(&decoded.finish_reason);
     if decoded.is_finished {
-        if decoded.finish_reason.as_deref() == Some("error") {
-            return Err(ProviderChunkError::StreamingFailure {
-                provider: provider.unwrap_or_default().to_owned(),
-            });
-        }
         state
             .received_finish_reason
             .clone_from(&decoded.finish_reason);
@@ -58,8 +54,9 @@ pub(super) fn fill_vllm(
     })?;
     let text = items
         .first()
-        .and_then(|item| at(item, "outputs"))
-        .and_then(first)
+        .and_then(|item| as_object(item)?.get("outputs"))
+        .and_then(as_array)
+        .and_then(<[JsonValue]>::first)
         .and_then(|output| text_at(output, "text"))
         .ok_or(ProviderChunkError::MissingField {
             field: "outputs[0].text",

@@ -1,5 +1,7 @@
 use std::str::from_utf8;
 
+use uuid::Uuid;
+
 use crate::provider_chunk_decode::chunk::{
     DecodeState, DecodedChunk, ProviderChunk, ProviderKind, RequestOptions,
 };
@@ -58,6 +60,7 @@ pub fn decode_fuzzed_stream_chunk(
             is_function_call: true,
         },
         repeated_chunk_limit: 100,
+        next_id: Uuid::new_v4,
     };
     Some(decode_provider_chunk(provider, &chunk_of(rest), &mut state))
 }

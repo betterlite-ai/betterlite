@@ -55,6 +55,9 @@ call:
         provider: text-completion-codestral
         chunk: {kind: text, value: 'data: {"id": "c1", "choices": [{"index": 0, "delta": {"content": "hi"}, "finish_reason": null}]}'}
       - op: decode
+        provider: text-completion-codestral
+        chunk: {kind: text, value: 'data: {"id": "c1", "choices": [{"index": 0, "delta": {"content": ""}, "finish_reason": "stop", "logprobs": {"a": 1}}]}'}
+      - op: decode
         provider: azure_text
         chunk: {kind: json, value: {choices: [{text: hi, finish_reason: stop}]}}
       - op: decode

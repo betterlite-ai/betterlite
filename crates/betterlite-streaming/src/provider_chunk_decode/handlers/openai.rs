@@ -1,8 +1,11 @@
-use crate::provider_chunk_decode::chunk::{DecodedChunk, ProviderChunk, as_object, first};
+use serde::Deserialize;
+
+use crate::provider_chunk_decode::chunk::{DecodedChunk, ProviderChunk, as_array, as_object};
 use crate::provider_chunk_decode::error::ProviderChunkError;
-use crate::provider_chunk_decode::handlers::{object_of, string_field, usage_counts};
+use crate::provider_chunk_decode::handlers::{object_of, parse_line, string_field, usage_counts};
 use crate::stream_chunk_shaping::extras::strip_sse_data_from_chunk;
 use crate::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamChunk};
+use crate::stream_chunk_shaping::tokens::mapped_finish_reason;
 
 pub fn handle_openai_chat_chunk(chunk: &StreamChunk, decoded: &mut DecodedChunk) {
     decoded.original = Some(chunk.clone());
@@ -23,7 +26,7 @@ pub fn handle_openai_chat_chunk(chunk: &StreamChunk, decoded: &mut DecodedChunk)
     if let Some(JsonValue::Bool(flag)) = chunk.hidden_params.get("is_finished") {
         decoded.is_finished = *flag;
     }
-    decoded.finish_reason = Some(reason);
+    decoded.finish_reason = Some(mapped_finish_reason(&reason).to_owned());
 }
 
 pub fn handle_text_completion_chunk(
@@ -50,7 +53,8 @@ fn fill_text_choice(
 ) -> Result<(), ProviderChunkError> {
     let Some(choice) = fields
         .and_then(|object| object.get("choices"))
-        .and_then(first)
+        .and_then(as_array)
+        .and_then(<[JsonValue]>::first)
         .and_then(as_object)
     else {
         return Ok(());
@@ -63,41 +67,34 @@ fn fill_text_choice(
     Ok(())
 }
 
+// The keys of a triton stream object the reader looks at.
+#[derive(Deserialize)]
+struct TritonStream {
+    text_output: Option<String>,
+    stop_reason: Option<String>,
+    is_finished: Option<bool>,
+}
+
 pub fn handle_triton_stream(
     chunk: &ProviderChunk,
     decoded: &mut DecodedChunk,
 ) -> Result<(), ProviderChunkError> {
-    if let ProviderChunk::Json(value) = chunk
-        && let JsonValue::Object(fields) = value.as_ref()
+    let data: TritonStream = if let ProviderChunk::Json(value) = chunk
+        && matches!(value.as_ref(), JsonValue::Object(_))
     {
-        return triton_decoded(fields, decoded);
-    }
-    let line = chunk.text()?;
-    if !line.contains("text_output") {
-        return Ok(());
-    }
-    let stripped = strip_sse_data_from_chunk(Some(line)).unwrap_or(line).trim();
-    let parsed =
-        serde_json::from_str(stripped).map_err(|source| ProviderChunkError::ParseResponse {
-            chunk: line.to_owned(),
-            source,
-        })?;
-    let JsonValue::Object(fields) = parsed else {
-        return Err(ProviderChunkError::UnexpectedChunk {
-            expected: "a JSON object",
-        });
+        serde_json::from_value(serde_json::to_value(value)?)?
+    } else {
+        let line = chunk.text()?;
+        if !line.contains("text_output") {
+            return Ok(());
+        }
+        let stripped = strip_sse_data_from_chunk(Some(line)).unwrap_or(line).trim();
+        parse_line(stripped, line)?
     };
-    triton_decoded(&fields, decoded)
-}
-
-fn triton_decoded(
-    fields: &JsonObject,
-    decoded: &mut DecodedChunk,
-) -> Result<(), ProviderChunkError> {
-    decoded.text = string_field(fields, "text_output")?.unwrap_or_default();
-    decoded.finish_reason = string_field(fields, "stop_reason")?;
-    if let Some(JsonValue::Bool(flag)) = fields.get("is_finished") {
-        decoded.is_finished = *flag;
+    decoded.text = data.text_output.unwrap_or_default();
+    decoded.finish_reason = data.stop_reason;
+    if let Some(flag) = data.is_finished {
+        decoded.is_finished = flag;
     }
     Ok(())
 }

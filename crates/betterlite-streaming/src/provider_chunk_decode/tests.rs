@@ -40,6 +40,7 @@ fn state(model: &str) -> DecodeState {
         completion_stream: None,
         options: options(),
         repeated_chunk_limit: 100,
+        next_id: fixed_id,
     }
 }
 

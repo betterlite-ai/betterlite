@@ -108,7 +108,10 @@ fn errors_vertex_function_call_is_built() {
     let items = as_array(calls).expect("the calls are a list");
     let call = as_object(items.first().expect("one call")).expect("the call is an object");
     let identifier = call.get("id").and_then(JsonValue::as_str);
-    assert!(identifier.is_some_and(|value| value.starts_with("call_")));
+    assert_eq!(
+        identifier,
+        Some("call_00000000-0000-0000-0000-000000000000")
+    );
     assert_eq!(
         call.get("type").and_then(JsonValue::as_str),
         Some("function")
@@ -129,5 +132,12 @@ fn errors_vertex_function_call_is_built() {
             .as_ref()
             .is_some_and(|original| !original.choices.is_empty())
     );
+    let original = decoded.original.as_ref().expect("the call chunk is built");
+    assert_eq!(original.id, "chatcmpl-00000000-0000-0000-0000-000000000000");
+    let choice = original
+        .choices
+        .first()
+        .expect("the call chunk has a choice");
+    assert_eq!(choice.delta.tool_calls.as_ref(), Some(calls));
     assert_eq!(decode_state.received_finish_reason.as_deref(), Some("stop"));
 }

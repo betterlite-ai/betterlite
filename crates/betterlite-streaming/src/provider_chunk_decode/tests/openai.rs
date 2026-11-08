@@ -127,12 +127,27 @@ fn openai_missing_choices_gives_empty_text() {
 }
 
 #[test]
-fn openai_error_finish_reason_fails() {
+fn openai_error_finish_reason_ends_the_stream_as_stop() {
     let mut decode_state = state("gpt-4");
     let chunk =
         json_chunk(r#"{"choices": [{"delta": {"content": "hi"}, "finish_reason": "error"}]}"#);
-    let error = decode_error("openai", &chunk, &mut decode_state);
-    assert!(matches!(error, ProviderChunkError::StreamingFailure { .. }));
+    let decoded = decode("openai", &chunk, &mut decode_state);
+    assert!(decoded.is_finished);
+    assert_eq!(decoded.finish_reason.as_deref(), Some("stop"));
+    assert_eq!(decode_state.received_finish_reason.as_deref(), Some("stop"));
+    assert_eq!(
+        decode_state.intermittent_finish_reason.as_deref(),
+        Some("stop")
+    );
+}
+
+#[test]
+fn openai_provider_finish_names_map_the_way_litellm_maps_them() {
+    let mut decode_state = state("gpt-4");
+    let chunk =
+        json_chunk(r#"{"choices": [{"delta": {"content": "hi"}, "finish_reason": "max_tokens"}]}"#);
+    let decoded = decode("openai", &chunk, &mut decode_state);
+    assert_eq!(decoded.finish_reason.as_deref(), Some("length"));
 }
 
 #[test]

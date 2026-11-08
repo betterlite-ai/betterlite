@@ -1,5 +1,5 @@
 use crate::provider_chunk_decode::chunk::{
-    DecodedChunk, ProviderChunk, as_object, at, first, text_at,
+    DecodedChunk, ProviderChunk, as_array, as_object, text_at,
 };
 use crate::provider_chunk_decode::error::ProviderChunkError;
 use crate::provider_chunk_decode::handlers::rejected_text;
@@ -33,7 +33,12 @@ fn fill_codestral_choice(
     parsed: &JsonValue,
     decoded: &mut DecodedChunk,
 ) -> Result<(), ProviderChunkError> {
-    let Some(choice) = at(parsed, "choices").and_then(first).and_then(as_object) else {
+    let Some(choice) = as_object(parsed)
+        .and_then(|fields| fields.get("choices"))
+        .and_then(as_array)
+        .and_then(<[JsonValue]>::first)
+        .and_then(as_object)
+    else {
         return Ok(());
     };
     let text = choice
@@ -45,10 +50,6 @@ fn fill_codestral_choice(
         decoded.is_finished = true;
         decoded.finish_reason = Some(reason.to_owned());
     }
-    decoded.logprobs = choice
-        .get("logprobs")
-        .filter(|logprobs| !matches!(logprobs, JsonValue::Null))
-        .cloned();
     decoded.original = Some(ProviderChunk::Json(Box::new(parsed.clone())).openai_chunk()?);
     Ok(())
 }

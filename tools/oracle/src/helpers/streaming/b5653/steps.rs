@@ -78,6 +78,7 @@ fn state_of(spec: &Value) -> Result<DecodeState, Box<HelperError>> {
             is_function_call: load::<bool>(spec, "is_function_call")?.unwrap_or(false),
         },
         repeated_chunk_limit: load::<usize>(spec, "repeated_chunk_limit")?.unwrap_or(100),
+        next_id: Uuid::nil,
     })
 }
 
@@ -185,7 +186,6 @@ fn raised(error: &ProviderChunkError) -> Value {
         | ProviderChunkError::MissingField { .. }
         | ProviderChunkError::InvalidField { .. }
         | ProviderChunkError::InvalidUtf8 { .. }
-        | ProviderChunkError::StreamingFailure { .. }
         | ProviderChunkError::InvalidChunk { .. }
         | ProviderChunkError::Shape { .. } => json!({"raised": {"message": error.to_string()}}),
     }
