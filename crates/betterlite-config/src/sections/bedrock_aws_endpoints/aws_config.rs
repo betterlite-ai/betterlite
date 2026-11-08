@@ -21,28 +21,12 @@ const DEFAULT_PROFILE: &str = "default";
 // boto3 returns a nested region as a dict, which LiteLLM's region validation rejects
 pub(super) const NESTED_REGION: &str = "{nested}";
 
-enum Source {
-    Missing,
-    Text(String),
-    Invalid,
-}
-
-impl Source {
-    fn sections(&self) -> Option<Vec<Section>> {
-        match self {
-            Self::Missing => Some(Vec::new()),
-            Self::Text(text) => ini::parse(text).ok(),
-            Self::Invalid => None,
-        }
-    }
-}
-
 pub(crate) fn session_region<L>(lookup: &L) -> Option<String>
 where
     L: EnvironmentLookup,
 {
-    let config = read_source(lookup, CONFIG_VARIABLE, CONFIG_DEFAULT).sections()?;
-    let credentials = read_source(lookup, CREDENTIALS_VARIABLE, CREDENTIALS_DEFAULT).sections()?;
+    let config = read_sections(lookup, CONFIG_VARIABLE, CONFIG_DEFAULT)?;
+    let credentials = read_sections(lookup, CREDENTIALS_VARIABLE, CREDENTIALS_DEFAULT)?;
     let profile = lookup
         .lookup("AWS_DEFAULT_PROFILE")
         .or_else(|| lookup.lookup("AWS_PROFILE"));
@@ -56,24 +40,27 @@ where
     let selected = profiles
         .get(profile.as_deref().unwrap_or(DEFAULT_PROFILE))
         .and_then(|values| values.get("region"))
-        .map(region_value);
+        .map(|value| match value {
+            Value::Scalar(text) => text.clone(),
+            Value::Nested => NESTED_REGION.to_owned(),
+        });
     lookup.lookup("AWS_DEFAULT_REGION").or(selected)
 }
 
-fn read_source<L>(lookup: &L, variable: &str, fallback: &str) -> Source
+fn read_sections<L>(lookup: &L, variable: &str, fallback: &str) -> Option<Vec<Section>>
 where
     L: EnvironmentLookup,
 {
     let configured = lookup.lookup(variable);
-    let text = configured.as_deref().unwrap_or(fallback);
-    let path = path::expand(lookup, text);
+    let path = path::expand(lookup, configured.as_deref().unwrap_or(fallback));
     if path.as_os_str().is_empty() {
-        return Source::Missing;
+        return Some(Vec::new());
     }
     let Ok(bytes) = fs::read(path) else {
-        return Source::Missing;
+        return Some(Vec::new());
     };
-    String::from_utf8(bytes).map_or(Source::Invalid, Source::Text)
+    let text = String::from_utf8(bytes).ok()?;
+    ini::parse(&text).ok()
 }
 
 fn profile_map(config: &[Section], credentials: &[Section]) -> ProfileMap {
@@ -89,8 +76,8 @@ fn profile_map(config: &[Section], credentials: &[Section]) -> ProfileMap {
 
 fn config_profile_name(name: &str) -> Option<String> {
     if name.starts_with("profile") {
-        let tokens = shlex::split(name)?;
-        let [_, profile] = tokens.as_slice() else {
+        let words = split_name(name)?;
+        let [_, profile] = words.as_slice() else {
             return None;
         };
         return Some(profile.clone());
@@ -99,6 +86,44 @@ fn config_profile_name(name: &str) -> Option<String> {
         return Some(DEFAULT_PROFILE.to_owned());
     }
     None
+}
+
+// Python shlex.split in posix mode without comments, which is what botocore's _parse_section calls
+fn split_name(name: &str) -> Option<Vec<String>> {
+    let mut words = Vec::new();
+    let mut word: Option<String> = None;
+    let mut quote = None;
+    let mut chars = name.chars();
+    while let Some(ch) = chars.next() {
+        match (quote, ch) {
+            (Some(opening), closing) if opening == closing => quote = None,
+            (Some('"'), '\\') => {
+                let next = chars.next()?;
+                if !matches!(next, '"' | '\\') {
+                    word.get_or_insert_default().push('\\');
+                }
+                word.get_or_insert_default().push(next);
+            }
+            (None, '\'' | '"') => {
+                quote = Some(ch);
+                word.get_or_insert_default();
+            }
+            (None, '\\') => word.get_or_insert_default().push(chars.next()?),
+            (None, ' ' | '\t' | '\r' | '\n') => {
+                if let Some(done) = word.take() {
+                    words.push(done);
+                }
+            }
+            (_, other) => word.get_or_insert_default().push(other),
+        }
+    }
+    if quote.is_some() {
+        return None;
+    }
+    if let Some(done) = word {
+        words.push(done);
+    }
+    Some(words)
 }
 
 fn overlay_credentials(profiles: &mut ProfileMap, sections: &[Section]) {
@@ -110,12 +135,5 @@ fn overlay_credentials(profiles: &mut ProfileMap, sections: &[Section]) {
             .entry(section.name.clone())
             .or_default()
             .extend(section.values.clone());
-    }
-}
-
-fn region_value(value: &Value) -> String {
-    match value {
-        Value::Scalar(text) => text.clone(),
-        Value::Nested => NESTED_REGION.to_owned(),
     }
 }

@@ -9,6 +9,3 @@ deviations:
   - what: Tilde expansion in those file paths differs from os.path.expanduser for a tilde that arrives from an expanded variable (left alone) and a ~user prefix (left literal), where botocore expands both.
     why: shellexpand expands only a literal leading ~ with the injected home directory and consults no password database, which a working AWS setup does not need.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L774-L790
-  - what: "A [profile ...] section name is split with the Rust shlex crate, which differs from the Python shlex.split that botocore's _parse_section uses, because # starting a word begins a comment, so [profile prod #x] names profile prod where botocore sees three tokens and no profile, and [profile #prod] names no profile where botocore names #prod; inside double quotes a backslash before $ is removed, where Python keeps it."
-    why: These differences only show up in section headers no working AWS setup writes, and the crate split keeps profile-name parsing to a few lines.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L779-L789

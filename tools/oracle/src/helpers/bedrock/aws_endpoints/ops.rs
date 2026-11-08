@@ -76,23 +76,18 @@ fn load_case(case: &LlmRegionCase) -> Result<Config, Box<HelperError>> {
         .to_str()
         .ok_or_else(|| failure("fixture path is not UTF-8"))?;
     environment.insert("HOME".to_owned(), home.to_owned());
-    if let Some(text) = &case.aws_config {
-        write_fixture(
-            folder.path(),
-            "config",
-            "AWS_CONFIG_FILE",
-            text,
-            &mut environment,
-        )?;
-    }
-    if let Some(text) = &case.aws_credentials {
-        write_fixture(
-            folder.path(),
+    let fixtures = [
+        ("config", "AWS_CONFIG_FILE", case.aws_config.as_deref()),
+        (
             "credentials",
             "AWS_SHARED_CREDENTIALS_FILE",
-            text,
-            &mut environment,
-        )?;
+            case.aws_credentials.as_deref(),
+        ),
+    ];
+    for (name, variable, text) in fixtures {
+        if let Some(content) = text {
+            write_fixture(folder.path(), name, variable, content, &mut environment)?;
+        }
     }
     load(&environment)
 }

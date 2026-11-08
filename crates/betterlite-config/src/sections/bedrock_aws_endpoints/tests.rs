@@ -120,7 +120,8 @@ fn session_region_cases() {
     credentials_parse_errors();
     nested_region_cases();
     invalid_utf8_cases();
-    shlex_differences();
+    profile_name_splitting();
+    profile_name_edges();
 }
 
 fn default_region_cases() {
@@ -407,19 +408,65 @@ fn invalid_utf8_cases() {
     );
 }
 
-fn shlex_differences() {
-    assert_eq!(
-        file_region("[profile prod #x]\nregion = eu-west-1\n", Some("prod")).as_deref(),
-        Some("eu-west-1")
-    );
-    assert_eq!(
-        file_region("[profile #prod]\nregion = eu-west-1\n", Some("#prod")),
-        None
-    );
-    assert_eq!(
-        file_region("[profile \"a\\$b\"]\nregion = eu-west-1\n", Some("a$b")).as_deref(),
-        Some("eu-west-1")
-    );
+fn check_splits(cases: &[(&str, Option<&str>, Option<&str>)]) {
+    for &(source, profile, expected) in cases {
+        assert_eq!(
+            file_region(source, profile).as_deref(),
+            expected,
+            "{source:?}"
+        );
+    }
+}
+
+fn profile_name_splitting() {
+    check_splits(&[
+        (
+            "[profile prod #x]\nregion = eu-west-1\n",
+            Some("prod"),
+            None,
+        ),
+        (
+            "[profile #prod]\nregion = eu-west-1\n",
+            Some("#prod"),
+            Some("eu-west-1"),
+        ),
+        (
+            "[profile \"a\\$b\"]\nregion = eu-west-1\n",
+            Some("a\\$b"),
+            Some("eu-west-1"),
+        ),
+        (
+            "[profile \"a\\`b\"]\nregion = eu-west-1\n",
+            Some("a\\`b"),
+            Some("eu-west-1"),
+        ),
+    ]);
+}
+
+fn profile_name_edges() {
+    check_splits(&[
+        (
+            "[profile \"a\\\"b\"]\nregion = eu-west-1\n",
+            Some("a\"b"),
+            Some("eu-west-1"),
+        ),
+        (
+            "[profile \"a\\\\b\"]\nregion = eu-west-1\n",
+            Some("a\\b"),
+            Some("eu-west-1"),
+        ),
+        (
+            "[profile \"\"]\nregion = eu-west-1\n",
+            Some(""),
+            Some("eu-west-1"),
+        ),
+        ("[profile \"open]\nregion = eu-west-1\n", Some("open"), None),
+        (
+            "[profile trailing\\]\nregion = eu-west-1\n",
+            Some("trailing"),
+            None,
+        ),
+    ]);
 }
 
 fn credentials_cases() {
