@@ -1,0 +1,18 @@
+kind: helper
+name: caller-in-litellm-params
+call:
+  b4114:
+    operation: caller_from_kwargs
+    kwargs:
+      metadata:
+        user_api_key_auth: null
+      litellm_params:
+        metadata:
+          user_api_key_auth:
+            team_id: params-metadata
+            parent_otel_span: params-span
+        litellm_metadata:
+          user_api_key_auth:
+            team_id: params-litellm
+env: {}
+compare: {ignore: []}

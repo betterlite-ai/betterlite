@@ -1,0 +1,9 @@
+kind: helper
+name: select-empty-list
+call:
+  b4114:
+    operation: select_tool
+    search_tool_name: preferred
+    search_tools: []
+env: {}
+compare: {ignore: []}

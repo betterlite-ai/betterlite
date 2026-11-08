@@ -192,8 +192,8 @@ pub async fn send(
     if let Some(response) = mock.and_then(|plan| plan.response) {
         return mocked_embedding(executor, deployment, request, response);
     }
-    let (model, api_key) = servable(deployment)?;
-    let post = post(deployment, request, model, api_key)?;
+    let (model, authorization) = servable(deployment)?;
+    let post = post(deployment, request, model, authorization)?;
     let started = Instant::now();
     let upstream = executor
         .client
@@ -234,12 +234,12 @@ fn mocked_embedding(
     })
 }
 
-fn post<'key>(
-    deployment: &'key ChatDeployment,
+fn post(
+    deployment: &ChatDeployment,
     request: &EmbeddingRequest,
     model: &str,
-    api_key: &'key SecretString,
-) -> Result<JsonPost<'key>, EmbeddingError> {
+    authorization: SecretString,
+) -> Result<JsonPost, EmbeddingError> {
     let mut body =
         serde_json::to_value(request).map_err(|source| EmbeddingError::Body { source })?;
     let Value::Object(ref mut object) = body else {
@@ -260,7 +260,7 @@ fn post<'key>(
         serde_json::to_vec(&body).map_err(|source| EmbeddingError::Encode { source })?;
     Ok(JsonPost {
         url,
-        bearer: api_key,
+        authorization,
         headers: Vec::new(),
         body: body_bytes,
         timeout: deployment.timeout,
@@ -268,12 +268,11 @@ fn post<'key>(
     })
 }
 
-fn servable(deployment: &ChatDeployment) -> Result<(&str, &SecretString), EmbeddingError> {
+fn servable(deployment: &ChatDeployment) -> Result<(&str, SecretString), EmbeddingError> {
     match &deployment.provider {
         Provider::OpenAi { model } => deployment
-            .api_key
-            .as_ref()
-            .map(|key| (model.as_str(), key))
+            .credential()
+            .map(|authorization| (model.as_str(), authorization))
             .ok_or(EmbeddingError::MissingApiKey),
         Provider::Unsupported { model } => Err(EmbeddingError::UnsupportedProvider {
             model: model.clone(),

@@ -77,7 +77,7 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/http_case/gcs-mock-auth-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3996::tests::replays_corpus$/)'
     - id: http-corpus
       why: The HTTP case decoder must replay GET/DELETE mock cases with fallthrough assertions.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/logging/gcs-mock/)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::tests::replays_the_http_case_corpus$/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/logging/gcs-mock/)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::postgres::tests::replays_the_http_case_corpus$/)'
 oracle_cases:
   - tools/oracle/cases/logging/gcs-mock/post-mocked-storage-url-returns-factory-response.yaml
   - tools/oracle/cases/logging/gcs-mock/post-non-storage-url-passes-through.yaml

@@ -1,14 +1,14 @@
 id: B4382
 milestone: M8 platform
 title: Build isolated Redis semantic indexes and cache operations
-status: todo
+status: done
 depends_on: [B4380, B4323, B5220]
 file: tasks/B4382-redis-semantic-cache.yaml
 covers:
   - "litellm/caching/redis_semantic_cache.py"
 parent: B128
 split_from: B128
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 925
