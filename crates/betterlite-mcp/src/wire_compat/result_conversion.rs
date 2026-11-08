@@ -1,0 +1,107 @@
+use betterlite_prompts::arguments::json::{Json, Object};
+
+use crate::client::tools::result::{CallToolResult, ContentBlock, TextContent, ToolCallResult};
+use crate::tools::schemas::McpTool;
+
+use super::tool_outcome::{ToolFailure, ToolOutcome, WireCompat};
+
+pub const INPUT_REQUIRED_UNSUPPORTED: &str = "Error: upstream tool returned an input_required interim result, which this MCP protocol revision cannot carry";
+
+#[must_use]
+pub fn error_text_result(failure: &ToolFailure) -> CallToolResult {
+    CallToolResult {
+        content: vec![ContentBlock::Text(TextContent {
+            text: format!("{}: {}", failure.error_type, failure.message),
+            extra: Object::new(),
+        })],
+        is_error: true,
+        structured_content: None,
+        meta: None,
+    }
+}
+
+#[must_use]
+pub fn to_call_tool_result(outcome: ToolOutcome, compat: WireCompat) -> ToolCallResult {
+    match outcome {
+        ToolOutcome::Text(result) => ToolCallResult::Complete(CallToolResult {
+            content: vec![ContentBlock::Text(TextContent {
+                text: result.text,
+                extra: Object::new(),
+            })],
+            is_error: false,
+            structured_content: None,
+            meta: None,
+        }),
+        ToolOutcome::Json(result) => {
+            let keep_structured =
+                compat == WireCompat::Modern || matches!(&result.value, Json::Object(_));
+            ToolCallResult::Complete(CallToolResult {
+                content: vec![ContentBlock::Text(TextContent {
+                    text: result.original_text,
+                    extra: Object::new(),
+                })],
+                is_error: false,
+                structured_content: keep_structured.then_some(result.value),
+                meta: None,
+            })
+        }
+        ToolOutcome::Complete(result) => ToolCallResult::Complete(match compat {
+            WireCompat::Modern => result,
+            WireCompat::Legacy => downgrade_structured_content(result),
+        }),
+        ToolOutcome::InputRequired(result) => match compat {
+            WireCompat::Modern => ToolCallResult::InputRequired(result),
+            WireCompat::Legacy => ToolCallResult::Complete(input_required_unsupported()),
+        },
+        ToolOutcome::Failure(failure) => ToolCallResult::Complete(error_text_result(&failure)),
+    }
+}
+
+#[must_use]
+pub fn complete_call_tool_result(outcome: ToolOutcome, compat: WireCompat) -> CallToolResult {
+    match to_call_tool_result(outcome, compat) {
+        ToolCallResult::Complete(result) => result,
+        ToolCallResult::InputRequired(_) => input_required_unsupported(),
+    }
+}
+
+#[must_use]
+pub fn to_gateway_tool(tool: &McpTool, name: &str) -> McpTool {
+    let mut renamed = tool.clone();
+    name.clone_into(&mut renamed.name);
+    renamed
+}
+
+fn input_required_unsupported() -> CallToolResult {
+    CallToolResult {
+        content: vec![ContentBlock::Text(TextContent {
+            text: INPUT_REQUIRED_UNSUPPORTED.to_owned(),
+            extra: Object::new(),
+        })],
+        is_error: true,
+        structured_content: None,
+        meta: None,
+    }
+}
+
+fn downgrade_structured_content(result: CallToolResult) -> CallToolResult {
+    let Some(structured) = result.structured_content.as_ref() else {
+        return result;
+    };
+    if matches!(structured, Json::Object(_)) {
+        return result;
+    }
+    let mut content = result.content;
+    content.push(ContentBlock::Text(TextContent {
+        text: serde_json::to_string(structured).unwrap_or_default(),
+        extra: Object::new(),
+    }));
+    CallToolResult {
+        content,
+        is_error: result.is_error,
+        structured_content: None,
+        meta: result.meta,
+    }
+}
+
+mod tests;

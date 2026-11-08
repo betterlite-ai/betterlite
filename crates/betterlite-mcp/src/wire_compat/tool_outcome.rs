@@ -1,0 +1,66 @@
+use betterlite_prompts::arguments::json::Json;
+
+use crate::client::tools::result::{CallToolResult, InputRequiredResult};
+
+use super::capabilities::versions::SpecVersion;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WireCompat {
+    Legacy,
+    Modern,
+}
+
+#[must_use]
+pub fn wire_compat_for(protocol_version: &str) -> WireCompat {
+    if SpecVersion::from_wire(protocol_version).is_some_and(SpecVersion::is_modern) {
+        WireCompat::Modern
+    } else {
+        WireCompat::Legacy
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TextResult {
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct JsonResult {
+    pub value: Json,
+    pub original_text: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ToolFailure {
+    pub error_type: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ToolOutcome {
+    Text(TextResult),
+    Json(JsonResult),
+    Complete(CallToolResult),
+    InputRequired(InputRequiredResult),
+    Failure(ToolFailure),
+}
+
+#[must_use]
+pub fn parse_http_body(body: &str) -> ToolOutcome {
+    if body.trim().is_empty() {
+        return ToolOutcome::Text(TextResult {
+            text: body.to_owned(),
+        });
+    }
+    match serde_json::from_str::<Json>(body) {
+        Ok(Json::Null) | Err(_) => ToolOutcome::Text(TextResult {
+            text: body.to_owned(),
+        }),
+        Ok(value) => ToolOutcome::Json(JsonResult {
+            value,
+            original_text: body.to_owned(),
+        }),
+    }
+}
+
+mod tests;
