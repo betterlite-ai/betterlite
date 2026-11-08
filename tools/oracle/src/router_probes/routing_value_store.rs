@@ -192,8 +192,7 @@ pub(crate) fn run(
             loaded_max_size_per_item_kib: 1024,
         },
         clock,
-    )
-    .map_err(store_error)?;
+    )?;
     let mut steps = Vec::with_capacity(input.steps.len());
     for step in &input.steps {
         if let Some(at) = step.clock() {
@@ -253,18 +252,14 @@ fn route_call<'store>(
 
 fn execute_set(call: &Call<'_>, value: &RouteValue) -> StepResult {
     if let Some(route_key) = &call.key {
-        call.store
-            .set(route_key, value, call.ttl)
-            .map_err(store_error)?;
+        call.store.set(route_key, value, call.ttl)?;
     }
     Ok(StepOutput::Set)
 }
 
 fn execute_set_pipeline(call: &Call<'_>, entries: &[Entry]) -> StepResult {
     let parsed = entries.iter().filter_map(entry_key).collect::<Vec<_>>();
-    call.store
-        .set_pipeline(&parsed, call.ttl)
-        .map_err(store_error)?;
+    call.store.set_pipeline(&parsed, call.ttl)?;
     Ok(StepOutput::SetPipeline)
 }
 
@@ -276,10 +271,7 @@ fn entry_key(entry: &Entry) -> Option<(RouteKey, RouteValue)> {
 
 fn execute_set_add(call: &Call<'_>, values: &[String]) -> StepResult {
     let added = match &call.key {
-        Some(route_key) => call
-            .store
-            .set_add(route_key, values, call.ttl)
-            .map_err(store_error)?,
+        Some(route_key) => call.store.set_add(route_key, values, call.ttl)?,
         None => values.to_vec(),
     };
     Ok(StepOutput::SetAdd { values: added })
@@ -289,7 +281,7 @@ fn read_one(store: &RoutingValueStore, raw: &str) -> ReadResult {
     let Ok(route_key) = RouteKey::parse(raw) else {
         return Ok(None);
     };
-    let read = store.get(&route_key).map_err(store_error)?;
+    let read = store.get(&route_key)?;
     Ok(read_value(&read))
 }
 
@@ -306,10 +298,7 @@ fn execute_increment(call: &Call<'_>, by: &RouteIncrement) -> StepResult {
         .key
         .as_ref()
         .ok_or_else(|| missing_key("an increment"))?;
-    let value = call
-        .store
-        .increment(route_key, by, call.ttl)
-        .map_err(store_error)?;
+    let value = call.store.increment(route_key, by, call.ttl)?;
     Ok(StepOutput::Increment { value })
 }
 
@@ -327,14 +316,15 @@ fn execute_compare_and_set(
     });
     let outcome = call
         .store
-        .compare_and_set(route_key, &wanted, value, call.ttl)
-        .map_err(store_error)?;
+        .compare_and_set(route_key, &wanted, value, call.ttl)?;
     Ok(compare_output(&outcome))
 }
 
-fn store_error(error: StoreError) -> OperationError {
-    OperationError::InvalidRequest {
-        message: error.to_string(),
+impl From<StoreError> for OperationError {
+    fn from(error: StoreError) -> Self {
+        Self::InvalidRequest {
+            message: error.to_string(),
+        }
     }
 }
 
@@ -375,8 +365,7 @@ fn parse_payload(payload: &ParsePayload) -> Result<ParseResult, OperationError> 
             let value = RouteValue::Pin(PinValue {
                 model_id: "a".repeat(length),
             });
-            serde_json::to_vec(&value)
-                .map_err(|source| store_error(StoreError::Encoding { source }))?
+            serde_json::to_vec(&value).map_err(|source| StoreError::Encoding { source })?
         }
     };
     match parse_route_value(&bytes) {
@@ -390,7 +379,7 @@ fn parse_payload(payload: &ParsePayload) -> Result<ParseResult, OperationError> 
             bytes: reported,
             limit,
         }),
-        Err(error) => Err(store_error(error)),
+        Err(error) => Err(OperationError::from(error)),
     }
 }
 
