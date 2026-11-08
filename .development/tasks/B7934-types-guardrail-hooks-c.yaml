@@ -1,0 +1,64 @@
+id: B7934
+title: Python types for guardrail hooks hiddenlayer to pangea (types/proxy/guardrails/guardrail_hooks)
+description: >-
+  This task ports 14 type files into `crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/`: `hiddenlayer`, `hide_secrets`, `ibm/` (base, ibm_detector),
+  `javelin`, `lakera_ai_v2`, `lasso`, `litellm_content_filter`, `mcp_end_user_permission`, `model_armor`, `noma`, `onyx`,
+  `openai/openai_moderation`, `ovalix` and `pangea`. It is Python only.
+
+
+  `litellm_content_filter.py` (172 lines) has the detection TypedDicts, the `DetectionType` string Enum and the competitor intent
+  results. `javelin.py` has six TypedDicts for the prompt injection assessment. The `ibm/` folder has a base model and the detector
+  request and response classes. The others hold one to three small classes.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/hiddenlayer.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/hide_secrets.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/ibm/**
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/javelin.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/lasso.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/litellm_content_filter.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/mcp_end_user_permission.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/model_armor.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/noma.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/onyx.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/openai/**
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/ovalix.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/pangea.py
+  - crates/betterlite-python/tests/test_types_guardrail_hooks_c.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/litellm_content_filter.py#L1-L172
+  why: Detection types and the DetectionType Enum.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/javelin.py#L1-L96
+  why: Prompt injection assessment TypedDicts.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/ibm/ibm_detector.py#L1-L60
+  why: IBM detector classes.
+out_of_scope:
+- >-
+  The nested `__init__.py` files are written by the architect.
+pitfalls:
+- >-
+  `javelin.py` defines `JavelinGuardInput` and `JavelinGuardRequest`; `types/guardrails.py` (B7930) has a different `JavelinGuardrailConfigModel`. Do not merge them.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_guardrail_hooks_c.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

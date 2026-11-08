@@ -1,0 +1,14 @@
+id: B7879
+milestone: M12 python
+title: Python assistant messages, runs, run streams and the assistants package
+status: todo
+depends_on: [B7878, B6040, B158, B167, B1057, B2488]
+file: tasks/B7879-python-assistants-messages-runs.yaml
+covers:
+  - "litellm/assistants/{main,utils}.py"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

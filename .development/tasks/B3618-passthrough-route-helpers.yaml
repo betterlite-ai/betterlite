@@ -122,7 +122,7 @@ deviations:
   - what: The router is reached through the RouterPassthrough trait, and the three router result shapes are one enum.
     why: Python tells them apart with inspect.isasyncgen and a cast; Rust needs a closed type. What a client sees is the same.
 out_of_scope:
-  - "Every @router.api_route and @router.websocket in llm_passthrough_endpoints.py, and the module singletons `router`, `vertex_llm_base`, `default_vertex_config`: B3619 to B3629 own their routes, and B3616 registers them."
+  - "Every @router.api_route and @router.websocket in llm_passthrough_endpoints.py, and the module singletons `router`, `vertex_llm_base`, `default_vertex_config`: B3619 to B3629 each register their own provider routes with axum, and B3616 registers only the endpoints configured in pass_through_endpoints."
   - "The vllm route's own router-model branch (L486-L548) builds its response without relay_router_model; B3627 owns it and calls provider_factory_route for the fallback."
   - "_relay_azure_router_model, _relay_azure_body_model_group, get_azure_ai_search_index_from_endpoint and is_azure_ai_search_service_level_index_create: B3624 owns them and calls models_served_by_group and relay_router_model."
   - "relay_nvidia_nim_request and nvidia_nim_proxy_route: B3628 owns them and calls relay_router_model."

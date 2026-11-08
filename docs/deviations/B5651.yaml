@@ -1,0 +1,8 @@
+task: B5651
+deviations:
+  - what: The check reads tools from JSON values, so LiteLLM's getattr(tool, "type") branch for a non-dict tool object has no Rust form; a non-object tool never counts as a function tool.
+    why: The Python layer turns tool objects into plain JSON before the native call, so the same tool arrives as a dict and takes the dict branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1147-L1154
+  - what: An api_base that urlsplit cannot parse, such as an unmatched IPv6 bracket, counts as not OpenAI-backed instead of raising out of the check.
+    why: LiteLLM's _is_openai_backed_api_base lets urlsplit's ValueError escape the policy; betterlite treats the unparsable base as not enforcing and the request fails later where the base is used. No working setup relies on the exception itself.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1064-L1066

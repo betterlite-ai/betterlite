@@ -1,0 +1,35 @@
+id: B7939
+milestone: M12 python
+title: Python types for logger integrations argilla to zerobus (types/integrations, observability and storage)
+status: todo
+depends_on: [B5657, B7929]
+file: tasks/B7939-types-integration-loggers.yaml
+covers:
+  - "litellm/types/integrations/argilla.py"
+  - "litellm/types/integrations/arize.py"
+  - "litellm/types/integrations/arize_phoenix.py"
+  - "litellm/types/integrations/azure_sentinel.py"
+  - "litellm/types/integrations/base_health_check.py"
+  - "litellm/types/integrations/cloudzero.py"
+  - "litellm/types/integrations/custom_logger.py"
+  - "litellm/types/integrations/datadog.py"
+  - "litellm/types/integrations/datadog_cost_management.py"
+  - "litellm/types/integrations/datadog_llm_obs.py"
+  - "litellm/types/integrations/datadog_metrics.py"
+  - "litellm/types/integrations/gcs_bucket.py"
+  - "litellm/types/integrations/langfuse.py"
+  - "litellm/types/integrations/langfuse_otel.py"
+  - "litellm/types/integrations/langsmith.py"
+  - "litellm/types/integrations/newrelic.py"
+  - "litellm/types/integrations/pagerduty.py"
+  - "litellm/types/integrations/pointfive.py"
+  - "litellm/types/integrations/posthog.py"
+  - "litellm/types/integrations/s3_v2.py"
+  - "litellm/types/integrations/weave_otel.py"
+  - "litellm/types/integrations/zerobus.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

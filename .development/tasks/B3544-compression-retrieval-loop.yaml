@@ -56,7 +56,7 @@ description: >-
   The Anthropic Messages driver in llm_http_handler.py calls the gate and the builder; that
   driver belongs to the Anthropic Messages task, so here just expose both as functions
   on the callback type from B3543 with typed inputs and outputs. AgenticLoopPlan and
-  AgenticLoopRequestPatch come from B189.
+  AgenticLoopRequestPatch come from B4119 (betterlite_context::agentic_loop_plan).
 
 scope:
   paths:
@@ -158,7 +158,7 @@ deviations:
 
 out_of_scope:
 - B3543 owns the settings, the pre-call hook, the original-content cache and its pruning, call ID resolution (_resolve_call_id), _get_cache, has_retrieval_tool and merge_tools. This task calls them.
-- B3542 owns compress(), the retrieval tool definition and the cache contents. B189 owns AgenticLoopPlan, AgenticLoopRequestPatch and the CustomLogger base.
+- B3542 owns compress(), the retrieval tool definition and the cache contents. B4119 owns AgenticLoopPlan and AgenticLoopRequestPatch (betterlite_context::agentic_loop_plan) and B189 owns the CustomLogger base.
 - The Anthropic Messages driver that calls the gate and the builder, applies the patch, enforces the loop cap and wraps results (llm_http_handler.py), belongs to the Anthropic Messages task.
 - The chat-completions agentic loop (chat_completion_agentic_loop.py) has no compression caller, since this callback only handles Anthropic Messages.
 

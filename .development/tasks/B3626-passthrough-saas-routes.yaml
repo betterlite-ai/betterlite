@@ -1,0 +1,153 @@
+id: B3626
+title: Pass-through Fal AssemblyAI and TinyFish routes
+description: >-
+  Build three provider pass-through routes in crates/betterlite-server as the module passthrough_saas_routes, and register them with axum in that module. Each route checks its inputs, looks up one provider key, builds the upstream URL and hands the request to B3615's create_pass_through_route handler. The handler is called with the request, the response and the authenticated key, and its result is returned unchanged. All three routes need a valid virtual key (B052's authentication, the same as LiteLLM's user_api_key_auth dependency). Shared helpers are not built here: B3618 owns provider_target_url and request_is_streaming, B3602 owns get_credentials, B1100 owns the request body read. Names below are at most 30 characters.
+
+  Fal route. Paths `/fal_ai/{endpoint}` with the methods GET, POST, PUT, DELETE and PATCH. Steps in order:
+  1. Build the target with B3618's provider_target_url. The base is B1531's fal_ai_queue_base (env FAL_AI_QUEUE_API_BASE, default https://queue.fal.run) and the path is the endpoint.
+  2. Read the key with get_credentials(custom_llm_provider "fal_ai", region None). Env fallback is FAL_AI_API_KEY. A missing key gives HTTP 401 with detail "FAL_AI_API_KEY is not set and no fal_ai pass-through deployment credentials are configured".
+  3. When the endpoint text does not contain the substring `/requests/`, read the request body through B1100 (an empty map when there is none) and call B1531's fal_ai_passthrough_cost with the endpoint text and that map. The endpoint text is the model, so `fal-ai/flux/schnell` is looked up as `fal_ai/fal-ai/flux/schnell`. A None result gives HTTP 400 with detail "fal_ai/{endpoint} has no pricing entry for this request; only priced Fal requests can be submitted through /fal_ai". Paths that contain `/requests/` (status and result polling) skip this check.
+  4. Call create_pass_through_route with the endpoint, the target, custom header `Authorization: Key {key}`, custom_llm_provider "fal_ai" and is_streaming_request false.
+
+  AssemblyAI route. Paths `/assemblyai/{endpoint}` and `/eu.assemblyai/{endpoint}` with the same five methods. Steps in order:
+  1. Take the region from B3647's `assembly_region_from_url` applied to the full request URL (it gives "eu" only when the URL host is exactly eu.assemblyai.com, else none) and the base URL from B3647's `assembly_base_url_from_region` (https://api.eu.assemblyai.com for "eu", else https://api.assemblyai.com).
+  2. Build the target with provider_target_url.
+  3. Read the key with get_credentials(custom_llm_provider "assemblyai", region). Env fallback is ASSEMBLYAI_API_KEY.
+  4. For POST only, read the JSON body through B1100. If its `stream` field is true, the call is streaming. Every other method is not streaming.
+  5. Call create_pass_through_route with the endpoint, the target, custom header `Authorization: {key}` (the bare key, no Bearer prefix) and the streaming flag. custom_llm_provider is not passed, so the call is typed as a generic endpoint. This route has no HTTP oracle case because the AssemblyAI hosts are fixed in B3647 and cannot point at a mock upstream. Its behavior is proven by Rust tests with a fake handler factory.
+
+  TinyFish route. Paths `/tinyfish/{endpoint}` with the methods GET and POST only. Steps in order:
+  1. Take the endpoint path as httpx does (query and fragment dropped) and add a leading `/` when missing.
+  2. If B3648's is_allowed_tinyfish_endpoint says no for the method and path, answer HTTP 403 with detail "{METHOD} {path} is not an allowed TinyFish Agent passthrough endpoint. Allowed: POST /v1/automation/run, POST /v1/automation/run-async, POST /v1/automation/run-sse, GET /v1/runs/{id}, POST /v1/runs/{id}/cancel."
+  3. For POST only, run `tinyfish_body_fields(content_type, bytes)` (this task's decoder, input is the request content type and the cached body bytes from B1100, not a second read of the stream). It returns the set of top-level JSON keys. It returns None, meaning HTTP 400 with detail "TinyFish requests must be a JSON object body sent with Content-Type: application/json.", when the content type is non-empty and B1100's is_json_content_type is false, when the bytes are not valid JSON, and when the JSON is not an object. An empty body gives the empty set.
+  4. Still for POST, intersect the keys with B3648's TINYFISH_ENVELOPE_FIELDS (custom_body, stream, query_params). A non-empty result, sorted and joined with ", ", gives HTTP 400 with detail "Request fields [{fields}] are LiteLLM pass-through envelope controls and are not accepted on the TinyFish route. Send the native TinyFish request body; streaming is determined by the endpoint."
+  5. Still for POST, intersect the keys with B3648's TINYFISH_RUN_AUTH_FIELDS (use_profile, profile_id, use_vault, credential_item_ids). When the result is non-empty, the path starts with `/v1/automation/` and the setting allow_authenticated_runs is not true, answer HTTP 403 with detail "Request fields [{fields}] run with the shared TinyFish account's saved credentials and are disabled on this proxy. Ask the proxy admin to set TINYFISH_ALLOW_AUTHENTICATED_RUNS=true to allow them." The setting comes from the new config section tinyfish_route (below).
+  6. Read the key with get_credentials(custom_llm_provider "tinyfish", region None). Env fallback is TINYFISH_API_KEY. A missing key gives HTTP 401 with detail "TinyFish API key not found. Set the TINYFISH_API_KEY environment variable or add a deployment with use_in_pass_through: true."
+  7. Build the target from B3648's resolve_tinyfish_api_base (env TINYFISH_AGENT_API_BASE, default https://agent.tinyfish.ai, https:// added when the scheme is missing) and provider_target_url.
+  8. Pick the timeout. When general_settings.pass_through_request_timeout is set (read from B3571's config section), pass no timeout so the operator's value wins. Otherwise pass B3648's TINYFISH_TIMEOUT_SECONDS (1500.0) so a legal 1200 second run is not cut at the 600 second default.
+  9. Call create_pass_through_route with the endpoint, the target, custom header `X-API-Key: {key}`, custom_llm_provider "tinyfish" and that timeout. The streaming flag is not passed, so the endpoint decides it (run-sse streams) through the logging and endpoint-type rules of B3600 and B3615.
+
+  Config section. Add crates/betterlite-config/src/sections/tinyfish_route.rs with one setting, allow_authenticated_runs, read from the env var TINYFISH_ALLOW_AUTHENTICATED_RUNS and default false. The value is true only when the trimmed, lowercased text is exactly "true" (LiteLLM's str_to_bool); "1", "yes" and "" are false and an unset var is false. No code outside betterlite-config reads the environment.
+
+  Fuzz. tinyfish_body_fields parses bytes from outside, so add the cargo-fuzz target crates/betterlite-server/fuzz/fuzz_targets/tinyfish_body_fields.rs (register its [[bin]] in the fuzz Cargo.toml like the existing targets), seed files under crates/betterlite-server/fuzz/corpus/tinyfish_body_fields/, and the test passthrough_saas_routes::tests::replays_corpus that feeds every seed to the same function.
+
+  Tests. Rust tests live in tests.rs under passthrough_saas_routes::tests and use fakes: a recording fake for B3602's credential lookup and a recording fake for B3615's create_pass_through_route factory, so a test sees the exact endpoint, target, custom headers, custom_llm_provider, streaming flag and timeout it was called with. Test groups are fal_route, assembly_route, tinyfish_gate, tinyfish_body, tinyfish_route and tinyfish_timeout.
+scope:
+  paths:
+    - crates/betterlite-server/src/passthrough_saas_routes.rs
+    - crates/betterlite-server/src/passthrough_saas_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/tinyfish_body_fields.rs
+    - crates/betterlite-server/fuzz/corpus/tinyfish_body_fields/**
+    - crates/betterlite-config/src/sections/tinyfish_route.rs
+    - crates/betterlite-config/src/sections/tinyfish_route/**
+    - tools/oracle/cases/server/passthrough-saas-routes/**
+    - tools/oracle/helpers/b3626.py
+    - tools/oracle/helpers/b3626/**
+    - tools/oracle/src/helpers/server/b3626.rs
+    - tools/oracle/src/helpers/server/b3626/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L435-L478
+    why: _fal_target and fal_ai_proxy_route from the decorator, with the 401 and 400 checks and the `Key` authorization header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1873-L1938
+    why: assemblyai_proxy_route from both decorators (/assemblyai and /eu.assemblyai), the region lookup, the body read and the bare Authorization header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3397-L3526
+    why: The TinyFish body-field reader, the timeout rule and tinyfish_proxy_route, with every 400, 401 and 403 detail text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/tinyfish.py#L1-L55
+    why: The field sets, TINYFISH_TIMEOUT_SECONDS and is_allowed_tinyfish_endpoint; B3648 owns them and this task calls them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L281-L308
+    why: The region and base URL functions the AssemblyAI route calls; B3647 owns them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/cost_calculator.py#L166-L173
+    why: fal_ai_passthrough_cost, which decides whether a Fal request is priced; B1531 owns it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_endpoint_router.py#L53-L70
+    why: get_credentials and the env fallback name {PROVIDER}_API_KEY (FAL_AI_API_KEY, ASSEMBLYAI_API_KEY, TINYFISH_API_KEY).
+  - url: https://docs.litellm.ai/docs/pass_through/tinyfish
+    why: User-facing description of the TinyFish route.
+dod:
+  - text: The Fal route builds the target from FAL_AI_QUEUE_API_BASE or the default, answers 401 without a key, answers 400 for an unpriced request outside `/requests/` paths, skips the price check for `/requests/` paths, and calls the factory with an Authorization header of `Key {key}`, custom_llm_provider fal_ai and no streaming.
+    proof: [fal-route-tests, oracle]
+  - text: The AssemblyAI route picks the base URL from the request host, reads the key for that region, treats a POST body with `stream` true as streaming and no other method as streaming, and calls the factory with a bare Authorization header and no custom_llm_provider.
+    proof: [assembly-route-tests]
+  - text: The TinyFish route answers 403 for a disallowed method and path, and 405 for methods other than GET and POST.
+    proof: [tinyfish-gate-tests, oracle]
+  - text: For POST, TinyFish answers 400 for a non-JSON content type, invalid JSON and a non-object body, and 400 naming the sorted envelope fields custom_body, stream and query_params.
+    proof: [tinyfish-body-tests, oracle]
+  - text: TinyFish answers 403 naming the authenticated run fields on /v1/automation/ paths unless TINYFISH_ALLOW_AUTHENTICATED_RUNS is "true", and forwards them when it is.
+    proof: [tinyfish-route-tests, config-tests, oracle]
+  - text: TinyFish answers 401 without a key, builds the target from TINYFISH_AGENT_API_BASE or the default, and calls the factory with `X-API-Key`, custom_llm_provider tinyfish and the timeout rule (1500 seconds unless general_settings.pass_through_request_timeout is set, then none).
+    proof: [tinyfish-route-tests, tinyfish-timeout-tests, oracle]
+  - text: The tinyfish_route config section loads TINYFISH_ALLOW_AUTHENTICATED_RUNS from an injected environment, true only for "true" in any case with surrounding spaces and false for anything else including unset.
+    proof: [config-tests, mutants]
+  - text: tinyfish_body_fields is the one decoder shared by the route, the fuzz target and the corpus replay, and the corpus has seeds added on this branch.
+    proof: [body-fields-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: fal-route-tests
+      why: the Fal route skips the key check, the price check or the Key header
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_saas_routes::tests::fal_route(::|$)/)'
+    - id: assembly-route-tests
+      why: the AssemblyAI route picks the wrong region, base URL, streaming flag or header
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_saas_routes::tests::assembly_route(::|$)/)'
+    - id: tinyfish-gate-tests
+      why: the TinyFish route forwards a disallowed endpoint or answers the wrong status for it
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_saas_routes::tests::tinyfish_gate(::|$)/)'
+    - id: tinyfish-body-tests
+      why: the TinyFish body check lets a bad content type, bad JSON or an envelope field through
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_saas_routes::tests::tinyfish_body(::|$)/)'
+    - id: tinyfish-route-tests
+      why: the TinyFish key, target, header or authenticated-field gate is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_saas_routes::tests::tinyfish_route(::|$)/)'
+    - id: tinyfish-timeout-tests
+      why: the TinyFish timeout ignores the operator setting or the 1500 second default
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_saas_routes::tests::tinyfish_timeout(::|$)/)'
+    - id: config-tests
+      why: the tinyfish_route section does not load or mis-parses the env flag
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::tinyfish_route::/)'
+    - id: body-fields-corpus
+      why: the decoder has no fuzz target, no new seed or a failing replay
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/tinyfish_body_fields)" && test -f crates/betterlite-server/fuzz/fuzz_targets/tinyfish_body_fields.rs && grep -qF "tinyfish_body_fields" crates/betterlite-server/fuzz/fuzz_targets/tinyfish_body_fields.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_saas_routes::tests::replays_corpus$/)'
+oracle_cases:
+  - tools/oracle/cases/server/passthrough-saas-routes/fal-priced-forward.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/fal-unpriced-400.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/fal-requests-path-skips-price.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/fal-missing-key-401.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-run-forward.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-list-runs-403.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-put-405.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-non-json-400.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-envelope-field-400.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-vault-field-403.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-vault-field-allowed.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-missing-key-401.yaml
+deviations:
+  - what: A POST body on the AssemblyAI route that is not valid JSON gets B1100's 400 invalid_request_error for the request body, and a JSON body that is not an object is treated as not streaming.
+    why: LiteLLM calls request.json() and then .get on the result with no handler, so a bad body or a JSON list ends as FastAPI's plain 500. betterlite has one body decoder, as B3618 decided for the generic provider route. Open question in the notes.
+  - what: A missing AssemblyAI key sends no Authorization header; LiteLLM sends the text `None`.
+    why: The upstream answers 401 in both cases and a literal None token helps nobody. Listed so the architect can veto it.
+  - what: The AssemblyAI and Fal request-body reads go through B1100's cached body, and TinyFish reads the cached bytes once.
+    why: Python reads request.body() twice because Starlette caches it; betterlite must not consume the stream before the relay does.
+out_of_scope:
+  - "create_pass_through_route, the relay, logging and cost for these providers: B3615, B3607 and B3647 to B3649 own them; this task only builds the three route handlers and the TinyFish config flag."
+  - "AssemblyAI region and base URL functions (assembly_region_from_url, assembly_base_url_from_region), transcript polling and pricing: B3647."
+  - "TinyFish field sets, is_allowed_tinyfish_endpoint, resolve_tinyfish_api_base, run records, billing and polling: B3648 and B3649. This task enforces the gates; B3648 defines them."
+  - "fal_ai_passthrough_cost and fal_ai_queue_base: B1531."
+  - "The other routes in llm_passthrough_endpoints.py and the shared helpers (create_request_copy, relay helpers, provider_target_url): B3618, B3619, B3620 to B3629."
+  - "resolve_pass_through_request_timeout and the pass_through_request_timeout setting: B3571; this task only asks whether the setting is set."
+pitfalls:
+  - "Fal step 3 matches the substring `/requests/` anywhere in the endpoint, not a path prefix, so `fal-ai/flux/requests/abc` also skips the price check."
+  - "The Fal 401 check runs before the pricing 400 check, so a request with no key and an unpriced model gets 401."
+  - "The Fal price lookup uses the whole endpoint text as the model name (`fal_ai/` plus the endpoint), and the body only matters through `resolution` and `num_images`."
+  - "The AssemblyAI region comes from the host of the incoming request URL, not from the `/eu.assemblyai` path, so a call to the proxy at any other host goes to api.assemblyai.com even on that path. LiteLLM does this and so do we; see the notes."
+  - "AssemblyAI sends the key as `Authorization: {key}` with no Bearer, and a missing key becomes the text `None` in LiteLLM (a listed deviation sends no header)."
+  - "TinyFish checks the endpoint allow-list before it reads the body, so a disallowed GET never touches the body or the key."
+  - "TinyFish envelope fields are rejected on every allowed POST path, but the authenticated-run fields are rejected only on paths that start with `/v1/automation/`; POST /v1/runs/{id}/cancel with `use_vault` passes."
+  - "tinyfish_body_fields returns the empty set, not None, for an empty body, so an empty POST to /v1/automation/run is forwarded."
+  - "A content type of `application/json; charset=utf-8` is JSON for B1100's is_json_content_type; a missing content type is accepted and the bytes are parsed as JSON anyway."
+  - "The operator timeout check is `is not None`, so a configured value of 0 still wins over the 1500 second default."
+  - "The TinyFish mock upstream in an oracle case should answer without a run_id in the body, so B3649's billing poller has nothing to poll and does not call the mock a second time."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

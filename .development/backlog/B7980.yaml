@@ -1,0 +1,13 @@
+id: B7980
+milestone: M8 platform
+title: Proxy streaming data generator
+status: todo
+depends_on: []
+file: null
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

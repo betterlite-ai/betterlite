@@ -1,0 +1,16 @@
+id: B7944
+milestone: M12 python
+title: Python types for auto router, prompt cache prediction and prompt caching requests (types/management_endpoints)
+status: todo
+depends_on: [B5657]
+file: tasks/B7944-types-mgmt-router-and-prompt-cache.yaml
+covers:
+  - "litellm/types/management_endpoints/auto_router_endpoints.py"
+  - "litellm/types/management_endpoints/prompt_cache_prediction.py"
+  - "litellm/types/management_endpoints/prompt_caching_requests.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

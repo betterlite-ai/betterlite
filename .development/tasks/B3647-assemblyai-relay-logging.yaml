@@ -12,6 +12,8 @@ description: >-
 
   Only POST requests are logged; other operations are skipped. Submit polling work through the injected async transport to avoid blocking the relayed response.
   Two unresolved framework dependencies are PassthroughEndpointRouter.get_credentials (credential lookup) and PassThroughEndpointLogging._handle_logging (the logging sink); neither may come from a B102 umbrella.
+
+  The module exports for B3626: `pub fn assembly_region_from_url(url)` (gives "eu" only when the URL host is exactly eu.assemblyai.com, else none) and `pub fn assembly_base_url_from_region(region)` (https://api.eu.assemblyai.com for "eu", else https://api.assemblyai.com).
 scope:
   paths:
     - crates/betterlite-core/src/relay/assemblyai.rs
@@ -54,6 +56,8 @@ dod:
   - text: Bearer authorization uses the API key from get_credentials with the format "Bearer <key>".
     proof: [relay-tests]
   - text: Transcript IDs are URL-encoded before being placed in the request URL.
+    proof: [relay-tests]
+  - text: The module exports assembly_region_from_url and assembly_base_url_from_region; the first returns eu only for the exact host eu.assemblyai.com and the second maps eu to https://api.eu.assemblyai.com and anything else to https://api.assemblyai.com.
     proof: [relay-tests]
 checks:
   optional: []

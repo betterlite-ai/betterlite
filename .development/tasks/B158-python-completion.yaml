@@ -24,7 +24,7 @@ description: >-
   `UnsupportedCallArgument` with the parameter name, since a Python HTTP client can't drive the Rust one. `logger_fn` is
   accepted, not called, and logs one warning. `timeout` may be an `httpx.Timeout`: read `connect`, `read`, `write` and `pool`
   through a `typing.Protocol`, because httpx is no dependency of the wheel. A pydantic class in `response_format` goes through
-  `model_json_schema()` and takes the shape from `type_to_response_format_param` (llms/base_llm/base_utils.py L179-L212).
+  `model_json_schema()` and takes the shape from `type_to_response_format_param` (llms/base_llm/base_utils.py L179-L212). The wheel imports the B7840 helper for the class branch of type_to_response_format_param and does not write its own.
   A `Message` in `messages` and a `ModelResponse` in `mock_response` go through `model_dump()`. An Exception in `mock_response`
   follows `_handle_mock_potential_exceptions`: an `openai.APIError` is raised as is, and anything else becomes `MockException`
   with `status_code`, `text` and `llm_provider` read from it, or 500, `str(e)` and the provider or `openai` when missing.

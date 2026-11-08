@@ -1,0 +1,94 @@
+id: B7874
+title: Python fine-tuning job functions
+description: >-
+  Fine-tuning users call `litellm.create_fine_tuning_job(model="gpt-4o-mini", training_file="file-abc")`, then retrieve,
+  list or cancel the job. This task adds the eight functions: `create_fine_tuning_job`, `retrieve_fine_tuning_job`,
+  `list_fine_tuning_jobs`, `cancel_fine_tuning_job` and the `a`-prefixed twin of each. The request building for OpenAI, Azure
+  and Vertex (B1052, B1053, B1141) and the timeout rule (B2487) are Rust. Python gathers arguments and builds
+  `LiteLLMFineTuningJob` objects (B167).
+
+
+  Native side, the family `tuning_calls`: `src/tuning_calls.rs` with `register` that adds `NativeTuningSession` and
+  `NativeTuningError`. Methods `create`, `retrieve`, `list`, `cancel` and their `a` twins take `(payload_text, blobs)` and give
+  JSON text. The architect writes the `lib.rs` lines. Conversion is in `src/tuning_calls/convert.rs`, tests `request_*` and
+  `error_*`.
+
+
+  Python side, `python/betterlite/fine_tuning/main.py` (fine_tuning/main.py L77-L720) with an explicit `__all__`. `create_fine_tuning_job(model,
+  training_file, hyperparameters={}, suffix=None, validation_file=None, integrations=None, seed=None,
+  custom_llm_provider="openai", extra_headers=None, extra_body=None, **kwargs)`. The provider is one of "openai", "azure" or
+  "vertex_ai". The list functions take `after` and `limit`, and the others take `fine_tuning_job_id`. Sync functions accept
+  `acreate_fine_tuning_job=True`, `acancel_fine_tuning_job=True`, `alist_fine_tuning_jobs=True` and
+  `aretrieve_fine_tuning_job=True` and then return a coroutine. A test compares `inspect.signature` for all eight. The list
+  result is a cursor page whose `data` holds `LiteLLMFineTuningJob`.
+scope:
+  paths:
+  - crates/betterlite-python/src/tuning_calls.rs
+  - crates/betterlite-python/src/tuning_calls/**
+  - crates/betterlite-python/python/betterlite/_native_tuning_calls.pyi
+  - crates/betterlite-python/python/betterlite/fine_tuning/**
+  - crates/betterlite-python/tests/tuning_server.py
+  - crates/betterlite-python/tests/test_fine_tuning.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L76-L332
+  why: create functions
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L333-L483
+  why: cancel functions
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L484-L639
+  why: list functions
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/fine_tuning/main.py#L640-L760
+  why: retrieve functions
+dod:
+- text: All eight functions keep LiteLLM's signatures, and the `a` names are coroutine functions.
+  proof: [tuning-signature]
+- text: Create sends the model, file ids, hyperparameters, suffix, seed and integrations, and the job equals LiteLLM's.
+  proof: [tuning-create]
+- text: Retrieve, list and cancel give the same objects, and each sync function returns a coroutine under its flag.
+  proof: [tuning-read]
+- text: A provider error keeps its class and cause, and the `{}` default of `hyperparameters` is never changed by a call.
+  proof: [tuning-error]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [tuning-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: tuning-signature
+    why: A caller's keyword is refused.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_fine_tuning.py -k signature
+  - id: tuning-create
+    why: A create field is lost.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_fine_tuning.py -k create
+  - id: tuning-read
+    why: A job reads back different.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_fine_tuning.py -k 'retrieve or list or cancel'
+  - id: tuning-error
+    why: Error class or the shared default is wrong.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_fine_tuning.py -k 'error or default'
+  - id: tuning-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^tuning_calls::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for the fine-tuning calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`client` is refused with `UnsupportedCallArgument`."
+  why: A Python HTTP client can't drive the Rust one (B158).
+- what: This task has no helper oracle cases.
+  why: pytest runs both packages against one local server.
+out_of_scope:
+- "`_prepare_azure_extra_body` L38-L74 and `_build_fine_tuning_job_data` L128-L138 belong to B1052."
+- "`_resolve_fine_tuning_timeout` L140-L151 belongs to B2487."
+- "The provider calls for Vertex tuning belong to B1384, and cancel's provider branch to B1141."
+pitfalls:
+- "`hyperparameters` defaults to the shared dict `{}` in LiteLLM. Keep that default value for the signature test but copy it before use."
+- "`alist_fine_tuning_jobs` and `list_fine_tuning_jobs` carry no `@client` at the pin, so they send no callbacks. Rust's list path must not either."
+- "`integrations` is a list of strings here, unlike OpenAI's list of objects, and goes through unchanged."
+- "`seed` of 0 is a value, so test `is None`."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
