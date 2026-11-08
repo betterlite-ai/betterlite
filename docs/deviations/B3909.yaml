@@ -1,0 +1,29 @@
+task: B3909
+deviations:
+  - what: >-
+      The OpenInference attributes LiteLLM's shared _utils.set_attributes writes on a langfuse_otel span
+      (openinference.span.kind, llm.model_name, llm.provider, the request, usage and choice-output keys)
+      are not written here. This module runs the one part of that flow Langfuse defines, the LLMObs
+      protocol call set_messages that produces langfuse.observation.input, and then the Langfuse-specific
+      keys.
+    why: >-
+      That shared flow is B3861's set_attributes and its wire-in by callback name is B3856's dispatch.
+      B3909 builds the Langfuse writer those tasks call and cannot call a flow that is not built yet.
+      When B3861 and B3856 land, a langfuse_otel span gets the same OpenInference keys as LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L429-L486
+  - what: >-
+      Header enrichment is a direct call to B3905's add_metadata_from_header. There is no import step to
+      fail, so the Python try/except has no counterpart; a litellm_params or proxy_server_request of the
+      wrong shape leaves the base metadata unchanged, which is the same result Python's except gives.
+    why: >-
+      Rust links its modules at build time. The observable fallback is kept, and the case is tested.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L72-L81
+  - what: >-
+      A function_call output item's arguments text is parsed with B192's bounded safe_json_loads, so text
+      over 1 MiB or nested deeper than 64 levels becomes the empty object. LiteLLM's safe_json_loads is an
+      unbounded json.loads.
+    why: >-
+      Tool arguments come from a provider response, and rule bounded-inputs forbids an unbounded read of
+      untrusted text. Real argument strings are far inside the bound; a working setup never sees the
+      difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_loads.py#L9-L16
