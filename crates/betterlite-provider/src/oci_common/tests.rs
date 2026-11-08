@@ -322,6 +322,38 @@ fn sign_oci_request_keeps_a_caller_content_type() {
 }
 
 #[test]
+fn sign_oci_request_keeps_a_mixed_case_content_type() {
+    let mut headers = HeaderMap::new();
+    headers.insert("Content-Type", HeaderValue::from_static("text/plain"));
+    let request = Json::Object(Object::new());
+    sign_oci_request(
+        &mut headers,
+        &signing_credentials(TEST_KEY),
+        &request,
+        TEST_API_BASE,
+        &fixed_clock(),
+    )
+    .unwrap();
+    assert_eq!(header_text(&headers, "content-type"), "text/plain");
+    assert_signature_verifies(&headers, TEST_PATH);
+}
+
+#[test]
+fn sign_oci_request_rejects_a_malformed_api_base() {
+    let request = Json::Object(Object::new());
+    let error = sign_oci_request(
+        &mut HeaderMap::new(),
+        &signing_credentials(TEST_KEY),
+        &request,
+        "not a url",
+        &fixed_clock(),
+    )
+    .unwrap_err();
+    assert_eq!(error.status, 500);
+    assert!(error.message.starts_with("the OCI api base is not a URL"));
+}
+
+#[test]
 fn sign_oci_request_signs_the_serialized_body_once() {
     let request = parse_json(r#"{"b": [true, null, 1.5], "a": "x"}"#);
     let mut headers = HeaderMap::new();
@@ -566,6 +598,20 @@ fn sign_oci_request_rejects_a_non_rsa_key() {
         error.message,
         "The provided private key is not an RSA key, which is required for OCI signing."
     );
+}
+
+#[test]
+fn sign_oci_request_rejects_a_malformed_key() {
+    let error = sign_oci_request(
+        &mut HeaderMap::new(),
+        &signing_credentials("not a PEM key"),
+        &Json::Object(Object::new()),
+        TEST_API_BASE,
+        &fixed_clock(),
+    )
+    .unwrap_err();
+    assert_eq!(error.status, 500);
+    assert!(!error.message.is_empty());
 }
 
 #[test]
