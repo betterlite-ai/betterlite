@@ -32,8 +32,7 @@ pub fn exception_detail_parts(detail: &JsonValue) -> (String, Option<ErrorFields
             if let Some(JsonValue::String(text)) = fields.get("message") {
                 return (text.clone(), Some(structured));
             }
-            let text = JsonValue::Object(fields.clone()).to_string();
-            (text, Some(structured))
+            (detail.to_string(), Some(structured))
         }
         JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) => {
             (detail.to_string(), None)
