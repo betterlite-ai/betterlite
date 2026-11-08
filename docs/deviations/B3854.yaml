@@ -1,0 +1,40 @@
+task: B3854
+deviations:
+  - what: >-
+      The emit-once record is a typed EmittedSpans value owned by the request context, not a
+      hidden _otel_internal.spans_logged dict inside litellm_params.metadata.
+    why: >-
+      The dict travels with the request metadata, so other callbacks and the spend log can see it.
+      A typed field keeps the dedupe state private and needs no replacement of non-dict
+      litellm_params or metadata values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1248-L1307
+  - what: >-
+      OpenTelemetryConfig.attributes is kept as the raw input value and not parsed here.
+    why: >-
+      B3857 owns the metric attribute filter and depends on this task, so this task cannot name
+      its type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L320-L339
+  - what: Environment values come from a snapshot map the caller passes in, not from the process environment.
+    why: >-
+      The logging crate reads no process state, and the single place that snapshots the environment
+      stays outside it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L325-L352
+  - what: A datetime in SpanTime is a UTC instant.
+    why: >-
+      LiteLLM's naive datetimes use the host's local timezone, which gave different nanoseconds on
+      hosts with different TZ settings. Typed timestamps in betterlite are already instants.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2946-L2952
+  - what: >-
+      A time that does not fit i64 nanoseconds saturates at i64::MIN or i64::MAX, where LiteLLM's
+      int(x * 1e9) returns a Python integer of any size.
+    why: >-
+      OTel's start_time and end_time are i64 nanoseconds, so no span can carry the larger value,
+      and the function cannot fail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2946-L2952
+  - what: >-
+      An explicitly false ignore_context_propagation still reads OTEL_IGNORE_CONTEXT_PROPAGATION,
+      where LiteLLM keeps the explicit False and ignores the variable.
+    why: >-
+      The settings record carries a plain bool, as the task asks, so an unset flag and an explicit
+      false are the same value. A true flag always wins over the variable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L331-L332
