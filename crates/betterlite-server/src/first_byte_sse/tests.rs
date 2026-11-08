@@ -55,7 +55,10 @@ fn failure(text: &str) -> SseFailure {
     serde_json::from_str(text).expect("valid failure fixture")
 }
 
-async fn late_body(outcome: Result<ProducedResponse, SseFailure>) -> Bytes {
+async fn late_body(
+    outcome: Result<ProducedResponse, SseFailure>,
+    hook: Option<Arc<dyn LateFailureHook>>,
+) -> Bytes {
     let response = open_sse_before_first_byte(
         async move {
             sleep(Duration::from_millis(1500)).await;
@@ -63,7 +66,7 @@ async fn late_body(outcome: Result<ProducedResponse, SseFailure>) -> Bytes {
         },
         Some(PingSetting::Seconds(1.0)),
         "text/event-stream",
-        None,
+        hook,
     )
     .await
     .expect("late response");
@@ -102,24 +105,6 @@ impl LateFailureHook for FakeHook {
             HookAnswer::Break(message) => Err(HookRaised::Broken(message.clone())),
         }
     }
-}
-
-async fn late_body_with_hook(
-    outcome: Result<ProducedResponse, SseFailure>,
-    hook: Arc<dyn LateFailureHook>,
-) -> Bytes {
-    let response = open_sse_before_first_byte(
-        async move {
-            sleep(Duration::from_millis(1500)).await;
-            outcome
-        },
-        Some(PingSetting::Seconds(1.0)),
-        "text/event-stream",
-        Some(hook),
-    )
-    .await
-    .expect("late response");
-    body_bytes(response).await
 }
 
 #[tokio::test]
@@ -247,13 +232,16 @@ async fn a_slow_stream_opens_with_the_keepalive_headers_and_pings() {
 
 #[tokio::test(start_paused = true)]
 async fn a_late_plain_response_is_replayed_as_one_data_frame() {
-    let body = late_body(Ok(ProducedResponse::Plain(
-        Response::builder()
-            .status(StatusCode::IM_A_TEAPOT)
-            .header("x-ignored", "yes")
-            .body(Body::from(r#"{"blocked":true}"#))
-            .expect("plain response"),
-    )))
+    let body = late_body(
+        Ok(ProducedResponse::Plain(
+            Response::builder()
+                .status(StatusCode::IM_A_TEAPOT)
+                .header("x-ignored", "yes")
+                .body(Body::from(r#"{"blocked":true}"#))
+                .expect("plain response"),
+        )),
+        None,
+    )
     .await;
     assert_eq!(
         body,
@@ -263,12 +251,15 @@ async fn a_late_plain_response_is_replayed_as_one_data_frame() {
 
 #[tokio::test(start_paused = true)]
 async fn a_late_plain_response_with_an_empty_body_writes_an_empty_object() {
-    let body = late_body(Ok(ProducedResponse::Plain(
-        Response::builder()
-            .status(StatusCode::NO_CONTENT)
-            .body(Body::empty())
-            .expect("plain response"),
-    )))
+    let body = late_body(
+        Ok(ProducedResponse::Plain(
+            Response::builder()
+                .status(StatusCode::NO_CONTENT)
+                .body(Body::empty())
+                .expect("plain response"),
+        )),
+        None,
+    )
     .await;
     assert_eq!(
         body,
@@ -278,9 +269,10 @@ async fn a_late_plain_response_with_an_empty_body_writes_an_empty_object() {
 
 #[tokio::test(start_paused = true)]
 async fn a_late_failure_is_written_as_the_error_and_done_frames() {
-    let body = late_body(Err(failure(
-        r#"{"status_code": 429, "detail": "slow down"}"#,
-    )))
+    let body = late_body(
+        Err(failure(r#"{"status_code": 429, "detail": "slow down"}"#)),
+        None,
+    )
     .await;
     assert_eq!(
         body,
@@ -293,9 +285,9 @@ async fn a_late_failure_is_written_as_the_error_and_done_frames() {
 #[tokio::test(start_paused = true)]
 async fn a_late_failure_uses_the_replacement_the_hook_returns() {
     let replacement = failure(r#"{"status_code": 401, "detail": "the hook's words"}"#);
-    let body = late_body_with_hook(
+    let body = late_body(
         Err(failure(r#"{"status_code": 500, "detail": "the original"}"#)),
-        FakeHook::arc(HookAnswer::Replace(replacement)),
+        Some(FakeHook::arc(HookAnswer::Replace(replacement))),
     )
     .await;
     assert_eq!(
@@ -309,9 +301,9 @@ async fn a_late_failure_uses_the_replacement_the_hook_returns() {
 #[tokio::test(start_paused = true)]
 async fn a_late_failure_uses_the_replacement_the_hook_raises() {
     let replacement = failure(r#"{"status_code": 403, "detail": "raised"}"#);
-    let body = late_body_with_hook(
+    let body = late_body(
         Err(failure(r#"{"status_code": 500, "detail": "the original"}"#)),
-        FakeHook::arc(HookAnswer::Raise(replacement)),
+        Some(FakeHook::arc(HookAnswer::Raise(replacement))),
     )
     .await;
     assert_eq!(
@@ -329,9 +321,9 @@ async fn a_late_failure_uses_the_replacement_the_hook_raises() {
 async fn a_late_failure_without_a_usable_replacement_keeps_the_original(
     #[case] answer: HookAnswer,
 ) {
-    let body = late_body_with_hook(
+    let body = late_body(
         Err(failure(r#"{"status_code": 500, "detail": "the original"}"#)),
-        FakeHook::arc(answer),
+        Some(FakeHook::arc(answer)),
     )
     .await;
     assert_eq!(

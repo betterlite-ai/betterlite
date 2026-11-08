@@ -48,13 +48,20 @@ pub fn agreed_keepalive_interval(
     coerce_keepalive_interval(global_interval)
 }
 
+fn streams_request(request_data: &JsonValue) -> bool {
+    match request_data.get("stream") {
+        Some(JsonValue::Bool(streams)) => *streams,
+        _ => false,
+    }
+}
+
 #[must_use]
 pub fn ttft_keepalive_interval(
     request_data: &JsonValue,
     deployments: &[JsonValue],
     global_interval: Option<&PingSetting>,
 ) -> Option<Duration> {
-    if !matches!(request_data.get("stream"), Some(JsonValue::Bool(true))) {
+    if !streams_request(request_data) {
         return None;
     }
     agreed_keepalive_interval(deployments, global_interval)
@@ -70,7 +77,7 @@ pub fn ttft_interval_for(
     request_data: &JsonValue,
     global_interval: Option<&PingSetting>,
 ) -> Option<Duration> {
-    if !matches!(request_data.get("stream"), Some(JsonValue::Bool(true))) {
+    if !streams_request(request_data) {
         return None;
     }
     let deployments = match (lookup, request_data.get("model")) {
