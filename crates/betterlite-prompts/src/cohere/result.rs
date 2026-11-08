@@ -8,7 +8,7 @@ use crate::message_content::{Content, Message};
 const FUNCTION: &str = "function";
 const RESULT: &str = "result";
 
-pub fn convert_openai_message_to_cohere_tool_result(
+pub fn tool_result(
     message: &Message,
     tool_calls: &[CohereTool],
     index: usize,

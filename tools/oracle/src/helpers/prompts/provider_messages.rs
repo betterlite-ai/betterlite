@@ -1,6 +1,6 @@
 use betterlite_prompts::arguments::json::Json;
-use betterlite_prompts::azure::convert::convert_to_azure_openai_messages;
-use betterlite_prompts::azure::stringify::stringify_json_tool_call_content;
+use betterlite_prompts::azure::convert::to_azure;
+use betterlite_prompts::azure::stringify::stringify_tool_content;
 use betterlite_prompts::azure::text::azure_text_pt;
 use betterlite_prompts::cohere::history::cohere_messages_pt_v2;
 use betterlite_prompts::cohere::prompt::cohere_message_pt;
@@ -31,21 +31,32 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::AzureMessages { messages } => {
-                let converted = convert_to_azure_openai_messages(messages)
+                let converted = to_azure(messages)
                     .map_err(|error| helper_error("AzureError", error.to_string()))?;
-                ok_value(converted)
+                to_value(converted)
+                    .map_err(|error| helper_error("SerializationError", error.to_string()))
             }
             Input::AzureText { messages } => {
                 let prompt = azure_text_pt(messages)
                     .map_err(|error| helper_error("AzureError", error.to_string()))?;
-                ok_value(prompt)
+                to_value(prompt)
+                    .map_err(|error| helper_error("SerializationError", error.to_string()))
             }
             Input::Stringify { messages } => {
-                let converted = stringify_json_tool_call_content(messages)
+                let converted = stringify_tool_content(messages)
                     .map_err(|error| helper_error("AzureError", error.to_string()))?;
                 stringified_values(&converted)
             }
-            Input::Cohere { messages } => cohere_values(messages),
+            Input::Cohere { messages } => {
+                let v2 = cohere_messages_pt_v2(messages)
+                    .map_err(|error| helper_error("CohereError", error.to_string()))?;
+                let legacy = cohere_message_pt(messages)
+                    .map_err(|error| helper_error("CohereError", error.to_string()))?;
+                Ok(without_nulls(json!([
+                    {"message": v2.message, "chat_history": v2.chat_history},
+                    {"prompt": legacy.prompt, "tool_results": legacy.tool_results}
+                ])))
+            }
         }
     }
 }
@@ -53,13 +64,15 @@ impl Helper for Op {
 fn stringified_values(messages: &[Message]) -> HelperResult {
     let mut values = Vec::with_capacity(messages.len());
     for message in messages {
-        let mut value = to_value(message).map_err(|error| serialize_error(&error))?;
+        let mut value = to_value(message)
+            .map_err(|error| helper_error("SerializationError", error.to_string()))?;
         if message.role == "tool"
             && let Some(Content::Text(text)) = &message.content
         {
-            let parsed: Json =
-                serde_json::from_str(text).map_err(|error| serialize_error(&error))?;
-            let parsed_value = to_value(parsed).map_err(|error| serialize_error(&error))?;
+            let parsed: Json = serde_json::from_str(text)
+                .map_err(|error| helper_error("SerializationError", error.to_string()))?;
+            let parsed_value = to_value(parsed)
+                .map_err(|error| helper_error("SerializationError", error.to_string()))?;
             if let Some(fields) = value.as_object_mut() {
                 fields.insert("content".to_owned(), parsed_value);
             }
@@ -67,17 +80,6 @@ fn stringified_values(messages: &[Message]) -> HelperResult {
         values.push(value);
     }
     Ok(without_nulls(Value::Array(values)))
-}
-
-fn cohere_values(messages: &[Message]) -> HelperResult {
-    let v2 = cohere_messages_pt_v2(messages)
-        .map_err(|error| helper_error("CohereError", error.to_string()))?;
-    let legacy = cohere_message_pt(messages)
-        .map_err(|error| helper_error("CohereError", error.to_string()))?;
-    Ok(without_nulls(json!([
-        {"message": v2.message, "chat_history": v2.chat_history},
-        {"prompt": legacy.prompt, "tool_results": legacy.tool_results}
-    ])))
 }
 
 // betterlite's message model cannot tell an absent key from a null one, so both sides drop null fields
@@ -93,17 +95,6 @@ fn without_nulls(value: Value) -> Value {
         Value::Array(items) => Value::Array(items.into_iter().map(without_nulls).collect()),
         other @ (Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)) => other,
     }
-}
-
-fn ok_value<Payload>(payload: Payload) -> HelperResult
-where
-    Payload: serde::Serialize,
-{
-    to_value(payload).map_err(|error| serialize_error(&error))
-}
-
-fn serialize_error(error: &serde_json::Error) -> Box<HelperError> {
-    helper_error("SerializationError", error.to_string())
 }
 
 fn helper_error(class: &str, message: String) -> Box<HelperError> {

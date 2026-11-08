@@ -22,7 +22,7 @@ pub enum CohereError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("message {index} fields are not a chat message")]
+    #[error("message {index} fields are not a chat message: {source}")]
     Fields {
         index: usize,
         #[source]

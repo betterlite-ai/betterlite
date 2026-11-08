@@ -1,11 +1,16 @@
 use crate::arguments::json::Json;
 use crate::azure::error::AzureError;
-use crate::media::limits::MAX_MESSAGE_PARTS;
+use crate::media::limits::{MAX_MESSAGE_PARTS, MAX_MESSAGES};
 use crate::message_content::{Content, ContentPart, Message};
 
 const TEXT: &str = "text";
 
 pub fn azure_text_pt(messages: &[Message]) -> Result<String, AzureError> {
+    if messages.len() > MAX_MESSAGES {
+        return Err(AzureError::TooManyMessages {
+            limit: MAX_MESSAGES,
+        });
+    }
     let mut prompt = String::new();
     for (index, message) in messages.iter().enumerate() {
         match &message.content {

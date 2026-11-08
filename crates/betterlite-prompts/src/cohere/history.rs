@@ -1,6 +1,6 @@
 use crate::cohere::content::{content_text, optional_content_text};
 use crate::cohere::error::CohereError;
-use crate::cohere::result::convert_openai_message_to_cohere_tool_result;
+use crate::cohere::result::tool_result;
 use crate::cohere::tool_calls::{
     collect_tool_calls, convert_to_cohere_tool_invoke, message_tool_calls,
 };
@@ -56,8 +56,7 @@ fn returned_message(
     index: usize,
 ) -> Result<CohereMessage, CohereError> {
     if message.role == TOOL {
-        return convert_openai_message_to_cohere_tool_result(message, tool_calls, index)
-            .map(CohereMessage::ToolResult);
+        return tool_result(message, tool_calls, index).map(CohereMessage::ToolResult);
     }
     content_text(message.content.as_ref(), index).map(CohereMessage::Text)
 }
@@ -170,7 +169,7 @@ fn tool_entry(
 ) -> Result<ChatHistoryEntry, CohereError> {
     let mut tool_results = Vec::with_capacity(run.len());
     for (position, message) in run.iter().enumerate() {
-        tool_results.push(convert_openai_message_to_cohere_tool_result(
+        tool_results.push(tool_result(
             message,
             tool_calls,
             offset.saturating_add(position),

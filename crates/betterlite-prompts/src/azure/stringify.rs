@@ -6,7 +6,7 @@ use crate::message_content::{Content, Message};
 const TOOL: &str = "tool";
 const RESULT: &str = "result";
 
-pub fn stringify_json_tool_call_content(messages: &[Message]) -> Result<Vec<Message>, AzureError> {
+pub fn stringify_tool_content(messages: &[Message]) -> Result<Vec<Message>, AzureError> {
     if messages.len() > MAX_MESSAGES {
         return Err(AzureError::TooManyMessages {
             limit: MAX_MESSAGES,

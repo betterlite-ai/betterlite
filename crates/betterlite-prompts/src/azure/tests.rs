@@ -6,9 +6,9 @@ use std::path::PathBuf;
 use rstest::rstest;
 
 use crate::arguments::json::{Json, Object};
-use crate::azure::convert::convert_to_azure_openai_messages;
+use crate::azure::convert::to_azure;
 use crate::azure::error::AzureError;
-use crate::azure::stringify::stringify_json_tool_call_content;
+use crate::azure::stringify::stringify_tool_content;
 use crate::azure::text::azure_text_pt;
 use crate::cohere::history::cohere_messages_pt_v2;
 use crate::cohere::prompt::cohere_message_pt;
@@ -104,15 +104,15 @@ fn parts_message(count: usize) -> Message {
 
 fn run_operation(operation: Operation, messages: &[Message]) -> Result<(), AzureError> {
     match operation {
-        Operation::Convert => convert_to_azure_openai_messages(messages).map(drop),
+        Operation::Convert => to_azure(messages).map(drop),
         Operation::Text => azure_text_pt(messages).map(drop),
-        Operation::Stringify => stringify_json_tool_call_content(messages).map(drop),
+        Operation::Stringify => stringify_tool_content(messages).map(drop),
     }
 }
 
-fn assert_convert(case: &Case) {
+fn assert_messages(case: &Case, convert: fn(&[Message]) -> Result<Vec<Message>, AzureError>) {
     let messages = parse_messages(case.messages);
-    let converted = convert_to_azure_openai_messages(&messages).unwrap();
+    let converted = convert(&messages).unwrap();
     assert_eq!(
         serde_json::to_value(&converted).unwrap(),
         serde_json::to_value(parse_messages(case.expected)).unwrap()
@@ -122,15 +122,6 @@ fn assert_convert(case: &Case) {
 fn assert_text(case: &TextCase) {
     let messages = parse_messages(case.messages);
     assert_eq!(azure_text_pt(&messages).unwrap(), case.expected);
-}
-
-fn assert_stringify(case: &Case) {
-    let messages = parse_messages(case.messages);
-    let converted = stringify_json_tool_call_content(&messages).unwrap();
-    assert_eq!(
-        serde_json::to_value(&converted).unwrap(),
-        serde_json::to_value(parse_messages(case.expected)).unwrap()
-    );
 }
 
 fn assert_failure(case: &FailureCase) {
@@ -200,8 +191,8 @@ fn matches_position(error: &AzureError, kind: PositionKind, index: usize, part: 
 fn assert_preserved(source: &'static str) {
     let messages = parse_messages(source);
     let untouched = messages.clone();
-    let first = convert_to_azure_openai_messages(&messages).unwrap();
-    let second = convert_to_azure_openai_messages(&messages).unwrap();
+    let first = to_azure(&messages).unwrap();
+    let second = to_azure(&messages).unwrap();
     assert_eq!(messages, untouched);
     assert_eq!(first, second);
 }
@@ -335,9 +326,9 @@ fn assert_preserved(source: &'static str) {
 ))]
 fn other_prompts_provider_message_tests_behavior(#[case] scenario: Scenario) {
     match scenario {
-        Scenario::Convert(case) => assert_convert(&case),
+        Scenario::Convert(case) => assert_messages(&case, to_azure),
         Scenario::Text(case) => assert_text(&case),
-        Scenario::Stringify(case) => assert_stringify(&case),
+        Scenario::Stringify(case) => assert_messages(&case, stringify_tool_content),
         Scenario::Failure(case) => assert_failure(&case),
         Scenario::MessageLimit(operation) => {
             let messages = vec![one_message(); MAX_MESSAGES.saturating_add(1)];
@@ -371,8 +362,8 @@ fn replays_the_provider_messages_corpus(#[files("fuzz/corpus/provider_messages/*
     let Ok(messages) = serde_json::from_slice::<Vec<Message>>(&bytes) else {
         return;
     };
-    drop(convert_to_azure_openai_messages(&messages));
-    drop(stringify_json_tool_call_content(&messages));
+    drop(to_azure(&messages));
+    drop(stringify_tool_content(&messages));
     drop(azure_text_pt(&messages));
     drop(cohere_messages_pt_v2(&messages));
     drop(cohere_message_pt(&messages));

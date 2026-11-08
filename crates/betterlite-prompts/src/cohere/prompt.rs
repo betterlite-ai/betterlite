@@ -1,5 +1,5 @@
 use crate::cohere::error::CohereError;
-use crate::cohere::result::convert_openai_message_to_cohere_tool_result;
+use crate::cohere::result::tool_result;
 use crate::cohere::tool_calls::collect_tool_calls;
 use crate::cohere::types::CoherePrompt;
 use crate::media::limits::MAX_MESSAGES;
@@ -19,11 +19,7 @@ pub fn cohere_message_pt(messages: &[Message]) -> Result<CoherePrompt, CohereErr
     let mut tool_results = Vec::new();
     for (index, message) in messages.iter().enumerate() {
         if message.role == TOOL {
-            tool_results.push(convert_openai_message_to_cohere_tool_result(
-                message,
-                &tool_calls,
-                index,
-            )?);
+            tool_results.push(tool_result(message, &tool_calls, index)?);
             continue;
         }
         match &message.content {

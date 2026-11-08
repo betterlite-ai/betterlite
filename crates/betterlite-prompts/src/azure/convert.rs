@@ -12,7 +12,7 @@ const FORMAT: &str = "format";
 const FUNCTION_CALL: &str = "function_call";
 const ARGUMENTS: &str = "arguments";
 
-pub fn convert_to_azure_openai_messages(messages: &[Message]) -> Result<Vec<Message>, AzureError> {
+pub fn to_azure(messages: &[Message]) -> Result<Vec<Message>, AzureError> {
     if messages.len() > MAX_MESSAGES {
         return Err(AzureError::TooManyMessages {
             limit: MAX_MESSAGES,
@@ -33,16 +33,15 @@ pub fn convert_to_azure_openai_messages(messages: &[Message]) -> Result<Vec<Mess
 }
 
 fn convert_function_call(message: &mut Message, index: usize) -> Result<(), AzureError> {
-    match message.provider_specific_fields.get_mut(FUNCTION_CALL) {
-        None | Some(Json::Null) => Ok(()),
-        Some(Json::Object(function_call)) => default_arguments(function_call, index),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(AzureError::FunctionCall { index })
-        }
+    let Some(value) = message.provider_specific_fields.get_mut(FUNCTION_CALL) else {
+        return Ok(());
+    };
+    if matches!(value, Json::Null) {
+        return Ok(());
     }
-}
-
-fn default_arguments(function_call: &mut Object, index: usize) -> Result<(), AzureError> {
+    let Json::Object(function_call) = value else {
+        return Err(AzureError::FunctionCall { index });
+    };
     // Azure reads a null arguments value as the empty string an omitted one already means
     match function_call.get(ARGUMENTS) {
         None | Some(Json::Null) => {
@@ -66,63 +65,48 @@ fn convert_user_content(message: &mut Message, index: usize) -> Result<(), Azure
         });
     }
     for (part_index, part) in parts.iter_mut().enumerate() {
-        match part.kind.as_str() {
-            IMAGE_URL => convert_image_url(part, index, part_index)?,
-            FILE => convert_file(part, index, part_index)?,
-            _ => {}
-        }
+        convert_part(part, index, part_index)?;
     }
     Ok(())
 }
 
-fn convert_image_url(
-    part: &mut ContentPart,
-    index: usize,
-    part_index: usize,
-) -> Result<(), AzureError> {
-    match part.fields.get(IMAGE_URL).cloned() {
-        Some(Json::Text(url)) => {
-            let mut image_url = Object::new();
-            image_url.insert(URL.to_owned(), Json::Text(url));
-            part.fields
-                .insert(IMAGE_URL.to_owned(), Json::Object(image_url));
+fn convert_part(part: &mut ContentPart, index: usize, part_index: usize) -> Result<(), AzureError> {
+    match part.kind.as_str() {
+        IMAGE_URL => {
+            let Some(image_url) = part.fields.get(IMAGE_URL).cloned() else {
+                return Err(AzureError::MissingImageUrl {
+                    index,
+                    part: part_index,
+                });
+            };
+            let converted = match image_url {
+                Json::Text(url) => Json::Object(Object::from([(URL.to_owned(), Json::Text(url))])),
+                Json::Object(fields) => Json::Object(without_format(&fields)),
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => {
+                    return Err(AzureError::ImageUrl {
+                        index,
+                        part: part_index,
+                    });
+                }
+            };
+            part.fields.insert(IMAGE_URL.to_owned(), converted);
         }
-        Some(Json::Object(fields)) => {
-            part.fields
-                .insert(IMAGE_URL.to_owned(), Json::Object(without_format(&fields)));
+        FILE => {
+            let converted = match part.fields.get(FILE).cloned() {
+                None => Json::Object(Object::new()),
+                Some(Json::Object(fields)) => Json::Object(without_format(&fields)),
+                Some(
+                    Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_),
+                ) => {
+                    return Err(AzureError::File {
+                        index,
+                        part: part_index,
+                    });
+                }
+            };
+            part.fields.insert(FILE.to_owned(), converted);
         }
-        None => {
-            return Err(AzureError::MissingImageUrl {
-                index,
-                part: part_index,
-            });
-        }
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_)) => {
-            return Err(AzureError::ImageUrl {
-                index,
-                part: part_index,
-            });
-        }
-    }
-    Ok(())
-}
-
-fn convert_file(part: &mut ContentPart, index: usize, part_index: usize) -> Result<(), AzureError> {
-    match part.fields.get(FILE).cloned() {
-        None => {
-            part.fields
-                .insert(FILE.to_owned(), Json::Object(Object::new()));
-        }
-        Some(Json::Object(fields)) => {
-            part.fields
-                .insert(FILE.to_owned(), Json::Object(without_format(&fields)));
-        }
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            return Err(AzureError::File {
-                index,
-                part: part_index,
-            });
-        }
+        _ => {}
     }
     Ok(())
 }
