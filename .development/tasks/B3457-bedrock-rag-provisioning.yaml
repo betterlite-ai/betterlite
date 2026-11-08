@@ -1,0 +1,205 @@
+id: B3457
+title: Bedrock RAG OpenSearch provisioning and ingestion
+description: >-
+  Build the second half of LiteLLM's BedrockRAGIngestion in a new sibling module `bedrock_provisioning` of the betterlite-rag crate.
+  B3456 (module `bedrock_ingestion`) already owns the settings, `BedrockRagState`, `CreatedResources`, `BedrockRagClients::signed_request`,
+  `normalize_principal_arn`, `auto_detect_config`, `create_s3_bucket`, `create_knowledge_base` (with its 30-check wait) and `create_data_source`.
+  Import those and never copy them. This task adds everything that needs STS, IAM, OpenSearch Serverless, S3 PutObject and the ingestion job API,
+  the lazy initialization flow, `embed`, `store`, and the production `AwsRagTransport` adapter over B173's pooled client.
+  Python uses boto3 and opensearch-py. Rust has neither, so every call becomes a SigV4-signed HTTPS request through
+  `BedrockRagClients::signed_request` (B595 signs, B594 resolves credentials, B198 `get_aws_partition` gives the dns_suffix). Never add an AWS SDK service crate.
+  Wire work for the architect: B3456's `signed_request(service, method, url, body)` has no header and no signing-region input. This task needs both (IAM signs in the
+  partition's global region, and every JSON call needs Content-Type and X-Amz-Target). It calls `BedrockRagClients::signed_request_with(service, signing_region, method, url, headers, body)`,
+  which B3456 must expose (see notes). Do not start before that method exists.
+
+  Module `plan`. Pure builders, no I/O. Each takes the region, the ARN prefix (`arn:{partition}:` from B198) and plain strings, and returns a `serde_json::Value` or a typed struct that is serialized to a compact JSON string.
+  (1) Encryption policy for collection `C`: `{"Rules":[{"ResourceType":"collection","Resource":["collection/C"]}],"AWSOwnedKey":true}`.
+  (2) Network policy: an array with one object, Rules for ResourceType `collection` and `dashboard`, both with Resource `["collection/C"]`, and `"AllowFromPublic":true`.
+  (3) Data access policy: an array with one object, Rules `index` (Resource `["index/C/*"]`, Permission `["aoss:*"]`) and `collection` (Resource `["collection/C"]`, Permission `["aoss:*"]`), and Principal.
+  Principal is `["{arn_prefix}iam::{account_id}:root", normalize_principal_arn(caller_arn, account_id)]` with the second entry dropped when equal to the first. Python deduplicates with `list(set(..))`, whose order is random; betterlite keeps root first.
+  (4) Index body: settings.index `{"knn":true,"knn.algo_param.ef_search":512}`; mappings.properties `bedrock-knowledge-base-default-vector` = `{"type":"knn_vector","dimension":1024,"method":{"engine":"faiss","name":"hnsw","space_type":"l2"}}`,
+  `AMAZON_BEDROCK_METADATA` = `{"type":"text","index":false}`, `AMAZON_BEDROCK_TEXT_CHUNK` = `{"type":"text"}`.
+  (5) Role trust policy: Version `2012-10-17`, one Allow statement, Principal Service `bedrock.amazonaws.com`, Action `sts:AssumeRole`, Condition StringEquals `aws:SourceAccount` = account id and ArnLike `aws:SourceArn` = `{arn_prefix}bedrock:{region}:{account_id}:knowledge-base/*`.
+  (6) Role permissions policy: Version `2012-10-17`, three Allow statements in this order: `bedrock:InvokeModel` on `{arn_prefix}bedrock:{region}::foundation-model/{embedding_model}`; `aoss:APIAccessAll` on the collection ARN;
+  `s3:GetObject` and `s3:ListBucket` on `{arn_prefix}s3:::{bucket}` and `{arn_prefix}s3:::{bucket}/*`.
+  Python writes these with json.dumps; spacing is not compared (docs/compatibility.md), so compact serde_json output is fine.
+
+  Module `calls`. One typed request and response struct per operation, serde field names exactly as AWS names them, plus the URL, header and body for each.
+  STS GetCallerIdentity: POST `https://sts.{region}.{dns_suffix}/`, service `sts`, Content-Type `application/x-www-form-urlencoded; charset=utf-8`, body `Action=GetCallerIdentity&Version=2011-06-15`. The answer is XML; read Account and Arn under GetCallerIdentityResult with quick-xml (already a workspace dependency).
+  IAM is a global service with no regional endpoint, so it needs the partition's global host and signing region: partition `aws` is `https://iam.amazonaws.com/` signed for `us-east-1`; `aws-cn` is `https://iam.cn-north-1.amazonaws.com.cn/` signed for `cn-north-1`; `aws-us-gov` is `https://iam.us-gov.amazonaws.com/` signed for `us-gov-west-1`. Use the `iam` service name, form body, Version `2010-05-08`.
+  CreateRole sends RoleName and AssumeRolePolicyDocument and reads Role/Arn from the XML answer. PutRolePolicy sends RoleName, PolicyName and PolicyDocument and needs no answer fields. Percent-encode every form value with the percent-encoding crate; the policy JSON contains `/`, `:`, `*` and quotes.
+  OpenSearch Serverless control plane: POST `https://aoss.{region}.{dns_suffix}/`, service `aoss`, Content-Type `application/x-amz-json-1.0`, header `X-Amz-Target: OpenSearchServerless.<Operation>`. Operations: CreateSecurityPolicy `{name,type,policy}` with type `encryption` then `network`,
+  CreateAccessPolicy `{name,type:"data",policy}`, CreateCollection `{name,type:"VECTORSEARCH"}` answering `createCollectionDetail.id`, BatchGetCollection `{ids:[..]}` or `{names:[..]}` answering `collectionDetails[]` with `status`, `arn` and `collectionEndpoint`.
+  boto3 adds a random `clientToken` to the three Create calls; send a fresh uuid v4 each time. Policy names are `{collection_name}-enc`, `{collection_name}-net` and `{collection_name}-access`; collection and role names use the unique id (below).
+  Bedrock Agent (reuse B3456's endpoint builder and its `bedrock-agent` service name): StartIngestionJob is PUT `/knowledgebases/{kb}/datasources/{ds}/ingestionjobs/` with a `clientToken` and answers `ingestionJob.ingestionJobId`;
+  GetIngestionJob is GET `/knowledgebases/{kb}/datasources/{ds}/ingestionjobs/{job}` and answers `ingestionJob.status`, `statistics.numberOfNewDocumentsIndexed` and `failureReasons`.
+  S3 PutObject: PUT to the object URL, built with B3456's bucket host rule (virtual-hosted, path style when the bucket has a dot or uppercase) followed by the key. Percent-encode each key segment and keep `/`. Headers `Content-Type` (the given type, else `application/octet-stream`) and `x-amz-content-sha256`. A non-2xx answer is B3456's `BedrockIngestionError::Aws`.
+  Collection data endpoint: the BatchGetCollection `collectionEndpoint` is `https://{id}.{region}.aoss.{dns_suffix}`. Accept it only when the scheme is https and the host ends with `.aoss.{dns_suffix}`; otherwise return a typed error before anything is signed (the credentials are sent to that host). Python trusts it. See deviations.
+
+  Module `provision`. `BedrockProvisioner` holds `BedrockRagClients`, the settings and state from B3456, `ingest_name: Option<String>`, and `unique_id: String` (8 lowercase hex characters, given by the caller; Python takes `uuid4().hex[:8]`).
+  Method `ensure_config_initialized` (L127-L139): returns at once when already initialized; with a knowledge_base_id it calls B3456 `auto_detect_config`, else `create_infrastructure`; it sets the initialized flag only after success, so a failed run is retried from scratch and creates a second set of resources (Python does the same, with no cleanup).
+  `create_infrastructure` (L190-L227), in this order: kb_name is ingest_name when non-empty, else `litellm-kb-{unique_id}`; STS GetCallerIdentity; the bucket is the configured s3_bucket, else B3456 `create_s3_bucket(unique_id)`; `create_opensearch_collection`; `create_opensearch_index`; `create_bedrock_role`; B3456 `create_knowledge_base(kb_name, role_arn, collection_arn)`; B3456 `create_data_source(kb_name)`. Store knowledge_base_id and data_source_id in the state.
+  `create_opensearch_collection(unique_id, account_id, caller_arn)` (L246-L354): name `litellm-kb-{unique_id}`; send encryption, network and access policies in that order; create the collection and record `created_resources.opensearch_collection` right after that call; then call BatchGetCollection by id up to 60 times, stop on status `ACTIVE`, sleep 5 seconds after each non-ACTIVE check (a never-ready collection does 60 checks, 60 sleeps, then fails with `CollectionTimeout`);
+  then sleep 60 seconds for policy propagation; return the name and the ARN from the last answer.
+  `create_opensearch_index(collection_name)` (L356-L440): BatchGetCollection by `names:[collection_name]`, take collectionDetails[0].collectionEndpoint (an empty list is a typed error; Python would raise IndexError), validate it as above, and send PUT `{endpoint}/bedrock-kb-index` with the index body, service `aoss`, Content-Type `application/json`.
+  Retry up to 8 attempts. A non-2xx answer whose body, lowercased, contains `authorization_exception` or `security_exception` waits 20 seconds and tries again (the sleep also happens after the 8th failure); any other failure, including a connection error, is returned at once. After 8 auth failures return `IndexRetriesExhausted` carrying the last status and the first 1024 bytes of the last body.
+  Python signs with requests_aws4auth and the credentials of `get_credentials(access key, secret key, token, region)` only; betterlite signs through `signed_request_with`, which resolves all ten keys. See deviations.
+  `create_bedrock_role(unique_id, account_id, collection_arn)` (L442-L514): role name `litellm-bedrock-kb-{unique_id}`; CreateRole, record `created_resources.iam_role` right after it (the role name, not the ARN), PutRolePolicy with policy name `{role_name}-policy`, then sleep 10 seconds; return the role ARN.
+
+  Module `ingest`. `embed(chunks)` returns `None` and ignores its input (L618-L628). `store(file_content, filename, content_type, chunks, embeddings, existing_file_id)` (L630-L720):
+  call `ensure_config_initialized` first, then if file_content is None or empty, or filename is None or empty, log a warning and return `(knowledge_base_id, None)` (the id is None when empty).
+  Otherwise the key is `{s3_prefix.trim_end_matches('/')}/{filename}`; PutObject; StartIngestionJob; when `wait_for_ingestion` is true, poll GetIngestionJob while the elapsed time (tokio::time::Instant) is below `ingestion_timeout` seconds: `COMPLETE` logs the new-document count (0 when absent) and stops;
+  `FAILED` logs the failure reasons at error level and stops; `STARTING` and `IN_PROGRESS` sleep 2 seconds and continue; any other status logs a warning and stops. Running out of time ends the loop silently, with no error (Python too). Return `(knowledge_base_id, Some(key))`.
+  `existing_file_id` is ignored (the class does not set supports_existing_file_id). Wire `ensure_config_initialized`, `embed` and `store` to the ingestion trait that B3451 declares in betterlite-core `rag::ingestion`; read its exact trait and method names in crates/betterlite-core/src/rag/ingestion.rs before writing the impl, and add the betterlite-core path dependency to betterlite-rag only for this impl.
+  B3456's module must stay free of betterlite-core; this task's impl lives in `bedrock_provisioning::ingest` only.
+
+  Module `transport`. `HttpRagTransport` implements B3456's `AwsRagTransport` trait (read its exact method in crates/betterlite-rag/src/bedrock_ingestion before writing) over betterlite-http's `ProxiedClient` (B173), received through the constructor as an `Arc<ProxiedClient>` for the deployment. It builds an `OutboundRequest` with the given method, url, headers and `RequestBody::Bytes` (or `Empty` for no body), a 60 second deadline, calls `send_buffered`, and returns status and body bytes.
+  Every status passes through unchanged (the 2xx check is B3456's job), and a `TransportError` becomes a typed error of this task's own enum that keeps the source and never prints headers. Add betterlite-http as a dependency of betterlite-rag; betterlite-http depends on betterlite-config only, so no cycle forms.
+  Tests drive it against a local fake, with B173's `network_mock` client or an in-process hyper listener (whichever the existing betterlite-http tests use), and do not open real AWS hosts.
+
+  Each module that can fail owns its error enum (`ProvisionError`, `CallError`, `IngestError`, `HttpRagTransportError`), none with a variant that carries a credential. Tests that wait use `#[tokio::test(start_paused = true)]` and a recording fake transport, so no real sleeping; assert the total virtual time of each wait.
+
+scope:
+  paths:
+    - crates/betterlite-rag/Cargo.toml
+    - crates/betterlite-rag/src/bedrock_provisioning.rs
+    - crates/betterlite-rag/src/bedrock_provisioning/**
+    - tools/oracle/cases/helpers/bedrock-rag-provisioning/**
+    - tools/oracle/helpers/b3457.py
+    - tools/oracle/helpers/b3457/**
+    - tools/oracle/src/helpers/bedrock/b3457.rs
+    - tools/oracle/src/helpers/bedrock/b3457/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L127-L139
+    why: Lazy initialization chooses auto-detect or create and sets the flag only after success.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L190-L227
+    why: Order of the six creation steps, kb_name and unique id rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L246-L354
+    why: The three policies, the collection, the 60 x 5 second wait and the 60 second propagation sleep.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L356-L440
+    why: Index body, signing service aoss, 8 attempts with 20 second waits on authorization errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L442-L514
+    why: Role trust and permissions policies, resource recording and the 10 second sleep.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L618-L720
+    why: embed returns None; store uploads, starts the job and polls with the exact status handling and return values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/aws_partition.py#L42-L43
+    why: get_aws_arn_prefix used inside every ARN.
+  - url: https://docs.aws.amazon.com/opensearch-service/latest/ServerlessAPIReference/Welcome.html
+    why: CreateSecurityPolicy, CreateAccessPolicy, CreateCollection and BatchGetCollection field names and the aoss.json target prefix.
+  - url: https://docs.aws.amazon.com/STS/latest/APIReference/API_GetCallerIdentity.html
+    why: Query request and XML answer.
+  - url: https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html
+    why: CreateRole and PutRolePolicy form fields and the Role/Arn answer.
+  - url: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_StartIngestionJob.html
+    why: StartIngestionJob and GetIngestionJob paths and fields.
+  - url: https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObject.html
+    why: PutObject request headers.
+
+dod:
+  - text: The policy builders produce the exact encryption, network, data access, index, trust and permissions documents, with root-first principals deduplicated and the partition ARN prefix everywhere.
+    proof: [plan-tests, oracle]
+  - text: STS, IAM, OpenSearch Serverless, Bedrock Agent job and S3 PutObject requests use the right method, URL, service name, signing region, headers and AWS-named body fields in the commercial, China and GovCloud partitions, and the XML and JSON answers are read into typed structs.
+    proof: [call-tests]
+  - text: The collection step sends the three policies in order, records the collection, waits through 60 checks with 5 second sleeps then fails with CollectionTimeout, and sleeps 60 seconds before returning.
+    proof: [collection-tests, oracle]
+  - text: The index step retries only authorization and security errors, 8 times with 20 second waits, returns other failures at once, and rejects a collection endpoint that is not https on the aoss host.
+    proof: [index-tests, oracle]
+  - text: The role step records the role name after CreateRole, attaches the policy named `{role}-policy`, sleeps 10 seconds and returns the ARN.
+    proof: [role-tests, oracle]
+  - text: ensure_config_initialized auto-detects with a knowledge base id, creates all resources in order without one, and stays uninitialized after a failure.
+    proof: [flow-tests, oracle]
+  - text: store uploads under the trimmed prefix, starts the job, polls by status for the wait setting and timeout, and returns the knowledge base id and key, or the early (id, None) result for missing content.
+    proof: [store-tests, oracle]
+  - text: embed returns None, and the ingestion trait impl from B3451 forwards to these methods.
+    proof: [store-tests]
+  - text: HttpRagTransport sends the signed request through the pooled client and returns status and body unchanged, and a transport failure becomes a typed error with no headers.
+    proof: [transport-tests]
+  - text: The helper adapter passes strict lint and type checks.
+    proof: [helper-python]
+
+checks:
+  optional: []
+  commands:
+    - id: plan-tests
+      why: a policy or index document builder is missing or differs
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_provisioning::(.*::)?tests::plan_/)'
+    - id: call-tests
+      why: an AWS request shape, endpoint, signing region or answer parser is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_provisioning::(.*::)?tests::call_/)'
+    - id: collection-tests
+      why: collection creation, its wait loop or the propagation sleep is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_provisioning::(.*::)?tests::collection_/)'
+    - id: index-tests
+      why: index creation, its retry rule or the endpoint check is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_provisioning::(.*::)?tests::index_/)'
+    - id: role-tests
+      why: IAM role creation, its policy or its sleep is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_provisioning::(.*::)?tests::role_/)'
+    - id: flow-tests
+      why: the initialization flow or its step order is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_provisioning::(.*::)?tests::flow_/)'
+    - id: store-tests
+      why: embed, store, the job polling or the trait impl is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_provisioning::(.*::)?tests::store_/)'
+    - id: transport-tests
+      why: the pooled-client transport adapter is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_provisioning::(.*::)?tests::transport_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3457)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3457 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3457/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/helpers/bedrock-rag-provisioning/policies-and-index.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-provisioning/collection-calls.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-provisioning/collection-timeout.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-provisioning/index-auth-retry.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-provisioning/index-other-error.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-provisioning/role-calls.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-provisioning/flow-existing-kb.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-provisioning/flow-create-all.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-provisioning/store-no-wait.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-provisioning/store-wait-statuses.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-provisioning/store-missing-content.yaml
+
+deviations:
+  - what: AWS calls are SigV4-signed HTTPS requests, not boto3 or opensearch-py clients. Oracle cases compare operation names and AWS-named parameters from a recording fake on the Python side, and native tests check the wire method, URL, service and signing region.
+    why: Rust has neither library and the rules forbid an AWS SDK service crate for these calls.
+  - what: The OpenSearch index call is signed through B3456's credential resolution with all ten credential keys, where Python gives requests_aws4auth only the access key, secret key and session token.
+    why: One signing path for every AWS call; the role-based keys Python ignores here only widen what already works.
+  - what: A collection endpoint that is not https or whose host does not end with `.aoss.{dns_suffix}` is a typed error before signing. Python sends to whatever host the answer names.
+    why: The signed credentials must not go to a host an unexpected answer picked. Open question in notes.
+  - what: Data access policy principals keep root first and the caller second. Python builds the list with set(), so its order is random.
+    why: A stable order is observable and harmless.
+  - what: Endpoints for STS, IAM and OpenSearch Serverless come only from region and partition. AWS_ENDPOINT_URL overrides that boto3 reads are ignored.
+    why: Same rule as B3456.
+
+out_of_scope:
+  - "BedrockRAGIngestion.__init__ settings, _auto_detect_config, _create_s3_bucket, _create_knowledge_base, _create_data_source, _normalize_principal_arn, _get_int, _get_str_or_none and _get_boto3_client: B3456 owns them; this task only calls them."
+  - "BaseRAGIngestion state, upload, ocr and chunk, and the call entry points: B3451 and B3460 own them."
+  - "The missing-boto3 and missing-opensearch-py ImportError branches: no optional dependency exists in Rust."
+  - "The pooled client, its limits and shutdown: B173 owns them; this task only wraps ProxiedClient."
+  - "Building the settings from the request vector_store_config and choosing the deployment client: B3460 composes them."
+
+pitfalls:
+  - IAM has one global endpoint per partition. Signing it with the configured region (for example us-west-2) fails with a signature error; use us-east-1, cn-north-1 or us-gov-west-1.
+  - STS and IAM answer in XML even for a JSON-looking client, and OpenSearch Serverless answers JSON; do not read both with one parser.
+  - The data access policy must list the account root and the normalized caller ARN; an assumed-role ARN left as is makes index creation fail forever with a security_exception.
+  - The index retry sleeps 20 seconds after the 8th failed attempt too, so the exhausted case takes 160 virtual seconds before it raises.
+  - A 403 with no `security_exception` text in the body is not retried; the match is on the body text, not on the status code.
+  - created_resources.iam_role holds the role name while the knowledge base entry holds the id, and the collection entry holds the name, so cleanup code can tell them apart.
+  - The collection wait uses status `ACTIVE` from BatchGetCollection by id, but the index step looks the collection up again by name.
+  - "`not file_content` is true for empty bytes, so an empty upload takes the early return and still runs initialization first."
+  - The s3 key is `data/file.txt` for prefix `data/` and `data//file.txt` must never appear; trim every trailing slash before joining.
+  - wait_for_ingestion polls with a wall-clock limit, so use tokio::time::Instant, which a paused test clock moves, and never std::time.
+  - Form-encoded IAM policy documents contain `+`, `/` and `:`; encode them or CreateRole answers MalformedPolicyDocument.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

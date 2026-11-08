@@ -1,0 +1,105 @@
+id: B5363
+title: Embedding optional params
+description: >-
+  `get_optional_params_embeddings` turns the OpenAI-style embedding kwargs into what each provider takes. Build it as
+  `embedding_optional_params` in betterlite-context, on B5362's `embedding_pre_process_non_default_params`,
+  `OptionalParamsMapper` and `add_provider_specific_params_to_optional_params`.
+
+
+  The function has two halves. With a provider config it runs `_check_valid_arg` and the mapper, then puts back
+  provider-only params that are in the supported list. Without one it walks a branch per provider: openai (`dimensions`
+  allowed only for text-embedding-3 models), triton, databricks, nvidia_nim, vertex_ai and gemini, lm_studio, bedrock,
+  mistral, jina_ai, voyage, sap, infinity, fireworks_ai, sambanova, ovhcloud, ollama, and a fallback that applies
+  `drop_params`. The bedrock branch splits again by model: Titan text v1, Titan image v1, Titan text v2:0, cohere.embed,
+  twelvelabs and marengo, nova, and an unmapped case. Voyage has contextual and multimodal paths. An empty `extra_body`
+  is removed at the end.
+
+
+  The caller passes the mapper for a branch and any answer from provider code, such as a supported list. A branch that
+  only sends the params on to a provider's `map_openai_params` calls the mapper. The Bedrock split decides which mapper
+  applies, so return a closed enum `BedrockEmbeddingFamily` from a plain function and let the caller pick.
+
+
+  The oracle operation is `b5363`. Its Python adapter calls `get_optional_params_embeddings` with fixture model and
+  provider values. Provider mapping there runs for real, so the Rust test mapper for each case holds the expected map.
+scope:
+  paths:
+  - crates/betterlite-context/src/embedding_optional_params.rs
+  - crates/betterlite-context/src/embedding_optional_params/**
+  - tools/oracle/cases/helpers/embedding-optional-params/**
+  - "tools/oracle/fuzz/corpus/helper_case/embedding_optional_params-*"
+  - tools/oracle/helpers/b5363.py
+  - tools/oracle/helpers/b5363/**
+  - tools/oracle/src/helpers/context/b5363.rs
+  - tools/oracle/src/helpers/context/b5363/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3747-L3860
+  why: The check, the provider config path and the first branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3860-L4101
+  why: Bedrock splits, the remaining branches, the fallback and the extra_body cleanup.
+dod:
+- text: >-
+    The provider config path gives LiteLLM's result, keeps supported provider-only params and raises the same error
+    for an unsupported param with `drop_params` off.
+  proof: [config-path, oracle, helper-python]
+- text: OpenAI `dimensions` passes for text-embedding-3 models and is refused or dropped for others as LiteLLM does.
+  proof: [openai-dimensions, oracle, helper-python]
+- text: Every Bedrock family and the unmapped case resolve as in the source.
+  proof: [bedrock-families, oracle, helper-python]
+- text: >-
+    Each remaining provider branch and the fallback give LiteLLM's result, and an empty `extra_body` is gone from the
+    output.
+  proof: [provider-branches, oracle, helper-python]
+- text: New helper corpus seeds call `b5363` and replay through the shared parser.
+  proof: [helper-case-corpus]
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: config-path
+    why: The config path loses provider-only params or the error differs.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^embedding_optional_params::.*config_path/)'
+  - id: openai-dimensions
+    why: The model check on dimensions is missing.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^embedding_optional_params::.*dimensions/)'
+  - id: bedrock-families
+    why: A Bedrock model resolves to the wrong family.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^embedding_optional_params::.*bedrock/)'
+  - id: provider-branches
+    why: A provider branch or the fallback is absent.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^embedding_optional_params::.*branch/)'
+  - id: helper-python
+    why: Without an adapter for b5363 the oracle cases can't run.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5363)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers/b5363 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5363/pyrightconfig.json
+  - id: helper-case-corpus
+    why: Seeds for this operation are absent or broken.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/embedding_optional_params-*")"
+      && grep -lE '^[[:space:]]+b5363:' tools/oracle/fuzz/corpus/helper_case/embedding_optional_params-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/embedding-optional-params/config-path.yaml
+- tools/oracle/cases/helpers/embedding-optional-params/openai-dimensions.yaml
+- tools/oracle/cases/helpers/embedding-optional-params/bedrock-families.yaml
+- tools/oracle/cases/helpers/embedding-optional-params/voyage.yaml
+- tools/oracle/cases/helpers/embedding-optional-params/provider-branches.yaml
+deviations: []
+out_of_scope:
+- >-
+  The schema helpers next to this function, L4104-L4145, are B5362. Embedding config selection L8767-L8858 is B037 and
+  B1440 owns the shared embedding dispatch.
+- Every provider's `map_openai_params` for embeddings stays with its provider task.
+- For the rest of litellm/utils.py see the inventory in the B157 task file.
+pitfalls:
+- >-
+  The branch order is part of the behavior: vertex_ai and gemini share a branch, and bedrock checks run in source order
+  on substrings of the model. A model can match two substrings, so keep the order.
+- >-
+  `drop_params` has two sources. The unsupported-param checks honor `litellm.drop_params is True or drop_params is True`,
+  but a provider mapper gets only the per-call value, false when unset. The caller passes both, and
+  `normalize_drop_params` from B206 runs on the per-call value first.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

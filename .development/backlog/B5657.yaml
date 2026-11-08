@@ -1,0 +1,15 @@
+id: B5657
+milestone: M12 python
+title: Python response objects for chat
+status: todo
+depends_on: [B5369]
+file: tasks/B5657-python-chat-objects.yaml
+covers:
+  - "litellm/types/utils.py"
+  - "litellm/types/completion.py"
+parent: B158
+split_from: B158
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

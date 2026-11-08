@@ -1,0 +1,142 @@
+id: B3633
+title: Anthropic passthrough batch logging
+description: >-
+  Build the logging step for a batch that a client creates through the Anthropic pass-through route (POST /v1/messages/batches). It prices nothing at create time. It turns the relayed response into a logging record with cost 0.0 and state "in_progress", and it hands the new batch to a registry so a later poll can attribute the batch cost to the creating key and tags.
+  The code lives in betterlite-server under src/pass_through_logging, in one module, anthropic_batch. The skeleton declares it next to B3630's four modules. Nothing here holds module-level state: the three collaborators come in through the constructor.
+
+
+  Public surface. B3606 calls it, so names and signatures are fixed.
+  `pub struct AnthropicBatchLogging` with `AnthropicBatchLogging::new(router: Option<Arc<dyn RouterModelIds>>, registry: Option<Arc<dyn ManagedBatchRegistry>>, ids: Arc<dyn ResponseIds>) -> AnthropicBatchLogging`.
+  `pub fn batch_creation_handler(&self, input: BatchCreationInput<'_>, call_log: &mut CallLog) -> BatchCreationLogged`. It never returns an error: every failure becomes a "failed" record, as in LiteLLM. CallLog is B247's per-call log, the same type B3630's response_costing functions take.
+  `pub fn store_batch_managed_object(&self, unified_object_id: &str, batch_object: BatchObject, model_object_id: &str, request_metadata: &serde_json::Map<String, serde_json::Value>)`. It returns nothing and never fails.
+  `pub fn get_actual_model_id_from_router(&self, model_name: &str) -> String`.
+  `pub trait RouterModelIds: Send + Sync { fn model_ids(&self, model_name: &str) -> Vec<String>; }` is B844's get_model_ids with exclude_team_models false; the router crate implements it.
+  `pub trait ManagedBatchRegistry: Send + Sync { fn store_unified_object_id(&self, request: BatchRegistration) -> BoxFuture<'static, Result<(), RegistryError>>; }` with RegistryError: Display. LiteLLM reaches this through proxy_logging_obj.get_proxy_hook("managed_files"), and that hook is not in the open-source PROXY_HOOKS (hooks/__init__.py L18-L31), so in a plain deployment the registry is None and the store step only logs the warning. A fake registry stands in for tests.
+  `pub trait ResponseIds: Send + Sync { fn new_response_id(&self) -> String; }` gives uuid4 text in production (B198's uuid helper) and a fixed text in tests.
+  Types in anthropic_batch: BatchCreationInput { status_code: u16, body: &[u8], url_route: &str, start_time: DateTime<Utc>, request_body: Option<&serde_json::Value>, request_metadata: &serde_json::Map<String, serde_json::Value> }, where request_metadata is kwargs["litellm_params"]["metadata"] with a missing or null litellm_params or metadata counted as empty. BatchCreationLogged { result: BatchLoggingResponse, kwargs: BatchLoggingKwargs }. BatchLoggingResponse { id, model, object, created, choices: [one choice with finish_reason "stop", index 0 and a message holding role "assistant", content, tool_calls null, function_call null and provider_specific_fields] }. BatchLoggingKwargs { response_cost: f64, model: String, batch_id: Option<String>, unified_object_id: Option<String>, batch_job_state: BatchJobState, plus the request metadata passed through }. BatchJobState is an enum with in_progress and failed, serialized as those lowercase words. BatchRegistration { unified_object_id, batch_object, model_object_id, file_purpose: "batch", registrant: BatchRegistrant, request_tags: Option<Vec<String>>, persist_attribution: true }. BatchObject is B587's batch record type. Errors live in AnthropicBatchError in the module's own files.
+
+
+  batch_creation_handler, in LiteLLM's order.
+  1. Success needs status_code == 200 and a JSON object body that has the key "id". Parse the body with serde_json; a body that does not parse, or is not an object, is a typed error that goes to step 7 with its text. A parsed object without "id", or any other status, goes to step 6.
+  2. Call B587's transform_retrieve_batch_response with model none, the body, the call log and empty litellm params, then set the batch status to "validating" (the poll only picks up "validating"). A transform error goes to step 7. batch_id is the body's "id".
+  3. Model name. Start from request_body["model"] when it is a non-empty string, else "unknown". When it is "unknown", take requests[0].params.model if requests is an array whose first item is an object whose params is an object and the model is a non-empty string. A missing request body counts as an empty object.
+  4. actual_model_id = get_actual_model_id_from_router(model_name). When it equals model_name and does not start with "anthropic/", it becomes "anthropic/{model_name}". unified_id_string is "litellm_proxy;model_id:{actual_model_id};llm_batch_id:{batch_id}" (LiteLLM's SpecialEnums.LITELLM_MANAGED_BATCH_COMPLETE_STR; keep it as a private const here, since the Vertex handler task owns its own copy). unified_object_id is URL-safe base64 of that string with the "=" padding removed (base64 crate URL_SAFE_NO_PAD).
+  5. Only when is_collection_route(url_route, "/v1/messages/batches") (B3630) holds, call store_batch_managed_object. Then build the record: a fresh id from ResponseIds, model = model_name, object "batch", created = start_time as whole seconds. The single choice has content "Batch job {batch_id} created and is pending. Status will be updated when the batch completes." and provider_specific_fields { batch_job_id, batch_job_state: "in_progress", unified_object_id }. kwargs get response_cost 0.0, model, batch_id, unified_object_id and batch_job_state "in_progress". The call log gets model = model_name (both the field and the "model" entry), "response_cost" = 0.0 and "batch_id" = batch_id.
+  6. Not a success: model "anthropic_batch", object "batch", created from start_time, a fresh id, content "Batch job creation failed. Status: {status_code}", provider_specific_fields { batch_job_state: "failed", status_code }. kwargs get response_cost 0.0, model "anthropic_batch" and batch_job_state "failed". The call log is not touched.
+  7. Any error in steps 1 to 5: log at error level "Error in batch_creation_handler: {error}" and return the same shape as step 6 with content "Error creating batch job: {error}", provider_specific_fields { batch_job_state: "failed", error }, model "anthropic_batch". Effects already written (nothing is written to the call log before step 5 ends, and the registry write of step 5 stays) are kept.
+
+
+  store_batch_managed_object. The whole body is wrapped: any error logs at error level "Error storing Anthropic batch managed object: {error}" and returns. With no registry, log at warn level "Managed files hook not available, cannot store batch object for cost tracking" and return. Otherwise build the registrant from request_metadata: user_id = "user_api_key_user_id" (default "default-user" when absent), api_key = optional_str("user_api_key") (B3630), team_id = "user_api_key_team_id", role "customer", spend 0.0, empty models, metadata, permissions, model_max_budget and model_spend, every other field none. request_tags = request_tags_from_metadata(request_metadata) (B3630). Spawn the registry future with tokio::spawn and attach the completion with log_batch_registration_result(finished, "Anthropic", unified_object_id, model_object_id, true) (B3630), which logs the join result. Spawning needs a running Tokio runtime: when Handle::try_current() fails, treat that as the wrapped error above, as Python's create_task raises with no running loop.
+
+
+  get_actual_model_id_from_router. With no router, log at warn level "Router not available, using model name: {model_name}" and return model_name. Otherwise ask model_ids(model_name): when the list has an item, log at info "Found model ID in router: {id}" and return the first; when empty, log at warn "Model not found in router, using model name: {model_name}" and return model_name.
+
+
+  Tests: module tests under pass_through_logging::anthropic_batch::tests, each name starting with batch_. A fake router, a fake registry that records the BatchRegistration (and one that fails), a fixed ResponseIds and the real B3630 functions run. The router-found path and the spawned registry write are Rust tests only, because the oracle has no router and no managed-files hook.
+  No route reaches this code until B3606 wires the dispatcher, so the oracle cases are helper cases: the Python adapter calls the pinned AnthropicPassthroughLoggingHandler.batch_creation_handler with an httpx.Response, a stub logging object and an id-scoped or collection route, and replaces the random result id before comparing. B3606 and the Anthropic route tasks add the HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_logging/anthropic_batch.rs
+    - crates/betterlite-server/src/pass_through_logging/anthropic_batch/**
+    - tools/oracle/cases/helpers/anthropic-batch-logging/**
+    - "tools/oracle/fuzz/corpus/helper_case/anthropic_batch_logging-*"
+    - tools/oracle/helpers/b3633.py
+    - tools/oracle/helpers/b3633/**
+    - tools/oracle/src/helpers/server/b3633.rs
+    - tools/oracle/src/helpers/server/b3633/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L896-L1094
+    why: batch_creation_handler, the success, non-success and exception branches, the model name search and the unified object id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L1096-L1171
+    why: _store_batch_managed_object, the registrant, the tags and the done callback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L1173-L1194
+    why: get_actual_model_id_from_router and its three log lines.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L54-L79
+    why: The dispatcher test that sends a 200 on a route containing /v1/messages/batches here; B3634 owns it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/batch_attribution.py#L16-L79
+    why: The B3630 helpers this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/__init__.py#L18-L31
+    why: PROXY_HOOKS in open-source LiteLLM has no managed_files entry, so the hook lookup returns none.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1373-L1377
+    why: get_proxy_hook is a plain mapping lookup that returns none for an unknown name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/litellm_executed_batches.py#L148-L168
+    why: The ManagedBatchStore protocol with the store_unified_object_id signature the registry trait mirrors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11444-L11476
+    why: Router.get_model_ids, which B844 owns and RouterModelIds wraps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4417-L4417
+    why: LITELLM_MANAGED_BATCH_COMPLETE_STR, the unified id template.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L664-L664
+    why: ANTHROPIC_BATCHES_ROUTE is "/v1/messages/batches".
+dod:
+  - text: A 200 response with an "id" on any route builds the in_progress record with cost 0.0, the "validating" batch, the unified object id and the call log updates, and the model name comes from request_body.model, then requests[0].params.model, then "unknown".
+    proof: [batch-tests, batch-oracle]
+  - text: The unified object id is URL-safe base64 without padding of "litellm_proxy;model_id:{id};llm_batch_id:{batch_id}", and an id equal to the model name gets the "anthropic/" prefix once.
+    proof: [batch-tests, batch-oracle]
+  - text: A non-200 status or a body without "id" gives the failed record "anthropic_batch" with the status text, and a body that does not parse or a transform error gives the error record; neither touches the call log.
+    proof: [batch-tests, batch-oracle]
+  - text: The managed object is registered only on the collection route, with the registrant defaults, B3630's tags and the done-callback log, and a missing registry or runtime only logs.
+    proof: [batch-tests]
+  - text: get_actual_model_id_from_router returns the first router id, or the name with the matching warning when the router is absent or has no id.
+    proof: [batch-tests]
+  - text: The helper adapter's Python passes the strict lint and type check.
+    proof: [helper-python]
+checks:
+  optional: []
+  commands:
+    - id: batch-tests
+      why: the batch creation handler, the registration or the router lookup are wrong, or have no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::anthropic_batch::tests::batch_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3633)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3633 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3633/pyrightconfig.json
+    - id: helper-case-corpus
+      why: new helper seeds are absent or do not replay through the shared helper-case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/anthropic_batch_logging-*')" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: batch-oracle
+      why: newly added helper cases are absent, do not use the b3633 operation or disagree with LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/anthropic-batch-logging)" &&
+        grep -rlE '^[[:space:]]+b3633:' tools/oracle/cases/helpers/anthropic-batch-logging &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/anthropic-batch-logging
+oracle_cases:
+  - tools/oracle/cases/helpers/anthropic-batch-logging/create-top-level-model-id-scoped.yaml
+  - tools/oracle/cases/helpers/anthropic-batch-logging/create-nested-params-model.yaml
+  - tools/oracle/cases/helpers/anthropic-batch-logging/create-no-model-unknown-prefixed.yaml
+  - tools/oracle/cases/helpers/anthropic-batch-logging/create-model-already-prefixed.yaml
+  - tools/oracle/cases/helpers/anthropic-batch-logging/create-collection-route-no-hook.yaml
+  - tools/oracle/cases/helpers/anthropic-batch-logging/create-non-200-failed.yaml
+  - tools/oracle/cases/helpers/anthropic-batch-logging/create-200-without-id-failed.yaml
+  - tools/oracle/cases/helpers/anthropic-batch-logging/create-empty-model-string.yaml
+deviations:
+  - what: The managed-object write goes through an injected ManagedBatchRegistry that is None in every betterlite deployment for now, so a create on the collection route logs the "Managed files hook not available" warning and registers nothing.
+    why: LiteLLM's managed_files hook lives in the enterprise package and the oracle has none; the trait keeps the registration code and its tests ready for a later MIT store.
+  - what: The text after "Error in batch_creation_handler:" and in the failed record's content and error field is the Rust error text (a serde_json or B587 transform error), not Python's exception text.
+    why: Exception strings are runtime wording (docs/compatibility.md); the record shape and the failed state are the same.
+  - what: A task panic or a missing Tokio runtime is reported through the same error log lines as a Python exception or a missing event loop.
+    why: Rust has no asyncio task, and the join result carries the same facts.
+out_of_scope:
+  - "anthropic_passthrough_handler: B3634 owns it. It calls batch_creation_handler from here when the route contains /v1/messages/batches and the status is 200, and reads request_body from the argument or from kwargs first."
+  - "optional_str, is_collection_route, request_tags_from_metadata and log_batch_registration_result: B3630 owns them in batch_attribution; this task only calls them."
+  - "AnthropicBatchesConfig.transform_retrieve_batch_response and the batch record type: B587. Router.get_model_ids: B844. The per-call log: B247. The uuid helper and ANTHROPIC_BATCHES_ROUTE: B198."
+  - "The managed_files hook and its store_unified_object_id implementation: enterprise only, not built."
+  - "The Vertex copies of batch_creation_handler, _store_batch_managed_object and get_actual_model_id_from_router in vertex_passthrough_logging_handler.py: the Vertex logging tasks own them."
+  - "Every other function in anthropic_passthrough_logging_handler.py: B3630, B3631, B3632 and B3634 own them."
+pitfalls:
+  - The success test is status 200 and the key "id" in the parsed body; a 201 or a body without "id" is the failed record even though the batch may exist upstream.
+  - model_name starts as request_body["model"] or "unknown", so an empty string also becomes "unknown" and then the requests[0].params.model search runs.
+  - The "anthropic/" prefix is added only when the router answer equals the model name, so a router id that differs from the name, even one without the prefix, is used as is.
+  - The unified id string uses model_id first and llm_batch_id second, and the base64 is urlsafe with the trailing "=" removed.
+  - store_batch_managed_object runs before the response record is built, so a failure there is logged and the record still reports in_progress.
+  - The registrant user_id defaults to "default-user" only when the metadata key is absent, the role is "customer", and the tags come from request_tags_from_metadata, which may return none or an empty list.
+  - The call log is written only on the success branch (model, "model" entry, "response_cost", "batch_id"); the failed and error branches leave it alone.
+  - The batch stored in the registry has status "validating", while the result record says batch_job_state "in_progress".
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -29,7 +29,7 @@ description: >-
   Routing-message compression: when messages_for_routing runs, apply the routing
   guardrail (if named in the policy) over the live request messages, never a
   pre-guardrail snapshot, so the routing sees what masking guardrails stripped.
-  Call the initialized guardrail through the read-through lookup and invoke its
+  Call the initialized guardrail through the read-through lookup (a callback counts as a compression guardrail when B3682's `GuardrailCallback::is_compression` is true; the router crate keeps no provider list of its own) and invoke its
   apply_guardrail method with structured_messages and a throwaway stats sink
   (routing never double-counts into compression savings).
 
@@ -74,7 +74,7 @@ dod:
     proof: [is-same-tests]
   - text: Policy resolution uses tag-matched deployments first, then untagged markers, in resolved order; the first policy found stops the search.
     proof: [policy-resolution-tests]
-  - text: Compression guardrail class detection identifies instances of registry-provided classes by provider name (headroom, compresr, typesafe).
+  - text: Compression guardrail detection calls B3682's `GuardrailCallback::is_compression`, which is true for the headroom, compresr and typesafe providers only.
     proof: [guardrail-detection-tests]
   - text: Pre-call arming sets suppressed guardrails in context (not metadata), arms the model-side guardrail by appending to metadata["guardrails"], and warns when the named guardrail is not active.
     proof: [pre-call-arming-tests]
@@ -95,7 +95,7 @@ checks:
       why: Policy resolution must prioritize tag-matched deployments over untagged and stop at the first policy found
       run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^auto_router_compression::(.*::)?auto_router_compression_policy::test_policy_for_model/)'
     - id: guardrail-detection-tests
-      why: Guardrail type detection must identify compression guardrail instances by provider name from the registry
+      why: is_compression must be true for the three compression providers and false for any other callback
       run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^auto_router_compression::test_guardrail_detection/)'
     - id: pre-call-arming-tests
       why: Pre-call arming must set suppressed guardrails in context, arm the model guardrail via metadata, and warn on missing active guardrails

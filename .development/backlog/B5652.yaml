@@ -1,0 +1,14 @@
+id: B5652
+milestone: M12 python
+title: Stream chunk shaping
+status: todo
+depends_on: [B005]
+file: tasks/B5652-stream-chunk-shaping.yaml
+covers:
+  - "litellm/litellm_core_utils/streaming_handler.py"
+parent: B158
+split_from: B158
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

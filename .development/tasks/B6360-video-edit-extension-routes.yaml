@@ -1,0 +1,185 @@
+id: B6360
+title: Video edit and extension HTTP routes
+description: >-
+  Register four routes of litellm/proxy/video_endpoints/endpoints.py once, in betterlite-server::api::video_edit_extension_routes:
+  POST /v1/videos/edits and POST /videos/edits (video_edit), and POST /v1/videos/extensions and POST /videos/extensions
+  (video_extension). All four sit behind B052 virtual key authentication and carry tags=["videos"]. There is no /openai/v1 alias.
+  Mount them from the route stub crates/betterlite-server/src/routes/video_edit.rs, which B1100 registers. Fill that file and leave
+  routes.rs and state.rs as they are. Register nothing else under /videos: B3343, B3344 and B3345 own the other video routes. The literal
+  segments "edits" and "extensions" are static paths, so axum matches them before /videos/{video_id}, and a GET on them answers 405
+  (see deviations).
+
+  Both handlers build a data map and hand it to B004's common request processor with a fixed route type and model=None. They also pass
+  the server's user_model, user_temperature, user_request_timeout, user_max_tokens, user_api_base and version. Every error from the
+  processor goes through B004's handle-exception step, so the error envelope, status and the x-litellm-* headers are B004's.
+
+  Edit (route type "avideo_edit"). (1) Read the body with B1100's body reader (JSON or multipart form, B1101 parses the form) into data.
+  (2) Remove the key "video" from data and keep the value. (3) If that value is an uploaded file part, convert it with B082's
+  batch_to_bytesio called with a one-item list. Only when the result is a nonempty list, store its first buffer as data["video"]. Then
+  set data["video_id"] to the empty string, whether or not the list was empty. (4) Any other value (a map, a string, a number, nothing)
+  is not an upload: data["video_id"] is B3330's video_reference_to_id of it, and data gets no "video" key. That function returns the "id"
+  of a map, the id of a string holding a JSON map, the string itself when it is not JSON or not a map, and "" for anything that is not
+  a map or string. (5) Run B672's decode_video_id_with_provider on data["video_id"] and keep its custom_llm_provider and model_id.
+
+  Extension (route type "avideo_extension") does steps 1 and 2 the same way, then always sets data["video_id"] to
+  video_reference_to_id of the removed value, then step 5. It has no upload branch: a file part under "video" is neither a map nor a
+  string, so video_id becomes "" and the file is dropped. data["seconds"] and data["prompt"] stay in data as the body gave them, and
+  seconds is never parsed or checked here.
+
+  Provider and model, the same for both routes. The provider is the first truthy of: B2400's header getter (custom-llm-provider), B2400's
+  query getter (custom_llm_provider), B3330's get_custom_provider_from_data(data) (the body field custom_llm_provider, then the same key
+  inside extra_body, which may be a JSON string), the provider decoded from the id, and the literal "openai". It is always written to
+  data["custom_llm_provider"]. Unlike the video content route, these routes never call B2400's body getter. When the decoded model_id
+  is truthy and a router exists, ask B844's resolve_model_name_from_model_id for a public name and, when the answer is truthy, store it
+  as data["model"], replacing a body model. With no router, or with no answer, data["model"] stays as the body had it.
+
+  Dispatch. Fill the two core entries B014 registers: crates/betterlite-core/src/operation/video_edit.rs with
+  dispatch/video_edit.rs (VideoEdit) and operation/video_extension.rs with dispatch/video_extension.rs (VideoExtension). Each replaces
+  its NotBuilt stub and stub test and leaves operation.rs and dispatch.rs alone. VideoEdit calls B3342's avideo_edit with video_id,
+  prompt, the video buffer as the keyword-only video argument, custom_llm_provider, extra_headers, extra_query, extra_body, timeout and
+  the remaining data keys as loose keywords (model and user among them). VideoExtension calls B3342's avideo_extension with video_id,
+  prompt, seconds, custom_llm_provider, extra_headers, extra_query, extra_body, timeout and the loose keywords. B3342 reads the logging
+  object from the loose keywords, so the entry passes the one B004 supplies. Keys in data that are not named arguments go to the loose
+  map unchanged. LiteLLM's route_llm_request sends these two route types straight to the SDK function when data has no model or an empty
+  one. With a model it calls the router's avideo_edit or avideo_extension. Each entry therefore first calls B6460's plan_video_route (VideoCallKind Edit or Extension). A Direct plan calls the B3342 function described above. A Router plan calls the matching VideoRouterCalls method. A NotFound plan returns the model-not-found error. VideoRouterCalls and VideoRouteView are injected into the entries, because betterlite-core cannot import sdk or router. At the pin a call with a model gets no SDK fallback: the Router.avideo_* wrapper is an async_wrapper, so route_llm_request.py L700-L706 gets an unawaited coroutine and a router error surfaces at the caller's await, outside the try. The router error reaches the client and the entry never retries the SDK function.
+
+  Count about 140 non-blank, non-comment LiteLLM lines (endpoints.py L725-L923 less docstrings). Budget 230 implementation, 260 tests
+  and 200 oracle fixtures. The task parses no new bytes (B1100 and B1101 own body and form decoding), so there is no fuzz target. Tests:
+  rstest functions edit_route_behavior, extension_route_behavior and provider_pick_behavior in api::video_edit_extension_routes::tests
+  (betterlite-server), with fakes for the model resolver and the calls, and video_entry_behavior in operation::video_edit::tests,
+  operation::video_extension::tests, dispatch::video_edit::tests and dispatch::video_extension::tests (betterlite-core), with a
+  recording fake of B3342's calls. One named case per DoD item. HTTP cases go through the booted proxy in
+  tools/oracle/cases/api/video-edit-extension-routes with master_key sk-test and the OpenAI mock upstream as api_base. The multipart
+  case uses the oracle's multipart capture. Encoded ids are "video_" plus base64 of "litellm:custom_llm_provider:<provider>;model_id:<model or empty>;video_id:<id>".
+scope:
+  paths:
+    - crates/betterlite-server/src/api/video_edit_extension_routes.rs
+    - crates/betterlite-server/src/api/video_edit_extension_routes/**
+    - crates/betterlite-server/src/routes/video_edit.rs
+    - crates/betterlite-server/src/routes/video_edit/**
+    - crates/betterlite-core/src/operation/video_edit.rs
+    - crates/betterlite-core/src/operation/video_edit/**
+    - crates/betterlite-core/src/dispatch/video_edit.rs
+    - crates/betterlite-core/src/dispatch/video_edit/**
+    - crates/betterlite-core/src/operation/video_extension.rs
+    - crates/betterlite-core/src/operation/video_extension/**
+    - crates/betterlite-core/src/dispatch/video_extension.rs
+    - crates/betterlite-core/src/dispatch/video_extension/**
+    - tools/oracle/cases/api/video-edit-extension-routes/**
+    - tools/oracle/fixtures/video-edit-extension-routes/**
+    - tools/oracle/helpers/b6360.py
+    - tools/oracle/helpers/b6360/**
+    - tools/oracle/src/helpers/server/b6360.rs
+    - tools/oracle/src/helpers/server/b6360/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L725-L826
+    why: video_edit with both POST decorators, the upload branch, the video_id rules, the provider order and the model lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L829-L923
+    why: video_extension with both POST decorators; no upload branch, video_id always from video_reference_to_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/utils.py#L14-L47
+    why: video_reference_to_id and get_custom_provider_from_data, owned by B3330 and called by both routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L52-L84
+    why: The header and query provider getters, owned by B2400.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L612-L636
+    why: avideo_edit and avideo_extension with an empty model go straight to the SDK function.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L695-L705
+    why: With a model the router is called. The except branch never runs for a router error, see the description.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2136-L2141
+    why: The router factory wiring for avideo_edit, video_edit, avideo_extension and video_extension, built by B6460.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L502-L528
+    why: What the OpenAI edit call sends upstream (POST {api_base}/edits, multipart for a file, JSON with video.id otherwise), for the oracle cases.
+dod:
+  - text: >-
+      POST /v1/videos/edits, /videos/edits, /v1/videos/extensions and /videos/extensions each answer with the mock provider's video object
+      under a valid key, each path is registered once, a GET on any of them answers 405, and /openai/v1/videos/edits is 404.
+    proof: [route-aliases, oracle]
+  - text: >-
+      Edit with a multipart video file reaches the provider as a named file part with the same filename and bytes, and data has video_id "".
+      An empty upload leaves data without a video key and still sets video_id "". Edit with a JSON body {"video":{"id":"video_1"}} sends video_id "video_1".
+    proof: [edit-video-input, oracle]
+  - text: >-
+      video_id follows video_reference_to_id for a map, a JSON string holding a map, a plain string and a value of any other type (""). Extension
+      with a file part under video gets video_id "" and no video key.
+    proof: [edit-video-input, extension-video-input]
+  - text: >-
+      The provider is the first truthy of header, query, body custom_llm_provider, extra_body custom_llm_provider (also as a JSON string), the id's
+      provider and "openai", and is always set. An empty header falls through to the next source, and the body getter is never called.
+    proof: [provider-pick, oracle]
+  - text: >-
+      A decoded model_id with a router sets data["model"] to the resolver's name and replaces a body model. No router, an empty model_id or an empty
+      answer leaves data["model"] as the body had it.
+    proof: [provider-pick, oracle]
+  - text: >-
+      Extension passes prompt and seconds from the body to the call unchanged, seconds as the string the client sent.
+    proof: [extension-video-input, oracle]
+  - text: >-
+      The VideoEdit and VideoExtension entries call B3342's avideo_edit and avideo_extension with the named arguments and the loose keywords, with and
+      without a model in data, and return the call's result.
+    proof: [entry-tests]
+  - text: >-
+      Provider failures, a malformed body and an unsupported provider reach the client as B004's error envelope with x-litellm-call-id.
+    proof: [error-envelopes, oracle]
+  - text: A missing or wrong key gives 401 auth_error from B052 with zero provider requests, on all four paths.
+    proof: [auth-failures, oracle]
+  - text: The branch adds HTTP oracle cases for these routes.
+    proof: [new-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: route-aliases
+      why: one of the four paths is missing, registered twice, answers another method or a /openai/v1 alias exists
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_edit_extension_routes::tests::route_aliases($|::)/)'
+    - id: edit-video-input
+      why: the edit upload or video reference rules differ, or an empty upload sets the video key
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_edit_extension_routes::tests::edit_route_behavior($|::)/)'
+    - id: extension-video-input
+      why: extension reads an upload branch, or changes seconds or prompt
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_edit_extension_routes::tests::extension_route_behavior($|::)/)'
+    - id: provider-pick
+      why: the provider order, the always-set rule or the model lookup differs
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_edit_extension_routes::tests::provider_pick_behavior($|::)/)'
+    - id: error-envelopes
+      why: a failure skips B004's error handling or loses x-litellm-call-id
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_edit_extension_routes::tests::error_envelopes($|::)/)'
+    - id: auth-failures
+      why: a route is reachable without a valid key or reaches the provider first
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::video_edit_extension_routes::tests::auth_failures($|::)/)'
+    - id: entry-tests
+      why: an entry still returns NotBuilt or passes the wrong arguments to B3342
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^dispatch::video_(edit|extension)::tests::video_entry_behavior($|::)/)'
+    - id: new-cases
+      why: the branch adds no HTTP oracle cases for these routes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/video-edit-extension-routes)"
+oracle_cases:
+  - tools/oracle/cases/api/video-edit-extension-routes/edit-route-aliases.yaml
+  - tools/oracle/cases/api/video-edit-extension-routes/edit-video-input.yaml
+  - tools/oracle/cases/api/video-edit-extension-routes/extension-body.yaml
+  - tools/oracle/cases/api/video-edit-extension-routes/edit-provider-pick.yaml
+  - tools/oracle/cases/api/video-edit-extension-routes/edit-model-lookup.yaml
+  - tools/oracle/cases/api/video-edit-extension-routes/edit-route-errors.yaml
+  - tools/oracle/cases/api/video-edit-extension-routes/edit-route-auth.yaml
+deviations:
+  - what: >-
+      GET /v1/videos/edits, /videos/edits, /v1/videos/extensions and /videos/extensions answer 405. LiteLLM sends those GETs to
+      video_status with the video id "edits" or "extensions".
+    why: axum prefers the static path over {video_id} and does not fall back across methods. No real video has that id.
+out_of_scope:
+  - "video_create, video_list, video_status (endpoints.py 33-305): B3343. video_content and video_remix (308-514): B3344. The character routes (516-723): B3345."
+  - "video_reference_to_id, get_custom_provider_from_data and extract_model_from_target_model_names in video_endpoints/utils.py: B3330. This task calls the first two."
+  - "avideo_edit and avideo_extension, the SDK calls: B3342. The transport behind them: B3336. The OpenAI edit and extension request transforms: B526."
+  - "ProxyBaseLLMRequestProcessing and its exception handler: B004. Body reading: B1100. Form parsing: B1101. Provider getters: B2400. Model-id lookup: B844. Authentication: B052. batch_to_bytesio: B082."
+  - "route_llm_request itself and the router factory wiring of avideo_edit, video_edit, avideo_extension and video_extension (router.py 2136-2141): B6460 owns the route choice and the wrappers; B016 owns the router call pipeline."
+pitfalls:
+  - "Edit sets video_id to the empty string for any uploaded file, even when batch_to_bytesio returns an empty list, and then sets no video key. Extension has no such branch."
+  - "A file part is only an upload when it is a file. A plain string under video in a multipart form is a reference and goes through video_reference_to_id like a JSON value."
+  - "The key video is removed from data in both routes, so a map under video never reaches the call as video, only its id does, as video_id."
+  - "The provider order here has no body getter (B2400's body reader) and reads the body field through get_custom_provider_from_data, which also looks inside extra_body, so a body custom_llm_provider beats the id's provider but loses to header and query."
+  - "data[custom_llm_provider] is written even when it is the literal default openai, so the call never infers a provider for these routes."
+  - "A resolved model replaces a body model, but nothing is written when the resolver gives an empty answer or no router exists."
+  - "base_process_llm_request gets model=None on both routes. The model travels only inside data."
+  - "seconds stays a string end to end. Do not parse it or default it, B3342 passes it through unchanged."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

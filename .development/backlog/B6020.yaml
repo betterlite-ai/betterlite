@@ -1,0 +1,14 @@
+id: B6020
+milestone: M12 python
+title: Router completion calls, sync stream fallback and batch helpers
+status: todo
+depends_on: [B014, B016, B017, B118, B138, B303, B310, B311, B323, B336, B346, B397, B5654, B5656]
+file: tasks/B6020-router-completion-call.yaml
+covers:
+  - "litellm/router.py"
+parent: B162
+split_from: B5078
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

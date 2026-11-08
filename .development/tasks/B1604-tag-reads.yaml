@@ -11,7 +11,7 @@ description: >-
   aggregates dynamic first/last timestamps. Stored tags appear first; dynamic-only tags have
   models null and the pinned descriptive text. /tag/info returns a name-keyed map with linked
   budget records and converts missing-name errors to 500 inside its catch.
-  Call B074 get_daily_activity using litellm_dailytagspend, entity field tag, default page=1,
+  Call B3091 get_daily_activity using litellm_dailytagspend, entity field tag, default page=1,
   page_size=10, comma splitting without trimming and no metadata_metrics_func. A requested
   key outside an internal user's set returns the empty paginated response before querying.
   Decode query strings in decode_tag_query(&[u8]) with a tag_query fuzz target; request bodies
@@ -68,7 +68,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B1603 owns all tag-management table protocols, mutation functions, deployment attachment helpers and tag_management.py types.
-  - B074 owns common_daily_activity.py, including aggregation and pagination beyond this route's key scope.
+  - B3091 owns get_daily_activity in common_daily_activity.py, including aggregation and pagination beyond this route's key scope.
 pitfalls:
   - An empty owned-key set is a deny-all query condition, whereas None means no key filter.
   - Multi-tag daily spend is attribution and can count one request several times.

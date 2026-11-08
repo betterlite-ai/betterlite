@@ -1,0 +1,14 @@
+id: B5368
+milestone: M12 python
+title: The call wrapper around SDK functions
+status: todo
+depends_on: [B011, B171, B191, B200, B206, B247, B250, B251, B306, B2232, B2235, B4300, B4304, B5367]
+file: tasks/B5368-call-wrapper.yaml
+covers:
+  - "litellm/utils.py"
+parent: B157
+split_from: B157
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

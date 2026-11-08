@@ -1,0 +1,27 @@
+task: B3785
+deviations:
+  - what: >-
+      A text-completion post call sends its choices to Pangea and applies the transformed choices.
+      LiteLLM fails the same call with a 500.
+    why: >-
+      In LiteLLM the TextCompletionResponse holds TextChoices objects, which are not Choices, so the
+      post-call hook passes them to the JSON payload unconverted and encoding the request raises
+      TypeError ("Object of type TextChoices is not JSON serializable"), which the hook wrapper
+      turns into a 500. A call that always fails is not behavior a working setup can rely on, so
+      betterlite serializes its typed choices and applies the answer. See also pangea.py L134-L139:
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pangea/pangea.py#L134-L139
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pangea/pangea.py#L239-L250
+  - what: >-
+      A Pangea answer larger than 1 MiB is refused with PangeaGuardrailError::ResponseTooLarge
+      instead of being read in full.
+    why: >-
+      LiteLLM reads the whole response body into memory with no limit; betterlite caps every
+      outbound answer (rule bounded-inputs).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pangea/pangea.py#L134-L139
+  - what: >-
+      The guardrail does not apply litellm_params.timeout per request. The Pangea call uses the
+      timeout of the reqwest client passed in when the guardrail is built.
+    why: >-
+      LiteLLM sets self.timeout in CustomGuardrail.__init__ and passes it to every post; that base
+      class and the shared async handler are owned by U1/B173, which supply the configured client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pangea/pangea.py#L134-L135

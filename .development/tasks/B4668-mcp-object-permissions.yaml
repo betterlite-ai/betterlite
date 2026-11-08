@@ -1,24 +1,11 @@
 id: B4668
 title: MCP object permission hydration
 description: >-
-  Implement object permission hydration and server/tool permission resolution for MCP access control.
-  This task loads MCP permissions from the database when referenced by object_permission_id but not
-  pre-loaded by the auth flow, then applies those permissions to resolve what MCP servers and tools
-  a principal (key, team, end-user, user, agent, or org) is allowed to access. Hydration is lazy:
-  permissions are loaded on-demand and cached via user_api_key_cache, using a unified check that raises
-  UnloadableEntitlementError when a row NAMES a permission that cannot be read (known entitlement,
-  unknown contents), preserving the distinction from "no permission" (no row, or row names nothing).
-  Permission resolution stacks level-by-level with different union/intersection rules per level
-  (key/team inherit or intersect, end-user/user/agent narrow, org ceilings), and every level can
-  restrict via direct mcp_servers entries, tag-style mcp_access_groups, per-server mcp_tool_permissions,
-  or mcp_toolsets (which resolve server/tool grants once and cache them). The keyless gateway-admitted-user
-  path resolves permissions per team (each team is a source with separate org ceilings), while key auth
-  uses a single key/team pair and org. Toolset resolution may raise UnloadableEntitlementError when
-  declared toolsets yield no grants (deleted/unknown ids or DB fault); this is caught and converted to
-  deny rather than silent allow-all. Per-team MCP rate-limit metadata is gathered for admitted subjects
-  and stamped onto their auth object. All LiteLLM defaults apply: mcp_servers absent means no restriction
-  (allow-all), MCP_ALL_TOOLS_WILDCARD means tool-level unrestricted for that level, the no_mcp_servers
-  sentinel disallows every server from that level and below.
+  Implement object permission hydration for MCP access control. This task loads MCP permissions from the database when a principal references an object_permission_id the auth flow did not pre-load. It owns the object permission getters for key, team, org, end-user, user and agent, _load_named_object_permission, the toolset helpers and _union_tool_grants.
+
+  Hydration is lazy and cached through user_api_key_cache. UnloadableEntitlementError marks a row that NAMES a permission that cannot be read (known entitlement, unknown contents), which differs from "no permission" (no row, or the row names nothing). Toolset resolution raises the same error when declared toolsets yield no grants, and the caller turns that into a deny, not allow-all. MCP_ALL_TOOLS_WILDCARD means tool-level unrestricted for that level.
+
+  Server and tool resolution per level is not here: B4669 owns key and team, B4670 owns the org, end-user, user and agent ceilings.
 scope:
   paths:
     - crates/betterlite-mcp/src/auth.rs
@@ -27,7 +14,6 @@ scope:
     - tools/oracle/helpers/b4668/**
     - tools/oracle/src/helpers/mcp/b4668.rs
     - tools/oracle/src/helpers/mcp/b4668/**
-    - tools/oracle/cases/helpers/object-permissions/no-mcp-servers-opt-out.yaml
     - tools/oracle/cases/helpers/object-permissions/unloadable-entitlement-db-failure.yaml
     - tools/oracle/cases/helpers/object-permissions/unloadable-entitlement-error.yaml
     - tools/oracle/cases/helpers/object-permissions/wildcard-tool-unrestricted.yaml
@@ -57,8 +43,10 @@ references:
       _load_named_object_permission for DB hydration.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3040-L3091
     why: >-
-      _get_user_object_permission: load user's object_permission (admitted users only),
-      using shared _load_named_object_permission for DB hydration.
+      _get_user_object_permission: load the user's object_permission through _user_object_permission_id and get_object_permission, raising plain ValueError when the named id can't be loaded.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3094-L3135
+    why: >-
+      _user_object_permission_id: cached link from user to object_permission_id, with USER_NO_MCP_PERMISSION_SENTINEL for "links none".
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3395-L3425
     why: >-
       _agent_object_permission_id and _AGENT_NO_PERMISSION_SENTINEL: cache the agent's
@@ -74,30 +62,6 @@ references:
       _toolset_tool_permissions and _toolset_tools_for_server, _union_tool_grants:
       resolve toolset grants to server/tool mappings, raising UnloadableEntitlementError
       when declared toolsets yield no results.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2545-L2629
-    why: >-
-      _get_allowed_mcp_servers_for_key: resolve key's direct mcp_servers, access_groups,
-      tool_permissions and toolset grants; fail-open on error after prelude checks.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2632-L2726
-    why: >-
-      _get_allowed_mcp_servers_for_team and _allowed_mcp_servers_for_single_team:
-      resolve team's servers, intersecting with key scope when key restricts.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2890-L2944
-    why: >-
-      _get_allowed_mcp_servers_for_org: org ceiling, with different fail-open/closed
-      rules for keyless sources vs keys.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2990-L3037
-    why: >-
-      _get_allowed_mcp_servers_for_end_user: resolve end-user's servers when
-      end_user_id is set on auth.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3137-L3171
-    why: >-
-      _get_allowed_mcp_servers_for_user: resolve user's servers (admitted users
-      reaching servers through their own identity, not teams).
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3468-L3519
-    why: >-
-      get_allowed_mcp_servers_for_agent: resolve agent's servers, intersecting
-      with caller's scope.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2240-L2262
     why: >-
       _key_or_team_declares_toolsets: check whether key or team has toolset grants
@@ -108,7 +72,7 @@ dod:
       Core hydration function _load_named_object_permission loads LiteLLM_ObjectPermissionTable
       from cache or DB by object_permission_id, raising UnloadableEntitlementError when the row
       names a permission that cannot be read (neither absent row nor successful load); this is
-      the single place that error is raised, so all hydration paths share the same logic.
+      the one place a principal row mints that error, so all hydration paths share the same logic. _toolset_tool_permissions raises it too, for declared toolsets that yield no grants.
     proof: [hydration-core, unloadable-error-sentinel]
 
   - text: >-
@@ -120,7 +84,7 @@ dod:
   - text: >-
       Key object permission hydration: _key_object_permission_hydrated loads the key's
       object_permission from DB when main auth cached the key with object_permission_id unhydrated
-      (the main flow swallows read failures); returns already-loaded permission without re-fetching.
+      (the main flow swallows read failures); returns already-loaded permission without re-fetching. _get_key_object_permission returns the key's permission through that hydration. Both are exposed for B4669.
     proof: [hydration-core]
 
   - text: >-
@@ -138,9 +102,11 @@ dod:
     proof: [hydration-core]
 
   - text: >-
-      User object permission (admitted subjects): _get_user_object_permission loads user's
-      permission for admitted keyless subjects, using shared _load_named_object_permission,
-      analogous to end-user path with user_id instead of end_user_id.
+      User object permission (admitted subjects): _get_user_object_permission takes the id from _user_object_permission_id and calls get_object_permission, not _load_named_object_permission. A named id that can't be loaded raises plain ValueError with the text `user {user_id!r} names object_permission_id {object_permission_id!r} which could not be loaded`.
+    proof: [hydration-core]
+
+  - text: >-
+      User object permission ID lookup: _user_object_permission_id caches `user_object_permission_id_cache_key(user_id)` with USER_NO_MCP_PERMISSION_SENTINEL and the get_management_object_ttl ttl. A cached value that isn't a string is a miss. A failed read answers None with a warning, but with check_db_only it raises HTTPException(503, "User policy is unavailable").
     proof: [hydration-core]
 
   - text: >-
@@ -163,52 +129,6 @@ dod:
       _toolset_tools_for_server extracts tools for one server; _union_tool_grants merges
       direct and toolset grants with MCP_ALL_TOOLS_WILDCARD handling, returning None when neither restricts or direct contains wildcard.
     proof: [hydration-core, unloadable-error-sentinel, wildcard-tool-restriction]
-
-  - text: >-
-      Key-level server resolution: _get_allowed_mcp_servers_for_key hydrates key's permission,
-      expands direct mcp_servers, resolves mcp_access_groups and mcp_tool_permissions to server
-      IDs, resolves mcp_toolset grants, fails closed on UnloadableEntitlementError (known
-      entitlement unreadable), and fails open on other exceptions (ceiling unresolved).
-    proof: [hydration-core, unloadable-error-sentinel]
-
-  - text: >-
-      Team-level server resolution: _get_allowed_mcp_servers_for_team gets team's hydrated
-      permission and expands servers (same as key path); _allowed_mcp_servers_for_single_team
-      does the actual expansion (direct + access_groups + tool_perms + toolsets); team
-      servers intersect with key when key restricts, else inherit from team.
-    proof: [hydration-core]
-
-  - text: >-
-      Org-level server resolution: _get_allowed_mcp_servers_for_org hydrates org permission
-      and expands servers; raises UnloadableEntitlementError when org ceiling is unreadable
-      (deny everywhere); returns None (unresolved) on other exceptions so keyless sources
-      re-raise (deny) and keys skip it (fail-open).
-    proof: [hydration-core, unloadable-error-sentinel]
-
-  - text: >-
-      End-user-level server resolution: _get_allowed_mcp_servers_for_end_user hydrates
-      end-user permission (via _get_end_user_object_permission) and expands servers,
-      with analogous toolset/access-group resolution as key/team; returns empty list
-      when no restriction or unreadable entitlement denies.
-    proof: [hydration-core, unloadable-error-sentinel]
-
-  - text: >-
-      User-level server resolution (admitted subjects): _get_allowed_mcp_servers_for_user
-      hydrates user permission via _get_user_object_permission for keyless admitted subjects
-      whose own identity reaches servers, with same expansion as end-user.
-    proof: [hydration-core]
-
-  - text: >-
-      Agent-level server resolution: get_allowed_mcp_servers_for_agent hydrates agent
-      permission and intersects with caller's scope; _get_agent_object_permission handles
-      DB lookup with same UnloadableEntitlementError semantics as other levels.
-    proof: [hydration-core, unloadable-error-sentinel]
-
-  - text: >-
-      no_mcp_servers sentinel denial: when a principal at any level declares no_mcp_servers,
-      access to all servers from that level and below is denied; the sentinel appears as an
-      entry in a server list and stops permission union before checking individual server grants.
-    proof: [hydration-core, no-mcp-servers-denial]
 
   - text: >-
       Toolset declaration check: _key_or_team_declares_toolsets answers True when key or
@@ -235,18 +155,12 @@ checks:
         MCP_ALL_TOOLS_WILDCARD does not make a permission level tool-unrestricted in _union_tool_grants,
         or toolset grants are incorrectly applied with the wildcard present.
       run: grep -q 'MCP_ALL_TOOLS_WILDCARD' tools/oracle/cases/helpers/object-permissions/wildcard-tool-unrestricted.yaml && grep -q 'MCP_ALL_TOOLS_WILDCARD' tools/oracle/cases/helpers/object-permissions/wildcard-with-toolset-grants.yaml
-    - id: no-mcp-servers-denial
-      why: >-
-        The no_mcp_servers sentinel does not deny access to every server from that level and below,
-        or is not properly handled in get_mcp_server_access.
-      run: grep -q 'no_mcp_servers' tools/oracle/cases/helpers/object-permissions/no-mcp-servers-opt-out.yaml
 
 oracle_cases:
   - tools/oracle/cases/helpers/object-permissions/unloadable-entitlement-error.yaml
   - tools/oracle/cases/helpers/object-permissions/unloadable-entitlement-db-failure.yaml
   - tools/oracle/cases/helpers/object-permissions/wildcard-tool-unrestricted.yaml
   - tools/oracle/cases/helpers/object-permissions/wildcard-with-toolset-grants.yaml
-  - tools/oracle/cases/helpers/object-permissions/no-mcp-servers-opt-out.yaml
 
 deviations:
   - what: >-
@@ -265,22 +179,26 @@ out_of_scope:
   - "attributing_source_for_server: determines which source bills for a call to a server; owned by B4671"
   - "_admitted_subject_team_rpm_limits: gathers per-team rate-limit metadata for admitted subjects; owned by B4671"
   - "resolve_admitted_subject_tools: orchestration of admitted subject tool access; owned by B4672"
-  - "Agent caller authorization (agent_caller_auth, managed_agent_policy, managed_agent_tools): owned by B739"
+  - "agent_caller_auth is owned by B4778; managed_agent_policy and managed_agent_tools are owned by B4772"
+  - "The no-mcp-servers sentinel and its early return: owned by B4669"
+  - "Server and tool ceilings (_get_allowed_mcp_servers_for_org, _for_end_user, _for_user, get_allowed_mcp_servers_for_agent, _apply_primary_org_ceiling, _apply_user_server_ceiling, apply_agent_caller_ceiling, _user_places_mcp_ceiling, admin_view_unscoped, _agent_capped_servers, _get_agent_access_group_server_ceiling, the five tool ceilings and get_agent_tool_permissions_for_server): owned by B4670"
   - "Tool access control beyond permission resolution (tool_is_granted): owned by B4672"
   - "Access group resolution (_get_mcp_servers_from_access_groups): owned by B735"
-  - "Tool permission expansion (global_mcp_server_manager.expand_tool_permissions): owned by B733"
-  - "Toolset resolution (global_mcp_server_manager.resolve_toolset_tool_permissions): owned by B737"
+  - "Tool permission expansion (global_mcp_server_manager.expand_tool_permissions): owned by B136"
+  - "Toolset resolution (global_mcp_server_manager.resolve_toolset_tool_permissions): owned by B136"
+  - "Key and team server resolution (_get_allowed_mcp_servers_for_key, _get_allowed_mcp_servers_for_team, _allowed_mcp_servers_for_single_team) and the fail-closed handling for the key path: owned by B4669"
 
 pitfalls:
-  - "UnloadableEntitlementError is raised ONLY by _load_named_object_permission when a principal row NAMES an object_permission_id that fails to load; it is the signal to deny (union operator will convert it to deny for that principal). Swallowed read failures (main auth's get_object_permission path) mean the field is unhydrated, not that the permission is absent."
-  - "_load_named_object_permission is the single place UnloadableEntitlementError is minted, so every hydration path calls it for DB loads and every handler uses that error to decide fail-open/closed consistently."
+  - "For a principal row, UnloadableEntitlementError comes only from _load_named_object_permission, when a principal row NAMES an object_permission_id that fails to load; it is the signal to deny (union operator will convert it to deny for that principal). Swallowed read failures (main auth's get_object_permission path) mean the field is unhydrated, not that the permission is absent."
+  - "_load_named_object_permission is the one place a principal row mints UnloadableEntitlementError, so the org, end-user and agent paths call it for DB loads and every handler uses that error to decide fail-open/closed consistently."
   - "A permission row naming nothing (object_permission_id is None or falsy) is different from an unreadable permission row (names an id but read fails); the first returns None, the second raises UnloadableEntitlementError."
   - "Team's object_permission is pre-loaded by get_team_object in the main auth flow; _get_team_object_permission just returns it without fetching again (team row does not have its own unhydrated path)."
   - "Keyless admitted subjects resolve per-team: each source has its own team_id and org_id, so org ceilings must be resolved per source (owner by later task); key auth uses one team_id and one org_id."
   - "Toolset grants are resolved once (not per-server) and cached; _toolset_tool_permissions raises UnloadableEntitlementError when declared but no grants result, so the caller converts this to deny not allow-all."
   - "MCP_ALL_TOOLS_WILDCARD makes a level tool-unrestricted; it is checked in _union_tool_grants before combining direct and toolset grants."
   - "Access group expansion (names/aliases to server ids) is not betterlite's job here; caller expands names to IDs before passing to this scope."
-  - "When object_permission_id is unhydrated in key auth, _key_object_permission_hydrated loads it; other levels (org, end-user, user, agent) inline the same load via _load_named_object_permission."
+  - "When object_permission_id is unhydrated in key auth, _key_object_permission_hydrated loads it; org, end-user and agent inline the same load via _load_named_object_permission; the user path doesn't."
+  - "Expose _key_object_permission_hydrated, _get_key_object_permission and _toolset_tool_permissions as pub(crate) items. B4669 owns the key and team server functions (_get_allowed_mcp_servers_for_key, _get_allowed_mcp_servers_for_team, _allowed_mcp_servers_for_single_team) and calls these three."
 
 review_level: security
 budget:

@@ -1,0 +1,19 @@
+task: B183
+deviations:
+  - what: >-
+      is_base64_encoded returns false for a canonical base64 payload whose decoded length is above the
+      50 MiB media cap instead of decoding it and returning true.
+    why: >-
+      The bounded-inputs rule forbids a decoded allocation in proportion to untrusted text. The
+      classifier counts the decoded size from the payload text first and refuses to decode past the
+      same cap decode_data_url enforces; every payload within the cap answers exactly as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8104-L8120
+  - what: >-
+      A request with more than 1024 messages, a message content list with more than 256 parts, or more
+      than 256 distinct remote media URLs is refused with a MediaError before any download; LiteLLM
+      has no cap and collects every distinct URL in the whole request.
+    why: >-
+      Bounded conversion: the message and part caps are B234's message limits, and the distinct URL cap
+      keeps the number of fetched data URLs, each up to the 50 MiB download cap, from growing with the
+      request. The traversal checks all three before it asks B5083 for any data URL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L309-L315

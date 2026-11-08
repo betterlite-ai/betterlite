@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Resolve semantic-cache embedding routing and input limits
 status: todo
 depends_on: [B002, B195]
-file: null
+file: tasks/B4310-semantic-embedding-inputs.yaml
 covers:
   - "litellm/caching/_embedding_router.py"
 parent: B125

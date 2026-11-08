@@ -1,0 +1,14 @@
+id: B6807
+milestone: M5 api families
+title: AWS Textract OCR providers
+status: todo
+depends_on: [B6800, B3300]
+file: tasks/B6807-textract-ocr-providers.yaml
+covers:
+  - "litellm/ocr/**"
+parent: B092
+split_from: B092
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

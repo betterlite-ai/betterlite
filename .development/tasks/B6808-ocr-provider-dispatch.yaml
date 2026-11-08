@@ -1,0 +1,82 @@
+id: B6808
+title: OCR provider selection and per-call execution
+description: >-
+  Add module `ocr_provider` to betterlite-ocr, porting litellm-rust core/src/ocr/provider_config.rs and
+  handler.rs. The enum `OcrConfigKind` has eleven variants: AwsTextract, AwsTextractAnalyze, Cohere,
+  Mistral, AzureAi, AzureCohere, AzureDocumentIntelligence, ReductoLegacy, ReductoV3, VertexAi and
+  VertexDeepSeek, each mapped to a config from B6801 to B6807. `resolve_provider_config(model,
+  custom_llm_provider)` returns the model name and the kind. With no provider it uses mistral. A
+  provider name that is not an OCR provider fails with InvalidProvider (anthropic, bedrock, openai and
+  openai_like are named in the Rust file as invalid). Rules: aws_textract uses TextractOperation::from_model;
+  azure_ai picks Document Intelligence when the lower-cased model contains doc-intelligence or
+  documentintelligence, then AzureCohere when it contains both cohere and parse, else AzureAi; reducto
+  picks Legacy for the model parse-legacy (any case) else V3; vertex_ai picks DeepSeek when the
+  lower-cased model contains deepseek, else VertexAi. `OcrConfigKind` forwards get_supported_ocr_params,
+  get_api_key_env_var, secret_names, get_health_check_document, resolve_connection_params and the async
+  `ocr` call to the chosen config. Also export `get_api_key_env_var(model, provider)`,
+  `get_health_check_document(model, provider)` and `passthrough_response(model, endpoint, body)`.
+  The passthrough function resolves the model as azure_ai, splits the endpoint path into non-empty
+  segments, and returns a normalized litellm-format OCR response only when the path equals the
+  Azure AI Mistral path, the Azure Cohere Parse path, or Document Intelligence's analyze_path(model); it
+  returns None for any other path and InvalidProvider for a non-Azure kind. B566 injects this as the OCR
+  projector for Foundry passthrough.
+  `perform_ocr_request` runs one call: it builds OcrCallHooks (before_provider_request lets the
+  caller's interceptor rewrite the wire request, response_received passes the body to the response
+  interceptor), maps secret lookup failures to Secret, and calls the kind's `ocr`. Secrets come from
+  the client's SecretSource by the config's secret_names.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-ocr/Cargo.toml
+    - crates/betterlite-ocr/src/ocr_provider.rs
+    - crates/betterlite-ocr/src/ocr_provider/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/core/src/ocr/provider_config.rs#L1-L614
+    why: The enum, the model to kind rules, the forwarding methods and passthrough_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/core/src/ocr/handler.rs#L1-L88
+    why: perform_ocr_request and the interceptor hooks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L91
+    why: The proxy route type that ends in an OCR call.
+
+dod:
+  - text: A table of provider and model strings resolves to the expected OcrConfigKind, including doc-intelligence, cohere parse, parse-legacy (mixed case) and deepseek cases.
+    proof: [provider-tests]
+  - text: No provider falls back to Mistral, and anthropic, bedrock, openai and openai_like fail with InvalidProvider naming the provider.
+    proof: [provider-tests]
+  - text: passthrough_response returns a normalized response for the three Azure OCR paths, None for another path, and InvalidProvider for a non-Azure kind.
+    proof: [provider-tests]
+  - text: get_api_key_env_var and get_health_check_document return the chosen config's value.
+    proof: [provider-tests]
+  - text: perform_ocr_request lets the interceptor rewrite the outgoing wire request and sees the response body once, and a secret lookup failure becomes Secret.
+    proof: [perform-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: provider-tests
+      why: provider selection, forwarding or passthrough behavior is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^ocr_provider::tests::(resolve|passthrough|forward)/)'
+    - id: perform-tests
+      why: hook order or secret error mapping is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^ocr_provider::tests::perform/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - Request types, argument filtering and document intake are B6809. The route handler is B092.
+  - The Foundry passthrough route is B566. This task only supplies the projector function.
+
+pitfalls:
+  - The kind enum is used by the request types in B6809, so keep it public inside the crate and put no request types here.
+  - Model matching for Azure and Vertex is on the lower-cased model, but the model string handed to the config keeps its original case.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
