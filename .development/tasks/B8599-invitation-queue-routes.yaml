@@ -2,7 +2,7 @@ id: B8599
 title: Invitation link routes, queued chat route and fallback login page
 description: >-
   Three leftover route groups of proxy_server.py, built in crates/betterlite-server/src/invitation_routes.rs (declared
-  by the skeleton) with `pub fn routes()`, error enum InvitationRouteError.
+  by the skeleton) with `pub fn routes()` for the invitation and queue routes and `pub fn public_routes()` for /fallback/login (B8670 merges the first inside the auth layers and the second outside them), error enum InvitationRouteError.
 
 
   Invitations on the LiteLLM_InvitationLink table. POST /invitation/new: no database is 400 db_not_connected_error;
@@ -54,7 +54,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "Mounting the routes and their HTTP oracle cases: the wave 17 management wiring part."
+  - "Mounting the routes and their HTTP oracle cases: B8670."
   - "create_invitation_for_user: B797. admin_can_invite_user: B863. Login form: B799. The data generator selector: B7324. The router's priority scheduler is the router's own."
 pitfalls:
   - Invitation refusals for access are 400, not 403, except the org-admin delete limit.

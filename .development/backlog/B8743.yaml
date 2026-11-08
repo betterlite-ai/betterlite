@@ -1,0 +1,13 @@
+id: B8743
+milestone: M8 platform
+title: Catalog adapters for the literalai, opik, deepeval and braintrust loggers
+status: todo
+depends_on: [B8741, B3969, B3972, B3973, B3974, B3962, B173]
+file: tasks/B8743-sdk-logger-adapters.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

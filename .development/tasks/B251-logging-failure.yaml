@@ -58,6 +58,9 @@ references:
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4019-L4035
   why: _should_run_sync_failure_callbacks_for_async_calls
 dod:
+- text: "Every CallbackSink::Logger the registry lists for the Failure phase (B8740) gets log_failure_event on a sync call and async_log_failure_event on an async one, after B3931's redaction for that logger; one logger's error is logged and the next logger still runs."
+  proof:
+  - behavior-tests
 - text: >-
     Each listed helper case compares its named production function with the pinned Python function, including precedence,
     omissions and error facts.

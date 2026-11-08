@@ -1,10 +1,10 @@
 use std::fmt::Display;
 
-use betterlite::guardrails::pattern_matching::{
-    CompiledPattern, blocked_words, check_patterns, compile, masking, spans,
-};
 use betterlite_config::sections::content_filter_records::{
     ContentFilterAction, ContentFilterPattern,
+};
+use betterlite_guardrails::pattern_matching::{
+    CompiledPattern, blocked_words, check_patterns, compile, masking, spans,
 };
 use serde::Deserialize;
 use serde_json::json;

@@ -24,9 +24,9 @@ description: >-
 
   The empty response is SpendAnalyticsPaginatedResponse (B3090) with results [] and a DailySpendMetadata that has every field at its default except page = the requested page, total_pages = 0 and has_more = false (so total_spend 0.0, all totals 0, api_key_limit, total_api_keys and entity_total_api_keys null, and total_pages 0 where the default is 1).
 
-  `routes/agent_daily_activity.rs` is a stub that B1100 registers; fill only that file (it only calls the handler) and leave routes.rs and state.rs alone. Register GET /agent/daily/activity exactly once with B052 authentication.
+  `routes/agent_daily_activity.rs` exports `routes(state: &Arc<ServerState>) -> Router` like a B1100 stub, but no B1100 entry merges it: B8661 merges it in app/spend.rs. Fill only that file (it only calls the handler) and leave routes.rs and state.rs alone. Register GET /agent/daily/activity exactly once with B052 authentication.
 
-  Oracle. The route is new behavior, so cases are HTTP cases through the booted proxy (path tools/oracle/cases/agent-activity/). Cases that need agent rows and keys use the Postgres fixtures B860 provides, like B058. Do not add a helper operation: every function here reaches the route.
+  Oracle. B8661 mounts the route, so it owns the HTTP cases in tools/oracle/cases/agent-activity/ and proves the route over HTTP with the Postgres fixtures B860 provides. Here the tests drive the handler with tower's oneshot over the module's own Router and fake ports. Do not add a helper operation: every function here reaches the route.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml
@@ -34,7 +34,6 @@ scope:
     - crates/betterlite-server/src/agent_daily_activity/**
     - crates/betterlite-server/src/routes/agent_daily_activity.rs
     - crates/betterlite-server/src/routes/agent_daily_activity/**
-    - tools/oracle/cases/agent-activity/**
     - tools/oracle/helpers/b4787.py
     - tools/oracle/helpers/b4787/**
     - tools/oracle/src/helpers/server/b4787.rs
@@ -57,27 +56,27 @@ dod:
   - text: resolve_scope runs the "agents" feature gate before anything else and returns its error without any read.
     proof: [scope-tests]
   - text: For a proxy_admin or proxy_admin_viewer caller, resolve_scope returns the requested ids unchanged (None stays None, unknown ids stay) and does not ask for grants.
-    proof: [scope-tests, oracle]
+    proof: [scope-tests]
   - text: For another caller with Unrestricted access, the permitted ids are the agents whose created_by is the caller's user_id, and a caller without a user_id gets none and triggers no read.
-    proof: [scope-tests, oracle]
+    proof: [scope-tests]
   - text: For another caller with Restricted access, the permitted ids are the granted ids as they are, and Restricted(empty) permits nothing.
-    proof: [scope-tests, oracle]
+    proof: [scope-tests]
   - text: Requested ids are kept only when permitted, in request order with repeats; a missing or empty request gives every permitted id in ascending order.
-    proof: [scope-tests, oracle]
+    proof: [scope-tests]
   - text: Metadata comes from all_agents when the scope is None and from agents_with_ids otherwise, maps agent_id to agent_name, skips ids with no row and runs no read for Some(empty).
     proof: [scope-tests]
   - text: Errors from the feature gate, the grant lookup and the row reads pass through with their own status and body.
     proof: [scope-tests]
   - text: parse_agent_query splits non-empty agent_ids and exclude_agent_ids on commas without trimming or deduplication, gives None for empty or missing strings, and defaults page to 1 and page_size to 10.
-    proof: [request-tests, oracle]
+    proof: [request-tests]
   - text: The handler checks the feature gate, then the database (500 with detail.error set to the db_not_connected_error text), then resolves the scope, and checks the gate before the database check.
-    proof: [request-tests, oracle]
+    proof: [request-tests]
   - text: An empty resolved scope returns the empty SpendAnalyticsPaginatedResponse (page as requested, total_pages 0, has_more false, all totals zero) without calling get_daily_activity.
-    proof: [request-tests, oracle]
+    proof: [request-tests]
   - text: A non-empty or unrestricted scope calls get_daily_activity with table litellm_dailyagentspend, entity field agent_id, the scoped ids (None or the list), the metadata, the exclusions and every date, model, key and page argument.
-    proof: [request-tests, oracle]
-  - text: GET /agent/daily/activity is registered once with B052 authentication.
-    proof: [oracle]
+    proof: [request-tests]
+  - text: The handler answers GET /agent/daily/activity through tower's oneshot over the module's own Router with fake ports; B8661 merges the route behind B052 authentication and proves it over HTTP.
+    proof: [request-tests]
 checks:
   optional: []
   commands:
@@ -87,15 +86,7 @@ checks:
     - id: request-tests
       why: query parsing, check order, the empty response or the get_daily_activity arguments differ from LiteLLM
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_daily_activity::request::/)'
-oracle_cases:
-  - tools/oracle/cases/agent-activity/no-database.yaml
-  - tools/oracle/cases/agent-activity/admin-all-agents.yaml
-  - tools/oracle/cases/agent-activity/admin-requested-ids-and-exclusions.yaml
-  - tools/oracle/cases/agent-activity/user-unrestricted-owned-only.yaml
-  - tools/oracle/cases/agent-activity/user-restricted-grants.yaml
-  - tools/oracle/cases/agent-activity/user-no-grants-empty-page.yaml
-  - tools/oracle/cases/agent-activity/requested-ids-filtered-to-permitted.yaml
-  - tools/oracle/cases/agent-activity/feature-disabled-for-internal-user.yaml
+oracle_cases: []
 deviations:
   - what: resolve_agent_daily_activity_scope is named resolve_scope on AgentActivityResolver, and it takes no database argument.
     why: A name over 30 characters is refused by the lint rule, and betterlite passes the database to a dependency through its constructor.

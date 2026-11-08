@@ -23,6 +23,8 @@ scope:
   paths:
     - crates/betterlite-logging/src/finops/pointfive.rs
     - crates/betterlite-logging/src/finops/pointfive/**
+    - crates/betterlite-logging/src/registry/catalog/pointfive.rs
+    - crates/betterlite-logging/src/registry/catalog/pointfive/**
   lint_tables: false
 
 references:
@@ -62,6 +64,8 @@ references:
     why: Package __init__.py exports PointFiveLogger.
 
 dod:
+  - text: "The PointFive logger buffers redacted events from the async success and failure events of CallbackLogger, and registry/catalog/pointfive.rs builds the one process logger for the pointfive name (tests named callback_logger_* under finops::pointfive and registry/catalog/pointfive/tests.rs)."
+    proof: [callback-logger]
   - text: PointFiveLogger inherits from CustomBatchLogger and preserves constructor parameter start_periodic_flush flag.
     proof: [pointfive-logger-init]
   - text: API key is resolved from params.api_key, then POINTFIVE_API_KEY, then raises ValueError if neither is set.
@@ -94,6 +98,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: callback-logger
+      why: pointfive still stops startup or its buffer is never fed by a logger event
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::pointfive::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::(.*::)?callback_logger_/)'
     - id: pointfive-logger-init
       why: PointFiveLogger.__init__ initialization tests fail or are missing
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::logger_tests_behavior::init/)'

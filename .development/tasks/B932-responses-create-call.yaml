@@ -29,7 +29,7 @@ scope:
   - crates/betterlite-core/src/api/responses_create_call.rs
   - crates/betterlite-core/src/api/responses_create_call/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/responses_async_create.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/responses_async_create.py
   - tools/oracle/cases/sdk-http/responses-async-create/**

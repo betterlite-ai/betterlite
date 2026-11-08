@@ -1,0 +1,92 @@
+id: B8747
+title: Prompt manager arms for the callback factory and their catalog names
+description: >-
+  Five callback names turn on a prompt manager in LiteLLM: dotprompt, gitlab, bitbucket, humanloop and langfuse (its
+  prompt role), and anthropic_cache_control_hook works the same way. B8560's per call dispatch asks a
+  `CompatibleLoggerFactory` for them with `init(name)`, but B8655's `PromptLoggerFactory` answers only
+  litellm_agent, so these names give nothing today. The managers are merged or planned: DotpromptManager (B4052),
+  GitLabPromptManager (B4054), BitBucketPromptManager (B4056), the Humanloop prompt client (B3968, betterlite-logging
+  humanloop.rs), LangfusePromptManagement (B3908) and the Anthropic cache hook adapter (B4126). This task adds their
+  arms, so a configured name both starts and serves prompts.
+
+
+  Arms. Extend B8655's crates/betterlite-server/src/app/callbacks/catalog/prompt_factory.rs, putting new code in
+  prompt_factory/ (managers.rs, tests.rs). `init(name)` builds each manager once per process and returns the same
+  `Arc<dyn PromptManagementBackend>` (B4058's trait) after that, as each LiteLLM arm returns the instance it holds.
+  dotprompt, gitlab and bitbucket already implement the trait in betterlite-prompts. Humanloop and Langfuse are types
+  in betterlite-logging, so the orphan rule needs a newtype here (`HumanloopPrompts`, `LangfusePrompts`) that
+  forwards get_chat_completion_prompt to the merged client. anthropic_cache_control_hook takes B4126's adapter as is.
+  gitlab and bitbucket read their settings from litellm_settings.global_gitlab_config and
+  litellm_settings.global_bitbucket_config. Without them LiteLLM raises "Gitlab configuration not found. Please set
+  litellm.global_gitlab_config first." or "BitBucket configuration not found. Please set
+  litellm.global_bitbucket_config first."; log that text at error level and give None, as the except branch does
+  (L5185-L5187). Production transports come from `shared.http` where the merged manager takes one.
+
+
+  Config. No section parses those two keys yet. Add crates/betterlite-config/src/sections/prompt_repositories.rs
+  (the skeleton declares it and adds it to the sections! list). It parses both keys into typed structs with the fields
+  B4054's GitLab config and B4056's BitBucket config take, each optional, and the factory converts them. Secrets in
+  them (access tokens) stay SecretString until the factory hands them over. Test it in sections::prompt_repositories::.
+
+
+  Registered managers. B8560 also takes the prompt managers that are in the callbacks list (LiteLLM's
+  get_custom_loggers_for_type(CustomPromptManagement)). Add `PromptLoggerFactory::configured(&self, names: &[String])
+  -> Vec<Arc<dyn PromptManagementBackend>>`: init for each name in order, skipping None.
+
+
+  Logger side. These classes override no log event, so in betterlite-logging fill the catalog modules
+  registry/catalog/humanloop.rs, dotprompt.rs, gitlab.rs and bitbucket.rs with B8741's BaseLogger for the name (langfuse
+  is B3908's module). In crates/betterlite-server/src/app/callbacks/hooks.rs change the anthropic_cache_control_hook arm
+  of hook_for to Ok(None): it registers no proxy hook, and the factory serves it.
+
+
+  Tests in prompt_factory/tests.rs: each name inits once and returns the same Arc; gitlab and bitbucket without config
+  give None and log LiteLLM's text; configured() keeps list order and skips names without a prompt role; init of an
+  unknown name stays None. hooks.rs: a config with anthropic_cache_control_hook in callbacks no longer fails startup.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/callbacks/catalog/prompt_factory.rs
+    - crates/betterlite-server/src/app/callbacks/catalog/prompt_factory/**
+    - crates/betterlite-server/src/app/callbacks/hooks.rs
+    - crates/betterlite-server/src/app/callbacks/hooks/**
+    - crates/betterlite-config/src/sections/prompt_repositories.rs
+    - crates/betterlite-config/src/sections/prompt_repositories/**
+    - crates/betterlite-logging/src/registry/catalog/humanloop.rs
+    - crates/betterlite-logging/src/registry/catalog/dotprompt.rs
+    - crates/betterlite-logging/src/registry/catalog/gitlab.rs
+    - crates/betterlite-logging/src/registry/catalog/bitbucket.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5005-L5011
+    why: The langfuse arm returns LangfusePromptManagement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5058-L5064
+    why: The anthropic_cache_control_hook arm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5111-L5160
+    why: The humanloop, dotprompt, bitbucket and gitlab arms and the two configuration errors.
+dod:
+  - text: The factory builds dotprompt, gitlab, bitbucket, humanloop, langfuse and anthropic_cache_control_hook once each and returns the same Arc.
+    proof: [factory-tests]
+  - text: gitlab and bitbucket without litellm_settings config log LiteLLM's message and give None, and the new section parses both keys.
+    proof: [factory-tests, section-tests]
+  - text: configured() lists the prompt managers of the callbacks list in order, the four logging catalog names build do nothing loggers, and anthropic_cache_control_hook no longer stops startup.
+    proof: [factory-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: factory-tests
+      why: an arm is missing, builds twice or the hook name still fails startup
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::catalog::prompt_factory::/) | test(/^app::callbacks::hooks::/)'
+    - id: section-tests
+      why: the two repository keys are not parsed
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::prompt_repositories::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The managers: B4052, B4054, B4056, B3968, B3908 and B4126. Per call selection and the prompt hooks: B8560 and B4058. Passing configured() to B8560's dispatch: the inference wiring (see B8742's notes)."
+pitfalls:
+  - The bitbucket and gitlab arms raise before building, so a missing config never leaves a half built manager in the cache.
+  - Keep one instance per name; B8560 compares the factory answer with the registered managers, and a second instance would run the prompt hook twice.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,14 @@
+id: B8607
+milestone: M5 api families
+title: Mount the Bedrock, Comprehend Medical and speech pass-through routes
+status: todo
+depends_on: [B8640, B3621, B3625]
+file: tasks/B8607-passthrough-aws-speech-mount.yaml
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

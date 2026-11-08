@@ -1,0 +1,84 @@
+id: B8622
+title: Build the MCP per-user token stores, SSO assertion store and OAuth sessions
+description: >-
+  B4660, B4664, B4715 and B4718 build the outbound credential stores behind ports and leave the Redis side, the
+  credential reader, the assertion store composition and the session store instance to the composition root. This task
+  builds them once as `McpTokens`, which the OAuth and route wiring parts (B8623 to B8626) borrow. It mounts no route.
+
+
+  Code goes in crates/betterlite-server/src/app/mcp/tokens.rs and app/mcp/tokens/ (redis.rs, per_user.rs, sso.rs,
+  sessions.rs, a tests.rs beside each). `McpTokens::build(core: &McpCore, identity: &McpIdentity, shared: &Shared) ->
+  McpTokens` holds Arc fields and no global; this task adds it as the field `tokens` of
+  B8620's McpState and one line in McpState::build (app/mcp/state.rs). It reads `shared.redis`, `shared.cache`, `shared.response_cache` and
+  `shared.db`.
+
+
+  1. RedisChain (redis.rs) is B4660's port for LiteLLM's user_api_key_cache.redis_cache plus
+  runtime_refresh_coordinator. parts() is Some when `shared.redis` holds a client and `shared.cache` has its Redis
+  tier, with the dual cache from B4293 and B4657's Redis refresh coordinator built over that client; it is None
+  otherwise. It is read on every build, because LiteLLM's lazy store exists for Redis that comes up after start.
+
+  2. Per-user OAuth tokens (per_user.rs). B4660's CredentialReader reads B4713's bound credential (read_bound_credential
+  with its decryption). The StoreBuilder holds the server lookup (B4731's server_by_id on McpCore's registry, LiteLLM's
+  get_mcp_server_by_id), the identity binding port (B4659's credential_binding_matches and
+  enforce_oauth_identity_binding with McpIdentity's IssuerJwks), the reader, the persist call (B4713's
+  store_user_oauth_credential), B4660's AuthorizationCodeRefresher post over `shared.http`, and the RedisChain. Build
+  one LazyPerUserOAuthTokenStore from it. B4715's UserTokenCaches is implemented over the same pieces:
+  invalidate_discovery_lists drops McpCore's discovery list entries for the server, invalidate_oauth_store calls the
+  lazy store's invalidate, and delete_legacy removes the legacy per-user cache entry that B4662 names.
+
+  3. SSO assertions (sso.rs). B4664's SsoClientSource returns sso_client_config over the GENERIC_* map B8620's
+  mcp_gateway_env section loaded. CoordinatorFactory is B4657's refresh_coordinator_factory over the RedisChain parts
+  (None without Redis). The store is LiteLLM's default_sso_assertion_store: B4663's DbSsoAssertionStore with rows over
+  the database (None without one), the DbCipher over B1600, McpCore's SsoAssertionCache and config_declares_id_jag,
+  wrapped in B4664's RefreshingAssertionStore with its refresher over `shared.http`, the access port, the factory,
+  B4656's in-process coordinator, skew 60 seconds and a system clock. Hand that store to B4667's credential resolver as
+  its SsoAssertionStore, and keep the resolver in McpTokens.
+
+  4. OAuth sessions (sessions.rs). B4718's SessionStore with its process-local table, a system clock, the cipher over
+  B1600, the database port over B4711 and B4712, and the Redis backend: the response cache backend from
+  `shared.response_cache` when the configured cache is Redis (B4290 and B4299), otherwise None, as LiteLLM passes
+  litellm.cache or nothing.
+
+
+  Tests in app::mcp::tokens:: run with no Redis and no database unless a test says otherwise: RedisChain.parts is None
+  without a client and Some with the in-process fake client the cache tests use; the lazy store fetch over a fake reader
+  returns the stored token and a mismatched binding proof drops it; UserTokenCaches.invalidate_oauth_store makes the
+  next fetch read the reader again; SsoClientSource returns None when one GENERIC_* value is missing and
+  client_secret_post when GENERIC_INCLUDE_CLIENT_ID is "TRUE"; the assertion store passes through an unexpired
+  assertion untouched; and SessionStore builds with no Redis backend when the response cache is local.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/mcp/state.rs
+    - crates/betterlite-server/src/app/mcp/tokens.rs
+    - crates/betterlite-server/src/app/mcp/tokens/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/resolver.py
+    why: The resolver that takes the assertion store and the per-user token store as its defaults.
+dod:
+  - text: RedisChain answers from Shared on every build and the lazy per-user store uses it.
+    proof: [tokens-tests]
+  - text: UserTokenCaches, CredentialReader, SsoClientSource and CoordinatorFactory forward to their owning crates.
+    proof: [tokens-tests]
+  - text: The refreshing SSO assertion store reaches B4667's resolver, and one SessionStore is built with the response cache backend or None.
+    proof: [tokens-tests]
+checks:
+  optional: []
+  commands:
+    - id: tokens-tests
+      why: an adapter, the store chain or the session store build is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::tokens::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The routes that read these stores: B8623 to B8626."
+  - "resolver.py beyond the composition here: B4667 and the B137 umbrella's leftover glob."
+pitfalls:
+  - The OAuthTokenCacheCodec decrypt uses the label "mcp_per_user_token" and returns None on failure; an error here turns a cache miss into a 500.
+  - SessionStore takes the response cache backend only when the response cache is Redis; a local response cache gives None, not an in-memory backend.
+  - RedisChain must not cache its answer at build time, since the lazy store exists for Redis that appears later.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

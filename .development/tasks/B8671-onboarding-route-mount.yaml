@@ -1,0 +1,62 @@
+id: B8671
+title: Mount the onboarding, logo, image and favicon routes with the password breach checker
+description: >-
+  B8387 builds five routes LiteLLM serves with no key, so the dashboard can use them before anyone logs in: GET `/onboarding/get_token`, POST `/onboarding/claim_token`, GET `/get_logo_url`, GET `/get_image` and GET `/get_favicon`, in crates/betterlite-server/src/onboarding_routes.rs with `pub fn routes()`. Its text left the mount to "the architect's skeleton", and no B1100 registry entry merges the module, so all five answer 404 today. claim_token also needs B786's password breach check. B786 built `password_policy::breach::BreachChecker` and nothing constructs it yet. This task builds the route state, including one BreachChecker, and mounts the routes.
+
+  Where. Module `app::management::onboarding`, files crates/betterlite-server/src/app/management/onboarding.rs and onboarding/** (tests.rs beside it). The skeleton declares `pub(crate) mod onboarding;` in app/management.rs. Then add exactly one line to `mount_public` in app/management.rs, after B8670's merges, that merges the onboarding router; change nothing else in that file. Read onboarding_routes.rs on the branch for the state type and constructor it exports, and build every field from `state.config` and `state.shared`. No statics, no trait objects, native async fn.
+
+  1. Breach checker. `pub(crate) fn breach_checker(config: &Config, shared: &Shared) -> BreachChecker` returns `BreachChecker { client: shared.http.clone(), base: HIBP_RANGE_API_BASE.to_owned(), timeout: HIBP_TIMEOUT, enabled: config.sections.password_policy.check_breached_passwords }`. The constants are in crates/betterlite-server/src/password_policy/breach.rs; the flag is general_settings.password_policy_check_breached_passwords, default true, already loaded by the password_policy section. LiteLLM's get_hibp_client is one shared client with a 5 second timeout, so build the checker once in mount_public and hand the same Arc to the onboarding state. With the flag false the checker answers "not breached" without a request; do not skip building it.
+
+  2. Onboarding state. From `shared.db`: B797's invitation repository, B714's writer for the claim transaction, B789's UI session key revocation and B056's key generation, each None or answering LiteLLM's db_not_connected_error when there is no database, as B8387's handlers expect. From the Config: the master key (None when unset, so get_token answers LiteLLM's "Master Key not set for Proxy" error), general_settings litellm_key_header_name (default "Authorization"), the UI session settings B8387 names, the custom URL inputs for B7323, the server root path from B4200's section and the logo, favicon and assets settings B8387's section loaded. Build it once in mount_public, never per request.
+
+  3. Mount. mount_public merges `onboarding_routes::routes(...)` with the state from item 2, outside the auth layers, because LiteLLM registers all five on the app with no auth dependency. Merge it once; B8670 already merged /fallback/login and the discovery paths, so do not register those again.
+
+  Tests in app/management/onboarding/tests.rs (module `app::management::onboarding::tests`) assert that breach_checker copies the flag in both states and uses the shared client and the HIBP base and timeout, that the onboarding state builds without a database and without a master key, and, with tower's oneshot over the router mount_public returns, that /get_logo_url answers 200 with no Authorization header and that each of the five paths is not 404.
+
+  HTTP oracle cases through the booted proxy, in tools/oracle/cases/onboarding/ (moved here from B8387, which tests its handlers with oneshot): GET /onboarding/get_token and POST /onboarding/claim_token with a master key and no database (500 with the db not connected detail); GET /onboarding/get_token with no master key (500 auth_error, param master_key); GET /get_logo_url with UI_LOGO_PATH set to an https URL (that URL) and to a local path (""); GET /get_image and GET /get_favicon with UI_LOGO_PATH and LITELLM_FAVICON_URL set to https URLs (307 to that URL). No case sends a key.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/management.rs
+    - crates/betterlite-server/src/app/management/onboarding.rs
+    - crates/betterlite-server/src/app/management/onboarding/**
+    - tools/oracle/cases/onboarding/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17209-L17215
+    why: GET /onboarding/get_token, an app route with no auth dependency; claim_token starts at L17411, get_logo_url at L17555, get_image at L17596 and get_favicon at L17671, all the same way.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/password_policy.py#L110-L160
+    why: get_hibp_client, is_breach_check_enabled and is_password_breached, the values BreachChecker carries.
+dod:
+  - text: breach_checker builds one BreachChecker from the shared client, the HIBP base and timeout and password_policy_check_breached_passwords.
+    proof: [onboarding-mount-tests]
+  - text: The onboarding state is built once from Config and Shared and builds without a database or a master key.
+    proof: [onboarding-mount-tests]
+  - text: The five routes answer without a key through mount_public, and the onboarding, logo, image and favicon answers match LiteLLM through the booted proxy.
+    proof: [onboarding-mount-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: onboarding-mount-tests
+      why: the breach checker, the onboarding state or the public merge is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::management::onboarding::/)'
+oracle_cases:
+  - tools/oracle/cases/onboarding/get-token-no-database.yaml
+  - tools/oracle/cases/onboarding/get-token-no-master-key.yaml
+  - tools/oracle/cases/onboarding/claim-token-no-database.yaml
+  - tools/oracle/cases/onboarding/logo-url-http.yaml
+  - tools/oracle/cases/onboarding/logo-url-local-path-hidden.yaml
+  - tools/oracle/cases/onboarding/image-redirect.yaml
+  - tools/oracle/cases/onboarding/favicon-redirect.yaml
+deviations: []
+out_of_scope:
+  - "The five handlers, the onboarding JWT and the claim transaction: B8387. The breach lookup itself: B786."
+  - "The login, password change and user field callers of the breach check: B899, B789 and B790 each build a BreachChecker in routes(state) from config.sections.password_policy, the HIBP constants and ProxiedClient::outbound, since a route task cannot read Shared. B788 takes the checker as an argument."
+  - "The discovery, invitation, queued chat and fallback login mounts and the rest of app/management.rs: B8670."
+pitfalls:
+  - Merging the onboarding router in mount puts the five routes behind the key check, and an invited user who has no key yet gets 401.
+  - A second ProxiedClient for the breach lookup would escape the shutdown drain; clone shared.http.
+  - The breach flag defaults to true, so a config without password_policy_check_breached_passwords still checks passwords.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

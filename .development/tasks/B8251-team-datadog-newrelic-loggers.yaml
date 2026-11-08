@@ -34,9 +34,9 @@ description: >-
 
   Caches. LiteLLM shares one cache across all services and tells them apart by the service name in the key. Here each
   handler takes its own typed cache, `&DynamicLoggerCache<Arc<DatadogLogger>>` and `&DynamicLoggerCache<Arc<NewRelicMetricsLogger>>`
-  (use the logger type names B3933 and B3944 define). The composition root builds each cache with the right stop effect
+  (use the logger type names B3933 and B3944 define). B8655 builds each cache with the right stop effect
   on eviction. Wiring into the callback selection (`dd_api_key or dd_site or dd_agent_host` decides, by truthiness, so an
-  empty string means global; `newrelic_api_key` truthy for New Relic) sits in LiteLLM's _init_custom_logger_compatible_class (litellm_logging.py L4602-L4616 and L5162-L5175), not in these handlers, and no task owns that function: the wave 17 callbacks wiring part adds those two arms and calls the get_*_logger_for_request functions from them. The newrelic trace logger re-resolve at L844 is B248's.
+  empty string means global; `newrelic_api_key` truthy for New Relic) sits in LiteLLM's _init_custom_logger_compatible_class (litellm_logging.py L4602-L4616 and L5162-L5175), not in these handlers, and no task owns that function: B8655 adds those two arms and calls the get_*_logger_for_request functions from them. The newrelic trace logger re-resolve at L844 is B248's.
 scope:
   paths:
     - crates/betterlite-logging/src/datadog_team_handler.rs

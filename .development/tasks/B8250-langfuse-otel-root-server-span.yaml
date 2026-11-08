@@ -104,7 +104,7 @@ deviations:
     why: Rust has no inheritance, and the trait lets tests record stamps without a tracer provider.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/langfuse_logger.py#L19-L28
 out_of_scope:
-  - "The axum layer that opens the HTTP server span, extracts traceparent and anchors the root span: the wave 17 middleware wiring part installs the span layer. This task only supplies ServerSpanPolicy and passthrough_span_name."
+  - "The axum layer that opens the HTTP server span, extracts traceparent and anchors the root span: B8680 installs the span layer in app::edge::wrap. This task only supplies ServerSpanPolicy and passthrough_span_name."
   - "LangfuseMapper, caller_trace_controls, request_root_span and the three content projections: B3846, B3892, B3847 and B3857 own them; this task calls them."
   - "Choosing the Langfuse callbacks from the OTel config name: B3853 notes that B110 dispatches to them, and that wiring is not part of this task."
 pitfalls:

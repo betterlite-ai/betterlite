@@ -41,7 +41,6 @@ scope:
     - crates/betterlite-server/fuzz/corpus/tinyfish_body_fields/**
     - crates/betterlite-config/src/sections/tinyfish_route.rs
     - crates/betterlite-config/src/sections/tinyfish_route/**
-    - tools/oracle/cases/server/passthrough-saas-routes/**
     - tools/oracle/helpers/b3626.py
     - tools/oracle/helpers/b3626/**
     - tools/oracle/src/helpers/server/b3626.rs
@@ -65,18 +64,20 @@ references:
   - url: https://docs.litellm.ai/docs/pass_through/tinyfish
     why: User-facing description of the TinyFish route.
 dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports. B8609 mounts the routes and proves them over HTTP with the oracle cases that were listed here.
+    proof: [fal-route-tests]
   - text: The Fal route builds the target from FAL_AI_QUEUE_API_BASE or the default, answers 401 without a key, answers 400 for an unpriced request outside `/requests/` paths, skips the price check for `/requests/` paths, and calls the factory with an Authorization header of `Key {key}`, custom_llm_provider fal_ai and no streaming.
-    proof: [fal-route-tests, oracle]
+    proof: [fal-route-tests]
   - text: The AssemblyAI route picks the base URL from the request host, reads the key for that region, treats a POST body with `stream` true as streaming and no other method as streaming, and calls the factory with a bare Authorization header and no custom_llm_provider.
     proof: [assembly-route-tests]
   - text: The TinyFish route answers 403 for a disallowed method and path, and 405 for methods other than GET and POST.
-    proof: [tinyfish-gate-tests, oracle]
+    proof: [tinyfish-gate-tests]
   - text: For POST, TinyFish answers 400 for a non-JSON content type, invalid JSON and a non-object body, and 400 naming the sorted envelope fields custom_body, stream and query_params.
-    proof: [tinyfish-body-tests, oracle]
+    proof: [tinyfish-body-tests]
   - text: TinyFish answers 403 naming the authenticated run fields on /v1/automation/ paths unless TINYFISH_ALLOW_AUTHENTICATED_RUNS is "true", and forwards them when it is.
-    proof: [tinyfish-route-tests, config-tests, oracle]
+    proof: [tinyfish-route-tests, config-tests]
   - text: TinyFish answers 401 without a key, builds the target from TINYFISH_AGENT_API_BASE or the default, and calls the factory with `X-API-Key`, custom_llm_provider tinyfish and the timeout rule (1500 seconds unless general_settings.pass_through_request_timeout is set, then none).
-    proof: [tinyfish-route-tests, tinyfish-timeout-tests, oracle]
+    proof: [tinyfish-route-tests, tinyfish-timeout-tests]
   - text: The tinyfish_route config section loads TINYFISH_ALLOW_AUTHENTICATED_RUNS from an injected environment, true only for "true" in any case with surrounding spaces and false for anything else including unset.
     proof: [config-tests, mutants]
   - text: tinyfish_body_fields is the one decoder shared by the route, the fuzz target and the corpus replay, and the corpus has seeds added on this branch.
@@ -108,19 +109,7 @@ checks:
     - id: body-fields-corpus
       why: the decoder has no fuzz target, no new seed or a failing replay
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/tinyfish_body_fields)" && test -f crates/betterlite-server/fuzz/fuzz_targets/tinyfish_body_fields.rs && grep -qF "tinyfish_body_fields" crates/betterlite-server/fuzz/fuzz_targets/tinyfish_body_fields.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_saas_routes::tests::replays_corpus$/)'
-oracle_cases:
-  - tools/oracle/cases/server/passthrough-saas-routes/fal-priced-forward.yaml
-  - tools/oracle/cases/server/passthrough-saas-routes/fal-unpriced-400.yaml
-  - tools/oracle/cases/server/passthrough-saas-routes/fal-requests-path-skips-price.yaml
-  - tools/oracle/cases/server/passthrough-saas-routes/fal-missing-key-401.yaml
-  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-run-forward.yaml
-  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-list-runs-403.yaml
-  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-put-405.yaml
-  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-non-json-400.yaml
-  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-envelope-field-400.yaml
-  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-vault-field-403.yaml
-  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-vault-field-allowed.yaml
-  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-missing-key-401.yaml
+oracle_cases: []
 deviations:
   - what: A POST body on the AssemblyAI route that is not valid JSON gets B1100's 400 invalid_request_error for the request body, and a JSON body that is not an object is treated as not streaming.
     why: LiteLLM calls request.json() and then .get on the result with no handler, so a bad body or a JSON list ends as FastAPI's plain 500. betterlite has one body decoder, as B3618 decided for the generic provider route. Open question in the notes.
