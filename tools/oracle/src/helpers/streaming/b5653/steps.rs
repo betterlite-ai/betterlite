@@ -118,7 +118,10 @@ fn apply(harness: &mut Harness, step: &Value) -> Result<Value, Box<HelperError>>
         "decode" => decode_step(harness, step),
         "creator" => creator_step(harness, step),
         "process_chunk" => process_step(harness, step),
-        other => Err(failure("InvalidInput", format!("unsupported operation {other}"))),
+        other => Err(failure(
+            "InvalidInput",
+            format!("unsupported operation {other}"),
+        )),
     }
 }
 
@@ -192,6 +195,9 @@ fn chunk_of(step: &Value) -> Result<ProviderChunk, Box<HelperError>> {
                 .map_err(|error| failure("InvalidInput", error.to_string()))?;
             Ok(ProviderChunk::Json(Box::new(parsed)))
         }
-        other => Err(failure("InvalidInput", format!("unsupported chunk kind {other}"))),
+        other => Err(failure(
+            "InvalidInput",
+            format!("unsupported chunk kind {other}"),
+        )),
     }
 }
