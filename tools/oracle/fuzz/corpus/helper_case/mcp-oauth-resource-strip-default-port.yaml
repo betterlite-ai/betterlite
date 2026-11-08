@@ -1,0 +1,5 @@
+kind: helper
+name: "mcp-oauth-resource-strip-default-port-seed"
+call: {"b4654":{"function":"strip_default_port","scheme":"https","netloc":"h:443"}}
+env: {}
+compare: {"ignore":[]}

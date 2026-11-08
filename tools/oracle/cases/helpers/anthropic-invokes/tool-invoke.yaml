@@ -1,0 +1,39 @@
+kind: helper
+name: anthropic-invokes-tool-invoke
+call:
+  anthropic_invokes:
+    function: convert_to_anthropic_tool_invoke
+    tool_calls:
+      - id: call_abc123
+        type: function
+        function:
+          name: get_current_weather
+          arguments: '{"location": "Boston, MA"}'
+      - id: call.2/slash
+        type: function
+        function:
+          name: lookup
+          arguments: '{}'
+      - id: call_3
+        type: function
+        function:
+          name: empty_arguments
+          arguments: ''
+      - id: call_4
+        type: function
+        function:
+          name: cached
+          arguments: '{"a": [1, 2]}'
+        cache_control:
+          type: ephemeral
+          ttl: 5m
+      - id: skip_me
+        type: web_search
+        function:
+          name: not_converted
+          arguments: '{}'
+    web_search_results: []
+    tool_results: []
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,5 @@
+kind: helper
+name: "target-names-excluded"
+call: {"b4654":{"function":"target_names","paths":["/mcp/sse","/mcp/sse/","/mcp/sse/messages","/mcp/sse/messages/","/mcp","/mcp/"]}}
+env: {}
+compare: {"ignore":[]}

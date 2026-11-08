@@ -1,0 +1,23 @@
+kind: helper
+name: specificity-ranking
+call:
+  b3241:
+    policy_memory_matching_attachment:
+      action: specificity
+      attachments:
+        - policy: global
+          scope: "*"
+        - policy: team
+          teams: [team-a]
+        - policy: key
+          keys: [key-a]
+        - policy: tag
+          tags: [prod]
+        - policy: model
+          models: [gpt-4]
+        - policy: combined
+          teams: [team-a]
+          models: [gpt-4]
+        - policy: empty
+env: {}
+compare: {ignore: []}

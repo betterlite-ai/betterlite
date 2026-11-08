@@ -1,0 +1,16 @@
+kind: helper
+name: match-reason-default-prefix
+call:
+  b3241:
+    policy_memory_matching_attachment:
+      action: attached_policies
+      attachments:
+        - policy: guardrail-y
+          scope: "*"
+          default: true
+      context:
+        team_alias: t
+        key_alias: k
+        model: gpt-5.2
+env: {}
+compare: {ignore: []}
