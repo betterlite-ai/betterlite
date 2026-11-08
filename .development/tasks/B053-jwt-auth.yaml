@@ -4,7 +4,7 @@ description: >-
   Install JWT and OAuth AuthBackend implementations into the pipeline. Compose signature verification,
   custom validation hook, identity/admin authorization and the independent JWT team authorization service.
   For managed agents, require trusted issuer/audience, allowed inference/discovery route and successful
-  identity-evidence recording; inject the B141 AgentIdentity port. Preserve source common-check ordering
+  identity-evidence recording; inject the AgentIdentity port that the wave 17 agents wiring part installs. Preserve source common-check ordering
   and AuthContext conversion. Reject litellm_jwtauth.custom_validate at startup until B054 installs its
   B165-backed callable; no success placeholder is permitted.
 
@@ -90,8 +90,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/jwt_auth.rs
     - crates/betterlite-server/src/state/jwt_auth/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/jwt-auth/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-auth-*

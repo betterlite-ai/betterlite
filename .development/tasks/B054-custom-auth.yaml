@@ -53,8 +53,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/custom_auth.rs
     - crates/betterlite-server/src/state/custom_auth/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/custom-auth-*
     - tools/oracle/src/helpers/server/custom_auth.rs

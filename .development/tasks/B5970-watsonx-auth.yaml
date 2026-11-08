@@ -103,11 +103,11 @@ deviations:
   - what: The IAM request is logged without the apikey form value.
     why: LiteLLM's debug line prints the whole form body including the key. Betterlite redacts secrets in logs (B187).
   - what: Environment names arrive in a WatsonxEnvironment value, not from get_secret_str.
-    why: No code outside the config crate reads the environment (rule on injected dependencies). Secret-manager lookups for these names stay with B129.
+    why: No code outside the config crate reads the environment (rule on injected dependencies). Secret-manager lookups for these names stay with B8500.
 out_of_scope:
   - B5972 owns aconvert_watsonx_messages_to_prompt, convert_watsonx_messages_to_prompt, their two core helpers from common_utils.py and the WatsonXModelPattern strings.
   - B5971 owns the chat config and handler, B5972 the text generation config, and B5842 the embedding, rerank, audio and passthrough configs. Each calls the functions here.
-  - B042 owns the call sites in main.py (embedding branch) and rerank_api/main.py, and wires everything into dispatch.
+  - B8331 owns the main.py call site (the watsonx embedding arm) and wires everything into dispatch; B1079 owns the rerank_api/main.py call site.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as b5970 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task''s to edit.'
   - The nested pop in project_id = params.pop("project_id", params.pop("watsonx_project", None)) always removes watsonx_project, even when project_id is present. The region chain does the same.

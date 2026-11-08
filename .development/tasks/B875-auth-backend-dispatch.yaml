@@ -6,7 +6,7 @@ description: >-
   prohibition (403), SCIM inactive-user refusal (401), and the user-model budget sequence. B053 installs
   JWT/OAuth and B054 custom callables; this stage cannot treat an absent configured backend as authenticated.
   Define AgentIdentity::resolve(VerifiedClaims)->Result<Option<ManagedAgent>,AuthError> and record(ManagedAgent)->Result<IdentityEvidence,AuthError>
-  ports; B141 implements them.
+  ports; the wave 17 agents wiring part installs their implementations.
 
 
   Injected port instead of a reverse dependency on B053: AuthBackend::jwt(SecretString,RequestContext)->Result<AuthContext,AuthError>;
@@ -95,8 +95,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/auth_backend_dispatch.rs
     - crates/betterlite-server/src/state/auth_backend_dispatch/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-backend-dispatch/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-backend-dispatch-*

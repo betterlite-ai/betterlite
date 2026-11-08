@@ -1,0 +1,20 @@
+id: B8153
+milestone: M3 providers
+title: vllm passthrough, model info and petals configs
+status: todo
+depends_on: [B668, B2202, B3570, B2220, B8150]
+file: tasks/B8153-vllm-petals.yaml
+covers:
+  - "litellm/llms/vllm/common_utils.py"
+  - "litellm/llms/vllm/completion/handler.py"
+  - "litellm/llms/vllm/completion/transformation.py"
+  - "litellm/llms/vllm/passthrough/transformation.py"
+  - "litellm/llms/petals/common_utils.py"
+  - "litellm/llms/petals/completion/handler.py"
+  - "litellm/llms/petals/completion/transformation.py"
+parent: B040
+split_from: B040
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

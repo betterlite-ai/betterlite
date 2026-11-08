@@ -165,7 +165,7 @@ deviations:
 out_of_scope:
   - The `timeout` argument of the private docker call (_docker). No caller at the pin passes it, so there is no "docker <verb> timed out" error.
   - DockerSandbox.__repr__. No caller at the pin.
-  - The docker() factory function and the re-exports in litellm/harness/sandbox/__init__.py and litellm/sandbox/__init__.py. B143 owns the package wiring; the factory is DockerSandbox::new.
+  - The docker() factory function and the re-exports in litellm/harness/sandbox/__init__.py and litellm/sandbox/__init__.py. They are Python package glue with no Rust code, so they are not built; the factory is DockerSandbox::new.
   - __aenter__ and __aexit__ as Python protocol methods. The Rust equivalents are the public start and close.
   - Stopping the program that a container command started when its docker client is killed. LiteLLM does not do it either.
 

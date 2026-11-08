@@ -6,7 +6,7 @@ description: >-
   functions in utils.py L34-L36,L44-L307,L1035-L1137. Move _output_token_detail L39-L41 to
   its only consumer B906. Reuse B175 preprocessing/allowed overrides, B213 nested deletion,
   B668 metadata conversion, B206 flag normalization and B2202 text-format conversion.
-  Provider capabilities come from B1114. B137 supplies MCP header parsing; this task merges
+  Provider capabilities come from B1114. B4654 supplies MCP header parsing; this task merges
   its results and does not reimplement OAuth or secret-name lookup.
 
   Load litellm_settings.drop_params through betterlite-config, initialized from
@@ -93,7 +93,7 @@ dod:
     A later mcp tool with headers={x-mcp-github-authorization:new,x-custom:v} overwrites that
     server authorization and raw fields, but does not recompute the legacy/oauth outputs.
     Empty/non-mcp/non-dict tool headers are ignored; no raw/tools yields four null results.
-    The legacy header warning is B137's; credentials must not enter betterlite diagnostics.
+    The legacy header warning is B4654's; credentials must not enter betterlite diagnostics.
   proof: [parameter-tests, oracle, parameter-adapter]
 - text: >-
     loads_drop_params uses env unset,""," false ","0","off" -> false and "true","1","yes" -> true;
@@ -125,7 +125,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - B903 owns ID codecs (unused decode_container_id_to_original has no caller at the pin); B904 owns traversal and B906 owns _output_token_detail plus both usage methods in responses/utils.py.
-- B137 owns MCPRequestHandler's three header extractors and get_mcp_client_side_auth_header_name, including its environment/general_settings precedence.
+- B4654 owns MCPRequestHandler's three header extractors and get_mcp_client_side_auth_header_name, including its environment/general_settings precedence.
 - B160's Python facade converts class-valued text_format through the schema bridge; native code consumes B2202's parsed format representation.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as responses_parameters in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_parameters.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_parameters.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

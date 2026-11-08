@@ -113,10 +113,10 @@ out_of_scope:
   - B060 owns `_get_model_group_info` (litellm/proxy/proxy_server.py:16320-16351), which
     supplies model-group records by calling llm_router.get_model_group_info without checking
     for a None router; B3193 calls it to populate the published groups.
-  - B130 or a health-read leaf owns `PrismaClient.get_all_latest_health_checks` and
+  - B7640 owns `PrismaClient.get_all_latest_health_checks` and
     `PrismaClient.get_latest_health_checks_for_models` (litellm/proxy/utils.py:6984-6990),
     which fetch the stored latest checks; B3193 uses them for health enrichment.
-  - B130 or a health-read leaf owns `_convert_health_check_to_dict` (litellm/proxy/health_endpoints/_health_endpoints.py:615-630),
+  - B4445 owns `_convert_health_check_to_dict` (litellm/proxy/health_endpoints/_health_endpoints.py:615-630),
     which serializes a check to a dict; the legacy route uses it before returning.
   - B052 owns `user_api_key_auth` (litellm/proxy/auth/user_api_key_auth.py:3433-3529),
     a FastAPI Depends callback; B3193's v1 routes use it to authenticate without requiring a

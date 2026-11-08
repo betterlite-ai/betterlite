@@ -36,7 +36,7 @@ description: >-
   and user_email or old email, preserving other members and order; empty new email preserves the old.
   Return before/after tuples after the roster write. No standalone role transaction is added here.
 
-  _emit_team_members_metric skips an absent B111 PrometheusLogger and debug-logs/swallow failures from
+  _emit_team_members_metric skips an absent PrometheusLogger (B3882's set_team_members_metric) and debug-logs/swallow failures from
   set_team_members_metric. Audit projection is an object with team_alias (including null) and
   members_with_roles retaining null member fields and order. B065 owns audit enablement/configuration.
   Membership audits skip disabled logging and exactly equal before/after tuples; otherwise schedule

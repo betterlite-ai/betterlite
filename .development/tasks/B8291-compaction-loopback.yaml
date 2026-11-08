@@ -1,0 +1,123 @@
+id: B8291
+title: Native compaction loopback executor
+description: >-
+  Port litellm/proxy/native_compaction.py (90 lines). When a request asks for native compaction, the router needs a
+  summary from a model, and LiteLLM gets it by sending a second, child request to its own proxy over an in-memory ASGI
+  client. The file builds that executor. B336 owns the router side: the executor trait (LiteLLM's `CompactionExecutor`),
+  `native_compaction_call` and the code that asks the executor for a summary. This task builds the executor that answers.
+
+  Code goes in crates/betterlite-server/src/compaction_loopback.rs and compaction_loopback/. Files: executor.rs (the
+  struct and the trait impl), target.rs (the child path and URL), headers.rs (the header filter) and error.rs.
+  `LoopbackError` is a thiserror enum with `ChildFailed { status: u16 }`, `InvalidChildBody` and `MissingModel`.
+  Each maps to HTTP 400 with the type `invalid_request_error`, like LiteLLM's BadRequestError.
+
+  `LoopbackExecutor` holds the app service to call (the same axum router the gateway serves, taken as a tower
+  `Service` the caller passes in, so no network is used), the parent request's URL, its `root_path` (the mount
+  prefix, empty by default), its headers, its peer address and the bool `logging_disabled`. The caller builds it once
+  for each client request. `logging_disabled` is true when the parent request's dynamic callback params carry
+  `turn_off_message_logging: true`. LiteLLM reads that from a context variable at call time. Here the caller reads it and
+  passes it in.
+
+  Its `execute(protocol, payload, parent_model)` method implements B336's executor trait, with the arguments LiteLLM
+  uses: `protocol` is `chat` or `messages`, `payload` is a JSON object, `parent_model` is an optional string. It does this:
+  1. The child path is `/v1/chat/completions` for chat and `/v1/messages` for messages. The URL is the parent URL with
+     its path replaced by `root_path` (trailing slashes cut) plus the child path, and with the query and fragment removed.
+  2. The child headers are every parent header except `content-length`, `x-litellm-call-id`,
+     `x-litellm-num-retries`, `x-litellm-timeout` and `x-litellm-stream-timeout`. When `logging_disabled` is true,
+     `litellm-disable-message-redaction` is dropped too. Names compare in lowercase. Header order and repeated headers
+     stay as they were. LiteLLM decodes the name as latin-1 for the second list, and HTTP names are ASCII, so a plain
+     lowercase compare is the same.
+  3. The model name is `payload["model"]` as text. A missing or non-string model is `MissingModel`. LiteLLM raises a
+     KeyError there.
+  4. Around the call, B336's `native_compaction_call(parent_model, model)` scope is held, and the message logging
+     privacy flag is set to `logging_disabled` OR the inherited value (B188 owns that scope). Both scopes must also be on
+     the task that runs the child request, because LiteLLM starts it with a fresh context copy and the scopes were set
+     inside that task. Spawn the child as its own tokio task and set the scopes inside it.
+  5. The child sends POST to the URL with the headers and the payload as JSON, with the parent's peer address on the
+     request. Use the service in memory.
+  6. A status outside 200 to 299 gives `ChildFailed` with text "Native compaction child request failed (HTTP <status>)".
+     The model is "context_compaction" and the provider is the empty string.
+  7. The body is read in full, then parsed as one JSON object. Anything else (an array, a number, bad JSON) gives
+     `InvalidChildBody` with text "Native compaction child returned an invalid JSON object". The result is the parsed map.
+
+  `with_proxy_compaction_executor` in LiteLLM puts the executor into a context variable for the length of one call and
+  resets it. A Rust call cannot read a context variable, so this task builds only the executor. The request pipeline
+  passes it to B336's entry point, and that wiring is a call site (common_request_processing.py L2626), not this task.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/compaction_loopback.rs
+    - crates/betterlite-server/src/compaction_loopback/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L27-L35
+    why: The five removed header names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L38-L84
+    why: The executor, the child path, the header filter, the child call and both error messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L86-L90
+    why: Installing the executor for one call. That stays with the request pipeline.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L40-L60
+    why: The executor protocol and its context variable. B336 turns them into a trait.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L351-L355
+    why: UNTRUSTED_REQUEST_HEADER_CONTROL_FIELDS holds the one name, litellm-disable-message-redaction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L15-L21
+    why: inherit_message_logging_privacy ORs the new flag into the inherited one.
+
+dod:
+  - text: The child path and URL follow the protocol and root_path rules, with the query and fragment removed and trailing slashes on root_path cut.
+    proof: [target-tests]
+  - text: The header filter drops the five names always and litellm-disable-message-redaction only when logging is disabled, in any letter case, and keeps order and duplicates.
+    proof: [header-tests]
+  - text: A non-2xx child gives ChildFailed with the status in the text, and a body that is not a JSON object gives InvalidChildBody.
+    proof: [executor-tests]
+  - text: A successful child returns the parsed object, and the call runs in its own task with the compaction and privacy scopes set inside it.
+    proof: [executor-tests]
+  - text: A payload without a string model gives MissingModel and sends no request.
+    proof: [executor-tests]
+  - text: Every LoopbackError maps to HTTP 400 with the type invalid_request_error.
+    proof: [error-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: target-tests
+      why: the child path or URL rules are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^compaction_loopback::target::tests::/)'
+    - id: header-tests
+      why: the header filter drops or keeps the wrong names
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^compaction_loopback::headers::tests::/)'
+    - id: executor-tests
+      why: the child call, its status handling, its body parse or its scopes are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^compaction_loopback::executor::tests::/)'
+    - id: error-tests
+      why: an error maps to the wrong HTTP status or type
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^compaction_loopback::error::tests::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: logging_disabled is passed in when the executor is built. LiteLLM reads turn_off_message_logging from a context variable when the child is sent.
+    why: Rust has no context variables, and the value cannot change during one client request.
+  - what: A missing or non-string model is MissingModel (HTTP 400). LiteLLM raises KeyError and the proxy turns it into a 500.
+    why: B336 always sets a model, so only a bug reaches this, and a typed error is clearer.
+  - what: The child request goes through the tower service in memory. LiteLLM uses its own ASGI client (litellm/llms/custom_httpx/asgi_handler.py).
+    why: Same effect, no socket, and axum already serves a tower service.
+
+out_of_scope:
+  - "CompactionExecutor, native_compaction_call, the compaction state and the summary request: B336."
+  - "The privacy scope itself (inherit_message_logging_privacy): B188."
+  - "The call site that wraps the model call (common_request_processing.py L2626): the request pipeline."
+  - "get_async_asgi_client (litellm/llms/custom_httpx/asgi_handler.py): B171 inventory, replaced here by the tower service."
+
+pitfalls:
+  - "The child must carry the parent's Authorization header, so the filter must not drop it. Only the five names and the redaction opt-out go."
+  - "Drop the redaction opt-out header only when logging is disabled. When logging is on, the child keeps it."
+  - "root_path may be empty or end in a slash. Cut trailing slashes before adding /v1/chat/completions."
+  - "The scopes must be set inside the spawned task. Setting them in the caller does not reach the child."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

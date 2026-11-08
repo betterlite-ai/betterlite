@@ -119,8 +119,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/jwt_provisioning.rs
     - crates/betterlite-server/src/state/jwt_provisioning/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/jwt-provisioning/**
     - crates/betterlite-auth/src/jwt_provisioning/fixtures.rs
     - crates/betterlite-auth/src/jwt_provisioning/fixtures/**

@@ -1,0 +1,13 @@
+id: B8376
+milestone: M8 platform
+title: Cached spend object updates after a request
+status: todo
+depends_on: [B733, B4291, B4294, B4331, B8400]
+file: tasks/B8376-spend-cache-update.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

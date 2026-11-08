@@ -175,7 +175,7 @@ out_of_scope:
   - B5980 owns databricks_auth (get_api_base, databricks_validate_environment, redaction), embeddings, Responses and pricing.
   - B1427 already built databricks/streaming_utils.py. Chat does not use the legacy OpenAI-like iterator.
   - B1428 owns the OpenAI-like chat execution and the fake-stream handling that reads should_fake_stream. B2214 owns BaseModelResponseIterator.
-  - B042 owns the call to this module (the _complete_databricks route, the HTTP handler, DATABRICKS_* environment reads), provider registration in dispatch and the HTTP oracle cases.
+  - B8330 owns the call to this module (the _complete_databricks route, the HTTP handler, DATABRICKS_* environment reads), provider registration in dispatch and the HTTP oracle cases.
   - The Anthropic helpers named above stay with B575, B574, B569 and B2221. Only their calls are made here.
 pitfalls:
   - The claude test is a case-sensitive substring on the model name, while _uses_anthropic_thinking_param lowercases and swaps "." for "-" first. "Claude-3" is not claude in one and is in the other.

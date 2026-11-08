@@ -1,0 +1,97 @@
+id: B8151
+title: hosted_vllm rerank, responses, image edit, transcription, video and decisions configs
+description: >-
+  Build the five non-chat hosted_vllm configs in betterlite-openai as crates/betterlite-openai/src/hosted_vllm_media.rs and its folder, one file per config. All are pure transforms. Each reuses the OpenAI config named in its source and changes only what the hosted_vllm file overrides.
+
+  Rerank: HostedVLLMRerankError, validated_truncation_params, HostedVLLMRerankConfig with get_complete_url, get_supported_cohere_rerank_params, map_cohere_rerank_params, validate_environment, transform_rerank_request, transform_rerank_response, get_error_class and _transform_response. The rerank reply comes from the network, so it gets a typed decoder and a fuzz target.
+
+  Responses: HostedVLLMResponsesAPIConfig (custom_llm_provider, validate_environment, get_complete_url, supports_native_websocket) over the OpenAI Responses config of B506.
+
+  Image edit: HostedVLLMImageEditConfig (get_supported_openai_params, validate_environment, get_complete_url) over B512.
+
+  Transcription: HostedVLLMAudioTranscriptionError and HostedVLLMAudioTranscriptionConfig (get_complete_url, transform_audio_transcription_request) over B515.
+
+  Video: HostedVLLMVideoConfig with get_supported_openai_params, map_openai_params, validate_environment, get_complete_url and transform_video_create_request, plus the form helpers _serialize_form_value, _maybe_json, _reject_unsafe_media_url, _reject_unsafe_urls_in_item, _reject_unsafe_media_urls, _form_value and _input_reference_file. The unsafe URL rejection is a security rule: keep every rejected case.
+
+  Decisions: HostedVLLMDecisionsConfig and resolve_api_key over the decisions records of B3510.
+
+  The __init__.py files of image_edit and videos only export the config and need no code beyond that.
+
+  Where the source and this text differ, the source at the pinned commit wins.
+scope:
+  paths:
+    - crates/betterlite-openai/src/hosted_vllm_media.rs
+    - crates/betterlite-openai/src/hosted_vllm_media/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/hosted_vllm_rerank_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/hosted_vllm_rerank_reply/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/hosted-vllm-media/**
+    - tools/oracle/helpers/b8151.py
+    - tools/oracle/helpers/b8151/**
+    - tools/oracle/src/helpers/provider/b8151.rs
+    - tools/oracle/src/helpers/provider/b8151/**
+    - tools/oracle/src/helpers/openai/b8151.rs
+    - tools/oracle/src/helpers/openai/b8151/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/rerank/transformation.py#L1-L244
+    why: Rerank config, truncation params and reply transform.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/responses/transformation.py#L1-L73
+    why: Responses config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/image_edit/transformation.py#L1-L43
+    why: Image edit config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/transcriptions/transformation.py#L1-L65
+    why: Transcription config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/videos/transformation.py#L1-L204
+    why: Video config and the unsafe URL checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/decisions/transformation.py#L1-L26
+    why: Decisions config.
+dod:
+  - text: Rerank params, request, URL, headers and reply transform match, including the truncation validation and error class.
+    proof: [hosted-vllm-media-tests, hosted-vllm-media-cases]
+  - text: Responses, image edit and transcription URLs, headers and supported params match LiteLLM.
+    proof: [hosted-vllm-media-tests, hosted-vllm-media-cases]
+  - text: Video create requests build the same form fields, and every unsafe media URL is rejected with the same message.
+    proof: [hosted-vllm-media-tests, hosted-vllm-media-cases]
+  - text: The decisions key resolution matches.
+    proof: [hosted-vllm-media-tests, hosted-vllm-media-cases]
+  - text: The reply decoder rejects malformed bodies without panicking and its corpus replays.
+    proof: [hosted-vllm-media-corpus]
+  - text: New helper cases for these functions exist.
+    proof: [hosted-vllm-media-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: hosted-vllm-media-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^hosted_vllm_media::/)'
+      why: Without this provider code there are no such tests, so the check fails on the base branch.
+    - id: hosted-vllm-media-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/hosted_vllm_rerank_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/hosted_vllm_rerank_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_hosted_vllm_rerank_reply_corpus)'
+      why: Bytes come from outside and need a fuzz target with a replayed corpus.
+    - id: hosted-vllm-media-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/hosted-vllm-media)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/helpers/hosted-vllm-media/rerank-params.yaml
+  - tools/oracle/cases/helpers/hosted-vllm-media/rerank-request.yaml
+  - tools/oracle/cases/helpers/hosted-vllm-media/rerank-reply.yaml
+  - tools/oracle/cases/helpers/hosted-vllm-media/responses-url.yaml
+  - tools/oracle/cases/helpers/hosted-vllm-media/image-edit-url.yaml
+  - tools/oracle/cases/helpers/hosted-vllm-media/transcription-request.yaml
+  - tools/oracle/cases/helpers/hosted-vllm-media/video-form.yaml
+  - tools/oracle/cases/helpers/hosted-vllm-media/video-unsafe-urls.yaml
+  - tools/oracle/cases/helpers/hosted-vllm-media/decisions-key.yaml
+deviations:
+  []
+out_of_scope:
+  - "B3332 selects the video provider; B3513 and B3514 dispatch decisions calls; B1079 handles the hosted_vllm rerank credentials. This task builds the configs they call."
+  - "B6040 and B7952 own the HostedVLLMRerankTruncationParams types."
+  - "B3331 owns the BaseVideoConfig contract; this task builds only the hosted_vllm side."
+pitfalls:
+  - "The oracle helper for this task is pre-registered as b8151 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task's to edit."
+  - "The truncation params are validated before they reach the body; a bad value is an error, not a dropped key."
+  - "The video config rejects private and local URLs in every media field; read all of L88-L117 before writing the checks."
+  - "The decisions config reads the key from the argument first, then the environment through betterlite-config."
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

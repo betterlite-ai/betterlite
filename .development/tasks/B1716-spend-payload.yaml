@@ -34,7 +34,7 @@ description: >-
   only when response prompt_tokens_details is not a mapping; write count prefers truthy
   cache_write_tokens then cache_creation_tokens. Existing keys, even null, block insertion.
   No configured cache yields Cache OFF; otherwise a non-null preset key wins, including
-  empty string, else call B125's key builder. Exact cache_hit=true appends _cache_hit plus
+  empty string, else call B4296's key builder. Exact cache_hit=true appends _cache_hit plus
   the current epoch text to the resolved ID before session derivation. A missing ID renders
   as Python's None string, and cache_hit renders True/False/None with Python capitalization.
   Payload team/org/user/end-user/provider fields keep the source's empty-string fallbacks,

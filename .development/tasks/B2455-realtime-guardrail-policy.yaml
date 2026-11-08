@@ -5,7 +5,7 @@ description: >-
   setup without depending on B1007's guardrail runner. Own _has_realtime_guardrails_for_event_hooks,
   _has_audio_transcription_guardrails, _make_disable_auto_response_message and
   _maybe_inject_guardrail_auto_response_disable as whole methods in
-  betterlite-core::api::realtime_guardrail_policy. Accept B104's callback descriptors/predicate
+  betterlite-core::api::realtime_guardrail_policy. Accept B3665's callback descriptors/predicate
   interface, request_data, backend protocol and the per-session sent flag. Do not register callbacks
   or execute apply_guardrail here. The unused _has_realtime_guardrails has no caller at the pin.
 

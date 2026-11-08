@@ -1,10 +1,10 @@
 id: B337
 title: Cache-cost-aware complexity placement
-description: 'Integrate B075''s existing cache prediction service with B334 placement and B325 affinity
+description: 'Integrate B3123''s cache prediction service with B334 placement and B325 affinity
   observations. Add cache_aware_routing configuration and the bounded prediction deadline; preserve the
   original classified route when prediction is unavailable. Carry the selected cost comparison as Decimal
   and update decision metadata through B012. This part only orchestrates the prediction and placement;
-  B075 owns cache observations, provider token-count calls and pricing eligibility. Keep the integration
+  B3122 owns cache observations, B3121 provider token-count calls and B3123 pricing eligibility. Keep the integration
   adapter in betterlite-server in this task module; consume predecessor public interfaces without editing
   their implementation crates. Configuration boundary keys introduced or consumed here: cache_aware_routing,
   cache_aware_routing_output_tokens, cache_aware_routing_timeout_ms. Pinned declaration defaults: cache_aware_routing=False;
@@ -44,7 +44,7 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/README.md#L74-L108
   why: Supported surface and prediction restrictions.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L318-L343
-  why: B075 prediction API and bounded failure recovery.
+  why: B3123 prediction API and bounded failure recovery; B3124 owns this file and builds on this task.
 dod:
 - text: Write tests named cache_cost_routing_behaviors and cache_cost_routing_boundaries under cache_cost_routing::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
@@ -206,7 +206,7 @@ out_of_scope:
   (L1324-L1479).'
 pitfalls:
 - Do not call count_tokens at all when no eligible warm alternative exists.
-- This dependency is B075, not the generic response cache B125.
+- This dependency is B3123, not the generic response cache B125.
 - Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
   a hard request error.
 - The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules

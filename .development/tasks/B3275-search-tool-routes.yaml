@@ -112,9 +112,9 @@ deviations:
   - what: The route module is mounted at startup, where LiteLLM imports it on the first request under /search_tools.
     why: The lazy import has no visible effect for a client, and the paths and answers are the same.
   - what: The config search tools, the router refresh, the team row read and the provider lookup are injected traits that the architect wires.
-    why: ProxyConfig (get_config, parse_search_tools, reload_search_tools_from_db) has no Rust owner at this pin, and the others live in crates that must not depend on the server.
+    why: ProxyConfig's get_config, parse_search_tools and reload_search_tools_from_db are B8379's and B8384's, in the binary crate above this one, and the others live in crates that must not depend on the server.
 out_of_scope:
-  - "ProxyConfig.get_config, parse_search_tools, reload_search_tools_from_db, _init_search_tools_in_db and _merge_config_and_db_search_tools (proxy_server.py L6014-L6160, L8997-L9072): no Rust owner is planned; this task only defines the injected trait."
+  - "ProxyConfig.get_config, parse_search_tools, reload_search_tools_from_db, _init_search_tools_in_db and _merge_config_and_db_search_tools (proxy_server.py L6014-L6160, L8997-L9072): B8379 and B8384; B8384 implements this task's injected trait."
   - "The role table that makes the write routes admin only and the two read routes open to internal users (LiteLLMRoutes in _types.py): B742."
   - "The /search and /v1/search call routes in litellm/proxy/search_endpoints/endpoints.py: another entry."
   - "SearchToolRegistry methods: B3271. asearch and its error conversion: B3272. Search records and BaseSearchConfig: B3270."

@@ -1,0 +1,18 @@
+id: B8190
+milestone: M9 agents and mcp
+title: MCP wire compatibility, result conversion and errors
+status: todo
+depends_on: []
+file: tasks/B8190-mcp-wire-results.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/contracts.py"
+  - "litellm/proxy/_experimental/mcp_server/capabilities.py"
+  - "litellm/proxy/_experimental/mcp_server/tool_outcome.py"
+  - "litellm/proxy/_experimental/mcp_server/result_conversion.py"
+  - "litellm/proxy/_experimental/mcp_server/exceptions.py"
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

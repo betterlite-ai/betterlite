@@ -110,7 +110,7 @@ out_of_scope:
   - "Registry reads and server_table: B4731. Allowed-server union and get_allowed_mcp_servers: B6591."
   - "Registry reload, add, update, remove: B6765. Config loading: B6764. Record build: B6763."
   - "OpenAPI spec loading (load_openapi_spec_async): B4683. Toolset storage (get_mcp_toolset_by_name): B4681."
-  - "_create_mcp_client, _resolve_static_headers_with_env_vars and _references_per_user_env_var: no owner found, see the architect notes; this task takes them as traits."
+  - "_create_mcp_client, _resolve_static_headers_with_env_vars and _references_per_user_env_var: B8461; this task takes them as traits."
   - "filter_server_ids_by_ip and the other methods outside the health section: their own entries."
 
 pitfalls:

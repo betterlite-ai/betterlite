@@ -1,0 +1,70 @@
+id: B8233
+title: Gateway and backend container images
+description: >-
+  Write two Dockerfiles for the split deployment, the Rust twins of gateway/Dockerfile and backend/Dockerfile: `packaging/docker/Dockerfile.gateway` (the data plane, port 4000, includes pgbouncer) and `packaging/docker/Dockerfile.backend` (the management plane, port 4001, no pgbouncer). The Docker build context is the repository root. Add one text check script, `packaging/docker/tests/component_images.sh`, that proves the files hold what this task lists. The binaries `betterlite-gateway` and `betterlite-backend` come from B4471, the entrypoint scripts from B5070. Read packaging/docker/Dockerfile (B5071) and packaging/docker/Dockerfile.non_root (B5073) first and copy their base image names, the build ARG names, the three-try apk loop and the pgbouncer stage as they are; do not invent other versions.
+
+  Dockerfile.gateway, in order. ARG LITELLM_BUILD_IMAGE and ARG LITELLM_RUNTIME_IMAGE (both the Wolfi digest used by B5073), ARG PGBOUNCER_VERSION=1.26.0 and ARG PGBOUNCER_SHA256 (the value in B5073).
+  Stage `pgbouncer-builder`: the same stage as B5073 (it downloads, checks the checksum, builds and installs /usr/local/bin/pgbouncer).
+  Stage `builder` FROM rust:1.98.0-bookworm: WORKDIR /app; COPY Cargo.toml Cargo.lock rust-toolchain.toml, crates/ and tools/; RUN cargo build --release --locked -p betterlite-gateway; copy packaging/docker/component_entrypoint.sh to /app/docker/component_entrypoint.sh, then `sed -i 's/\r$//'` and `chmod +x` on it.
+  Stage `runtime` FROM $LITELLM_RUNTIME_IMAGE: as root, apk add --no-cache bash openssl tzdata libevent inside the three-try loop (libevent is for pgbouncer). WORKDIR /app. ENV HOME=/home/nonroot. COPY from builder: target/release/betterlite-gateway to /usr/local/bin/betterlite-gateway, /app/docker with --chown=nonroot:nonroot. COPY /usr/local/bin/pgbouncer from pgbouncer-builder. USER nonroot (the Wolfi account with UID and GID 65532). EXPOSE 4000/tcp. ENTRYPOINT ["/app/docker/component_entrypoint.sh", "betterlite-gateway"]. CMD ["--host", "0.0.0.0", "--port", "4000"].
+  There is no workers flag: LiteLLM's entrypoint passed `--workers "${NUM_WORKERS:-1}"` to a Python supervisor, and the Rust binary is one process, so NUM_WORKERS has no effect.
+
+  Dockerfile.backend: the same shape with `-p betterlite-backend`, no pgbouncer stage, no libevent, no pgbouncer COPY, EXPOSE 4001/tcp, ENTRYPOINT ["/app/docker/component_entrypoint.sh", "betterlite-backend"] and CMD ["--host", "0.0.0.0", "--port", "4001"].
+
+  Neither image has Python, uv, Node, Prisma, a venv, PYTHONPATH or the `rust_bridge` copy step. Both set no ENV that LiteLLM set for Python (PYTHONDONTWRITEBYTECODE, PYTHONUNBUFFERED, PRISMA_BINARY_CACHE_DIR, UV_*).
+
+  The check script uses only bash, grep and test. It fails on the first problem, prints which one, and checks: both files exist; each starts with the three ARG lines it needs; each has `cargo build --release --locked -p betterlite-gateway` or `-p betterlite-backend` and not the other one; each has the sed and chmod line for component_entrypoint.sh; each runs as `USER nonroot`; the gateway has EXPOSE 4000/tcp and the pgbouncer stage and COPY, the backend has EXPOSE 4001/tcp and no "pgbouncer" text at all; each ENTRYPOINT and CMD line equals the text above; neither file contains any of `python`, `uv sync`, `prisma`, `node`, `PYTHONPATH` in any case (grep -i).
+scope:
+  paths:
+    - packaging/docker/Dockerfile.gateway
+    - packaging/docker/Dockerfile.backend
+    - packaging/docker/tests/component_images.sh
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/Dockerfile#L1-L30
+    why: Base images, pgbouncer pin and the pgbouncer build stage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/Dockerfile#L106-L170
+    why: Runtime stage of the gateway, nonroot user, EXPOSE 4000, ENTRYPOINT and CMD.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/backend/Dockerfile#L88-L142
+    why: Runtime stage of the backend, EXPOSE 4001, ENTRYPOINT and CMD.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/component_entrypoint.sh#L1-L16
+    why: The script that both entrypoints run first.
+dod:
+  - text: Both Dockerfiles exist, build the right binary with cargo build --release --locked, run as the nonroot user, expose the right port and set the exact ENTRYPOINT and CMD.
+    proof: [images-check]
+  - text: Only the gateway image has the pgbouncer stage, libevent and the pgbouncer binary.
+    proof: [images-check]
+  - text: Neither image has Python, uv, Prisma or Node.
+    proof: [images-check]
+  - text: The check script has valid bash syntax.
+    proof: [script-syntax]
+checks:
+  optional: []
+  commands:
+    - id: script-syntax
+      why: the check script has a syntax error
+      run: bash -n packaging/docker/tests/component_images.sh
+    - id: images-check
+      why: a component Dockerfile is missing or lost a required line
+      run: bash packaging/docker/tests/component_images.sh
+oracle_cases: []
+deviations:
+  - what: NUM_WORKERS has no effect and the entrypoint does not run a Python supervisor.
+    why: gateway/launch.py started uvicorn workers and pgbouncer; betterlite-gateway is one process (B4471).
+  - what: The files are Dockerfile.gateway and Dockerfile.backend in packaging/docker/, not gateway/Dockerfile and backend/Dockerfile.
+    why: B5071 and B5073 keep all Dockerfiles in packaging/docker/, with the repository root as build context.
+  - what: The check is a text check and not a docker build.
+    why: The gate sandbox cannot reach the Docker socket.
+out_of_scope:
+  - "gateway/launch.py (the uvicorn and pgbouncer supervisor): nothing ports it, see the final note. Who starts pgbouncer inside the gateway container is open."
+  - "The two binaries: B4471. The entrypoint scripts: B5070. The base Dockerfiles: B5071, B5073."
+  - "Compose files that run the split deployment: B5072."
+pitfalls:
+  - The two images must differ only where the list says (binary, port, pgbouncer); keep them line for line the same elsewhere so one fix applies to both.
+  - Build context is the repository root, so every COPY path starts there (crates/, packaging/docker/), never ../.
+  - The ENTRYPOINT is a JSON array without a shell, so the CMD arguments reach the binary as given.
+  - component_entrypoint.sh needs bash, so keep bash in the apk list.
+review_level: standard
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0

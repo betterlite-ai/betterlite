@@ -26,7 +26,7 @@ description: >-
   ids, aliases, routing groups, team public-model names, and matched via global or team
   wildcard/pattern routes), collapsing unrecognized client-supplied strings to "other" while
   passing through router_originated values when no proxy router exists. Return None when
-  requested_model is None. Rate-limit labels (category, rate_limit_type) are validated
+  requested_model is None. betterlite-logging may not depend on betterlite-router, so the router view is the `RequestedModelCatalog` port, a trait in `crates/betterlite-logging/src/prometheus/failure.rs` with `is_recognized_model`, `is_team_public_model` and `matches_pattern_route` (the global pattern router, then every team pattern router), passed as an optional trait object (none means no proxy router). The wave 17 callbacks wiring part implements it in betterlite-server over B8351's `CatalogQueries::is_recognized_model`, B302's team public names and the pattern routers. Rate-limit labels (category, rate_limit_type) are validated
   through error validation enums before emission.
 
   For provider attribution before deployment resolution, try the resolved custom_llm_provider
@@ -94,7 +94,7 @@ dod:
   - text: >-
       Requested-model cardinality is bounded: returns None when requested_model is None,
       returns an empty string unchanged, returns "other" when requested_model is not a string,
-      checks router.is_recognized_model and team_public_model_names, tests pattern_router.route
+      asks the `RequestedModelCatalog` port for a recognized name and a team public-model name, then for a match in pattern_router.route
       and all team_pattern_routers.route, and collapses unrecognized client strings to "other"
       unless router_originated is true.
     proof: [bounded-model-label, bounded-model-non-string-collapse]

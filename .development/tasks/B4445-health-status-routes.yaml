@@ -6,7 +6,7 @@ description: >-
   this task decides whether a result gets written to history: that is B7640.
 
   Mounting. One function `health_status_routes(state) -> Router` registers GET /health, GET /health/history and GET /health/latest
-  and the umbrella B130 mounts it once. All three sit behind B052's `user_api_key_auth`, so a missing or wrong key is that
+  and B8540 mounts it once. All three sit behind B052's `user_api_key_auth`, so a missing or wrong key is that
   pipeline's answer and this module never sees it. The state is built with constructor injection and holds what LiteLLM reads
   from proxy_server globals: the deployment list (`llm_model_list`, None until a router exists), the router (B844), `user_model`
   (the CLI model), `health_check_details` (bool), `health_check_concurrency` (Option<usize>), `use_background_health_checks`

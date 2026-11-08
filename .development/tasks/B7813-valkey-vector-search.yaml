@@ -7,7 +7,7 @@ description: >-
 
   Helpers. build_valkey_url(host, port, password, ssl) returns "<scheme>://<creds><host>:<port>", where scheme is rediss when
   ssl is true else redis and creds is ":<percent-encoded password>@" for a non-empty password (everything unsafe encoded) else
-  nothing. It reads no environment. pack_vector turns floats into little-endian f32 bytes. B128 uses both, so they
+  nothing. It reads no environment. pack_vector turns floats into little-endian f32 bytes. B8296 uses both, so they
   are public.
 
   Ports. Define the trait ValkeySearchPort with one async method that runs FT.SEARCH on an index with the query string,
@@ -84,7 +84,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/valkey/vector_stores/transformation.py#L82-L94
 out_of_scope:
   - B1064 and B2484 call the search entry and pass the ready port when the proxy holds a shared client.
-  - B128 calls build_valkey_url and pack_vector and need this task first (see the notes to the architect).
+  - B8296 calls build_valkey_url and pack_vector and need this task first (see the notes to the architect).
   - The sync and async variants are one async function here.
   - The pip install hint for a missing redis package has no meaning in Rust.
 pitfalls:

@@ -11,7 +11,7 @@ description: >-
   Group info returns {data: []} immediately for missing/empty llm_model_list or missing router. Otherwise
   proxy admin/view callers use B759 get_complete_model_list with empty key/team grants, B302 router
   names, injected user_model, general_settings.infer_model_from_keys default false, return_wildcard_routes
-  false and the router. Other callers use B124 get_available_models_for_user with their full auth,
+  false and the router. Other callers use B8398 get_available_models_for_user with their full auth,
   database/cache/logger/settings, team_id=None and include/only model access groups both false. Filter
   B842 undiscoverable names using the actual caller team_id before group construction.
 
@@ -21,10 +21,10 @@ description: >-
   schema defaults, not404. Mark is_public_model_group=true only for membership in the nonnull
   litellm_settings.public_model_groups list (default absent); public marking does not grant visibility.
 
-  Next B141 append_agents_to_model_group runs even when the model_group filter matched no model;
+  Next B4784's agent_model_groups (LiteLLM's append_agents_to_model_group) runs even when the model_group filter matched no model;
   agents can therefore survive that filter. Its own lookup/access failures DEBUG-log and preserve
   prior rows. B007 TeamModelNameTranslator builds internal-to-public names for the callback filtering
-  step. B124 _names_hidden_by_listing_callbacks receives unique public names in first-seen order;
+  step. B8598 hidden_listing_names (_names_hidden_by_listing_callbacks) receives unique public names in first-seen order;
   filter by those names but return the original group objects, without renaming their model_group.
   Preserve source order and null/default schema fields. No route-owned except block or
   handle_exception_on_proxy call exists; dependency errors flow through B003's global handler.
@@ -45,8 +45,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/model_management.rs
     - crates/betterlite-server/src/routes/model_management/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/model-management-*
     - tools/oracle/cases/management/model-management/**
@@ -95,8 +93,8 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B843 owns date bucketing and deprecation collection; B846 owns router group metadata.
-  - B007/B759/B124 own list construction and name translation; B842 owns discovery policy.
-  - B141 owns agent append policy; stored-model writes remain B832-B840 and their existing owners.
+  - B007/B759/B8398 own list construction and name translation; B842 owns discovery policy.
+  - B4784 owns agent append policy (agent_model_groups and agent_model_infos); stored-model writes remain B832-B840 and their existing owners.
 pitfalls:
   - The public-name map affects callback filtering but does not rename the returned group objects.
   - Appended agents are outside the model_group filter applied earlier.

@@ -1,0 +1,106 @@
+id: B8591
+title: Proxy exception handlers, CORS settings and UI folder setup
+description: >-
+  LiteLLM registers four exception handlers on the FastAPI app, computes its CORS settings from two env vars and picks
+  and prepares the admin UI folder at import time. Build them in betterlite-server as two modules the skeleton
+  declares: crates/betterlite-server/src/error_handlers.rs (error enum none; handlers return responses) and
+  crates/betterlite-server/src/app_setup.rs (error enum AppSetupError).
+
+
+  error_handlers. `proxy_exception_response(request, error)` ports openai_exception_handler: log the denial through
+  B8389's log_model_access_denial, build the body as {"error": error.to_dict()} with B011's call id stamped in when
+  general_settings asks for it (header LITELLM_CALL_ID_HEADER), status int(code) or 500 when code is empty, the
+  exception's own headers on the response, close the span through B8389's close_error_span, and return B3867's
+  otlp_error_response instead when the request is an OTLP ingest request. `http_exception_response` ports
+  otlp_http_exception_handler: the OTLP response when there is one (span closed first), else Starlette's default
+  {"detail": ...} answer with the exception's status and headers. `management_problem_response` closes the span with
+  the problem's status and returns the problem+json answer. `validation_error_response` ports
+  otel_request_validation_exception_handler: errors pass through public_validation_errors; under the management v1
+  prefix the answer is the request-validation problem, else the OTLP answer or 422 {"detail": errors}.
+  `unhandled_error_response` ports otel_unhandled_exception_handler: a database-unavailable error anywhere in the
+  cause chain becomes B872's service-unavailable ProxyException answered by proxy_exception_response; anything else
+  logs "Unhandled exception in request: <type>", logs B4171's bug report when should_report_bug says so, closes the span
+  with 500, and answers the OTLP response or 500 {"error": {"message": "Internal server error", "type":
+  "internal_server_error"}}.
+
+
+  app_setup. `cors_config(origins_env, credentials_env)` ports _get_cors_config: LITELLM_CORS_ORIGINS unset or blank
+  gives ["*"], else the comma-split, trimmed, non-empty entries; LITELLM_CORS_ALLOW_CREDENTIALS set gives true only for
+  "true" after trim and lower-case, unset gives true exactly when "*" is not among the origins. `cors_layer` turns it
+  into a tower-http CorsLayer with any method, any header and LITELLM_UI_ALLOW_HEADERS exposed. `select_ui_folder(env,
+  packaged)` ports the UI folder logic: LITELLM_NON_ROOT=true (case-insensitive) moves the default runtime folder to
+  /var/lib/litellm/ui, LITELLM_UI_PATH overrides it; a runtime folder different from the packaged one is used as is
+  when it has content (restructured or not, with LiteLLM's info or warning), is filled by copying the packaged folder
+  when empty, and falls back to the packaged folder when the copy fails. `validate_ui_folder`, `is_ui_restructured`
+  (marker .litellm_ui_ready or a non-underscore subfolder holding index.html), `restructure_ui_html` (each x.html
+  outside _next and litellm-asset-prefix moves to x/index.html) and `rewrite_root_path` (replace /litellm-asset-prefix
+  and /litellm/.well-known/litellm-ui-config in every non-binary file when server_root_path is not "/" and the folder is
+  writable) port the helpers of the same names. Any failure in this block is logged and swallowed, as LiteLLM's outer
+  try does.
+scope:
+  paths:
+    - crates/betterlite-server/src/error_handlers.rs
+    - crates/betterlite-server/src/error_handlers/**
+    - crates/betterlite-server/src/app_setup.rs
+    - crates/betterlite-server/src/app_setup/**
+    - tools/oracle/cases/helpers/cors-config/**
+    - tools/oracle/helpers/b8591.py
+    - tools/oracle/helpers/b8591/**
+    - tools/oracle/src/helpers/server/b8591.rs
+    - tools/oracle/src/helpers/server/b8591/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
+    why: openai_exception_handler and otlp_http_exception_handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1966-L1969
+    why: management_problem_exception_handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2034-L2080
+    why: The validation and unhandled exception handlers with the database-unavailable branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2086-L2124
+    why: _get_cors_config and its credentials rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2125-L2427
+    why: UI folder selection, copy, root path rewrite, static mounts and restructuring.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2430-L2437
+    why: The CORSMiddleware arguments.
+dod:
+  - text: Each exception handler answers LiteLLM's status, body and headers, prefers the OTLP answer for ingest requests and closes the span.
+    proof: [error-handler-tests]
+  - text: cors_config matches LiteLLM for unset, blank, wildcard and listed origins and every credentials value.
+    proof: [app-setup-tests, oracle]
+  - text: select_ui_folder, the restructure and the root path rewrite match LiteLLM on temp folders, including the read-only and copy-failure fallbacks.
+    proof: [app-setup-tests]
+checks:
+  optional: []
+  commands:
+    - id: error-handler-tests
+      why: an exception handler answer differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^error_handlers::/)'
+    - id: app-setup-tests
+      why: the CORS settings or the UI folder setup differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app_setup::/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8591)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8591 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8591/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/cors-config/unset-origins-wildcard.yaml
+  - tools/oracle/cases/helpers/cors-config/listed-origins-trimmed.yaml
+  - tools/oracle/cases/helpers/cors-config/credentials-explicit-values.yaml
+deviations:
+  - what: The UI static folders (/ui, /_next, /litellm-asset-prefix/_next) are served by tower-http ServeDir.
+    why: Same files and paths as Starlette's StaticFiles with html=True; directory index behavior follows ServeDir.
+out_of_scope:
+  - "Installing the handlers, the CORS layer and the static UI mounts on the app, and the HTTP oracle cases for them: the wave 17 middleware wiring part."
+  - "The other middlewares (security headers, gzip, in-flight, Redis batch, budget release, billing, Prometheus auth): B122 and their own tasks."
+  - "close_error_span and log_model_access_denial: B8389. otlp_error_response: B3867. ProxyException: B8410. Bug reports: B4171."
+pitfalls:
+  - With LITELLM_CORS_ORIGINS="*" and no credentials env var, credentials are off; any explicit list turns them on unless the env says otherwise.
+  - The validation handler strips internal fields with public_validation_errors before the span sees the error.
+  - otel_unhandled_exception_handler re-raises ProxyException, HTTPException and RequestValidationError so their own handlers answer.
+  - restructure_ui_html must skip index.html itself and anything under _next or litellm-asset-prefix.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

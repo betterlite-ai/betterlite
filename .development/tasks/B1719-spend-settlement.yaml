@@ -3,9 +3,9 @@ title: Settle reservations around a spend write in the pinned order
 description: >-
   Implement server::spend::settlement for the callback helpers from
   _IncrementSpendCounters through _invalidate_budget_reservation_counters. Use B070's
-  update_database result as the charged/not-charged boundary, B124's awaited counter
-  increment and cache-prefetch operations, and B1718's request-owned batch. Define the
-  reservation settlement port beside the existing B732 reservation record, so B071 can
+  update_database result as the charged/not-charged boundary, B8593's awaited counter
+  increment (increment_spend_counters), B8376's cache-prefetch operations, and B1718's request-owned batch. Define the
+  reservation settlement port beside the existing B732 reservation record, so B8481 can
   supply reconciliation/release/invalidation without making this lower coordinator depend
   on the budget umbrella. The port receives the shared reservation state, actual Decimal
   cost, finalize and apply_consistent flags. No-op behavior is valid only for no reservation;
@@ -18,12 +18,12 @@ description: >-
   or incrementing counters. A false charged result releases the reservation and returns
   false. A write exception attempts release; if release fails, try invalidation, then
   rethrow the original write error without replacing it with cleanup failures.
-  After a successful write, arm B124's cache read before the awaited counter increment so
+  After a successful write, arm B8376's cache read before the awaited counter increment so
   both can share Redis's pipeline. Forward start time, tags, org, project and groups.
   Counter failure attempts invalidation and always marks the reservation finalized before
   rethrowing. Do not roll back a successful database write or replay it on this path.
   Inline the source's one-expression release/invalidation wrappers at their call sites;
-  the interface methods themselves remain named operations for B071 to implement.
+  the interface methods themselves remain named operations for B8481 to implement over B3003.
   Extract the core_helpers reservation lookup and callback-bound stamping into
   betterlite-auth::reservation_state. A dictionary-valued direct stamp wins over the
   auth-object field; nonmapping values are absent. Bind/unbind updates both existing
@@ -76,8 +76,8 @@ oracle_cases:
   - tools/oracle/cases/helpers/reservation-state/bind-unbind-two-existing-buckets.yaml
 deviations: []
 out_of_scope:
-  - B071 owns reservation estimates, atomic reservation algorithms and its middleware; it implements this lower settlement port when enabling reservations.
-  - B070 owns update_database, B124 the proxy counter/cache operations, B069 success callback orchestration and B1720 failure handling; B206 retains unrelated core_helpers functions and B1717 provider cost stamping.
+  - B3001 owns reservation estimates, B3004 and B8480 the reservation algorithms and B8270 the release layer; B8481 implements this lower settlement port over B3003 when enabling reservations.
+  - B070 owns update_database, B8593 increment_spend_counters, B8376 the proxy cache operations, B069 success callback orchestration and B1720 failure handling; B206 retains unrelated core_helpers functions and B1717 provider cost stamping.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as reservation_state in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/reservation_state.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/reservation_state.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A failed reconciliation finalizes the reservation but still permits the already incurred cost to be persisted.

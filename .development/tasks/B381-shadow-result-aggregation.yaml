@@ -1,7 +1,7 @@
 id: B381
 title: Shadow evaluation aggregate queries
 description: 'Implement ShadowResultsRepository and grouped attempt/funnel aggregates using B051 parameterized
-  queries and B118 append-only observations. Compute exact tier/model/target slices, tie/error denominators,
+  queries and B4083''s append-only attempt and funnel rows. Compute exact tier/model/target slices, tie/error denominators,
   latest error and missing-funnel coverage. Preserve Decimal spend; no endpoint or job mutation is added.
   Implement the owned native service in crates/betterlite-server/src/shadow_result_aggregation.rs. B301 registers ProbeOperation::ShadowResultAggregation and its Python entry as stubs,
   so fill only tools/oracle/src/router_probes/shadow_result_aggregation.rs and tools/oracle/litellm/probes/shadow_result_aggregation.py and leave mod.rs and registry.py as they are;

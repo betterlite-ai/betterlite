@@ -1,7 +1,7 @@
 id: B1225
 title: Budget admission handoff after authentication
 description: >-
-  Hand off to B071 reserve_budget_for_request after auth checks; use its actual implementation, not an
+  Hand off to B8480's reserve_budget_for_request after auth checks; use its actual implementation, not an
   uninstalled callback port. First clear token.budget_reservation even if skipping. Reserve only when
   skip_budget_checks is false and general_settings.disable_budget_reservation is not boolean true.
   Pass request body, route/router, token, team/user/end-user objects, DB/cache/logging context and
@@ -9,7 +9,7 @@ description: >-
   only for boolean true; fail_closed_budget_enforcement is enabled for boolean true OR any non-null
   token.billing_agent_policy. Absent settings are None and effectively false; string true does not satisfy
   these identity comparisons. There are no top-level aliases or environment reads. After success or a
-  skipped reservation, copy token.budget_reservation to request.state if a request exists. If reservation
+  skipped reservation, copy token.budget_reservation into the request by calling B8270's ReservationSlot::set on the slot the release layer put in the request extensions, if a request exists. If reservation
   raises, propagate it without writing request.state; B757 owns its final HTTP envelope.
 
   Overlay a key default end-user budget by taking end_user_object.litellm_budget_table when an end-user
@@ -107,8 +107,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/budget_admission_handoff.rs
     - crates/betterlite-server/src/state/budget_admission_handoff/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/budget-admission-handoff/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/budget-admission-handoff-*

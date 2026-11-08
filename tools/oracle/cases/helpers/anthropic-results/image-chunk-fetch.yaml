@@ -1,0 +1,11 @@
+kind: helper
+name: anthropic-results-image-chunk-fetch
+call:
+  anthropic_results:
+    function: anthropic_image_chunk
+    openai_image_url: "https://example.test/a.png"
+    data_urls:
+      "https://example.test/a.png": "data:image/png;base64,QUJD"
+env: {}
+compare:
+  ignore: []

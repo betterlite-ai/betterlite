@@ -21,10 +21,10 @@ description: >-
 
   validate_models_exist checks exact B844 router model names; no router returns (false, original inputs),
   and missing names preserve request order/duplicates. Read-through attempts every initially missing name
-  sequentially via B124 model_registry_read_through, then rechecks against the current proxy_server router,
+  sequentially via B8231 model_registry_read_through, then rechecks against the current proxy_server router,
   since it may have been rebound. Empty missing lists do no work; failures propagate. Native
   readthrough_order_and_rebound_router and readthrough_failure_no_write plus pure exact_model_names
-  cover these paths. Read-through settings remain with B124; this task reads no env/config key.
+  cover these paths. Read-through settings remain with B8231; this task reads no env/config key.
 
   Add/remove helpers mutate the supplied model_info dictionary/list. Absent access_groups starts as [];
   adding an existing entry does nothing, adding appends, removing deletes only the FIRST matching

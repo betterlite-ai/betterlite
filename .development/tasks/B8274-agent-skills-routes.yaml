@@ -1,0 +1,96 @@
+id: B8274
+title: Serve the public agent skills index and archive routes
+description: >-
+  Register three unauthenticated GET routes in betterlite-server, from LiteLLM's discovery_endpoints/agent_skills_endpoints.py: `/.well-known/agent-skills/index.json`, its hidden alias `/.well-known/skills/index.json` (same handler, left out of the OpenAPI document) and `/v1/skills/{skill_id}/archive`. Code in `crates/betterlite-server/src/agent_skills_routes.rs` and its folder; `pub fn routes()` is built like the sibling route modules and the architect mounts it. Discovery clients (`npx skills add <proxy url>`) send no key, so none of the three routes has the key check.
+
+  Off switch. The route state takes `index_enabled: bool` from the config key `litellm_settings.public_skills_index` (default false, LiteLLM's `litellm.public_skills_index`), read by this task's config section public_skills_index. When it is not true, all three routes answer 404 `{"detail": "Not Found"}` before anything else runs, the stored skills are not read, and no archive is built.
+
+  Reads. The state also takes the stored-skill reader from B3212 (a list of up to 1000 skills, newest first, and a get by id that gives `None` for an unknown id) and B3210's `build_skill_archive` (it gives the archive `content`, `digest`, `declared_name`, `declared_description`, or nothing for a bad upload). Both are called through constructor-given traits so the tests use fakes. Building an archive is blocking work, so run it with `spawn_blocking`. A stored skill is read as: `skill_id`, `display_title` (optional), `description` (optional), `file_content` (optional bytes), `updated_at` (optional datetime).
+
+  Archive cache. Keep a cache of built archives with at most 128 entries and a one-hour time to live, built on B2226's local TTL cache. The key is `<skill_id>:<updated_at in ISO format>`; a skill with no `updated_at` is never cached, and an archive larger than 524288 bytes is built but not cached. `_archive_for(skill)`: no `file_content` gives no archive; a cache hit returns the cached archive; otherwise build it; if the build gives nothing, log at warning "Agent Skills index: skipping skill <id>, its upload is not a zip holding SKILL.md at the root of a single top-level folder" and give no archive.
+
+  Index route. After the off switch, list the stored skills, walk them in reverse order (oldest first), build or fetch each archive, and keep the skills that have one. Name each kept skill: take the first non-empty slug of `archive.declared_name`, `display_title`, `skill_id`, else `skill`. A slug is the lowercase text with every run of characters outside `[a-z0-9]` replaced by one `-`, then `-` trimmed from both ends, cut to 64 characters, trailing `-` trimmed again; an empty result is no slug. Make the names unique: group equal names, keep the order of the skills inside a group, and give the first of a group its name and the n-th (n from 2) the name cut to `64 - len(suffix)` characters, trailing `-` trimmed, plus the suffix `-<n>`. Description: the first of `archive.declared_description`, `skill.description`, `skill.display_title` that is not empty after trimming, trimmed; if none, the unique name. Cut it to 1024 characters. The entry is `{name, type: "archive", description, url, digest}` with `type` always `archive`, `digest` from the archive and `url` from B7323's custom URL builder with route `v1/skills/<skill_id>/archive` and this request's base URL. The body is `{"$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json", "skills": [entries]}`, the `$schema` key first.
+
+  Archive route. After the off switch, get the skill by `skill_id`; a lookup error from B3212 for a missing skill counts as no skill. With no skill or no archive, answer 404 `{"detail": "No installable skill archive for: <skill_id>"}`. Otherwise answer 200 with the archive bytes, `Content-Type: application/zip` and `Content-Disposition: attachment; filename="<skill_id>.zip"`.
+scope:
+  paths:
+    - crates/betterlite-server/src/agent_skills_routes.rs
+    - crates/betterlite-server/src/agent_skills_routes/**
+    - crates/betterlite-config/src/sections/public_skills_index.rs
+    - crates/betterlite-config/src/sections/public_skills_index/**
+    - tools/oracle/cases/agent-skills/**
+    - tools/oracle/helpers/b8274.py
+    - tools/oracle/helpers/b8274/**
+    - tools/oracle/src/helpers/server/b8274.rs
+    - tools/oracle/src/helpers/server/b8274/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_endpoints.py#L1-L130
+    why: The constants, the cache, the off switch, the stored-skill readers and the three routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_endpoints.py#L132-L200
+    why: Installable filter, archive cache, slug, unique names and description rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/discovery_endpoints/agent_skills_endpoints.py#L1-L26
+    why: The index record, the $schema alias and the two length limits.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/__init__.py#L1-L1
+    why: The package marker; it holds no code.
+dod:
+  - text: The three routes exist for GET only, need no key, and the alias is left out of the OpenAPI document.
+    proof: [route-tests]
+  - text: With public_skills_index off (the default) all three answer 404 "Not Found" without reading any skill.
+    proof: [route-tests, oracle]
+  - text: The index lists installable skills oldest first, skips skills with no file or a bad archive, and carries name, type, description, url and digest with the $schema key first.
+    proof: [index-tests]
+  - text: Names are slugs of at most 64 characters, fall back through declared name, title and id to "skill", and duplicates get -2, -3 suffixes within the 64-character limit.
+    proof: [name-tests]
+  - text: Descriptions follow the declared, stored, title, name order, are trimmed and cut at 1024 characters.
+    proof: [name-tests]
+  - text: The archive route returns the zip with the attachment header, and gives 404 with the skill id for an unknown skill or an unusable upload.
+    proof: [archive-tests]
+  - text: Archives are cached by id and updated_at for an hour, up to 128 entries and 512 KiB each, and a skill with no updated_at is rebuilt every time.
+    proof: [cache-tests]
+  - text: The config section public_skills_index (crates/betterlite-config/src/sections/public_skills_index.rs, under litellm_settings) adds the bool field public_skills_index, true only when litellm_settings.public_skills_index is the YAML boolean true and false when the key is absent or holds any other value; its tests load a config with the key set to true and one without it.
+    proof: [config-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: route-tests
+      why: a route, its method, the open access or the off switch is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_skills_routes::tests::route_/)'
+    - id: index-tests
+      why: the index order, filter or entry shape is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_skills_routes::tests::index_/)'
+    - id: name-tests
+      why: slug, unique name or description rules are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_skills_routes::tests::name_/)'
+    - id: archive-tests
+      why: the archive download or its 404 is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_skills_routes::tests::archive_/)'
+    - id: cache-tests
+      why: the archive cache key or limits are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_skills_routes::tests::cache_/)'
+    - id: new-cases
+      why: the agent skills routes have no HTTP parity case on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/agent-skills)"
+    - id: config-tests
+      why: the public_skills_index config field is missing or a config with or without the key reads wrongly
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::public_skills_index::/)'
+oracle_cases:
+  - tools/oracle/cases/agent-skills/index-disabled.yaml
+  - tools/oracle/cases/agent-skills/legacy-index-disabled.yaml
+  - tools/oracle/cases/agent-skills/archive-disabled.yaml
+deviations: []
+out_of_scope:
+  - "SkillArchive and build_skill_archive: B3210. Stored skill reads and owner checks: B3212. The TTL cache itself: B2226. get_custom_url: B7323."
+  - "Creating, listing and deleting skills through /v1/skills: other entries."
+  - "Mounting routes() and handing config.sections.public_skills_index to the route state: the architect."
+pitfalls:
+  - "The off switch runs before the skill lookup, so a disabled proxy answers 404 even for an id that does not exist, with the plain Not Found body, not the archive message."
+  - "The index walks the stored list in reverse, so the oldest skill comes first and wins the plain name; the newest gets the -2 suffix."
+  - "Duplicate numbering follows the position in the sorted-by-name group, which keeps the original order inside a group because the sort is stable."
+  - "The suffix cut uses the length of the suffix, so a 64-character name plus -2 becomes 62 characters plus -2."
+  - "A skill whose build fails is logged at warning on every index call unless it was cached; failures are not cached."
+  - "The archive route needs the same enabled check as the index, since it serves every stored skill to anyone."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
