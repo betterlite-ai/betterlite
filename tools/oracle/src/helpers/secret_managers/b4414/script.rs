@@ -7,7 +7,7 @@ use betterlite_secret_managers::aws::request_signing::{
     AwsCredentialsInfo, AwsOptionalParams, AwsTransport, CredentialResolver, TransportError,
     TransportFuture, TransportRequest, TransportResponse,
 };
-use betterlite_secret_managers::aws_secret_reads::AwsBlockingTransport;
+use betterlite_secret_managers::aws_secret_reads::blocking::AwsBlockingTransport;
 use http::StatusCode;
 use serde::Deserialize;
 use serde_json::{Value, json};

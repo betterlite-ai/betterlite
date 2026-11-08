@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::time::Duration;
 
 use secrecy::ExposeSecret as _;
@@ -10,62 +9,60 @@ use crate::aws::request_signing::{
     ActionRequest, AwsOptionalParams, AwsRequestError, AwsTransport, CredentialResolver,
     TransportError, TransportRequest, TransportResponse,
 };
-use crate::aws_secret_reads::AwsBlockingTransport;
 use crate::secret_contracts::options::SecretTimeout;
 
-const MAX_RESPONSE_BYTES: usize = 0x0010_0000;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
-
-fn request_timeout(timeout: Option<SecretTimeout>) -> Duration {
-    match timeout {
-        Some(SecretTimeout::Total(limit)) => limit,
-        Some(SecretTimeout::Phases {
-            connect,
-            read,
-            write,
-            pool,
-        }) => [connect, read, write, pool]
-            .into_iter()
-            .try_fold(Duration::ZERO, |total, phase| {
-                phase.map(|limit| total.saturating_add(limit))
-            })
-            .unwrap_or(DEFAULT_TIMEOUT),
-        None => DEFAULT_TIMEOUT,
-    }
-}
-
-fn checked_reply<ResolverError, TransportFailure, Reply>(
-    response: Result<TransportResponse, TransportError<TransportFailure>>,
-) -> Result<Reply, AwsRequestError<ResolverError, TransportFailure>>
-where
-    ResolverError: Error + 'static,
-    TransportFailure: Error + 'static,
-    Reply: DeserializeOwned,
-{
-    let checked = response.map_err(|error| match error {
-        TransportError::Timeout => AwsRequestError::Timeout,
-        TransportError::ResponseTooLarge => AwsRequestError::ResponseTooLarge {
-            limit: MAX_RESPONSE_BYTES,
-        },
-        TransportError::Failed(source) => AwsRequestError::Transport(source),
-    })?;
-    if checked.body.len() > MAX_RESPONSE_BYTES {
-        return Err(AwsRequestError::ResponseTooLarge {
-            limit: MAX_RESPONSE_BYTES,
-        });
-    }
-    if !checked.status.is_success() {
-        let text = String::from_utf8(checked.body).map_err(AwsRequestError::ErrorText)?;
-        return Err(AwsRequestError::Http { text });
-    }
-    serde_json::from_slice(&checked.body).map_err(AwsRequestError::Response)
-}
 
 impl<Resolver, Transport> AwsSecretsManager<Resolver, Transport>
 where
     Resolver: CredentialResolver + Sync,
     Transport: AwsTransport,
 {
+    pub(crate) const MAX_RESPONSE_BYTES: usize = 0x0010_0000;
+
+    pub(crate) fn request_timeout(timeout: Option<SecretTimeout>) -> Duration {
+        match timeout {
+            Some(SecretTimeout::Total(limit)) => limit,
+            Some(SecretTimeout::Phases {
+                connect,
+                read,
+                write,
+                pool,
+            }) => [connect, read, write, pool]
+                .into_iter()
+                .try_fold(Duration::ZERO, |total, phase| {
+                    phase.map(|limit| total.saturating_add(limit))
+                })
+                .unwrap_or(DEFAULT_TIMEOUT),
+            None => DEFAULT_TIMEOUT,
+        }
+    }
+
+    pub(crate) fn checked_reply<Reply>(
+        response: Result<TransportResponse, TransportError<Transport::Error>>,
+    ) -> Result<Reply, AwsRequestError<Resolver::Error, Transport::Error>>
+    where
+        Reply: DeserializeOwned,
+    {
+        let checked = response.map_err(|error| match error {
+            TransportError::Timeout => AwsRequestError::Timeout,
+            TransportError::ResponseTooLarge => AwsRequestError::ResponseTooLarge {
+                limit: Self::MAX_RESPONSE_BYTES,
+            },
+            TransportError::Failed(source) => AwsRequestError::Transport(source),
+        })?;
+        if checked.body.len() > Self::MAX_RESPONSE_BYTES {
+            return Err(AwsRequestError::ResponseTooLarge {
+                limit: Self::MAX_RESPONSE_BYTES,
+            });
+        }
+        if !checked.status.is_success() {
+            let text = String::from_utf8(checked.body).map_err(AwsRequestError::ErrorText)?;
+            return Err(AwsRequestError::Http { text });
+        }
+        serde_json::from_slice(&checked.body).map_err(AwsRequestError::Response)
+    }
+
     pub async fn async_post_action<Body, Reply>(
         &self,
         request: &ActionRequest<'_, Body>,
@@ -85,38 +82,10 @@ where
                 url: &prepared.endpoint_url,
                 headers: prepared.headers,
                 body: prepared.body.expose_secret(),
-                timeout: request_timeout(timeout),
-                max_response_bytes: MAX_RESPONSE_BYTES,
+                timeout: Self::request_timeout(timeout),
+                max_response_bytes: Self::MAX_RESPONSE_BYTES,
             })
             .await;
-        checked_reply(response)
-    }
-}
-
-impl<Resolver, Transport> AwsSecretsManager<Resolver, Transport>
-where
-    Resolver: CredentialResolver + Sync,
-    Transport: AwsBlockingTransport,
-{
-    pub fn blocking_post_action<Body, Reply>(
-        &self,
-        request: &ActionRequest<'_, Body>,
-        optional_params: Option<&mut AwsOptionalParams>,
-        timeout: Option<SecretTimeout>,
-    ) -> Result<Reply, AwsRequestError<Resolver::Error, Transport::Error>>
-    where
-        Body: Serialize,
-        Reply: DeserializeOwned,
-    {
-        let now = (self.dependencies.clock)();
-        let prepared = self.prepare_request(request, None, optional_params, now)?;
-        let response = self.dependencies.transport.post_blocking(TransportRequest {
-            url: &prepared.endpoint_url,
-            headers: prepared.headers,
-            body: prepared.body.expose_secret(),
-            timeout: request_timeout(timeout),
-            max_response_bytes: MAX_RESPONSE_BYTES,
-        });
-        checked_reply(response)
+        Self::checked_reply(response)
     }
 }

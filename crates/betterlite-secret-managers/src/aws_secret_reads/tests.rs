@@ -19,7 +19,8 @@ use thiserror::Error;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
 
-use super::{AwsBlockingTransport, AwsReadError, SecretField, parse_primary_secret};
+use super::blocking::AwsBlockingTransport;
+use super::{AwsReadError, SecretField, parse_primary_secret};
 use crate::aws::request_signing::{
     ActionRequest, AwsCredentialsInfo, AwsOptionalParams, AwsRequestError, AwsTransport,
     CredentialResolver, NoBody, TransportError, TransportFuture, TransportRequest,
