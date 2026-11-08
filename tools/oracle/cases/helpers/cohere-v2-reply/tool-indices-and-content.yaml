@@ -11,8 +11,38 @@ call:
         id: chatcmpl-template
         finish_reason: stop
         message: {content: existing}
+      - body: '{"message":{"tool_calls":[{"id":"call_str","type":"function","function":{"name":"get_weather","arguments":"{\"location\":\"Toronto\"}"}}]},"usage":{"tokens":{}}}'
+        status: 200
+        model: command-r
+        created: 1235
+        id: chatcmpl-template
+        finish_reason: stop
+        message: {}
+      - body: '{"message":{"tool_calls":[{"id":"call_obj","type":"function","function":{"name":"lookup","arguments":{"city":"Paris"}}}]},"usage":{"tokens":{}}}'
+        status: 200
+        model: command-r
+        created: 1236
+        id: chatcmpl-template
+        finish_reason: stop
+        message: {}
+      - body: '{"message":{"tool_calls":[{"id":"call_empty","function":{"name":"noop"}}],"citations":[{"sources":[{"type":"tool","document":{}}]}]},"usage":{"tokens":{}}}'
+        status: 200
+        model: command-r
+        created: 1237
+        id: chatcmpl-template
+        finish_reason: stop
+        message: {}
+      - body: '{"message":{"content":[{"text":"kept"}],"tool_calls":null},"usage":{"tokens":{}}}'
+        status: 200
+        model: command-r
+        created: 1238
+        id: chatcmpl-template
+        finish_reason: stop
+        message: {content: existing}
 compare:
   ignore:
     - pointer: /value/0/value/tool_calls/1/function/arguments
+      why: betterlite writes compact JSON where Python's json.dumps adds spaces
+    - pointer: /value/2/value/tool_calls/0/function/arguments
       why: betterlite writes compact JSON where Python's json.dumps adds spaces
 env: {}

@@ -50,6 +50,12 @@ fn reply_input<'body>(
     }
 }
 
+fn annotated_input(body: &str) -> ReplyInput<'_> {
+    let mut input = reply_input(body.as_bytes(), 200, 1234, Some("kept"));
+    input.message.annotations = Some(vec![url_annotation(1, 2, "Existing", "source:existing")]);
+    input
+}
+
 fn decode(body: &str) -> Result<CohereV2Reply, ReplyError> {
     decode_cohere_chat_v2(reply_input(body.as_bytes(), 200, 1234, None))
 }
@@ -101,6 +107,7 @@ fn supported_params_match_the_v2_advertised_list() {
     r#"{"max_completion_tokens": 20, "max_tokens": 10}"#,
     r#"{"max_tokens": 20}"#
 )]
+#[case::max_tokens_alone(r#"{"max_tokens": 10}"#, r#"{"max_tokens": 10}"#)]
 fn max_completion_tokens_wins_in_either_order(#[case] requested: &str, #[case] expected: &str) {
     let mapped = map_openai_params(&object(requested), Object::new());
     assert_eq!(mapped, object(expected));
@@ -347,6 +354,21 @@ fn annotations_attach_to_the_existing_message_only_when_present() {
     assert_eq!(without.message.annotations, None);
 }
 
+#[rstest]
+#[case::absent_citations(r#"{"message":{},"usage":{"tokens":{}}}"#)]
+#[case::empty_citations(r#"{"message":{"citations":[]},"usage":{"tokens":{}}}"#)]
+#[case::non_document_sources(
+    r#"{"message":{"citations":[{"sources":[{"type":"tool","document":{}}]}]},"usage":{"tokens":{}}}"#
+)]
+fn an_existing_annotation_survives_an_empty_translation(#[case] body: &str) {
+    let reply = decode_cohere_chat_v2(annotated_input(body)).unwrap();
+    assert_eq!(
+        reply.message.annotations,
+        Some(vec![url_annotation(1, 2, "Existing", "source:existing")])
+    );
+    assert_eq!(reply.message.content.as_deref(), Some("kept"));
+}
+
 #[test]
 fn usage_reads_tokens_and_ignores_billed_units() {
     let reply = decode(
@@ -363,6 +385,15 @@ fn usage_reads_tokens_and_ignores_billed_units() {
     );
     let empty = decode(r#"{"message":{"content":[]},"usage":{"tokens":{}}}"#).unwrap();
     assert_eq!(empty.usage.total_tokens, 0);
+    let no_tokens = decode(r#"{"message":{"content":[]},"usage":{}}"#).unwrap();
+    assert_eq!(
+        no_tokens.usage,
+        CohereUsage {
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+        }
+    );
 }
 
 #[test]
@@ -417,6 +448,42 @@ fn tool_arguments_without_parameters_are_empty_and_missing_type_is_function() {
     assert_eq!(call.function.arguments, "");
     assert_eq!(call.function.name.as_deref(), Some("noop"));
     assert_eq!(call.index, 0);
+}
+
+#[test]
+fn tool_function_arguments_win_over_parameters() {
+    let reply = decode(
+        r#"{"message":{"tool_calls":[
+            {"id":"a","function":{"name":"get_weather","arguments":"{\"location\":\"Toronto\"}"}},
+            {"id":"b","function":{"name":"lookup","arguments":{"city":"Paris"},"parameters":{"ignored":1}}},
+            {"id":"c","function":{"name":"fallback","arguments":null,"parameters":{"kept":1}}}
+        ]},"usage":{"tokens":{}}}"#,
+    )
+    .unwrap();
+    let calls = reply.message.tool_calls.unwrap();
+    assert_eq!(calls[0].function.arguments, r#"{"location":"Toronto"}"#);
+    assert_eq!(calls[1].function.arguments, r#"{"city":"Paris"}"#);
+    assert_eq!(calls[2].function.arguments, r#"{"kept":1}"#);
+}
+
+#[test]
+fn null_tool_calls_keep_the_text_content() {
+    let reply = decode_preserving(
+        r#"{"message":{"content":[{"text":"kept"}],"tool_calls":null},"usage":{"tokens":{}}}"#,
+        "existing",
+    )
+    .unwrap();
+    assert_eq!(reply.message.content.as_deref(), Some("kept"));
+    assert_eq!(reply.message.tool_calls, None);
+}
+
+#[test]
+fn a_tool_reply_carries_the_empty_computed_annotation_list() {
+    let reply = decode(
+        r#"{"message":{"tool_calls":[{"id":"a","function":{}}],"citations":[{"sources":[{"type":"tool","document":{}}]}]},"usage":{"tokens":{}}}"#,
+    )
+    .unwrap();
+    assert_eq!(reply.message.annotations, Some(Vec::new()));
 }
 
 #[rstest]

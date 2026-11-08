@@ -25,5 +25,12 @@ call:
         id: chatcmpl-template
         finish_reason: null
         message: {}
+      - body: '{"message":{"content":[]},"usage":{}}'
+        status: 200
+        model: command-r
+        created: 45
+        id: chatcmpl-template
+        finish_reason: stop
+        message: {}
 compare: {ignore: []}
 env: {}

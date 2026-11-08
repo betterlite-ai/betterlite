@@ -74,15 +74,28 @@ fn function(fields: &Object) -> Result<ReplyFunction, ReplyError> {
         Some(Json::Text(name)) => Some(name.clone()),
         Some(_) => return Err(ReplyError::Field("tool function name", "is not a string")),
     };
-    let arguments = match fields.get("parameters") {
-        None | Some(Json::Null) => String::new(),
+    // the pinned Function reads arguments first and falls back to parameters only when it is None
+    let arguments = match fields.get("arguments") {
+        Some(Json::Text(arguments)) => arguments.clone(),
         Some(Json::Object(parameters)) => {
             serde_json::to_string(parameters).map_err(ReplyError::Encode)?
         }
+        Some(Json::Null) | None => match fields.get("parameters") {
+            None | Some(Json::Null) => String::new(),
+            Some(Json::Object(parameters)) => {
+                serde_json::to_string(parameters).map_err(ReplyError::Encode)?
+            }
+            Some(_) => {
+                return Err(ReplyError::Field(
+                    "tool function parameters",
+                    "is not an object",
+                ));
+            }
+        },
         Some(_) => {
             return Err(ReplyError::Field(
-                "tool function parameters",
-                "is not an object",
+                "tool function arguments",
+                "is not a string",
             ));
         }
     };

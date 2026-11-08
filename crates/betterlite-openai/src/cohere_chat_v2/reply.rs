@@ -115,7 +115,11 @@ fn reply_message(
             annotations,
         });
     }
-    if annotations.is_some() {
+    // only the non-tool branch skips an empty computed list, keeping the message's own annotations
+    if annotations
+        .as_deref()
+        .is_some_and(|found| !found.is_empty())
+    {
         reply.annotations = annotations;
     }
     Ok(reply)
@@ -143,10 +147,7 @@ fn concatenate(parts: &[Json]) -> Result<String, ReplyError> {
 
 fn field_annotations(fields: &Object) -> Result<Option<Vec<Annotation>>, ReplyError> {
     match fields.get("citations").filter(|value| value.is_truthy()) {
-        Some(Json::List(entries)) => {
-            let found = citations::annotations(entries)?;
-            Ok((!found.is_empty()).then_some(found))
-        }
+        Some(Json::List(entries)) => Ok(Some(citations::annotations(entries)?)),
         Some(_) => Err(ReplyError::Field("message.citations", "is not a list")),
         None => Ok(None),
     }

@@ -9,6 +9,7 @@ call:
         optional_params: {kept: 1}
       - non_default_params: {max_completion_tokens: 20, max_tokens: 10}
         optional_params: {}
+      - non_default_params: {max_tokens: 10}
       - non_default_params:
           n: 2
           top_p: 0.5
