@@ -9,3 +9,9 @@ deviations:
   - what: A client of the wrong manager type raises a typed error that names the required client protocol, and the Custom dispatcher names the actual client kind where LiteLLM names the Python class.
     why: LiteLLM calls the method on whatever object it was handed and lets AttributeError escape, and its Custom error text comes from type(client).__name__. betterlite's handle is a typed enum, so the same misconfiguration raises an error of its own words that names the protocol it needed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/secret_manager_handler.py#L206-L221
+  - what: The Conjur HTTP transport caps a reply at 1 MiB and gives every call a 600-second total timeout.
+    why: LiteLLM's httpx client has no body cap and its Conjur requests carry no timeout. betterlite bounds every outbound call, and 600 seconds is LiteLLM's default request timeout, so no working setup sees a shorter wait.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/cyberark_secret_manager.py#L235-L265
+  - what: The Vault reader built here requests Vault on every dispatch read and does not use the manager's response-body cache.
+    why: B4417 owns the cached sync read on HashicorpSecretManager and is not merged yet; this reader gives a Vault config a production client now and can be swapped for B4417's read when it lands.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L433-L464

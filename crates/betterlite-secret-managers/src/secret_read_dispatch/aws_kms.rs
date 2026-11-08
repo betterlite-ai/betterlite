@@ -28,5 +28,9 @@ pub(super) fn read(
         .decrypt(&ciphertext_blob)
         .map_err(SecretDispatchError::AwsKms)?;
     let text = from_utf8(&plaintext).map_err(SecretDispatchError::AwsKmsUtf8)?;
-    Ok(Some(SecretString::from(text.trim())))
+    // Python's str.strip() also drops the file-separator whitespace below U+0020
+    let stripped = text.trim_matches(|character: char| {
+        character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
+    });
+    Ok(Some(SecretString::from(stripped)))
 }

@@ -20,6 +20,20 @@ fn aws_kms_decrypts_and_strips_the_plaintext() {
 }
 
 #[test]
+fn aws_kms_strips_python_control_whitespace() {
+    let fake = aws_kms_fake(Some(b"\x1cplain\x1f"));
+    let client = aws_kms_client(&fake);
+    let result = get_secret_from_manager(
+        &client,
+        Some(KeyManagementSystem::AwsKms),
+        "encrypted",
+        None,
+        &environment("encrypted", &base64_of("\u{1c}plain\u{1f}")),
+    );
+    assert_secret(result, "plain");
+}
+
+#[test]
 fn aws_kms_accepts_python_lenient_base64() {
     let fake = aws_kms_fake(Some(b"plain"));
     let client = aws_kms_client(&fake);

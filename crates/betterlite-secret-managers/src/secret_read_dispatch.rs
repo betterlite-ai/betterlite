@@ -16,16 +16,20 @@ mod aws_kms;
 mod aws_secrets;
 mod azure;
 pub mod base64_codec;
+pub mod conjur_http;
 mod custom;
 mod cyberark;
 pub mod error;
 mod google_kms;
 mod google_secrets;
+pub mod http_transport;
 mod infisical;
 mod local;
+pub mod manager_readers;
 pub mod protocols;
 pub mod settings;
 mod vault;
+pub mod vault_http;
 
 mod tests;
 

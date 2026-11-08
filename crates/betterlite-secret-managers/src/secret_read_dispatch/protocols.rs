@@ -1,3 +1,5 @@
+use std::io;
+
 use secrecy::SecretString;
 
 use crate::aws_kms::AwsKmsError;
@@ -10,8 +12,10 @@ pub struct AzureSecret {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Azure Key Vault secret read failed")]
-pub struct AzureKeyVaultError;
+pub enum AzureKeyVaultError {
+    #[error("Azure Key Vault request failed")]
+    Transport(#[source] io::Error),
+}
 
 pub trait AzureKeyVaultClient: Send + Sync {
     fn get_secret(&self, secret_name: &str) -> Result<AzureSecret, AzureKeyVaultError>;
@@ -34,8 +38,10 @@ pub trait AwsKmsClient: Send + Sync {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("AWS Secrets Manager read failed")]
-pub struct AwsSecretsManagerError;
+pub enum AwsSecretsManagerError {
+    #[error("AWS Secrets Manager request failed")]
+    Transport(#[source] io::Error),
+}
 
 pub trait AwsSecretsManagerClient: Send + Sync {
     fn sync_read_secret(
@@ -64,8 +70,10 @@ pub struct InfisicalSecret {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Infisical secret read failed")]
-pub struct InfisicalError;
+pub enum InfisicalError {
+    #[error("Infisical request failed")]
+    Transport(#[source] io::Error),
+}
 
 pub trait InfisicalClient: Send + Sync {
     fn get_secret(&self, secret_name: &str) -> Result<InfisicalSecret, InfisicalError>;

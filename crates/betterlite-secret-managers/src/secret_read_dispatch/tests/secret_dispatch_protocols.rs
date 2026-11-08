@@ -1,15 +1,57 @@
+use std::error::Error;
+
 use crate::secret_read_dispatch::SecretManagerClient;
+use crate::secret_read_dispatch::error::SecretDispatchError;
 use crate::secret_read_dispatch::get_secret_from_manager;
 use crate::secret_read_dispatch::settings::SecretManagerSettings;
 use crate::secret_types::KeyManagementSystem;
 
 use super::support::{
-    assert_secret, aws_kms_client, aws_kms_fake, aws_secrets_client, aws_secrets_fake,
-    azure_client, azure_fake, base64_of, custom_client, custom_fake, custom_optional_params,
-    cyberark_client, empty_environment, environment, google_kms_client, google_kms_fake,
-    google_secrets_client, google_secrets_fake, infisical_client, infisical_fake, sync_reader_fake,
-    vault_client,
+    assert_secret, aws_kms_client, aws_kms_fake, aws_secrets_client, aws_secrets_failing_fake,
+    aws_secrets_fake, azure_client, azure_failing_fake, azure_fake, base64_of, custom_client,
+    custom_fake, custom_optional_params, cyberark_client, empty_environment, environment,
+    google_kms_client, google_kms_fake, google_secrets_client, google_secrets_fake,
+    infisical_client, infisical_failing_fake, infisical_fake, sync_reader_fake, vault_client,
 };
+
+fn deepest_source(error: &SecretDispatchError) -> String {
+    let mut source: &dyn Error = error;
+    while let Some(next) = source.source() {
+        source = next;
+    }
+    source.to_string()
+}
+
+#[test]
+fn protocol_client_failures_keep_their_source() {
+    let azure = azure_client(&azure_failing_fake());
+    let azure_error = get_secret_from_manager(
+        &azure,
+        Some(KeyManagementSystem::AzureKeyVault),
+        "db",
+        None,
+        &empty_environment(),
+    )
+    .expect_err("an Azure failure should raise");
+    assert!(deepest_source(&azure_error).contains("azure transport failed"));
+
+    let aws_secrets = aws_secrets_client(&aws_secrets_failing_fake());
+    let aws_error = get_secret_from_manager(
+        &aws_secrets,
+        Some(KeyManagementSystem::AwsSecretManager),
+        "db",
+        None,
+        &empty_environment(),
+    )
+    .expect_err("an AWS Secrets Manager failure should raise");
+    assert!(deepest_source(&aws_error).contains("aws secrets transport failed"));
+
+    let infisical = infisical_client(&infisical_failing_fake());
+    let infisical_error =
+        get_secret_from_manager(&infisical, None, "db", None, &empty_environment())
+            .expect_err("an Infisical failure should raise");
+    assert!(deepest_source(&infisical_error).contains("infisical transport failed"));
+}
 
 #[test]
 fn azure_key_vault_client_exposes_the_secret_value() {

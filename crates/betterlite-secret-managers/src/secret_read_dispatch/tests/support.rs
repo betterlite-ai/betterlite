@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::ready;
+use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use base64::Engine as _;
@@ -173,7 +174,9 @@ impl AzureKeyVaultClient for AzureFake {
     fn get_secret(&self, secret_name: &str) -> Result<AzureSecret, AzureKeyVaultError> {
         self.record(secret_name);
         if self.fail {
-            return Err(AzureKeyVaultError);
+            return Err(AzureKeyVaultError::Transport(io::Error::other(
+                "azure transport failed",
+            )));
         }
         Ok(AzureSecret {
             value: self.value.clone(),
@@ -298,7 +301,9 @@ impl AwsSecretsManagerClient for AwsSecretsFake {
     ) -> Result<Option<SecretString>, AwsSecretsManagerError> {
         self.record(secret_name, primary_secret_name);
         if self.fail {
-            return Err(AwsSecretsManagerError);
+            return Err(AwsSecretsManagerError::Transport(io::Error::other(
+                "aws secrets transport failed",
+            )));
         }
         Ok(self.value.clone())
     }
@@ -469,7 +474,7 @@ pub(super) fn custom_optional_params() -> CustomParams {
 
 pub(super) struct InfisicalFake {
     value: Option<SecretString>,
-    fail: bool,
+    failure: Option<&'static str>,
     names: Mutex<Vec<String>>,
 }
 
@@ -485,7 +490,7 @@ impl InfisicalFake {
 pub(super) fn infisical_fake(value: Option<&str>) -> Arc<InfisicalFake> {
     Arc::new(InfisicalFake {
         value: value.map(SecretString::from),
-        fail: false,
+        failure: None,
         names: Mutex::new(Vec::new()),
     })
 }
@@ -493,7 +498,7 @@ pub(super) fn infisical_fake(value: Option<&str>) -> Arc<InfisicalFake> {
 pub(super) fn infisical_failing_fake() -> Arc<InfisicalFake> {
     Arc::new(InfisicalFake {
         value: None,
-        fail: true,
+        failure: Some("infisical transport failed"),
         names: Mutex::new(Vec::new()),
     })
 }
@@ -504,12 +509,13 @@ impl InfisicalClient for InfisicalFake {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(secret_name.to_owned());
-        if self.fail {
-            Err(InfisicalError)
-        } else {
-            Ok(InfisicalSecret {
-                secret_value: self.value.clone(),
-            })
-        }
+        self.failure.map_or_else(
+            || {
+                Ok(InfisicalSecret {
+                    secret_value: self.value.clone(),
+                })
+            },
+            |message| Err(InfisicalError::Transport(io::Error::other(message))),
+        )
     }
 }

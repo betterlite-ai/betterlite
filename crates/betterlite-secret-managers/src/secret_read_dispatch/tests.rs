@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod http_server;
 mod support;
 
 mod secret_dispatch;

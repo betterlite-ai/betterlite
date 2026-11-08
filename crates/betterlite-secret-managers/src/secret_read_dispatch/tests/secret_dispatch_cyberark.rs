@@ -1,6 +1,9 @@
 use crate::secret_read_dispatch::get_secret_from_manager;
 use crate::secret_types::KeyManagementSystem;
 
+mod http;
+mod reader;
+
 use super::support::{assert_secret, cyberark_client, empty_environment, sync_reader_fake};
 
 #[test]
