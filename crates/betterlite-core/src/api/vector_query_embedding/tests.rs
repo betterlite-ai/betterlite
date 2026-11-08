@@ -65,10 +65,11 @@ fn direct_executor() -> DirectEmbeddingExecutor {
     }
 }
 
-struct AnsweringExecutor(EmbeddingResponse);
+// an executor that answers with its response, or fails when it holds none
+struct ScriptedExecutor(Option<EmbeddingResponse>);
 
 #[async_trait]
-impl VectorStoreEmbeddingExecutor for AnsweringExecutor {
+impl VectorStoreEmbeddingExecutor for ScriptedExecutor {
     async fn embed(
         &self,
         _entry: EmbeddingEntry,
@@ -76,24 +77,11 @@ impl VectorStoreEmbeddingExecutor for AnsweringExecutor {
         _query: &str,
         _configuration: &Params,
     ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
-        Ok(self.0.clone())
-    }
-}
-
-struct FailingExecutor;
-
-#[async_trait]
-impl VectorStoreEmbeddingExecutor for FailingExecutor {
-    async fn embed(
-        &self,
-        _entry: EmbeddingEntry,
-        _model: &str,
-        _query: &str,
-        _configuration: &Params,
-    ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
-        Err(VectorStoreEmbeddingError::DuplicateArgument {
-            name: "input".to_owned(),
-        })
+        self.0
+            .clone()
+            .ok_or_else(|| VectorStoreEmbeddingError::DuplicateArgument {
+                name: "input".to_owned(),
+            })
     }
 }
 
@@ -112,13 +100,14 @@ impl VectorStoreRouter for FakeRouter {
     async fn embedding(
         &self,
         _entry: EmbeddingEntry,
-        _model: &str,
+        model: &str,
         _input: &[String],
         _configuration: Params,
     ) -> Result<EmbeddingResponse, BaseLlmException> {
+        let message = format!("no deployment for {model}");
         Err(BaseLlmException {
             status_code: 404,
-            message: "no deployment".to_owned(),
+            message,
             headers: BTreeMap::new(),
         })
     }
@@ -126,7 +115,7 @@ impl VectorStoreRouter for FakeRouter {
 
 #[test]
 fn executor_precedence_prefers_explicit_then_router_then_direct() {
-    let explicit = AnsweringExecutor(answer(TWO_RECORDS));
+    let explicit = ScriptedExecutor(Some(answer(TWO_RECORDS)));
     let metadata = params(r#"{"team": "a"}"#);
     assert!(matches!(
         query_embedding_executor(
@@ -154,7 +143,7 @@ fn executor_precedence_prefers_explicit_then_router_then_direct() {
 
 #[tokio::test]
 async fn embed_query_returns_the_first_vector() {
-    let executor = AnsweringExecutor(answer(TWO_RECORDS));
+    let executor = ScriptedExecutor(Some(answer(TWO_RECORDS)));
     let litellm_params = params(
         r#"{"litellm_embedding_model": "openai/text-embedding-3-small", "litellm_embedding_config": {"dimensions": 2}}"#,
     );
@@ -177,7 +166,7 @@ async fn embed_query_wraps_only_the_executor_failure() {
         EmbeddingEntry::Aembedding,
         "a b",
         &litellm_params,
-        Some(&FailingExecutor),
+        Some(&ScriptedExecutor(None)),
         direct_executor(),
     )
     .await
@@ -199,7 +188,7 @@ async fn embed_query_wraps_only_the_executor_failure() {
         EmbeddingEntry::Embedding,
         "a b",
         &Params::new(),
-        Some(&FailingExecutor),
+        Some(&ScriptedExecutor(None)),
         direct_executor(),
     )
     .await
@@ -209,7 +198,7 @@ async fn embed_query_wraps_only_the_executor_failure() {
 
 #[tokio::test]
 async fn embed_query_validates_the_answer_after_the_call() {
-    let empty = AnsweringExecutor(answer(NO_RECORDS));
+    let empty = ScriptedExecutor(Some(answer(NO_RECORDS)));
     let litellm_params = params(r#"{"litellm_embedding_model": "openai/text-embedding-3-small"}"#);
     let error = embed_query(
         EmbeddingEntry::Embedding,

@@ -87,10 +87,19 @@ fn query_text_joins_a_sequence_with_one_space(#[case] query: Vec<String>, #[case
 }
 
 #[rstest]
-#[case::model(r#"{"litellm_embedding_model": "openai/text-embedding-3-small"}"#)]
-#[case::space(r#"{"litellm_embedding_model": " "}"#)]
-fn query_embedding_model_accepts_a_nonempty_text(#[case] configuration: &str) {
-    assert!(query_embedding_model(&params(configuration)).is_ok());
+#[case::model(
+    r#"{"litellm_embedding_model": "openai/text-embedding-3-small"}"#,
+    "openai/text-embedding-3-small"
+)]
+#[case::space(r#"{"litellm_embedding_model": " "}"#, " ")]
+fn query_embedding_model_accepts_a_nonempty_text(
+    #[case] configuration: &str,
+    #[case] expected: &str,
+) {
+    assert!(matches!(
+        query_embedding_model(&params(configuration)),
+        Ok(model) if model == expected
+    ));
 }
 
 #[rstest]
