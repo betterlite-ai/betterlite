@@ -35,6 +35,8 @@ description: >-
 
   Shared provider base helper implementations are B2202: use its owned primitives directly when called by these
   ranges. Do not reintroduce a dependency on B010/B016 for these small helpers.
+
+  The `GenericLiteLLMParams` validators in litellm/types/router.py are this task's too, in the deployment params type the server hands to a provider: `validate_provider_affinity_header` (L472-L475) checks a set header name with `validate_provider_affinity_header_name` and keeps None; `preprocess_input_data` (L479-L491) drops the keys `self`, `params` and `__class__` and turns a string `max_retries` into an integer, failing on a string that is not one; `coerce_drop_params` (L495-L503) keeps a flag value from `normalize_drop_params`, keeps any other string, and treats anything else as unset with a warning. The dict-style accessors of `GenericLiteLLMParams` and `LiteLLM_Params` (L505-L519, L530-L544) are plain field reads in Rust.
 scope:
   paths:
   - Cargo.toml

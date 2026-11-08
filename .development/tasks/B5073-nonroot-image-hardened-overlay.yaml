@@ -157,7 +157,7 @@ out_of_scope:
   - B5071 owns the root Dockerfile and Dockerfile.database; B5074 owns the PyPI image; B5075 the tracing stack.
   - B5072 owns docker-compose.yml, proxy_server_config.yaml and the other shared stack files; the overlay only references them.
   - B5070 owns the entrypoint scripts this image copies; B1232 owns betterlite-db-admin and B003 owns the betterlite binary.
-  - B151 owns docker/README.md (its hardened section), docker/tests/nonroot.yaml and the container-structure checks of the final image.
+  - B8543 owns docker/README.md (its hardened section), docker/tests/nonroot.yaml and the container-structure checks of the final image.
   - The docker-based tests (tests/proxy_migration_tests/test_offline_image_migration.py, test_component_image_serves_offline.py) and the image-scan workflow need a docker daemon, a built image and Postgres. They have no caller in the gate and are not ported here.
   - tests/unit/test_dockerfile_bedrock_realtime_extra.py checks uv sync lines, which this image does not have.
   - The admin UI files that LiteLLM copies into /var/lib/litellm/ui; no task supplies a native UI bundle yet (see notes).

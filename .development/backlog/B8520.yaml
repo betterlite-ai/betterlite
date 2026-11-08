@@ -1,0 +1,14 @@
+id: B8520
+milestone: M5 api families
+title: Pass-through config create, update and delete routes
+status: todo
+depends_on: [B3600, B3614, B3616, B3617, B052]
+file: tasks/B8520-passthrough-config-writes.yaml
+covers:
+  - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
+parent: B102
+split_from: B102
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

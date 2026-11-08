@@ -1,0 +1,14 @@
+id: B8589
+milestone: M8 platform
+title: Serve the A2A invoke and agent card routes
+status: todo
+depends_on: [B001, B003, B732, B756, B1103, B3501, B4780, B4788, B4789, B4811, B4812, B4814, B6950, B7323, B8231, B8394, B8395]
+file: tasks/B8589-a2a-invoke-card-routes.yaml
+covers:
+  - "litellm/proxy/agent_endpoints/a2a_endpoints.py"
+parent: B141
+split_from: B141
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

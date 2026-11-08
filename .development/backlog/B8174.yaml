@@ -1,0 +1,18 @@
+id: B8174
+milestone: M3 providers
+title: MiniMax text to speech and ModelScope images
+status: todo
+depends_on: [B1135, B2202, B511]
+file: tasks/B8174-minimax-speech-modelscope-image.yaml
+covers:
+  - "litellm/llms/minimax/__init__.py"
+  - "litellm/llms/minimax/text_to_speech/__init__.py"
+  - "litellm/llms/minimax/text_to_speech/transformation.py"
+  - "litellm/llms/modelscope/image_generation/__init__.py"
+  - "litellm/llms/modelscope/image_generation/transformation.py"
+parent: B043
+split_from: B043
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

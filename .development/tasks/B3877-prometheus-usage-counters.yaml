@@ -58,8 +58,8 @@ description: >-
 
   Oracle helper cases (pure input, no route reaches this code yet) call the helper operation `b3877`. Its Python adapter patches
   `PrometheusLogger._inc_labeled_counter` with a recorder, calls the real unbound LiteLLM methods on a bare stand-in object, and
-  returns the recorded (metric name, amount) list; for the two resolvers it calls the real static methods. The umbrella B111
-  adds the HTTP scrape cases.
+  returns the recorded (metric name, amount) list; for the two resolvers it calls the real static methods. The HTTP scrape cases wait on the
+  prometheus callback adapter (B8561 out_of_scope).
 
 scope:
   paths:
@@ -163,7 +163,7 @@ deviations:
     why: Same outcome in a typed form. The error stops the rest of that function, as the exception does in LiteLLM.
 
 out_of_scope:
-  - "async_log_success_event orchestration, the invalid-key skip and the construction of `UserAPIKeyLabelValues` from the payload: no backlog entry names them yet, the architect assigns them (see notes). This task takes the label values and context as inputs."
+  - "async_log_success_event orchestration, the invalid-key skip and the construction of `UserAPIKeyLabelValues` from the payload: B8561 owns them. This task takes the label values and context as inputs."
   - "The `litellm_proxy_total_requests_metric` increment at the end of the success hook: one call to B3876's `inc_labeled_counter` made by the orchestrator."
   - "Latency, token-per-second and guardrail observations, `_get_input_sequence_length`: B3878."
   - "Remaining rate-limit and deployment TPM/RPM gauges, `_set_virtual_key_rate_limit_metrics`: B3879. Deployment success and failure outcomes: B3881."

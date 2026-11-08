@@ -114,7 +114,7 @@ out_of_scope:
   - Storage ports ClickHouseStorage.lens_* and provide_storage (G1), which remain unowned.
   - Unbound reservation release (G2) and analysis logging marker (G3), which remain unowned
     per the outline.
-  - The three LiteLLM model-call attempt logic for transport errors/429/502/503/504 (B132 worker).
+  - The three LiteLLM model-call attempt logic for transport errors/429/502/503/504 (B8232 worker).
 pitfalls:
   - 'Architectural blocker: crates/betterlite-lens/src/lib.rs must declare `pub mod investigation;` before this task runs. This planner''s scope excludes lib.rs (it''s a parent module, not owned by this task), so the architect must add the module declaration. Without it, the investigation.rs file cannot compile.'
   - investigate_stored filters examined to relevant by candidate.execution_ids; if no matches

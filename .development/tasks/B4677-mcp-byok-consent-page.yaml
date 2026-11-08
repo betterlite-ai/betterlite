@@ -43,7 +43,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L85-L88
     why: >-
       User ID extraction wrapper (_user_id_from_session_cookie): simple 2-line helper that returns
-      just the user_id from the session cookie, used by B136 (discoverable_endpoints.py lines 425/428, 904/913)
+      just the user_id from the session cookie, used by B7971 (discoverable_endpoints.py lines 425/428, 904/913)
 
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L91-L131
     why: >-
@@ -189,14 +189,14 @@ deviations:
 
 out_of_scope:
   - "HTML form builder (_build_authorize_html, lines 187-644): Split into B4687 per call-graph split rule."
-  - "_user_id_from_session_cookie (lines 85-88): thin wrapper over _session_identity_from_cookie, returns user_id; called from B136's discoverable_endpoints.py lines 425/428, 904/913. Owned by B4655."
+  - "_user_id_from_session_cookie (lines 85-88): thin wrapper over _session_identity_from_cookie, returns user_id; called from B7971's discoverable_endpoints.py lines 425/428, 904/913. Owned by B4655."
   - "PKCE verification (_verify_pkce function, checking code_verifier against stored code_challenge). Owned by B4678."
   - "OAuth error response formatting (_oauth_token_error). Owned by B4678."
   - "Token endpoint (POST /v1/mcp/oauth/token). Owned by B4678."
   - "OAuth metadata discovery endpoints (/.well-known/oauth-authorization-server, /.well-known/oauth-authorization-server/.../v1/mcp/oauth, /.well-known/oauth-authorization-server/{root_path:path}/v1/mcp/oauth). Owned by B4678."
   - "GET /v1/mcp/oauth/protected-resource (byok_protected_resource_metadata). Owned by B4678."
   - "store_user_credential database write (persisting the credential from the API key field). Owned by B4713."
-  - "global_mcp_server_manager and MCP registry lookup (ServerConfig metadata retrieval). Owned by B136."
+  - "global_mcp_server_manager and MCP registry lookup (ServerConfig metadata retrieval). Owned by B4731."
   - "Session-key DB liveness lookup (get_key_object, hash_token utilities). Owned by B738."
   - "get_request_base_url and validate_loopback_redirect_uri utilities. Owned by B4654."
   - "master_key global. Owned by proxy core config."

@@ -37,7 +37,7 @@ description: >-
 
   Module download. download_python_module(source_type, bucket_name, object_key, local_file_path) fetches the object with the same S3 or GCS client code, decodes it as UTF-8, creates the parent directories of local_file_path and writes the text there.
   Unlike the config readers, this path resolves credentials per call (LiteLLM builds a fresh BaseAWSLLM() each time) and a GCS client per call.
-  LiteLLM returns True or False and logs the cause. betterlite returns Result<(), ModuleDownloadError>, with the cause kept as #[source], so its caller (B124's get_instance_fn work) can raise the same "Failed to download {object_key} from {storage_type} bucket {bucket_name}" ImportError text from the Err.
+  LiteLLM returns True or False and logs the cause. betterlite returns Result<(), ModuleDownloadError>, with the cause kept as #[source], so its caller (B8042's get_instance_fn, through B165's BucketModuleFetcher) can raise the same "Failed to download {object_key} from {storage_type} bucket {bucket_name}" ImportError text from the Err.
   The download must write nothing when the fetch or decode fails.
 
 
@@ -165,7 +165,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/bucket-config/include-not-mapping.yaml
 deviations:
   - what: betterlite downloads a Python module from s3:// or gcs:// and writes it to the local path, but does not run it.
-    why: betterlite has no Python interpreter. LiteLLM's exec_module step is in get_instance_fn, which B124's remaining work owns; a callback given as an s3:// or gcs:// module URL needs the architect's decision (see notes).
+    why: betterlite has no Python interpreter. LiteLLM's exec_module step is in get_instance_fn, which B8042 owns; a callback given as an s3:// or gcs:// module URL needs the architect's decision (see notes).
   - what: The S3 region is AWS_DEFAULT_REGION, else us-east-1; boto3 also reads the shared config file and the SDK profile region.
     why: betterlite has no botocore config loader, and the region only picks the signing scope and the host for reading a bucket. A bucket in another region answers with a redirect error, which reads as a missing object.
   - what: A dotted bucket name is read with a path-style URL.
@@ -173,8 +173,8 @@ deviations:
   - what: A failed module download is a typed Rust error, not a False result.
     why: Rust rules forbid dropping the cause. The caller turns it into the same ImportError text.
 out_of_scope:
-  - "Calling this module at startup (the LITELLM_CONFIG_BUCKET_* branch in ProxyConfig.get_config, proxy_server.py L6031-L6048) and raising 'Unable to load config from given source.'; B124's remaining proxy_server.py work owns the call."
-  - "get_instance_fn and _load_instance_from_remote_storage in litellm/proxy/types_utils/utils.py (URL splitting, temp file, exec_module, getattr of the instance); B124 owns them and calls download_python_module."
+  - "Calling this module at startup (the LITELLM_CONFIG_BUCKET_* branch in ProxyConfig.get_config, proxy_server.py L6031-L6048) and raising 'Unable to load config from given source.': B8379's reload_config owns the call."
+  - "get_instance_fn and _load_instance_from_remote_storage in litellm/proxy/types_utils/utils.py (URL splitting, temp file, exec_module, getattr of the instance); B8042 owns them, and B165.s BucketModuleFetcher calls download_python_module."
   - "GCSBucketBase and download_gcs_object; B3997 owns them."
   - "AWS credential resolution; B594 owns it."
   - "S3 log upload signing (s3_v2.py); B3993 owns it."

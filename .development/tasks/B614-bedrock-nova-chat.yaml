@@ -32,9 +32,9 @@ description: >-
   validation as a tuple of mapping records, preserve it unchanged. On successful validation of a list or tuple,
   remove points whose location equals tool_config, preserve all other points and their fields/order, and write a
   list even if empty. Perform this before B604 so unsupported tool caching is never credited in gateway attribution.
-  direct_nova_endpoint: Direct Nova reports provider amazon_nova. Resolve base by truthy explicit api_base, B129
+  direct_nova_endpoint: Direct Nova reports provider amazon_nova. Resolve base by truthy explicit api_base, B8500
   get_secret_str(AMAZON_NOVA_API_BASE), then https://api.nova.amazon.com/v1; do not trim its slash here. Resolve
-  key by truthy explicit api_key, litellm.amazon_nova_api_key, B129 get_secret_str(AMAZON_NOVA_API_KEY), then litellm.api_key.
+  key by truthy explicit api_key, litellm.amazon_nova_api_key, B8500 get_secret_str(AMAZON_NOVA_API_KEY), then litellm.api_key.
   Global key settings are used as values, not resolved a second time. Missing keys yield None without an error in
   this helper. nova_converse_delegation: Bedrock Nova initializes B2205, takes supported options from B600 and mapping
   from B602, and delegates the entire buffered response to B607 with all original arguments including api_key/json_mode.
@@ -175,8 +175,8 @@ dod:
   - oracle
   - helper-python
 - text: 'direct_nova_endpoint: Direct Nova reports provider amazon_nova. Resolve base by truthy explicit api_base,
-    B129 get_secret_str(AMAZON_NOVA_API_BASE), then https://api.nova.amazon.com/v1; do not trim its slash here.
-    Resolve key by truthy explicit api_key, litellm.amazon_nova_api_key, B129 get_secret_str(AMAZON_NOVA_API_KEY),
+    B8500 get_secret_str(AMAZON_NOVA_API_BASE), then https://api.nova.amazon.com/v1; do not trim its slash here.
+    Resolve key by truthy explicit api_key, litellm.amazon_nova_api_key, B8500 get_secret_str(AMAZON_NOVA_API_KEY),
     then litellm.api_key. Global key settings are used as values, not resolved a second time. Missing keys yield
     None without an error in this helper.'
   proof:
@@ -282,9 +282,9 @@ checks:
       this before B604 so unsupported tool caching is never credited in gateway attribution.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_chat_cases::case_[0-9]+_nova_tool_config_injection$/)'
   - id: case-direct-nova-endpoint
-    why: Direct Nova reports provider amazon_nova. Resolve base by truthy explicit api_base, B129 get_secret_str(AMAZON_NOVA_API_BASE),
+    why: Direct Nova reports provider amazon_nova. Resolve base by truthy explicit api_base, B8500 get_secret_str(AMAZON_NOVA_API_BASE),
       then https://api.nova.amazon.com/v1; do not trim its slash here. Resolve key by truthy explicit api_key, litellm.amazon_nova_api_key,
-      B129 get_secret_str(AMAZON_NOVA_API_KEY), then litellm.api_key. Global key settings are used as values, not
+      B8500 get_secret_str(AMAZON_NOVA_API_KEY), then litellm.api_key. Global key settings are used as values, not
       resolved a second time. Missing keys yield None without an error in this helper.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_chat_cases::case_[0-9]+_direct_nova_endpoint$/)'
   - id: helper-python

@@ -15,7 +15,7 @@ description: >-
 
 
   Build a module `milvus_vector_config` in betterlite-server (crates/betterlite-server/src/milvus_vector_config.rs and the
-  folder beside it) with a type `MilvusProviderPorts` that holds the environment reader (the B129 `get_secret_str` seam) and
+  folder beside it) with a type `MilvusProviderPorts` that holds the environment reader (the B8500 `get_secret_str` seam) and
   implements the Milvus arms of the port. `auth_headers` passes the store params' `api_key` to B7810's `get_auth_credentials`.
   `complete_url` reads `MILVUS_API_BASE` through the reader, builds B7810's `MilvusEnv`, and calls B7810's `get_complete_url`
   with the store params' `api_base` string (or none).

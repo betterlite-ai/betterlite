@@ -1,0 +1,18 @@
+id: B8232
+milestone: M8 platform
+title: Lens worker executable and image files
+status: todo
+depends_on: [B4500, B4506, B4509]
+file: tasks/B8232-lens-worker-binary.yaml
+covers:
+  - "litellm/proxy/lens/worker.py"
+  - "deploy/lens/Dockerfile"
+  - "deploy/lens/Dockerfile.dockerignore"
+  - "deploy/lens/compose.yaml"
+  - "deploy/lens/compose.build.yaml"
+parent: B132
+split_from: B132
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

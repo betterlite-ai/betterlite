@@ -142,7 +142,7 @@ out_of_scope:
   - Storage of span rows or spend records; B3866 owns that port.
   - Native OTLP decode and error encoding; supplied through the native codec boundary (G2).
   - Projection of AgentNode, TracePage, and SpanDetail from stored span rows; B3866 uses these types to build trace/query records and agent trees.
-  - Langfuse root span input/output specialization; B110 owns that override.
+  - Langfuse root span input/output specialization; B8250 owns that override.
   - HTTP request/response handling and auth; B3867 owns the ingest route.
 
 pitfalls:

@@ -264,7 +264,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: redact_nested_match_and_regex_keys L715-L751
   belong to B104.'
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: _get_parent_otel_span_from_kwargs L429-L450
-  belong to B110.'
+  belong to B3847.'
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: safe_divide_seconds L33-L48; normalize_drop_params
   L54-L60; drop_params_flag L63-L67; drop_params_env_flag L73-L83; safe_divide L86-L104; _is_litellm_limit_rejection
   L107-L113; _is_proxy_rejection L116-L123; _is_provider_originated L126-L133; is_expected_client_error L136-L165;

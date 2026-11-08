@@ -1,0 +1,14 @@
+id: B8604
+milestone: M8 platform
+title: Proxy SSE data generator
+status: todo
+depends_on: [B8602, B8603, B7324]
+file: tasks/B8604-sse-data-generator.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"
+parent: B7980
+split_from: B7980
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

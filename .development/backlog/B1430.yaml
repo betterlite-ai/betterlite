@@ -6,6 +6,7 @@ depends_on: [B002, B960, B961, B962, B171]
 file: tasks/B1430-native-messages-hosts.yaml
 covers:
   - "litellm/llms/{deepseek,tencent,minimax}/messages/transformation.py"
+  - "litellm/llms/tencent/messages/__init__.py"
 parent: B043
 split_from: null
 resolution: null

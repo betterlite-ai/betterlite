@@ -22,7 +22,7 @@ description: >-
   L86-L91; _load_sdk_k8s_token_provider L94-L99.
 
 
-  Named case contracts: static_key_disables_wif: Strip explicit api_key and OPENAI_API_KEY using B129 normalize_nonempty_secret_str;
+  Named case contracts: static_key_disables_wif: Strip explicit api_key and OPENAI_API_KEY using B4410 normalize_nonempty_secret_str;
   either nonblank key disables workload identity, including an env key after an explicit whitespace-only key. https_openai_host_only:
   Effective base is api_base, litellm.api_base, OPENAI_BASE_URL, OPENAI_API_BASE; an absent base allows WIF, otherwise
   require HTTPS plus B500 api.openai.com/subdomain classification. Foreign/HTTP hosts disable it; URL parse failures
@@ -33,7 +33,7 @@ description: >-
   openai>=2.32.0 and naming all three identity environment variables.
 
 
-  B129 owns get_secret_str and normalize_nonempty_secret_str; configuration injects the resulting snapshots. Treat
+  B8500 owns get_secret_str and B4410 normalize_nonempty_secret_str; configuration injects the resulting snapshots. Treat
   SDK availability as an injectable capability for oracle comparison, without requiring a Python runtime in production.
 
 
@@ -132,7 +132,7 @@ references:
     _targets_openai_api, _workload_identity_auth, _load_sdk_workload_identity_auth, _load_sdk_k8s_token_provider.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: 'static_key_disables_wif: Strip explicit api_key and OPENAI_API_KEY using B129 normalize_nonempty_secret_str;
+- text: 'static_key_disables_wif: Strip explicit api_key and OPENAI_API_KEY using B4410 normalize_nonempty_secret_str;
     either nonblank key disables workload identity, including an env key after an explicit whitespace-only key.'
   proof:
   - case-static-key-disables-wif
@@ -232,7 +232,7 @@ checks:
   - mutants
   commands:
   - id: case-static-key-disables-wif
-    why: Strip explicit api_key and OPENAI_API_KEY using B129 normalize_nonempty_secret_str; either nonblank key
+    why: Strip explicit api_key and OPENAI_API_KEY using B4410 normalize_nonempty_secret_str; either nonblank key
       disables workload identity, including an env key after an explicit whitespace-only key.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::workload_identity_cases::case_[0-9]+_static_key_disables_wif$/)'
   - id: case-three-fields-required

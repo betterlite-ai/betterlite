@@ -145,7 +145,7 @@ out_of_scope:
 - Monetary cost calculation is B068.
 - Tool formatting and catalog-based model-name normalization are B259; engine/backend selection and Hugging Face
   family selection are B195.
-- The /utils/token_counter proxy route and the model_info.custom_tokenizer field it reads are unowned; this task
+- The /utils/token_counter proxy route and the model_info.custom_tokenizer field it reads belong to B8598; this task
   only consumes an already-built custom tokenizer input, never a raw identifier.
 pitfalls:
 - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/token_count-<case>.yaml. The rest of that folder belongs to other tasks.'

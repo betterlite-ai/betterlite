@@ -21,7 +21,7 @@ description: >-
 
   B537's Azure OpenAI transport depends on this task, so inject a B010 prepared operation for that branch,
   with caller-visible credential/argument tests here and concrete wire tests in B537. The same seam is used
-  for downstream B047 ElevenLabs/Polly, B043 MiniMax, B046 RunwayML, B036 Mistral and B041 EdenAI composition.
+  for downstream B047 ElevenLabs/Polly, B8312 MiniMax, B046 RunwayML, B036 Mistral and B8311 EdenAI composition.
   These are named owners, never imports of a task that depends on this one. Generic execution goes through
   B2452. Vertex native synthesis uses B1352/B1353 config operations; lowercase substring gemini on vertex_ai/
   vertex_ai_beta and provider gemini use B1003's chat bridge. No streaming pump or cancellation implementation
@@ -135,7 +135,7 @@ deviations: []
 out_of_scope:
 - B1083 owns aspeech; B1082 transcription/atranscription; B158 owns remaining general main.py SDK facade functions, while per-provider _complete_* functions remain their provider umbrellas' responsibility.
 - B1135 owns base speech contracts; B157 owns ProviderConfigManager.get_provider_text_to_speech_config; B176 owns get_litellm_params; B174 model resolution.
-- B537 Azure OpenAI,B538 native Azure,B047 ElevenLabs/Polly,B043 MiniMax,B046 RunwayML,B036 Mistral,B041 EdenAI and B033 Vertex composition own concrete adapters. B010 operations are injected where those owners are downstream; this task never imports them.
+- B537 Azure OpenAI,B538 native Azure,B047 ElevenLabs/Polly,B8312 MiniMax,B046 RunwayML,B036 Mistral,B8311 EdenAI and B033 Vertex composition own concrete adapters. B010 operations are injected where those owners are downstream; this task never imports them.
 - B2452 owns generic text_to_speech_handler/async_text_to_speech_handler; B514 owns OpenAI execution and B1003 the chat bridge.
 pitfalls:
 - Azure voice validation and credential resolution must remain with its call, not a separate line-count stage.

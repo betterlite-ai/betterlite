@@ -1,0 +1,67 @@
+id: B8150
+title: hosted_vllm chat and embedding configs
+description: >-
+  Build the hosted_vllm chat and embedding configs in betterlite-openai as crates/betterlite-openai/src/hosted_vllm.rs and its folder. Both are pure transforms over typed arguments; the HTTP call and the main.py dispatch (_complete_hosted_vllm) stay with B8157, and the embedding call goes through the shared openai_like path of B1440.
+
+  Chat is HostedVLLMChatConfig, a thin layer over the OpenAI base chat config of B668: _convert_custom_tools_to_function_tools, get_supported_openai_params, map_openai_params (the reasoning_effort handling of B212 applies), _get_openai_compatible_provider_info (api base and key from the arguments, then HOSTED_VLLM_API_BASE and HOSTED_VLLM_API_KEY through betterlite-config, with LiteLLM's default key), _is_video_file, _convert_file_to_video_url and the three _transform_messages overloads, which turn a video file content item into a video_url item. Read the source and keep its order and its error texts.
+
+  Embedding is HostedVLLMEmbeddingError and HostedVLLMEmbeddingConfig: validate_environment, get_complete_url, transform_embedding_request, transform_embedding_response, get_supported_openai_params, map_openai_params and get_error_class. The response decoder is typed; a field of the wrong type is an error, never a default.
+
+  Where the source and this text differ, the source at the pinned commit wins.
+scope:
+  paths:
+    - crates/betterlite-openai/src/hosted_vllm.rs
+    - crates/betterlite-openai/src/hosted_vllm/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/hosted-vllm-chat-embedding/**
+    - tools/oracle/helpers/b8150.py
+    - tools/oracle/helpers/b8150/**
+    - tools/oracle/src/helpers/provider/b8150.rs
+    - tools/oracle/src/helpers/provider/b8150/**
+    - tools/oracle/src/helpers/openai/b8150.rs
+    - tools/oracle/src/helpers/openai/b8150/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/chat/transformation.py#L1-L239
+    why: Chat config, tool conversion, param mapping and video file messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/embedding/transformation.py#L1-L176
+    why: Embedding request, response, URL and headers.
+dod:
+  - text: Supported params and map_openai_params give LiteLLM's options for hosted_vllm chat.
+    proof: [hosted-vllm-chat-embedding-tests, hosted-vllm-chat-embedding-cases]
+  - text: Video file content items become video_url items with LiteLLM's rule, and custom tools become function tools.
+    proof: [hosted-vllm-chat-embedding-tests, hosted-vllm-chat-embedding-cases]
+  - text: The provider info resolves api base and key in LiteLLM's order.
+    proof: [hosted-vllm-chat-embedding-tests, hosted-vllm-chat-embedding-cases]
+  - text: The embedding URL, headers, request body and response match, and each bad reply gives the same error class and message.
+    proof: [hosted-vllm-chat-embedding-tests, hosted-vllm-chat-embedding-cases]
+  - text: New helper cases for these functions exist.
+    proof: [hosted-vllm-chat-embedding-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: hosted-vllm-chat-embedding-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^hosted_vllm::/)'
+      why: Without this provider code there are no such tests, so the check fails on the base branch.
+    - id: hosted-vllm-chat-embedding-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/hosted-vllm-chat-embedding)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/helpers/hosted-vllm-chat-embedding/chat-param-mapping.yaml
+  - tools/oracle/cases/helpers/hosted-vllm-chat-embedding/chat-video-messages.yaml
+  - tools/oracle/cases/helpers/hosted-vllm-chat-embedding/chat-custom-tools.yaml
+  - tools/oracle/cases/helpers/hosted-vllm-chat-embedding/embedding-request.yaml
+  - tools/oracle/cases/helpers/hosted-vllm-chat-embedding/embedding-response.yaml
+deviations:
+  []
+out_of_scope:
+  - "B8157 owns _complete_hosted_vllm in main.py and the dispatch wiring."
+  - "B1440 owns the shared openai_like embedding dispatch that calls this config."
+  - "B668 owns the OpenAI base chat config this config extends; B212 owns the reasoning_effort helpers."
+  - "The BaseEmbeddingConfig contract has no owner in the backlog; this task builds only the hosted_vllm side of it."
+pitfalls:
+  - "The oracle helper for this task is pre-registered as b8150 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task's to edit."
+  - "The video file check looks at the file format and the mime type of the content item; copy the exact test from _is_video_file."
+  - "An empty api key from the arguments is not the same as a missing one; follow the source."
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

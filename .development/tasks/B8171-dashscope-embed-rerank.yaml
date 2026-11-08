@@ -1,0 +1,145 @@
+id: B8171
+title: DashScope embedding, rerank and shared errors
+description: >-
+  Build the DashScope embedding and rerank transforms and the pieces they share. Three modules. dashscope_common in
+  crates/betterlite-provider holds DashscopeError, the rerank base resolver and the family identity type. dashscope_rerank
+  in crates/betterlite-provider holds the rerank config over B1013's rerank contracts. dashscope_embedding in
+  crates/betterlite-openai holds the embedding config. The files are litellm/llms/dashscope/common_utils.py (L20-L128, except
+  the three get_dashscope_family_*_config selectors and resolve_dashscope_family_api_key, which B8172 builds),
+  embed/transformation.py and rerank/transformation.py. The two __init__.py files only re-export. Nothing reads an
+  environment variable. The caller passes every key and base as a plain argument. Dispatch wiring and the HTTP cases belong to B8312.
+
+  dashscope_common. DashscopeError carries status_code, message and headers (an empty header map when none), and is a
+  BaseLLMException (B2202). FamilyIdentity { missing_key_message: String, default_base: String, env_base: Option<String>,
+  env_key: Option<String>, fallback_key: Option<String>, empty_key_is_set: bool }. It stands for one brand. This task builds
+  the plain DashScope one: default_base https://dashscope.aliyuncs.com/compatible-mode/v1, missing_key_message "DashScope
+  API key is required. Set 'DASHSCOPE_API_KEY' env var or pass api_key explicitly.", env_key the DASHSCOPE_API_KEY value
+  the caller passes, no fallback key, empty_key_is_set true. B8172 builds the other two. resolve_key(identity, api_key): when
+  empty_key_is_set, an api_key that is not None wins even if empty; otherwise a non-empty api_key wins. Then env_key, then
+  fallback_key. None left gives a ValueError with missing_key_message.
+
+  resolve_rerank_base(api_base, env_value, default_rerank_base) is resolve_dashscope_family_rerank_api_base. First find the
+  remap: when api_base is set, parse it as a URL, and its host is aliyuncs.com or ends in .aliyuncs.com (host compared in
+  lower case), and its path with trailing slashes removed is exactly /compatible-mode/v1, the remap is
+  {scheme}://{netloc}/compatible-api/v1/reranks. Otherwise there is no remap. Then: api_base set (even empty) and no remap
+  returns api_base unchanged. Else the result is env_value when non-empty, else the remap, else default_rerank_base. So a
+  chat-shaped aliyuncs base is remapped, unless the env value is set, which wins over the remap.
+
+  dashscope_embedding. DashscopeEmbeddingConfig takes a FamilyIdentity. Supported options are dimensions, encoding_format
+  and user. map_openai_params walks non_default_params, skips None values, copies the three supported keys into
+  optional_params and drops every other key without an error, whatever drop_params says. Headers are Content-Type
+  application/json and Authorization Bearer {resolve_key}, then the caller headers overlay them. The URL base is api_base,
+  else env_base, else default_base. Trim trailing slashes. If it ends in /embeddings return it, else append /embeddings. The
+  body is {model, input} with model as given, then dimensions, encoding_format and user when present and not None. The reply
+  decoder takes bytes. A body that is not JSON gives DashscopeError(status of the HTTP reply, "Failed to parse DashScope
+  response as JSON: {reason}"). A body with an error key gives DashscopeError(status, error.message when error is an object,
+  else the error as text). Otherwise the reply is object "list", data (default empty list), model (body model, else the
+  request model), usage {prompt_tokens (default 0), completion_tokens 0, total_tokens (default prompt_tokens)}, and id when
+  the body has one. Name it decode_dashscope_embedding_reply(bytes, status, request_model) and give it a fuzz target.
+  get_error_class builds DashscopeError from message, status and headers.
+
+  dashscope_rerank. DashscopeRerankConfig takes a FamilyIdentity plus the rerank env name's value as rerank_env_value and a
+  default_rerank_url (plain DashScope: https://dashscope.aliyuncs.com/compatible-api/v1/reranks, env value from
+  DASHSCOPE_API_BASE_RERANK). The URL: resolve_rerank_base first. If the result equals default_rerank_url return it. Else trim
+  trailing slashes; if it ends in /reranks or /rerank return it; otherwise append /reranks (a base ending in /v1 and any
+  other base give the same result). Headers are Authorization Bearer {resolve_key}, accept application/json, content-type
+  application/json, then the caller headers overlay. Supported cohere params are query, documents, top_n,
+  return_documents. map_cohere_rerank_params returns {query, documents}, plus top_n when not None, plus return_documents when
+  not None. Every other argument is ignored. transform_rerank_request needs query and documents ("query is required for
+  DashScope rerank", "documents is required for DashScope rerank", ValueError each). The body is {model, query, documents},
+  plus top_n and return_documents when present and not None. The reply decoder decode_dashscope_rerank_reply(bytes, status)
+  behaves as follows. Not JSON: DashscopeError(status, the body text). A body with a code key and no results key:
+  DashscopeError(status, the body's message field, else the body as JSON text, see docs/compatibility.md). No results key or
+  results null: DashscopeError(status, "No results in DashScope rerank response: {body as JSON text}"). Each result becomes
+  {index, relevance_score}, plus document when the result has one: an object is kept as is, a string becomes {text}, any
+  other value is dropped. The id is the body id when truthy, else a new UUID4. meta.billed_units.total_tokens and
+  meta.tokens.input_tokens both hold usage.total_tokens (absent when the body has no usage or no total_tokens). Give the
+  decoder a fuzz target.
+
+  Size. The LiteLLM code owned here is about 330 nonblank, non-comment lines. Plan 300 production, 320 tests, 120 adapters,
+  80 fuzz and 20 wiring lines. No split.
+scope:
+  paths:
+    - crates/betterlite-provider/src/dashscope_common.rs
+    - crates/betterlite-provider/src/dashscope_common/**
+    - crates/betterlite-provider/src/dashscope_rerank.rs
+    - crates/betterlite-provider/src/dashscope_rerank/**
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/dashscope_rerank_reply.rs
+    - crates/betterlite-provider/fuzz/corpus/dashscope_rerank_reply/**
+    - crates/betterlite-openai/src/dashscope_embedding.rs
+    - crates/betterlite-openai/src/dashscope_embedding/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/dashscope_embedding_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/dashscope_embedding_reply/**
+    - tools/oracle/cases/helpers/dashscope-embed/**
+    - tools/oracle/helpers/b8171.py
+    - tools/oracle/helpers/b8171/**
+    - tools/oracle/src/helpers/openai/b8171.rs
+    - tools/oracle/src/helpers/openai/b8171/**
+    - tools/oracle/src/helpers/provider/b8171.rs
+    - tools/oracle/src/helpers/provider/b8171/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/common_utils.py#L20-L40
+    why: The rerank path constants and the chat-shaped base remap.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/common_utils.py#L112-L128
+    why: DashScopeError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/embed/transformation.py#L30-L191
+    why: Embedding params, headers, URL, body and reply conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/rerank/transformation.py#L52-L250
+    why: Rerank URL, headers, params, body and reply conversion.
+dod:
+  - text: The rerank base resolver remaps a chat-shaped aliyuncs base, lets the env value win over the remap, and returns any other explicit base unchanged.
+    proof: [dashscope-rerank-tests, oracle]
+  - text: Embedding options, headers, URL, body and reply conversion match LiteLLM, including the missing-key error and the error-key reply.
+    proof: [dashscope-embed-tests, oracle]
+  - text: Rerank URL, headers, params, body and reply conversion match LiteLLM, including string documents, code-without-results and missing results.
+    proof: [dashscope-rerank-tests, oracle]
+  - text: A reply that is not valid JSON, lacks a field or has the wrong types fails with a typed error and does not panic, and both fuzz corpora replay.
+    proof: [dashscope-embed-corpus, dashscope-rerank-corpus]
+  - text: The new oracle cases exist and call this task's helper.
+    proof: [dashscope-embed-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: dashscope-embed-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^dashscope_embedding::/) - test(/replays_the_/)'
+      why: A generic OpenAI embedding config drops nothing it should keep and has no DashScope key rule or /embeddings suffix rule.
+    - id: dashscope-rerank-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^dashscope_(common|rerank)::/) - test(/replays_the_/)'
+      why: A Cohere-shaped rerank would use the wrong URL, send extra fields and miss the string-document and error-body rules.
+    - id: dashscope-embed-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/dashscope_embedding_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/dashscope_embedding_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_dashscope_embedding_reply_corpus)'
+      why: The reply body comes from the network and needs a fuzz target with a replayed corpus.
+    - id: dashscope-rerank-corpus
+      run: test -f crates/betterlite-provider/fuzz/fuzz_targets/dashscope_rerank_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/dashscope_rerank_reply)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_dashscope_rerank_reply_corpus)'
+      why: The reply body comes from the network and needs a fuzz target with a replayed corpus.
+    - id: dashscope-embed-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/dashscope-embed)" && /usr/bin/grep -rlE '^  b8171:' tools/oracle/cases/helpers/dashscope-embed
+      why: Without cases that call the B8171 helper nothing compares these transforms with LiteLLM.
+oracle_cases:
+  - tools/oracle/cases/helpers/dashscope-embed/embedding-params-and-url.yaml
+  - tools/oracle/cases/helpers/dashscope-embed/embedding-reply.yaml
+  - tools/oracle/cases/helpers/dashscope-embed/rerank-base-resolver.yaml
+  - tools/oracle/cases/helpers/dashscope-embed/rerank-url-and-headers.yaml
+  - tools/oracle/cases/helpers/dashscope-embed/rerank-request.yaml
+  - tools/oracle/cases/helpers/dashscope-embed/rerank-reply.yaml
+deviations:
+  - what: A rerank result without index or relevance_score fails with a typed DashscopeError that names the field, status 500.
+    why: LiteLLM raises a raw KeyError there. The Rust decoder must return an error. 500 is the status LiteLLM's generic exception mapping gives an unclassified exception (to be confirmed by the architect, see notes).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/rerank/transformation.py#L212-L217
+out_of_scope:
+  - B8172 owns the family selectors (get_dashscope_family_embedding_config, get_dashscope_family_rerank_config, get_dashscope_family_image_generation_config), resolve_dashscope_family_api_key, missing_dashscope_family_key_message and the QwenCloud and Qianwen AI Platform identities.
+  - B1013 owns BaseRerankConfig and the rerank records. B2202 owns BaseLLMException.
+  - B8312 owns dispatch wiring, the credential call sites and the HTTP oracle cases. This task touches no dispatch.rs or operation.rs.
+pitfalls:
+  - Plain DashScope embedding treats an empty api_key string as given (the check is "is not None"). The brand identities treat an empty string as unset.
+  - The remap applies only to hosts that are aliyuncs.com or end in .aliyuncs.com and only when the path is exactly /compatible-mode/v1 after trailing slashes are removed. dashscope-intl.aliyuncs.com counts, evil-aliyuncs.com does not.
+  - An explicit api_base that is not chat-shaped is returned as is, even when it is an empty string. The env value is read only when api_base is None or chat-shaped.
+  - get_complete_url returns the default rerank URL untouched, but a base equal to it after trimming is not special-cased, only the exact default string.
+  - The rerank reply sets billed_units and tokens from the same total_tokens, and both stay empty when the body has no usage.
+  - The embedding reply keeps the body's data array as it came, with no index or object rewrite.
+  - "The embedding reply type is the shared EmbeddingResponse, with EmbeddingRecord and EmbeddingUsage, in crates/betterlite-openai/src/embedding.rs (from B006). Decode into it and define no second response type. It has no id field, so decode_dashscope_embedding_reply returns the body id beside it."
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

@@ -1,0 +1,14 @@
+id: B8397
+milestone: M8 platform
+title: Remaining PrismaClient table reads and writes and the config row cache
+status: todo
+depends_on: [B714, B722, B2362]
+file: tasks/B8397-table-operations.yaml
+covers:
+  - "litellm/proxy/utils.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

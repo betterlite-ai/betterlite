@@ -222,7 +222,7 @@ out_of_scope:
   - Prompt extraction and cached-response decoding; B4380 owns `extract_semantic_prompt` and `decode_cached_response`, and this task calls them (the Redis `_get_prompt_from_kwargs`, `_collect_responses_input_text`, `_coerce_response_input_value` and `_get_cache_logic` bodies live there, with the miss-on-decode-error policy kept here).
   - Embedding calls, Router lookup, truncation and timeouts (`_embedding_input`, `_get_embedding`, `_get_async_embedding`); B4381 owns them and B4310 owns their helpers. This task only calls the `SemanticEmbedder` port.
   - Sync `set_cache` and `get_cache`; see deviations. No caller needs them in an async gateway.
-  - Valkey's overrides of the read and write methods (valkey_semantic_cache.py); B128 owns them.
+  - Valkey's overrides of the read and write methods (valkey_semantic_cache.py); B8296 owns them.
   - Choosing the cache type from settings and constructing this cache (caching.py:215-232); B4299 and the cache facade own that, and B4299 raises a not-supported error until this task is wired.
   - The health readiness details body and the route that call `index_info`; B4448 owns them.
   - Opening Redis connections (`LiveAsyncClient`, `RedisClient::Url`); B5220 and B4323 own them.

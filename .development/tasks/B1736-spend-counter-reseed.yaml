@@ -73,7 +73,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - B1735 owns from_db, _counter_row, end_user_from_db and window-counter prefix recognition; this task owns every other function in spend_counter_reseed.py.
-  - B071 and B124 decide budget admission and call these lower services; they do not own this cache-reseed mechanism.
+  - B3004, B8480 and B124 decide budget admission and call these lower services; they do not own this cache-reseed mechanism.
 pitfalls:
   - A successful Redis miss must ignore the per-pod value even when it is nonzero.
   - Window warm failures propagate unconditionally, unlike the default primary-counter warm path.

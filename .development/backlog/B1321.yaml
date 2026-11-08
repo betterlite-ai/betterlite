@@ -7,9 +7,6 @@ file: tasks/B1321-gemini-request-body.yaml
 covers:
   - "litellm/llms/vertex_ai/gemini/transformation.py"
   - "litellm/types/llms/vertex_ai.py"
-  - "litellm-proxy-extras/litellm_proxy_extras/migrations/migration_lock.toml"
-  - "litellm-proxy-extras/litellm_proxy_extras/py.typed"
-  - "migrations/Dockerfile"
 parent: B051
 split_from: null
 resolution: null
