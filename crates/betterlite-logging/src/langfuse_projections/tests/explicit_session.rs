@@ -105,6 +105,16 @@ fn langfuse_trace_id_blocks_session_detection() {
 }
 
 #[test]
+fn langfuse_trace_id_null_does_not_block_session_detection() {
+    let proxy = request(r#"{"langfuse_trace_id": null, "x-session-id": "trace-12345678"}"#);
+    assert!(is_session_header_trace(
+        Some(&text("trace-12345678")),
+        Some(&text("trace-12345678")),
+        Some(&proxy)
+    ));
+}
+
+#[test]
 fn short_trace_ids_are_not_session_headers() {
     let proxy = request(r#"{"x-session-id": "short"}"#);
     assert!(!is_session_header_trace(

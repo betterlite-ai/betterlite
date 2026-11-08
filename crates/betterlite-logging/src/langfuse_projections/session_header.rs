@@ -40,7 +40,11 @@ fn session_header_matches(
     {
         return false;
     }
-    if headers.contains_key("langfuse_trace_id") {
+    if headers
+        .get("langfuse_trace_id")
+        .copied()
+        .is_some_and(|value| !matches!(value, Json::Null))
+    {
         return false;
     }
     let same_session = header_text(headers, "langfuse_session_id") == Some(session_id);
