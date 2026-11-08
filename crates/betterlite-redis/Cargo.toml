@@ -9,6 +9,7 @@ publish.workspace = true
 betterlite-env = { path = "../betterlite-env" }
 betterlite-redact = { path = "../betterlite-redact" }
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
+hex.workspace = true
 prometheus-client = "0.25.1"
 py_literal = "0.4.0"
 redis = { workspace = true, features = ["cluster-async", "connection-manager", "tls-rustls-insecure", "tokio-rustls-comp", "token-based-authentication"] }
@@ -16,9 +17,10 @@ secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = "1.0.154"
 serde_with = "3.24.0"
+sha2.workspace = true
 socket2 = "0.6.5"
 thiserror.workspace = true
-tokio = { workspace = true, features = ["rt", "time"] }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
 tracing.workspace = true
 url = "2.5.8"
 
