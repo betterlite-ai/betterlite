@@ -181,6 +181,15 @@ fn http_boundaries_url_boundary_tests_behavior(#[case] behavior: Behavior, #[cas
     assert_eq!(observe(behavior), expected);
 }
 
+#[test]
+fn refuses_inputs_past_the_length_bound() {
+    let long_url = format!("https://api.example.com/{}", "a".repeat(0x0001_0000));
+    let error = assert_same_origin(&long_url, "https://api.example.com/v1").unwrap_err();
+    assert_eq!(error.to_string(), "the URL is longer than 65536 characters");
+    assert!(!destination_allowed(&long_url, &[]));
+    assert!(AllowedDestination::parse(&long_url).is_none());
+}
+
 #[rstest]
 fn replays_the_url_policy_corpus(#[files("fuzz/corpus/url_policy/*")] path: PathBuf) {
     let text = fs::read_to_string(path).unwrap();
