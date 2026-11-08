@@ -1,0 +1,49 @@
+kind: helper
+name: logging-state-correlation-defaults
+call:
+  logging_state:
+    instances:
+      - init:
+          model: gpt-4o
+          messages: "hello"
+          stream: false
+          call_type: completion
+          start_time: "2026-01-01T00:00:00+00:00"
+          litellm_call_id: call-omitted
+          function_id: fn-call-omitted
+          litellm_trace_id: "inner\r-trace"
+        correlation:
+          context: {"trace_id": "outer-trace", "session_id": "outer-session"}
+          settings: {"request_correlation_in_logs": true}
+        operations:
+          - op: restore_correlation
+      - init:
+          model: gpt-4o
+          messages: "hello"
+          stream: false
+          call_type: completion
+          start_time: "2026-01-01T00:00:00+00:00"
+          litellm_call_id: call-redacted
+          function_id: fn-call-redacted
+          litellm_trace_id: "sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        correlation:
+          context: {"trace_id": "outer-trace", "session_id": "outer-session"}
+          settings: {"request_correlation_in_logs": true}
+        operations:
+          - op: restore_correlation
+      - init:
+          model: gpt-4o
+          messages: "hello"
+          stream: false
+          call_type: completion
+          start_time: "2026-01-01T00:00:00+00:00"
+          litellm_call_id: call-unredacted
+          function_id: fn-call-unredacted
+          litellm_trace_id: "sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        correlation:
+          context: {"trace_id": "outer-trace", "session_id": "outer-session"}
+          settings: {"request_correlation_in_logs": true, "secret_redaction": "disabled"}
+        operations:
+          - op: restore_correlation
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: vector-query-embedding-direct-store-defaults
+call:
+  vector_query_embedding:
+    operation: direct_store_defaults
+    api_bases: [null, "", "https://example.test/path"]
+    litellm_params: {}
+env: {}
+compare: {ignore: []}

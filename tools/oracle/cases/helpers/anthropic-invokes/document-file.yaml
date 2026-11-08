@@ -1,0 +1,40 @@
+kind: helper
+name: anthropic-invokes-document-file
+call:
+  anthropic_invokes:
+    function: process_openai_file_message
+    messages:
+      - type: file
+        file:
+          file_data: 'data:image/png;base64,QUJD'
+      - type: file
+        file:
+          file_data: 'data:application/pdf;base64,QUJD'
+          format: application/pdf
+      - type: file
+        file:
+          file_id: file-abc
+          format: application/pdf
+      - type: file
+        file:
+          file_id: file-abc
+          format: image/png
+      - type: file
+        file:
+          file_id: file-abc
+          format: video/mp4
+      - type: file
+        file:
+          file_id: 'https://example.test/file.pdf'
+      - type: file
+        file:
+          file_id: file-abc
+      - type: file
+        file:
+          file_data: 'https://example.test/file.png'
+          format: application/pdf
+    data_urls:
+      'https://example.test/file.png': 'data:image/png;base64,QUJD'
+env: {}
+compare:
+  ignore: []

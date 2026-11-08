@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::{JsonPost, ProxiedClient, UpstreamResponse};
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 use super::envelope::Assembled;
@@ -28,7 +28,7 @@ pub async fn post(
     client
         .post_json(JsonPost {
             url: assembled.log_url,
-            bearer: key,
+            authorization: SecretString::from(format!("Bearer {}", key.expose_secret())),
             headers: Vec::new(),
             body,
             timeout,

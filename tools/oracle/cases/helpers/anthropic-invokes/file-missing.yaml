@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-invokes-file-missing
+call:
+  anthropic_invokes:
+    function: process_openai_file_message
+    messages:
+      - type: file
+env: {}
+compare:
+  ignore: []

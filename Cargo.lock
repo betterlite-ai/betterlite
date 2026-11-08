@@ -1519,6 +1519,7 @@ dependencies = [
 name = "betterlite-guardrails"
 version = "0.1.0"
 dependencies = [
+ "aws-lc-rs",
  "axum",
  "base64 0.23.1",
  "betterlite-compression",
@@ -1533,8 +1534,11 @@ dependencies = [
  "hex",
  "hyper",
  "indexmap 2.14.2",
+ "jsonwebtoken",
  "lru",
  "mime_guess",
+ "pem",
+ "pkcs8",
  "regex",
  "reqwest",
  "rstest",
@@ -1731,6 +1735,8 @@ dependencies = [
  "indexmap 2.14.2",
  "insta",
  "jiff",
+ "lettre",
+ "mail-builder",
  "minijinja",
  "minijinja-contrib",
  "nix",
@@ -1795,6 +1801,7 @@ dependencies = [
  "hex",
  "http 1.5.0",
  "pem",
+ "regex",
  "rstest",
  "rustix",
  "scrypt",
@@ -1874,6 +1881,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-http",
  "betterlite-models",
  "betterlite-prompts",
@@ -2151,6 +2159,7 @@ dependencies = [
  "indexmap 2.14.2",
  "libfuzzer-sys",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -2158,12 +2167,17 @@ name = "betterlite-provider"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-lc-rs",
+ "base64 0.23.1",
  "betterlite-config",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-prompts",
+ "chrono",
  "futures-util",
  "http 1.5.0",
+ "pem",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -2334,6 +2348,7 @@ dependencies = [
 name = "betterlite-router"
 version = "0.1.0"
 dependencies = [
+ "betterlite-context",
  "betterlite-error",
  "betterlite-redis",
  "indexmap 2.14.2",
@@ -2378,6 +2393,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tracing",
  "url",
 ]
 
@@ -2545,9 +2561,13 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "rstest",
+ "rust_decimal",
  "serde",
  "serde_json",
  "thiserror",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -2666,6 +2686,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "tracing",
  "uuid",
 ]
@@ -3919,6 +3940,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "encodify"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e95d6e27686e1d6991a3077f4dbec9d33d18903466d234165ad86cd08c3ebc79"
+dependencies = [
+ "memchr",
+ "simdutf8",
+]
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4539,6 +4570,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc627f471c528ff0c4a49e1d5e60450c8f6461dd6d10ba9dcd3a61d3dff7728d"
 dependencies = [
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "hostname"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "617aaa3557aef3810a6369d0a99fac8a080891b68bd9f9812a1eeda0c0730cbd"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "windows-link",
 ]
 
 [[package]]
@@ -5165,6 +5207,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonwebtoken"
+version = "11.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e75fe14a82d81e5f5af639997db37d8b96045938a7ac6ab18cdbe1c7467e05e1"
+dependencies = [
+ "aws-lc-rs",
+ "base64 0.22.1",
+ "getrandom 0.2.17",
+ "js-sys",
+ "serde",
+ "serde_json",
+ "signature",
+ "zeroize",
+]
+
+[[package]]
 name = "keyring-core"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5217,6 +5275,25 @@ name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
+
+[[package]]
+name = "lettre"
+version = "0.11.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2c646bd5cc763b1087b15493e29a64be6147ba8f19342004fa52048ee596eae"
+dependencies = [
+ "base64 0.23.1",
+ "email_address",
+ "hostname",
+ "idna",
+ "nom 8.0.0",
+ "percent-encoding",
+ "rustls",
+ "rustls-native-certs",
+ "socket2",
+ "tokio",
+ "url",
+]
 
 [[package]]
 name = "lexical-parse-float"
@@ -5426,6 +5503,15 @@ name = "macro_rules_attribute-proc_macro"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc04a4c58212d57930a24bf47d3fa87485264a3a054e9c10e042eb373573ad3c"
+
+[[package]]
+name = "mail-builder"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8bca634885db8e836b80700a73661de20ffd93cb5787729afc31575545e2aed"
+dependencies = [
+ "encodify",
+]
 
 [[package]]
 name = "matchers"
@@ -6335,6 +6421,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
+name = "pkcs8"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "451913da69c775a56034ea8d9003d27ee8948e12443eae7c038ba100a4f21cb7"
+dependencies = [
+ "der",
+ "spki",
+]
+
+[[package]]
 name = "pkg-config"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7182,6 +7278,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
+ "log",
  "once_cell",
  "rustls-pki-types",
  "rustls-webpki",
@@ -7608,6 +7705,15 @@ checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
  "errno",
  "libc",
+]
+
+[[package]]
+name = "signature"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
+dependencies = [
+ "rand_core 0.6.4",
 ]
 
 [[package]]

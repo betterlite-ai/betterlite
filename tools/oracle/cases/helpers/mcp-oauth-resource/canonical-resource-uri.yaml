@@ -1,0 +1,5 @@
+kind: helper
+name: "canonical-resource-uri"
+call: {"b4654":{"function":"canonicalize","url":"/relative/path","resource_only":true}}
+env: {}
+compare: {"ignore":[]}
