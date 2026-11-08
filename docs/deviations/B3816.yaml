@@ -35,12 +35,23 @@ deviations:
       the IdP answers with a real URI instead of staying broken for a day.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L422-L429
   - what: >-
-      A JWKS entry on the P-521 curve (ES512) fails the key set as an
-      unsupported key type; PyJWT verifies ES512 tokens.
+      A JWKS entry on the P-521 curve is skipped like every other unusable
+      entry, so an ES512-signed incoming token fails verification with "No
+      JWKS key matching kid=<kid> at <uri>"; LiteLLM verifies ES512 tokens.
     why: >-
-      jsonwebtoken and aws-lc-rs ship no ES512 verifier, and failing the set is
-      safer than silently skipping a key the IdP published.
+      jsonwebtoken and aws-lc-rs ship no ES512 verifier. Every unusable JWK is
+      skipped the way PyJWKSet skips one, so an IdP publishing an encryption
+      key next to its signing key still works.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L459-L472
+  - what: >-
+      MCP_JWT_SIGNING_KEY must hold an RSA key of 2048 to 8192 bits; a smaller
+      or larger key is a startup error because aws-lc-rs rejects it, while
+      LiteLLM loads it and PyJWT only warns about a short key.
+    why: >-
+      aws-lc-rs, which the task requires, accepts only 2048 to 8192 bit RSA
+      keys; PyJWT's enforce_minimum_key_length defaults to false, so LiteLLM
+      merely warns and keeps signing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L140-L151
   - what: >-
       A token whose exp equals the current second passes betterlite's expiry
       check and fails PyJWT's; both use zero leeway.

@@ -124,6 +124,13 @@ fn a_bad_pem_is_an_error_and_not_a_generated_key() {
 }
 
 #[test]
+fn a_key_below_2048_bits_is_an_error() {
+    let material = include_str!("fixtures/rsa-1024.pem");
+    let error = SigningKey::load(&environment(Some(material))).expect_err("short key");
+    assert!(matches!(error, SigningKeyError::PrivateKey { .. }));
+}
+
+#[test]
 fn a_pem_that_does_not_hold_a_private_key_is_an_error() {
     let material = pem::encode(&pem::Pem::new("PRIVATE KEY", [1_u8, 2, 3]));
     let error = SigningKey::load(&environment(Some(&material))).expect_err("bad pkcs8");
