@@ -93,20 +93,16 @@ impl RedisTransport {
     }
 
     pub fn mget(&self, keys: &[String]) -> Result<Vec<redis::Value>, ClientReuseError> {
-        if keys.is_empty() {
+        let Some(command) = mget_command(keys) else {
             return Ok(Vec::new());
-        }
-        let mut command = redis::cmd("MGET");
-        command.arg(keys);
+        };
         self.sync_client.query(&command)
     }
 
     pub async fn async_mget(&self, keys: &[String]) -> Result<Vec<redis::Value>, ClientReuseError> {
-        if keys.is_empty() {
+        let Some(command) = mget_command(keys) else {
             return Ok(Vec::new());
-        }
-        let mut command = redis::cmd("MGET");
-        command.arg(keys);
+        };
         let client = self.async_client().await?;
         Ok(client.query(&command).await?)
     }
@@ -144,4 +140,14 @@ impl RedisTransport {
         // the dropped client's driver task needs one poll to observe the close
         yield_now().await;
     }
+}
+
+// litellm uses mget_nonatomic on a cluster and a plain mget elsewhere; both send nothing for an empty list.
+fn mget_command(keys: &[String]) -> Option<redis::Cmd> {
+    if keys.is_empty() {
+        return None;
+    }
+    let mut command = redis::cmd("MGET");
+    command.arg(keys);
+    Some(command)
 }
