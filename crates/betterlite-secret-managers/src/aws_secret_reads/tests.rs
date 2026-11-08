@@ -30,6 +30,7 @@ use crate::aws::{AwsDependencies, AwsSecretsManager};
 
 const ACCESS_KEY: &str = "AKIDEXAMPLE";
 const SECRET_KEY: &str = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
+const PRIMARY_REPLY: &[u8] = br#"{"SecretString":"{\"db\":\"pw-one\",\"api\":\"pw-two\"}"}"#;
 
 #[derive(Debug, Error)]
 enum ResolverFailure {
@@ -469,10 +470,10 @@ async fn async_reads_post_bootstrap_names_to_aws() {
 #[tokio::test]
 async fn primary_reads_return_the_requested_key() {
     let transport = FakeTransport::with_replies(vec![
-        answer(200, br#"{"db":"pw-one","api":"pw-two"}"#),
-        answer(200, br#"{"db":"pw-one","api":"pw-two"}"#),
-        answer(200, br#"{"db":"pw-one","api":"pw-two"}"#),
-        answer(200, br#"{"db":"pw-one","api":"pw-two"}"#),
+        answer(200, PRIMARY_REPLY),
+        answer(200, PRIMARY_REPLY),
+        answer(200, PRIMARY_REPLY),
+        answer(200, PRIMARY_REPLY),
     ]);
     let manager = manager(&transport, FakeResolver::working(), BTreeMap::new());
     let async_value = manager
@@ -505,8 +506,8 @@ async fn primary_reads_return_the_requested_key() {
 #[tokio::test]
 async fn primary_reads_have_no_optional_params() {
     let transport = FakeTransport::with_replies(vec![
-        answer(200, br#"{"db":"pw"}"#),
-        answer(200, br#"{"db":"pw"}"#),
+        answer(200, br#"{"SecretString":"{\"db\":\"pw\"}"}"#),
+        answer(200, br#"{"SecretString":"{\"db\":\"pw\"}"}"#),
     ]);
     let manager = manager(&transport, FakeResolver::working(), BTreeMap::new());
     let mut async_params = region_params("eu-west-1");
@@ -765,9 +766,16 @@ async fn blocking_post_matches_async_post(#[case] reply: PostReply) {
     let blocking_manager = manager(&blocking_transport, resolver_for(reply), BTreeMap::new());
     let blocking_reply = blocking_manager
         .blocking_post_action::<NoBody, BTreeMap<String, SecretField>>(&request, None, None);
+    let expected_posts = usize::from(!matches!(reply, PostReply::Credentials));
     assert_eq!(describe(async_reply), describe(blocking_reply));
-    assert_eq!(async_transport.posts.load(Ordering::Relaxed), 1);
-    assert_eq!(blocking_transport.blocking_posts.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        async_transport.posts.load(Ordering::Relaxed),
+        expected_posts
+    );
+    assert_eq!(
+        blocking_transport.blocking_posts.load(Ordering::Relaxed),
+        expected_posts
+    );
 }
 
 fn resolver_for(reply: PostReply) -> FakeResolver {
