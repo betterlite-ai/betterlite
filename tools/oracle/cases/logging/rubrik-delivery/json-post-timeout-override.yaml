@@ -1,0 +1,13 @@
+kind: helper
+name: rubrik-delivery-json-post-timeout-override
+call:
+  b3976:
+    environment: {}
+    init: {api_base: "https://rubrik.test", api_key: test-key, timeout_seconds: 2.5}
+    replies:
+      - {status: 200, body: "{}"}
+    actions:
+      - do: post_prompt
+        payload: {model: gpt-4o}
+env: {}
+compare: {ignore: []}
