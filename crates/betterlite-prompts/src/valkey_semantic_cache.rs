@@ -56,6 +56,7 @@ impl ValkeySemanticCache {
             .index_name
             .clone()
             .unwrap_or_else(|| DEFAULT_VALKEY_INDEX_NAME.to_owned());
+        tracing::debug!("Valkey semantic-cache initializing index - {index_name}");
         let key_prefix = format!("{index_name}:");
         let url = options
             .index
