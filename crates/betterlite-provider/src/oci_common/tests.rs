@@ -733,7 +733,7 @@ fn oci_serving_mode_serializes_the_wire_shape() {
 )]
 fn resolve_oci_schema_refs_matches_litellm(#[case] input: &str, #[case] expected: &str) {
     assert_eq!(
-        resolve_oci_schema_refs(&parse_json(input)),
+        resolve_oci_schema_refs(&parse_json(input)).unwrap(),
         parse_json(expected)
     );
 }
@@ -746,7 +746,7 @@ fn resolve_oci_schema_refs_bounds_a_long_ref_chain() {
         .collect::<Vec<String>>()
         .join(", ");
     let schema = format!("{{\"$defs\": {{{chain}}}, \"a\": {{\"$ref\": \"#/$defs/c0\"}}}}");
-    let resolved = resolve_oci_schema_refs(&parse_json(&schema));
+    let resolved = resolve_oci_schema_refs(&parse_json(&schema)).unwrap();
     assert_eq!(resolved, parse_json(r#"{"a": {"type": "object"}}"#));
 }
 
@@ -767,12 +767,29 @@ fn resolve_oci_schema_refs_bounds_a_nested_ref_chain() {
         .stack_size(2 * 1024 * 1024)
         .spawn(move || resolve_oci_schema_refs(&parse_json(&schema)))
         .unwrap();
-    let resolved = worker.join().unwrap();
+    let resolved = worker.join().unwrap().unwrap();
     let entry = resolved
         .as_object()
         .and_then(|object| object.get("a"))
         .unwrap();
     assert_eq!(deepest_value(entry), &parse_json(r#"{"type": "object"}"#));
+}
+
+#[test]
+fn resolve_oci_schema_refs_rejects_an_exponential_expansion() {
+    let definitions = (0_u32..30_u32)
+        .zip(1_u32..=30_u32)
+        .map(|(index, next)| {
+            format!(
+                "\"c{index}\": {{\"allOf\": [{{\"$ref\": \"#/$defs/c{next}\"}}, {{\"$ref\": \"#/$defs/c{next}\"}}]}}"
+            )
+        })
+        .collect::<Vec<String>>()
+        .join(", ");
+    let schema = format!("{{\"$defs\": {{{definitions}}}, \"a\": {{\"$ref\": \"#/$defs/c0\"}}}}");
+    let error = resolve_oci_schema_refs(&parse_json(&schema)).unwrap_err();
+    assert_eq!(error.status, 400);
+    assert!(error.message.contains("expands past"));
 }
 
 #[rstest]
@@ -831,6 +848,10 @@ fn resolve_oci_schema_anyof_matches_litellm(#[case] input: &str, #[case] expecte
 #[case::recurses_into_properties(
     r#"{"properties": {"a": {"title": "T", "default": null, "type": "any"}}}"#,
     r#"{"properties": {"a": {"type": "object"}}}"#
+)]
+#[case::keeps_a_property_named_title(
+    r#"{"type": "object", "properties": {"title": {"type": "string"}, "x": {"type": "number", "title": "X"}}, "required": ["title", "x"]}"#,
+    r#"{"type": "object", "properties": {"title": {"type": "string"}, "x": {"type": "number"}}, "required": ["title", "x"]}"#
 )]
 #[case::recurses_into_lists(r#"[{"title": "T"}]"#, "[{}]")]
 fn sanitize_oci_schema_matches_litellm(#[case] input: &str, #[case] expected: &str) {

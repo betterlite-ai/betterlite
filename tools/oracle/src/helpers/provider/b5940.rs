@@ -134,23 +134,13 @@ fn signature(
     Ok(serde_json::json!({"headers": signed, "body": body_text}))
 }
 
-fn schema_output(schema: &Json) -> serde_json::Value {
-    serde_json::json!({
-        "refs": resolve_oci_schema_refs(schema),
+fn schema_output(schema: &Json) -> crate::helpers::HelperResult {
+    Ok(serde_json::json!({
+        "refs": resolve_oci_schema_refs(schema).map_err(oci_failure)?,
         "anyof": resolve_oci_schema_anyof(schema),
         "sanitized": sanitize_oci_schema(schema),
         "python_types": BTreeMap::from(OCI_JSON_TO_PYTHON_TYPES),
-    })
-}
-
-fn description_output(description: &str, schema: &Json) -> crate::helpers::HelperResult {
-    let object = schema
-        .as_object()
-        .ok_or_else(|| input_failure("schema must be an object".to_owned()))?;
-    Ok(serde_json::json!(enrich_cohere_description(
-        description,
-        object
-    )))
+    }))
 }
 
 struct FixedClock(DateTime<Utc>);
@@ -181,11 +171,19 @@ impl crate::helpers::Helper for Op {
                 request,
                 headers,
             } => signature(explicit, env, api_base, request, headers),
-            Input::Schema { schema } => Ok(schema_output(schema)),
+            Input::Schema { schema } => schema_output(schema),
             Input::Description {
                 description,
                 schema,
-            } => description_output(description, schema),
+            } => {
+                let object = schema
+                    .as_object()
+                    .ok_or_else(|| input_failure("schema must be an object".to_owned()))?;
+                Ok(serde_json::json!(enrich_cohere_description(
+                    description,
+                    object
+                )))
+            }
         }
     }
 }

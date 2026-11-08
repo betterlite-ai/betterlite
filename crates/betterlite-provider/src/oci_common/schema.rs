@@ -1,6 +1,10 @@
 use std::collections::BTreeSet;
 
 use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::definitions::estimate::estimate_json_bytes;
+use betterlite_prompts::definitions::legacy::DEFS_MAX_INLINED_BYTES;
+
+use crate::oci_common::OciError;
 
 const MAX_SCHEMA_DEPTH: usize = 256;
 
@@ -14,82 +18,97 @@ pub const OCI_JSON_TO_PYTHON_TYPES: [(&str, &str); 7] = [
     ("any", "any"),
 ];
 
-#[must_use]
-pub fn resolve_oci_schema_refs(schema: &Json) -> Json {
+struct Walk<'defs> {
+    defs: Option<&'defs Object>,
+    resolving: BTreeSet<String>,
+    spent: usize,
+}
+
+pub fn resolve_oci_schema_refs(schema: &Json) -> Result<Json, OciError> {
     let defs = schema
         .as_object()
         .and_then(|object| object.get("$defs"))
         .and_then(Json::as_object);
-    let mut resolving = BTreeSet::new();
-    let mut resolved = resolve_refs(schema, defs, &mut resolving, 0);
+    let mut walk = Walk {
+        defs,
+        resolving: BTreeSet::new(),
+        spent: 0,
+    };
+    let mut resolved = resolve_refs(schema, &mut walk, 0)?;
     if let Json::Object(fields) = &mut resolved {
         fields.shift_remove("$defs");
     }
-    resolved
+    Ok(resolved)
 }
 
-fn resolve_refs(
-    value: &Json,
-    defs: Option<&Object>,
-    resolving: &mut BTreeSet<String>,
-    depth: usize,
-) -> Json {
+fn resolve_refs(value: &Json, walk: &mut Walk<'_>, depth: usize) -> Result<Json, OciError> {
     if depth >= MAX_SCHEMA_DEPTH {
-        return Json::Object(Object::from([(
+        return Ok(Json::Object(Object::from([(
             "type".to_owned(),
             Json::Text("object".to_owned()),
-        )]));
+        )])));
     }
     let next = depth.saturating_add(1);
     let fields = match value {
         Json::Object(fields) => fields,
-        Json::List(items) => {
-            return Json::List(
-                items
-                    .iter()
-                    .map(|item| resolve_refs(item, defs, resolving, next))
-                    .collect(),
-            );
-        }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => return value.clone(),
+        Json::List(items) => return resolve_list(items, walk, next),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => return Ok(value.clone()),
     };
     match fields.get("$ref") {
         None | Some(Json::Null) => {}
         Some(Json::Text(reference)) if reference.starts_with("#/$defs/") => {
-            return resolve_reference(value, reference, defs, resolving, depth).unwrap_or_else(
-                || {
-                    Json::Object(Object::from([(
-                        "type".to_owned(),
-                        Json::Text("object".to_owned()),
-                    )]))
-                },
-            );
+            let resolved = resolve_reference(value, reference, walk, depth)?;
+            return Ok(resolved.unwrap_or_else(|| {
+                Json::Object(Object::from([(
+                    "type".to_owned(),
+                    Json::Text("object".to_owned()),
+                )]))
+            }));
         }
-        Some(_) => return value.clone(),
+        Some(_) => return Ok(value.clone()),
     }
-    Json::Object(
-        fields
-            .iter()
-            .map(|(key, field)| (key.clone(), resolve_refs(field, defs, resolving, next)))
-            .collect(),
-    )
+    resolve_fields(fields, walk, next)
+}
+
+fn resolve_list(items: &[Json], walk: &mut Walk<'_>, next: usize) -> Result<Json, OciError> {
+    let resolved = items
+        .iter()
+        .map(|item| resolve_refs(item, walk, next))
+        .collect::<Result<Vec<Json>, OciError>>()?;
+    Ok(Json::List(resolved))
+}
+
+fn resolve_fields(fields: &Object, walk: &mut Walk<'_>, next: usize) -> Result<Json, OciError> {
+    let mut resolved = Object::new();
+    for (key, field) in fields {
+        resolved.insert(key.clone(), resolve_refs(field, walk, next)?);
+    }
+    Ok(Json::Object(resolved))
 }
 
 fn resolve_reference(
     value: &Json,
     reference: &str,
-    defs: Option<&Object>,
-    resolving: &mut BTreeSet<String>,
+    walk: &mut Walk<'_>,
     depth: usize,
-) -> Option<Json> {
+) -> Result<Option<Json>, OciError> {
     let key = reference.rsplit('/').next().unwrap_or_default().to_owned();
-    if !resolving.insert(key.clone()) {
-        return None;
+    if !walk.resolving.insert(key.clone()) {
+        return Ok(None);
     }
-    let target = defs.and_then(|table| table.get(&key)).unwrap_or(value);
-    let resolved = resolve_refs(target, defs, resolving, depth.saturating_add(1));
-    resolving.remove(&key);
-    Some(resolved)
+    let target = walk.defs.and_then(|table| table.get(&key)).unwrap_or(value);
+    walk.spent = walk.spent.saturating_add(estimate_json_bytes(target));
+    if walk.spent > DEFS_MAX_INLINED_BYTES {
+        return Err(OciError {
+            status: 400,
+            message: format!(
+                "the OCI tool schema expands past {DEFS_MAX_INLINED_BYTES} estimated bytes"
+            ),
+        });
+    }
+    let resolved = resolve_refs(target, walk, depth.saturating_add(1));
+    walk.resolving.remove(&key);
+    resolved.map(Some)
 }
 
 #[must_use]
@@ -161,6 +180,12 @@ fn sanitize_object(fields: &Object) -> Object {
                     continue;
                 }
             }
+            "properties" => {
+                if let Json::Object(properties) = value {
+                    sanitized.insert(key.clone(), Json::Object(sanitize_properties(properties)));
+                    continue;
+                }
+            }
             _ => {}
         }
         sanitized.insert(key.clone(), sanitize_oci_schema(value));
@@ -178,6 +203,13 @@ fn sanitize_object(fields: &Object) -> Object {
     }
     filter_required(&mut sanitized);
     sanitized
+}
+
+fn sanitize_properties(properties: &Object) -> Object {
+    properties
+        .iter()
+        .map(|(name, schema)| (name.clone(), sanitize_oci_schema(schema)))
+        .collect()
 }
 
 fn normalize_type(value: &Json) -> Option<Json> {
