@@ -49,10 +49,20 @@ pub fn decode_stream_line(line: &str) -> TextGenerationChunk {
         .or_else(|| line.strip_prefix("data:"))
         .unwrap_or(line);
     let Ok(body) = serde_json::from_str::<StreamChunkBody>(stripped) else {
-        return unfinished_chunk(String::new());
+        return TextGenerationChunk {
+            text: String::new(),
+            is_finished: false,
+            finish_reason: Some(String::new()),
+            usage: None,
+        };
     };
     let Some(result) = body.results.and_then(|results| results.into_iter().next()) else {
-        return unfinished_chunk(String::from("stop"));
+        return TextGenerationChunk {
+            text: String::new(),
+            is_finished: false,
+            finish_reason: Some(String::from("stop")),
+            usage: None,
+        };
     };
     let prompt_tokens = result.input_token_count.unwrap_or(0);
     let completion_tokens = result.generated_token_count.unwrap_or(0);
@@ -65,14 +75,5 @@ pub fn decode_stream_line(line: &str) -> TextGenerationChunk {
             completion_tokens,
             total_tokens: prompt_tokens.saturating_add(completion_tokens),
         }),
-    }
-}
-
-const fn unfinished_chunk(finish_reason: String) -> TextGenerationChunk {
-    TextGenerationChunk {
-        text: String::new(),
-        is_finished: false,
-        finish_reason: Some(finish_reason),
-        usage: None,
     }
 }

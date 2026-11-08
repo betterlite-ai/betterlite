@@ -1,9 +1,14 @@
 #![cfg(test)]
 
-use std::sync::Mutex;
+use std::fmt::Debug;
+use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
 use rstest::rstest;
+use tracing::field::{Field, Visit};
+use tracing::subscriber::set_default;
+use tracing::{Event, Subscriber};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 use super::{apply_prompt_template, messages_to_prompt};
 use crate::builtin::Message;
@@ -167,4 +172,54 @@ async fn messages_to_prompt_returns_none_when_no_template_matches() {
     .await
     .unwrap();
     assert_eq!(prompt, None);
+}
+
+#[derive(Clone, Default)]
+struct CapturedEvents(Arc<Mutex<Vec<String>>>);
+
+impl<S: Subscriber> Layer<S> for CapturedEvents {
+    fn on_event(&self, event: &Event<'_>, _: Context<'_, S>) {
+        let mut fields = CapturedFields::default();
+        event.record(&mut fields);
+        if let Ok(mut events) = self.0.lock() {
+            events.extend(fields.0);
+        }
+    }
+}
+
+#[derive(Default)]
+struct CapturedFields(Vec<String>);
+
+impl Visit for CapturedFields {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        if field.name() == "message" {
+            self.0.push(format!("{value:?}"));
+        }
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            self.0.push(value.to_owned());
+        }
+    }
+}
+
+#[tokio::test]
+async fn prompt_templates_log_a_failed_hugging_face_render() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::registry().with(CapturedEvents(Arc::clone(&events)));
+    let _captured = set_default(subscriber);
+    let prompt = apply_prompt_template(
+        &factory_with("openai/gpt-oss-broken", "{% if %}"),
+        "watsonx/openai/gpt-oss-broken",
+        &messages(r#"[{"role":"user","content":"hi"}]"#),
+        now(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(prompt, None);
+    let captured = events.lock().unwrap().clone();
+    assert!(captured.iter().any(|line| {
+        line.contains("Failed to apply HuggingFace template for model openai/gpt-oss-broken:")
+    }));
 }

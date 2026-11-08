@@ -121,17 +121,31 @@ async fn hugging_face_template(
     now: DateTime<Utc>,
 ) -> Option<String> {
     if let Some(template) = cached_template(factory, model) {
-        return jinja::hf_chat_template(&template, messages, now)
-            .ok()
-            .filter(|rendered| !rendered.is_empty());
+        return match jinja::hf_chat_template(&template, messages, now) {
+            Ok(rendered) => (!rendered.is_empty()).then_some(rendered),
+            Err(error) => {
+                tracing::debug!("Failed to apply HuggingFace template for model {model}: {error}");
+                None
+            }
+        };
     }
     let fallback = builtin::default_pt(messages).ok();
-    let Ok(Output::Text(rendered)) = prompt_factory(factory, model, messages, None, now).await
-    else {
-        return None;
+    let rendered = match prompt_factory(factory, model, messages, None, now).await {
+        Ok(Output::Text(text)) => text,
+        Ok(Output::None | Output::Ollama(_)) => return None,
+        Err(error) => {
+            tracing::debug!("Failed to apply HuggingFace template for model {model}: {error}");
+            return None;
+        }
     };
     // the generic branch answers default_pt when the fetch fails, and LiteLLM's branch gives None on any template error
-    if rendered.is_empty() || fallback.is_some_and(|default| default == rendered) {
+    if rendered.is_empty() {
+        return None;
+    }
+    if fallback.is_some_and(|default| default == rendered) {
+        tracing::debug!(
+            "Failed to apply HuggingFace template for model {model}: no template was fetched"
+        );
         return None;
     }
     Some(rendered)
