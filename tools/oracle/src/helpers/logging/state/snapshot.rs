@@ -20,6 +20,7 @@ pub(super) fn snapshot(state: &LoggingState, context: &CorrelationContext) -> Va
         "stream_options": &state.stream_options,
         "custom_pricing": state.cost.custom_pricing,
         "custom_llm_provider": &state.custom_llm_provider,
+        "request_logging": state.request_logging,
         "completion_start_time_micros": state.completion_start_time.map(|time| time.timestamp_micros()),
         "response_timing_metrics": &state.response_timing_metrics,
         "model_call_details": &state.model_call_details,
