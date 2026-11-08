@@ -1,0 +1,93 @@
+id: B6805
+title: Azure Document Intelligence OCR provider
+description: >-
+  Add module `azure_doc_intel` to betterlite-ocr with `AzureDocumentIntelligenceOcrConfig`, an
+  `OcrProviderConfig` implementation that ports azure_ai/ocr/document_intelligence/transformation.rs.
+  Supported options are pages, features and req_format. `pages` accepts an array of zero-based
+  integers (sorted, deduplicated, each turned into page+1, a negative one fails with Pages
+  "negative page index"), an array of strings or a string of native ranges like "1-3,5" (trimmed), and
+  every token must be digits or digits-digits, else Pages "invalid native page range". An empty
+  array means no pages. `features` accepts an array of strings or a comma string, each trimmed and
+  matching a letter followed by letters or digits, else the Features error. The URL is the endpoint
+  (api_base, else AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT) completed with
+  documentintelligence/documentModels/{model}:analyze, then the query api-version (from OcrSettings),
+  pages and features. Model ids are validated as the Rust file does. A missing endpoint fails with the
+  provider authentication error naming AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT. Headers: a supplied
+  authorization or Ocp-Apim-Subscription-Key header wins; else the request key or
+  AZURE_DOCUMENT_INTELLIGENCE_API_KEY sent as Ocp-Apim-Subscription-Key; else an Entra token from
+  `AzureTokenSource` as Authorization Bearer. Use B6804's validate_destination and resolve_entra so a
+  host credential is never sent to a request-supplied endpoint.
+  The body is {"urlSource": url} or {"base64Source": base64} when the source is a data URI.
+  The call answers 202 with an operation-location header. Poll that URL with GET, sending only the
+  Ocp-Apim-Subscription-Key and authorization headers, on the polling client. The poll URL must have
+  the same origin as the request URL and no user or password, else PollOrigin; a missing header is
+  PollLocation. Wait Retry-After seconds (at least 1, default from the shared poll constant) between
+  polls and stop at the poll timeout with PollTimeout. Status succeeded finishes, running and
+  notStarted wait, anything else (also a missing status) is OperationStatus with the status text or
+  "None". A direct non-202 answer is decoded as a finished operation.
+  Normalize analyzeResult: content, tables and keyValuePairs pass through, each page becomes an
+  OcrPage with index pageNumber-1 (1 when absent), markdown made of the line contents joined by
+  newlines, and dimensions in pixels: inch units are multiplied by the DPI setting, other units kept,
+  default size 8.5 by 11 inches, truncated toward zero, a non-finite or out-of-range value fails with
+  NumericRange. usage pages_processed is the page count.
+  The request model also decides the path, so export `analyze_path(model)` for B6808's passthrough check.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-ocr/Cargo.toml
+    - crates/betterlite-ocr/src/azure_doc_intel.rs
+    - crates/betterlite-ocr/src/azure_doc_intel/**
+    - tools/oracle/cases/ocr/azure-doc-intel/**
+    - tools/oracle/helpers/b6805.py
+    - tools/oracle/helpers/b6805/**
+    - tools/oracle/src/helpers/ocr/b6805.rs
+    - tools/oracle/src/helpers/ocr/b6805/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/azure_ai/ocr/document_intelligence/transformation.rs#L1-L667
+    why: Option parsing, URL and query, key rules, polling, origin check and page normalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/azure_ai/ocr/common_utils.rs#L1-L56
+    why: The shared Entra and destination helpers.
+
+dod:
+  - text: pages and features options normalize as described, and each invalid input fails with its own Pages or Features error.
+    proof: [doc-intel-tests, oracle]
+  - text: The analyze URL carries api-version, pages and features in that order, and a missing endpoint returns the authentication error.
+    proof: [doc-intel-tests, oracle]
+  - text: Header order is supplied header, key as Ocp-Apim-Subscription-Key, then Entra bearer, and a host credential is refused for a request-supplied endpoint.
+    proof: [doc-intel-tests]
+  - text: A 202 answer is polled with only the two allowed headers, honors Retry-After, ends on succeeded, and fails with PollOrigin, PollLocation, PollTimeout or OperationStatus in the cases above.
+    proof: [doc-intel-tests, oracle]
+  - text: Page markdown, pixel dimensions (inch times DPI, default 8.5 by 11), tables, key value pairs and pages_processed match LiteLLM for the same operation result.
+    proof: [doc-intel-tests, oracle]
+  - text: req_format native returns the final operation JSON in the native slot, not the 202 body.
+    proof: [doc-intel-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: doc-intel-tests
+      why: Document Intelligence option parsing, URL, polling or page normalization is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^azure_doc_intel::tests::/)'
+
+oracle_cases:
+  - tools/oracle/cases/ocr/azure-doc-intel/analyze-and-poll.yaml
+  - tools/oracle/cases/ocr/azure-doc-intel/pages-and-features.yaml
+
+deviations: []
+
+out_of_scope:
+  - Azure token acquisition is B529 and the Azure auth tasks. Azure AI Mistral and Cohere are B6804.
+
+pitfalls:
+  - The poll client must not follow redirects and must not send other caller headers to the operation URL.
+  - Poll waits come from the server's Retry-After, so cap total time by the poll timeout, not by a poll count.
+  - A page number of 0 or an overflow must fail with NumericRange, not wrap.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

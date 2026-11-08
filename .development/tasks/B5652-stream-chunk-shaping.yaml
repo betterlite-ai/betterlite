@@ -1,0 +1,161 @@
+id: B5652
+title: Stream chunk shaping
+description: >-
+  `CustomStreamWrapper` in litellm_core_utils/streaming_handler.py is one large class that turns provider chunks into the
+  chunks a caller sees. This task builds the part of it that needs no provider and no IO: the chunk types, the per-stream
+  state and the rules that decide what a chunk looks like and whether it is sent at all. B5653 feeds it decoded provider
+  data and B5654 drives it.
+
+
+  In betterlite-streaming add `stream_chunk_shaping`. `StreamChunk` is the Rust form of `ModelResponseStream`: `id`,
+  `object`, `created`, `model`, `system_fingerprint`, `choices`, `usage`, `provider_specific_fields`, and `hidden_params` as
+  a `serde_json::Map`. `StreamChoice` holds `index`, `delta`, `finish_reason` and `logprobs`. `StreamDelta` holds `content`,
+  `role`, `function_call`, `tool_calls`, `audio`, `images`, `annotations`, `reasoning_content`, `thinking_blocks` and
+  `provider_specific_fields`. Any field a provider sends beyond these stays in an `extra` map, since the caller sees it.
+  `ChunkShaper` holds what the wrapper keeps on `self`: `sent_first_chunk`, `sent_last_chunk`, `holding_chunk`,
+  `response_uptil_now`, `received_finish_reason`, `intermittent_finish_reason`, `tool_call`, `chunks`, the response id, the
+  model, the provider and `merge_reasoning_content_in_choices`.
+
+
+  Build these on it, with LiteLLM's method name in snake case without the leading underscore:
+  `model_response_creator` (L727-L778), `is_delta_empty` (L780), `set_model_id` (L786-L802),
+  `copy_model_response_level_provider_specific_fields` (L804-L817), `is_chunk_non_empty` (L819-L866), `strip_role_from_delta`
+  (L868-L880), the special delta helpers (L882-L943), `return_processed_chunk_logic` (L945-L1065),
+  `optional_combine_thinking_block_in_choices` (L1067-L1101), `check_special_tokens` (L480-L513),
+  `raise_on_model_repetition` (L440-L478), `check_is_function_call` (L414-L423), `check_send_stream_usage` (L411),
+  `finish_reason_handler` (L1715-L1728), `record_usage_only_chunk` (L1730-L1738), `resolve_provider_reported_cost`
+  (L1741-L1752) and `propagate_usage_cost_to_hidden_params` (L1755-L1766). `set_model_id`, `is_chunk_non_empty` and the rest
+  take the chunk as an argument and hold no IO, so a helper case can call each one.
+
+
+  The module-level pieces go here too: `stamp_served_service_tier` (L75), `provider_response_model` (L171),
+  `parsed_provider_hidden_params` (L176), `provider_hidden_params` (L185), `strip_sse_data_from_chunk` (L2328-L2361),
+  `cache_token_count` (L2364), `backfill_missing_cache_usage_fields` (L2372-L2390), `coerce_token_details` (L2396),
+  `calculate_total_usage` (L2407-L2458), `generic_chunk_has_all_required_fields` (L2461) and
+  `convert_generic_chunk_to_model_response_stream` (L2471-L2494).
+
+
+  The two limits arrive as arguments and not from a global: `repeated_chunk_limit` (`REPEATED_STREAMING_CHUNK_LIMIT`) and
+  the list of usage cost providers (`_USAGE_COST_HEADER_PROVIDERS`). Errors are one `StreamShapeError` with the fields the
+  mapped exception needs: `raise_on_model_repetition` gives "The model is repeating the same chunk = {last_content}." with
+  empty model and provider, as an internal server error. A small `mapped_finish_reason` table sits in this module and is
+  ported from `_FINISH_REASON_MAP` in litellm_core_utils/core_helpers.py L253-L258: an unknown value logs "Unmapped
+  finish_reason '%s', defaulting to 'stop'" at warning level and gives `stop`. betterlite-openai has the same table as
+  `pub(crate)`, and this crate doesn't depend on that one.
+
+
+  Test names sit in `stream_chunk_shaping::tests` and start with `creator_`, `non_empty_`, `processed_`, `thinking_`,
+  `repetition_`, `special_tokens_`, `finish_reason_`, `usage_`, `generic_`, `sse_` and `hidden_`.
+scope:
+  paths:
+  - crates/betterlite-streaming/src/stream_chunk_shaping.rs
+  - crates/betterlite-streaming/src/stream_chunk_shaping/**
+  - tools/oracle/cases/helpers/stream-chunk-shaping/**
+  - "tools/oracle/fuzz/corpus/helper_case/stream_chunk_shaping-*"
+  - tools/oracle/helpers/b5652.py
+  - tools/oracle/helpers/b5652/**
+  - tools/oracle/src/helpers/streaming/b5652.rs
+  - tools/oracle/src/helpers/streaming/b5652/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L727-L1101
+  why: Chunk creation, the send decision and the thinking merge.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L440-L513
+  why: Repetition guard and special token holding.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1715-L1766
+  why: Finish reason choice and provider reported cost.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L2328-L2494
+  why: SSE stripping, usage totals and generic chunks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L225-L258
+  why: The finish reason table and its unknown value rule.
+dod:
+- text: A created chunk keeps one id, created time and system fingerprint across the stream, with hidden params merged in LiteLLM's order.
+  proof: [chunk-creation, oracle, helper-python]
+- text: The non-empty check keeps a chunk with content, tool calls, function calls, reasoning, audio or provider fields, and drops an empty one.
+  proof: [non-empty, oracle, helper-python]
+- text: The send decision strips repeated roles, holds and flushes held text, keeps usage after a finish reason and sends one last chunk with the mapped reason.
+  proof: [processed-chunk, oracle, helper-python]
+- text: Reasoning merges into content between `<think>` and `</think>` only when the option is on.
+  proof: [thinking-merge, oracle, helper-python]
+- text: The repetition guard raises at the limit with LiteLLM's message, and short or empty content restarts the count.
+  proof: [repetition, oracle, helper-python]
+- text: Sagemaker chunks hold back a partial special token, and other providers pass through.
+  proof: [special-tokens, oracle, helper-python]
+- text: Finish reason falls back to `stop`, turns into `tool_calls` after a tool call and maps unknown values with a warning.
+  proof: [finish-reason, oracle, helper-python]
+- text: Total usage keeps LiteLLM's rule across chunks, with cache fields filled in and provider cost copied to hidden params.
+  proof: [usage-totals, oracle, helper-python]
+- text: Generic chunks and SSE data lines convert as in LiteLLM.
+  proof: [generic-chunks, sse-data, oracle, helper-python]
+- text: Provider hidden params and the served service tier land on the chunk.
+  proof: [hidden-params, oracle, helper-python]
+- text: Shaping seeds added to the helper corpus parse and replay, one per helper family.
+  proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+  - id: chunk-creation
+    why: Chunks of one stream differ in id or hidden params.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^stream_chunk_shaping::tests::creator_/)'
+  - id: non-empty
+    why: A chunk with real data is dropped.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^stream_chunk_shaping::tests::non_empty_/)'
+  - id: processed-chunk
+    why: The caller sees a repeated role, a lost finish reason or no final chunk.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^stream_chunk_shaping::tests::processed_/)'
+  - id: thinking-merge
+    why: Think tags open twice or never close.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^stream_chunk_shaping::tests::thinking_/)'
+  - id: repetition
+    why: A stuck model streams forever, or a real repeat fails.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^stream_chunk_shaping::tests::repetition_/)'
+  - id: special-tokens
+    why: Template tokens reach the caller.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^stream_chunk_shaping::tests::special_tokens_/)'
+  - id: finish-reason
+    why: Tool calls end with `stop`.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^stream_chunk_shaping::tests::finish_reason_/)'
+  - id: usage-totals
+    why: Stream usage or cost differs from LiteLLM.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^stream_chunk_shaping::tests::usage_/)'
+  - id: generic-chunks
+    why: A custom provider's chunk is refused or misread.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^stream_chunk_shaping::tests::generic_/)'
+  - id: sse-data
+    why: A `data:` prefix reaches the JSON parser.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^stream_chunk_shaping::tests::sse_/)'
+  - id: hidden-params
+    why: The response model or service tier gets lost.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^stream_chunk_shaping::tests::hidden_/)'
+  - id: helper-python
+    why: This proves a real b5652 adapter exists and type checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5652)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5652 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5652/pyrightconfig.json
+  - id: helper-case-corpus
+    why: Parsing seeds for b5652 have to replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/stream_chunk_shaping-*")" && grep -lE '^[[:space:]]+b5652:' tools/oracle/fuzz/corpus/helper_case/stream_chunk_shaping-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/stream-chunk-shaping/creator.yaml
+- tools/oracle/cases/helpers/stream-chunk-shaping/non-empty.yaml
+- tools/oracle/cases/helpers/stream-chunk-shaping/processed-chunk.yaml
+- tools/oracle/cases/helpers/stream-chunk-shaping/thinking-merge.yaml
+- tools/oracle/cases/helpers/stream-chunk-shaping/repetition.yaml
+- tools/oracle/cases/helpers/stream-chunk-shaping/special-tokens.yaml
+- tools/oracle/cases/helpers/stream-chunk-shaping/finish-reason.yaml
+- tools/oracle/cases/helpers/stream-chunk-shaping/total-usage.yaml
+- tools/oracle/cases/helpers/stream-chunk-shaping/generic-chunk.yaml
+- tools/oracle/cases/helpers/stream-chunk-shaping/strip-sse-data.yaml
+deviations: []
+out_of_scope:
+- Decoding a provider's raw chunk, `_dispatch_provider_chunk`, `chunk_creator` and the `handle_*` methods are B5653.
+- "`__next__`, `__anext__`, `__init__`, closing, logging and caching are B5654."
+- The Python classes a caller holds are B5657, and the iterator face is B158.
+pitfalls:
+- '`raise_on_model_repetition` needs two chunks in `chunks`, skips ones with no choices, and resets the count to 1 when content is None or has length 2 or less.'
+- The hidden params merge order is caller values, then `custom_llm_provider` and `created_at`, then the wrapper's base values, so the base wins.
+- The `delta` of a usage-only chunk is empty, so check `usage` before the empty check or the last usage is lost.
+- '`finish_reason_handler` prefers `received_finish_reason`, then `intermittent_finish_reason`, then `stop`, and only a plain `stop` turns into `tool_calls`.'
+- In `resolve_provider_reported_cost` a bool gives None even though Python counts it as a number, and a dict uses its `total_cost`.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -34,6 +34,8 @@ description: >-
   may query; sanitization is caller-applied. _get_user_mcp_management_mode loads
   the setting from proxy config.
 
+  Rust names for the callers (B4724 and B4729), all `pub(crate)` in module mcp::management_visibility. `pub(crate) async fn authorize_mcp_server(registry: &ServerRegistry, db: &impl DbLookup, auth: &UserApiKeyAuth, server_id: &str) -> Result<LiteLLM_MCPServerTable, VisibilityError>` is _authorize_and_fetch_mcp_server and returns the server table row it authorized. `pub(crate) async fn resolve_accessible_servers(registry: &ServerRegistry, auth: &UserApiKeyAuth, mode: ManagementMode) -> Vec<LiteLLM_MCPServerTable>` is _resolve_accessible_mcp_servers. `pub(crate) fn user_management_mode(settings: &GeneralSettings) -> ManagementMode` is _get_user_mcp_management_mode, with ManagementMode having the values Restricted and ViewAll. VisibilityError holds the HTTP status and the detail error text (404 "MCP Server {server_id} not found", 403 for a denied non-admin). ServerRegistry and DbLookup come from B4731, LiteLLM_MCPServerTable from B858 and UserApiKeyAuth from B2314.
+
 scope:
   paths:
     - crates/betterlite-server/src/mcp/management_visibility.rs
@@ -142,6 +144,9 @@ dod:
       when server is not in their allowed set.
     proof: [visibility-tests]
   - text: >-
+      authorize_mcp_server, resolve_accessible_servers and user_management_mode are pub(crate) with the signatures in the description, and authorize_mcp_server returns the server table row it authorized.
+    proof: [visibility-tests]
+  - text: >-
       Every default, env var, config key, error code, and warn-and-drop path a user
       can observe is in a named case with literal input and outcome.
     proof: [visibility-tests]
@@ -168,10 +173,10 @@ out_of_scope:
   - Credential storage and retrieval; owned by B4713, B4714, B4715
   - UserAPIKeyAuth type and LitellmUserRoles (PROXY_ADMIN, PROXY_ADMIN_VIEW_ONLY); owned by B2314
   - AuthContext type and interface; owned by B732
-  - Manager methods (is_mcp_server_public, get_mcp_server_by_id, resolve_mcp_server, authorize_mcp_server, get_all_mcp_servers_unfiltered, get_all_allowed_mcp_servers, registry reload); owned by B4731
+  - "Registry reads (is_mcp_server_public, get_mcp_server_by_id, resolve_mcp_server, authorize_mcp_server, get_all_mcp_servers_unfiltered); owned by B4731 as is_server_public, server_by_id, resolve_server and authorize_server; get_allowed_mcp_servers and get_all_allowed_mcp_servers: owned by B6591, as allowed_servers and allowed_tables. Registry reload: owned by B6592"
   - Config loading and proxy_general_settings access; owned by B002
   - MCP_ADMIN_CONFIG_CREDENTIAL_KEYS constant, NewMCPServerRequest, MCPCredentials type; Q1 per outline
-  - admitted_user_context, build_effective_auth_contexts, _user_has_admin_view functions; owned by B4731
+  - "admitted_user_context and build_effective_auth_contexts: owned by B4672 (admitted_user_context, build_effective_auth_contexts); _user_has_admin_view: owned by B2314 (user_api_key_has_admin_view)"
 
 pitfalls:
   - 'The _INHERITED_CREDENTIAL_FIELDS table maps server attributes to credentials dict keys for inheritance; a mismatch here breaks the draft form pre-fill. Non-matching fields are silently dropped (not inherited), matching LiteLLM''s behavior.'

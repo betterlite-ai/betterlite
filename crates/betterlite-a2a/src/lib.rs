@@ -13,6 +13,7 @@ pub mod pydantic_ai_provider;
 pub mod pydantic_ai_submit;
 pub mod pydantic_ai_transformation;
 pub mod send;
+pub mod send_params;
 pub mod streaming_iterator;
 pub mod utils;
 pub mod version_convert;

@@ -269,6 +269,7 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as auth_limit_inputs in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/limit_inputs.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_limit_inputs.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - An unchanged estimate resent by a non-admin is allowed, but replacing metadata without that field can be a forbidden removal.
   - Empty key model-limit metadata falls through, whereas an empty team model-limit map blocks deployment inheritance.
+  - "Add public readers on UserAPIKeyAuth in its own auth_limit_inputs module (api_key, org_id, team_id, project_id, organization_rpm_limit, organization_tpm_limit). B3038, B3039 and B3040 need them, since the fields are pub(crate). The limit readers get_key_model_rpm_limit, get_key_model_tpm_limit, get_key_own_model_rate_limit and get_model_rate_limit_from_metadata keep those names and take &UserAPIKeyAuth."
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

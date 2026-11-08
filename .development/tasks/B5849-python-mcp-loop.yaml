@@ -1,0 +1,116 @@
+id: B5849
+title: Wire the real MCP loop into the Python completion call
+description: >-
+  Today a chat request with MCP tools fails in the Python package. B5655's `prepare_completion` returns
+  `PreparedCompletion::McpLoop` for it, B5656's targets hand that to the `McpLoopRunner` trait, and the native session in
+  `crates/betterlite-python/src/completion.rs` (B5659) passes `NoMcpLoop`, which fails by name. This task adds the real runner
+  and puts it in the session, so the same request runs the loop that LiteLLM's `acompletion_with_mcp` runs.
+
+
+  Add `crates/betterlite-sdk/src/mcp_loop.rs`. `ChatMcpRunner` implements B5656's `McpLoopRunner`. Read the trait as B5656 built
+  it in `crates/betterlite-sdk/src/completion_call.rs` and implement exactly that method. Its constructor takes what B956
+  and B957 need and nothing else: the MCP server settings already resolved by the caller, the transports, the clock and the
+  `ApiLimits` from B1087. It reads no env and no global. The runner does two steps in LiteLLM's order (main.py L5266-L5300 hands
+  the request over, chat_completions_handler.py L85-L651 runs it). First it calls B956's `chat_mcp_plans` to split the tools
+  and build the first model call. Then it calls B957's `chat_mcp_loop` with that plan. When the plan finds no MCP tools,
+  it makes the plain call with the skip flag set, as L120-L127 does.
+
+
+  The loop calls the model again. In LiteLLM that is `litellm.acompletion(..., _skip_mcp_handler=True)`, so the follow-up goes
+  through the whole completion path but not back into the MCP branch. Do the same: the runner receives the calling
+  `CallTarget` for each run and makes every model call through it with `_skip_mcp_handler` true in the arguments. B5655's
+  `prepare_completion` pops that key before anything else, so the follow-up reaches `Dispatch`. Don't hold the target in the
+  runner: the target holds the runner, and that would be a cycle. If B5656's trait method gives the runner no way to reach the
+  calling target, stop and report a blocker, since this task can't change that trait.
+
+
+  A streamed MCP reply is B957's stream, and the runner converts it into B5654's `ChatStream` so the native stream
+  handle from B5659 reads it with no change. A finished reply stays a finished response. A B957 error leaves through
+  `exception_type` from B011, like every other error in `completion_call`, and the diagnostic lines B957 keeps (the missing
+  follow-up stream warning) pass through unchanged.
+
+
+  In `crates/betterlite-python/src/completion.rs` and its submodules, replace the `NoMcpLoop` value with `ChatMcpRunner`. The
+  session builds it once from the same JSON settings text it already parses. If the settings name no MCP server, the runner
+  is still built and a request with `litellm_proxy` tools sees an empty tool list, as LiteLLM does with an empty server
+  manager. Remove the `NoMcpLoop` import there, and leave `NoMcpLoop` itself in B5656 for tests that want the failing form.
+  The settings key for MCP servers is whichever one B956's input type reads. Don't invent a second name for it.
+
+
+  The Python crate needs no new native function and no new `.pyi` line: `completion`, `acompletion` and their streams already
+  carry the result. Add `betterlite-core` to the Python crate's `Cargo.toml` only if the code you write there names a core type
+  directly. Prefer to keep that inside `betterlite-sdk`.
+
+
+  Test names in `mcp_loop::tests` start with `runner_`. They run `ChatMcpRunner` against a local HTTP MCP server and a scripted
+  model target. Cover a tool call that runs and gets one follow-up, a streamed follow-up, a request with no MCP tools, and a
+  failing tool. The Python test file `crates/betterlite-python/tests/test_native_mcp.py` builds the wheel's session against a
+  local server and checks that a `litellm_proxy` tool request completes where it raised before.
+scope:
+  paths:
+  - crates/betterlite-sdk/Cargo.toml
+  - crates/betterlite-sdk/src/mcp_loop.rs
+  - crates/betterlite-sdk/src/mcp_loop/**
+  - crates/betterlite-python/Cargo.toml
+  - crates/betterlite-python/src/completion.rs
+  - crates/betterlite-python/src/completion/**
+  - crates/betterlite-python/tests/test_native_mcp.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5260-L5330
+  why: The MCP branch of completion() and the call to acompletion_with_mcp.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/chat_completions_handler.py#L85-L130
+  why: The entry, the split of MCP tools and the plain-call path with `_skip_mcp_handler`.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/chat_completions_handler.py#L328-L651
+  why: The loop B957 ports, which the runner drives.
+dod:
+- text: A chat request with MCP tools runs the plan and the loop through `ChatMcpRunner` and returns the final response.
+  proof: [runner-loop]
+- text: Every model call the loop makes goes through the calling target with `_skip_mcp_handler` set, and none re-enters the MCP branch.
+  proof: [runner-skip]
+- text: A request with no MCP tools makes one plain call, and a streamed follow-up arrives as a `ChatStream`.
+  proof: [runner-plain-stream]
+- text: A failing tool or model call leaves as a LiteLLM error through `exception_type`.
+  proof: [runner-failure]
+- text: The native session no longer uses `NoMcpLoop`.
+  proof: [no-stub]
+- text: In the built wheel an MCP tool request completes through `completion` and `acompletion`.
+  proof: [native-mcp]
+checks:
+  optional: []
+  commands:
+  - id: runner-loop
+    why: The runner is missing or skips the plan or the loop.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^mcp_loop::tests::runner_loop/)'
+  - id: runner-skip
+    why: A follow-up call re-enters the MCP branch or drops the skip flag.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^mcp_loop::tests::runner_skip/)'
+  - id: runner-plain-stream
+    why: A request with no MCP tools takes the loop, or a stream is read as a finished response.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^mcp_loop::tests::runner_(plain|stream)/)'
+  - id: runner-failure
+    why: A tool failure surfaces as a raw error.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^mcp_loop::tests::runner_failure/)'
+  - id: no-stub
+    why: The session still passes the failing stub.
+    run: test -f crates/betterlite-sdk/src/mcp_loop.rs && ! grep -rq "NoMcpLoop" crates/betterlite-python/src
+  - id: native-mcp
+    why: The wheel still fails an MCP tool request.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_mcp.py
+oracle_cases: []
+deviations:
+- what: The follow-up model call goes through B5656's target and not through `litellm.acompletion`.
+  why: There is no module-level `acompletion` to import in Rust, and the target is the same code path with the same skip flag.
+out_of_scope:
+- The plan (B956) and the loop (B957) are built there. This task calls them and ports no line of `chat_completions_handler.py`.
+- The public Python `completion`, `acompletion` and their error classes are B158, and the native session is B5659. This task only changes which runner the session passes.
+- HTTP routes that run MCP tools are the route tasks of the API family. No oracle case or route is added here.
+pitfalls:
+- B5655 pops `_skip_mcp_handler` and `_skip_responses_api_bridge` first. If the runner forgets to set the first one on a follow-up, the call plans the same tools again and never ends.
+- '`completion()` in LiteLLM returns the coroutine of `acompletion_with_mcp` (main.py L5278) for an async caller, so the blocking target must run the runner to the end and not hand back a pending future.'
+- '`crates/betterlite-python/Cargo.toml` keeps `unsafe_code = "forbid"`, so report a blocker and do not relax the lint if a dependency you add breaks it.'
+- The sdk crate must not depend on `betterlite-python` or `betterlite-server`, and `betterlite-core` must not depend on `betterlite-sdk`.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

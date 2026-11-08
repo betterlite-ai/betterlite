@@ -1,0 +1,165 @@
+id: B4664
+title: "MCP SSO assertion renewal"
+description: >-
+  An ID-JAG agent spends the user's stored IdP id_token as the subject_token of leg 1, and that token dies at its exp, usually within an hour. LiteLLM's sso_assertion_refresher.py renews it: when a read finds the assertion about to expire, it redeems the refresh token stored beside it at the IdP's token endpoint, stores the answer and returns the new assertion. This task ports that file. The ID-JAG two-leg exchange itself (resolver.py's _id_jag_exchange) already belongs to B4667, so this task builds no resolver code and B4664's covers list no longer names resolver.py. No route reaches this code yet, so it is typed functions and ports, tested natively and with helper oracle cases.
+
+  Layout. Everything goes in betterlite-server, module mcp::outbound_credentials::sso_assertion_refresher, because it needs B4656's RefreshCoordinator and B4657's coordinator factory, which live in that crate, and betterlite-server may depend on betterlite-mcp. Submodules: client_config, failure, transport, refresher and store. Do not edit crates/betterlite-server/Cargo.toml: B4661 already added betterlite-mcp and the other dependencies this task uses; if one is still missing, say so in your report as a blocker. Names stop at 30 characters, so LiteLLM's RefreshingSSOAssertionStore is RefreshingAssertionStore and SSOAssertionRefresher is AssertionRefresher. Types that B4650, B4656, B4657, B4661 and B4663 build are used under the Rust names those tasks chose; read them in the code on main first and, if a signature differs from this text, adapt at the call site and never edit another task's file.
+
+  client_config. SsoClientConfig { token_endpoint: String, client_id: String, client_secret: SecretString, auth_method } where auth_method is B4650's token-endpoint auth method type (client_secret_basic or client_secret_post). sso_client_config(env: &BTreeMap<String, String>) -> Option<SsoClientConfig> reads GENERIC_TOKEN_ENDPOINT, GENERIC_CLIENT_ID and GENERIC_CLIENT_SECRET. If any of the three is missing or empty it returns None, which is an ordinary state and logs nothing. auth_method is client_secret_post when GENERIC_INCLUDE_CLIENT_ID, lowercased, equals "true" (default "false" when absent), otherwise client_secret_basic. The caller passes the map, so this task does not read the process environment. trait SsoClientSource has fn client(&self) -> Option<SsoClientConfig> and is read on every refresh, because LiteLLM reads os.environ on every call. The composition root implements it over live settings.
+
+  failure. RefreshFailure { kind: RefreshFailureKind, detail: String } where RefreshFailureKind is Rejected (settled: this refresh token never works again, so the user must sign in) or Unavailable (transient: the same attempt may work later). Constructors rejected(detail) and unavailable(detail). Consumers match on kind with no wildcard arm.
+
+  transport. trait RefreshTransport has async fn post(&self, url: &str, form: &BTreeMap<String, String>, headers: &BTreeMap<String, String>) -> Result<serde_json::Map<String, Value>, RefreshFailure>. The production type GrantPostTransport<P> wraps B4661's M2mTokenEndpointPost (token_post.rs) and maps its TokenEndpointOutcome: Success { body } is Ok(body). Denied with a status from 400 to 499 is Rejected "the IdP refused the refresh with status N". Denied with any other status (3xx, 5xx, or the 2xx that B4661 uses for a body that is not a JSON object) is Unavailable, "the IdP token endpoint answered with status N" for a non-2xx status and "the IdP token endpoint returned a non-object response" for a 2xx one. Unreachable is Unavailable "the IdP token endpoint is unreachable". The split matters because a 400 invalid_grant means the user must act, while a timeout or a 5xx means wait. Failure details never carry the URL, the form or the body.
+
+  refresher. trait AssertionAccess has async fn read(&self, user_id: &str) -> Result<Option<SsoIdentityAssertion>, AssertionStoreUnavailable> and async fn write(&self, user_id: &str, assertion: &SsoIdentityAssertion) -> Result<(), AssertionStoreUnavailable>, using B4663's types. store.rs implements it for B4663's DbSsoAssertionStore<R>: read is fetch_uncached and write is persist, with a persist error wrapped in AssertionStoreUnavailable as the source. AssertionRefresher<T: RefreshTransport, C: SsoClientSource, A: AssertionAccess> has a constructor taking the three. refresh(user_id, assertion: &SsoIdentityAssertion) -> Result<SsoIdentityAssertion, RefreshFailure> runs in this order. (1) No refresh_token: log the warning "ID-JAG: the stored IdP identity assertion for user_id=%s has expired and no refresh token was captured with it, so it cannot be renewed without another interactive sign-in. Add 'offline_access' to GENERIC_SCOPE so the SSO login captures one." and return Rejected "no refresh token was captured at sign-in". (2) client() is None: log "ID-JAG: the stored IdP identity assertion for user_id=%s has expired and cannot be renewed because the generic SSO client is not configured (GENERIC_TOKEN_ENDPOINT, GENERIC_CLIENT_ID, GENERIC_CLIENT_SECRET)." and return Rejected "the generic SSO client is not configured". (3) Build the client auth with B4650's build_token_client_auth from auth_method, client_id and client_secret; its error cannot happen after step 2 and maps to the same Rejected as step 2. (4) POST the form grant_type=refresh_token, refresh_token=<carried token>, plus the auth body (client_id and client_secret for client_secret_post, nothing for basic), with the auth headers (Authorization: Basic for client_secret_basic), to token_endpoint. A transport failure is returned as it is. (5) On a body, rotated = the body's refresh_token when it is a non-empty string, else the carried token. Call B4663's assertion_from_sso_login with the body's id_token and that refresh token as untyped JSON values, so the renewal passes the same validator as a login. None logs "ID-JAG: the IdP accepted the refresh for user_id=%s but returned no usable id_token, so there is nothing to assert upstream. The SSO client's grant needs the 'openid' scope for the token endpoint to return one on a refresh." and returns Rejected "the IdP's refresh response carried no usable id_token". (6) Store it. Read the user's row through A::read; if a row exists and its id_token differs from the id_token this renewal started from, log at info "ID-JAG: a newer IdP identity assertion for user_id=%s was stored while this renewal was in flight; keeping the stored one." and skip the write, which still returns Ok(renewed). Otherwise A::write. A read or write error logs the warning "ID-JAG: could not persist the renewed IdP identity assertion for user_id=%s, so the rotated refresh token is lost and this user will have to sign in again once the renewed token expires: %s" and returns Unavailable "the renewed IdP identity assertion could not be persisted".
+
+  store. RefreshingAssertionStore<I, T, C, A, F> wraps an inner B4663 SsoAssertionStore and implements the same trait, so the id_jag credential path is unchanged. Fields: inner: I, refresher: AssertionRefresher<T, C, A>, access: Arc<A> (LiteLLM's fresh_read), factory: F (a trait CoordinatorFactory with fn coordinator(&self) -> Option<Arc<dyn the B4656 coordinator>>, implemented over B4657's refresh_coordinator_factory by the composition root), an InProcessRefreshCoordinator from B4656, the built distributed coordinator in a Mutex<Option<..>>, skew: Duration (default 60 seconds) and clock: Box<dyn Clock> (B4650's credential_contracts::byok_cache trait). fetch(user_id): read inner.fetch (its AssertionStoreUnavailable goes straight up). An assertion that is None, or not expiring, is returned untouched. Expiring means assertion_expired(assertion, clock.now() + skew). Otherwise run the coordinator once for the key (user_id, "sso_identity_assertion") with a refresh step and a reread step, then return access.read(user_id), uncached, as the answer. The coordinator is the distributed one once the factory has produced one, else the in-process one; the factory is asked again on every call until it yields Some, and the first Some is kept.
+
+  The refresh step re-reads the row through access first. If it is None or no longer expiring (another replica renewed it) it returns without redeeming. Otherwise it calls refresher.refresh: Ok returns, Rejected returns (the expired assertion stays and the caller's own expiry check sends the user to sign in again), Unavailable becomes AssertionStoreUnavailable with the detail as its cause. The reread step runs for a cross-replica loser: it re-reads through access, and if the row is still expiring it fails with AssertionStoreUnavailable "the IdP identity assertion for user_id=<id> was being renewed by another replica and is not yet current; retry shortly". LiteLLM's coordinator protocol types both steps as returning an optional OAuthToken and propagates their errors to every waiter; both steps here return nothing. A failure of the refresh step reaches every concurrent in-process caller, and a Redis loser gets its own reread's outcome.
+
+  Wiring. default_sso_assertion_store (the function that builds DbSSOAssertionStore, the transport and the store) is composition, not logic: the composition root builds RefreshingAssertionStore from the parts above and hands it to B4667's resolver as its SsoAssertionStore.
+
+  Oracle. Helper cases on the b4664 operation. The Python adapter runs the pinned SSOAssertionRefresher and RefreshingSSOAssertionStore with a scripted TokenEndpointTransport (the case lists the outcome: a body, rejected or unavailable, and records the url, form and headers it received), an in-memory assertion map as inner store, read and write, a fixed clock, and either LiteLLM's in-process coordinator or a loser coordinator that runs only the reread step. Id tokens are unsigned three-segment JWTs the adapter builds from a claims object in the case (header {"alg":"none"}, base64url without padding, empty signature); the Rust side builds the same text. exp values are whole seconds. The output of a step is its result kind, the detail text, the form and headers sent, the writes made and the number of IdP posts. Logs, the Redis coordinator and the live HTTP transport stay in native tests.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/outbound_credentials/sso_assertion_refresher.rs
+    - crates/betterlite-server/src/mcp/outbound_credentials/sso_assertion_refresher/**
+    - tools/oracle/cases/helpers/mcp-sso-refresher/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-sso-refresher-*
+    - tools/oracle/helpers/b4664.py
+    - tools/oracle/helpers/b4664/**
+    - tools/oracle/src/helpers/server/b4664.rs
+    - tools/oracle/src/helpers/server/b4664/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L86-L121
+    why: Owned. The grant type, the single-flight key, the 60 second skew and the four injected seams.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L123-L161
+    why: Owned. SSOClientConfig and sso_client_config, including how GENERIC_INCLUDE_CLIENT_ID picks the auth method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L163-L237
+    why: Owned. RefreshFailure, the transport contract and how a 4xx differs from everything else.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L240-L299
+    why: Owned. SSOAssertionRefresher.refresh, its check order, its warning texts and the form it posts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L301-L363
+    why: Owned. How a renewed assertion is built from the response and how the write-back avoids overwriting a newer login.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L366-L458
+    why: Owned. RefreshingSSOAssertionStore, the lazy renewal, the coordinator choice and the loser's reread.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L461-L469
+    why: Owned as composition only. default_sso_assertion_store; the composition root does this.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/resolver.py#L123-L138
+    why: Call site. The resolver takes an SSOAssertionStore and falls back to default_sso_assertion_store(); B4667 owns the resolver.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/oauth_token_store.py#L198-L211
+    why: The RefreshCoordinator protocol this store drives with a refresh and a reread callable.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/token_endpoint_auth.py#L47-L79
+    why: build_token_endpoint_client_auth, which B4650 ports and the refresh form uses.
+  - url: https://www.rfc-editor.org/rfc/rfc6749.html#section-6
+    why: The refresh_token grant request and its invalid_grant refusal.
+dod:
+  - text: sso_client_config returns the endpoint, client id and secret from the three GENERIC_ variables, is None when any is missing or empty, and picks client_secret_post only when GENERIC_INCLUDE_CLIENT_ID lowercased is "true".
+    proof: [config-tests, oracle, helper-python]
+  - text: A refresh with no refresh token, and a refresh with no configured client, each return Rejected without any IdP call, and the missing token is checked first.
+    proof: [refresher-tests, oracle, helper-python]
+  - text: The refresh posts grant_type=refresh_token and the carried token with HTTP Basic headers for client_secret_basic and client_id and client_secret in the form for client_secret_post.
+    proof: [refresher-tests, oracle, helper-python]
+  - text: A rotated refresh token from the IdP replaces the stored one, and an omitted or empty one keeps the carried token.
+    proof: [refresher-tests, oracle, helper-python]
+  - text: A response without a usable id_token is Rejected with the fixed detail and nothing is written.
+    proof: [refresher-tests, oracle, helper-python]
+  - text: A newer stored row, one whose id_token differs from the one the renewal started from, is kept and not overwritten, and the refresh still returns the renewed assertion.
+    proof: [refresher-tests, oracle, helper-python]
+  - text: A failing row read or write during write-back is Unavailable with the fixed detail, and the renewed refresh token is not written.
+    proof: [refresher-tests, oracle, helper-python]
+  - text: The transport maps a 4xx to Rejected, and a 3xx, a 5xx, a non-object 2xx body and an unreachable endpoint to Unavailable, without the URL, form or body in the detail.
+    proof: [transport-tests]
+  - text: An assertion that is None or still more than 60 seconds from its exp is returned by fetch without any IdP call.
+    proof: [store-tests, oracle, helper-python]
+  - text: An assertion inside the 60 second skew is renewed once, written, and returned from an uncached read.
+    proof: [store-tests, oracle, helper-python]
+  - text: A Rejected renewal leaves the expired assertion in place and returns it, and an Unavailable renewal fails fetch with AssertionStoreUnavailable.
+    proof: [store-tests, oracle, helper-python]
+  - text: Concurrent in-process fetches of one expiring user make one IdP call, and a failed renewal reaches every one of them.
+    proof: [store-tests]
+  - text: The refresh step skips the IdP when its fresh read shows another replica already renewed the row.
+    proof: [store-tests, oracle, helper-python]
+  - text: A cross-replica loser whose reread still finds the row expiring fails with the fixed retry message, and one that finds it renewed returns the new assertion.
+    proof: [store-tests, oracle, helper-python]
+  - text: The distributed coordinator is used once the factory yields one and is kept, and the in-process one is used while the factory yields None.
+    proof: [store-tests]
+  - text: No id_token, refresh token or client secret appears in any Debug output, log line or error text.
+    proof: [refresher-tests, store-tests]
+checks:
+  optional: []
+  commands:
+    - id: config-tests
+      why: The client configuration tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::sso_assertion_refresher::client_config::tests::/)'
+    - id: transport-tests
+      why: The outcome mapping tests for the refresh transport are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::sso_assertion_refresher::transport::tests::/)'
+    - id: refresher-tests
+      why: The refresh order, form, rotation or write-back tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::sso_assertion_refresher::refresher::tests::/)'
+    - id: store-tests
+      why: The lazy renewal, single-flight or coordinator choice tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::outbound_credentials::sso_assertion_refresher::store::tests::/)'
+    - id: helper-python
+      why: The b4664 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4664.py tools/oracle/helpers/b4664)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b4664 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/mcp-sso-refresher-*")" &&
+        grep -lE 'b4664"?:' tools/oracle/fuzz/corpus/helper_case/mcp-sso-refresher-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-sso-refresher/client-config.yaml
+  - tools/oracle/cases/helpers/mcp-sso-refresher/refresh-no-refresh-token.yaml
+  - tools/oracle/cases/helpers/mcp-sso-refresher/refresh-no-client.yaml
+  - tools/oracle/cases/helpers/mcp-sso-refresher/refresh-form-basic.yaml
+  - tools/oracle/cases/helpers/mcp-sso-refresher/refresh-form-post.yaml
+  - tools/oracle/cases/helpers/mcp-sso-refresher/refresh-token-rotation.yaml
+  - tools/oracle/cases/helpers/mcp-sso-refresher/refresh-no-usable-id-token.yaml
+  - tools/oracle/cases/helpers/mcp-sso-refresher/refresh-newer-row-kept.yaml
+  - tools/oracle/cases/helpers/mcp-sso-refresher/refresh-write-fails.yaml
+  - tools/oracle/cases/helpers/mcp-sso-refresher/store-fresh-untouched.yaml
+  - tools/oracle/cases/helpers/mcp-sso-refresher/store-renews-expiring.yaml
+  - tools/oracle/cases/helpers/mcp-sso-refresher/store-refusal-keeps-expired.yaml
+  - tools/oracle/cases/helpers/mcp-sso-refresher/store-idp-outage.yaml
+  - tools/oracle/cases/helpers/mcp-sso-refresher/store-already-renewed.yaml
+  - tools/oracle/cases/helpers/mcp-sso-refresher/store-loser-reread.yaml
+deviations:
+  - what: "The refresh POST carries an Accept header (application/json), and a 2xx body that is not a JSON object is reported with the fixed detail 'the IdP token endpoint returned a non-object response' for both a non-JSON and a non-object body."
+    why: The POST goes through B4661's pooled grant poster, which adds that header and cannot tell the two body shapes apart. The detail only reaches logs and AssertionStoreUnavailable, which the resolver replaces with a generic 503 text, so no client sees the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L217-L237
+  - what: A response body over the pool's size cap is Unavailable, and so is any 3xx. LiteLLM reads any size.
+    why: Every outbound call is bounded by B173's caps. A 3xx is already Unavailable in LiteLLM because raise_for_status rejects it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L217-L237
+  - what: The generic SSO client settings come from a map the composition root passes through SsoClientSource, not from os.environ at the moment of each call.
+    why: betterlite reads no process environment outside config loading. Who fills the map is the SSO settings task's decision.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L133-L161
+out_of_scope:
+  - "default_sso_assertion_store: composition, done by the server's composition root from the types here, B4663's DbSsoAssertionStore and B4657's coordinator factory."
+  - "post_form and HttpxTokenEndpointTransport's httpx calls: replaced by GrantPostTransport over B4661's HttpGrantPost, which B173's pooled client backs."
+  - "The ID-JAG exchange, the slot key, the fingerprint and invalidate_credentials in resolver.py: B4667, which covers the whole file. This task's covers no longer name resolver.py."
+  - "The sso_assertion_store module, assertion_from_sso_login, assertion_expired and DbSsoAssertionStore: B4663. The OAuth token stores and coordinators: B4656 and B4657. build_token_endpoint_client_auth: B4650."
+  - "Filling the GENERIC_TOKEN_ENDPOINT, GENERIC_CLIENT_ID, GENERIC_CLIENT_SECRET and GENERIC_INCLUDE_CLIENT_ID map from the stored SSO settings, and reconciling them at startup: the SSO settings tasks. The login path's own reading of GENERIC_SCOPE is theirs too; only the warning text names it here."
+  - "HTTP oracle cases: no route reaches this code yet, so the umbrella that wires the id_jag egress adds them."
+pitfalls:
+  - "The missing refresh token is checked before the missing client, so an assertion with neither logs the offline_access warning and not the client one."
+  - "Only a 4xx from the IdP is Rejected; a 429 is a 4xx too, so it tells the user to sign in again, as LiteLLM does. Do not widen it to retry on 429."
+  - "A renewal the write-back skipped because a newer row exists still returns Ok(renewed), and the caller reads the newer row anyway through the uncached read."
+  - "The skip test compares id_token text with the token the renewal started from, not the refresh token; a login that landed with the same id_token but a rotated refresh token is overwritten."
+  - "A renewed assertion goes through assertion_from_sso_login, which logs its own 'could not be decoded' warning for an undecodable id_token before this task logs the no-usable-id_token one, so two lines appear."
+  - "client_secret_basic and client_secret_post differ in where the secret goes; a form for basic must not also carry client_id or client_secret."
+  - "fetch re-reads the row uncached after the coordinator returns, because the inner cache can still hold the old assertion for its TTL; B4663's persist invalidates it, but a skipped write does not."
+  - "A Rejected renewal returns nothing from the refresh step, so fetch hands back the still-expired assertion and the id_jag path's own assertion_expired check produces the sign-in-again 412."
+  - "The refresh step re-reads before redeeming; skipping that read would spend a refresh token another replica just rotated, and an IdP that detects reuse can revoke the whole grant."
+  - "The factory is asked again on every fetch while it returns None, so a Redis client wired after startup is picked up; once it returns Some the value is kept and the factory is not asked again."
+  - "Log lines name user_id but never a token, the client secret or the form; a test builds a renewal with a recognizable secret and asserts it is absent from every captured log line."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

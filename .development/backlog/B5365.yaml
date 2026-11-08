@@ -1,0 +1,14 @@
+id: B5365
+milestone: M12 python
+title: Model registration, deployment filters and region checks
+status: todo
+depends_on: [B171, B174, B193, B2218, B2229, B5361]
+file: tasks/B5365-model-registration.yaml
+covers:
+  - "litellm/utils.py"
+parent: B157
+split_from: B157
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

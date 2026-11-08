@@ -1,0 +1,173 @@
+id: B4718
+title: MCP temporary OAuth sessions and shared draft lookup
+description: >-
+  Build the short-lived MCP server session that the admin "Authorize and fetch token" flow runs on, the lookup that finds it again, and the one route that creates it: POST /v1/mcp/server/oauth/session (add_session_mcp_server). A session is a server the admin has not saved yet. The browser then calls /register, /authorize and /token for it, and those calls can land on any worker or replica, so the session has to be findable from all of them. B4719 builds those three routes on top of the lookup from this task.
+
+
+  Code goes in betterlite-server, module mcp::oauth_sessions: crates/betterlite-server/src/mcp/oauth_sessions.rs, oauth_sessions/store.rs, oauth_sessions/redis_copy.rs, oauth_sessions/record.rs, oauth_sessions/route.rs and a tests.rs beside each file. The skeleton adds the dependencies on betterlite-mcp and betterlite-cache to betterlite-server; this task does not edit Cargo.toml. Nothing here keeps global state: the process-local table, the clock, the cipher, the optional Redis backend and the database port are all fields of one struct, SessionStore, built by the composition root and shared behind the caller's own pointer. LiteLLM's module-level dict _temporary_mcp_servers becomes the private field `local: Mutex<HashMap<String, LocalEntry>>`, where LocalEntry { server: MCPServer, expires_at: DateTime<Utc> } is LiteLLM's _TemporaryMCPServerEntry.
+
+
+  Constants, spelled as in LiteLLM: TEMPORARY_MCP_SERVER_TTL_SECONDS = 300 and TEMPORARY_MCP_SERVER_REDIS_KEY_PREFIX = "litellm:mcp:temporary_server". Neither is configurable.
+
+
+  Functions to build (LiteLLM name in backticks). Types come from other tasks: MCPServer and OAuth2Flow from B6590, LiteLLM_MCPServerTable from B858, NewMCPServerRequest and its checks from B4716, redaction and credential inheritance from B4717, the draft rows from B4711 and B4712, the registry lookups from B4731, build_mcp_server_from_table from B6592, the response cache backend trait from B4290 (read its exact name and method signatures in crates/betterlite-cache/src/backend.rs once B4290 has merged) and the stored cipher from B1600.
+
+  1. record.rs, `build_temporary_record` (`_build_temporary_mcp_server_record`), inputs: the request, created_by: Option<&str>, server_id and now. It returns a LiteLLM_MCPServerTable with created_at and updated_at both set to now, created_by and updated_by both set to created_by, teams set to the empty list, allowed_tools and extra_headers set to the request value or the empty list, and server_name set to the request's server_name, else its alias, else the server_id (the first non-empty one). These fields copy over from the request: alias, description, url, transport, auth_type, credentials, mcp_access_groups, mcp_info, static_headers, command, args, env, issuer, authorization_url, token_url, registration_url, allow_all_keys, available_on_public_internet, timeout, max_concurrent_requests. Every other row field keeps its default. In particular approval_status is not set, so the table value is not a draft; only the database row written in step 4 is a draft. Read the row type from B858 and match every field it has.
+
+  2. store.rs, local table. `prune_expired` (`_prune_expired_temporary_mcp_servers`) removes every entry whose expires_at is at or before now, and does nothing on an empty table. `cache_local` (`_cache_temporary_mcp_server`) takes the server and ttl_seconds, raises ttl_seconds to at least 1, prunes, stores the entry under server.server_id with expires_at = now + ttl (replacing an earlier entry for that id, which refreshes the lifetime), and returns the server. The clock is a field, so tests move time without sleeping.
+
+  3. store.rs, `get_cached_temporary_server` (`get_cached_temporary_mcp_server`), input: server_id. It prunes the local table first. Then three sources are tried in this order and the first hit wins: the local table; the shared draft row (step 5); the Redis copy (step 6). A hit in the draft row or in Redis is returned as is and is never written into the local table, so a Redis entry cannot live longer than its own TTL. A database error from the draft read is not caught and reaches the caller. SessionStore implements B4731's TempLookup port (temp_server(server_id) -> Result<Option<MCPServer>, ResolveError>) with this function, so resolve_server can call it.
+
+  4. store.rs, draft row writes. `persist_draft` (`_persist_draft_mcp_server`), inputs: the request, server_id and created_by. When the database port reports no database (LiteLLM's _get_prisma_client_or_none is None; B4711 owns that accessor) it returns Ok and writes nothing. Otherwise it calls B4712's create_draft_mcp_server with ttl_seconds = 300 and the given server_id. A failure is returned, not swallowed, because a missing shared row is the very bug the draft row exists to fix. The request passed in still holds plain credentials; create_draft_mcp_server encrypts them.
+
+  5. store.rs, `draft_as_server` (`_get_draft_mcp_server_as_mcp_server`), input: server_id. No database gives None. Otherwise B4712's get_draft_mcp_server(server_id, ttl_seconds = 300) decides; None gives None. A row is turned into a runtime MCPServer with B6592's build_mcp_server_from_table with its default credentials_are_encrypted (true), because get_draft_mcp_server decrypts only the global env var values and leaves the credentials blob encrypted. B4712's text names get_draft_mcp_server only in a pitfall, so check that it exists; if it does not, say so in the report instead of writing it here.
+
+  6. redis_copy.rs, `write_redis_copy` (`_cache_temporary_mcp_server_in_redis`), inputs: server and ttl_seconds. It is best effort and returns nothing: every failure is a tracing::debug line and the function returns. No Redis backend (the field is None) returns at once. The value is the server serialized to JSON, encrypted with B1600's encrypt_value_helper, stored under "<prefix>:<server_id>" with ttl = max(1, ttl_seconds). An encryption error or a backend write error is logged at debug and ignored. `read_redis_copy` (`_get_temporary_mcp_server_from_redis`), input: server_id. No backend gives None. A backend read error gives None (debug log). A value that is not a string gives None, so an old plain dict payload is rejected. The string is decrypted with B1600's decrypt_value_helper using the field label "temporary_mcp_server" and the debug error mode, and a failed decrypt gives None. Then the JSON is parsed, a value that is not an object gives None, and MCPServer deserialization decides the rest; a failure at any step is a debug log and None. MCPServer needs Serialize for the write; B6590 derives only Deserialize, see the report notes.
+
+  7. store.rs, `resolve_session_id` (`_resolve_session_server_id`), input: the request. No server_id on the request gives a fresh UUID v4 string (the random source is a field, so tests fix it). A supplied id is kept only when B4731's server_by_id(server_id, None) finds a server in the registry (the edit form re-authorizing a saved server). Else, with no database, the supplied id is kept. Else B4711's get_mcp_server reads the row for that id: no row, or a row whose approval_status is draft, gives a fresh UUID; any other row keeps the supplied id. This is what stops a second session from adopting the URL and client credentials of a first one. Database errors are returned.
+
+  8. route.rs, `add_session_server` (`add_session_mcp_server`) for POST /v1/mcp/server/oauth/session, wrapped by B865's management_endpoint_wrapper like every management route, status 200, authenticated with the normal user_api_key_auth dependency (the cookie fallback of _mcp_oauth_user_api_key_auth belongs to B4719). The body is NewMCPServerRequest. The optional litellm-changed-by header is declared and never read. Steps in this exact order: (a) B4716's validate_and_normalize_mcp_server_payload (400 on a bad name); (b) B4716's stamp_omitted_oauth2_flow; (c) a caller whose user_role is not PROXY_ADMIN gets 403 with body {"detail": {"error": "User does not have permission to create temporary mcp servers. You can only create temporary mcp servers if you are a PROXY_ADMIN."}}, so PROXY_ADMIN_VIEW_ONLY is refused too; (d) created_by is the caller's user_id, else "default_user_id" (LITELLM_PROXY_ADMIN_NAME); (e) B4717's inherit_credentials_from_existing_server on the request; (f) resolve_session_id and build_temporary_record; (g) inside one error scope: build_mcp_server_from_table(record, credentials_are_encrypted = false), then cache_local, then persist_draft, then write_redis_copy, in that order; any error in this scope is logged and becomes 500 with detail {"error": "Error caching temporary mcp server: <error text>"}. The id lookup in (f) runs before that scope, so its errors are not wrapped in that message. The response body is B4717's redact_mcp_credentials applied to the record from (f), so scopes and admin config survive and every secret is dropped.
+
+  9. store.rs, `cached_temporary_server_or_404` (`_get_cached_temporary_mcp_server_or_404`), inputs: server_id, the caller's auth, and the optional request. The client ip is B743's get_mcp_client_ip(request), None when there is no request. It calls B4731's resolve_server with this store as the temp lookup, no database lookup, id_client_ip None, name_client_ip the client ip and match_name true. Then authorize_server with is_admin_view from B2314's user_api_key_has_admin_view, not_found_detail {"error": "MCP server <id> not found"}, forbidden_detail {"error": "Access denied to MCP server <id>"} and non_admin_missing NotFound. It returns the runtime MCPServer. A resolution without a runtime cannot happen with these two sources; return a typed error variant for it instead of an assert, and the route layer maps it to 500.
+
+  Errors: one SessionError enum (thiserror) in oauth_sessions.rs with a variant per failure above, wrapping the upstream error types with #[from] where they exist, and a status mapping used by the route.
+
+  Tests use synthetic servers (ids like test-session-1, urls like https://mcp.example.test/sse), a fake clock, a fake Redis backend that can be set to fail each operation, a fake cipher that can fail, and an in-memory fake for the database port. The HTTP cases run the booted proxy with a master key and no database and no response cache, so they cover the in-memory path only.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/mcp/oauth_sessions.rs
+    - crates/betterlite-server/src/mcp/oauth_sessions/**
+    - tools/oracle/cases/mcp-oauth-session/**
+    - tools/oracle/helpers/b4718.py
+    - tools/oracle/helpers/b4718/**
+    - tools/oracle/src/helpers/server/b4718.rs
+    - tools/oracle/src/helpers/server/b4718/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L87-L92
+    why: Router prefix /v1/mcp and the two constants, TTL 300 seconds and the Redis key prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L244-L247
+    why: _TemporaryMCPServerEntry holds the server and its expires_at.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L472-L491
+    why: The process-local table, the prune on every call and the cache write with max(1, ttl).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L493-L574
+    why: Redis write (encrypted string, key prefix, TTL) and Redis read (rejects non-strings and plain dicts, every failure is None).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L576-L637
+    why: No-database accessor, draft write (errors raised), draft read via build_mcp_server_from_table, and the three-source lookup order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L919-L980
+    why: Session id choice (fresh UUID unless the supplied id is a real saved server) and the temporary table record.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2010-L2078
+    why: The POST /server/oauth/session decorators, admin gate, step order, error wrapping and the redacted response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2180-L2205
+    why: The 404 and 403 lookup that /authorize, /token and /register call, with its resolve and authorize arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1013-L1100
+    why: Draft create (create-if-absent, race recovery), prune and read with the age check; B4712 owns them, this task calls them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server_resolution.py#L33-L60
+    why: How resolve_mcp_server calls temp_lookup first; B4731 owns it.
+
+dod:
+  - text: >-
+      The local table keeps a session for exactly 300 seconds, prunes expired entries on every write and every lookup,
+      refreshes the lifetime when the same id is stored again, and raises a ttl below 1 to 1.
+    proof: [session-tests]
+  - text: >-
+      get_cached_temporary_server tries the local table, then the draft row, then the Redis copy, returns the first hit,
+      never writes a draft or Redis hit into the local table, and returns a draft-read database error to the caller.
+    proof: [session-tests]
+  - text: >-
+      The Redis copy is stored encrypted under "litellm:mcp:temporary_server:<server_id>" with ttl max(1, ttl_seconds).
+      A missing backend, a failed encryption or a failed write is ignored with a debug log.
+    proof: [session-tests]
+  - text: >-
+      Reading the Redis copy gives None for a missing backend, a backend error, a non-string value, a failed decrypt,
+      invalid JSON, a JSON value that is not an object and an object that is not a valid MCPServer, and gives the server otherwise.
+    proof: [session-tests]
+  - text: >-
+      persist_draft writes nothing when there is no database, calls create_draft_mcp_server with ttl 300 and the given id
+      otherwise, and returns its error. draft_as_server returns None with no database or no live draft and builds the
+      runtime server with credentials_are_encrypted true.
+    proof: [session-tests]
+  - text: >-
+      resolve_session_id returns a fresh UUID when no id is supplied, keeps an id that names a registry server, keeps the
+      supplied id when there is no database, and returns a fresh UUID when the id has no row or names a draft row.
+    proof: [session-tests]
+  - text: >-
+      build_temporary_record picks server_name from server_name, then alias, then server_id, stamps both timestamps and
+      both audit fields, sets teams to the empty list and copies the listed request fields.
+    proof: [session-tests]
+  - text: >-
+      cached_temporary_server_or_404 passes match_name true, no id ip and the client ip from the request, answers 404 for an
+      unknown id, 403 for a non-admin caller on a temporary session, and returns the runtime server for an admin view.
+    proof: [session-tests]
+  - text: >-
+      POST /v1/mcp/server/oauth/session answers 200 with the credential-redacted record for a master-key caller, keeps a
+      supplied server_id when there is no database, mints a new id when none is supplied, and keeps scopes while dropping
+      auth_value and client_secret from the response.
+    proof: [oracle]
+  - text: >-
+      The route validates the payload before the role check (a bad name gives 400 even for a non-admin), answers 403 with the
+      exact error text for any role except PROXY_ADMIN, answers 401 without credentials, and wraps an error from the caching
+      step as 500 "Error caching temporary mcp server: <error>".
+    proof: [oracle, session-tests]
+  - text: >-
+      Every default, error text and ignore-and-continue path a user can observe is in a named test or oracle case with a literal
+      input and outcome.
+    proof: [session-tests]
+
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: session-tests
+      why: the session store, the three-source lookup, the Redis copy, the id rule and the route steps have no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_sessions::/)'
+
+oracle_cases:
+  - tools/oracle/cases/mcp-oauth-session/session-supplied-id-kept.yaml
+  - tools/oracle/cases/mcp-oauth-session/session-generated-id.yaml
+  - tools/oracle/cases/mcp-oauth-session/session-credentials-redacted.yaml
+  - tools/oracle/cases/mcp-oauth-session/session-requires-auth.yaml
+  - tools/oracle/cases/mcp-oauth-session/session-invalid-name-400.yaml
+
+deviations:
+  - what: The Redis copy is skipped when no backend is configured, like LiteLLM when litellm.cache is None; there is no check for a missing method on the backend.
+    why: A backend is a typed value in betterlite, so a backend without async_set_cache or async_get_cache cannot exist.
+  - what: Redis payloads written by betterlite are not guaranteed to be readable by a LiteLLM process, and the reverse is also not promised.
+    why: The payload is MCPServer serialized with serde and then encrypted; LiteLLM's model_dump field set differs in detail. Both sides only ever read their own copy during the five-minute life of a session.
+  - what: A resolution without a runtime server returns a typed error and the route answers 500, where LiteLLM's assert raises AssertionError.
+    why: Production code carries no assert; the case cannot occur with a temp lookup and a registry as the only two sources.
+
+out_of_scope:
+  - "B4711 owns _get_prisma_client_or_none, get_prisma_client_or_throw and get_mcp_server; this task calls them."
+  - "B4712 owns create_draft_mcp_server, _prune_expired_draft_mcp_servers and get_draft_mcp_server (db.py L1013-L1100); this task calls them."
+  - "B4716 owns validate_and_normalize_mcp_server_payload, stamp_omitted_oauth2_flow and NewMCPServerRequest; B4717 owns _redact_mcp_credentials and _inherit_credentials_from_existing_server."
+  - "B4731 owns resolve_mcp_server, authorize_mcp_server and get_mcp_server_by_id (server_resolution.py and the registry reads); B6592 owns build_mcp_server_from_table."
+  - "B4719 owns _mcp_oauth_user_api_key_auth (cookie and delegate_auth_to_upstream fallbacks) and the three routes mcp_authorize, mcp_token and mcp_register that call cached_temporary_server_or_404."
+  - "B4729 and B4730 own the connection preview and test routes; they use their own staging, not this store."
+  - "B865 owns management_endpoint_wrapper, B743 owns IPAddressUtils.get_mcp_client_ip, B2314 owns UserAPIKeyAuth and user_api_key_has_admin_view, B1600 owns encrypt_value_helper and decrypt_value_helper."
+  - "The response cache instance (litellm.cache) and its backends are owned by B4290 and B4299; the composition root hands this store the backend or None."
+
+pitfalls:
+  - The admin check comes after validate_and_normalize_mcp_server_payload and stamp_omitted_oauth2_flow, so a non-admin sending a bad server name gets 400 and only a valid payload reaches the 403.
+  - Only PROXY_ADMIN may create a session; PROXY_ADMIN_VIEW_ONLY gets the same 403 text as an ordinary user.
+  - The id lookup (resolve_session_id) runs before the error scope, so a database error there is not wrapped in "Error caching temporary mcp server:".
+  - The local table is written before the draft row, so when the draft write fails the 500 is returned but the local entry stays for the rest of its 300 seconds.
+  - The record is built with credentials_are_encrypted = false (plain credentials from the request), but a draft row read back later must use the default true, since its credentials blob is encrypted at rest.
+  - get_draft_mcp_server decrypts only the global env var values; do not decrypt the credentials a second time.
+  - A draft row or Redis hit must not be copied into the local table, or a session could outlive its Redis TTL.
+  - Redis values are encrypted strings only; a plain dict payload from an older build is rejected, not parsed.
+  - The decrypt call uses the label "temporary_mcp_server" and the debug error mode, so a bad value logs at debug and returns None instead of raising.
+  - A supplied server_id that names a draft row is replaced by a fresh UUID, so two sessions can never share one id by accident.
+  - With no database the supplied id is kept as is, so oracle cases that run without a database can assert the exact id.
+  - id_client_ip is always None for the session lookup and name_client_ip is the request ip; the other order would hide a server from its own admin.
+  - The response is the redacted table record, not the runtime MCPServer, so created_at and updated_at appear and authentication_token never does.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

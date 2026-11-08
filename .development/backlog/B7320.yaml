@@ -1,0 +1,14 @@
+id: B7320
+milestone: M1 openai data plane
+title: Provider api_base lookup
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/litellm_core_utils/llm_response_utils/get_api_base.py"
+parent: B004
+split_from: B004
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

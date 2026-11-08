@@ -1,0 +1,14 @@
+id: B5655
+milestone: M12 python
+title: Completion request preparation
+status: todo
+depends_on: [B175, B176, B305, B502, B2219, B5362, B5366, B5650, B5651]
+file: tasks/B5655-completion-request.yaml
+covers:
+  - "litellm/main.py"
+parent: B158
+split_from: B158
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -149,6 +149,7 @@ pitfalls:
     individual attribute do not stop the process, and subsequent attributes are still set.'
   - 'The fallback for add_metadata_from_header import failure uses a bare except clause, catching all exceptions
     and silently continuing; header enrichment simply does not happen in that case.'
+  - "This task owns litellm/types/integrations/langfuse_otel.py."
 
 review_level: standard
 budget:

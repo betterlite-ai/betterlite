@@ -1,0 +1,10 @@
+kind: helper
+name: content-inspection-string-batch
+call:
+  b5470:
+    function: is_string_batch_input
+    data:
+      input: ["first", "", "third"]
+env: {}
+compare:
+  ignore: []

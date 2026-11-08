@@ -9,19 +9,19 @@ use super::Clock;
 
 const CAPACITY: usize = 200;
 
-pub(super) struct Entry {
+pub(crate) struct Entry {
     value: SecretString,
     expiry: Instant,
 }
 
-pub(super) struct TtlCache {
-    pub(super) entries: Mutex<BTreeMap<String, Entry>>,
-    pub(super) ttl: Duration,
-    pub(super) clock: Clock,
+pub(crate) struct TtlCache {
+    pub(crate) entries: Mutex<BTreeMap<String, Entry>>,
+    pub(crate) ttl: Duration,
+    pub(crate) clock: Clock,
 }
 
 impl TtlCache {
-    pub(super) fn get(&self, key: &str) -> Option<SecretString> {
+    pub(crate) fn get(&self, key: &str) -> Option<SecretString> {
         let now = (self.clock)();
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         if entries.get(key).is_some_and(|entry| now > entry.expiry) {
@@ -31,7 +31,7 @@ impl TtlCache {
     }
 
     // An unexpired entry keeps its first expiry when overwritten, as LiteLLM's InMemoryCache does.
-    pub(super) fn set(&self, key: &str, value: SecretString) {
+    pub(crate) fn set(&self, key: &str, value: SecretString) {
         let now = (self.clock)();
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         entries.retain(|_, entry| now < entry.expiry);
@@ -50,7 +50,7 @@ impl TtlCache {
         entries.insert(key.to_owned(), Entry { value, expiry });
     }
 
-    pub(super) fn delete(&self, key: &str) {
+    pub(crate) fn delete(&self, key: &str) {
         self.entries
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

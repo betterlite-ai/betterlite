@@ -1,0 +1,14 @@
+id: B6761
+milestone: M9 agents and mcp
+title: MCP upstream OAuth metadata discovery fetch
+status: todo
+depends_on: [B6760, B6590, B4654, B171, B173]
+file: tasks/B6761-mcp-oauth-discovery-fetch.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"
+parent: B139
+split_from: B6592
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,15 @@
+id: B6040
+milestone: M12 python
+title: Shared call path and types for the Python endpoint families
+status: todo
+depends_on: [B5658, B158]
+file: tasks/B6040-endpoint-shared-path.yaml
+covers:
+  - "litellm/types/{embedding,rerank}.py"
+  - "litellm/types/images/**"
+parent: B159
+split_from: B159
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,109 @@
+id: B6032
+title: Python CustomGuardrail class
+description: >-
+  Users and many LiteLLM guardrails subclass `litellm.integrations.custom_guardrail.CustomGuardrail`. After `import
+  betterlite as litellm`, the same subclass must work unchanged. This task ports the class to Python on top of B6030's
+  `CustomLogger` and the native calls of B6031. It is Python only: no Rust file changes.
+
+
+  Put the code in `python/betterlite/_integrations/custom_guardrail.py` (split into more files in the same package if it
+  passes 300 lines) and a re-export module at `python/betterlite/integrations/custom_guardrail.py`. Do not create any
+  `__init__.py` outside `_integrations`. The architect writes those.
+
+
+  Which methods call Rust. The constructor builds a `NativeGuardrail` from its arguments and keeps it. These methods are
+  thin calls: `should_run_guardrail`, `_event_hook_is_event_type`, `get_guardrail_dynamic_request_body_params`,
+  `render_violation_message`, `_inject_advisory_message`, `update_in_memory_litellm_params`, the event hook validation done
+  in the constructor, `add_standard_logging_guardrail_information_to_request_data`, the sync of log fields into the logging
+  object, the response summary and the message selection by call type. A rejected constructor argument raises the same
+  exception class and message type as LiteLLM, converted from `NativeGuardrailError`. The attributes subclasses read
+  (`guardrail_name`, `supported_event_hooks`, `event_hook`, `default_on`, `mask_request_content`, `mask_response_content`,
+  `violation_message_template`) stay plain attributes, refreshed from `NativeGuardrail.settings()` after an update.
+
+
+  What stays in Python. Raising exceptions (`ModifyResponseException` from `betterlite.exceptions`, B163, `HTTPException`
+  style errors the source raises), the wrappers that time a hook and record the call, and anything that holds a Python
+  object across calls: the per-request suppressed set (pass it to `should_run_guardrail` as an argument), the pre-call
+  markers, and the session de-duplication cache. Port the session and marker code as the source writes it, with a plain
+  attribute or a small class and no ContextVar. Read `custom_guardrail.py` from the top and cover every method. Proxy-only
+  hooks that need a deployment or the proxy server, such as the scan of `logging_only` guardrails, belong to B165 and B124.
+  If the class defines such a method, port the method with the same signature and have it use only the arguments it
+  receives.
+
+
+  `GuardrailEventHooks`, `Mode` and the other guardrail types come from litellm/types/guardrails.py. That file belongs to
+  B167, which is not planned yet. Write only the names this class uses in `_integrations/guardrail_types.py`: the enum
+  with LiteLLM's member names and values, and plain classes with the same field names for the rest. B167 will re-export
+  them from `betterlite.types.guardrails`. Annotations use Protocols and `JsonValue`, never `Any`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/_integrations/custom_guardrail*.py
+  - crates/betterlite-python/python/betterlite/_integrations/guardrail_types.py
+  - crates/betterlite-python/python/betterlite/integrations/custom_guardrail.py
+  - crates/betterlite-python/tests/test_custom_guardrail.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py
+  why: The class to port. Work through it from the top.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1305
+  why: The event hook enum.
+dod:
+- text: Every method of `CustomGuardrail` exists with the same name and parameter names, and a LiteLLM subclass body runs on both without change.
+  proof: [guardrail-surface]
+- text: '`should_run_guardrail` and the event hook checks give the same answers as LiteLLM for the cases in the test: no hook, a text, a list, a tagged hook, a default-on guardrail, a request that names the guardrail and one that does not.'
+  proof: [guardrail-selection]
+- text: A bad constructor argument, a bad mode and a request with a non-list guardrails value raise the same class as LiteLLM.
+  proof: [guardrail-errors]
+- text: Violation messages, advisory injection and in-memory param updates give the same results as LiteLLM.
+  proof: [guardrail-messages]
+- text: The record helper writes the same entry in the request metadata as LiteLLM, and a hook wrapper records a success and a failure.
+  proof: [guardrail-records]
+- text: Python files pass ruff and basedpyright in strict mode.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: guardrail-surface
+    why: A method or parameter is missing.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_custom_guardrail.py -k guardrail_surface
+  - id: guardrail-selection
+    why: A selection answer differs.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_custom_guardrail.py -k guardrail_selection
+  - id: guardrail-errors
+    why: An error class or trigger differs.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_custom_guardrail.py -k guardrail_error
+  - id: guardrail-messages
+    why: A message or param update differs.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_custom_guardrail.py -k guardrail_message
+  - id: guardrail-records
+    why: A logged entry differs.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_custom_guardrail.py -k guardrail_record
+  - id: python-lint
+    why: Strict typing has to hold for every new module.
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The guardrail types this class needs are small local definitions until B167 builds `betterlite.types.guardrails`.
+  why: B167 is not planned and a wait for it would put this class behind the whole types package.
+- what: Selection, message and record logic runs in Rust. Only the Python-side state stays in Python.
+  why: B5471, B3665 and B3664 already own that logic, and a second copy would drift.
+out_of_scope:
+- The Rust logic (B5471, B3665, B3664) and the native bridge (B6031).
+- Proxy hooks that need a deployment or the server, such as the `logging_only` scan, are B165 and B124.
+- The `__init__.py` files outside `_integrations` and any star line in `betterlite/__init__.py` are written by the architect.
+- Provider guardrails that inherit from this class belong to their own entries.
+pitfalls:
+- The suppressed set is an argument of the native gate. Do not rebuild a ContextVar in Python.
+- A native error turns into LiteLLM's exception class. Do not let `NativeGuardrailError` reach a user.
+- 'Do not use `Any`, `cast` or `type: ignore`. Use Protocols for objects like the logging object.'
+- Attributes can be assigned by subclasses after `__init__`, so read them from the instance each time and do not cache them in a second place.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

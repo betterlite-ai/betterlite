@@ -1,0 +1,366 @@
+id: B5630
+title: Wire RedisCache to the breaker, service logging and config
+description: >-
+  B5640 builds `RedisCache` in betterlite-redis, where the breaker and the service
+  logger are only the traits `BreakerGate` and `ServiceHooks`. This task fills those
+  traits and reads the two cache settings from config. It adds the config section
+  `redis_cache` and the module `redis_cache_wiring` in betterlite-server. Nothing
+  calls the builder yet: B360, B4299 and B126 call it when they bring up their caches.
+
+  Why betterlite-server. The gate needs `RedisFailurePolicy` from betterlite-router,
+  the hooks need betterlite-logging, and both traits live in betterlite-redis. Only
+  betterlite-server sees all three. betterlite-redis can't take betterlite-router, and
+  betterlite-cache can't either, since the router reaches it through `DualCache`.
+  Add `betterlite-redis` and `redis` to `crates/betterlite-server/Cargo.toml`, and
+  `betterlite-logging` if B012 left it out.
+
+  Config section. `crates/betterlite-config/src/sections/redis_cache.rs` has a `Raw`
+  view of `litellm_settings.cache`, `litellm_settings.default_redis_ttl`,
+  `litellm_settings.cache_params.default_redis_ttl` and
+  `litellm_settings.cache_params.redis_flush_size`, built the way `redis_credentials.rs`
+  reaches `cache_params`. `Settings` has `default_ttl: i64` and `redis_flush_size:
+  Option<usize>`, read as `config.sections.redis_cache`.
+
+  `cache_params` counts only when `litellm_settings.cache` is the boolean `true`,
+  because the proxy reads it in that branch and nowhere else (L6304 and L6548 of
+  `proxy_server.py`). Read `cache` through an untagged enum like `ScalarBool` in
+  `redis_credentials.rs`, so text turns the switch off and is not a load error. The
+  TTL is `cache_params.default_redis_ttl` when the switch is on, else
+  `litellm_settings.default_redis_ttl`, else 60. Read each with `resolve_number` and
+  `parse_float`, so `os.environ/NAME` works, then cut toward zero like Python's `int()`.
+  Take `value.trunc()`, write it with `format!("{:.0}", ..)` and parse that text as
+  `i64`, because the rules forbid `as` (`truncate_float_code` in
+  `crates/betterlite-error/src/parse.rs` does the same). A failed parse is
+  `ConfigError::InvalidInteger`, and `inf` and `NaN` fail the same way with no branch
+  of their own. 0 and negative values stay as they are. Read `redis_flush_size` with
+  `resolve_number` and a `usize` parser shaped like `parse_integer`, under the same
+  switch. It stays `None` when unset, because only the response cache passes it
+  (`caching.py` L213-L219). `Router._create_redis_cache` never does, and B4327's 100
+  covers that instance.
+
+  Gate. `PolicyGate` implements `BreakerGate` over B393's `RedisFailurePolicy`, one per
+  `RedisCache`, because LiteLLM gives each instance its own breaker (L663-L667). B393's
+  task names no Rust method, so read `crates/betterlite-router/src/redis_failure_policy.rs`
+  on main and use its public operations for the steps below. `PolicyGate` has the
+  fields `policy`, `next_call: AtomicU64` and `swallowed_calls: Mutex<BTreeSet<u64>>`.
+
+  `enter(name)` asks the policy whether it is open, and when it is, returns
+  `BreakerOpen` with `name`. Otherwise the admission's `u64` holds the policy's
+  generation in the high 32 bits and the next call number in the low 32 bits.
+
+  `exit(admission)` removes the number from `swallowed_calls`, and returns with no
+  success when it was there. It also returns with no success when the policy's
+  generation differs from the admission's. Otherwise it records a success (L520-L533).
+
+  `record_failure(error)` keeps LiteLLM's filter (L549-L551): only a health failure
+  reaches the policy, with `is_timeout` set for a timeout. `swallowed(admission,
+  error)` applies the same filter, records the failure, and adds the admission's number
+  to `swallowed_calls` (L434-L446). A command error or a decode error is no health
+  failure, so it changes nothing, and that lets a caller reach `swallowed` after
+  `exit` for a bad cached value with no entry left behind. B4327's sync
+  `batch_get_cache` calls `swallowed` with no `exit` after a failed read, so cap the
+  set: after an insert, drop the lowest entries past `SWALLOWED_CALLS_KEPT` (4096). A
+  dropped entry costs one wrongly counted success, never a leak.
+
+  Health check. Hand the error to B393's classifier of `_is_redis_health_failure` and
+  `is_redis_timeout_failure`. If that takes a typed cause and not a `dyn Error`, walk
+  `error.source()` to the first `redis::RedisError` or `std::io::Error` and map it with
+  the `redis` crate's own kind checks. LiteLLM's health list is connection errors,
+  timeouts, `BusyLoadingError`, `ClusterDownError` and `OSError` (L318-L333). When
+  the failure passes the filter, also give it to B393's counterpart of
+  `log_redis_failure` with the text "Redis operation failed", so timeout lines stay
+  throttled. B4327 to B4329 write plain lines and count on this.
+
+  Hooks. `ServiceEventHooks` implements `ServiceHooks` over B012's service events, and
+  it is shared by every cache. B012's task names no Rust type either, so read
+  `crates/betterlite-logging/src/logging_service_events.rs` on main. `success` sends
+  a service event with service `redis`, `call_type`, `duration` in seconds, `is_error`
+  false, and `event_metadata` of `{"key": key}` when `event.key` is `Some`. `failure`
+  sends the same with `is_error` true and the error text. Start and end times, if
+  B012's event wants them, come from B012's injected clock with start as end minus
+  `duration`. Both trait methods are sync and must not block. If B012's entry point is
+  async, spawn it on a `tokio::runtime::Handle` the struct holds, because sync cache
+  methods run on `spawn_blocking` threads and on plain threads with no runtime
+  context, as LiteLLM's `_dispatch_from_sync` allows for.
+
+  Builder. `RedisCacheWiring` has public fields, and callers write the struct literal:
+  `factory: Arc<LiveClientFactory>`, `store: Arc<RedisClientStore>`, `hooks: Arc<dyn
+  ServiceHooks>`, B393's settings from `config.sections.redis_failure_policy`,
+  `default_ttl: i64` from `config.sections.redis_cache.default_ttl`, and
+  `default_major_version: u32` from
+  `config.sections.redis_cache_primitives.default_redis_major_version`.
+  `RedisCacheRequest` has `overrides: RedisOverrides`, `family: RedisCacheFamily`,
+  `namespace: Option<String>` and `redis_flush_size: Option<usize>`. `async fn build<E:
+  EnvironmentLookup>(&self, request: RedisCacheRequest, env: &E) -> Result<RedisCache,
+  RedisCacheWiringError>` makes a new policy and `PolicyGate`, fills
+  `RedisCacheOptions`, and awaits `RedisCache::connect`. That is where the namespace
+  goes in and where `setup_health_pings` gets called, inside `connect`.
+  `RedisCacheWiringError` is a `thiserror` enum owned by this module. Split the code
+  into `redis_cache_wiring/gate.rs`, `hooks.rs` and `build.rs`.
+
+  Tests. The section's tests sit in its `tests.rs` under `sections::redis_cache::tests`,
+  named by the prefixes `ttl_`, `flush_size_` and `cache_switch_`. They use
+  `ConfigLoader { lookup }.load(yaml)`. Wiring tests sit under
+  `redis_cache_wiring/tests/`, one file per group. The fake Redis server is private to
+  betterlite-redis, so `build` tests use a closed loopback port: `connect` must return
+  `Ok` with the version read failing. The gate tests use a real `RedisFailurePolicy`
+  and no connection.
+
+  The oracle helper op `b5630` has one function, `cache_defaults`, with the inputs
+  `default_redis_ttl` and `redis_flush_size`. Its Rust side builds a config YAML with
+  `cache: true` and both keys under `cache_params`, loads it with `ConfigLoader`, and
+  returns `default_ttl` and `redis_flush_size.unwrap_or(100)`. Its Python side sets
+  `litellm.default_redis_ttl`, patches `litellm._redis.get_redis_client` and
+  `get_redis_connection_pool` with stubs, replaces `RedisCache._setup_health_pings`
+  with a no-op, builds a real `RedisCache(redis_flush_size=...)`, and returns its
+  `default_ttl` and `redis_flush_size`. Each case file is `kind: helper` with `call:
+  {b5630: {function: cache_defaults, ...}}`.
+
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/redis_cache.rs
+    - crates/betterlite-config/src/sections/redis_cache/**
+    - "crates/betterlite-config/fuzz/corpus/config_yaml/redis-cache-defaults-*"
+    - crates/betterlite-server/src/redis_cache_wiring.rs
+    - crates/betterlite-server/src/redis_cache_wiring/**
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - tools/oracle/cases/helpers/redis-cache-defaults/**
+    - "tools/oracle/fuzz/corpus/helper_case/redis_cache_defaults-*"
+    - tools/oracle/helpers/b5630.py
+    - tools/oracle/helpers/b5630/**
+    - tools/oracle/src/helpers/config/b5630.rs
+    - tools/oracle/src/helpers/config/b5630/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L663-L674
+    why: One breaker per instance, then the default TTL from `litellm.default_redis_ttl` cut with int().
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L318-L341
+    why: The exception list that counts as a health failure, and why command errors don't.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L434-L446
+    why: A swallowed failure is marked per call, and a shared counter is the bug it avoids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L507-L554
+    why: Enter, exit and the failure filter the gate must reproduce.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1583-L1645
+    why: Sync batch_get_cache records a swallowed failure with no exit, the reason the set has a cap.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L22-L24
+    why: The default TTL of 60.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L404
+    why: default_redis_ttl is a global float, unset by default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5972-L5975
+    why: "`_init_cache` copies cache_params.default_redis_ttl to the global before it builds the cache."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6304-L6372
+    why: cache_params is read only when `cache` is true, and os.environ references resolve here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6548-L6551
+    why: The key cache_params on its own does nothing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6620-L6628
+    why: Any other litellm_settings key, default_redis_ttl included, is set on the module.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L213-L219
+    why: The response cache is the one caller that passes redis_flush_size.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1282-L1297
+    why: The router builds a RedisCache with no flush size.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_service_logger.py#L154-L212
+    why: The sync hooks hand over to the async ones through _dispatch_from_sync.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_service_logger.py#L213-L240
+    why: The fields of the service event payload.
+
+dod:
+  - text: >-
+      `default_ttl` is 60 when nothing is set, comes from
+      `litellm_settings.default_redis_ttl` or `cache_params.default_redis_ttl`, cuts a
+      float toward zero (`60.9` gives 60, `-0.5` gives 0), keeps 0, resolves
+      `os.environ/NAME`, and fails the load for `.inf` and `.nan`.
+    proof: [config-ttl-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      `redis_flush_size` is `None` when unset, is the given number otherwise, and fails
+      the load for a negative value.
+    proof: [config-flush-size-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      `cache_params` keys count only when `litellm_settings.cache` is the boolean `true`,
+      and then `cache_params.default_redis_ttl` wins over
+      `litellm_settings.default_redis_ttl`.
+    proof: [config-cache-switch-tests]
+  - text: >-
+      `crates/betterlite-config/fuzz/corpus/config_yaml/redis-cache-defaults-valid.yaml`
+      holds `default_redis_ttl` and `redis_flush_size` under `cache_params`, and
+      `redis-cache-defaults-invalid.yaml` holds a TTL of `.inf`. Both replay through the
+      config parser.
+    proof: [config-corpus]
+  - text: >-
+      `PolicyGate::enter` returns `BreakerOpen` with the method name when the policy is
+      open, and an admission otherwise. `exit` records a success, and records none when
+      the generation moved after `enter`.
+    proof: [gate-admission-tests]
+  - text: >-
+      After `swallowed` with a health failure, `exit` of that admission records no success
+      while `exit` of a second concurrent admission still does. The set never
+      passes `SWALLOWED_CALLS_KEPT`, and an admission with no `exit` leaves it bounded.
+    proof: [gate-swallowed-tests]
+  - text: >-
+      `record_failure` and `swallowed` count connection errors and timeouts on the policy,
+      flag timeouts as such, and ignore a command error and a decode error.
+    proof: [gate-failure-tests]
+  - text: >-
+      `ServiceEventHooks` sends a `redis` service event with the call type, the duration
+      in seconds and the key metadata, sends the error text on failure, and doesn't panic
+      when called from a thread with no runtime context.
+    proof: [hooks-tests]
+  - text: >-
+      `RedisCacheWiring::build` returns a `RedisCache` with the configured `default_ttl`,
+      the request's namespace and `default_major_version` while Redis is unreachable, and
+      two caches get two gates, so opening one leaves the other closed.
+    proof: [build-tests]
+  - text: Mutants in the changed config section code are caught.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-ttl-tests
+      why: The default TTL key, its cut or its 60 default is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::redis_cache::tests::ttl_/)'
+    - id: config-flush-size-tests
+      why: The flush size key is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::redis_cache::tests::flush_size_/)'
+    - id: config-cache-switch-tests
+      why: The cache switch or the order between the two TTL keys is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::redis_cache::tests::cache_switch_/)'
+    - id: config-corpus
+      why: The new config seeds are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/redis-cache-defaults-*")" &&
+        grep -Fq 'default_redis_ttl' crates/betterlite-config/fuzz/corpus/config_yaml/redis-cache-defaults-valid.yaml &&
+        grep -Fq 'redis_flush_size' crates/betterlite-config/fuzz/corpus/config_yaml/redis-cache-defaults-valid.yaml &&
+        test -f crates/betterlite-config/fuzz/corpus/config_yaml/redis-cache-defaults-invalid.yaml &&
+        test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs &&
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: gate-admission-tests
+      why: The gate's enter and exit are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^redis_cache_wiring::tests::gate_admission::/)'
+    - id: gate-swallowed-tests
+      why: The per call swallow marker or its cap is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^redis_cache_wiring::tests::gate_swallowed::/)'
+    - id: gate-failure-tests
+      why: The health failure filter is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^redis_cache_wiring::tests::gate_failures::/)'
+    - id: hooks-tests
+      why: The service event adapter is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^redis_cache_wiring::tests::hooks::/)'
+    - id: build-tests
+      why: The builder or the gate per cache is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^redis_cache_wiring::tests::build::/)'
+    - id: helper-python
+      why: The Python side of cache_defaults has a lint or type error
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5630)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5630 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5630/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new cache default cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/redis_cache_defaults-*")" &&
+        grep -lE '^[[:space:]]+b5630:' tools/oracle/fuzz/corpus/helper_case/redis_cache_defaults-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/redis-cache-defaults/ttl-unset-is-sixty.yaml
+  - tools/oracle/cases/helpers/redis-cache-defaults/ttl-float-cuts-toward-zero.yaml
+  - tools/oracle/cases/helpers/redis-cache-defaults/ttl-negative-float-cuts-up.yaml
+  - tools/oracle/cases/helpers/redis-cache-defaults/ttl-zero-stays-zero.yaml
+  - tools/oracle/cases/helpers/redis-cache-defaults/flush-size-unset-is-one-hundred.yaml
+  - tools/oracle/cases/helpers/redis-cache-defaults/flush-size-given.yaml
+
+deviations:
+  - what: >-
+      The order of keys under `litellm_settings` doesn't matter, and every cache gets the
+      same TTL. `cache_params.default_redis_ttl` wins, else
+      `litellm_settings.default_redis_ttl`. LiteLLM walks the keys in YAML order, so a
+      `default_redis_ttl` written after `cache: true` misses the response cache but
+      reaches caches built later.
+    why: Settings resolve once at load, and a TTL that depends on YAML key order is an accident of the loop.
+  - what: >-
+      A boolean `default_redis_ttl` fails the load, where Python's `int(True)` gives 1. Text
+      with a fraction is accepted and cut, where `int("60.5")` raises at startup.
+    why: "`resolve_number` is the shared reader for numbers, and it rejects booleans and reads text as a float."
+  - what: >-
+      A negative or text `redis_flush_size` fails the load. LiteLLM starts, then flushes on
+      every write for a negative value and raises `TypeError` at the first buffered write
+      for text.
+    why: B4327 takes a `usize`, and a load error tells the operator sooner.
+  - what: >-
+      A service event carries no `parent_otel_span` and no `caller`. LiteLLM sends both.
+    why: B4325's `ServiceEvent` has neither field, and Rust has no frame names to walk.
+  - what: >-
+      The swallow marker belongs to one admission. LiteLLM's ContextVar spans the whole
+      task, so when a guarded call swallows a failure inside another guarded call, the outer
+      call counts no success either. Here `batch_cache_write` still counts a success after
+      its inner pipeline swallowed a failure, and that resets the failure streak.
+    why: The rules forbid ContextVar style state, and `batch_cache_write` is the only nested guard in the file.
+  - what: >-
+      Failures reach B393's throttled log with the fixed text "Redis operation failed".
+      LiteLLM passes each method's own message to `log_redis_failure`.
+    why: "`BreakerGate` gets the error and no message. The method's own text still goes out on its plain `tracing` line."
+
+out_of_scope:
+  - "`RedisCache.__init__`, `async_increment`, `async_get_cache`, `async_batch_get_cache`, `async_increment_pipeline`, `async_get_ttl` and `async_refresh_ttl`; B5640 owns them. This task hands `RedisCache::connect` what it needs."
+  - "`RedisCircuitBreaker`, the failure classifiers, `log_redis_failure` and the `REDIS_CIRCUIT_BREAKER_*` settings; B393 owns them."
+  - "`ServiceLogging`, its callback list and every exporter; B012 and the M5 exporter tasks own them."
+  - "`DEFAULT_REDIS_MAJOR_VERSION`; B4324's section `redis_cache_primitives` already reads it."
+  - "`RedisClusterCache`, `_build_redis_usage_cache`, `GcpTokenFetcher`, `AzureTokenFetcher`, `AwsCredentialsResolver` and the production credential source given to `LiveClientFactory`; B126 owns them."
+  - "The other `cache_params` keys (`host`, `port`, `password`, `namespace`, `type`) and the `Cache` wrapper; B4299 owns them and passes them in `RedisCacheRequest`."
+  - "`default_in_memory_ttl` and `dual_cache.py`'s use of `default_redis_ttl`; B4293 owns them."
+  - "Building caches at server startup; B360, B4299 and B126 call `RedisCacheWiring::build`, and B126 adds the HTTP oracle cases."
+
+pitfalls:
+  - >-
+      Don't treat a `default_redis_ttl` of 0 as unset. LiteLLM tests `is not None`, so 0
+      gives `default_ttl` 0 and every `SET` then fails on `EX 0`.
+  - >-
+      `-0.5` cuts to `-0` in `format!`, and that parses as 0 in `i64`. Rounding instead of
+      cutting turns `60.9` into 61.
+  - >-
+      `litellm_settings.cache` set to the text `"true"` is off, because the proxy tests
+      `value is True`.
+  - >-
+      Build a new `RedisFailurePolicy` in every `build`. A shared one lets the response
+      cache's outage open the breaker on the router's Redis.
+  - >-
+      A shared `AtomicU64` counter of swallowed failures looks simpler than the set, but
+      then a success overlapping another call's failure is thrown away, the bug L434-L446
+      warns about.
+  - >-
+      `exit` must remove the call number even when the generation moved, or the entry stays
+      until the cap pushes it out.
+  - >-
+      `tokio::spawn` panics on a thread with no runtime, so sync cache paths need the stored
+      `Handle`.
+  - >-
+      Restore `litellm.default_redis_ttl` in a `finally` in the Python adapter. One helper
+      process runs every case, so a leaked value changes the next case's answer.
+  - >-
+      `BreakerOpen` must never reach `record_failure`. `enter` returns it before the body
+      runs, so a test that sees it there has a broken guard.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

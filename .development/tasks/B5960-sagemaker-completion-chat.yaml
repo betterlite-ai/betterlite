@@ -1,0 +1,156 @@
+id: B5960
+title: SageMaker TGI completion, Messages API chat and Nova request transforms
+description: >-
+  Build the pure request and reply transforms of the SageMaker provider that need no AWS code. Two new modules in
+  betterlite-openai, sagemaker_completion and sagemaker_chat, cover `completion/transformation.py`, the pure half of
+  `chat/transformation.py` and `nova/transformation.py`, plus the `SagemakerError` class from `common_utils.py`. Signing,
+  URLs, credentials and the event stream belong to B5961 and B5840 in betterlite-bedrock, which imports this crate.
+
+
+  sagemaker_completion. `SagemakerError` carries status_code, message and optional headers; B011 owns the base exception
+  and B239 maps it, so this task only defines the type, and every other SageMaker module reuses it.
+  The supported OpenAI options are, in this order, stream, temperature, max_tokens, max_completion_tokens, top_p, stop, n.
+  `map_openai_params` walks the non-default options in their input order and writes: temperature (0 or 0.0 becomes 0.01
+  unless the option map holds a truthy `aws_sagemaker_allow_zero_temp`), top_p, stream and stop as they are, n as
+  `best_of` plus `do_sample` true, max_tokens as `max_new_tokens` (0 becomes 1) and max_completion_tokens as
+  `max_new_tokens`, so the later of the two in input order wins. After the walk it removes `aws_sagemaker_allow_zero_temp`
+  from the caller's map, so take that map as `&mut`. The `SagemakerConfig(...)` constructor that stores class-wide
+  defaults and `get_config` have no effect on any request at the pin (the handler merges them into a copy it never
+  sends), so they are not built.
+
+
+  `transform_request` copies the options, removes `stream` (default false) and builds the body in this key order:
+  `parameters` (the rest of the options), `stream: true` only when stream was exactly true, then `inputs`. Keep that order
+  with serde_json's preserve_order map: the signed body bytes depend on it. The prompt comes from `_transform_prompt`. A
+  prompt dictionary entry for the model name wins; otherwise one for `hf_model_name` (a missing name matches nothing);
+  both go through B177's `custom_prompt` with roles, initial_prompt_value and final_prompt_value (both default empty).
+  With no entry, a missing hf_model_name and a model name containing `llama-2` in any case picks
+  `meta-llama/Llama-2-7b-chat-hf` when the name also contains `chat` and `meta-llama/Llama-2-7b` when not. Then
+  `hf_model_name or model` goes to B177's `prompt_factory`. The dictionary is the request's `custom_prompt_dict` when it
+  is non-empty, else the process-wide dictionary; take both as arguments and pick by emptiness. `async_transform_request`
+  only wraps the sync call in a thread, so it is not built.
+
+
+  `transform_response` takes the decoded JSON reply. A list uses its first item. The text is `generation` when present,
+  else `generated_text`, else empty. If the text starts with the prompt and the prompt contains `<s>`, the prompt is
+  removed once from the start. The text becomes choice 0's message content. Any failure while reading the reply (empty
+  list, a non-string field, a non-object reply) becomes `SagemakerError` status 500 with message `LiteLLM Error: Unable to
+  parse sagemaker RAW RESPONSE ` followed by the reply as JSON. Usage counts the prompt and the text through an injected
+  trait `TextTokenCounter` (one method, counting a response text), because betterlite-openai does not depend on the tokenizer;
+  B196's counter is plugged in by B042. `created` is the injected clock's whole seconds, `model` is the request model,
+  finish_reason stays what B004's default response holds. `validate_environment` returns exactly
+  `Content-Type: application/json`: the source overwrites its headers argument before merging it, so caller headers are
+  never kept.
+
+
+  sagemaker_chat. `SagemakerChatConfig` is B668's OpenAI config with these changes. `validate_environment` adds
+  `X-Amzn-SageMaker-Inference-Component` with the `model_id` option when that option is a string, and returns the headers
+  unchanged otherwise. `transform_request` builds the OpenAI body through B668 and B503, then replaces `model` with
+  `hf_model_name` from the request parameters when that is a string (the key keeps its place). `get_error_class` builds
+  `SagemakerError`. It reports `has_custom_stream_wrapper` true and `supports_stream_param_in_request_body` false; B5840 uses the
+  first, and the shared HTTP handler reads the second. `SagemakerNovaConfig` extends it: the same flag is true,
+  the supported options gain top_k, reasoning_effort, allowed_token_ids and truncate_prompt_tokens (each appended only when absent),
+  and `transform_request` removes `model` from the body.
+
+
+  Test modules, named so the checks can filter: `sagemaker_completion::params`, `sagemaker_completion::request`,
+  `sagemaker_completion::response` and `sagemaker_chat::request`. Helper cases send input of the declared types; the helper
+  runs the pinned classes, and the reply case passes a fixed clock and a word-count stand-in for token_counter on both sides.
+scope:
+  paths:
+    - crates/betterlite-openai/src/sagemaker_completion.rs
+    - crates/betterlite-openai/src/sagemaker_completion/**
+    - crates/betterlite-openai/src/sagemaker_chat.rs
+    - crates/betterlite-openai/src/sagemaker_chat/**
+    - tools/oracle/cases/helpers/providers/sagemaker-completion/**
+    - tools/oracle/cases/helpers/providers/sagemaker-chat/**
+    - "tools/oracle/fuzz/corpus/helper_case/b5960-*"
+    - tools/oracle/helpers/b5960.py
+    - tools/oracle/helpers/b5960/**
+    - tools/oracle/src/helpers/openai/b5960.rs
+    - tools/oracle/src/helpers/openai/b5960/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/transformation.py#L35-L272
+    why: Option mapping, prompt choice, TGI body, reply projection and the headers quirk.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/chat/transformation.py#L41-L82
+    why: Chat config errors, inference component header, hf_model_name body override.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/chat/transformation.py#L132-L138
+    why: The two stream capability flags.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/nova/transformation.py#L17-L70
+    why: Nova options and the body without model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L43-L50
+    why: The error class.
+  - url: https://huggingface.co/docs/text-generation-inference/en/messages_api
+    why: The Messages API the chat config targets.
+dod:
+  - text: Option mapping matches LiteLLM for temperature zero, n, max_tokens zero, both token limits and the zero-temperature flag.
+    proof: [completion-params-tests, oracle-completion, helper-python]
+  - text: The TGI body keeps the key order, the prompt choice order and the llama-2 fallback names.
+    proof: [completion-request-tests, oracle-completion, helper-python]
+  - text: Replies project generation or generated_text, strip an echoed prompt only with an `<s>` template, count usage, and fail with the 500 parse error.
+    proof: [completion-response-tests, oracle-completion, helper-python]
+  - text: Chat and Nova requests add the inference component header, override model, and drop model for Nova.
+    proof: [chat-request-tests, oracle-chat, helper-python]
+  - text: The new helper seeds select the b5960 variant.
+    proof: [seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: completion-params-tests
+      why: Zero temperature or the n mapping is passed through unchanged.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sagemaker_completion::params::/)'
+    - id: completion-request-tests
+      why: The prompt comes from the wrong source or the body keys are reordered.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sagemaker_completion::request::/)'
+    - id: completion-response-tests
+      why: The reply is read from the wrong field or a bad reply panics.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sagemaker_completion::response::/)'
+    - id: chat-request-tests
+      why: A hf_model_name or model_id is ignored, or Nova keeps model.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sagemaker_chat::request::/)'
+    - id: oracle-completion
+      why: The TGI transforms differ from the pinned classes.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/providers/sagemaker-completion)" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: oracle-chat
+      why: The chat or Nova transforms differ from the pinned classes.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/providers/sagemaker-chat)" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: helper-python
+      why: The Python side of the helper fails type checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: seeds
+      why: A seed parses as another helper and tests nothing here.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/b5960-*")" &&
+        grep -lq 'b5960' tools/oracle/fuzz/corpus/helper_case/b5960-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/providers/sagemaker-completion/map-params.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-completion/zero-temperature-flag.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-completion/request-prompt-sources.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-completion/response-echoed-prompt.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-completion/response-parse-failure.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-chat/request-model-override.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-chat/nova-request.yaml
+deviations: []
+out_of_scope:
+  - B5961 owns the embedding configs and the event-stream decoder, and B5840 owns credentials, URLs, signing, the HTTP calls, the custom stream wrappers and the region rules.
+  - "`SagemakerChatHandler` in `chat/handler.py` has no caller at the pin; main.py builds it but sends sagemaker_chat and sagemaker_nova through the shared HTTP handler. It is not built."
+  - B005 owns the streaming wrapper and its `check_special_tokens` rule for sagemaker; B196 owns `token_counter`; B042 plugs both in, with the provider lookups in `get_supported_openai_params.py` and `utils.py` that pick these configs.
+  - B239 owns the SageMaker exception mapping.
+pitfalls:
+  - The body key order is parameters, stream, inputs. The SigV4 signature covers the exact bytes, so a reordered map fails at AWS.
+  - '`validate_environment` of the TGI config drops caller headers because the source reassigns `headers` before reading it; do not "fix" it.'
+  - When the temperature is 0 the 0.01 rewrite happens before the flag is removed, and the flag is removed from the caller's map even if no temperature was sent.
+  - max_tokens and max_completion_tokens both write `max_new_tokens`, so the last one in input order wins, and only max_tokens maps 0 to 1.
+  - 'The prompt echo is removed only when the prompt contains `<s>`; a Llama-2 template without it leaves the echo in place.'
+  - A model name that holds `llama-2` picks a template name only when hf_model_name is absent, and `chat` is tested on the lowercased model name.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

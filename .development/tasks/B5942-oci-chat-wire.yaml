@@ -1,0 +1,158 @@
+id: B5942
+title: OCI chat wire types, message and tool adapters, response and chunk parsing
+description: >-
+  Add oci_chat_wire in betterlite-provider for litellm/llms/oci/chat/cohere.py and
+  litellm/llms/oci/chat/generic.py. This task is the whole translation between OpenAI-shaped
+  values and the two OCI chat wire formats, COHERE and GENERIC. B5843 builds the request payload,
+  signs and sends it, and calls these functions. Credentials, URLs and signing are not touched here.
+
+  B042 owns the pydantic types in litellm/types/llms/oci.py, so define the Rust equivalents in
+  this module with serde, skipping None fields on output: OciVendor (COHERE and GENERIC, with the
+  GENERIC wire value as the apiFormat for any non-Cohere vendor), OciRole (SYSTEM, USER, ASSISTANT,
+  TOOL), the content parts (TEXT with text, IMAGE with imageUrl url and optional detail), OciToolCall
+  (optional id, name, arguments as a JSON string), OciToolDefinition, OciMessage, OciChatRequestPayload
+  (apiFormat, messages, tools, isStream, numGenerations, maxTokens, maxCompletionTokens, temperature,
+  topP, stop, seed, frequencyPenalty, presencePenalty, reasoningEffort, responseFormat, toolChoice,
+  logitBias, logProbs), the response types OciResponseUsage, OciResponseChoice, OciChatResponse and
+  OciCompletionResponse, the stream types OciStreamDelta and OciStreamChunk, and the Cohere set:
+  CohereMessage with its USER, CHATBOT, SYSTEM and TOOL variants, CohereToolCall, CohereToolResult,
+  CohereParameterDefinition, CohereTool, CohereChatRequest, CohereUsage, CohereChatResponse,
+  CohereChatResult and CohereStreamChunk. Read litellm/types/llms/oci.py lines 1 to 410 for every
+  field and which are required. The payload wrapper OCICompletionPayload and the serving mode
+  belong to B5843 and B5940. Build responses with betterlite-openai's ChatResponse, ChatChoice,
+  AssistantMessage, ChatUsage and ToolCall, and stream deltas with its stream Chunk and Delta.
+
+  GENERIC messages. adapt_messages_to_generic_oci_standard walks the messages: an assistant
+  message with tool_calls becomes a tool-call message (content None); system, user and assistant
+  messages with content become content messages; a tool message becomes a content message with
+  toolCallId; any other message (for example a system message with no content) is skipped. Content
+  is a string or a list of parts; only text and image_url parts are accepted, and image_url may be
+  a string or an object with url. Every check in the source raises OciError 400 with its exact
+  message; keep the wording. Tool calls must be type function with a string id, a function object, a
+  string name and a string arguments value (default "{}"). Tool definitions go through
+  adapt_tool_definition_to_oci_standard: type must be function, the schema passes through B5940's
+  refs, anyOf and sanitize steps in that order, and description defaults to "".
+
+  COHERE messages and tools. extract_text_content keeps the plain text of a string or a list of
+  text parts (non-text parts add nothing). adapt_messages_to_cohere_standard builds chatHistory
+  from every message except the last user message (all messages when none is a user message). The
+  caller removes system messages first. user becomes USER, assistant becomes CHATBOT with toolCalls
+  parsed from the JSON arguments (an invalid JSON string gives an empty map), and tool messages become
+  TOOL entries with toolResults resolved by tool_call_id against the assistant calls in the whole
+  list (an unknown id gives a call with an empty name and empty parameters); consecutive tool
+  messages merge into one TOOL entry. adapt_tool_definitions_to_cohere_standard turns each tool into
+  a CohereTool whose parameter definitions come from the cleaned schema's properties, with type
+  mapped through B5940's table (default string), the description enriched by B5940, and isRequired
+  from the required list.
+
+  Responses. normalize_oci_finish_reason maps None to None, COMPLETE to stop, MAX_TOKENS to length,
+  TOOL_CALL and TOOL_CALLS to tool_calls and everything else to stop. synthesize_oci_tool_call_id is
+  call_ plus the first 24 hex characters of the SHA-256 of "position|name|arguments". For Cohere
+  tool calls the arguments field is the JSON text of the parameters in their own key order and the hash input uses
+  the key-sorted JSON text (see pitfalls). handle_generic_response fills the passed ChatResponse: created
+  from chatResponse.timeCreated (ISO 8601 with a Z suffix), model from modelId, an OciError with
+  the HTTP status and "OCI response contained no choices" when choices is empty, text parts of the
+  first choice concatenated into the content (non-text parts skipped, content untouched when
+  there is no text part), tool calls adapted with synthesized ids when the id is missing, the
+  normalized finish reason, and usage with completion_tokens defaulting to 0 and the reasoning
+  token count taken from completionTokensDetails. handle_cohere_response fills model from the
+  argument, created from the current time, one choice with content None when the text is empty,
+  tool_calls only when present, and usage zeros when absent. A body that does not fit its type is
+  OciError with the HTTP status and the "Response cannot be casted to ..." prefix.
+
+  Stream chunks. handle_generic_stream_chunk first fills missing id, name and arguments of
+  message.toolCalls with empty strings, then types the chunk (a mismatch is OciError 500 with the
+  "Chunk cannot be parsed as OCIStreamChunk" prefix) and defaults index to 0. Text parts are
+  concatenated into content (None when there is none). An image part is OciError 500 and
+  any other part type is OciError 500. Tool calls become id, type function, name, arguments with
+  synthesized ids for empty ones. handle_cohere_stream_chunk takes two flags, prior_tool_calls_emitted
+  and prior_text_emitted, and drops restated text when the chunk has chatHistory or toolCalls and text was
+  already sent, and restated tool calls when it has chatHistory and tool calls were already sent. The
+  stream wrapper state that sets the flags belongs to B5843.
+
+  Plan 330 lines of module code, 150 of types, 100 of tests and fixtures, 44 of oracle adapters. The
+  remaining source is 624 nonblank, noncomment lines.
+scope:
+  paths:
+    - crates/betterlite-provider/src/oci_chat_wire.rs
+    - crates/betterlite-provider/src/oci_chat_wire/**
+    - tools/oracle/cases/helpers/oci-chat-wire/**
+    - "tools/oracle/fuzz/corpus/helper_case/oci_chat_wire-*"
+    - tools/oracle/helpers/b5942.py
+    - tools/oracle/helpers/b5942/**
+    - tools/oracle/src/helpers/provider/b5942.rs
+    - tools/oracle/src/helpers/provider/b5942/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/cohere.py#L62-L215
+    why: Text extraction, tool argument parsing, chatHistory construction with tool-result merging and Cohere tool definitions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/cohere.py#L219-L352
+    why: Cohere response parsing and the stream chunk dedupe rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/generic.py#L59-L240
+    why: GENERIC message and tool definition adapters with their validation errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/generic.py#L243-L437
+    why: Finish reasons, synthetic tool call ids, GENERIC response and chunk parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/oci.py#L1-L410
+    why: The wire types this module recreates, with required and optional fields.
+  - url: https://docs.oracle.com/en-us/iaas/api/#/en/generative-ai-inference/20231130/ChatResult/Chat
+    why: The chat request and response shapes for both apiFormat values.
+dod:
+  - text: GENERIC and COHERE message arrays convert to the same wire values, including tool calls, tool results and the validation errors.
+    proof: [oci-wire-tests, oci-wire-python, oci-wire-seeds]
+  - text: Tool definitions convert with cleaned schemas for both formats.
+    proof: [oci-wire-tests, oci-wire-python, oci-wire-seeds]
+  - text: Non-streaming responses of both formats become the same choices, finish reasons, tool call ids and usage.
+    proof: [oci-wire-tests, oci-wire-python, oci-wire-seeds]
+  - text: Stream chunks of both formats become the same deltas, including Cohere duplicate suppression.
+    proof: [oci-wire-tests, oci-wire-python, oci-wire-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: oci-wire-tests
+      why: message, tool, response or chunk conversion behavior is missing
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^oci_chat_wire::/)'
+    - id: oci-wire-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5942)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5942 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5942/pyrightconfig.json
+    - id: oci-wire-seeds
+      why: new OCI wire cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/oci_chat_wire-*")" &&
+        grep -lE '^[[:space:]]+b5942:' tools/oracle/fuzz/corpus/helper_case/oci_chat_wire-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/oci-chat-wire/generic-messages-text-image-and-roles.yaml
+  - tools/oracle/cases/helpers/oci-chat-wire/generic-message-validation-errors.yaml
+  - tools/oracle/cases/helpers/oci-chat-wire/generic-tool-call-and-result-messages.yaml
+  - tools/oracle/cases/helpers/oci-chat-wire/generic-tool-definitions-with-refs.yaml
+  - tools/oracle/cases/helpers/oci-chat-wire/cohere-chat-history-and-merged-tool-results.yaml
+  - tools/oracle/cases/helpers/oci-chat-wire/cohere-tool-definitions.yaml
+  - tools/oracle/cases/helpers/oci-chat-wire/generic-response-text-tools-usage.yaml
+  - tools/oracle/cases/helpers/oci-chat-wire/generic-response-no-choices.yaml
+  - tools/oracle/cases/helpers/oci-chat-wire/cohere-response-tool-calls-and-usage.yaml
+  - tools/oracle/cases/helpers/oci-chat-wire/finish-reason-map.yaml
+  - tools/oracle/cases/helpers/oci-chat-wire/generic-stream-chunks.yaml
+  - tools/oracle/cases/helpers/oci-chat-wire/cohere-stream-restated-text-and-tools.yaml
+deviations:
+  - what: The error text for a body or chunk that does not fit its type differs from LiteLLM. LiteLLM appends the pydantic validation message. The status codes and the fixed prefix text are the same.
+    why: The pydantic message has no Rust equivalent.
+  - what: handle_generic_response accepts timeCreated only as RFC 3339 (for example 2025-01-01T00:00:00.000Z); Python fromisoformat also takes forms such as a date without a time. Anything else is OciError with the HTTP status.
+    why: chrono parses RFC 3339 and a wider hand-written parser is not worth carrying for OCI's fixed format.
+out_of_scope:
+  - B5940 owns the schema cleanup helpers, the Cohere type map, OciError and OciServingMode used here.
+  - B5843 owns the request payload wrapper, parameter mapping, vendor lookup, the stream wrapper state, JSON and SSE decoding of the body and chunks, and all HTTP calls.
+  - B042 owns wiring the chat route and the HTTP oracle cases.
+pitfalls:
+  - Cohere tool-call ids hash the key-sorted JSON of the parameters while the arguments field holds the text in the original key order, so two calls with the same keys in a different order get the same id but different arguments.
+  - The message left out of chatHistory is the last user message wherever it sits, so tool messages after it stay in the history.
+  - Tool results look up the originating call over every assistant message in the list, not only the one just before.
+  - GENERIC skips a system, user or assistant message whose content is None, and an assistant message with tool_calls None and content falls to the content branch; only a present tool_calls list takes the tool branch.
+  - An image_url detail is never copied, so OciImageUrl.detail stays None.
+  - A GENERIC response whose first choice has no message, or no text part, leaves the pre-made message untouched.
+  - A Cohere stream chunk with no index gets index 0, and its finish reason goes through the same normalizer, so an unknown reason becomes stop.
+  - The streaming tool-call defaults are written into the raw chunk before it is typed; a chunk with a tool call missing only the id is valid.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard
