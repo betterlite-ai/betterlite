@@ -98,12 +98,16 @@ pub fn is_client_error(error: &ProxyHookError) -> bool {
     }
 }
 
-// Python's isdigit on an int() that may overflow: only a numeric code of 500 or more is server-side
+// LiteLLM gates int() behind isdigit(), so a sign, a space or empty text is never a server code
 fn code_is_server_range(code: &str) -> bool {
-    if let Ok(number) = code.parse::<u32>() {
-        return number >= 500;
+    if code.is_empty() || !code.as_bytes().iter().all(u8::is_ascii_digit) {
+        return false;
     }
-    !code.is_empty() && code.as_bytes().iter().all(u8::is_ascii_digit)
+    let digits = code.trim_start_matches('0');
+    if digits.len() > 3 {
+        return true;
+    }
+    digits.parse::<u16>().is_ok_and(|number| number >= 500)
 }
 
 #[must_use]

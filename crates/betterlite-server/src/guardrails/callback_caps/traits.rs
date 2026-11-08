@@ -8,21 +8,38 @@ use betterlite_openai::openai_base_config::Object as JsonMap;
 
 use super::errors::{GuardrailGateError, HttpException, ProxyHookError};
 
-// clippy counts the written type, so the flags go through one name; every field stays a plain bool
-pub type HookFlag = bool;
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RequestHooks {
+    pub pre_call: bool,
+    pub moderation: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PostCallHooks {
+    pub success: bool,
+    pub failure: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HeaderHooks {
+    pub response_headers: bool,
+    pub accepts_call_info: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StreamingHooks {
+    pub chunk: bool,
+    pub iterator: bool,
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct HookOverrides {
-    pub pre_call: HookFlag,
-    pub moderation: HookFlag,
-    pub post_call_success: HookFlag,
-    pub post_call_failure: HookFlag,
-    pub response_headers: HookFlag,
-    pub streaming_chunk: HookFlag,
-    pub streaming_iterator: HookFlag,
-    pub apply_guardrail: HookFlag,
-    pub filter_listed_models: HookFlag,
-    pub accepts_call_info: HookFlag,
+    pub apply_guardrail: bool,
+    pub filter_listed_models: bool,
+    pub request: RequestHooks,
+    pub post_call: PostCallHooks,
+    pub headers: HeaderHooks,
+    pub streaming: StreamingHooks,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

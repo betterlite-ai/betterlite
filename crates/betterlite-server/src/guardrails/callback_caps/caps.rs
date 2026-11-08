@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
-use super::traits::{HookFlag, ProxyCallback};
+use super::traits::ProxyCallback;
 
 pub type CallbackList = Vec<Arc<dyn ProxyCallback>>;
 
@@ -16,15 +16,30 @@ pub struct IteratorOverride {
     pub kind: IteratorKind,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GuardrailCapabilities {
+    pub has_guardrail: bool,
+    pub has_moderation_override: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RequestCapabilities {
+    pub has_pre_call_override: bool,
+    pub has_content_enforcer: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StreamingCapabilities {
+    pub has_iterator_override: bool,
+    pub has_streaming_chunk_override: bool,
+}
+
 #[derive(Clone, Default)]
 pub struct CallbackCapabilities {
-    pub has_post_call_response_headers: HookFlag,
-    pub has_iterator_override: HookFlag,
-    pub has_streaming_chunk_override: HookFlag,
-    pub has_guardrail: HookFlag,
-    pub has_pre_call_override: HookFlag,
-    pub has_content_enforcer: HookFlag,
-    pub has_moderation_override: HookFlag,
+    pub has_post_call_response_headers: bool,
+    pub guardrails: GuardrailCapabilities,
+    pub request: RequestCapabilities,
+    pub streaming: StreamingCapabilities,
     pub iterator_overrides: Vec<IteratorOverride>,
     pub resolved_callbacks: CallbackList,
     pub listed_models_filters: CallbackList,
@@ -38,34 +53,6 @@ impl CallbackCapabilities {
             walk.visit(callback);
         }
         walk.finish()
-    }
-
-    #[must_use]
-    pub const fn has_streaming_callbacks(&self) -> bool {
-        if self.has_iterator_override {
-            true
-        } else {
-            self.has_streaming_chunk_override || self.has_guardrail
-        }
-    }
-
-    #[must_use]
-    pub const fn has_chunk_hook_overrides(&self) -> bool {
-        if self.has_streaming_chunk_override {
-            true
-        } else {
-            self.has_guardrail
-        }
-    }
-
-    // LiteLLM asks this and has_chunk_hook_overrides as separate questions with the same rule
-    #[must_use]
-    pub const fn needs_per_chunk_streaming_hook(&self) -> bool {
-        if self.has_streaming_chunk_override {
-            true
-        } else {
-            self.has_guardrail
-        }
     }
 
     #[must_use]
@@ -83,15 +70,51 @@ impl CallbackCapabilities {
     }
 }
 
+// LiteLLM's has_post_call_response_headers_callbacks and has_streaming_chunk_hook_overrides run past the 30-character name cap
+pub trait CallbackCapabilityQueries {
+    fn has_response_headers_callbacks(&self) -> bool;
+    fn has_streaming_callbacks(&self) -> bool;
+    fn has_chunk_hook_overrides(&self) -> bool;
+    fn needs_per_chunk_streaming_hook(&self) -> bool;
+    fn needs_iterator_wrap(&self) -> bool;
+    fn has_during_call_guardrails(&self) -> bool;
+}
+
+impl CallbackCapabilityQueries for CallbackCapabilities {
+    fn has_response_headers_callbacks(&self) -> bool {
+        self.has_post_call_response_headers
+    }
+
+    fn has_streaming_callbacks(&self) -> bool {
+        self.streaming.has_iterator_override
+            || self.streaming.has_streaming_chunk_override
+            || self.guardrails.has_guardrail
+    }
+
+    fn has_chunk_hook_overrides(&self) -> bool {
+        self.streaming.has_streaming_chunk_override || self.guardrails.has_guardrail
+    }
+
+    // LiteLLM gives this rule its own name because two call sites ask it separately
+    fn needs_per_chunk_streaming_hook(&self) -> bool {
+        self.has_chunk_hook_overrides()
+    }
+
+    fn needs_iterator_wrap(&self) -> bool {
+        self.streaming.has_iterator_override
+    }
+
+    fn has_during_call_guardrails(&self) -> bool {
+        self.guardrails.has_guardrail
+    }
+}
+
 #[derive(Default)]
 struct CapabilityWalk {
-    has_post_call_response_headers: HookFlag,
-    has_streaming_chunk_override: HookFlag,
-    has_guardrail: HookFlag,
-    has_pre_call_override: HookFlag,
-    has_content_enforcer: HookFlag,
-    has_moderation_override: HookFlag,
-    streaming_iterator_override: HookFlag,
+    has_post_call_response_headers: bool,
+    guardrails: GuardrailCapabilities,
+    request: RequestCapabilities,
+    streaming: StreamingCapabilities,
     iterator_overrides: Vec<IteratorOverride>,
     resolved_callbacks: CallbackList,
     listed_models_filters: CallbackList,
@@ -105,13 +128,13 @@ impl CapabilityWalk {
         }
         let overrides = callback.overrides();
         let is_guardrail = callback.guardrail().is_some();
-        self.has_guardrail |= is_guardrail;
-        self.has_moderation_override |= overrides.moderation && !is_guardrail;
-        if overrides.response_headers {
+        self.guardrails.has_guardrail |= is_guardrail;
+        self.guardrails.has_moderation_override |= overrides.request.moderation && !is_guardrail;
+        if overrides.headers.response_headers {
             self.has_post_call_response_headers = true;
         }
-        self.streaming_iterator_override |= overrides.streaming_iterator;
-        let kind = if overrides.streaming_iterator {
+        self.streaming.has_iterator_override |= overrides.streaming.iterator;
+        let kind = if overrides.streaming.iterator {
             Some(IteratorKind::Override)
         } else if overrides.apply_guardrail && !callback.use_native_lifecycle_hooks() {
             Some(IteratorKind::ApplyGuardrail)
@@ -124,13 +147,13 @@ impl CapabilityWalk {
                 kind: entry_kind,
             });
         }
-        if overrides.streaming_chunk {
-            self.has_streaming_chunk_override = true;
+        if overrides.streaming.chunk {
+            self.streaming.has_streaming_chunk_override = true;
         }
-        if overrides.pre_call {
-            self.has_pre_call_override = true;
+        if overrides.request.pre_call {
+            self.request.has_pre_call_override = true;
             if callback.enforces_request_content() {
-                self.has_content_enforcer = true;
+                self.request.has_content_enforcer = true;
             }
         }
         if overrides.filter_listed_models {
@@ -138,20 +161,18 @@ impl CapabilityWalk {
         }
     }
 
-    fn finish(self) -> CallbackCapabilities {
-        let has_iterator_override = self.streaming_iterator_override
+    fn finish(mut self) -> CallbackCapabilities {
+        let wraps_iterator = self.streaming.has_iterator_override
             || self
                 .iterator_overrides
                 .iter()
                 .any(|entry| entry.kind == IteratorKind::ApplyGuardrail);
+        self.streaming.has_iterator_override = wraps_iterator;
         CallbackCapabilities {
             has_post_call_response_headers: self.has_post_call_response_headers,
-            has_iterator_override,
-            has_streaming_chunk_override: self.has_streaming_chunk_override,
-            has_guardrail: self.has_guardrail,
-            has_pre_call_override: self.has_pre_call_override,
-            has_content_enforcer: self.has_content_enforcer,
-            has_moderation_override: self.has_moderation_override,
+            guardrails: self.guardrails,
+            request: self.request,
+            streaming: self.streaming,
             iterator_overrides: self.iterator_overrides,
             resolved_callbacks: self.resolved_callbacks,
             listed_models_filters: self.listed_models_filters,

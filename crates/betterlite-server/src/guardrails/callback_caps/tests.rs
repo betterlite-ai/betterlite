@@ -10,14 +10,17 @@ use betterlite_core::routes::CallType;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use rstest::rstest;
 
-use super::caps::{CallbackCache, CallbackCapabilities, IteratorKind, combined_callback_list};
+use super::caps::{
+    CallbackCache, CallbackCapabilities, CallbackCapabilityQueries as _, GuardrailCapabilities,
+    IteratorKind, RequestCapabilities, StreamingCapabilities, combined_callback_list,
+};
 use super::errors::{
     GuardrailGateError, ModifiedResponseError, ProxyException, ProxyHookError, SensitiveRouteError,
     changes_request_flow, is_client_error,
 };
 use super::traits::{
-    FailureReply, GuardrailCallback, GuardrailEvent, HeadersContext, HookFlag, HookOverrides,
-    PreCallReturn, ProxyCallback,
+    FailureReply, GuardrailCallback, GuardrailEvent, HeaderHooks, HeadersContext, HookOverrides,
+    PostCallHooks, PreCallReturn, ProxyCallback, RequestHooks, StreamingHooks,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,16 +39,24 @@ enum Hook {
 
 fn overrides(hooks: &[Hook]) -> HookOverrides {
     HookOverrides {
-        pre_call: hooks.contains(&Hook::PreCall),
-        moderation: hooks.contains(&Hook::Moderation),
-        post_call_success: hooks.contains(&Hook::PostCallSuccess),
-        post_call_failure: hooks.contains(&Hook::PostCallFailure),
-        response_headers: hooks.contains(&Hook::ResponseHeaders),
-        streaming_chunk: hooks.contains(&Hook::StreamingChunk),
-        streaming_iterator: hooks.contains(&Hook::StreamingIterator),
         apply_guardrail: hooks.contains(&Hook::ApplyGuardrail),
         filter_listed_models: hooks.contains(&Hook::FilterListedModels),
-        accepts_call_info: hooks.contains(&Hook::AcceptsCallInfo),
+        request: RequestHooks {
+            pre_call: hooks.contains(&Hook::PreCall),
+            moderation: hooks.contains(&Hook::Moderation),
+        },
+        post_call: PostCallHooks {
+            success: hooks.contains(&Hook::PostCallSuccess),
+            failure: hooks.contains(&Hook::PostCallFailure),
+        },
+        headers: HeaderHooks {
+            response_headers: hooks.contains(&Hook::ResponseHeaders),
+            accepts_call_info: hooks.contains(&Hook::AcceptsCallInfo),
+        },
+        streaming: StreamingHooks {
+            chunk: hooks.contains(&Hook::StreamingChunk),
+            iterator: hooks.contains(&Hook::StreamingIterator),
+        },
     }
 }
 
@@ -87,12 +98,17 @@ impl GuardrailCallback for FakeGuardrail {
     fn mark_pre_call_hook_ran(&self, _data: &mut JsonMap) {}
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct FakeFlags {
+    base_logger: bool,
+    content_enforcer: bool,
+}
+
 struct FakeCallback {
     name: &'static str,
     overrides: HookOverrides,
-    base_logger: HookFlag,
-    content_enforcer: HookFlag,
-    native_lifecycle: HookFlag,
+    flags: FakeFlags,
+    native_lifecycle: bool,
     guardrail: Option<FakeGuardrail>,
 }
 
@@ -106,11 +122,11 @@ impl ProxyCallback for FakeCallback {
     }
 
     fn is_base_logger(&self) -> bool {
-        self.base_logger
+        self.flags.base_logger
     }
 
     fn enforces_request_content(&self) -> bool {
-        self.content_enforcer
+        self.flags.content_enforcer
     }
 
     fn use_native_lifecycle_hooks(&self) -> bool {
@@ -128,8 +144,7 @@ fn fake(name: &'static str, hooks: &[Hook], guardrail: Option<FakeGuardrail>) ->
     FakeCallback {
         name,
         overrides: overrides(hooks),
-        base_logger: false,
-        content_enforcer: false,
+        flags: FakeFlags::default(),
         native_lifecycle: false,
         guardrail,
     }
@@ -159,8 +174,10 @@ fn base_logger() -> Arc<dyn ProxyCallback> {
     Arc::new(FakeCallback {
         name: "CustomLogger",
         overrides: overrides(&every_hook),
-        base_logger: true,
-        content_enforcer: true,
+        flags: FakeFlags {
+            base_logger: true,
+            content_enforcer: true,
+        },
         native_lifecycle: false,
         guardrail: Some(FakeGuardrail),
     })
@@ -215,12 +232,18 @@ fn rejected_request() -> ProxyHookError {
 fn build_capabilities(flags: (bool, bool, bool)) -> CallbackCapabilities {
     CallbackCapabilities {
         has_post_call_response_headers: false,
-        has_iterator_override: flags.0,
-        has_streaming_chunk_override: flags.1,
-        has_guardrail: flags.2,
-        has_pre_call_override: false,
-        has_content_enforcer: false,
-        has_moderation_override: false,
+        guardrails: GuardrailCapabilities {
+            has_guardrail: flags.2,
+            has_moderation_override: false,
+        },
+        request: RequestCapabilities {
+            has_pre_call_override: false,
+            has_content_enforcer: false,
+        },
+        streaming: StreamingCapabilities {
+            has_iterator_override: flags.0,
+            has_streaming_chunk_override: flags.1,
+        },
         iterator_overrides: Vec::new(),
         resolved_callbacks: Vec::new(),
         listed_models_filters: Vec::new(),
@@ -231,12 +254,12 @@ fn build_capabilities(flags: (bool, bool, bool)) -> CallbackCapabilities {
 fn from_callbacks_defaults_to_no_flags() {
     let capabilities = CallbackCapabilities::from_callbacks(&[]);
     assert!(!capabilities.has_post_call_response_headers);
-    assert!(!capabilities.has_iterator_override);
-    assert!(!capabilities.has_streaming_chunk_override);
-    assert!(!capabilities.has_guardrail);
-    assert!(!capabilities.has_pre_call_override);
-    assert!(!capabilities.has_content_enforcer);
-    assert!(!capabilities.has_moderation_override);
+    assert!(!capabilities.streaming.has_iterator_override);
+    assert!(!capabilities.streaming.has_streaming_chunk_override);
+    assert!(!capabilities.guardrails.has_guardrail);
+    assert!(!capabilities.request.has_pre_call_override);
+    assert!(!capabilities.request.has_content_enforcer);
+    assert!(!capabilities.guardrails.has_moderation_override);
     assert!(capabilities.iterator_overrides.is_empty());
     assert!(capabilities.resolved_callbacks.is_empty());
     assert!(capabilities.listed_models_filters.is_empty());
@@ -249,29 +272,29 @@ fn from_callbacks_counts_response_headers_and_chunk_overrides() {
         callback("chunk", &[Hook::StreamingChunk]),
     ]);
     assert!(capabilities.has_post_call_response_headers);
-    assert!(capabilities.has_streaming_chunk_override);
-    assert!(!capabilities.has_iterator_override);
+    assert!(capabilities.streaming.has_streaming_chunk_override);
+    assert!(!capabilities.streaming.has_iterator_override);
 }
 
 #[test]
 fn overrides_carry_the_call_info_flag() {
     let declaring = callback("headers", &[Hook::ResponseHeaders, Hook::AcceptsCallInfo]);
     let ignoring = callback("headers", &[Hook::ResponseHeaders]);
-    assert!(declaring.overrides().accepts_call_info);
-    assert!(!ignoring.overrides().accepts_call_info);
+    assert!(declaring.overrides().headers.accepts_call_info);
+    assert!(!ignoring.overrides().headers.accepts_call_info);
 }
 
 #[test]
 fn from_callbacks_keeps_guardrails_out_of_moderation_override() {
     let with_guardrail =
         CallbackCapabilities::from_callbacks(&[guardrail("pii", &[Hook::Moderation])]);
-    assert!(with_guardrail.has_guardrail);
-    assert!(!with_guardrail.has_moderation_override);
+    assert!(with_guardrail.guardrails.has_guardrail);
+    assert!(!with_guardrail.guardrails.has_moderation_override);
 
     let with_logger =
         CallbackCapabilities::from_callbacks(&[callback("logger", &[Hook::Moderation])]);
-    assert!(!with_logger.has_guardrail);
-    assert!(with_logger.has_moderation_override);
+    assert!(!with_logger.guardrails.has_guardrail);
+    assert!(with_logger.guardrails.has_moderation_override);
 }
 
 #[test]
@@ -285,7 +308,7 @@ fn from_callbacks_records_one_override_for_a_type_with_both_hooks() {
         .expect("the callback defines the iterator hook");
     assert_eq!(entry.kind, IteratorKind::Override);
     assert!(Arc::ptr_eq(&entry.callback, &both));
-    assert!(capabilities.has_iterator_override);
+    assert!(capabilities.streaming.has_iterator_override);
 }
 
 #[test]
@@ -294,8 +317,7 @@ fn from_callbacks_wraps_apply_guardrail_only_without_native_hooks() {
     let native: Arc<dyn ProxyCallback> = Arc::new(FakeCallback {
         name: "native",
         overrides: overrides(&[Hook::ApplyGuardrail]),
-        base_logger: false,
-        content_enforcer: false,
+        flags: FakeFlags::default(),
         native_lifecycle: true,
         guardrail: Some(FakeGuardrail),
     });
@@ -308,7 +330,7 @@ fn from_callbacks_wraps_apply_guardrail_only_without_native_hooks() {
         .expect("the unified callback gets an entry");
     assert_eq!(entry.kind, IteratorKind::ApplyGuardrail);
     assert!(Arc::ptr_eq(&entry.callback, &unified));
-    assert!(capabilities.has_iterator_override);
+    assert!(capabilities.streaming.has_iterator_override);
 }
 
 #[test]
@@ -316,30 +338,34 @@ fn from_callbacks_needs_a_pre_call_override_for_the_content_enforcer() {
     let enforcer: Arc<dyn ProxyCallback> = Arc::new(FakeCallback {
         name: "enforcer",
         overrides: overrides(&[Hook::PreCall]),
-        base_logger: false,
-        content_enforcer: true,
+        flags: FakeFlags {
+            base_logger: false,
+            content_enforcer: true,
+        },
         native_lifecycle: false,
         guardrail: None,
     });
     let enforcing = CallbackCapabilities::from_callbacks(&[enforcer]);
-    assert!(enforcing.has_pre_call_override);
-    assert!(enforcing.has_content_enforcer);
+    assert!(enforcing.request.has_pre_call_override);
+    assert!(enforcing.request.has_content_enforcer);
 
     let plain = CallbackCapabilities::from_callbacks(&[callback("plain", &[Hook::PreCall])]);
-    assert!(plain.has_pre_call_override);
-    assert!(!plain.has_content_enforcer);
+    assert!(plain.request.has_pre_call_override);
+    assert!(!plain.request.has_content_enforcer);
 
     let bare: Arc<dyn ProxyCallback> = Arc::new(FakeCallback {
         name: "enforcer",
         overrides: overrides(&[]),
-        base_logger: false,
-        content_enforcer: true,
+        flags: FakeFlags {
+            base_logger: false,
+            content_enforcer: true,
+        },
         native_lifecycle: false,
         guardrail: None,
     });
     let without_hook = CallbackCapabilities::from_callbacks(&[bare]);
-    assert!(!without_hook.has_pre_call_override);
-    assert!(!without_hook.has_content_enforcer);
+    assert!(!without_hook.request.has_pre_call_override);
+    assert!(!without_hook.request.has_content_enforcer);
 }
 
 #[test]
@@ -389,12 +415,12 @@ fn from_callbacks_skips_every_flag_of_the_base_logger() {
         .expect("the base logger is still resolved");
     assert!(Arc::ptr_eq(resolved, &base));
     assert!(!capabilities.has_post_call_response_headers);
-    assert!(!capabilities.has_streaming_chunk_override);
-    assert!(!capabilities.has_guardrail);
-    assert!(!capabilities.has_pre_call_override);
-    assert!(!capabilities.has_content_enforcer);
-    assert!(!capabilities.has_moderation_override);
-    assert!(!capabilities.has_iterator_override);
+    assert!(!capabilities.streaming.has_streaming_chunk_override);
+    assert!(!capabilities.guardrails.has_guardrail);
+    assert!(!capabilities.request.has_pre_call_override);
+    assert!(!capabilities.request.has_content_enforcer);
+    assert!(!capabilities.guardrails.has_moderation_override);
+    assert!(!capabilities.streaming.has_iterator_override);
     assert!(capabilities.iterator_overrides.is_empty());
     assert!(capabilities.listed_models_filters.is_empty());
 }
@@ -406,7 +432,7 @@ fn cache_reuses_the_capabilities_for_the_same_list() {
     let first = cache.capabilities(&callbacks);
     let second = cache.capabilities(&callbacks);
     assert!(Arc::ptr_eq(&first, &second));
-    assert!(second.has_streaming_chunk_override);
+    assert!(second.streaming.has_streaming_chunk_override);
 }
 
 #[test]
@@ -417,7 +443,7 @@ fn cache_recomputes_when_a_member_changes() {
     assert!(!Arc::ptr_eq(&first, &second));
     let replaced = cache.capabilities(&[callback("one", &[])]);
     assert!(!Arc::ptr_eq(&second, &replaced));
-    assert!(!replaced.has_streaming_chunk_override);
+    assert!(!replaced.streaming.has_streaming_chunk_override);
 }
 
 #[test]
@@ -428,28 +454,39 @@ fn cache_recomputes_when_the_length_changes() {
     let single = cache.capabilities(slice::from_ref(&one));
     let pair = cache.capabilities(&[Arc::clone(&one), Arc::clone(&two)]);
     assert!(!Arc::ptr_eq(&single, &pair));
-    assert!(!single.has_streaming_chunk_override);
-    assert!(pair.has_streaming_chunk_override);
+    assert!(!single.streaming.has_streaming_chunk_override);
+    assert!(pair.streaming.has_streaming_chunk_override);
     let back = cache.capabilities(slice::from_ref(&one));
     assert!(!Arc::ptr_eq(&back, &pair));
-    assert!(!back.has_streaming_chunk_override);
+    assert!(!back.streaming.has_streaming_chunk_override);
 }
 
 #[rstest]
-#[case::nothing((false, false, false), (false, false, false))]
-#[case::iterator_only((true, false, false), (true, false, false))]
-#[case::chunk_only((false, true, false), (true, true, true))]
-#[case::guardrail_only((false, false, true), (true, true, true))]
-#[case::chunk_and_guardrail((false, true, true), (true, true, true))]
-#[case::everything((true, true, true), (true, true, true))]
+#[case::nothing((false, false, false), (false, false))]
+#[case::iterator_only((true, false, false), (true, false))]
+#[case::chunk_only((false, true, false), (true, true))]
+#[case::guardrail_only((false, false, true), (true, true))]
+#[case::chunk_and_guardrail((false, true, true), (true, true))]
+#[case::everything((true, true, true), (true, true))]
 fn predicates_combine_the_flags_like_litellm(
     #[case] flags: (bool, bool, bool),
-    #[case] expected: (bool, bool, bool),
+    #[case] expected: (bool, bool),
 ) {
     let capabilities = build_capabilities(flags);
     assert_eq!(capabilities.has_streaming_callbacks(), expected.0);
     assert_eq!(capabilities.has_chunk_hook_overrides(), expected.1);
-    assert_eq!(capabilities.needs_per_chunk_streaming_hook(), expected.2);
+    assert_eq!(capabilities.needs_per_chunk_streaming_hook(), expected.1);
+    assert_eq!(capabilities.needs_iterator_wrap(), flags.0);
+    assert_eq!(capabilities.has_during_call_guardrails(), flags.2);
+}
+
+#[test]
+fn response_headers_callbacks_follow_the_headers_flag() {
+    let declaring =
+        CallbackCapabilities::from_callbacks(&[callback("headers", &[Hook::ResponseHeaders])]);
+    let plain = CallbackCapabilities::from_callbacks(&[]);
+    assert!(declaring.has_response_headers_callbacks());
+    assert!(!plain.has_response_headers_callbacks());
 }
 
 #[test]
@@ -521,6 +558,9 @@ fn combined_callback_list_puts_dynamic_first_and_drops_later_duplicates() {
 #[case::proxy_text_code(proxy_error("not-a-code"), true)]
 #[case::proxy_none_code(proxy_error("None"), true)]
 #[case::proxy_empty_code(proxy_error(""), true)]
+#[case::proxy_signed_code(proxy_error("+500"), true)]
+#[case::proxy_spaced_code(proxy_error(" 500"), true)]
+#[case::proxy_long_digit_code(proxy_error("999999999999999999999"), false)]
 #[case::guardrail_raised(guardrail_raised(), false)]
 #[case::sensitive_route(sensitive_route(), false)]
 #[case::modified_response(modified_response(), false)]
