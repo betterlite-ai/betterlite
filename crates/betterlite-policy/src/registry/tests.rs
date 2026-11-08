@@ -52,17 +52,8 @@ fn config(entries: Vec<(&str, RawPolicy)>) -> BTreeMap<String, RawPolicy> {
         .collect()
 }
 
-fn policy(inherit: Option<&str>, add: &[&str]) -> Policy {
-    Policy {
-        inherit: inherit.map(str::to_owned),
-        description: None,
-        guardrails: PolicyGuardrails {
-            add: Some(names(add)),
-            remove: None,
-        },
-        condition: None,
-        pipeline: None,
-    }
+fn runtime_policy(inherit: Option<&str>, add: &[&str]) -> Policy {
+    parse_policy("added", raw(inherit, add, &[])).unwrap()
 }
 
 #[test]
@@ -248,10 +239,14 @@ fn load_policies_tracks_config_policies_and_sources() {
 #[test]
 fn load_policies_clears_the_previous_state() {
     let mut registry = PolicyRegistry::default();
-    registry.add_policy("db-only", policy(None, &["toxicity"]), PolicySource::Db);
+    registry.add_policy(
+        "db-only",
+        runtime_policy(None, &["toxicity"]),
+        PolicySource::Db,
+    );
     registry.policies_by_id.insert(
         "version-1".to_owned(),
-        ("db-only".to_owned(), policy(None, &[])),
+        ("db-only".to_owned(), runtime_policy(None, &[])),
     );
     registry
         .load_policies(config(vec![("baseline", raw(None, &["pii"], &[]))]))
@@ -267,7 +262,11 @@ fn load_policies_clears_the_previous_state() {
 #[test]
 fn add_policy_records_a_db_source() {
     let mut registry = PolicyRegistry::default();
-    registry.add_policy("custom", policy(None, &["toxicity"]), PolicySource::Db);
+    registry.add_policy(
+        "custom",
+        runtime_policy(None, &["toxicity"]),
+        PolicySource::Db,
+    );
     assert!(registry.initialized);
     assert_eq!(registry.sources.get("custom"), Some(&PolicySource::Db));
     assert!(!registry.config_policies.contains_key("custom"));
@@ -276,7 +275,7 @@ fn add_policy_records_a_db_source() {
 #[test]
 fn add_policy_with_a_config_source_updates_the_config_snapshot() {
     let mut registry = PolicyRegistry::default();
-    let added = policy(None, &["toxicity"]);
+    let added = runtime_policy(None, &["toxicity"]);
     registry.add_policy("custom", added.clone(), PolicySource::Config);
     assert_eq!(registry.config_policies.get("custom"), Some(&added));
 }
@@ -284,8 +283,12 @@ fn add_policy_with_a_config_source_updates_the_config_snapshot() {
 #[test]
 fn add_policy_replaces_an_earlier_version() {
     let mut registry = PolicyRegistry::default();
-    registry.add_policy("custom", policy(None, &["first"]), PolicySource::Db);
-    registry.add_policy("custom", policy(None, &["second"]), PolicySource::Db);
+    registry.add_policy("custom", runtime_policy(None, &["first"]), PolicySource::Db);
+    registry.add_policy(
+        "custom",
+        runtime_policy(None, &["second"]),
+        PolicySource::Db,
+    );
     assert_eq!(
         registry
             .policies
@@ -301,7 +304,11 @@ fn remove_policy_restores_the_config_version() {
     registry
         .load_policies(config(vec![("baseline", raw(None, &["pii"], &[]))]))
         .unwrap();
-    registry.add_policy("baseline", policy(None, &["from-db"]), PolicySource::Db);
+    registry.add_policy(
+        "baseline",
+        runtime_policy(None, &["from-db"]),
+        PolicySource::Db,
+    );
     assert!(registry.remove_policy("baseline"));
     assert_eq!(
         registry
@@ -333,7 +340,11 @@ fn remove_policy_restores_a_config_policy_that_was_never_overridden() {
 #[test]
 fn remove_policy_deletes_a_db_only_policy() {
     let mut registry = PolicyRegistry::default();
-    registry.add_policy("custom", policy(None, &["toxicity"]), PolicySource::Db);
+    registry.add_policy(
+        "custom",
+        runtime_policy(None, &["toxicity"]),
+        PolicySource::Db,
+    );
     assert!(registry.remove_policy("custom"));
     assert!(!registry.policies.contains_key("custom"));
     assert!(!registry.sources.contains_key("custom"));
@@ -352,7 +363,7 @@ fn remove_policy_returns_false_for_an_unknown_name() {
 #[test]
 fn policies_by_id_holds_request_versions() {
     let mut registry = PolicyRegistry::default();
-    let versioned = policy(None, &["pii"]);
+    let versioned = runtime_policy(None, &["pii"]);
     registry.policies_by_id.insert(
         "2f7c".to_owned(),
         ("baseline".to_owned(), versioned.clone()),

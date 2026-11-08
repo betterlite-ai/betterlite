@@ -75,11 +75,9 @@ pub fn policies_matching_conditions(
     context: &PolicyMatchContext,
     policies: &BTreeMap<String, Policy>,
 ) -> Vec<String> {
-    let mut matching = Vec::new();
-    for policy_name in policy_names {
-        if !applying_chain_members(policy_name, context, policies).is_empty() {
-            matching.push(policy_name.clone());
-        }
-    }
-    matching
+    policy_names
+        .iter()
+        .filter(|policy_name| !applying_chain_members(policy_name, context, policies).is_empty())
+        .cloned()
+        .collect()
 }

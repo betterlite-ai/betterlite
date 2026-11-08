@@ -8,7 +8,7 @@ use betterlite_policy::registry::RawPolicy;
 use betterlite_policy::scope::{matches_pattern, scope_matches};
 use betterlite_policy::values::PolicyScope;
 use serde::Deserialize;
-use serde_json::{Map, json};
+use serde_json::{Map, Value, json};
 
 use super::support;
 use crate::helpers::HelperResult;
@@ -58,12 +58,23 @@ pub(crate) fn run(action: &Action) -> HelperResult {
             policies,
             context,
             policy_name,
-        } => chain(policies, context, policy_name),
+        } => {
+            let registry = support::loaded(policies)?;
+            Ok(json!({
+                "members": applying_chain_members(policy_name, context, &registry.policies),
+                "applies": policy_applies(policy_name, context, &registry.policies),
+            }))
+        }
         Action::MatchingConditions {
             policies,
             context,
             policy_names,
-        } => conditions(policies, context, policy_names),
+        } => {
+            let registry = support::loaded(policies)?;
+            Ok(json!({
+                "names": policies_matching_conditions(policy_names, context, &registry.policies),
+            }))
+        }
     }
 }
 
@@ -73,7 +84,7 @@ fn applies(
     policy_names: &[String],
 ) -> HelperResult {
     let registry = support::loaded(policies)?;
-    let mut applies = Map::new();
+    let mut applies: Map<String, Value> = Map::new();
     for name in policy_names {
         applies.insert(
             name.clone(),
@@ -81,25 +92,4 @@ fn applies(
         );
     }
     Ok(json!({ "applies": applies }))
-}
-
-fn chain(
-    policies: &BTreeMap<String, RawPolicy>,
-    context: &PolicyMatchContext,
-    policy_name: &str,
-) -> HelperResult {
-    let registry = support::loaded(policies)?;
-    let members = applying_chain_members(policy_name, context, &registry.policies);
-    let applies = policy_applies(policy_name, context, &registry.policies);
-    Ok(json!({ "members": members, "applies": applies }))
-}
-
-fn conditions(
-    policies: &BTreeMap<String, RawPolicy>,
-    context: &PolicyMatchContext,
-    policy_names: &[String],
-) -> HelperResult {
-    let registry = support::loaded(policies)?;
-    let matching = policies_matching_conditions(policy_names, context, &registry.policies);
-    Ok(json!({ "names": matching }))
 }

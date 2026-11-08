@@ -4,8 +4,9 @@ use betterlite_policy::attachment::AttachmentRegistry;
 use betterlite_policy::context::PolicyMatchContext;
 use betterlite_policy::pipeline::GuardrailPipeline;
 use betterlite_policy::registry::{PolicyRegistry, RawPolicy};
-use betterlite_policy::resolver::{
-    pipeline_managed_guardrails, resolve_guardrails_for_context, resolve_pipelines_for_context,
+use betterlite_policy::resolver::guardrails::resolve_guardrails_for_context;
+use betterlite_policy::resolver::pipelines::{
+    pipeline_managed_guardrails, resolve_pipelines_for_context,
 };
 use betterlite_policy::values::PolicyAttachment;
 use serde::Deserialize;
@@ -43,13 +44,31 @@ pub(crate) fn run(action: &Action) -> HelperResult {
             attachments,
             context,
             policy_names,
-        } => guardrails(policies, attachments, context, policy_names.as_deref()),
+        } => {
+            let (registry, attachment_registry) = registries(policies, attachments)?;
+            let resolved = resolve_guardrails_for_context(
+                context,
+                &registry,
+                &attachment_registry,
+                policy_names.as_deref(),
+            );
+            Ok(json!({ "guardrails": resolved }))
+        }
         Action::ResolvePipelines {
             policies,
             attachments,
             context,
             policy_names,
-        } => pipelines(policies, attachments, context, policy_names.as_deref()),
+        } => {
+            let (registry, attachment_registry) = registries(policies, attachments)?;
+            let resolved = resolve_pipelines_for_context(
+                context,
+                &registry,
+                &attachment_registry,
+                policy_names.as_deref(),
+            );
+            Ok(json!({ "pipelines": resolved }))
+        }
         Action::ManagedGuardrails { pipelines } => Ok(json!({
             "guardrails": pipeline_managed_guardrails(pipelines),
         })),
@@ -67,28 +86,4 @@ fn registries(
     let mut attachment_registry = AttachmentRegistry::default();
     attachment_registry.load_attachments(attachments.to_vec());
     Ok((policy_registry, attachment_registry))
-}
-
-fn guardrails(
-    policies: &BTreeMap<String, RawPolicy>,
-    attachments: &[PolicyAttachment],
-    context: &PolicyMatchContext,
-    policy_names: Option<&[String]>,
-) -> HelperResult {
-    let (registry, attachment_registry) = registries(policies, attachments)?;
-    let resolved =
-        resolve_guardrails_for_context(context, &registry, &attachment_registry, policy_names);
-    Ok(json!({ "guardrails": resolved }))
-}
-
-fn pipelines(
-    policies: &BTreeMap<String, RawPolicy>,
-    attachments: &[PolicyAttachment],
-    context: &PolicyMatchContext,
-    policy_names: Option<&[String]>,
-) -> HelperResult {
-    let (registry, attachment_registry) = registries(policies, attachments)?;
-    let resolved =
-        resolve_pipelines_for_context(context, &registry, &attachment_registry, policy_names);
-    Ok(json!({ "pipelines": resolved }))
 }

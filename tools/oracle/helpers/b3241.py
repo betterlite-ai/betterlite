@@ -144,23 +144,15 @@ def registry_parse_pipeline(input_value: dict[str, Json]) -> Json:
     return cast(Json, {"pipeline": policy_value.pipeline.model_dump(mode="json")})
 
 
-def registry_get_policy(input_value: dict[str, Json]) -> Json:
+def registry_lookup(input_value: dict[str, Json]) -> Json:
     registry = PolicyRegistry()
     registry.load_policies(policy_configs(input_value.get("policies")))
     found: dict[str, Json] = {}
+    present: dict[str, Json] = {}
     for name in string_list(input_value.get("policy_names"), "policy_names"):
         found[name] = policy_json_or_none(registry.get_policy(name))
-    return cast(Json, {"policies": found})
-
-
-def registry_has_policy(input_value: dict[str, Json]) -> Json:
-    registry = PolicyRegistry()
-    registry.load_policies(policy_configs(input_value.get("policies")))
-    present = {
-        name: registry.has_policy(name)
-        for name in string_list(input_value.get("policy_names"), "policy_names")
-    }
-    return cast(Json, {"has": present})
+        present[name] = registry.has_policy(name)
+    return cast(Json, {"policies": found, "has": present})
 
 
 def policy_source(value: Json) -> Literal["db", "config"]:
@@ -345,8 +337,7 @@ HANDLERS: dict[str, dict[str, Handler]] = {
         "load_policies": registry_load_policies,
         "parse_policy": registry_parse_policy,
         "parse_pipeline": registry_parse_pipeline,
-        "get_policy": registry_get_policy,
-        "has_policy": registry_has_policy,
+        "lookup": registry_lookup,
         "scenario": registry_scenario,
     },
     "policy_memory_matching_attachment": {

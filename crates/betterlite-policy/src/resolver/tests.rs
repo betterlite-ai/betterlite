@@ -2,9 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use super::{
-    pipeline_managed_guardrails, resolve_guardrails_for_context, resolve_pipelines_for_context,
-};
+use super::guardrails::resolve_guardrails_for_context;
+use super::pipelines::{pipeline_managed_guardrails, resolve_pipelines_for_context};
 use crate::attachment::AttachmentRegistry;
 use crate::context::PolicyMatchContext;
 use crate::pipeline::{GuardrailPipeline, PipelineAction, PipelineMode, PipelineStep};

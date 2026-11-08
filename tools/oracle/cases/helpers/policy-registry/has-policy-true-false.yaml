@@ -3,7 +3,7 @@ name: has-policy-true-false
 call:
   b3241:
     policy_memory_matching_registry:
-      action: has_policy
+      action: lookup
       policies:
         baseline:
           guardrails:

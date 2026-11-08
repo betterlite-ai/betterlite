@@ -23,11 +23,7 @@ pub(crate) enum Action {
     ParsePipeline {
         pipeline: RawPipeline,
     },
-    GetPolicy {
-        policies: BTreeMap<String, RawPolicy>,
-        policy_names: Vec<String>,
-    },
-    HasPolicy {
+    Lookup {
         policies: BTreeMap<String, RawPolicy>,
         policy_names: Vec<String>,
     },
@@ -59,14 +55,19 @@ pub(crate) fn run(action: &Action) -> HelperResult {
             policy,
         } => parsed_policy(policy_name, policy),
         Action::ParsePipeline { pipeline } => parsed_pipeline(pipeline),
-        Action::GetPolicy {
+        Action::Lookup {
             policies,
             policy_names,
-        } => found(policies, policy_names),
-        Action::HasPolicy {
-            policies,
-            policy_names,
-        } => present(policies, policy_names),
+        } => {
+            let registry = support::loaded(policies)?;
+            let mut found = Map::new();
+            let mut present = Map::new();
+            for name in policy_names {
+                found.insert(name.clone(), json!(registry.policies.get(name)));
+                present.insert(name.clone(), json!(registry.policies.contains_key(name)));
+            }
+            Ok(json!({ "policies": found, "has": present }))
+        }
         Action::Scenario {
             policies,
             add,
@@ -85,24 +86,6 @@ fn parsed_pipeline(pipeline: &RawPipeline) -> HelperResult {
     let parsed = parse_pipeline(pipeline.clone())
         .map_err(|error| support::invalid_input(error.to_string()))?;
     Ok(json!({ "pipeline": parsed }))
-}
-
-fn found(policies: &BTreeMap<String, RawPolicy>, policy_names: &[String]) -> HelperResult {
-    let registry = support::loaded(policies)?;
-    let mut found = Map::new();
-    for name in policy_names {
-        found.insert(name.clone(), json!(registry.policies.get(name)));
-    }
-    Ok(json!({ "policies": found }))
-}
-
-fn present(policies: &BTreeMap<String, RawPolicy>, policy_names: &[String]) -> HelperResult {
-    let registry = support::loaded(policies)?;
-    let mut present = Map::new();
-    for name in policy_names {
-        present.insert(name.clone(), json!(registry.policies.contains_key(name)));
-    }
-    Ok(json!({ "has": present }))
 }
 
 fn scenario(
