@@ -1,0 +1,13 @@
+kind: helper
+name: redis-pipeline-set
+call:
+  b4290:
+    function: redis_pipeline_set
+    operation:
+      key: pipeline-key
+      value:
+        nested: [1, true, null]
+      ttl: null
+env: {}
+compare:
+  ignore: []

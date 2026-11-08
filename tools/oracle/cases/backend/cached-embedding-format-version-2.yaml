@@ -1,0 +1,17 @@
+kind: helper
+name: cached-embedding-format-version-2
+call:
+  b4290:
+    function: cached_embedding_format_version_2
+    embedding:
+      embedding: [0.1, 0.2]
+      index: 0
+      object: embedding
+      model: text-embedding-3-small
+      prompt_tokens: 4
+      prompt_tokens_details:
+        image_tokens: 2
+      format_version: 2
+env: {}
+compare:
+  ignore: []

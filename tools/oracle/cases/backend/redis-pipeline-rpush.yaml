@@ -1,0 +1,11 @@
+kind: helper
+name: redis-pipeline-rpush
+call:
+  b4290:
+    function: redis_pipeline_rpush
+    operation:
+      key: pipeline-key
+      values: [alpha, 1, false]
+env: {}
+compare:
+  ignore: []

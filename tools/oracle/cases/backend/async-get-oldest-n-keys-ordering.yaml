@@ -1,0 +1,17 @@
+kind: helper
+name: async-get-oldest-n-keys-ordering
+call:
+  b4290:
+    function: async_get_oldest_n_keys_ordering
+    clock: 0.0
+    limit: 2
+    entries:
+      - key: beta
+        ttl: 20.0
+      - key: alpha
+        ttl: 10.0
+      - key: gamma
+        ttl: 30.0
+env: {}
+compare:
+  ignore: []

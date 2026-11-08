@@ -1,0 +1,12 @@
+kind: helper
+name: dynamic-cache-control-ttl
+call:
+  b4290:
+    function: dynamic_cache_control_ttl
+    cache:
+      ttl: 120
+      namespace: team
+      s-maxage: 60
+env: {}
+compare:
+  ignore: []

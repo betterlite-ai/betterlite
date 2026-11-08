@@ -1,0 +1,11 @@
+kind: helper
+name: redis-pipeline-lpop
+call:
+  b4290:
+    function: redis_pipeline_lpop
+    operation:
+      key: pipeline-key
+      count: 5
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,12 @@
+kind: helper
+name: redis-pipeline-increment
+call:
+  b4290:
+    function: redis_pipeline_increment
+    operation:
+      key: pipeline-key
+      increment_value: 1.5
+      ttl: 30
+env: {}
+compare:
+  ignore: []

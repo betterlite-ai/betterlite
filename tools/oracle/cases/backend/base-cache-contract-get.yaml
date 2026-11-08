@@ -1,0 +1,8 @@
+kind: helper
+name: base-cache-contract-get
+call:
+  b4290:
+    function: base_cache_contract_get
+env: {}
+compare:
+  ignore: []

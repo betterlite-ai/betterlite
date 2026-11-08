@@ -1,0 +1,22 @@
+kind: helper
+name: ping-response-health-check
+call:
+  b4290:
+    function: ping_response_health_check
+    ping:
+      status: success
+      cache_type: local
+      ping_response: true
+      set_cache_response: ok
+      litellm_cache_params: '{"a":1}'
+      health_check_cache_params:
+        host: localhost
+        port: 6379
+        redis_kwargs:
+          db: 0
+          ssl: false
+        namespace: ns
+        redis_version: "7.0.1"
+env: {}
+compare:
+  ignore: []
