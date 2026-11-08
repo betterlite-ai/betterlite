@@ -1,0 +1,137 @@
+id: B8681
+title: Mount the public provider routes, the API docs pages and the OpenAPI document
+description: >-
+  Three groups of routes that LiteLLM serves without a key are built and never mounted. B3190 merged
+  `public_endpoints::providers::providers_routes()` (GET /public/providers, /public/providers/fields and
+  /public/endpoints) with a comment at providers.rs line 64 that waits for an integration task. B7740 builds
+  `docs_routes::docs_router(DocsRouteConfig)` (the Swagger page at docs_url, /docs/oauth2-redirect, ReDoc at redoc_url,
+  the /swagger assets and the root redirect) and registers nothing. B123 builds the OpenAPI document in
+  betterlite-openapi and leaves the openapi_url route and the route list to this task. This task mounts all three
+  through `mount_public` in crates/betterlite-server/src/app/edge.rs, with the document code in
+  crates/betterlite-server/src/app/edge/openapi.rs and app/edge/openapi/ (declared by the skeleton). It never edits
+  routes.rs, server.rs or app.rs.
+
+
+  Settings, read once in mount_public. `DocsEnv` (B7740) is filled from the process environment variables DOCS_URL,
+  REDOC_URL, OPENAPI_URL, NO_DOCS, NO_REDOC, NO_OPENAPI and ROOT_REDIRECT_URL, and `resolve()` gives the DocsUrls. The
+  server root path is the value of B4200's request_root_paths section (SERVER_ROOT_PATH, default "/" as LiteLLM reads
+  it). The title is the title of B123's `default_info(server_root_path, version)`, "LiteLLM API", and version is the
+  betterlite crate version.
+
+
+  Routes merged by mount_public, in this order:
+
+  1. `providers_routes()` as it is. Delete its stale comment line at providers.rs line 64 and change nothing else there.
+
+  2. `docs_router(DocsRouteConfig { urls, title, server_root_path })` with the values above. FastAPI registers these
+  pages with no dependency, so a request without a key reaches them.
+
+  3. The OpenAPI document. When `urls.openapi_url` is Some(path), register GET at that exact path. The answer is 200,
+  content type application/json, with the JSON of B123's `build_document(&inputs)`. LiteLLM builds the schema on the
+  first call and keeps it (app.openapi_schema), so build the bytes once in mount_public and serve the same bytes every
+  time. When openapi_url is None nothing is registered, so the path answers the app's 404, as FastAPI does with
+  openapi_url=None.
+
+  `openapi::document_inputs(server_root_path, version) -> DocumentInputs` builds the inputs in code. info is
+  `default_info`. routes is one POST RouteDoc for each path of B123's three LLM request body lists, in that order: the
+  four chat completion paths, the four embedding paths and the three Responses paths, with the handler names and tags
+  of LiteLLM's decorators for them (read proxy_server.py for chat_completion and embeddings and
+  response_api_endpoints/endpoints.py for responses_api) and error_responses false. websockets is the realtime and
+  Responses WebSocket routes LiteLLM declares with @router.websocket at proxy_server.py L12908-L12910 and
+  response_api_endpoints/endpoints.py L1474-L1475, with the function name and the query parameters of each decorator.
+  llm_schemas has all three fields None. server_root_path is the root path above, as B123 expects it.
+
+
+  Tests in app/edge/openapi/tests.rs (names start with `openapi_`) assert the inputs list the eleven POST routes and the
+  WebSocket routes in order, and that the built document has a servers entry only for a root path other than empty.
+  Tests in app/edge/tests.rs (names start with `public_`) boot a Router through mount_public and send requests with
+  tower's oneshot and no key: the three provider routes answer 200, GET / answers the Swagger page, GET /openapi.json
+  answers the document bytes twice with equal bodies, OPENAPI_URL moves it, NO_OPENAPI removes the document and the
+  three pages, and no route merged here carries a fallback.
+
+
+  HTTP oracle cases through the booted proxy. The eight docs cases move here from B7740, which could not pass them
+  before this mount: tools/oracle/cases/docs/swagger-at-root.yaml, redoc-page.yaml, oauth2-redirect-page.yaml,
+  swagger-asset-css.yaml, swagger-asset-missing.yaml, swagger-post-method.yaml, no-docs-flag.yaml and
+  docs-url-with-root-redirect.yaml; write each from B7740's text. New cases in tools/oracle/cases/edge/public/, master
+  key set, no database, no key on the request unless named: providers-list-no-key (GET /public/providers),
+  provider-fields-no-key (GET /public/providers/fields), endpoints-no-key (GET /public/endpoints), openapi-default-url
+  (GET /openapi.json: compare status and content type, ignore the body, see deviations), openapi-custom-url
+  (OPENAPI_URL=/spec.json, GET /spec.json, same compare) and openapi-disabled (NO_OPENAPI=true, GET /openapi.json with
+  the master key: 404 {"detail": "Not Found"}).
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/app/edge.rs
+    - crates/betterlite-server/src/app/edge/tests.rs
+    - crates/betterlite-server/src/app/edge/openapi.rs
+    - crates/betterlite-server/src/app/edge/openapi/**
+    - crates/betterlite-server/src/public_endpoints/providers.rs
+    - tools/oracle/cases/docs/**
+    - tools/oracle/cases/edge/public/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1731-L1741
+    why: The FastAPI app with docs_url, redoc_url and openapi_url.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1806-L1885
+    why: get_openapi_schema, custom_openapi and the cached app.openapi_schema.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12908-L12910
+    why: The realtime WebSocket decorators for the WebSocket stubs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1474-L1475
+    why: The Responses WebSocket decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py
+    why: The public provider routes, which have no auth dependency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19949-L19953
+    why: The public routers included on the app.
+dod:
+  - text: mount_public merges the provider routes, the docs router and the openapi_url route once each, all reachable without a key, with no fallback.
+    proof: [public-tests, oracle]
+  - text: The OpenAPI document is built once from the eleven LLM POST routes and the WebSocket routes and served at openapi_url, which OPENAPI_URL moves and NO_OPENAPI removes.
+    proof: [openapi-tests, public-tests, oracle]
+  - text: The six public and OpenAPI cases and the eight docs cases moved from B7740 match LiteLLM through the booted proxy.
+    proof: [public-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: openapi-tests
+      why: the document inputs miss a route, a WebSocket stub or the root path
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::edge::openapi::/)'
+    - id: public-tests
+      why: a public route is missing, needs a key, is registered twice or carries a fallback
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::edge::tests::public_/)'
+    - id: public-cases
+      why: without new case files the oracle proof compares nothing for the mounted routes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/edge/public tools/oracle/cases/docs)"
+oracle_cases:
+  - tools/oracle/cases/docs/swagger-at-root.yaml
+  - tools/oracle/cases/docs/redoc-page.yaml
+  - tools/oracle/cases/docs/oauth2-redirect-page.yaml
+  - tools/oracle/cases/docs/swagger-asset-css.yaml
+  - tools/oracle/cases/docs/swagger-asset-missing.yaml
+  - tools/oracle/cases/docs/swagger-post-method.yaml
+  - tools/oracle/cases/docs/no-docs-flag.yaml
+  - tools/oracle/cases/docs/docs-url-with-root-redirect.yaml
+  - tools/oracle/cases/edge/public/providers-list-no-key.yaml
+  - tools/oracle/cases/edge/public/provider-fields-no-key.yaml
+  - tools/oracle/cases/edge/public/endpoints-no-key.yaml
+  - tools/oracle/cases/edge/public/openapi-default-url.yaml
+  - tools/oracle/cases/edge/public/openapi-custom-url.yaml
+  - tools/oracle/cases/edge/public/openapi-disabled.yaml
+deviations:
+  - what: The OpenAPI document lists only the eleven LLM API POST routes and the realtime and Responses WebSocket routes, without request body schemas.
+    why: axum has no route introspection and no pydantic models, so the full route list and the request schemas need a route catalog no task builds yet (see the report notes). LiteLLM documents every registered route.
+  - what: info.version in the document is the betterlite version.
+    why: LiteLLM writes its own package version there.
+out_of_scope:
+  - "The handlers: B3190 (provider routes), B7740 (docs pages, assets, DocsEnv) and B123 (build_document and its parts). /public/agents/fields: B8647."
+  - "A route catalog that documents every mounted route and the request body schemas: no owner yet, see the report notes."
+  - "The edge layers and the UI static mounts: B8680. The Lens routes: B8682."
+pitfalls:
+  - Every route here is public in LiteLLM; merged through mount instead of mount_public it would answer 401 without a key.
+  - docs_url defaults to "/", so GET / is the Swagger page, and the root redirect only exists when docs_url is not "/".
+  - NO_OPENAPI removes the docs and ReDoc pages too, because FastAPI registers them only with an openapi_url.
+  - Serve the same document bytes every time; LiteLLM caches the first build and never rebuilds it.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

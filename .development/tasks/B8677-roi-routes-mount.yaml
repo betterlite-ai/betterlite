@@ -1,0 +1,112 @@
+id: B8677
+title: Mount the ROI calculator routes and run its scheduled sync on one SyncManager
+description: >-
+  LiteLLM's ROI calculator is split over three finished modules that nothing merges: B3158's GET and PUT
+  /roi-calculator/settings (roi_settings.rs), B3161's GET /roi-calculator/repositories and POST
+  /roi-calculator/connections/test (roi_connections.rs), and B8588's sync, report, identity map and reset routes plus
+  `run_scheduled_sync` (roi_routes.rs). LiteLLM keeps one module-level SyncManager (_SYNC_MANAGER) that the routes and
+  the 30 second refresh job share. This task builds that one state, mounts the three routers, runs the job and proves
+  the routes over HTTP.
+
+
+  Where. crates/betterlite-server/src/app/admin/roi.rs (the skeleton declares it in app/admin.rs, see B8675) with tests
+  in app/admin/roi/tests.rs, plus one line in each of admin.rs `mount` and `start`. Read the three modules on the
+  branch and use the constructors they export.
+
+
+  1. State. `RoiRuntime` holds the one `RoiRouteState` and is built once from `state.shared`: B3157's SyncManager
+  (one per process), the repository source over `shared.db` (None gives the routes' 500 db_not_connected answer),
+  B3155's SyncStore over the same database, the system clock, the router model list read per request from
+  `shared.router` (an empty list when no router is installed, as LiteLLM's _router_models answers an empty tuple when
+  llm_router is None), and B3161's spend reader and completion caller factories (the completion caller reaches this
+  proxy's own /v1/chat/completions with `shared.http`). B3158's and B3161's routers take the parts of this state they
+  need; pass the same Arcs.
+
+  2. Mount. `pub(crate) fn mount_roi(router: Router, state: &Arc<ServerState>) -> Router` merges roi_settings,
+  roi_connections and roi_routes once each. Every ROI path needs a key in LiteLLM, so admin.rs `mount` calls it.
+
+  3. Scheduled sync. proxy_startup_event registers the job only when there is a scheduler and a database (L1566-L1569):
+  register_scheduled_sync adds run_scheduled_sync every 30 seconds with id roi_calculator_refresh, max_instances 1 and
+  replace_existing. `pub(crate) async fn start_roi(state: &Arc<ServerState>)`, called from admin.rs `start`, does
+  nothing without `shared.db`; with one it spawns, on the server's TaskTracker (the one `shared.http` carries), a
+  tokio interval of 30 seconds with MissedTickBehavior::Skip that awaits B8588's run_scheduled_sync with the RoiRuntime
+  state, so a run never overlaps the next. The first tick fires after 30 seconds, as APScheduler's interval trigger
+  does. An error from a run is logged and the job goes on.
+
+
+  Tests in app/admin/roi/tests.rs (module `app::admin::roi::tests`, names start with `oneshot_` and `schedule_`) use
+  the in-memory fakes of B8610's tests and tokio's paused clock. They assert every ROI path answers something other
+  than 404 on the mounted router, the routes and the job see the same SyncManager (start a sync through the route,
+  then read the status the job sees), start_roi spawns nothing without a database, and with one the job runs at 30 and
+  60 seconds and not at 0, and skips a tick while a run is still going.
+
+
+  HTTP oracle cases. The cases B3158, B3161 and B8588 planned (tools/oracle/cases/management/roi_settings/,
+  tools/oracle/cases/roi_connections/ and tools/oracle/cases/management/roi_routes/) move here unchanged with their
+  folders; the worker writes them from those tasks' texts and runs them through the booted proxy with master key
+  oracle-master.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/admin.rs
+    - crates/betterlite-server/src/app/admin/roi.rs
+    - crates/betterlite-server/src/app/admin/roi/**
+    - tools/oracle/cases/management/roi_settings/**
+    - tools/oracle/cases/roi_connections/**
+    - tools/oracle/cases/management/roi_routes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1566-L1569
+    why: The refresh job is registered only with a scheduler and a database.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L119-L121
+    why: get_roi_sync_manager, the one process-wide SyncManager.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L562-L596
+    why: register_scheduled_sync and run_scheduled_sync.
+dod:
+  - text: One RoiRouteState with one SyncManager backs the settings, connections and sync routes, merged once each inside the auth layers.
+    proof: [roi-mount-tests, oracle]
+  - text: With a database the refresh job runs every 30 seconds without overlap on the same state; without one it is not started.
+    proof: [roi-mount-tests]
+  - text: The ROI settings, repositories, connection test, sync, report, identity map and reset routes answer like LiteLLM through the booted proxy.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: roi-mount-tests
+      why: an ROI router is not merged, the job and the routes hold different SyncManagers, or the job starts without a database or overlaps itself
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::admin::roi::/)'
+oracle_cases:
+  - tools/oracle/cases/management/roi_settings/get-settings-read-admin-200.yaml
+  - tools/oracle/cases/management/roi_settings/get-settings-non-admin-403.yaml
+  - tools/oracle/cases/management/roi_settings/put-settings-write-admin-200.yaml
+  - tools/oracle/cases/management/roi_settings/put-settings-view-only-403.yaml
+  - tools/oracle/cases/management/roi_settings/put-settings-null-url-422.yaml
+  - tools/oracle/cases/management/roi_settings/put-settings-db-not-connected-500.yaml
+  - tools/oracle/cases/management/roi_settings/put-settings-validation-error-422.yaml
+  - tools/oracle/cases/management/roi_settings/get-settings-db-not-connected-500.yaml
+  - tools/oracle/cases/management/roi_settings/get-settings-invalid-stored-500.yaml
+  - tools/oracle/cases/management/roi_settings/put-settings-invalid-stored-500.yaml
+
+  - tools/oracle/cases/roi_connections/repositories-read-admin-200.yaml
+  - tools/oracle/cases/roi_connections/repositories-non-admin-403.yaml
+  - tools/oracle/cases/roi_connections/repositories-query-parameter-200.yaml
+  - tools/oracle/cases/roi_connections/repositories-source-error-502.yaml
+  - tools/oracle/cases/roi_connections/connections-test-write-admin-200.yaml
+  - tools/oracle/cases/roi_connections/connections-test-estimator-409.yaml
+  - tools/oracle/cases/roi_connections/connections-test-github-502.yaml
+
+  - tools/oracle/cases/management/roi_routes/sync-status-no-credentials.yaml
+  - tools/oracle/cases/management/roi_routes/sync-start-not-ready-409.yaml
+  - tools/oracle/cases/management/roi_routes/report-live-empty.yaml
+  - tools/oracle/cases/management/roi_routes/identity-map-empty-login-422.yaml
+  - tools/oracle/cases/management/roi_routes/setup-reset-view-only-403.yaml
+
+deviations: []
+out_of_scope:
+  - "The handlers, run_scheduled_sync and next_update: B3158, B3161 and B8588. SyncManager: B3157. SyncStore: B3155."
+pitfalls:
+  - A second SyncManager in the job would let a scheduled sync run while the routes report idle and accept a manual start.
+  - APScheduler's interval job first fires one interval after registration, not at startup.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -99,7 +99,7 @@ deviations:
 out_of_scope:
   - "The server side of the /lens/worker routes: B4505."
   - "The analysis code itself (analyze_sample, the coordinator, the trace store): B4500, B4506, B4509."
-  - "deploy/lens/README.md, the feature guide: the wave 17 Lens wiring part."
+  - "deploy/lens/README.md, the feature guide: no task writes it yet; B8682 mounts the Lens routes."
   - "Publishing the image to a registry: the release workflow."
 pitfalls:
   - The worker needs two different failure texts for one HTTP error depending on the path, so keep the path in Status and test with `/lens/worker/l1/j1/model` and `/lens/worker/l1/j1/sample`.

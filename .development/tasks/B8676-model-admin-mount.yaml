@@ -1,0 +1,126 @@
+id: B8676
+title: Mount the model admin and public provider routes and pass the auto-router catalog
+description: >-
+  Model admin routes are built but answer 404 today, because no B1100 registry entry merges them: B8597's GET / and
+  GET /adaptive_router/state (root_routes.rs), B8586's cost map and beta header reload, schedule, cancel, status and
+  source routes (reload_routes.rs), B8272's GET /model-insights and GET /model-insights/tasks
+  (model_insights_routes.rs) and B8386's four model metrics routes (model_metrics_routes.rs). B3190 built
+  `public_endpoints::providers::providers_routes()` for GET /public/providers, GET /public/providers/fields and GET
+  /public/endpoints and left it unmerged. And B379's availability route reads saved auto routers through its
+  `AutoRouterCatalog` port, which B8381's DeploymentSync implements, while B379's routes function can only pass a
+  catalog that answers None. This task builds the state, mounts the routes, passes the real catalog and proves the
+  paths over HTTP.
+
+
+  Where. Code goes in crates/betterlite-server/src/app/admin/models.rs (the skeleton declares it in app/admin.rs, see
+  B8675) with tests in app/admin/models/tests.rs, plus one line in each of admin.rs `mount` and `mount_public`, and
+  the catalog line in crates/betterlite-server/src/routes/router_preview_validation.rs. Read each route module on the
+  branch first and use the names and constructor arguments it exports. No statics.
+
+
+  1. Keyed routes. `pub(crate) fn mount_models(router: Router, state: &Arc<ServerState>) -> Router` merges, each once
+  and on its own line: root_routes::routes (it takes the router from `shared.router`, the RouterHandle, and reads it
+  per request, so a router installed later by the database sync answers too; no router or no adaptive routers is
+  LiteLLM's 404), reload_routes::routes (over the one B8385 `PeriodicReloads` that the lifespan timer checks also
+  use, handed over as `shared.periodic_reloads`; never build a second one, or the status routes show another pod's
+  times), model_insights_routes::routes and model_metrics_routes::routes (both over `shared.db`; B8386 also takes
+  `shared.proxy_logging` for the slow response threshold). LiteLLM puts user_api_key_auth on every one of these
+  paths, so admin.rs `mount` calls mount_models.
+
+  2. Public routes. `pub(crate) fn mount_models_public(router: Router) -> Router` merges providers_routes() once.
+  LiteLLM serves the three /public paths with no key check, so admin.rs `mount_public` calls it. The router carries
+  no fallback (B8610 forbids one there).
+
+  3. Auto-router catalog. B379's routes function builds its handler state with a catalog that always answers None
+  until this task. Replace that one value with `state.shared.auto_router_catalog` as `Arc<dyn AutoRouterCatalog>`
+  (B8381's DeploymentSync rebuilds the catalog on every successful model row read, and B8613 hands it over). Change
+  nothing else in that file.
+
+
+  Tests in app/admin/models/tests.rs (module `app::admin::models::tests`, names start with `oneshot_`) build a
+  ServerState from the in-memory fakes B8610's tests use and call the routers with tower's oneshot. They assert
+  every keyed path answers something other than 404 on the mount_models router and is absent from the public one,
+  the three /public paths answer 200 on the public router, GET /adaptive_router/state answers 404 with an empty
+  RouterHandle and then a snapshot list after a router with one adaptive deployment is installed, and
+  /auto_router/availability answers from a fake catalog placed in Shared.
+
+
+  HTTP oracle cases through the booted proxy, master key oracle-master, no database. New cases in
+  tools/oracle/cases/model-admin/: GET / with the master key ("LiteLLM: RUNNING"), GET / without a key (401), GET
+  /adaptive_router/state with the master key and a config without adaptive routers (404 "No adaptive_router is
+  configured on this proxy."). The reload, model insights and model metrics cases that B8586, B8272 and B8386 planned
+  move here unchanged, and their folders are in this task's scope; the worker writes them from those tasks' texts.
+  B3190's three public endpoint cases already exist on main and answer once providers_routes is merged.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/admin.rs
+    - crates/betterlite-server/src/app/admin/models.rs
+    - crates/betterlite-server/src/app/admin/models/**
+    - crates/betterlite-server/src/routes/router_preview_validation.rs
+    - tools/oracle/cases/model-admin/**
+    - tools/oracle/cases/reload-routes/**
+    - tools/oracle/cases/model-insights/**
+    - tools/oracle/cases/model-metrics/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19860-L19897
+    why: GET / and GET /adaptive_router/state, both with user_api_key_auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_insights_endpoints.py#L180-L190
+    why: The model insights routes and their key dependency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L386-L420
+    why: The /public provider routes, served without user_api_key_auth.
+dod:
+  - text: mount_models merges the root, reload, model insights and model metrics routes once each inside the auth layers, over the shared RouterHandle, PeriodicReloads, database and ProxyLogging.
+    proof: [models-mount-tests, oracle]
+  - text: The three /public provider routes answer without a key through mount_public.
+    proof: [models-mount-tests, oracle]
+  - text: B379's availability route reads the DeploymentSync catalog from Shared instead of the empty catalog.
+    proof: [models-mount-tests]
+  - text: The root, adaptive router, reload, model insights and model metrics routes answer like LiteLLM through the booted proxy.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: models-mount-tests
+      why: a model admin router is missing, merged on the wrong side of the auth layers, reads a second PeriodicReloads, or the availability route still uses the empty catalog
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::admin::models::/)'
+oracle_cases:
+  - tools/oracle/cases/model-admin/root-running.yaml
+  - tools/oracle/cases/model-admin/root-no-key.yaml
+  - tools/oracle/cases/model-admin/adaptive-router-none.yaml
+  - tools/oracle/cases/public-endpoints/providers-list.yaml
+  - tools/oracle/cases/public-endpoints/providers-fields-assembled.yaml
+  - tools/oracle/cases/public-endpoints/endpoints-discovery.yaml
+
+  - tools/oracle/cases/reload-routes/non-admin-reload.yaml
+  - tools/oracle/cases/reload-routes/schedule-zero-hours.yaml
+  - tools/oracle/cases/reload-routes/cost-map-reload-no-database.yaml
+  - tools/oracle/cases/reload-routes/cost-map-schedule-no-database.yaml
+  - tools/oracle/cases/reload-routes/cost-map-status-no-database.yaml
+  - tools/oracle/cases/reload-routes/beta-headers-status-no-database.yaml
+  - tools/oracle/cases/reload-routes/cost-map-source.yaml
+
+  - tools/oracle/cases/model-insights/auth-required.yaml
+  - tools/oracle/cases/model-insights/no-database.yaml
+  - tools/oracle/cases/model-insights/tasks-no-database.yaml
+  - tools/oracle/cases/model-insights/invalid-metric.yaml
+
+  - tools/oracle/cases/model-metrics/streaming-no-database.yaml
+  - tools/oracle/cases/model-metrics/metrics-no-database.yaml
+  - tools/oracle/cases/model-metrics/slow-responses-no-database.yaml
+  - tools/oracle/cases/model-metrics/exceptions-no-database.yaml
+  - tools/oracle/cases/model-metrics/metrics-no-key.yaml
+
+deviations: []
+out_of_scope:
+  - "The handlers: B8597, B8586, B8272, B8386, B3190 and B379. PeriodicReloads: B8385. The catalog itself: B8381."
+  - "B3191's agent_fields_routes: the agents area."
+  - "Handing DeploymentSync and PeriodicReloads to Shared: the foundation parts."
+pitfalls:
+  - Merging providers_routes in mount puts the /public paths behind the key check, and LiteLLM answers them without one.
+  - GET /adaptive_router/state reads the RouterHandle per request; capturing the router at mount time would answer 404 forever when the database sync installs the router later.
+  - The reload status routes must read the same PeriodicReloads the timer checks write, or they report a pod that never reloaded.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

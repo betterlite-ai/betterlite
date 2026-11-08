@@ -1,14 +1,14 @@
 id: B8589
 title: Serve the A2A invoke and agent card routes
 description: >-
-  Build the two route handlers of LiteLLM's proxy/agent_endpoints/a2a_endpoints.py in betterlite-server, module `a2a_routes` under agent_endpoints (crates/betterlite-server/src/agent_endpoints/a2a_routes.rs and a2a_routes/**): `get_agent_card` and `invoke_agent_a2a`, plus `_get_agent` and the `_PASCAL_TO_WIRE` table. `pub fn routes()` returns the axum router like the sibling route modules; the wave 17 agents wiring part mounts it. Every path sits behind the normal key check and carries the tag "[beta] A2A Agents". The helpers around these handlers are built already or elsewhere: B4788's a2a_forwarding (`jsonrpc_error`, `caller_identity_headers`, `forwarding_headers`, the backend auth header, `enforce_inbound_trace_id`, `validate_push_url`, `forward_jsonrpc`), B4789's a2a_stream (`relay_message_stream` for message/stream and the SSE relay for tasks/resubscribe), B6950's send params reader, B4811's served version and B4812's request, response and card conversion. This task is the HTTP layer that calls them in LiteLLM's order.
+  Build the two route handlers of LiteLLM's proxy/agent_endpoints/a2a_endpoints.py in betterlite-server, module `a2a_routes` under agent_endpoints (crates/betterlite-server/src/agent_endpoints/a2a_routes.rs and a2a_routes/**): `get_agent_card` and `invoke_agent_a2a`, plus `_get_agent` and the `_PASCAL_TO_WIRE` table. `pub fn routes()` returns the axum router like the sibling route modules; B8648 mounts it. Every path sits behind the normal key check and carries the tag "[beta] A2A Agents". The helpers around these handlers are built already or elsewhere: B4788's a2a_forwarding (`jsonrpc_error`, `caller_identity_headers`, `forwarding_headers`, the backend auth header, `enforce_inbound_trace_id`, `validate_push_url`, `forward_jsonrpc`), B4789's a2a_stream (`relay_message_stream` for message/stream and the SSE relay for tasks/resubscribe), B6950's send params reader, B4811's served version and B4812's request, response and card conversion. This task is the HTTP layer that calls them in LiteLLM's order.
 
   Agent card. GET `/a2a/{agent_id}/.well-known/agent-card.json` and GET `/a2a/{agent_id}/.well-known/agent.json` share one handler. Look the agent up by id or name through B8231's `get_agent_with_read_through`; none is 404 "Agent '<agent_id>' not found". B4780's `is_agent_allowed(agent.agent_id, caller)` false is 403 "Agent '<agent_id>' is not allowed for your key/team. Contact proxy admin for access.". Empty agent_card_params is 404 "Agent '<agent_id>' has no agent card configured". Otherwise build the proxy URL with B7323's custom route URL for route `a2a/<agent_id>` from the request base URL, deep-copy the card, set its `url`, and set `url` on the first entry of `supportedInterfaces` when that is a non-empty list; convert the card to the served version and answer it as JSON. An HTTP error passes through; any other error logs "Error getting agent card: %s" and answers 500 with the error text as detail.
 
   Invoke. POST `/a2a/{agent_id}`, POST `/a2a/{agent_id}/message/send` and POST `/v1/a2a/{agent_id}/message/send` share one handler, in this order:
   (1) Parse the JSON body. jsonrpc other than "2.0" answers jsonrpc_error(id, -32600, "Invalid Request: jsonrpc must be '2.0'") with status 400. Map the method through `_PASCAL_TO_WIRE` (SendMessage, SendStreamingMessage, GetTask, ListTasks, CancelTask, SubscribeToTask, the four push notification config names and GetExtendedAgentCard to their wire names); keep the original method for the served version. When params is an object, move every key that is one of LiteLLM's litellm params (all_litellm_params) to the top level of the body, except `id` and `metadata`.
   (2) Look the agent up; none answers -32000 "Agent '<agent_id>' not found" with 404. Take the served version, then the access check (403 as above), then set the caller's invoked_agent_id to agent.agent_id, then enforce_inbound_trace_id. agent_url is agent_card_params.url, agent_name is agent_card_params.name or agent_id. With custom_llm_provider in litellm_params and a caller api_key, add the key hash under the completion bridge's user key hash param. No URL and no provider answers -32000 "Agent '<agent_id>' has no URL configured" with 500.
-  (3) Fill metadata (created as an object when absent) with agent_id, model_group "a2a_agent/<agent_name>" and model_info {"id": agent_id}; set body agent_id, model "a2a_agent/<agent_name>" and custom_llm_provider "a2a_agent". Run B1103's request preparation (common_processing_pre_call_logic) with route type "asend_message". Build the dynamic headers: each name in agent.extra_headers read from the request headers without regard to case, then every request header that starts with "x-a2a-<agent_id lowercased>-" or "x-a2a-<agent_name lowercased>-" with that prefix removed. Merge them with the static headers through B3501's header merge and pass them, the caller identity headers and the backend auth header to forwarding_headers. Agent guardrails from litellm_params (a single value becomes a list) are appended to the request guardrails without duplicates.
+  (3) Fill metadata (created as an object when absent) with agent_id, model_group "a2a_agent/<agent_name>" and model_info {"id": agent_id}; set body agent_id, model "a2a_agent/<agent_name>" and custom_llm_provider "a2a_agent". Run the shared pre-call (common_processing_pre_call_logic) through the `Arc<dyn PreCall<UserAPIKeyAuth>>` from B8801 that A2aRouteState holds, with route type asend_message; B8648 passes B8802's production step. Build the dynamic headers: each name in agent.extra_headers read from the request headers without regard to case, then every request header that starts with "x-a2a-<agent_id lowercased>-" or "x-a2a-<agent_name lowercased>-" with that prefix removed. Merge them with the static headers through B3501's header merge and pass them, the caller identity headers and the backend auth header to forwarding_headers. Agent guardrails from litellm_params (a single value becomes a list) are appended to the request guardrails without duplicates.
   (4) Dispatch on the wire method. message/send: read the params with B6950 (an error answers -32602 "Invalid params: <error>" with 400), call B4814's `asend_message` with model "a2a_agent/<agent_name>", api_base agent_url, litellm_params, agent_id, metadata, proxy_server_request and the forwarding headers, run B8394's post-call success hook, and answer the converted JSON-RPC response for the served version. message/stream: B4789's relay. tasks/get, tasks/list, tasks/cancel, the four tasks/pushNotificationConfig methods and agent/getAuthenticatedExtendedCard: no URL answers -32000 with 500; convert object params for the served version; for pushNotificationConfig/set, params that are not an object answer 400 "params must be an object", a pushNotificationConfig that is not an object answers 400 "pushNotificationConfig must be an object", and each non-empty url (params.url, then the config's url) must be a string (else 400 "Push notification URL must be a string") that passes validate_push_url; forward {"jsonrpc": "2.0", "id", "method", "params"} with forward_jsonrpc; for the extended card rewrite url and the first supportedInterfaces url like the card route and convert the card, otherwise convert the response; then the success hook, and answer the result as JSON. tasks/resubscribe: no URL answers -32000 with 500; convert params and relay the SSE stream through B4789. Any other method answers -32601 "Method '<method>' not found" with 400.
   (5) An HTTP error passes through. Any other error logs "Error invoking agent: %s", awaits B8395's failure hook (an error from the hook is ignored), and answers -32602 with the error message and 400 for a provider bad request error, otherwise -32603 "Internal error: <error>" with 500. Both use the body id (null when the body never parsed).
 
@@ -17,7 +17,6 @@ scope:
   paths:
     - crates/betterlite-server/src/agent_endpoints/a2a_routes.rs
     - crates/betterlite-server/src/agent_endpoints/a2a_routes/**
-    - tools/oracle/cases/agents/a2a-routes/**
     - tools/oracle/helpers/b8589.py
     - tools/oracle/helpers/b8589/**
     - tools/oracle/src/helpers/server/b8589.rs
@@ -33,18 +32,20 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L635-L1032
     why: The three invoke decorators and invoke_agent_a2a with its method dispatch and error answers.
 dod:
-  - text: The two card paths and the three invoke paths exist with exactly their methods, each behind the key check, and a request with no key gets the usual 401.
-    proof: [route-tests, oracle]
+  - text: The two card paths and the three invoke paths exist with exactly their methods; each sits behind the key check, and B8648 proves the 401 for a missing key over HTTP.
+    proof: [route-tests]
   - text: The card route answers 404 for an unknown agent or a missing card, 403 when access is denied, and otherwise the card with url and the first supportedInterfaces url pointing at the proxy, converted to the served version.
-    proof: [card-tests, oracle]
+    proof: [card-tests]
   - text: The invoke route answers -32600 with 400 for a wrong jsonrpc value, -32000 with 404 for an unknown agent and -32000 with 500 without a URL, maps PascalCase methods, and lifts litellm params out of params except id and metadata.
-    proof: [invoke-tests, oracle]
+    proof: [invoke-tests]
   - text: The request is prepared with route type asend_message after the metadata, model and provider fields are set, and the forwarded headers include the extra headers, the x-a2a prefixed headers, the static headers and the caller identity.
     proof: [invoke-tests]
   - text: Each wire method reaches its call (send, stream relay, forward, SSE relay) with the push notification checks, the extended card rewrite and the success hook, and an unknown method answers -32601.
     proof: [dispatch-tests]
   - text: An unexpected error runs the failure hook once and answers -32602 with 400 for a bad request error and -32603 with 500 otherwise.
     proof: [dispatch-tests]
+  - text: The handlers are tested with tower's oneshot over routes() and fake ports; B8648 mounts them and proves the HTTP answers with the oracle cases moved there.
+    proof: [route-tests, card-tests, invoke-tests]
 checks:
   optional: [mutants]
   commands:
@@ -60,22 +61,14 @@ checks:
     - id: dispatch-tests
       why: the method dispatch or the error answers are wrong
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::a2a_routes::tests::dispatch_/)'
-    - id: new-cases
-      why: the A2A routes have no HTTP parity case on this branch
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/agents/a2a-routes)"
-oracle_cases:
-  - tools/oracle/cases/agents/a2a-routes/card-no-credentials.yaml
-  - tools/oracle/cases/agents/a2a-routes/card-unknown-agent.yaml
-  - tools/oracle/cases/agents/a2a-routes/invoke-no-credentials.yaml
-  - tools/oracle/cases/agents/a2a-routes/invoke-bad-jsonrpc-version.yaml
-  - tools/oracle/cases/agents/a2a-routes/invoke-unknown-agent.yaml
+oracle_cases: []
 deviations:
   - what: "A body that is not valid JSON answers -32603 with 500 and the message Internal error: followed by betterlite's parse error text."
     why: LiteLLM puts Python's JSONDecodeError text there; the code, status and prefix match.
 out_of_scope:
   - "The forwarding helpers, the JSON-RPC error body and forward_jsonrpc: B4788. The SSE relay for message/stream and tasks/resubscribe: B4789. Reading message send params: B6950."
   - "The served version and the 0.3 and 1.0 conversion: B4811 and B4812. asend_message: B4814. The access check: B4780. The agent read-through lookup: B8231."
-  - "Request preparation: B1103. The post-call success hook: B8394. The failure hook: B8395. Mounting routes(): the wave 17 agents wiring part."
+  - "Request preparation: B1103. The post-call success hook: B8394. The failure hook: B8395. Mounting routes(): B8648."
 pitfalls:
   - "The jsonrpc check runs before the agent lookup, so a wrong version for an unknown agent answers -32600, not -32000."
   - "jsonrpc_error defaults to status 400; only the not-found (404) and no-URL and internal (500) answers pass another status."

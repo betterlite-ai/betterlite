@@ -3,7 +3,7 @@ title: Model latency and exception metrics routes
 description: >-
   The admin UI's model dashboard reads four routes from proxy_server.py that aggregate spend and error logs per model
   group. Build crates/betterlite-server/src/model_metrics_routes.rs (declared by the skeleton) with `pub fn routes()`
-  like the sibling route modules; the architect's skeleton mounts it. All four are GET, behind the normal key check
+  like the sibling route modules; B8676 mounts it. All four are GET, behind the normal key check
   (B052) and nothing more, hidden from the OpenAPI schema, and read through the reader (B714). Query parameters:
   _selected_model_group, startTime and endTime (ISO datetimes), and api_key and customer where noted. Error enum
   ModelMetricsError.
@@ -36,7 +36,6 @@ scope:
   paths:
     - crates/betterlite-server/src/model_metrics_routes.rs
     - crates/betterlite-server/src/model_metrics_routes/**
-    - tools/oracle/cases/model-metrics/**
     - tools/oracle/helpers/b8386.py
     - tools/oracle/helpers/b8386/**
     - tools/oracle/src/helpers/server/b8386.rs
@@ -46,8 +45,10 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15532-L15953
     why: The four routes, their SQL, defaults and response shapes.
 dod:
-  - text: Each route answers 500 internal_error with LiteLLM's message without a database and 401 without a key.
-    proof: [metrics-route-tests, oracle]
+  - text: "The handlers are tested with tower's oneshot over the module's own Router and fake ports; B8676 runs the HTTP oracle cases through the booted proxy."
+    proof: [route-oneshot]
+  - text: Each route answers 500 internal_error with LiteLLM's message without a database and 401 without a key. B8676 proves it over HTTP.
+    proof: [metrics-route-tests]
   - text: Streaming and latency metrics group by request or day, name series by model or api_base, sort by key and list the api bases.
     proof: [metrics-route-tests]
   - text: Slow responses use the alerting threshold and exceptions pivot counts by exception type.
@@ -55,16 +56,14 @@ dod:
 checks:
   optional: [mutants]
   commands:
+    - id: route-oneshot
+      why: the handlers are not tested with tower's oneshot over the module's own Router and fake ports
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_metrics_routes::tests::oneshot_/)'
     - id: metrics-route-tests
       why: A metrics route path, default, filter, grouping or response shape is missing or differs from LiteLLM
       run: >-
         cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_metrics_routes::/)'
-oracle_cases:
-  - tools/oracle/cases/model-metrics/streaming-no-database.yaml
-  - tools/oracle/cases/model-metrics/metrics-no-database.yaml
-  - tools/oracle/cases/model-metrics/slow-responses-no-database.yaml
-  - tools/oracle/cases/model-metrics/exceptions-no-database.yaml
-  - tools/oracle/cases/model-metrics/metrics-no-key.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - "The spend and error log tables and their writers: the spend log tasks. The Slack alerting settings: B8399."

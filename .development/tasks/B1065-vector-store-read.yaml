@@ -21,7 +21,7 @@ scope:
   - crates/betterlite-config/src/api/vector_store_read/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-read-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/vector_store_read.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/vector_store_read.py
   - tools/oracle/cases/sdk-http/vector-store-read/**

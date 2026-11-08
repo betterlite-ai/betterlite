@@ -22,7 +22,7 @@ description: >-
   load current config with B8379's reload_config, capture the prior selected block, then publish the in-memory litellm
   setting. This publication must occur after get_config because that read can restore stale
   persisted overrides. Replace the selected litellm_settings block, save through B8380's save_config and
-  submit the config audit to B065's bounded audit service only after success. The audit goes through a ConfigAudit port, a trait in settings_services that takes the setting name, the before and after values and the acting admin. The wave 17 config wiring part backs that port with B8594's config_audit_log, so this task does not depend on the /config/update route. Tests use a recording fake. Return
+  submit the config audit to B065's bounded audit service only after success. The audit goes through a ConfigAudit port, a trait in settings_services that takes the setting name, the before and after values and the acting admin. B8612's ConfigAuditLog backs that port with B8594's config_audit_log, so this task does not depend on the /config/update route. Tests use a recording fake. Return
   the caller's success message, status=success and serialized settings. A failed save does
   not undo the already-published runtime value. Expose typed SettingKey variants for the five
   source consumers, not an arbitrary runtime attribute setter.
