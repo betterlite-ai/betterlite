@@ -10,6 +10,7 @@ base64 = "0.23.1"
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-env = { path = "../betterlite-env" }
+betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
@@ -19,6 +20,7 @@ futures-util = { version = "0.3.34", default-features = false, features = ["std"
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+jsonschema = { version = "0.56.0", default-features = false, features = ["arbitrary-precision"] }
 lopdf = { version = "0.46.0", default-features = false }
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
