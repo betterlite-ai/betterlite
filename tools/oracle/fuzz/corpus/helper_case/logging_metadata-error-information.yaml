@@ -1,0 +1,18 @@
+kind: helper
+name: logging-metadata-error-information-seed
+call:
+  logging_metadata:
+    function: error_information
+    exception:
+      class_name: BudgetExceededError
+      message: budget has been exceeded
+      budget_entity_type: key
+      budget_entity_id: key-1
+      budget_limit: 5
+      budget_spend: 6
+    metadata: {client_disconnected: true}
+    error_str: seed
+    policy: {log_client_error_tracebacks: false, expected_client_error: false}
+    redact: true
+env: {}
+compare: {ignore: []}

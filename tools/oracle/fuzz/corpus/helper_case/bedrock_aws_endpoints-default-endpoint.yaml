@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-aws-endpoints-default-endpoint-seed
+call:
+  bedrock_aws_endpoints:
+    default_endpoint:
+      cases:
+        - {endpoint_type: agent, region: us-west-2}
+        - {endpoint_type: null, region: cn-north-1}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: helper
+name: logging-metadata-base64-truncation
+call:
+  logging_metadata:
+    function: truncate_base64
+    messages:
+      messages:
+        - role: user
+          content: data:image/png;base64,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+        - role: user
+          content:
+            - type: text
+              text: "before data:image/png;base64,AAAA after"
+      note: untouched
+    max_base64_length: 64
+env:
+  MAX_BASE64_LENGTH_FOR_LOGGING: "64"
+compare: {ignore: []}

@@ -1,0 +1,36 @@
+kind: helper
+name: provider-selection-order
+call:
+  bedrock_aws_endpoints:
+    provider_selection:
+      models:
+        - 'invoke/anthropic.claude-3-5-sonnet-20240620-v1:0'
+        - 'us.amazon.nova-pro-v1:0'
+        - 'amazon.nova-lite-v1:0'
+        - 'amazon.titan-text-express-v1'
+        - 'meta.llama3-70b-instruct-v1:0'
+        - 'llama/arn:aws:bedrock:us-east-1:1:imported-model/x'
+        - 'cohere.command-r-v1:0'
+        - 'x.cohere'
+        - 'mistral.mistral-7b-instruct-v0:2'
+        - 'ai21.j2-mid-v1'
+        - 'deepseek_r1/model'
+        - 'qwen3/coder'
+        - 'qwen2/instruct'
+        - 'twelvelabs/marengo'
+        - 'openai.gpt-oss-20b-1:0'
+        - 'stability.stable-diffusion-xl-v1'
+        - 'moonshot/kimi'
+        - 'invoke/invoke/anthropic.claude'
+        - 'NOVA-model'
+        - 'SomeAnthropicModel'
+        - 'unknown-model'
+        - 'cohere.embed-english-v3:0'
+        - 'us.twelvelabs.marengo-embed-2-7-v1:0'
+        - 'Amazon.titan-embed-text-v1'
+        - 'some-amazon-model'
+        - 'us.meta.llama3-1-70b-instruct-v1:0'
+        - 'cohere.twelvelabs.x'
+        - 'vendor-amazon-cohere'
+env: {}
+compare: {ignore: []}
