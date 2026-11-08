@@ -128,7 +128,11 @@ fn lock_cache<T>(auth: &WatsonxAuth<T>) -> Result<MutexGuard<'_, LocalTtlCache>,
 }
 
 fn cached_value<T>(auth: &WatsonxAuth<T>, key: &str) -> Result<Option<CacheValue>, WatsonxError> {
-    lock_cache(auth)?.get(key).map_err(WatsonxError::Cache)
+    let cached = {
+        let mut cache = lock_cache(auth)?;
+        cache.get(key)
+    };
+    cached.map_err(WatsonxError::Cache)
 }
 
 fn token_from_cache(cached: CacheValue) -> Option<SecretString> {
@@ -149,7 +153,10 @@ pub(super) fn cached_token<T>(
     auth: &WatsonxAuth<T>,
     key: &str,
 ) -> Result<Option<SecretString>, WatsonxError> {
-    Ok(cached_value(auth, key)?.and_then(token_from_cache))
+    let Some(cached) = cached_value(auth, key)? else {
+        return Ok(None);
+    };
+    Ok(token_from_cache(cached))
 }
 
 pub(super) fn store_token<T>(
