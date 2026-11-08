@@ -133,18 +133,19 @@ fn body_lists_message_type_param_and_code_in_that_order() {
 
 #[test]
 fn body_carries_provider_specific_fields_when_the_map_has_entries() {
-    let body = ProxyErrorBody {
+    let mut provider_specific_fields = BTreeMap::new();
+    provider_specific_fields.insert("provider".to_owned(), serde_json::json!("azure"));
+    let exception = ProxyException::new(ProxyExceptionInit {
         message: "boom".to_owned(),
         error_type: "bad_request_error".to_owned(),
         param: None,
-        code: "400".to_owned(),
-        provider_specific_fields: BTreeMap::from_iter([(
-            "provider".to_owned(),
-            serde_json::json!("azure"),
-        )]),
-    };
+        code: ExceptionCode::Status(400),
+        headers: BTreeMap::new(),
+        openai_code: None,
+        provider_specific_fields,
+    });
     assert_eq!(
-        serde_json::to_string(&body).unwrap(),
+        serde_json::to_string(&exception.to_body()).unwrap(),
         r#"{"message":"boom","type":"bad_request_error","param":null,"code":"400","provider_specific_fields":{"provider":"azure"}}"#
     );
 }
