@@ -253,30 +253,15 @@ def _snapshot(logging_obj: Logging) -> Json:
             "litellm_request_debug": logging_obj.litellm_request_debug,
             "stream_options": getattr(logging_obj, "stream_options", None),
             "custom_pricing": logging_obj.custom_pricing,
-            "zero_cost_warned": logging_obj.zero_cost_warned,
             "custom_llm_provider": getattr(logging_obj, "custom_llm_provider", None),
             "completion_start_time_micros": None if completion is None else _micros(completion),
             "response_timing_metrics": dict(logging_obj.response_timing_metrics),
             "model_call_details": _plain(logging_obj.model_call_details),
             "callback_dynamic_params": logging_obj.standard_callback_dynamic_params,
-            "trusted_callback_vars": [
-                list(pair)
-                for pair in logging_obj._trusted_callback_vars  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-            ],
-            "standard_built_in_tools_params": logging_obj.standard_built_in_tools_params,
             "request_logging": {
                 "log_raw_request_response": logging_obj.log_raw_request_response,
                 "raw_request_only": logging_obj.raw_request_only,
             },
-            "dynamic_callbacks": {
-                "input": logging_obj.dynamic_input_callbacks,
-                "success": logging_obj.dynamic_success_callbacks,
-                "async_success": logging_obj.dynamic_async_success_callbacks,
-                "failure": logging_obj.dynamic_failure_callbacks,
-                "async_failure": logging_obj.dynamic_async_failure_callbacks,
-            },
-            "truncated_messages_for_logging": logging_obj.truncated_messages_for_logging,
-            "cost_breakdown": logging_obj.cost_breakdown,
             "correlation": {
                 "pre_call": {
                     "trace_id": logging_obj._pre_call_trace_id,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]

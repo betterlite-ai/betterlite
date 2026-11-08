@@ -99,18 +99,6 @@ fn empty_update() -> CallUpdate {
     }
 }
 
-fn full_params() -> IndexMap<String, Json> {
-    params(&[
-        ("api_base", text("http://proxy")),
-        ("litellm_request_debug", Json::Bool(true)),
-        (
-            "stream_options",
-            object(&[("include_usage", Json::Bool(true))]),
-        ),
-        ("input_cost_per_token", number(0.5)),
-    ])
-}
-
 fn user_cleared_outcome() -> String {
     let mut state = build(init());
     let mut filled = empty_update();
@@ -222,7 +210,18 @@ fn messages_updated_outcome() -> String {
 
 fn outcome(scenario: &Scenario) -> String {
     match scenario {
-        Scenario::Environment => environment(call_update(), &full_params()),
+        Scenario::Environment => environment(
+            call_update(),
+            &params(&[
+                ("api_base", text("http://proxy")),
+                ("litellm_request_debug", Json::Bool(true)),
+                (
+                    "stream_options",
+                    object(&[("include_usage", Json::Bool(true))]),
+                ),
+                ("input_cost_per_token", number(0.5)),
+            ]),
+        ),
         Scenario::ModelKept => environment(empty_update(), &params(&[])),
         Scenario::UserCleared => user_cleared_outcome(),
         Scenario::PricingNull => environment(

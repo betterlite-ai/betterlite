@@ -147,9 +147,18 @@ fn apply_operation(
 ) -> Result<Value, Box<HelperError>> {
     match step.op {
         Operation::SetResponseTimingMetrics => Ok(timing(state, step)),
-        Operation::UpdateEnvironmentVariables => environment(state, context, step),
-        Operation::UpdateFromKwargs => from_kwargs(state, context, step),
-        Operation::UpdateMessages => messages_operation(state, context, step),
+        Operation::UpdateEnvironmentVariables => {
+            environment(state, step)?;
+            Ok(snapshot::snapshot(state, context))
+        }
+        Operation::UpdateFromKwargs => {
+            from_kwargs(state, step)?;
+            Ok(snapshot::snapshot(state, context))
+        }
+        Operation::UpdateMessages => {
+            update_messages(state, step.messages.clone());
+            Ok(snapshot::snapshot(state, context))
+        }
         Operation::IsSyncLitellmRequest => Ok(serde_json::json!(is_sync_litellm_request(
             &step.litellm_params
         ))),
@@ -167,7 +176,10 @@ fn apply_operation(
             step.callback,
             &step.litellm_params
         ))),
-        Operation::UpdateCompletionStartTime => completion(state, context, step),
+        Operation::UpdateCompletionStartTime => {
+            completion(state, step)?;
+            Ok(snapshot::snapshot(state, context))
+        }
         Operation::RestoreCorrelation => Ok(restore(state, context)),
         Operation::RestoreCorrelationGuarded => Ok(restore_guarded(state, context)),
         Operation::SetCorrelation => Ok(set_correlation(context, step)),
@@ -179,41 +191,18 @@ fn timing(state: &mut LoggingState, step: &Step) -> Value {
     serde_json::json!({ "response_timing_metrics": &state.response_timing_metrics })
 }
 
-fn environment(
-    state: &mut LoggingState,
-    context: &CorrelationContext,
-    step: &Step,
-) -> Result<Value, Box<HelperError>> {
+fn environment(state: &mut LoggingState, step: &Step) -> Result<(), Box<HelperError>> {
     update_environment_variables(state, &step.litellm_params, step.update.clone())
-        .map_err(|error| failure("LoggingStateError", error.to_string()))?;
-    Ok(snapshot::snapshot(state, context))
+        .map_err(|error| failure("LoggingStateError", error.to_string()))
 }
 
-fn from_kwargs(
-    state: &mut LoggingState,
-    context: &CorrelationContext,
-    step: &Step,
-) -> Result<Value, Box<HelperError>> {
+fn from_kwargs(state: &mut LoggingState, step: &Step) -> Result<(), Box<HelperError>> {
     let caller = (!step.litellm_params.is_empty()).then_some(&step.litellm_params);
     update_from_kwargs(state, &step.kwargs, caller, step.update.clone())
-        .map_err(|error| failure("LoggingStateError", error.to_string()))?;
-    Ok(snapshot::snapshot(state, context))
+        .map_err(|error| failure("LoggingStateError", error.to_string()))
 }
 
-fn messages_operation(
-    state: &mut LoggingState,
-    context: &CorrelationContext,
-    step: &Step,
-) -> Result<Value, Box<HelperError>> {
-    update_messages(state, step.messages.clone());
-    Ok(snapshot::snapshot(state, context))
-}
-
-fn completion(
-    state: &mut LoggingState,
-    context: &CorrelationContext,
-    step: &Step,
-) -> Result<Value, Box<HelperError>> {
+fn completion(state: &mut LoggingState, step: &Step) -> Result<(), Box<HelperError>> {
     let Some(completion_start_time) = step.completion_start_time else {
         return Err(failure(
             "InvalidInput",
@@ -221,7 +210,7 @@ fn completion(
         ));
     };
     update_completion_start_time(state, completion_start_time);
-    Ok(snapshot::snapshot(state, context))
+    Ok(())
 }
 
 fn restore(state: &LoggingState, context: &mut CorrelationContext) -> Value {

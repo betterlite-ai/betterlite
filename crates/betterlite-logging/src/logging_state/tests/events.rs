@@ -75,11 +75,9 @@ fn record_outcome(stream: Option<bool>, recorded: LoggingEvent, untouched: Loggi
 
 fn claim_outcome() -> String {
     let mut state = build(init());
-    format!(
-        "{}/{}",
-        claim_async_success_log(&mut state),
-        claim_async_success_log(&mut state)
-    )
+    let first = claim_async_success_log(&mut state);
+    let second = claim_async_success_log(&mut state);
+    format!("{first}/{second}")
 }
 
 fn completion_outcome() -> String {
