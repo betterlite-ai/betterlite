@@ -1,0 +1,20 @@
+kind: helper
+name: token-count-function-tool-arguments
+call:
+  token_count:
+    function: token_counter
+    model: gpt-3.5-turbo
+    messages:
+      - role: assistant
+        tool_calls:
+          - id: call_1
+            type: function
+            function:
+              name: get_weather
+              arguments: '{"city": "Paris"}'
+      - role: assistant
+        function_call:
+          name: get_weather
+          arguments: '{"days": 2}'
+env: {}
+compare: {ignore: []}
