@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_openai::api::container_contracts::catalog::container_endpoints;
+use betterlite_openai::api::container_contracts::catalog::{CatalogError, container_endpoints};
 use betterlite_openai::api::container_contracts::config::{
     BaseContainerConfig, ContainerListQuery, ContainerRequestContext,
 };
@@ -155,6 +155,12 @@ impl From<serde_json::Error> for Box<HelperError> {
     }
 }
 
+impl From<CatalogError> for Box<HelperError> {
+    fn from(error: CatalogError) -> Self {
+        validation_error(error.to_string())
+    }
+}
+
 enum Action<'names> {
     Decode,
     Fields(&'names [String]),
@@ -239,7 +245,7 @@ impl Helper for Op {
                 .map(Value::Array),
             Input::RecordField { record, names } => apply(record, &Action::Fields(names)),
             Input::EndpointCatalog => {
-                serde_json::to_value(container_endpoints()).map_err(Box::<HelperError>::from)
+                serde_json::to_value(container_endpoints()?).map_err(Box::<HelperError>::from)
             }
             Input::ConfigDefaults(defaults) => Ok(config_defaults(defaults)),
         }

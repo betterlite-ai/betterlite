@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 use serde_json::{Map, Value};
+use sha2::{Digest as _, Sha256};
 
 use super::catalog::{ContainerEndpoint, container_endpoints};
 use super::config::{BaseContainerConfig, ContainerListQuery, ContainerRequestContext};
@@ -500,7 +501,7 @@ const PINNED_CATALOG: &str = r#"[
 
 #[test]
 fn catalog_contains_the_five_pinned_endpoints_in_order() {
-    let endpoints = container_endpoints();
+    let endpoints = container_endpoints().unwrap();
     let names: Vec<&str> = endpoints
         .iter()
         .map(|endpoint| endpoint.name.as_str())
@@ -534,12 +535,22 @@ fn catalog_contains_the_five_pinned_endpoints_in_order() {
 #[test]
 fn catalog_entries_carry_every_pinned_field() {
     let expected: Vec<ContainerEndpoint> = serde_json::from_str(PINNED_CATALOG).unwrap();
-    assert_eq!(container_endpoints(), expected);
+    assert_eq!(container_endpoints().unwrap(), expected);
+}
+
+// The pinned bytes include the trailing spaces the upstream file carries, so any reformatting fails this hash
+#[test]
+fn catalog_embedded_text_is_the_pinned_endpoints_file() {
+    let digest = hex::encode(Sha256::digest(include_bytes!("fixtures/endpoints.json")));
+    assert_eq!(
+        digest,
+        "37b78192c365a9e8fc0b83ece9ed766c5ac6bc437c5c8806912abad3a6f5bcdb"
+    );
 }
 
 #[test]
 fn catalog_flags_default_to_false_and_mark_multipart_and_binary_entries() {
-    let endpoints = container_endpoints();
+    let endpoints = container_endpoints().unwrap();
     let flags: Vec<(&str, bool, bool)> = endpoints
         .iter()
         .map(|endpoint| {

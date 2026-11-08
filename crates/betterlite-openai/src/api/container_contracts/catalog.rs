@@ -20,12 +20,20 @@ struct ContainerEndpointsDocument {
     endpoints: Vec<ContainerEndpoint>,
 }
 
-const CONTAINER_ENDPOINTS_JSON: &str = include_str!("endpoints.json");
+#[derive(Debug, thiserror::Error)]
+pub enum CatalogError {
+    #[error("the embedded container endpoint catalog does not parse")]
+    Parse {
+        #[source]
+        source: serde_json::Error,
+    },
+}
 
-#[must_use]
-pub fn container_endpoints() -> Vec<ContainerEndpoint> {
+const CONTAINER_ENDPOINTS_JSON: &str = include_str!("fixtures/endpoints.json");
+
+pub fn container_endpoints() -> Result<Vec<ContainerEndpoint>, CatalogError> {
     match serde_json::from_str::<ContainerEndpointsDocument>(CONTAINER_ENDPOINTS_JSON) {
-        Ok(document) => document.endpoints,
-        Err(_) => Vec::new(),
+        Ok(document) => Ok(document.endpoints),
+        Err(source) => Err(CatalogError::Parse { source }),
     }
 }
