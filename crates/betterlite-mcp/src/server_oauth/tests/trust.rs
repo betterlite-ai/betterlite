@@ -128,6 +128,27 @@ fn trust_restrict_adds_the_dcr_bridge_sentence_only_for_a_dropped_registration(
     );
 }
 
+#[rstest]
+#[case::pinned_url(true)]
+#[case::advertised_url(false)]
+fn trust_restrict_keeps_credentials_out_of_the_warning_log(#[case] bad_pinned: bool) {
+    let bad_url = "https://client:s3cret@[idp.test]/authorize?api_key=abc";
+    let mut metadata = discovered_metadata();
+    let manual = if bad_pinned {
+        bad_url
+    } else {
+        metadata.authorization_url = Some(bad_url.to_owned());
+        "https://idp.test/authorize"
+    };
+    let (captured, _guard) = capture();
+    let restricted = restrict_to_corroborated(Some(metadata), Some(manual), "test-server", false);
+    assert!(restricted.is_some());
+    let text = captured.text();
+    assert!(text.contains("<unparsable url>"));
+    assert!(!text.contains("s3cret"));
+    assert!(!text.contains("api_key"));
+}
+
 #[test]
 fn trust_restrict_keeps_metadata_without_token_or_registration_endpoints() {
     let metadata = metadata_from_json(r#"{"authorization_url": "https://other.test/authorize"}"#);

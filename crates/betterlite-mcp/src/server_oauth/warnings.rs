@@ -16,15 +16,19 @@ pub struct UnresolvedCheck<'check> {
     pub manual_token_url: Option<&'check str>,
 }
 
+#[derive(Clone, Copy)]
+pub struct NeededEndpoint<'endpoint> {
+    pub needed: bool,
+    pub manual: Option<&'endpoint str>,
+}
+
 #[must_use]
 pub fn discovery_leaves_unresolved(
-    needs_authorization_url: ServerFlag,
-    needs_token_url: ServerFlag,
-    manual_authorization_url: Option<&str>,
-    manual_token_url: Option<&str>,
+    authorization: NeededEndpoint<'_>,
+    token: NeededEndpoint<'_>,
 ) -> bool {
-    (needs_authorization_url && blank_to_none(manual_authorization_url).is_none())
-        || (needs_token_url && blank_to_none(manual_token_url).is_none())
+    (authorization.needed && blank_to_none(authorization.manual).is_none())
+        || (token.needed && blank_to_none(token.manual).is_none())
 }
 
 pub fn warn_unresolved(check: UnresolvedCheck<'_>) {

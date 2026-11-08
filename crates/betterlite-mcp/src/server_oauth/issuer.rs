@@ -53,9 +53,17 @@ pub fn endpoints_yield_to_issuer<'endpoint>(
 
 #[must_use]
 pub fn normalized_authorize_endpoint(url: &str) -> String {
-    // urlparse accepts nearly any string, so an unparsable url keeps its literal text as its identity
+    // comparisons only: an unparsable url keeps its text, and the log path uses <unparsable url>
     let Ok(identity) = canonicalize_url_identity(url) else {
         return url.to_owned();
+    };
+    identity
+}
+
+#[must_use]
+pub fn authorize_endpoint_for_log(url: &str) -> String {
+    let Ok(identity) = canonicalize_url_identity(url) else {
+        return "<unparsable url>".to_owned();
     };
     identity
 }

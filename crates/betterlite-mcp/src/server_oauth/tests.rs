@@ -19,12 +19,15 @@ use super::flow::{
     resolve_oauth2_flow,
 };
 use super::issuer::{
-    ManualEndpoints, endpoints_yield_to_issuer, issuer_matches, normalized_authorize_endpoint,
+    ManualEndpoints, authorize_endpoint_for_log, endpoints_yield_to_issuer, issuer_matches,
+    normalized_authorize_endpoint,
 };
 use super::merge::{ScopesInput, extract_scopes, merge_discovered};
 use super::trust::{carry_forward_endpoints, endpoints_corroborate, restrict_to_corroborated};
 use super::unresolved::{endpoints_unresolved, flow_endpoints_missing, requires_discovery};
-use super::warnings::{UnresolvedCheck, discovery_leaves_unresolved, warn_unresolved};
+use super::warnings::{
+    NeededEndpoint, UnresolvedCheck, discovery_leaves_unresolved, warn_unresolved,
+};
 use crate::server_record::{MCPOAuthMetadata, MCPServer, OAuth2Flow};
 
 include!("tests/basics.rs");

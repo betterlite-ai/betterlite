@@ -1,5 +1,5 @@
 use super::basics::blank_to_none;
-use super::issuer::normalized_authorize_endpoint;
+use super::issuer::{authorize_endpoint_for_log, normalized_authorize_endpoint};
 use crate::server_record::{MCPOAuthMetadata, MCPServer};
 
 #[must_use]
@@ -22,8 +22,8 @@ pub fn restrict_to_corroborated(
         return Some(document);
     }
     let advertised = blank_to_none(document.authorization_url.as_deref())
-        .map_or_else(|| "<absent>".to_owned(), normalized_authorize_endpoint);
-    let pinned = normalized_authorize_endpoint(manual);
+        .map_or_else(|| "<absent>".to_owned(), authorize_endpoint_for_log);
+    let pinned = authorize_endpoint_for_log(manual);
     let bridge_note = if is_dcr_bridge && discovered_registration.is_some() {
         " The discovered registration_url is rejected with it, so this dcr_bridge server stays on the short-circuit registration arm."
     } else {

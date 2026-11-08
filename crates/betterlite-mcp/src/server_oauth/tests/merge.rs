@@ -138,10 +138,14 @@ fn merge_discovery_leaves_unresolved_decides_per_needed_field(
 ) {
     assert_eq!(
         discovery_leaves_unresolved(
-            needs_authorization,
-            needs_token,
-            manual_authorization,
-            manual_token
+            NeededEndpoint {
+                needed: needs_authorization,
+                manual: manual_authorization,
+            },
+            NeededEndpoint {
+                needed: needs_token,
+                manual: manual_token,
+            },
         ),
         expected
     );
