@@ -116,63 +116,30 @@ pub fn finish_reason_handler(shaper: &mut ChunkShaper) -> StreamChunk {
     model_response
 }
 
-const LENGTH_REASONS: &[&str] = &["max_tokens", "MAX_TOKENS", "compaction", "length"];
-const TOOL_CALL_REASONS: &[&str] = &["tool_use", "tool_calls"];
-const CONTENT_FILTER_REASONS: &[&str] = &[
-    "refusal",
-    "ERROR_TOXIC",
-    "SAFETY",
-    "RECITATION",
-    "LANGUAGE",
-    "OTHER",
-    "BLOCKLIST",
-    "PROHIBITED_CONTENT",
-    "SPII",
-    "IMAGE_SAFETY",
-    "IMAGE_PROHIBITED_CONTENT",
-    "NO_IMAGE",
-    "IMAGE_RECITATION",
-    "IMAGE_OTHER",
-    "ESCALATION",
-    "sensitive",
-    "guardrail_intervened",
-    "content_filter",
-    "content_filtered",
-];
-const STOP_REASONS: &[&str] = &[
-    "stop_sequence",
-    "end_turn",
-    "COMPLETE",
-    "ERROR",
-    "eos_token",
-    "eos",
-    "STOP",
-    "FINISH_REASON_UNSPECIFIED",
-    "MALFORMED_FUNCTION_CALL",
-    "TOO_MANY_TOOL_CALLS",
-    "MALFORMED_RESPONSE",
-    "UNEXPECTED_TOOL_CALL",
-    "MISSING_THOUGHT_SIGNATURE",
-    "network_error",
-    "stop",
-    "error",
-];
+// Whitespace-separated tables, compared one whole reason at a time.
+const LENGTH_REASONS: &str = "max_tokens MAX_TOKENS compaction length";
+const TOOL_CALL_REASONS: &str = "tool_use tool_calls";
+const CONTENT_FILTER_REASONS: &str = "refusal ERROR_TOXIC SAFETY RECITATION LANGUAGE OTHER BLOCKLIST PROHIBITED_CONTENT SPII IMAGE_SAFETY IMAGE_PROHIBITED_CONTENT NO_IMAGE IMAGE_RECITATION IMAGE_OTHER ESCALATION sensitive guardrail_intervened content_filter content_filtered";
+const STOP_REASONS: &str = "stop_sequence end_turn COMPLETE ERROR eos_token eos STOP FINISH_REASON_UNSPECIFIED MALFORMED_FUNCTION_CALL TOO_MANY_TOOL_CALLS MALFORMED_RESPONSE UNEXPECTED_TOOL_CALL MISSING_THOUGHT_SIGNATURE network_error stop error";
 
 #[must_use]
 pub fn mapped_finish_reason(raw: &str) -> &'static str {
-    if LENGTH_REASONS.contains(&raw) {
+    if LENGTH_REASONS.split(' ').any(|reason| reason == raw) {
         return "length";
     }
-    if TOOL_CALL_REASONS.contains(&raw) {
+    if TOOL_CALL_REASONS.split(' ').any(|reason| reason == raw) {
         return "tool_calls";
     }
-    if CONTENT_FILTER_REASONS.contains(&raw) {
+    if CONTENT_FILTER_REASONS
+        .split(' ')
+        .any(|reason| reason == raw)
+    {
         return "content_filter";
     }
     if raw == "function_call" {
         return "function_call";
     }
-    if !STOP_REASONS.contains(&raw) {
+    if !STOP_REASONS.split(' ').any(|reason| reason == raw) {
         tracing::warn!("Unmapped finish_reason '{raw}', defaulting to 'stop'");
     }
     "stop"

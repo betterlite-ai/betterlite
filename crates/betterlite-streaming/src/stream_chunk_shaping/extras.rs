@@ -71,7 +71,7 @@ pub fn apply_special_delta_attributes(delta: &StreamDelta, model_response: &mut 
 pub fn generic_chunk_has_known_fields(chunk: &JsonObject) -> bool {
     chunk
         .keys()
-        .all(|key| GENERIC_CHUNK_FIELDS.contains(&key.as_str()))
+        .all(|key| GENERIC_CHUNK_FIELDS.split(' ').any(|field| field == key))
 }
 
 #[must_use]

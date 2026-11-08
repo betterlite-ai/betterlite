@@ -149,15 +149,8 @@ pub struct GenericChunk {
 }
 
 // frozenset(GenericStreamingChunk.__annotations__): the keys a provider may put in a generic chunk.
-pub const GENERIC_CHUNK_FIELDS: &[&str] = &[
-    "text",
-    "tool_use",
-    "is_finished",
-    "finish_reason",
-    "usage",
-    "index",
-    "provider_specific_fields",
-];
+pub const GENERIC_CHUNK_FIELDS: &str =
+    "text tool_use is_finished finish_reason usage index provider_specific_fields";
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
