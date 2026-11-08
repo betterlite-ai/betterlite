@@ -6,6 +6,7 @@ pub mod sink;
 mod tests;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use indexmap::IndexMap;
 
@@ -15,6 +16,7 @@ use phases::{CallbackList, CallbackPhase, CallbackSelection};
 use sink::{CallbackEvent, CallbackSink};
 
 use crate::callback_config::{CallbackVars, FeatureFlags};
+use crate::callback_logger::CallbackLogger;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Registration {
@@ -216,6 +218,18 @@ impl CallbackRegistry {
                 );
             }
         }
+    }
+
+    #[must_use]
+    pub fn loggers(&self, phase: CallbackPhase) -> Vec<Arc<dyn CallbackLogger>> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.phases.contains(&phase))
+            .filter_map(|entry| match &entry.sink {
+                CallbackSink::Logger(logger) => Some(Arc::clone(logger)),
+                CallbackSink::Tracing | CallbackSink::Channel(_) => None,
+            })
+            .collect()
     }
 
     #[must_use]

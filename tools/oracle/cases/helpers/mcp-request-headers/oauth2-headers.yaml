@@ -1,0 +1,5 @@
+kind: helper
+name: "oauth2-headers"
+call: {"b4654":{"function":"oauth2","raw":[["Authorization","Bearer first"],["authorization-foo","last"]]}}
+env: {}
+compare: {"ignore":[]}

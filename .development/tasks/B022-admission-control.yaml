@@ -42,6 +42,7 @@ scope:
   - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/admission_control.rs
   - crates/betterlite-server/src/routing/admission_control/**
+  - crates/betterlite-server/src/server.rs
   - tools/oracle/src/router_probes/admission_control.rs
   - tools/oracle/src/router_probes/admission_control/**
   - tools/oracle/litellm/probes/admission_control.py
@@ -134,6 +135,7 @@ oracle_cases:
 - tools/oracle/cases/routing/admission-control/invalid-settings-warning-disables.yaml
 - tools/oracle/cases/routing/admission-control/omitted-queue-equals-inflight.yaml
 - tools/oracle/cases/routing/admission-control/default-queue-timeout.yaml
+- tools/oracle/cases/routing/admission-control/scalar-root-exempt.yaml
 deviations: []
 out_of_scope:
 - Implementing a Prometheus exporter (B111) or new health endpoints (B130).

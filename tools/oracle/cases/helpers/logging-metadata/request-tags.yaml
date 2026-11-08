@@ -1,0 +1,13 @@
+kind: helper
+name: logging-metadata-request-tags
+call:
+  logging_metadata:
+    function: request_tags
+    litellm_params:
+      metadata: {tags: [alpha, beta]}
+      litellm_metadata: {tags: [ignored]}
+    headers: {user-agent: curl/8.5, x-team: platform}
+    extra_spend_tag_headers: [x-team, x-missing]
+    disable_add_user_agent: false
+env: {}
+compare: {ignore: []}

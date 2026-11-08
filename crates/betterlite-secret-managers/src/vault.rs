@@ -22,13 +22,9 @@ pub mod transport;
 
 pub struct HashicorpSecretManager<T> {
     settings: VaultSettings,
-    transport: T,
+    pub(crate) transport: T,
     clock: Clock,
     token: Mutex<Option<CachedToken>>,
-    #[expect(
-        dead_code,
-        reason = "the secret body cache is built here for B4417's reads and writes, which this task only creates"
-    )]
     body_cache: TtlCache,
 }
 
@@ -76,10 +72,6 @@ impl<T: VaultTransport> HashicorpSecretManager<T> {
         self.settings.namespace.as_deref()
     }
 
-    #[expect(
-        dead_code,
-        reason = "B4417 reads and writes the secret body cache through this accessor"
-    )]
     pub(crate) const fn body_cache(&self) -> &TtlCache {
         let Self { body_cache, .. } = self;
         body_cache

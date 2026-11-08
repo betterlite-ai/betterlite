@@ -1,0 +1,8 @@
+model_list:
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: sk-test
+
+general_settings:
+  hide_default_credentials_hint: true

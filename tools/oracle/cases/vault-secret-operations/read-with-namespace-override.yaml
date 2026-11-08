@@ -1,0 +1,20 @@
+kind: helper
+name: vault-secret-operations-read-with-namespace-override
+env: {}
+compare: {ignore: []}
+call:
+  b4417:
+    env:
+      HCP_VAULT_TOKEN: token
+    routes:
+      - route: "GET http://127.0.0.1:8200/v1/teams/team-b/kv-prod/data/virtual-keys/DB_PASSWORD"
+        replies:
+          - {status: 200, body: '{"data":{"data":{"key":"namespaced-value"}}}'}
+    steps:
+      - op: read
+        name: DB_PASSWORD
+        params:
+          secret_manager_settings:
+            namespace: teams/team-b
+            mount: kv-prod
+            path_prefix: virtual-keys
