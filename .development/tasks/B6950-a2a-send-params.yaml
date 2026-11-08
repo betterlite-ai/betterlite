@@ -18,7 +18,7 @@ description: >-
   - request metadata: present when the key is present, even as an empty object.
   The SDK turns protobuf Struct numbers into doubles; where an integral double comes back, write it as a JSON integer if the oracle case for numbers in data and metadata shows LiteLLM does.
 
-  No route calls this yet. B4789 (stream relay) and the B141 route handler call it. Cases are helper cases on the pure function; a route-level case comes with B141.
+  No route calls this yet. B4789 (stream relay) and B8589's route handler call it. Cases are helper cases on the pure function; a route-level case comes with B8589.
 scope:
   paths:
     - crates/betterlite-a2a/src/send_params.rs
@@ -91,7 +91,7 @@ deviations:
   - what: Params that are not a JSON object return the same invalid-params error. LiteLLM raises a TypeError from `**params`, which the route reports as -32603 "Internal error".
     why: "The declared type of params is an object; a typed error is the honest answer to a list or a string."
 out_of_scope:
-  - "The message/send and message/stream handlers that call this function, the JSON-RPC error responses and the SSE relay are B4789 (streams) and B141 (route handler)."
+  - "The message/send and message/stream handlers that call this function, the JSON-RPC error responses and the SSE relay are B4789 (streams) and B8589 (route handler)."
   - "0.3/1.0 conversion of responses, stream events, task requests and agent cards is B4812. This task converts only the send-message request params."
   - "The completion bridge's own loose MessageSendParams record in completion_bridge::wire is B4803's and stays as it is; callers that need the strict record use this module's."
   - "Task, artifact, status-update and security-scheme conversions in the SDK's conversions module have no caller on this path."

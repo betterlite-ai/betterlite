@@ -24,7 +24,7 @@ description: >-
   that prerequisite.
 
 
-  Named case contracts: configured_gateway_required: Choose truthy explicit api_base then B129 AGENTCORE_GATEWAY_URL
+  Named case contracts: configured_gateway_required: Choose truthy explicit api_base then B8500 AGENTCORE_GATEWAY_URL
   defaultNone; no automatic /mcp append or trim. Missing/empty -> ValueError AGENTCORE_GATEWAY_URL is not set. Set
   it to your AgentCore Gateway MCP endpoint (https://<gateway-id>.gateway.bedrock-agentcore.<region>.amazonaws.com/mcp)
   or pass api_base. Constructor calls B091 BaseSearch and B590 BaseAWS; UI friendly name Web Search on Amazon Bedrock.
@@ -181,7 +181,7 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
-- text: 'configured_gateway_required: Choose truthy explicit api_base then B129 AGENTCORE_GATEWAY_URL defaultNone;
+- text: 'configured_gateway_required: Choose truthy explicit api_base then B8500 AGENTCORE_GATEWAY_URL defaultNone;
     no automatic /mcp append or trim. Missing/empty -> ValueError AGENTCORE_GATEWAY_URL is not set. Set it to your
     AgentCore Gateway MCP endpoint (https://<gateway-id>.gateway.bedrock-agentcore.<region>.amazonaws.com/mcp) or
     pass api_base. Constructor calls B091 BaseSearch and B590 BaseAWS; UI friendly name Web Search on Amazon Bedrock.'
@@ -299,7 +299,7 @@ checks:
     why: The secret safe failure invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_search_secret_safe_failure$/)'
   - id: case-configured-gateway-required
-    why: Choose truthy explicit api_base then B129 AGENTCORE_GATEWAY_URL defaultNone; no automatic /mcp append or
+    why: Choose truthy explicit api_base then B8500 AGENTCORE_GATEWAY_URL defaultNone; no automatic /mcp append or
       trim. Missing/empty -> ValueError AGENTCORE_GATEWAY_URL is not set. Set it to your AgentCore Gateway MCP endpoint
       (https://<gateway-id>.gateway.bedrock-agentcore.<region>.amazonaws.com/mcp) or pass api_base. Constructor
       calls B091 BaseSearch and B590 BaseAWS; UI friendly name Web Search on Amazon Bedrock.

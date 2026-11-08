@@ -7,10 +7,10 @@ description: >-
   belong to B1214. This route can still patch blocked, subject to its own admin-only check.
 
   Read the resolved general_settings.store_model_in_db flag, default false; null YAML becomes false.
-  B124's startup resolution enables it through STORE_MODEL_IN_DB or an existing true YAML value
+  B8372's startup resolution in initialize_scheduled_background_jobs enables it through STORE_MODEL_IN_DB or an existing true YAML value
   (env false cannot turn YAML true off). When still not true, a DB general_settings record can enable
-  it with true or case-insensitive string "true"; read failures are debug-logged and ignored. B124
-  owns that bootstrap and reload logic, B002 owns the typed loader. This task proves the resolved flag
+  it with true or case-insensitive string "true"; read failures are debug-logged and ignored. B8372
+  owns that bootstrap, B8379 owns the coercion when a database overlay reload sets the flag, B002 owns the typed loader. This task proves the resolved flag
   is actually used: disabled yields 400 validation_error, param null, message "Model updates only
   supported for DB-stored models". Test absent/null/false/true YAML and env enablement/false precedence,
   plus DB enablement and failed DB lookup through the production configuration path.
@@ -114,8 +114,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/model_patch.rs
     - crates/betterlite-server/src/routes/model_patch/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/model-patch/**
     - crates/betterlite-server/src/model_patch/fixtures.rs
     - crates/betterlite-server/src/model_patch/fixtures/**
@@ -164,7 +162,7 @@ dod:
       - postgres-tests
   - text: 'Production loader tests storage_default_and_null, storage_env_enables,
       storage_env_false_preserves_yaml and storage_db_enable_or_debug_failure prove the route receives
-      the resolved flag; all use the existing loader and B124 bootstrap, not a duplicate parser.'
+      the resolved flag; all use the existing loader and B8372 bootstrap, not a duplicate parser.'
     proof: [config-tests, config-corpus, behavior-tests]
 checks:
   optional: [mutants]

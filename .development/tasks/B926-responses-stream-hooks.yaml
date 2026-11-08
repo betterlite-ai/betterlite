@@ -5,9 +5,9 @@ description: >-
   The two testing-only hook facades are excluded after checking production callers.
   Consume B2413 state/error/task primitives and B928 detached logging/cost helpers; neither
   depends on this task. B250/B251 provide success/failure handlers, B068 cost calculation,
-  B125 cache eligibility/writes, B189 callback registry/converted-stream flags, B004 response
+  B4296/B4297 cache eligibility/writes, B189 callback registry/converted-stream flags, B004 response
   metadata, B157 async_post_call_success_deployment_hook and B198 async/thread execution.
-  B125/B068/B157 have no detailed task files yet: consume those exact injected interfaces,
+  B068/B157 have no detailed task files yet: consume those exact injected interfaces,
   not local copies of their implementations. Python callbacks remain supported per README.
 
   Use B171 responses_stream_hooks with recording cache/logging/callback dependencies and
@@ -121,7 +121,7 @@ deviations: []
 out_of_scope:
 - B2413 owns primitives/state L73-L361; B925 _process_chunk L363-L532; B927 live/synthetic iteration L954-L1326; B928 synthetic/billing helpers L1329-L1732; B942-B945 websocket methods after L1732.
 - Both call_post_streaming_hooks_for_testing facades L801-L807 and L995-L1006 have no production caller at the pin; their tested live callee remains owned here.
-- B125 owns cache backend/eligibility/task creation, B068 the calculator and B157 the shared post-success callback dispatcher; their missing detailed plans are explicit integration seams.
+- B4299 owns the cache backend, B4296 eligibility (should_use_cache) and B4297 the add_cache and async_add_cache writes, B068 the calculator and B157 the shared post-success callback dispatcher; their missing detailed plans are explicit integration seams.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as responses_stream_hooks in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_stream_hooks.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_stream_hooks.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - logged is latched before the cache write, so a failed write must not enable a second success dispatch.

@@ -1,0 +1,90 @@
+id: B8201
+title: MCP semantic tool filter hook
+description: >-
+  Port hooks/mcp_semantic_filter/hook.py, the pre-call hook that narrows MCP tools by meaning.
+  The semantic index itself is B4685; this task is the hook that calls it.
+
+  SemanticToolFilterConfig has four optional fields: enabled, embedding_model, top_k and
+  similarity_threshold. The hook finds MCP tool references that point at the LiteLLM gateway,
+  expands them to real tool definitions, takes the user query from the messages, keeps the top-k
+  tools above the threshold, narrows the MCP references to the selected names, and writes the
+  result to request metadata. A response header hook adds the selected tool names as a CSV, cut at
+  a whole tool name by _truncate_csv_at_tool_name_boundary when too long.
+  initialize_from_config builds the hook from the config block and registers it.
+
+  The package __init__.py only exports the hook and the config type.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/hooks/mcp_semantic_filter.rs
+    - crates/betterlite-server/src/hooks/mcp_semantic_filter/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-semantic-hook/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-semantic-hook-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/mcp_semantic_filter/hook.py#L34-L90
+    why: Config type, CSV truncation and the gateway reference test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/mcp_semantic_filter/hook.py#L91-L291
+    why: Tool expansion, filtering, reference narrowing and metadata emission.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/mcp_semantic_filter/hook.py#L292-L536
+    why: The pre-call hook, response header hook, CSV helper and config initializer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/mcp_semantic_filter/__init__.py#L1-L10
+    why: Package exports.
+
+dod:
+  - text: >-
+      A request with no gateway MCP tools passes through unchanged, and a disabled filter leaves
+      tools unchanged.
+    proof: [hook-tests, hook-oracle]
+  - text: >-
+      With a query, the hook keeps the top-k tools at or above the threshold and narrows each MCP
+      reference to the kept names.
+    proof: [hook-tests, hook-oracle]
+  - text: >-
+      The CSV header cuts at a whole tool name, returns an empty string when the first name is
+      too long, and is untouched when it fits.
+    proof: [hook-tests]
+  - text: >-
+      A filter failure follows the Python: the request keeps its original tools and the failure
+      is logged.
+    proof: [hook-tests]
+  - text: Every mutant in the hook logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: hook-tests
+      why: Expansion, filtering, narrowing, header or config handling differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^hooks::mcp_semantic_filter::/)'
+    - id: hook-oracle
+      why: Filtered tool lists or headers differ from LiteLLM on the same input.
+      run: >-
+        cargo run --locked -p betterlite-oracle -- --self-check
+        tools/oracle/cases/helpers/mcp-semantic-hook
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - The semantic index and embedding scoring (B4685).
+  - Listing MCP tools from servers (B8197).
+
+pitfalls:
+  - >-
+    The Python reads the metadata key name from the request shape (_get_metadata_variable_name).
+    Port that choice, not a fixed key.
+  - >-
+    The CSV cut uses the character at index max_length. Test a name that ends exactly at the limit.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -111,7 +111,7 @@ deviations:
   - what: The token comes back as a SecretString and is never logged.
     why: rules.yaml secrets-stay-secret; LiteLLM returns a plain str.
 out_of_scope:
-  - "GigaChatPassthroughConfig, GigaChatConfig, the embedding transformation and file_handler.py call get_access_token: the rest of B043's gigachat parts own them and call GigachatTokens. file_handler.py's two call sites (L125 and L191) use the sync and async forms, which are one method here."
+  - "GigaChatPassthroughConfig, GigaChatConfig, the embedding transformation and file_handler.py call get_access_token: B8177 and B8178 own them and call GigachatTokens. file_handler.py's two call sites (L125 and L191) use the sync and async forms, which are one method here."
   - "GIGACHAT_BASE_URL and get_api_base in gigachat/utils.py: B3627 owns the pass-through gigachat_route.api_base setting, and the chat part owns get_api_base."
   - "Building the reqwest::Client (pooling, redirects off, TLS policy) and the production wiring of GigachatAuthenticator into the server: B173 and the architect's skeleton."
   - "The proxy route that calls the trait: B3627 imports GigachatTokens from this module and declares no token type of its own."

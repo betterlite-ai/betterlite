@@ -5,7 +5,7 @@ description: >-
   `api::ocr_routes`, ported from the route function in litellm/proxy/ocr_endpoints/endpoints.py.
   Both paths use the proxy API key check (B756) and answer JSON. The handler decodes the request with
   B3300's `ocr_request` parser (JSON or multipart, req_format from body then the x-req-format header),
-  prepares authenticated request data with B1103, runs the pre-call hook with call_type aocr (B124),
+  prepares authenticated request data with B1103, runs the pre-call hook with call_type aocr (B8399's hook service),
   and calls B6809's `aocr` through the shared route pipeline with route_type aocr. If B3300 selected
   the native format and a provider payload was captured, return that payload with the captured
   LiteLLM response headers except content-length and content-type. Otherwise return the normalized

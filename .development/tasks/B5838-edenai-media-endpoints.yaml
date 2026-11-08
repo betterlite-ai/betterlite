@@ -5,12 +5,12 @@ description: >-
   image_generation. B6100 built the first half and edenai_common (EdenAiEnv, EdenAiError, authorized_headers, json_headers,
   endpoint_url, pick and the cost readers); import those and do not write them again. Every family points an OpenAI
   config at https://api.edenai.run/v3, authenticates with the Eden key and lifts the cost Eden reports. All code is pure
-  transforms with no network call, no environment read and no route. B041 wires them into dispatch. Credentials arrive as
+  transforms with no network call, no environment read and no route. B8311 wires them into dispatch. Credentials arrive as
   the EdenAiEnv argument; add no config section.
 
   Modules, all in betterlite-openai, each a file plus a folder with tests.rs: edenai_transcription, edenai_videos,
   edenai_speech, edenai_image. A provider leaf never imports betterlite-core or betterlite-provider, so the records come
-  from B1122, B1135 and B997 in betterlite-openai, and B041 implements the provider traits over these functions.
+  from B1122, B1135 and B997 in betterlite-openai, and B8311 implements the provider traits over these functions.
 
   edenai_transcription (audio_transcription/transformation.py), over B515's Whisper config. Supported params and
   map_openai_params are B515's Whisper ones, unchanged. The config reports a native transcription endpoint. URL:
@@ -168,7 +168,7 @@ deviations:
     why: LiteLLM lets the JSONDecodeError from response.json() escape as an unhandled 500. A typed upstream error is clearer, and the decoder is fuzzed.
 out_of_scope:
   - B6100 owns common_utils.py (edenai_common), chat, embedding, responses and messages.
-  - B041 owns the dispatch branches for transcription, video, speech and image in litellm/utils.py and litellm/main.py (the aspeech EdenAITextToSpeechConfig branch at main.py L8319), the ProviderConfigManager entries, reading EDENAI_API_KEY and EDENAI_API_BASE into EdenAiEnv, registering the configs in dispatch and the HTTP oracle cases through the booted proxy.
+  - B8311 owns the dispatch branches for transcription, video, speech and image in litellm/main.py (the aspeech EdenAITextToSpeechConfig branch at main.py L8319), reading EDENAI_API_KEY and EDENAI_API_BASE into EdenAiEnv and building the configs in dispatch. The ProviderConfigManager entries are B5360's selection.
   - B3332 and B5360 own provider selection for video and media configs, and B2453 owns the native transcription HTTP path and subtitle replies.
   - B515 owns the Whisper params and mapping, B1001 process_audio_file, B525 and B526 the OpenAI video methods Eden does not override, B1035 HttpxBinaryResponseContent, B1717 set_response_cost_in_hidden_params, and B004 convert_to_model_response_object.
   - The logging call logging_obj.post_call(original_response=body) in the image transform belongs to the caller (B249 hooks).

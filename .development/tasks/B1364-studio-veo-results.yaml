@@ -79,7 +79,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B1363 implements every create-input and identity method, including the local image converter; B1362 provides shared duration configuration and valid sample-count extraction.
-  - B093 owns video HTTP route registration and generic operation execution; B035 supplies the Studio adapter binding.
+  - B3343 to B3345 and B6360 own video HTTP route registration and B3333 to B3337 generic operation execution; B035 supplies the Studio adapter binding.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as studio_veo_operation in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/studio_veo_operation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/studio_veo_operation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A done operation with an error still becomes completed in Studio's status transformation.

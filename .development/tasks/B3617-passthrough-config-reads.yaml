@@ -112,7 +112,7 @@ out_of_scope:
   - Database client initialization and connection pooling.
   - Route decorator registration beyond what the route handler sets.
   - Config general settings retrieval (depends on get_config_general_settings from B002).
-  - Update/create/delete operations on endpoints (owned by B102).
+  - Update/create/delete operations on endpoints (owned by B8520).
 pitfalls:
   - Malformed endpoints in config are logged with a warning and skipped, not propagated as errors.
   - is_from_config is a response-only field set at read time, never stored in config or database.

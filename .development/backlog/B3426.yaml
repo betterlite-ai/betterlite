@@ -6,6 +6,7 @@ depends_on: [B3420, B3421, B3422]
 file: tasks/B3426-eval-read-create-routes.yaml
 covers:
   - "litellm/proxy/openai_evals_endpoints/endpoints.py"
+  - "litellm/proxy/openai_evals_endpoints/__init__.py"
 parent: B096
 split_from: B096
 resolution: null

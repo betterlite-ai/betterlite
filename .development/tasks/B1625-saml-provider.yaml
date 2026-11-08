@@ -20,7 +20,7 @@ description: >-
   URN. SAML_STRICT and SAML_WANT_ASSERTIONS_SIGNED default true; SAML_WANT_MESSAGES_SIGNED and
   SAML_AUTHN_REQUESTS_SIGNED default false. Boolean env parsing trims and accepts true/1/yes/on.
   Keep wantNameId=true, requestedAuthnContext=false and the pinned metadata merge order.
-  The server adapter resolves public URLs through B124 and injects them into the auth
+  The server adapter resolves public URLs through B7323 and injects them into the auth
   provider as validated values; the auth crate never imports server state. Use B743
   for secure cookies. Login returns 303, stores
   saml_authn_request:<id> for 600s and sets HttpOnly litellm_saml_authn with SameSite=None on

@@ -1,0 +1,85 @@
+id: B8153
+title: vllm passthrough, model info and petals configs
+description: >-
+  Build the vllm and petals provider code in betterlite-provider as crates/betterlite-provider/src/vllm.rs and petals.rs with their folders. All are pure transforms; the main.py dispatch (_complete_petals) stays with B8157.
+
+  vllm: VLLMError and VLLMModelInfo from common_utils.py (validate_environment, get_api_base, get_api_key, get_base_model, get_models, get_error_class), VLLMConfig (a thin layer over the hosted_vllm chat config of B8150), and VLLMPassthroughConfig (is_streaming_request, get_complete_url) over the passthrough contract of B3570. B2220 builds the model metadata factory and uses VLLMModelInfo, so build the type here with the exact method names it calls.
+
+  vllm in-process SDK: handler.py runs a local vllm Python engine (completion, batch_completions, embedding, validate_environment). That cannot run in Rust. Build the request-to-prompt and reply-to-ModelResponse shaping only if it is a pure function; the call into the engine is not ported and returns a typed error with LiteLLM's message (see deviations).
+
+  petals: PetalsError, PetalsConfig (get_config, get_error_class, get_supported_openai_params, map_openai_params, transform_request, transform_response, validate_environment) and the HTTP branch of handler.py completion. The local torch branch is not ported, same as vllm. The petals reply is decoded with a typed struct and has a fuzz target.
+
+  Where the source and this text differ, the source at the pinned commit wins.
+scope:
+  paths:
+    - crates/betterlite-provider/src/vllm.rs
+    - crates/betterlite-provider/src/vllm/**
+    - crates/betterlite-provider/src/petals.rs
+    - crates/betterlite-provider/src/petals/**
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/petals_reply.rs
+    - crates/betterlite-provider/fuzz/corpus/petals_reply/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/vllm-petals/**
+    - tools/oracle/helpers/b8153.py
+    - tools/oracle/helpers/b8153/**
+    - tools/oracle/src/helpers/provider/b8153.rs
+    - tools/oracle/src/helpers/provider/b8153/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vllm/common_utils.py#L1-L84
+    why: VLLMError and VLLMModelInfo.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vllm/completion/handler.py#L1-L188
+    why: In-process vllm handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vllm/completion/transformation.py#L1-L13
+    why: VLLMConfig.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vllm/passthrough/transformation.py#L1-L32
+    why: Passthrough config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/petals/common_utils.py#L1-L8
+    why: PetalsError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/petals/completion/handler.py#L1-L146
+    why: Petals handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/petals/completion/transformation.py#L1-L133
+    why: Petals config.
+dod:
+  - text: VLLMModelInfo, VLLMConfig and VLLMPassthroughConfig give LiteLLM's api base, key, URL and streaming detection.
+    proof: [vllm-petals-tests, vllm-petals-cases]
+  - text: Petals params, request and reply transforms match, and a bad reply gives the same error.
+    proof: [vllm-petals-tests, vllm-petals-cases]
+  - text: The in-process engine paths return the typed not-supported error instead of running.
+    proof: [vllm-petals-tests, vllm-petals-cases]
+  - text: The reply decoder rejects malformed bodies without panicking and its corpus replays.
+    proof: [vllm-petals-corpus]
+  - text: New helper cases for these functions exist.
+    proof: [vllm-petals-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: vllm-petals-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^vllm::/) | test(/^petals::/)'
+      why: Without this provider code there are no such tests, so the check fails on the base branch.
+    - id: vllm-petals-corpus
+      run: test -f crates/betterlite-provider/fuzz/fuzz_targets/petals_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/petals_reply)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_petals_reply_corpus)'
+      why: Bytes come from outside and need a fuzz target with a replayed corpus.
+    - id: vllm-petals-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vllm-petals)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/helpers/vllm-petals/vllm-model-info.yaml
+  - tools/oracle/cases/helpers/vllm-petals/vllm-passthrough.yaml
+  - tools/oracle/cases/helpers/vllm-petals/petals-params.yaml
+  - tools/oracle/cases/helpers/vllm-petals/petals-request.yaml
+  - tools/oracle/cases/helpers/vllm-petals/petals-reply.yaml
+deviations:
+  - what: "The vllm in-process engine handler and the petals local torch branch return a typed error with status 400 and LiteLLM's missing-package message."
+    why: "Both run Python ML libraries inside the process, which a Rust gateway cannot do. The architect decides the final status and text."
+out_of_scope:
+  - "B8157 owns main.py _complete_petals and the dispatch wiring."
+  - "B2220 owns the provider metadata factory; B3627 uses VLLMPassthroughConfig and VLLMModelInfo from here."
+  - "B8150 owns the hosted_vllm chat config that VLLMConfig extends."
+pitfalls:
+  - "The oracle helper for this task is pre-registered as b8153 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task's to edit."
+  - "get_models lists models over HTTP with the injected client; it never uses a request-supplied URL."
+  - "VLLMError exists twice in LiteLLM (common_utils.py and handler.py); build the common_utils one and map the handler one onto it."
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

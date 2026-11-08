@@ -142,7 +142,7 @@ out_of_scope:
   - "B4775 owns redact_sensitive_agent_litellm_params, parse_agent_litellm_params, parse_agent_kill_switch, serialize_agent_kill_switch and the _restore_redacted_* functions."
   - "agents_table and object_permission_table are repository accessors. B726 owns the agentstable and objectpermissiontable bindings that replace them."
   - "Reading the `agents` and `agent_list` config keys and calling load_agents_from_config at startup (proxy_server.py L7060-L7066) has no owner yet. See the notes."
-  - "Spawning run_grant_id_migration at startup, the periodic _init_agents_in_db reload and the read-through resync (registry_read_through._resync_agents) belong to the server wiring and the read-through task. They call this task's methods."
+  - "Spawning run_grant_id_migration at startup belongs to B8374, the periodic _init_agents_in_db reload to B8384 and the read-through resync (registry_read_through._resync_agents) to B8231. They call this task's methods."
   - "AgentResponse and AgentConfig records are B4770. Cache invalidation after a config sync is not part of the registry."
 pitfalls:
   - The legacy id hashes the raw entry exactly as loaded, so the serializer must not drop null values, reorder lists (only object keys are sorted) or normalize numbers. `1` and `1.0` give different ids.

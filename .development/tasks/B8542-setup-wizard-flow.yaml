@@ -1,0 +1,132 @@
+id: B8542
+title: Setup wizard flow, key checks and config file
+description: >-
+  `litellm --setup` runs run_setup_wizard from litellm/setup_wizard.py. B4594 built the terminal pieces in crates/betterlite
+  (terminal_styling, styled_input, yaml_escape, provider_selection with PROVIDERS and select_providers, welcome with print_welcome).
+  This task builds the rest of the SetupWizard class as a new module `setup_wizard` (crates/betterlite/src/setup_wizard.rs and
+  setup_wizard/, declared in lib.rs by the skeleton) and the public `run_setup_wizard(io: &mut WizardIo, deps: &WizardDeps) ->
+  WizardOutcome` that B8375 calls for `--setup`. Read the merged B4594 modules first and call them as they are.
+
+  `WizardIo` holds the line reader, the writer, the is_tty flag styled_input takes and whether colors are on (B4594's
+  supports_color). `WizardDeps` holds the package version string, the current directory, a `KeyCheck` trait with
+  `check(model: &str, api_key: &str) -> bool`, a master key source (a trait returning 32 random bytes, real one from rand's system
+  rng) and a `Launcher` trait with `exec(program: &Path, args: &[String]) -> io::Error` that only returns on failure. The real
+  KeyCheck calls B5364's check_valid_key through B5656's ModelProbe, so it sends one completion with "Hey, how's it going?" and
+  max_tokens 10 and answers false on any error. The real Launcher uses std::os::unix::process::CommandExt::exec.
+
+  run (L226-L231): run the steps; an EOF from styled_input or B4594's SelectError::Cancelled prints "\n\n  " + grey("Setup
+  cancelled.") + "\n" and ends with WizardOutcome::Cancelled. The flow (L235-L254): print_welcome with the version, then
+  "  " + bold("Lets get started.") and an empty line, select providers, collect keys, read proxy settings, then write
+  `<current dir>/litellm_config.yaml` with the built config. A write error prints "\n  " + bold("✗ Could not write config:") + "
+  <error>" and "  Try running from a directory you have write access to.\n" and ends the wizard. Otherwise print the success block
+  and offer to start.
+
+  collect_keys (L390-L426): the divider block, "Enter your API keys" and the two grey tip lines, then per provider in selection
+  order. No env_key (Ollama) prints "  " + green(name) + ": " + grey("no key needed (uses local Ollama)") and adds nothing. Else
+  prompt_key; an empty answer skips the provider. Then each extra key with its hint (Bedrock), stored only when non-empty; for a
+  provider with needs_api_base (Azure) the endpoint prompt stored as `_LITELLM_AZURE_AI_API_BASE_<ID upper>` and the deployment
+  prompt stored as `_LITELLM_AZURE_DEPLOYMENT_<ID upper>`, each only when non-empty. Last, store env_key = validate_and_report's
+  answer. Keep insertion order (an ordered map), since the environment_variables block prints in that order.
+  prompt_key (L428-L438): loop the "API key" prompt; empty prints the grey "Key is required. Leave blank to skip this provider."
+  and asks "Skip? (y/N): ", where "y" in any case returns "". validate_and_report (L440-L468): no test_model returns the key
+  unchanged without a check. Else loop: print the grey "Testing connection to <name>..." line, call KeyCheck; true prints the
+  green check line and returns the key; false prints the "— invalid API key" line and asks "Re-enter key? (y/N)"; anything but y
+  returns the old key; y asks for a new key, and an empty one returns the old key.
+  proxy_settings (L472-L490): port defaults to 4000; an empty answer keeps it, digits in 1..=65535 set it, anything else prints
+  the grey "Enter a valid port number (1–65535)." and asks again. The master key answer is used as given, or when empty becomes
+  "sk-" plus the 32 random bytes in URL-safe base64 without padding (Python's secrets.token_urlsafe(32), 43 characters).
+
+  `build_config(providers, env_vars, master_key) -> String` (L494-L550) is a pure function and the heart of the oracle cases.
+  Work on a copy of env_vars. Skip a provider whose env_key is set but missing from the copy. Azure takes its deployment out of the
+  copy and is skipped when it is empty, with the one model `azure/<deployment>` and display name `azure-<deployment>`; other
+  providers use their models with the display name after the last "/". Each model writes `  - model_name:`, `    litellm_params:`,
+  `      model:`, then `      api_key: os.environ/<ENV_KEY>` when the key is in the copy, then the quoted escaped api_base when
+  the provider has a fixed one (Ollama), else for needs_api_base the base taken out of the copy, then `      api_version: <value>`
+  when set. Then an empty line, `general_settings:`, `  master_key: "<escaped>"` and an empty line. Then, when any entry of the
+  copy does not start with `_LITELLM_`, `environment_variables:` with one `  KEY: "<escaped value>"` line each and an empty line.
+  Join with "\n" and add no final newline beyond what the list gives.
+
+  print_success (L554-L571) and offer_start (L573-L620) print LiteLLM's lines exactly, with the absolute config path and the port.
+  An answer other than "", "y" or "yes" (lowercased) prints the "Run litellm --config <path> whenever you're ready." and the curl
+  hint and returns WizardOutcome::Saved. Otherwise print the starting block and call Launcher::exec with the current executable
+  (std::env::current_exe) and the arguments `--config <path> --port <port>`; when exec returns its error, print "\n  " +
+  bold("✗ Could not start proxy:") + " <error>" and "  Run manually:  litellm --config <path> --port <port>\n".
+
+  Tests in `setup_wizard::tests` drive the whole flow with scripted input and fakes for KeyCheck, the random source and Launcher:
+  cancel on EOF at each step, the skip and re-enter loops, the port loop, the auto master key length and alphabet, the write error
+  and both offer_start answers.
+
+  Oracle cases are helper cases for build_config, a pure function: operation b8542 calls SetupWizard._build_config with providers
+  picked by id from LiteLLM's PROVIDERS and compares the returned text. The worker writes them under
+  tools/oracle/cases/helpers/setup-wizard/: openai-with-key, anthropic-without-key-skipped, azure-with-deployment,
+  azure-without-deployment-skipped, bedrock-extra-keys, ollama-fixed-base and master-key-escaping (a key with a quote and a backslash).
+scope:
+  paths:
+    - crates/betterlite/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite/src/setup_wizard.rs
+    - crates/betterlite/src/setup_wizard/**
+    - tools/oracle/cases/helpers/setup-wizard/**
+    - tools/oracle/helpers/b8542.py
+    - tools/oracle/helpers/b8542/**
+    - tools/oracle/src/helpers/server/b8542.rs
+    - tools/oracle/src/helpers/server/b8542/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L216-L256
+    why: SetupWizard.run with the cancel message and _wizard with the config path and write error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L388-L491
+    why: _collect_keys, _prompt_key, _validate_and_report and _proxy_settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L494-L551
+    why: _build_config, the generated YAML text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L553-L631
+    why: _print_success, _offer_start with the exec call, and run_setup_wizard.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7147-L7165
+    why: check_valid_key, which KeyCheck stands for.
+dod:
+  - text: build_config writes LiteLLM's exact text for every provider kind, skips providers without credentials and Azure without a deployment, and lists only real environment variables.
+    proof: [wizard-tests, oracle, helper-python]
+  - text: The key prompts, skip and re-enter loops, the port loop and the generated master key follow LiteLLM.
+    proof: [wizard-tests]
+  - text: EOF or a cancelled selection prints the cancel line, a write error prints its two lines, and offer_start either prints the manual command or execs the binary with --config and --port.
+    proof: [wizard-tests]
+checks:
+  optional: []
+  commands:
+    - id: wizard-tests
+      why: A wizard step, the config text or the launch branch is missing or differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^setup_wizard::/)'
+    - id: helper-python
+      why: The strict oracle adapter for the build_config cases fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8542)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8542 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8542/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/setup-wizard/openai-with-key.yaml
+  - tools/oracle/cases/helpers/setup-wizard/anthropic-without-key-skipped.yaml
+  - tools/oracle/cases/helpers/setup-wizard/azure-with-deployment.yaml
+  - tools/oracle/cases/helpers/setup-wizard/azure-without-deployment-skipped.yaml
+  - tools/oracle/cases/helpers/setup-wizard/bedrock-extra-keys.yaml
+  - tools/oracle/cases/helpers/setup-wizard/ollama-fixed-base.yaml
+  - tools/oracle/cases/helpers/setup-wizard/master-key-escaping.yaml
+deviations:
+  - what: Start the proxy now execs the running betterlite binary instead of the litellm script in Python's scripts folder.
+    why: betterlite has no Python scripts folder; the arguments and the fallback message stay LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L603-L620
+  - what: Ctrl-C at a line prompt ends the process through the default SIGINT handling, without the "Setup cancelled." line; Ctrl-D and Ctrl-C in the provider selector still print it.
+    why: Python turns SIGINT into KeyboardInterrupt at any prompt; installing a process-wide signal handler for one message would change shutdown for the rest of the CLI.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L226-L231
+out_of_scope:
+  - "Colors, styled input, YAML escaping, the provider catalog, the selectors and the welcome banner: B4594."
+  - "check_valid_key's rule and the completion behind it: B5364 and B5656."
+  - "Parsing --setup and calling run_setup_wizard in run_server's order: B8375."
+pitfalls:
+  - _build_config pops the Azure base and deployment out of its copy, so they never reach environment_variables while the real key does.
+  - A provider with an env_key whose key was skipped is left out of model_list entirely, but Ollama (env_key None) is always written.
+  - validate_and_report returns the possibly re-entered key, and that answer, not the first one, is what goes into environment_variables.
+  - "\"y\" is compared after lower(), so \"Y\" skips or re-enters too, while offer_start also accepts \"yes\" and an empty answer as yes."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -15,7 +15,7 @@ description: >-
   and no row yields null. Otherwise resolve just messages,response,proxy_server_request.
   ColdStorageHandler uses an injected logger when present, else the active callback named
   by litellm_settings.cold_storage_custom_logger (default null). No selected/active logger
-  means no payload. B115 owns configured storage transports; a stored object key is not a
+  means no payload. B3993 and B3998 own configured storage transports; a stored object key is not a
   request URL. Load the setting through loads_spend_cold_storage and seed config_yaml.
   Prefer database content when any of the three fields is nonempty: null, empty containers
   and strings stripping to empty, {}, [] or null are empty. Metadata cold_storage_object_key
@@ -101,7 +101,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/log-payload/daily-summary-null-users-and-key-collision.yaml
 deviations: []
 out_of_scope:
-  - B115 implements S3/GCS callback storage; this task owns every ColdStorageHandler method but no cloud transport.
+  - B3993 and B3998 implement S3/GCS callback storage; this task owns every ColdStorageHandler method but no cloud transport.
   - B1730 owns legacy listing and UI enrichment, B1731 session listing and B1732 flat/grouped route coordination; B1728 owns query primitives and B1704 owner checks.
   - B1721-B1727 and B069 retain non-log reports; B1600/B1713-B1716/B1726/B1727 retain spend_tracking_utils.
 pitfalls:

@@ -1,0 +1,15 @@
+id: B8156
+milestone: M3 providers
+title: Ollama generate config and embedding handler
+status: todo
+depends_on: [B2202, B177, B2223, B8155]
+file: tasks/B8156-ollama-generate-embed.yaml
+covers:
+  - "litellm/llms/ollama/completion/handler.py"
+  - "litellm/llms/ollama/completion/transformation.py"
+parent: B040
+split_from: B040
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

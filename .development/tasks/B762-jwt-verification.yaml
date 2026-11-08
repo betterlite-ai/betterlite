@@ -141,8 +141,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/jwt_verification.rs
     - crates/betterlite-server/src/state/jwt_verification/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - crates/betterlite-server/src/auth/jwt_verification.rs
     - crates/betterlite-server/src/auth/jwt_verification/**
     - crates/betterlite-config/src/sections/jwt_verification.rs

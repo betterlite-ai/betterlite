@@ -1,0 +1,12 @@
+kind: helper
+name: anthropic-results-function-invoke-error
+call:
+  anthropic_results:
+    function: function_invoke
+    id: fixed-id
+    function_call:
+      name: weather
+      arguments: not json
+env: {}
+compare:
+  ignore: []

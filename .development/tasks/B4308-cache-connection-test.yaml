@@ -3,8 +3,7 @@ title: Test cache connections with target-bound credentials
 description: >-
   Serve POST /cache/settings/test from crates/betterlite-server. The admin UI sends the cache form to this route before it
   saves, and the route answers whether a Redis built from those settings answers PING. It never changes the running cache.
-  The route is authenticated with the same dependency as the other management routes (any valid key, not admin only, as in
-  LiteLLM). Put the handler and its types in crates/betterlite-server/src/cache_settings_test/route.rs and expose
+  The route is authenticated with the same dependency as the other management routes (user_api_key_auth, whose route check refuses a non-admin key for /cache/settings routes, as in LiteLLM). Put the handler and its types in crates/betterlite-server/src/cache_settings_test/route.rs and expose
   pub fn router(state) -> axum::Router for the architect to merge. Do not register the route anywhere else and do not touch lib.rs.
 
   The body is CacheTestRequest, one member cache_settings, a JSON object. A missing member or a non-object value is a 422 with
@@ -70,7 +69,7 @@ references:
   why: RedisClusterCache.test_connection, the cluster answers (B4326 owns it).
 
 dod:
-- text: POST /cache/settings/test answers 401 without a valid key and 200 for any valid key, with status, message and error in the body, error being null on success.
+- text: POST /cache/settings/test answers 401 without a valid key, the admin-only route error for a non-admin key, and 200 for a proxy admin key, with status, message and error in the body, error being null on success.
   proof: [route-tests, oracle]
 - text: A body without cache_settings, or with a non-object cache_settings, answers 422 with B003's validation error body.
   proof: [route-tests, oracle]
@@ -126,11 +125,11 @@ deviations:
   why: Python exception strings (a redis-py connection error, a TypeError from a bad keyword) have no Rust equivalent; status, the prefix and the null or non-null error match.
 - what: >-
     A settings map with redis_startup_nodes (cluster mode) answers status "failed" while B4299 cannot build a cluster cache.
-  why: B4299 raises its unsupported-type error for cluster mode and the route reports it in the failed message; LiteLLM would connect. This ends when the cluster constructor lands in B4299's Cache.
+  why: B4299 raises its unsupported-type error for cluster mode and the route reports it in the failed message; LiteLLM would connect. Merged betterlite-redis already parses startup_nodes (B4321) and builds the Cluster client (B4323). B5220 opens it, B4325 adds `RedisCacheFamily::Cluster`, B5640's `connect` with that family is the cluster cache constructor and B4326 adds its test_connection, but no task wires B4299's Cache to that constructor yet, so this lasts until one does.
 
 out_of_scope:
 - GET /cache/settings and the effective values it returns; B4307 owns them.
-- POST /cache/settings, the encryption of the saved row, the audit log row and CacheSettingsManager; B125 owns them as the umbrella's remaining code.
+- POST /cache/settings, the encryption of the saved row, the audit log row and CacheSettingsManager; B8502 owns them.
 - parse_stored_settings, resolve_cache_url_precedence, redact_credentials, has_connection_target, target_repr, saved_secret_is_reusable and merge_over_saved; B4306 owns them and this route calls them.
 - RedisCache.test_connection and RedisClusterCache.test_connection; B4326 owns them and this route calls them.
 - Cache.__init__ and the Redis connection settings (including REDIS_ environment fallbacks and os.environ/ references in values); B4299 and B4321 own them.

@@ -1,7 +1,7 @@
 id: B254
 milestone: M1 openai data plane
 title: Typed standard logging fields and normalization
-status: todo
+status: done
 depends_on: [B188, B011, B005, B006, B212]
 file: tasks/B254-logging-fields.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/utils.py"
 parent: B012
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 870

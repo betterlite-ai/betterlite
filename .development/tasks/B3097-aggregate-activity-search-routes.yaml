@@ -18,9 +18,8 @@ description: >-
   carries the resolver's `tags` and the operation name from `operation_names` (`aggregated` and `search`;
   B3094's `OperationNames`), and each handler runs inside B865's management completion wrapper, like
   `@management_endpoint_wrapper`. The route functions are named after those operation names. Expose one public
-  function that returns the axum routes for an entity. B074 composes them with B3096's and B3098's, and this task
-  adds no loop over all entities. Mount them where B3096 mounts its own routes in the booted proxy, so the HTTP
-  oracle cases can reach them.
+  function that returns the axum routes for an entity. B8482 composes them with B3096's and B3098's and mounts them, and this task
+  adds no loop over all entities and mounts nothing.
 
   Query parameters. The entity's own parameters are parsed by the B3094 and B3095 query types (user: start_date,
   end_date, model, api_key, user_id, timezone, include_current_utc_day; team: team_ids, exclude_team_ids and the
@@ -75,17 +74,11 @@ description: >-
   search route. An HTTP error from the scope step or from B3093 (which already answers 500 itself) passes through
   unchanged and is not logged by the handler.
 
-  HTTP oracle cases are in this task because no other task owns these routes. The seeded database holds users,
-  keys and teams but no daily spend rows (the fixture has no table for them), so the cases cover empty reports,
-  parameter validation, date errors, access errors, the route set per prefix and the missing database. The summing,
-  folding and error paths are covered by native tests with a fake repository.
+  This task has unit tests only. Its routes answer over HTTP once B8482 mounts them, so B8482 owns their HTTP oracle cases (tools/oracle/cases/management/daily-activity-aggregate/) and proves the defaults, bounds, date errors, access errors, missing credential and missing database over HTTP. Here native tests call the per-entity routes on a test router with fake dependencies for the parameter bounds, the route set per prefix, the date check flag per entity, scope denials and the dependency order, and cover summing, folding and error paths with a fake repository.
 scope:
   paths:
     - crates/betterlite-server/src/aggregate_activity_routes.rs
     - crates/betterlite-server/src/aggregate_activity_routes/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
-    - tools/oracle/cases/management/daily-activity-aggregate/**
     - tools/oracle/helpers/b3097.py
     - tools/oracle/helpers/b3097/**
     - tools/oracle/src/helpers/server/b3097.rs
@@ -103,7 +96,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L63-L94
     why: Database and repository lookups, _date_range_error and _resolved_scope, built by B3096; this task calls them and passes the user_aggregated flag.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L560-L579
-    why: Which prefixes get which routes and the six resolvers; the loop itself is B074's.
+    why: Which prefixes get which routes and the six resolvers; the loop itself is B8482's.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L1007-L1086
     why: get_daily_activity_aggregated (B3093), its defaults, and how it turns any failure into its own 500.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2166-L2171
@@ -116,21 +109,21 @@ references:
     why: DailyActivityScope, whose api_keys field the search replaces.
 dod:
   - text: The aggregated route answers SpendAnalyticsPaginatedResponse on every prefix, with api_key_limit default 100 and maximum 1000 and a value out of range answering 422.
-    proof: [oracle, route-tests]
+    proof: [route-tests]
   - text: The search route requires a non-empty search, with limit default 100 and maximum 100, and an out of range limit answers 422 on every prefix.
-    proof: [oracle, route-tests]
+    proof: [route-tests]
   - text: Exactly 14 routes exist, two per prefix, /end_user is hidden from the schema and answers like /customer, and the team, tag, organization, customer and agent prefixes each have both routes.
-    proof: [oracle, route-tests]
+    proof: [route-tests]
   - text: The user aggregated route accepts a range of more than 400 days and answers the canonical-date message for a missing date, while the other five aggregated routes and all six search routes answer 400 for a range of more than 400 days.
-    proof: [oracle, route-tests]
+    proof: [route-tests]
   - text: A reversed or non-canonical date answers 400 with detail.error before the scope resolver runs.
-    proof: [oracle, route-tests]
+    proof: [route-tests]
   - text: A scope denial answers 403 or 404 with detail.error, and a non-admin asking for another user gets "Non-admin users can only view their own spend data.".
-    proof: [oracle]
+    proof: [route-tests]
   - text: A missing database answers 500 with the db_not_connected_error text before any parameter validation error, and a missing credential answers 401 first.
-    proof: [oracle, route-tests]
+    proof: [route-tests]
   - text: Malformed timezone or include_current_utc_day values answer 422 instead of being ignored.
-    proof: [oracle]
+    proof: [route-tests]
   - text: The aggregated handler passes the scope, the resolved entity metadata, the resolver's entity breakdown flag and api_key_limit to B3093's function and returns its response unchanged.
     proof: [route-tests]
   - text: The search handler answers an empty list without an aggregate read when no keys match, and otherwise reads the aggregate with api_keys replaced by the found keys, no entity breakdown and the default key limit.
@@ -143,7 +136,7 @@ checks:
   optional: []
   commands:
     - id: route-tests
-      why: the routes, their parameter bounds, the route set per prefix, the date check flag per entity, the dependency order or the aggregated handler wiring are missing or wrong
+      why: the routes, their parameter bounds, the route set per prefix, the date check flag per entity, scope denials, the dependency order or the aggregated handler wiring are missing or wrong
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^aggregate_activity_routes::tests::route_/)'
     - id: search-tests
       why: the search handler, its early return, its scope copy or search_rows and fold_key_metrics are missing or wrong
@@ -154,42 +147,7 @@ checks:
     - id: failure-tests
       why: errors are not turned into the 500 body and log line LiteLLM uses, or an HTTP error is wrapped
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^aggregate_activity_routes::tests::failure_/)'
-oracle_cases:
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-defaults.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-range-over-400-days.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-missing-dates.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-non-canonical-date.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-reversed-range.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-bad-timezone.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-bad-include-current-day.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-other-user-denied.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-team-range-over-400-days.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-team-missing-dates.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-team-defaults.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-tag-defaults.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-organization-defaults.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-customer-defaults.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-end-user-alias.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-agent-defaults.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-key-limit-zero.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-key-limit-over-max.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-key-limit-at-max.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-no-database.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-no-credentials.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/search-user-defaults.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/search-user-range-over-400-days.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/search-user-missing-dates.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/search-user-other-user-denied.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/search-missing-term.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/search-empty-term.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/search-limit-zero.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/search-limit-over-max.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/search-bad-timezone.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/search-team-prefix.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/search-end-user-alias.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/search-no-database.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/search-no-database-with-bad-limit.yaml
-  - tools/oracle/cases/management/daily-activity-aggregate/search-no-credentials.yaml
+oracle_cases: []
 deviations:
   - what: >-
       A repository or aggregation failure answers 500 with "Failed to fetch analytics" and a colon, followed by the Rust error's display text, not Python's exception text.
@@ -201,11 +159,11 @@ deviations:
 out_of_scope:
   - "B3096 owns resolved_scope, date_range_error, key_metadata, key_activity_row, key_activity_rows (L63-L162), get_daily_activity_prisma_client, get_daily_activity_repository, the key page, model leaders and cache leakage routes (L313-L353, L405-L452, L516-L557), and the types KeyActivityRow, KeySpendMetrics, KeySpendActivityRow, DailyActivityKeySearchResponse and the other response models."
   - "B3098 owns the export route and _export_filename, _content_disposition, _csv_cell, _csv_row and _stream_export_rows (L165-L184, L203-L237, L455-L513)."
-  - "B074 composes the routes of B3096 to B3098 and owns register_daily_activity_routes with its loop over the six resolvers (L560-L579); this task only exposes the per-entity route function."
+  - "B8482 composes the routes of B3096 to B3098 and owns register_daily_activity_routes with its loop over the six resolvers (L560-L579); this task only exposes the per-entity route function."
   - "B3093 owns get_daily_activity_aggregated and the rollup folding; B729 owns the repository's search_keys and aggregated methods and their limit checks; B3094 and B3095 own the resolvers and query shapes; B3090 owns SpendMetrics, KeyMetadata, SpendAnalyticsPaginatedResponse, ScopeDenied, InvalidDateRange and raise_public; B815 owns aggregated_date_range_error."
 pitfalls:
   - The aggregated route passes user_aggregated true for the user entity only, so /user/daily/activity/aggregated has no 400-day cap and a different missing-date message, while /team, /tag, /organization, /customer, /end_user and /agent keep the cap. The search route passes false for every entity, user included.
-  - The missing-database 500 comes from a dependency, so it beats the 422 for a bad limit, api_key_limit or timezone; a case with no database and limit=0 must still answer 500, and a missing credential answers 401 before that.
+  - The missing-database 500 comes from a dependency, so it beats the 422 for a bad limit, api_key_limit or timezone; a test with no database and limit=0 must still answer 500, and a missing credential answers 401 before that.
   - The search route replaces the scope's api_keys with the found keys, so an api_key the caller passed only narrows the first search and not the aggregate read that follows.
   - fold_key_metrics takes the metadata from the first day that holds the key, not the last, and a key found by the search but absent from every day is dropped, so the response can have fewer rows than the limit.
   - get_daily_activity_aggregated already turns its own failure into an HTTP 500, so the handler must let that error through without wrapping it or logging "Daily activity aggregation failed" a second time.

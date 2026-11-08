@@ -18,7 +18,7 @@ description: >-
   use B1365's existing core factory: Chirp retains B1357's lifecycle, while Vertex Live combines
   B1379 client conversion, B1382 server frames and B1381 close accounting with B1115's usage
   converter. Supply the common relay from B1008 and the same cancellation owner to both backends.
-  Export B1361/B1362 video preparation/poll/content operations for B093 without adding video
+  Export B1361/B1362 video preparation/poll/content operations for B3332 without adding video
   routes before that API task. Register no HTTP route in this composition.
   Booted-proxy fixtures use the existing aliases: embeddings POST /v1/embeddings, /embeddings,
   /engines/{model:path}/embeddings and /openai/deployments/{model:path}/embeddings; images POST
@@ -102,7 +102,7 @@ deviations: []
 out_of_scope:
   - B1352 owns the other live speech transformation methods; the legacy handler it covers has no caller at the pin.
   - B1340-B1349, B1352-B1362 and B1365 own modality transforms and transports; B1378-B1382/B1394 own shared Live protocol functions.
-  - B006/B082/B083/B085/B1125 keep their route factories. B093 owns future video routes and B157 the SDK surface.
+  - B006/B082/B083/B085/B1125 keep their route factories. B3343, B3344, B3345 and B6360 own the video routes and B157 the SDK surface.
 pitfalls:
   - Voice object extraction belongs before the existing voice mapper; forwarding the whole object changes default language selection.
   - Vertex Live and Chirp share the public socket path but use different backend transports and termination rules.

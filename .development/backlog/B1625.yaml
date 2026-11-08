@@ -2,7 +2,7 @@ id: B1625
 milestone: M4 keys, spend and management
 title: Configure the SAML provider and publish login metadata
 status: todo
-depends_on: [B002, B003, B009, B124, B4290, B4299, B4302, B173, B733, B743, B1630]
+depends_on: [B002, B003, B009, B4290, B4299, B4302, B173, B733, B743, B1630, B7323]
 file: tasks/B1625-saml-provider.yaml
 covers:
   - "litellm/proxy/management_endpoints/sso/saml_sso.py"

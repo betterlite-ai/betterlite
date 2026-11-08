@@ -17,7 +17,7 @@ description: 'Implement POST /auto_router/validate_complexity_router_config and 
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
   instead of separate ports. Bound the preview_config outside-byte parser to 1048576 bytes before decoding;
   on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
-  path). B1100 registers routes/router_preview_validation.rs as a stub, so fill only crates/betterlite-server/src/routes/router_preview_validation.rs and leave routes.rs and state.rs as they are.'
+  path). B1100 registers routes/router_preview_validation.rs as a stub, so fill only crates/betterlite-server/src/routes/router_preview_validation.rs and leave routes.rs and state.rs as they are. The availability route reads saved routers through `AutoRouterCatalog`, a trait this task declares in crates/betterlite-server/src/router_preview_validation.rs: `trait AutoRouterCatalog: Send + Sync { fn catalog(&self) -> Option<Arc<Vec<AutoRouterCatalogEntry>>>; }`, where the row is the type build_auto_router_catalog returns (LiteLLM''s AutoRouterCatalogEntry). None is LiteLLM''s proxy_config.auto_router_db_catalog being None, so the route answers 503 "Auto-router availability is unavailable", the same answer it gives without a router. The handler takes an injected `Arc<dyn AutoRouterCatalog>` from state; B8381 implements it, and the wave 17 model admin wiring part puts that implementation in state.'
 scope:
   paths:
   - crates/betterlite-server/src/router_preview_validation.rs

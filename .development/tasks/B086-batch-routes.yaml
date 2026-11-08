@@ -5,7 +5,7 @@ description: >-
   /v1/batches/{batch_id:path}/cancel and /{provider}/v1/batches/{batch_id:path}/cancel.
   Implement betterlite-server::api::batch_routes and betterlite-core::api::batch_routes. B1050 create, B1051 retrieve and B1133 list mount from their own route stubs, so do not mount them here. Do not re-register their paths.
   B1019 owns both ID formats, B1021 managed requirements, B1020 grants/credentials, B844 model-id
-  name lookup, B1038 SDK cancellation, B162 router cancellation and B1112 fallback/runner selection.
+  name lookup, B1038 SDK cancellation, B8353 router cancellation and B1112 fallback/runner selection.
 
   Correct the previous plan's executed-cancel expectations: the MIT factory requires a
   ManagedBatchStore hook, so without enterprise it returns 400 before the runner loads a row.
@@ -18,7 +18,7 @@ description: >-
   unified model id (resolved name when available) before dispatch. Preserve cancellation provider
   precedence path, body data.custom_llm_provider, custom-llm-provider header, query, then openai;
   this deliberately differs from file-route precedence. B2400 supplies final exception handling,
-  B004 request call ids/logging/custom headers and B124 hooks/status updates.
+  B004 request call ids/logging/custom headers and B8399 hooks/status updates.
 
   HTTP scenarios use B900/B1139, a configured sk-test master key, seeded virtual keys and the mock;
   no helper calls FastAPI and no enterprise hook is installed. Native callback-order tests live in

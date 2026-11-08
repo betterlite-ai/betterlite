@@ -150,8 +150,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/jwt_keys.rs
     - crates/betterlite-server/src/state/jwt_keys/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - crates/betterlite-server/src/auth/jwt_keys.rs
     - crates/betterlite-server/src/auth/jwt_keys/**
     - crates/betterlite-config/src/sections/jwt_keys.rs

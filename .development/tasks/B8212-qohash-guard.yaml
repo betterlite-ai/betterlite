@@ -1,0 +1,78 @@
+id: B8212
+title: Qostodian Nexus guardrail
+description: >-
+  Build the Qostodian Nexus guardrail (Qohash) in betterlite-guardrails, module qohash, with qohash/init.rs for the
+  initializer in qohash/__init__.py. The class is a thin layer over the generic guardrail API from B3770 and B3771: it
+  sets a default endpoint, a default name and four extra headers, then hands every call to the generic evaluation.
+
+  Constructor. api_base is the argument, else QOSTODIAN_NEXUS_API_BASE, else "http://nexus:8800". The guardrail name
+  defaults to "qostodian_nexus" when the caller gives none. extra_headers is the fixed list
+  x-qostodian-nexus-identifiers-trace, x-qostodian-nexus-identifiers-source, x-qostodian-nexus-identifiers-container and
+  x-qostodian-nexus-identifiers-identity, followed by the caller's own extra_headers that are not already in that list,
+  in the caller's order. Everything else goes to the generic guardrail API constructor unchanged.
+
+  apply_guardrail calls the generic apply_guardrail with the same four arguments and returns its result. Nothing else
+  changes. The pass-through exists in LiteLLM so the proxy's routing check finds apply_guardrail on the subclass itself;
+  in Rust the type simply implements the guardrail trait by delegating to the generic type, so the same routing rule holds.
+
+  The config model (QostodianNexusConfigModel) is the generic API model with Nexus defaults; B7935 holds its Python type.
+
+  initialize_qohash(params, guardrail_name) in qohash/init.rs returns QohashArgs with api_base, the name (empty string
+  when absent), event_hook (the mode), default_on, additional_provider_specific_params, extra_headers and timeout.
+  Fields copy without change. The registry key for this guardrail is QOSTODIAN_NEXUS, not the folder name (B3682 maps it).
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/qohash.rs
+    - crates/betterlite-guardrails/src/qohash/**
+    - tools/oracle/cases/guardrails/qohash-*.yaml
+    - tools/oracle/helpers/b8212.py
+    - tools/oracle/helpers/b8212/**
+    - tools/oracle/src/helpers/guardrails/b8212.rs
+    - tools/oracle/src/helpers/guardrails/b8212/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qohash/qohash.py
+    why: The QostodianNexus class with the defaults, the header merge and the pass-through apply_guardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qohash/__init__.py
+    why: The initializer and the QOSTODIAN_NEXUS registry entries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/generic_guardrail_api.py
+    why: The parent class whose constructor and apply_guardrail this class calls (built by B3770 and B3771).
+
+dod:
+  - text: The default api_base, name and header list match LiteLLM, and caller headers already in the fixed list are not repeated.
+    proof: [unit-tests]
+  - text: apply_guardrail gives exactly what the generic guardrail gives for the same input.
+    proof: [oracle]
+  - text: The initializer copies the settings into QohashArgs.
+    proof: [init-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: unit-tests
+      why: a unit test of the qohash module fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^qohash::/)'
+    - id: init-tests
+      why: the initializer arguments differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^qohash::init::/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/qohash-allowed.yaml
+  - tools/oracle/cases/guardrails/qohash-blocked.yaml
+  - tools/oracle/cases/guardrails/qohash-extra-headers.yaml
+
+deviations:
+  - what: The initializer returns QohashArgs and registers nothing.
+    why: B3682 owns the registry and the registration, as with B3681.
+
+out_of_scope:
+  - The generic API request, verdict and error handling (B3770, B3771).
+  - The initializer registry and the callback registration (B3682).
+
+pitfalls:
+  - The merged header list keeps the four fixed names first, then caller headers in their order, with no duplicates of the fixed names.
+  - A caller who passes a guardrail_name keeps it. Only a missing one gets "qostodian_nexus".
+review_level: standard
+budget:
+  max_changed_lines: 900
+  max_new_expects: 0

@@ -1,0 +1,128 @@
+id: B8374
+title: Proxy lifespan startup and shutdown order
+description: >-
+  LiteLLM's FastAPI lifespan, proxy_startup_event in proxy_server.py, runs every startup step in a fixed order before the
+  first request, and after the server stops it drains and closes everything in another fixed order. Other tasks build the
+  steps; this task calls them in LiteLLM's order. Build crates/betterlite/src/lifespan.rs (declared in lib.rs by the
+  skeleton) with `pub async fn run_proxy(inputs: LifespanInputs) -> Result<(), LifespanError>`, where LifespanInputs carries
+  the loaded Config, the env map, the CLI values B8375 passes (model, alias, api_base, api_version, debug, detailed_debug,
+  temperature, max_tokens, request_timeout, max_budget, drop_params, add_function_to_prompt, headers, use_queue, config path)
+  and the host and port. run_proxy calls betterlite-server's `server::run` between startup and shutdown.
+
+  Startup, in this order (L1231-L1586): apply B4175's verbose level plan; when PROMETHEUS_MULTIPROC_DIR is set, B3887's
+  mark_dead_workers; run LITELLM_WORKER_STARTUP_HOOKS (see below); read LITELLM_MASTER_KEY; resolve the config source the way LiteLLM does: CONFIG_FILE_PATH naming an
+  existing YAML file wins, else WORKER_CONFIG naming a YAML file (or any string when LITELLM_CONFIG_BUCKET_NAME is set) is
+  loaded, else WORKER_CONFIG is a JSON object of initialize() arguments (port of initialize_from_worker_config, dropping the
+  legacy key telemetry), logging it at debug through the port of _redact_worker_config_for_logging. Then B758's master key
+  boot verdict with the stored-secret count (port of _connect_to_count_stored_values: connect to the database only for the
+  count). Then B051's database setup when DATABASE_URL is set, B730's migrate_if_requested, and with a database the two
+  background migrations (B786's scrypt password migration, logged "Password migration: {result}" or skipped with a warning;
+  B4776's legacy agent grant id migration, three attempts five seconds apart). Then the Redis selection: B8377's init_from_db with B1652's persisted
+  coordination_redis block, the litellm_settings snapshot and the router, where a returned client becomes the usage Redis;
+  the transaction buffer Redis is the usage Redis, else B8377's buffer_redis (REDIS_* env) when B8373's wants_buffer_redis
+  holds. Then B8373's check_transaction_buffer, the B3853
+  OTel V2 provider publish (errors at debug), B8373's mock testing warning, JWT setup, prompt injection attach, the proxy
+  budget seeding and spend warm-up when a database and max_budget > 0, the two warnings, B8372's register_background_jobs
+  when a database is connected, then default team budgets and the UI settings sync, B8372's model info refresh and ROI sync job (register_roi_sync), and B5075's
+  tracing receiver when general_settings.tracing.store is "clickhouse". The gateway auth cache is created here with B733's
+  settings: memory TTL 60 seconds unless general_settings.user_api_key_cache_ttl is set, which then sets both memory and Redis
+  TTLs.
+
+  LITELLM_WORKER_STARTUP_HOOKS is a comma list of "module.path:function_name" specs; blanks are skipped. This task defines the
+  `StartupHooks` port (one async `run(specs) -> Result<(), StartupHookError>`), carried in LifespanInputs as an Option,
+  and calls it with the list. B165's PythonHooks::run_startup_hooks runs the specs through betterlite-pyhost and B8587's
+  PyStartupHooks adapter implements the port over it: it imports each spec and runs it in order
+  (awaiting a coroutine), logging "Worker startup hook '{spec}' executed successfully"; a spec without ":" is "Invalid hook spec '{spec}':
+  expected format is 'module.path:function_name'", and any failure logs "Worker startup hook '{spec}' failed: {error}"
+  and stops startup. When no port is given (no Python host) and the variable names a hook, startup fails with
+  LifespanError::StartupHooksNeedPython, which names LITELLM_WORKER_STARTUP_HOOKS.
+
+  Guardrails, pass-through endpoints and plugins at startup. Build B3682's GuardrailFactories once, extended with B8521's
+  `GuardrailFactories::with_hooks(self, ports: HookPorts)`, and hand them to B3682's InMemoryGuardrailHandler::new for B3683's
+  startup reconcile. After the config load (B8590's config_boot steps, called in load_config order), when general_settings.pass_through_endpoints is set, call B3616's
+  initialize_pass_through_endpoints with that list and the config file path (load_config L6814-L6821), and call B8230's
+  `PluginRegistry::replace_from_settings(general_settings)` (register_plugins_from_config, L6689). The database pass-through
+  load (L9076-L9079) runs inside B8384's non-LLM object sync, and the database settings reload calls (L7894, L7911) are B8379's
+  apply_general_settings_row. B8520's GeneralSettingsStore impl and the config field update route's plugin reload (L18367)
+  belong to route mounts: the wave 17 config wiring part mounts them.
+
+  initialize() (L9145-L9276) for worker-config and CLI starts: print B4175's banner, then the feedback box unless
+  LITELLM_DONT_SHOW_FEEDBACK_BOX is "true" in any case (port of generate_feedback_box at L236-L260 with its exact text), apply
+  debug levels, load the config file when one is given, and build the single-model config from the CLI values exactly as
+  initialize does (headers, api_base, max_tokens, temperature, request_timeout and alias go under the model; drop_params and
+  add_function_to_prompt set the global flags; api_version sets AZURE_API_VERSION for the process environment the providers
+  read).
+
+  Shutdown, in this order (L1570-L1645 and L1095-L1167): remove the model info job (and stop its private scheduler), B8370's
+  pause_scheduled_jobs, B4448's start_shutdown and wait_for_drain, stop B712's token refresh and B051's health watchdog and
+  view setup tasks, drain the spend event producer, B8370's stop_in_flight_jobs with the env timeouts, flush spend counters
+  through B1748's db_update_spend_transaction_handler with 3 retries (log and continue on error), drain the spend logs queue
+  through B1747 (log and continue), stop B8381's config sync and auth cache invalidation subscribers when they were started,
+  then proxy_shutdown_event: deregister the B731 heartbeat, flush B3102's gateway request counts before disconnecting the
+  database, drain B4331's post-call Redis batches, disconnect the response cache, close the JWT handler and the writer
+  client, run B3078's billing metrics shutdown hook, flush B3903's Langfuse channels (with LiteLLM's two log lines), and
+  finally B3887's mark_worker_exit when PROMETHEUS_MULTIPROC_DIR was set.
+
+  Tests drive run_proxy with recording fakes for every step behind small traits and assert the order of calls, the
+  config source choice and that a failing flush or drain is logged and shutdown continues. No oracle case: the order is not
+  visible to a client, and boot failures are not HTTP responses.
+scope:
+  paths:
+    - crates/betterlite/Cargo.toml
+    - crates/betterlite/src/lifespan.rs
+    - crates/betterlite/src/lifespan/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1230-L1645
+    why: proxy_startup_event's startup order and the shutdown order after the yield.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1095-L1167
+    why: flush_spend_counters_on_shutdown, _flush_spend_logs_queue_on_shutdown and proxy_shutdown_event.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9131-L9276
+    why: save_worker_config, initialize_from_worker_config and initialize with the CLI-built model config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L236-L260
+    why: generate_feedback_box text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L997-L1015
+    why: _redact_worker_config_for_logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2605-L2615
+    why: The auth cache created with the 60 second memory TTL.
+dod:
+  - text: Startup runs the master key verdict, database setup, migrations, checks, job registration and model info refresh in LiteLLM's order, and only with a database where LiteLLM requires one.
+    proof: [lifespan-tests]
+  - text: The config source follows CONFIG_FILE_PATH, then WORKER_CONFIG as a file, bucket name or JSON object, and drops the telemetry key.
+    proof: [lifespan-tests]
+  - text: initialize prints the banner and the feedback box unless LITELLM_DONT_SHOW_FEEDBACK_BOX is true, and builds the CLI model config like LiteLLM.
+    proof: [lifespan-tests]
+  - text: Shutdown pauses jobs, drains requests, stops in-flight jobs, flushes spend and closes clients in LiteLLM's order, and a failing flush does not stop the rest.
+    proof: [lifespan-tests]
+  - text: Startup hooks run through the StartupHooks port in list order and a failing or malformed hook stops startup; without the Python host a non-empty LITELLM_WORKER_STARTUP_HOOKS fails with the typed error naming it.
+    proof: [lifespan-tests]
+  - text: The usage Redis takes the persisted coordination block, and the buffer Redis falls back to REDIS_* env only when the buffer flag is on.
+    proof: [lifespan-tests]
+  - text: The auth cache uses a 60 second memory TTL unless user_api_key_cache_ttl is set.
+    proof: [lifespan-tests]
+checks:
+  optional: []
+  commands:
+    - id: lifespan-tests
+      why: A startup or shutdown step is missing, runs in another order, or stops the rest when it fails
+      run: >-
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^lifespan::/)'
+oracle_cases: []
+deviations:
+  - what: No shared aiohttp session is created or closed.
+    why: _initialize_shared_aiohttp_session builds a Python aiohttp pool; betterlite's outbound pool is betterlite-http's client, drained by server::run.
+out_of_scope:
+  - "cleanup_router_config_variables and showwarning: they reset or patch Python module globals; betterlite has no globals to reset, so not built."
+  - "_init_dd_tracer and _init_pyroscope: Python profilers; not built."
+  - "The steps themselves: B8373 (checks), B8372 (jobs), B8370 (scheduler stop) and the owners named in the description."
+  - "The CLI flags and run_server order before the lifespan: B8375."
+pitfalls:
+  - A WORKER_CONFIG string that names no file is parsed as JSON only when LITELLM_CONFIG_BUCKET_NAME is unset; with the bucket name set, any string is treated as a config path.
+  - CONFIG_FILE_PATH that is set but names no YAML file loads nothing and does not fall back to WORKER_CONFIG.
+  - The gateway request flush runs before the database disconnect inside the same guard, because a write after disconnect fails without persisting anything.
+  - The model info job is removed before jobs are paused, and its private scheduler is shut down only when it is not the proxy scheduler.
+  - Scheduled jobs are stopped before the spend counter flush and the spend logs drain, since a job finishing needs its database connection.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

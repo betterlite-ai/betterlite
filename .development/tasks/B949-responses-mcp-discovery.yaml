@@ -1,7 +1,7 @@
 id: B949
 title: Responses mcp discovery
 description: >-
-  Discover MCP tools using the selected authorized server set and B136 manager with B137 request-scoped headers
+  Discover MCP tools using the selected authorized server set and B8197 listing operations with B137 request-scoped headers
   and credentials. Export captured tool schemas plus call context to Responses orchestration; preserve parent tags
   and never persist request credentials in registry state.
 
@@ -47,7 +47,7 @@ description: >-
   30 wiring; 525 total within the 530-line cap. The estimate includes tests and adapters, not just production code.
 
 
-  Direct inputs come from B136 (MCP gateway server, transports and server registry), B137 (MCP auth, OAuth flows,
+  Direct inputs come from B8197 (MCP listing of tools, prompts and resources), B137 (MCP auth, OAuth flows,
   BYOK and outbound credentials), B171 (Direct helper oracle and URL path encoding), B948 (Responses mcp selection),
   B1087 (Api boundaries), B905 (Responses parameters). These are callable/type/config owners, not provider-family
   umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.

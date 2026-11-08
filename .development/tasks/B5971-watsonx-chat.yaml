@@ -78,7 +78,7 @@ out_of_scope:
   - B5972 owns IBMWatsonXChatConfig._apply_prompt_template_core, aapply_prompt_template and apply_prompt_template (lines 105-224 of chat/transformation.py), because the text completion config is their only caller besides prompt_factory.
   - B5970 owns every function this task calls from common_utils.py, including credentials and the IAM token.
   - B668, B503 and B504 own the OpenAI request and reply conversion this config inherits, and B1428 owns the HTTP execution and streaming.
-  - B042 owns the main.py registration of watsonx_chat_completion and the HTTP oracle cases.
+  - B8331 owns the main.py registration of watsonx_chat_completion and the HTTP oracle cases.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as b5971 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task''s to edit.'
   - map_openai_params removes tools from the caller's non-default params and puts them back last, so the key order of the delegated map changes.

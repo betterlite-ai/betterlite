@@ -37,7 +37,7 @@ description: >-
   list, a non-string field, a non-object reply) becomes `SagemakerError` status 500 with message `LiteLLM Error: Unable to
   parse sagemaker RAW RESPONSE ` followed by the reply as JSON. Usage counts the prompt and the text through an injected
   trait `TextTokenCounter` (one method, counting a response text), because betterlite-openai does not depend on the tokenizer;
-  B196's counter is plugged in by B042. `created` is the injected clock's whole seconds, `model` is the request model,
+  B196's counter is plugged in by B8331. `created` is the injected clock's whole seconds, `model` is the request model,
   finish_reason stays what B004's default response holds. `validate_environment` returns exactly
   `Content-Type: application/json`: the source overwrites its headers argument before merging it, so caller headers are
   never kept.
@@ -143,7 +143,7 @@ deviations: []
 out_of_scope:
   - B5961 owns the embedding configs and the event-stream decoder, and B5840 owns credentials, URLs, signing, the HTTP calls, the custom stream wrappers and the region rules.
   - "`SagemakerChatHandler` in `chat/handler.py` has no caller at the pin; main.py builds it but sends sagemaker_chat and sagemaker_nova through the shared HTTP handler. It is not built."
-  - B005 owns the streaming wrapper and its `check_special_tokens` rule for sagemaker; B196 owns `token_counter`; B042 plugs both in, with the provider lookups in `get_supported_openai_params.py` and `utils.py` that pick these configs.
+  - B005 owns the streaming wrapper and its `check_special_tokens` rule for sagemaker; B196 owns `token_counter`; B8331 plugs both in; B175 owns the lookups in `get_supported_openai_params.py` and B2230 the chat config selection in `utils.py` that pick these configs.
   - B239 owns the SageMaker exception mapping.
 pitfalls:
   - The body key order is parameters, stream, inputs. The SigV4 signature covers the exact bytes, so a reordered map fails at AWS.

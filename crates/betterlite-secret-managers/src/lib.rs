@@ -10,6 +10,7 @@ pub mod google_secret_manager;
 pub mod oidc;
 pub mod secret_contracts;
 pub mod secret_helpers;
+pub mod secret_lookup;
 pub mod secret_name;
 pub mod secret_read_dispatch;
 pub mod secret_types;

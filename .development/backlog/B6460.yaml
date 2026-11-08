@@ -2,7 +2,7 @@ id: B6460
 milestone: M5 api families
 title: Router video call wrappers
 status: todo
-depends_on: [B016, B6021, B3338, B3339, B3340, B3341, B3342]
+depends_on: [B016, B6021, B3338, B3339, B3340, B3341, B3342, B8351]
 file: tasks/B6460-router-video-calls.yaml
 covers:
   - "litellm/router.py"

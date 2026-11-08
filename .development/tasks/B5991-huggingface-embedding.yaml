@@ -3,7 +3,7 @@ title: Hugging Face embedding request, task lookup and response
 description: >-
   Build huggingface_embedding in betterlite-openai (crates/betterlite-openai/src/huggingface_embedding.rs and its folder) from litellm/llms/huggingface/embedding/handler.py and the
   three live methods of HuggingFaceEmbeddingConfig in embedding/transformation.py (get_special_options_params, validate_environment, get_error_class). It uses B5990's HuggingfaceError.
-  It makes no HTTP call itself: the pipeline tag lookup goes through an injected PipelineTagSource trait, tag(model, task_type) -> Result<Option<String>, HuggingfaceError>, which B042
+  It makes no HTTP call itself: the pipeline tag lookup goes through an injected PipelineTagSource trait, tag(model, task_type) -> Result<Option<String>, HuggingfaceError>, which B8332
   backs with a plain GET of "https://huggingface.co/api/models/{model}" (no auth header, no status check, JSON field pipeline_tag, absent means None). The token encoder is an injected
   OrdinaryEncoder trait with encode_ordinary(text) -> usize that returns the token count with LiteLLM's default encoding; the helper adapter backs it with B195's bundled cl100k_base.
   The resolved api_key, api_base and the two env values (HF_API_BASE, HUGGINGFACE_API_BASE) come in as plain arguments (an HuggingfaceEnv value).
@@ -124,7 +124,7 @@ deviations:
   - what: A task lookup that LiteLLM does with two blocking GETs inside an async call is made through the injected source and awaits like any other call.
     why: betterlite has no sync/async split; the number of lookups and their URL stay the same.
 out_of_scope:
-  - B042 owns the embedding branch of litellm/main.py (key order api_key, litellm.huggingface_key, HUGGINGFACE_API_KEY, litellm.api_key), the HTTP POST of the body, the pre_call and post_call logging, the pooled client choice and the proxy HTTP cases.
+  - B8332 owns the embedding branch of litellm/main.py (key order api_key, litellm.huggingface_key, HUGGINGFACE_API_KEY, litellm.api_key), the HTTP POST of the body, the pre_call and post_call logging, the pooled client choice and the proxy HTTP cases.
   - The class attributes, __init__, get_config, get_supported_openai_params, map_openai_params, get_hf_api_key, read_tgi_conv_models, get_hf_task_for_model, transform_request, transform_response, convert_to_model_response_object and _convert_streamed_response_to_complete_response of HuggingFaceEmbeddingConfig have no caller at the pin (chat uses HuggingFaceChatConfig), so they and the two huggingface_llms_metadata text files are not built.
   - async_get_hf_task_embedding_for_model and _async_transform_input have no caller at the pin and are folded into the single lookup path above.
   - The Hub error type is B5990's HuggingfaceError.
