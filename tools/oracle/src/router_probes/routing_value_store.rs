@@ -1,9 +1,10 @@
+mod parser;
+mod steps;
+
 use std::sync::{Arc, Mutex as StdMutex, PoisonError};
 
-use betterlite_router::routing_value_store::codec::parse_route_value;
 use betterlite_router::routing_value_store::{
-    Clock, CompareOutcome, MAX_VALUE_BYTES, PinValue, RouteIncrement, RouteKey, RouteValue,
-    RoutingValueStore, StoreError, StoreRead, StoreSettings,
+    Clock, RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreError, StoreSettings,
 };
 use serde::{Deserialize, Serialize};
 
@@ -176,6 +177,14 @@ struct Call<'store> {
     ttl: Option<f64>,
 }
 
+impl From<StoreError> for OperationError {
+    fn from(error: StoreError) -> Self {
+        Self::InvalidRequest {
+            message: error.to_string(),
+        }
+    }
+}
+
 pub(crate) fn run(
     input: &Input,
     _random: &mut InjectedRandom<'_>,
@@ -207,19 +216,19 @@ fn execute_step(store: &RoutingValueStore, step: &Step) -> StepResult {
     match step {
         Step::Set {
             key, value, ttl, ..
-        } => execute_set(&route_call(store, Some(key.as_str()), *ttl), value),
+        } => steps::execute_set(&route_call(store, Some(key.as_str()), *ttl), value),
         Step::SetPipeline { entries, ttl, .. } => {
-            execute_set_pipeline(&route_call(store, None, *ttl), entries)
+            steps::execute_set_pipeline(&route_call(store, None, *ttl), entries)
         }
         Step::SetAdd {
             key, values, ttl, ..
-        } => execute_set_add(&route_call(store, Some(key.as_str()), *ttl), values),
+        } => steps::execute_set_add(&route_call(store, Some(key.as_str()), *ttl), values),
         Step::Get { key, .. } => Ok(StepOutput::Get {
-            value: read_one(store, key)?,
+            value: steps::read_one(store, key)?,
         }),
-        Step::BatchGet { keys, .. } => execute_batch_get(store, keys),
+        Step::BatchGet { keys, .. } => steps::execute_batch_get(store, keys),
         Step::Increment { key, by, ttl, .. } => {
-            execute_increment(&route_call(store, Some(key.as_str()), *ttl), by)
+            steps::execute_increment(&route_call(store, Some(key.as_str()), *ttl), by)
         }
         Step::CompareAndSet {
             key,
@@ -227,13 +236,13 @@ fn execute_step(store: &RoutingValueStore, step: &Step) -> StepResult {
             value,
             ttl,
             ..
-        } => execute_compare_and_set(
+        } => steps::execute_compare_and_set(
             &route_call(store, Some(key.as_str()), *ttl),
             expected.as_ref(),
             value,
         ),
         Step::Parse { payload } => Ok(StepOutput::Parse {
-            result: parse_payload(payload)?,
+            result: parser::parse_payload(payload)?,
         }),
     }
 }
@@ -247,157 +256,5 @@ fn route_call<'store>(
         store,
         key: key.and_then(|raw| RouteKey::parse(raw).ok()),
         ttl: ttl.map(|seconds| seconds.0),
-    }
-}
-
-fn execute_set(call: &Call<'_>, value: &RouteValue) -> StepResult {
-    if let Some(route_key) = &call.key {
-        call.store.set(route_key, value, call.ttl)?;
-    }
-    Ok(StepOutput::Set)
-}
-
-fn execute_set_pipeline(call: &Call<'_>, entries: &[Entry]) -> StepResult {
-    let parsed = entries.iter().filter_map(entry_key).collect::<Vec<_>>();
-    call.store.set_pipeline(&parsed, call.ttl)?;
-    Ok(StepOutput::SetPipeline)
-}
-
-fn entry_key(entry: &Entry) -> Option<(RouteKey, RouteValue)> {
-    RouteKey::parse(&entry.key)
-        .ok()
-        .map(|key| (key, entry.value.clone()))
-}
-
-fn execute_set_add(call: &Call<'_>, values: &[String]) -> StepResult {
-    let added = match &call.key {
-        Some(route_key) => call.store.set_add(route_key, values, call.ttl)?,
-        None => values.to_vec(),
-    };
-    Ok(StepOutput::SetAdd { values: added })
-}
-
-fn read_one(store: &RoutingValueStore, raw: &str) -> ReadResult {
-    let Ok(route_key) = RouteKey::parse(raw) else {
-        return Ok(None);
-    };
-    let read = store.get(&route_key)?;
-    Ok(read_value(&read))
-}
-
-fn execute_batch_get(store: &RoutingValueStore, keys: &[String]) -> StepResult {
-    let values = keys
-        .iter()
-        .map(|key| read_one(store, key))
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(StepOutput::BatchGet { values })
-}
-
-fn execute_increment(call: &Call<'_>, by: &RouteIncrement) -> StepResult {
-    let route_key = call
-        .key
-        .as_ref()
-        .ok_or_else(|| missing_key("an increment"))?;
-    let value = call.store.increment(route_key, by, call.ttl)?;
-    Ok(StepOutput::Increment { value })
-}
-
-fn execute_compare_and_set(
-    call: &Call<'_>,
-    expected: Option<&RouteValue>,
-    value: &RouteValue,
-) -> StepResult {
-    let route_key = call
-        .key
-        .as_ref()
-        .ok_or_else(|| missing_key("a compare and set"))?;
-    let wanted = expected.map_or(StoreRead::Missing, |current| {
-        StoreRead::Value(current.clone())
-    });
-    let outcome = call
-        .store
-        .compare_and_set(route_key, &wanted, value, call.ttl)?;
-    Ok(compare_output(&outcome))
-}
-
-impl From<StoreError> for OperationError {
-    fn from(error: StoreError) -> Self {
-        Self::InvalidRequest {
-            message: error.to_string(),
-        }
-    }
-}
-
-fn missing_key(operation: &str) -> OperationError {
-    OperationError::InvalidRequest {
-        message: format!("{operation} needs a route key within the key limit"),
-    }
-}
-
-fn compare_output(outcome: &CompareOutcome) -> StepOutput {
-    StepOutput::CompareAndSet {
-        swapped: outcome.swapped,
-        current: read_value(&outcome.current),
-    }
-}
-
-fn read_value(read: &StoreRead) -> Option<RouteValue> {
-    match read {
-        StoreRead::Missing => None,
-        StoreRead::Value(value) => Some(value.clone()),
-    }
-}
-
-fn parse_payload(payload: &ParsePayload) -> Result<ParseResult, OperationError> {
-    let bytes = match payload {
-        ParsePayload::Text { text } => text.as_bytes().to_vec(),
-        ParsePayload::Pin { model_id_bytes } => {
-            let length = usize::try_from(*model_id_bytes).map_err(|error| {
-                OperationError::InvalidRequest {
-                    message: error.to_string(),
-                }
-            })?;
-            if length > MAX_VALUE_BYTES.saturating_add(1) {
-                return Err(OperationError::InvalidRequest {
-                    message: "the pin model id length is past the parser bound".to_owned(),
-                });
-            }
-            let value = RouteValue::Pin(PinValue {
-                model_id: "a".repeat(length),
-            });
-            serde_json::to_vec(&value).map_err(|source| StoreError::Encoding { source })?
-        }
-    };
-    match parse_route_value(&bytes) {
-        Ok(value) => Ok(ParseResult::Valid {
-            value: summarize(&value),
-        }),
-        Err(StoreError::ValueTooLarge {
-            bytes: reported,
-            limit,
-        }) => Ok(ParseResult::Invalid {
-            bytes: reported,
-            limit,
-        }),
-        Err(error) => Err(OperationError::from(error)),
-    }
-}
-
-fn summarize(value: &RouteValue) -> ValueSummary {
-    match value {
-        RouteValue::Counter(counter) => ValueSummary::Counter { value: *counter },
-        RouteValue::Spend(spend) => ValueSummary::Spend {
-            amount: spend.to_string(),
-        },
-        RouteValue::Pin(pin) => ValueSummary::Pin {
-            model_id_bytes: pin.model_id.len(),
-        },
-        RouteValue::SchedulerTuple(tuple) => ValueSummary::SchedulerTuple {
-            priority: tuple.priority,
-            request_id_bytes: tuple.request_id.len(),
-        },
-        RouteValue::Members(members) => ValueSummary::Members {
-            members: members.iter().cloned().collect(),
-        },
     }
 }
