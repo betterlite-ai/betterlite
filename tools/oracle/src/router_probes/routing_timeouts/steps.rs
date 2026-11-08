@@ -6,7 +6,7 @@ use betterlite_router::routing_timeouts::completion::{
 use betterlite_router::routing_timeouts::global::GlobalRequestTimeout;
 use betterlite_router::routing_timeouts::plan::{
     DeploymentTimeouts, RequestTimeouts, RouterTimeoutSources, RouterTimeouts, TimeoutPlan,
-    attempt_timeout, non_stream_timeout, resolve_router_timeouts, stream_timeout,
+    resolve_router_timeouts, select_timeouts,
 };
 use betterlite_router::routing_timeouts::seconds::Seconds;
 
@@ -49,11 +49,8 @@ fn fill_completion(
         input.global_timeout.explicitly_set,
     )?;
     let kwargs = TimeoutKwargs {
-        timeout: optional_seconds("kwargs timeout", input.timeout.as_deref())?,
-        request_timeout: optional_seconds(
-            "kwargs request_timeout",
-            input.request_timeout.as_deref(),
-        )?,
+        timeout: as_seconds(input.timeout.as_deref(), "kwargs timeout")?,
+        request_timeout: as_seconds(input.request_timeout.as_deref(), "kwargs request_timeout")?,
     };
     let model_timeout = input
         .model_timeout
@@ -84,63 +81,60 @@ fn fill_router(router: Option<&RouterInput>, output: &mut Fields) -> Result<(), 
         &input.global_timeout.seconds,
         input.global_timeout.explicitly_set,
     )?;
-    let timeouts = resolve_router_timeouts(&router_sources(input)?, global);
-    let request = request_timeouts(input)?;
-    let deployment = deployment_timeouts(input)?;
-    output.stream = stream_timeout(&request, &deployment, &timeouts).map(TimeoutOutput::from);
-    output.non_stream =
-        non_stream_timeout(&request, &deployment, &timeouts).map(TimeoutOutput::from);
-    output.attempt = attempt_timeout(&request, &deployment, &timeouts).map(TimeoutOutput::from);
-    fill_plan(input, output, &timeouts, &request, &deployment)
+    let probe = probe_timeouts(input)?;
+    let timeouts = resolve_router_timeouts(&probe.sources, global);
+    let selected = select_timeouts(&probe.request, &probe.deployment, &timeouts);
+    output.stream = selected.stream.map(TimeoutOutput::from);
+    output.non_stream = selected.non_stream.map(TimeoutOutput::from);
+    output.attempt = selected.attempt.map(TimeoutOutput::from);
+    fill_plan(input, output, &timeouts, &probe.request, &probe.deployment)
 }
 
-fn router_sources(input: &RouterInput) -> Result<RouterTimeoutSources, OperationError> {
-    Ok(RouterTimeoutSources {
-        timeout: optional_seconds("router_settings.timeout", input.timeout.as_deref())?,
-        stream_timeout: optional_seconds(
-            "router_settings.stream_timeout",
+struct ProbeTimeouts {
+    sources: RouterTimeoutSources,
+    request: RequestTimeouts,
+    deployment: DeploymentTimeouts,
+}
+
+fn probe_timeouts(input: &RouterInput) -> Result<ProbeTimeouts, OperationError> {
+    let sources = RouterTimeoutSources {
+        timeout: as_seconds(input.timeout.as_deref(), "router_settings.timeout")?,
+        stream_timeout: as_seconds(
             input.stream_timeout.as_deref(),
+            "router_settings.stream_timeout",
         )?,
-        default_timeout: optional_seconds(
-            "router_settings.default_litellm_params.timeout",
+        default_timeout: as_seconds(
             input.default_timeout.as_deref(),
+            "router_settings.default_litellm_params.timeout",
         )?,
-        default_stream_timeout: optional_seconds(
-            "router_settings.default_litellm_params.stream_timeout",
+        default_stream_timeout: as_seconds(
             input.default_stream_timeout.as_deref(),
+            "router_settings.default_litellm_params.stream_timeout",
         )?,
-    })
-}
-
-fn request_timeouts(input: &RouterInput) -> Result<RequestTimeouts, OperationError> {
-    Ok(RequestTimeouts {
-        stream: input.kwargs.stream,
-        timeout: optional_seconds("kwargs timeout", input.kwargs.timeout.as_deref())?,
-        request_timeout: optional_seconds(
-            "kwargs request_timeout",
-            input.kwargs.request_timeout.as_deref(),
-        )?,
-        stream_timeout: optional_seconds(
-            "kwargs stream_timeout",
-            input.kwargs.stream_timeout.as_deref(),
-        )?,
-    })
-}
-
-fn deployment_timeouts(input: &RouterInput) -> Result<DeploymentTimeouts, OperationError> {
-    Ok(DeploymentTimeouts {
-        timeout: optional_seconds(
-            "litellm_params.timeout",
-            input.deployment.timeout.as_deref(),
-        )?,
-        request_timeout: optional_seconds(
+    };
+    let kwargs = &input.kwargs;
+    let request = RequestTimeouts {
+        stream: kwargs.stream,
+        timeout: as_seconds(kwargs.timeout.as_deref(), "kwargs timeout")?,
+        request_timeout: as_seconds(kwargs.request_timeout.as_deref(), "kwargs request_timeout")?,
+        stream_timeout: as_seconds(kwargs.stream_timeout.as_deref(), "kwargs stream_timeout")?,
+    };
+    let params = &input.deployment;
+    let deployment = DeploymentTimeouts {
+        timeout: as_seconds(params.timeout.as_deref(), "litellm_params.timeout")?,
+        request_timeout: as_seconds(
+            params.request_timeout.as_deref(),
             "litellm_params.request_timeout",
-            input.deployment.request_timeout.as_deref(),
         )?,
-        stream_timeout: optional_seconds(
+        stream_timeout: as_seconds(
+            params.stream_timeout.as_deref(),
             "litellm_params.stream_timeout",
-            input.deployment.stream_timeout.as_deref(),
         )?,
+    };
+    Ok(ProbeTimeouts {
+        sources,
+        request,
+        deployment,
     })
 }
 
@@ -224,15 +218,15 @@ fn timeout_value(input: &TimeoutInput) -> Result<TimeoutValue, OperationError> {
             write,
             pool,
         } => Ok(TimeoutValue::Phases(TimeoutPhases {
-            connect: optional_seconds("connect", connect.as_deref())?,
-            read: optional_seconds("read", read.as_deref())?,
-            write: optional_seconds("write", write.as_deref())?,
-            pool: optional_seconds("pool", pool.as_deref())?,
+            connect: as_seconds(connect.as_deref(), "connect")?,
+            read: as_seconds(read.as_deref(), "read")?,
+            write: as_seconds(write.as_deref(), "write")?,
+            pool: as_seconds(pool.as_deref(), "pool")?,
         })),
     }
 }
 
-fn optional_seconds(field: &str, text: Option<&str>) -> Result<Option<Seconds>, OperationError> {
+fn as_seconds(text: Option<&str>, field: &str) -> Result<Option<Seconds>, OperationError> {
     let Some(value) = text else {
         return Ok(None);
     };

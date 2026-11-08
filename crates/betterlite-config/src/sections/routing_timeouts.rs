@@ -129,26 +129,31 @@ fn router_settings<L>(raw: RawRouter, lookup: &L) -> Result<RouterTimeouts, Conf
 where
     L: EnvironmentLookup,
 {
+    let timeout = resolve_number(raw.timeout, "router_settings.timeout", lookup, parse_float)?;
+    let stream_timeout = resolve_number(
+        raw.stream_timeout,
+        "router_settings.stream_timeout",
+        lookup,
+        parse_float,
+    )?;
+    let defaults = raw.default_litellm_params;
+    let default_timeout = resolve_number(
+        defaults.timeout,
+        "router_settings.default_litellm_params.timeout",
+        lookup,
+        parse_float,
+    )?;
+    let default_stream_timeout = resolve_number(
+        defaults.stream_timeout,
+        "router_settings.default_litellm_params.stream_timeout",
+        lookup,
+        parse_float,
+    )?;
     Ok(RouterTimeouts {
-        timeout: resolve_number(raw.timeout, "router_settings.timeout", lookup, parse_float)?,
-        stream_timeout: resolve_number(
-            raw.stream_timeout,
-            "router_settings.stream_timeout",
-            lookup,
-            parse_float,
-        )?,
-        default_timeout: resolve_number(
-            raw.default_litellm_params.timeout,
-            "router_settings.default_litellm_params.timeout",
-            lookup,
-            parse_float,
-        )?,
-        default_stream_timeout: resolve_number(
-            raw.default_litellm_params.stream_timeout,
-            "router_settings.default_litellm_params.stream_timeout",
-            lookup,
-            parse_float,
-        )?,
+        timeout,
+        stream_timeout,
+        default_timeout,
+        default_stream_timeout,
     })
 }
 
@@ -161,26 +166,30 @@ where
 {
     let mut deployments = Vec::with_capacity(raw.len());
     for (index, deployment) in raw.into_iter().enumerate() {
+        let params = deployment.litellm_params;
         let prefix = format!("model_list.{index}.litellm_params");
+        let timeout = resolve_number(
+            params.timeout,
+            &format!("{prefix}.timeout"),
+            lookup,
+            parse_float,
+        )?;
+        let stream_timeout = resolve_number(
+            params.stream_timeout,
+            &format!("{prefix}.stream_timeout"),
+            lookup,
+            parse_float,
+        )?;
+        let request_timeout = resolve_number(
+            params.request_timeout,
+            &format!("{prefix}.request_timeout"),
+            lookup,
+            parse_float,
+        )?;
         deployments.push(DeploymentTimeouts {
-            timeout: resolve_number(
-                deployment.litellm_params.timeout,
-                &format!("{prefix}.timeout"),
-                lookup,
-                parse_float,
-            )?,
-            stream_timeout: resolve_number(
-                deployment.litellm_params.stream_timeout,
-                &format!("{prefix}.stream_timeout"),
-                lookup,
-                parse_float,
-            )?,
-            request_timeout: resolve_number(
-                deployment.litellm_params.request_timeout,
-                &format!("{prefix}.request_timeout"),
-                lookup,
-                parse_float,
-            )?,
+            timeout,
+            stream_timeout,
+            request_timeout,
         });
     }
     Ok(deployments)
