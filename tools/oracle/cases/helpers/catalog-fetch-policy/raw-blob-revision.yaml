@@ -1,0 +1,8 @@
+kind: helper
+name: raw-blob-revision
+call:
+  catalog_fetch_policy:
+    operation: raw_blob_revision
+    body: "{\"model\": {}}\nhéllo"
+compare: {ignore: []}
+env: {}

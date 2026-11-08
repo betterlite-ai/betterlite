@@ -1,0 +1,8 @@
+kind: helper
+name: catalog-fetch-policy-parse-retry-after
+call:
+  catalog_fetch_policy:
+    operation: parse_retry_after
+    headers: {Retry-After: "3.5"}
+compare: {ignore: []}
+env: {}
