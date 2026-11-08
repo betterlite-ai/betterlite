@@ -28,6 +28,9 @@ class FoundryFacts(BaseModel):
 
     supports_native_responses: bool = False
     chat_rejects_function_tools: bool = False
+    model: str = ""
+    api_base: str | None = None
+    effort: str | None = None
 
 
 class GptFacts(BaseModel):
@@ -35,6 +38,7 @@ class GptFacts(BaseModel):
 
     five: bool = False
     search: bool = False
+    model: str = ""
 
 
 class Capabilities(BaseModel):
@@ -70,42 +74,50 @@ class ResolvedBase:
     def __init__(self, api_base: str) -> None:
         self.api_base = api_base
 
-    def __call__(self, _api_base: str | None) -> str:
-        return self.api_base
+    def __call__(self, api_base: str | None) -> str:
+        return self.api_base if api_base is None else api_base
 
 
 class FoundrySupports:
-    def __init__(self, *, supported: bool) -> None:
+    def __init__(self, *, supported: bool, model: str, api_base: str | None) -> None:
         self.supported = supported
+        self.model = model
+        self.api_base = api_base
 
-    def __call__(self, _model: str | None, _api_base: str | None) -> bool:
-        return self.supported
+    def __call__(self, model: str | None, api_base: str | None) -> bool:
+        return self.supported and model == self.model and api_base == self.api_base
 
 
 class FoundryRejects:
-    def __init__(self, *, rejects: bool) -> None:
+    def __init__(self, *, rejects: bool, model: str, effort: str | None) -> None:
         self.rejects = rejects
+        self.model = model
+        self.effort = effort
 
     def __call__(
-        self, _model: str, _reasoning_effort: str | Mapping[str, object] | None
+        self, model: str, reasoning_effort: str | Mapping[str, object] | None
     ) -> bool:
-        return self.rejects
+        return (
+            self.rejects
+            and self.effort is not None
+            and model == self.model
+            and reasoning_effort == self.effort
+        )
 
 
 class GptFiveNames:
-    def __init__(self, *, gpt_5: bool, gpt_5_4_plus: bool, gpt_5_search: bool) -> None:
-        self.gpt_5 = gpt_5
-        self.gpt_5_4_plus = gpt_5_4_plus
-        self.gpt_5_search = gpt_5_search
+    def __init__(self, *, facts: GptFacts, four_plus: bool) -> None:
+        self.facts = facts
+        self.four_plus = four_plus
 
-    def is_model_gpt_5_model(self, _model: str) -> bool:
-        return self.gpt_5
+    def is_model_gpt_5_model(self, model: str) -> bool:
+        return self.facts.five and model == self.facts.model
 
-    def is_model_gpt_5_4_plus_model(self, _model: str) -> bool:
-        return self.gpt_5_4_plus
+    def is_model_gpt_5_4_plus_model(self, model: str) -> bool:
+        return self.four_plus and model == self.facts.model
 
-    def is_model_gpt_5_search_model(self, _model: str) -> bool:
-        return self.gpt_5_search
+    def is_model_gpt_5_search_model(self, model: str) -> bool:
+        return self.facts.search and model == self.facts.model
 
 
 def run(input_value: dict[str, Json]) -> dict[str, Json]:
@@ -130,21 +142,25 @@ def run(input_value: dict[str, Json]) -> dict[str, Json]:
         patch.object(
             litellm_main,
             "azure_ai_supports_native_responses",
-            FoundrySupports(supported=facts.foundry.supports_native_responses),
+            FoundrySupports(
+                supported=facts.foundry.supports_native_responses,
+                model=facts.foundry.model,
+                api_base=facts.foundry.api_base,
+            ),
         ),
         patch.object(
             litellm_main,
             "foundry_chat_rejects_function_tools_while_reasoning",
-            FoundryRejects(rejects=facts.foundry.chat_rejects_function_tools),
+            FoundryRejects(
+                rejects=facts.foundry.chat_rejects_function_tools,
+                model=facts.foundry.model,
+                effort=facts.foundry.effort,
+            ),
         ),
         patch.object(
             litellm_main,
             "OpenAIGPT5Config",
-            GptFiveNames(
-                gpt_5=facts.gpt.five,
-                gpt_5_4_plus=facts.gpt_5_4_plus,
-                gpt_5_search=facts.gpt.search,
-            ),
+            GptFiveNames(facts=facts.gpt, four_plus=facts.gpt_5_4_plus),
         ),
     ):
         litellm.route_all_chat_openai_to_responses = (

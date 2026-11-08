@@ -9,9 +9,9 @@ call:
         - type: function
           function: {name: lookup}
     capabilities:
-      foundry: {supports_native_responses: true, chat_rejects_function_tools: false}
+      foundry: {supports_native_responses: true, model: gpt-5.6}
       resolved_openai_api_base: https://example.invalid/openai/v1
-      gpt: {five: true}
+      gpt: {five: true, model: gpt-5.6}
       gpt_5_4_plus: true
 env: {}
 compare:

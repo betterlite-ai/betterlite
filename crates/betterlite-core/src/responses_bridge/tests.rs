@@ -59,8 +59,11 @@ enum Fact {
 #[derive(Debug, Default)]
 struct Fake {
     model_info: Object,
-    resolved_openai_api_base: String,
+    configured_base: String,
     facts: Vec<Fact>,
+    fact_model: String,
+    fact_api_base: Option<String>,
+    fact_effort: Option<ReasoningEffort>,
 }
 
 impl Fake {
@@ -75,7 +78,22 @@ impl Fake {
     }
 
     fn on_base(mut self, api_base: &str) -> Self {
-        self.resolved_openai_api_base = api_base.to_owned();
+        self.configured_base = api_base.to_owned();
+        self
+    }
+
+    fn accepting(mut self, model: &str) -> Self {
+        self.fact_model = model.to_owned();
+        self
+    }
+
+    fn at(mut self, api_base: Option<&str>) -> Self {
+        self.fact_api_base = api_base.map(str::to_owned);
+        self
+    }
+
+    fn for_effort(mut self, effort: &str) -> Self {
+        self.fact_effort = Some(ReasoningEffort::Text(effort.to_owned()));
         self
     }
 
@@ -98,32 +116,36 @@ impl ResponsesBridgeCapabilities for Fake {
         Ok(self.model_info.clone())
     }
 
-    fn resolved_openai_api_base(&self, _api_base: Option<&str>) -> String {
-        self.resolved_openai_api_base.clone()
+    fn resolved_openai_api_base(&self, api_base: Option<&str>) -> String {
+        api_base.map_or_else(|| self.configured_base.clone(), str::to_owned)
     }
 
-    fn foundry_supports_responses(&self, _model: &str, _api_base: Option<&str>) -> bool {
+    fn foundry_supports_responses(&self, model: &str, api_base: Option<&str>) -> bool {
         self.knows(Fact::FoundrySupportsResponses)
+            && self.fact_model == model
+            && self.fact_api_base.as_deref() == api_base
     }
 
     fn foundry_chat_rejects_tools(
         &self,
-        _model: &str,
-        _reasoning_effort: Option<&ReasoningEffort>,
+        model: &str,
+        reasoning_effort: Option<&ReasoningEffort>,
     ) -> bool {
         self.knows(Fact::FoundryChatRejectsTools)
+            && self.fact_model == model
+            && reasoning_effort == self.fact_effort.as_ref()
     }
 
-    fn is_gpt_5_model(&self, _model: &str) -> bool {
-        self.knows(Fact::Gpt5)
+    fn is_gpt_5_model(&self, model: &str) -> bool {
+        self.knows(Fact::Gpt5) && self.fact_model == model
     }
 
-    fn is_gpt_5_4_plus_model(&self, _model: &str) -> bool {
-        self.knows(Fact::Gpt54Plus)
+    fn is_gpt_5_4_plus_model(&self, model: &str) -> bool {
+        self.knows(Fact::Gpt54Plus) && self.fact_model == model
     }
 
-    fn is_gpt_5_search_model(&self, _model: &str) -> bool {
-        self.knows(Fact::Gpt5Search)
+    fn is_gpt_5_search_model(&self, model: &str) -> bool {
+        self.knows(Fact::Gpt5Search) && self.fact_model == model
     }
 }
 
@@ -149,6 +171,13 @@ fn responses_info() -> Object {
 
 fn chat_info() -> Object {
     object(&[("mode", text("chat"))])
+}
+
+fn null_mode_info() -> Object {
+    object(&[
+        ("mode", JsonValue::Null),
+        ("litellm_provider", text("openai")),
+    ])
 }
 
 fn check(model_info: Object, model: &str) -> BridgeCheck {
@@ -224,6 +253,22 @@ fn prefix_sets_responses_mode_when_the_lookup_has_none() {
 }
 
 #[test]
+fn prefix_sets_responses_mode_when_the_mode_is_null() {
+    let fake = Fake::default().with_info(null_mode_info());
+    let request = bridge_request("responses/gpt-4o", "openai");
+    assert_eq!(
+        responses_api_bridge_check(&request, &fake),
+        check(
+            object(&[
+                ("mode", text("responses")),
+                ("litellm_provider", text("openai")),
+            ]),
+            "gpt-4o"
+        )
+    );
+}
+
+#[test]
 fn prefix_is_kept_when_the_lookup_names_a_mode() {
     let fake = Fake::default().with_info(chat_info());
     let request = bridge_request("responses/gpt-4o", "openai");
@@ -276,7 +321,19 @@ fn prefix_strips_every_responses_segment() {
 
 #[test]
 fn web_search_marks_xai_responses() {
-    let fake = Fake::default();
+    let fake = Fake::default().with_info(chat_info());
+    let options = JsonValue::Bool(true);
+    let mut request = bridge_request("grok-4", "xai");
+    request.web_search_options = Some(&options);
+    assert_eq!(
+        responses_api_bridge_check(&request, &fake),
+        check(responses_info(), "grok-4")
+    );
+}
+
+#[test]
+fn web_search_strips_the_prefix_with_an_existing_mode() {
+    let fake = Fake::default().with_info(chat_info());
     let options = JsonValue::Bool(true);
     let mut request = bridge_request("responses/grok-4", "xai");
     request.web_search_options = Some(&options);
@@ -310,7 +367,7 @@ fn web_search_xai_without_options_stays_on_chat() {
 
 #[test]
 fn gpt5_summary_with_effort_bridges() {
-    let fake = Fake::default().with(Fact::Gpt5);
+    let fake = Fake::default().with(Fact::Gpt5).accepting("gpt-5");
     let effort = ReasoningEffort::Text("medium".to_owned());
     let summary = text("auto");
     let mut request = bridge_request("gpt-5", "openai");
@@ -323,8 +380,25 @@ fn gpt5_summary_with_effort_bridges() {
 }
 
 #[test]
+fn gpt5_summary_with_effort_strips_the_prefix() {
+    let fake = Fake::default()
+        .with(Fact::Gpt5)
+        .with_info(chat_info())
+        .accepting("responses/gpt-5");
+    let effort = ReasoningEffort::Text("medium".to_owned());
+    let summary = text("auto");
+    let mut request = bridge_request("responses/gpt-5", "openai");
+    request.reasoning_effort = Some(&effort);
+    request.reasoning_summary = Some(&summary);
+    assert_eq!(
+        responses_api_bridge_check(&request, &fake),
+        check(responses_info(), "gpt-5")
+    );
+}
+
+#[test]
 fn gpt5_summary_without_effort_stays_on_chat() {
-    let fake = Fake::default().with(Fact::Gpt5);
+    let fake = Fake::default().with(Fact::Gpt5).accepting("gpt-5");
     let summary = text("auto");
     let mut request = bridge_request("gpt-5", "openai");
     request.reasoning_summary = Some(&summary);
@@ -336,7 +410,7 @@ fn gpt5_summary_without_effort_stays_on_chat() {
 
 #[test]
 fn gpt5_effort_without_summary_stays_on_chat() {
-    let fake = Fake::default().with(Fact::Gpt5);
+    let fake = Fake::default().with(Fact::Gpt5).accepting("gpt-5");
     let effort = ReasoningEffort::Text("medium".to_owned());
     let mut request = bridge_request("gpt-5", "openai");
     request.reasoning_effort = Some(&effort);
@@ -348,7 +422,10 @@ fn gpt5_effort_without_summary_stays_on_chat() {
 
 #[test]
 fn gpt5_search_models_stay_on_chat() {
-    let fake = Fake::default().with(Fact::Gpt5).with(Fact::Gpt5Search);
+    let fake = Fake::default()
+        .with(Fact::Gpt5)
+        .with(Fact::Gpt5Search)
+        .accepting("gpt-5-search");
     let effort = ReasoningEffort::Text("medium".to_owned());
     let summary = text("auto");
     let mut request = bridge_request("gpt-5-search", "openai");
@@ -362,7 +439,7 @@ fn gpt5_search_models_stay_on_chat() {
 
 #[test]
 fn gpt5_on_other_providers_stays_on_chat() {
-    let fake = Fake::default().with(Fact::Gpt5);
+    let fake = Fake::default().with(Fact::Gpt5).accepting("gpt-5");
     let effort = ReasoningEffort::Text("medium".to_owned());
     let summary = text("auto");
     let mut request = bridge_request("gpt-5", "anthropic");
@@ -379,7 +456,8 @@ fn gpt5_4_function_tools_with_unset_effort_on_openai_bridge() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::Gpt54Plus)
-        .on_base("https://api.openai.com/v1");
+        .on_base("https://api.openai.com/v1")
+        .accepting("gpt-5.4");
     let tools = [function_tool()];
     let mut request = bridge_request("gpt-5.4", "openai");
     request.tools = &tools;
@@ -390,11 +468,28 @@ fn gpt5_4_function_tools_with_unset_effort_on_openai_bridge() {
 }
 
 #[test]
+fn gpt5_4_function_tools_use_the_request_api_base() {
+    let fake = Fake::default()
+        .with(Fact::Gpt5)
+        .with(Fact::Gpt54Plus)
+        .accepting("gpt-5.4");
+    let tools = [function_tool()];
+    let mut request = bridge_request("gpt-5.4", "openai");
+    request.tools = &tools;
+    request.api_base = Some("https://chat.example.com/v1");
+    assert_eq!(
+        responses_api_bridge_check(&request, &fake),
+        check(Object::new(), "gpt-5.4")
+    );
+}
+
+#[test]
 fn gpt5_4_function_tools_with_unset_effort_on_a_custom_base_stay_on_chat() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::Gpt54Plus)
-        .on_base("https://chat.example.com/v1");
+        .on_base("https://chat.example.com/v1")
+        .accepting("gpt-5.4");
     let tools = [function_tool()];
     let mut request = bridge_request("gpt-5.4", "openai");
     request.tools = &tools;
@@ -409,7 +504,8 @@ fn gpt5_4_function_tools_with_an_explicit_effort_on_a_custom_base_bridge() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::Gpt54Plus)
-        .on_base("https://chat.example.com/v1");
+        .on_base("https://chat.example.com/v1")
+        .accepting("gpt-5.4");
     let tools = [function_tool()];
     let effort = ReasoningEffort::Text("low".to_owned());
     let mut request = bridge_request("gpt-5.4", "openai");
@@ -426,7 +522,8 @@ fn gpt5_4_function_tools_on_azure_bridge() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::Gpt54Plus)
-        .on_base("https://chat.example.com/v1");
+        .on_base("https://chat.example.com/v1")
+        .accepting("gpt-5.4");
     let tools = [function_tool()];
     let mut request = bridge_request("gpt-5.4", "azure");
     request.tools = &tools;
@@ -441,7 +538,8 @@ fn gpt5_4_function_tools_on_a_whitespace_base_bridge() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::Gpt54Plus)
-        .on_base("   ");
+        .on_base("   ")
+        .accepting("gpt-5.4");
     let tools = [function_tool()];
     let mut request = bridge_request("gpt-5.4", "openai");
     request.tools = &tools;
@@ -456,7 +554,8 @@ fn gpt5_custom_tools_stay_on_chat() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::Gpt54Plus)
-        .on_base("https://api.openai.com/v1");
+        .on_base("https://api.openai.com/v1")
+        .accepting("gpt-5.4");
     let tools = [tool(&[("type", text("custom")), ("name", text("grammar"))])];
     let mut request = bridge_request("gpt-5.4", "openai");
     request.tools = &tools;
@@ -471,7 +570,8 @@ fn gpt5_non_object_tools_are_not_function_tools() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::Gpt54Plus)
-        .on_base("https://api.openai.com/v1");
+        .on_base("https://api.openai.com/v1")
+        .accepting("gpt-5.4");
     let tools = [text("function")];
     let mut request = bridge_request("gpt-5.4", "openai");
     request.tools = &tools;
@@ -486,7 +586,8 @@ fn gpt5_4_function_tools_with_an_unparsable_base_stay_on_chat() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::Gpt54Plus)
-        .on_base("http://[::1");
+        .on_base("http://[::1")
+        .accepting("gpt-5.4");
     let tools = [function_tool()];
     let mut request = bridge_request("gpt-5.4", "openai");
     request.tools = &tools;
@@ -501,7 +602,8 @@ fn gpt5_effort_none_keeps_function_tools_on_chat() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::Gpt54Plus)
-        .on_base("https://api.openai.com/v1");
+        .on_base("https://api.openai.com/v1")
+        .accepting("gpt-5.4");
     let tools = [function_tool()];
     let effort = ReasoningEffort::Text("none".to_owned());
     let mut request = bridge_request("gpt-5.4", "openai");
@@ -518,7 +620,8 @@ fn gpt5_object_effort_none_with_summary_is_active() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::Gpt54Plus)
-        .on_base("https://api.openai.com/v1");
+        .on_base("https://api.openai.com/v1")
+        .accepting("gpt-5.4");
     let tools = [function_tool()];
     let effort = ReasoningEffort::Object(object(&[
         ("effort", text("none")),
@@ -538,7 +641,8 @@ fn gpt5_object_effort_none_without_summary_is_inactive() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::Gpt54Plus)
-        .on_base("https://api.openai.com/v1");
+        .on_base("https://api.openai.com/v1")
+        .accepting("gpt-5.4");
     let tools = [function_tool()];
     let effort = ReasoningEffort::Object(object(&[("effort", text("none"))]));
     let mut request = bridge_request("gpt-5.4", "openai");
@@ -554,7 +658,8 @@ fn gpt5_object_effort_none_without_summary_is_inactive() {
 fn gpt5_5_4_predicate_false_keeps_tools_on_chat() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
-        .on_base("https://api.openai.com/v1");
+        .on_base("https://api.openai.com/v1")
+        .accepting("gpt-5.1");
     let tools = [function_tool()];
     let mut request = bridge_request("gpt-5.1", "openai");
     request.tools = &tools;
@@ -569,7 +674,8 @@ fn gpt5_function_tools_need_an_object_payload_or_a_name() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::Gpt54Plus)
-        .on_base("https://api.openai.com/v1");
+        .on_base("https://api.openai.com/v1")
+        .accepting("gpt-5.4");
     let tools = [tool(&[
         ("type", text("function")),
         ("function", text("lookup")),
@@ -587,7 +693,8 @@ fn gpt5_a_named_function_tool_counts() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::Gpt54Plus)
-        .on_base("https://api.openai.com/v1");
+        .on_base("https://api.openai.com/v1")
+        .accepting("gpt-5.4");
     let tools = [tool(&[
         ("type", text("function")),
         ("name", text("lookup")),
@@ -602,13 +709,41 @@ fn gpt5_a_named_function_tool_counts() {
 
 #[test]
 fn foundry_rejecting_chat_bridges_function_tools() {
+    let base = "https://example.services.ai.azure.com/openai/v1";
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::FoundrySupportsResponses)
-        .with(Fact::FoundryChatRejectsTools);
+        .with(Fact::FoundryChatRejectsTools)
+        .accepting("gpt-5.6")
+        .at(Some(base))
+        .for_effort("medium");
     let tools = [function_tool()];
+    let effort = ReasoningEffort::Text("medium".to_owned());
     let mut request = bridge_request("gpt-5.6", "azure_ai");
     request.tools = &tools;
+    request.reasoning_effort = Some(&effort);
+    request.api_base = Some(base);
+    assert_eq!(
+        responses_api_bridge_check(&request, &fake),
+        check(responses_info(), "gpt-5.6")
+    );
+}
+
+#[test]
+fn foundry_strips_the_prefix_after_the_foundry_answers() {
+    let fake = Fake::default()
+        .with(Fact::Gpt5)
+        .with(Fact::FoundrySupportsResponses)
+        .with(Fact::FoundryChatRejectsTools)
+        .with_info(chat_info())
+        .accepting("responses/gpt-5.6")
+        .at(None)
+        .for_effort("medium");
+    let tools = [function_tool()];
+    let effort = ReasoningEffort::Text("medium".to_owned());
+    let mut request = bridge_request("responses/gpt-5.6", "azure_ai");
+    request.tools = &tools;
+    request.reasoning_effort = Some(&effort);
     assert_eq!(
         responses_api_bridge_check(&request, &fake),
         check(responses_info(), "gpt-5.6")
@@ -620,7 +755,8 @@ fn foundry_without_native_responses_stays_on_chat() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::Gpt54Plus)
-        .on_base("https://api.openai.com/v1");
+        .on_base("https://api.openai.com/v1")
+        .accepting("gpt-5.4");
     let tools = [function_tool()];
     let mut request = bridge_request("gpt-5.4", "azure_ai");
     request.tools = &tools;
@@ -635,7 +771,9 @@ fn foundry_uses_its_own_rule_instead_of_the_gpt_5_4_predicate() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::Gpt54Plus)
-        .with(Fact::FoundrySupportsResponses);
+        .with(Fact::FoundrySupportsResponses)
+        .accepting("gpt-5.4")
+        .at(None);
     let tools = [function_tool()];
     let mut request = bridge_request("gpt-5.4", "azure_ai");
     request.tools = &tools;
@@ -649,7 +787,9 @@ fn foundry_uses_its_own_rule_instead_of_the_gpt_5_4_predicate() {
 fn foundry_summary_with_effort_bridges_without_tools() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
-        .with(Fact::FoundrySupportsResponses);
+        .with(Fact::FoundrySupportsResponses)
+        .accepting("gpt-5.6")
+        .at(None);
     let effort = ReasoningEffort::Text("medium".to_owned());
     let summary = text("auto");
     let mut request = bridge_request("gpt-5.6", "azure_ai");
@@ -666,7 +806,10 @@ fn foundry_rejecting_tools_with_effort_none_stays_on_chat() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
         .with(Fact::FoundrySupportsResponses)
-        .with(Fact::FoundryChatRejectsTools);
+        .with(Fact::FoundryChatRejectsTools)
+        .accepting("gpt-5.6")
+        .at(None)
+        .for_effort("medium");
     let tools = [function_tool()];
     let effort = ReasoningEffort::Text("none".to_owned());
     let mut request = bridge_request("gpt-5.6", "azure_ai");

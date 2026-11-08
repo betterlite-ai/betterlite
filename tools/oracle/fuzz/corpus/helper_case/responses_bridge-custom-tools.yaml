@@ -10,7 +10,7 @@ call:
       api_base: https://api.openai.com/v1
     capabilities:
       resolved_openai_api_base: https://eu.api.openai.com/v1
-      gpt: {five: true}
+      gpt: {five: true, model: gpt-5.4}
       gpt_5_4_plus: true
 env: {}
 compare:

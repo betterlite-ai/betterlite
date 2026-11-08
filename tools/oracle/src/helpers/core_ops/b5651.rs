@@ -57,6 +57,13 @@ struct FoundryFacts {
     supports_native_responses: bool,
     #[serde(default)]
     chat_rejects_function_tools: bool,
+    // both Foundry answers apply only to this model, base and effort
+    #[serde(default)]
+    model: String,
+    #[serde(default)]
+    api_base: Option<String>,
+    #[serde(default)]
+    effort: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -66,6 +73,9 @@ struct GptFacts {
     five: bool,
     #[serde(default)]
     search: bool,
+    // all three GPT-5 name answers apply only to this model
+    #[serde(default)]
+    model: String,
 }
 
 impl ResponsesBridgeCapabilities for Facts {
@@ -82,32 +92,39 @@ impl ResponsesBridgeCapabilities for Facts {
         Ok(self.known_model_info.clone())
     }
 
-    fn resolved_openai_api_base(&self, _api_base: Option<&str>) -> String {
-        self.resolved_api_base.clone()
+    fn resolved_openai_api_base(&self, api_base: Option<&str>) -> String {
+        api_base.map_or_else(|| self.resolved_api_base.clone(), str::to_owned)
     }
 
-    fn foundry_supports_responses(&self, _model: &str, _api_base: Option<&str>) -> bool {
+    fn foundry_supports_responses(&self, model: &str, api_base: Option<&str>) -> bool {
         self.foundry.supports_native_responses
+            && self.foundry.model == model
+            && self.foundry.api_base.as_deref() == api_base
     }
 
     fn foundry_chat_rejects_tools(
         &self,
-        _model: &str,
-        _reasoning_effort: Option<&ReasoningEffort>,
+        model: &str,
+        reasoning_effort: Option<&ReasoningEffort>,
     ) -> bool {
+        let Some(ReasoningEffort::Text(effort)) = reasoning_effort else {
+            return false;
+        };
         self.foundry.chat_rejects_function_tools
+            && self.foundry.model == model
+            && self.foundry.effort.as_deref() == Some(effort.as_str())
     }
 
-    fn is_gpt_5_model(&self, _model: &str) -> bool {
-        self.gpt.five
+    fn is_gpt_5_model(&self, model: &str) -> bool {
+        self.gpt.five && self.gpt.model == model
     }
 
-    fn is_gpt_5_4_plus_model(&self, _model: &str) -> bool {
-        self.gpt_5_4_plus
+    fn is_gpt_5_4_plus_model(&self, model: &str) -> bool {
+        self.gpt_5_4_plus && self.gpt.model == model
     }
 
-    fn is_gpt_5_search_model(&self, _model: &str) -> bool {
-        self.gpt.search
+    fn is_gpt_5_search_model(&self, model: &str) -> bool {
+        self.gpt.search && self.gpt.model == model
     }
 }
 

@@ -3,13 +3,14 @@ name: responses-bridge-gpt5-summary
 call:
   b5651:
     request:
-      model: gpt-5
+      model: responses/gpt-5
       custom_llm_provider: openai
       reasoning_effort: medium
       reasoning_summary: auto
     capabilities:
+      model_info: {mode: chat}
       resolved_openai_api_base: https://api.openai.com/v1
-      gpt: {five: true}
+      gpt: {five: true, model: responses/gpt-5}
 env: {}
 compare:
   ignore: []

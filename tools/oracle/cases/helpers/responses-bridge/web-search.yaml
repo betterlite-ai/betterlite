@@ -3,10 +3,11 @@ name: responses-bridge-web-search
 call:
   b5651:
     request:
-      model: responses/grok-4
+      model: grok-4
       custom_llm_provider: xai
       web_search_options: {search_context_size: low}
     capabilities:
+      model_info: {mode: chat}
       resolved_openai_api_base: https://api.x.ai/v1
 env: {}
 compare:
