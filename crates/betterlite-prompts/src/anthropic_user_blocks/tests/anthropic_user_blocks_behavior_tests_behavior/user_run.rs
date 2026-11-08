@@ -1,8 +1,11 @@
 use std::collections::BTreeMap;
+use std::iter::repeat_with;
 
 use crate::anthropic_results::tool_result::ToolResultError;
 use crate::anthropic_user_blocks::error::UserBlocksError;
 use crate::anthropic_user_blocks::user_run::{UserBlockBuilder, UserRun};
+use crate::arguments::json::{Json, Object};
+use crate::media::limits::MAX_MESSAGE_PARTS;
 
 use super::{NoFileBlocks, RecordingBlocks, UrlMap, messages, object, url_map};
 
@@ -373,4 +376,33 @@ async fn anthropic_user_blocks_behavior_tests_behavior_the_source_messages_are_u
     };
     builder.convert(&input, 0).await.unwrap();
     assert_eq!(input, original);
+}
+
+#[tokio::test]
+async fn anthropic_user_blocks_behavior_tests_behavior_too_many_parts_are_refused_by_the_run() {
+    let parts = repeat_with(|| Json::Object(object(r#"{"type":"audio"}"#)))
+        .take(MAX_MESSAGE_PARTS + 1)
+        .collect::<Vec<_>>();
+    let input = vec![Json::Object(Object::from_iter([
+        ("role".to_owned(), Json::Text("user".to_owned())),
+        ("content".to_owned(), Json::List(parts)),
+    ]))];
+    let fetcher = UrlMap {
+        data_urls: BTreeMap::new(),
+    };
+    let blocks = NoFileBlocks;
+    let new_id = || GENERATED_ID.to_owned();
+    let builder = UserBlockBuilder {
+        force_base64: false,
+        fetcher: &fetcher,
+        blocks: &blocks,
+        new_id: &new_id,
+    };
+    let error = builder.convert(&input, 0).await.unwrap_err();
+    assert!(matches!(
+        error,
+        UserBlocksError::TooManyParts {
+            limit: MAX_MESSAGE_PARTS
+        }
+    ));
 }

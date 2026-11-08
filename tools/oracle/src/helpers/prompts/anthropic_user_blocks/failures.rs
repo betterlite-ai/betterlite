@@ -47,6 +47,7 @@ where
         | UserBlocksError::MissingRole { .. }
         | UserBlocksError::BlockNotObject { .. }
         | UserBlocksError::Field { .. }
+        | UserBlocksError::TooManyParts { .. }
         | UserBlocksError::MessageDecode { .. } => None,
     };
     failure(status, error)

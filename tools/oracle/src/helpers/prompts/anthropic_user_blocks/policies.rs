@@ -22,20 +22,12 @@ impl RemoteMediaFetcher for UrlSource<'_> {
         )
     }
 
-    fn convert_urls(
-        &self,
-        urls: &[String],
-    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
-        ready(
-            urls.iter()
-                .map(|url| {
-                    self.data_urls
-                        .get(url)
-                        .cloned()
-                        .ok_or_else(|| ImageFetchError::Attempts { url: url.clone() })
-                })
-                .collect(),
-        )
+    async fn convert_urls(&self, urls: &[String]) -> Result<Vec<String>, ImageFetchError> {
+        let mut resolved = Vec::with_capacity(urls.len());
+        for url in urls {
+            resolved.push(self.convert_url(url).await?);
+        }
+        Ok(resolved)
     }
 }
 

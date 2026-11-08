@@ -6,6 +6,7 @@ use crate::anthropic_results::images::create_anthropic_image_param;
 use crate::anthropic_results::tool_result::{FileBlocks, to_anthropic_tool_result};
 use crate::arguments::json::{Json, Object};
 use crate::media::inline::RemoteMediaFetcher;
+use crate::media::limits::MAX_MESSAGE_PARTS;
 use crate::message_content::Message;
 
 use super::error::UserBlocksError;
@@ -55,7 +56,7 @@ where
                 return Err(UserBlocksError::MissingRole { index });
             };
             match role {
-                USER => self.append_user_blocks(fields, index, &mut blocks).await?,
+                USER => blocks.extend(self.user_blocks(fields, index).await?),
                 TOOL | FUNCTION => blocks.push(self.tool_result(message, index).await?),
                 _ => break,
             }
@@ -67,40 +68,44 @@ where
         })
     }
 
-    async fn append_user_blocks(
+    async fn user_blocks(
         &self,
         fields: &Object,
         index: usize,
-        blocks: &mut Vec<Object>,
-    ) -> Result<(), UserBlocksError<Blocks::Failure>> {
-        match fields.get(CONTENT) {
-            Some(Json::List(parts)) => self.append_parts(parts, index, blocks).await,
-            Some(Json::Text(text)) => {
-                blocks.push(text_element(text, fields));
-                Ok(())
-            }
-            _ => Ok(()),
+    ) -> Result<Vec<Object>, UserBlocksError<Blocks::Failure>> {
+        let Some(content) = fields.get(CONTENT) else {
+            return Ok(Vec::new());
+        };
+        match content {
+            Json::List(parts) => self.parts_blocks(parts, index).await,
+            Json::Text(text) => Ok(vec![text_element(text, fields)]),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => Ok(Vec::new()),
         }
     }
 
-    async fn append_parts(
+    async fn parts_blocks(
         &self,
         parts: &[Json],
         index: usize,
-        blocks: &mut Vec<Object>,
-    ) -> Result<(), UserBlocksError<Blocks::Failure>> {
-        for (block, part) in parts.iter().enumerate() {
+    ) -> Result<Vec<Object>, UserBlocksError<Blocks::Failure>> {
+        if parts.len() > MAX_MESSAGE_PARTS {
+            return Err(UserBlocksError::TooManyParts {
+                limit: MAX_MESSAGE_PARTS,
+            });
+        }
+        let mut blocks = Vec::with_capacity(parts.len());
+        for (offset, part) in parts.iter().enumerate() {
             let Some(part_fields) = part.as_object() else {
                 return Err(UserBlocksError::BlockNotObject {
                     message: index,
-                    block,
+                    block: offset,
                 });
             };
-            if let Some(element) = self.part_block(part_fields, index, block).await? {
+            if let Some(element) = self.part_block(part_fields, index, offset).await? {
                 blocks.push(element);
             }
         }
-        Ok(())
+        Ok(blocks)
     }
 
     async fn part_block(
@@ -110,31 +115,26 @@ where
         block: usize,
     ) -> Result<Option<Object>, UserBlocksError<Blocks::Failure>> {
         let element = match part.get(TYPE).and_then(Json::as_str).unwrap_or_default() {
-            IMAGE_URL => self.image_block(part, message, block).await?,
+            IMAGE_URL => {
+                let Some(image_url) = part.get(IMAGE_URL) else {
+                    return Err(UserBlocksError::Field {
+                        message,
+                        block,
+                        field: IMAGE_URL,
+                    });
+                };
+                add_cache_control_to_content(
+                    create_anthropic_image_param(image_url, None, self.force_base64, self.fetcher)
+                        .await?,
+                    part,
+                )
+            }
             TEXT => text_block(part, message, block)?,
             DOCUMENT => add_cache_control_to_content(part.clone(), part),
             FILE => self.file_block(part).await?,
             _ => return Ok(None),
         };
         Ok(Some(element))
-    }
-
-    async fn image_block(
-        &self,
-        part: &Object,
-        message: usize,
-        block: usize,
-    ) -> Result<Object, UserBlocksError<Blocks::Failure>> {
-        let Some(image_url) = part.get(IMAGE_URL) else {
-            return Err(UserBlocksError::Field {
-                message,
-                block,
-                field: IMAGE_URL,
-            });
-        };
-        let element =
-            create_anthropic_image_param(image_url, None, self.force_base64, self.fetcher).await?;
-        Ok(add_cache_control_to_content(element, part))
     }
 
     async fn file_block(&self, part: &Object) -> Result<Object, UserBlocksError<Blocks::Failure>> {

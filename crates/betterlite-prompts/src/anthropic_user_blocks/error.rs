@@ -29,6 +29,8 @@ where
         block: usize,
         field: &'static str,
     },
+    #[error("a content list exceeds the maximum of {limit} parts")]
+    TooManyParts { limit: usize },
     #[error("message at index {index} cannot be read as an OpenAI message")]
     MessageDecode {
         index: usize,
