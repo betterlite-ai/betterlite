@@ -42,12 +42,6 @@ pub struct AdmissionStats {
     pub rejected_queue_timeout: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Rejection {
-    QueueFull,
-    QueueTimeout,
-}
-
 pub struct AdmissionControl {
     limits: Option<Limits>,
     semaphore: Arc<Semaphore>,
@@ -116,31 +110,29 @@ impl AdmissionControl {
             .is_ok()
     }
 
-    async fn admit(&self, limits: &Limits) -> Result<OwnedSemaphorePermit, Rejection> {
+    async fn admit(&self, limits: &Limits) -> Option<OwnedSemaphorePermit> {
         if let Ok(permit) = Arc::clone(&self.semaphore).try_acquire_owned() {
-            return Ok(permit);
+            return Some(permit);
         }
         let max_queued = u64::try_from(limits.max_queued_requests).unwrap_or(u64::MAX);
         if !self.reserve_queue_slot(max_queued) {
             self.rejected_queue_full.fetch_add(1, Ordering::AcqRel);
             self.rejected_total.fetch_add(1, Ordering::AcqRel);
-            return Err(Rejection::QueueFull);
+            return None;
         }
-        let mut slot = QueueSlot {
-            control: Some(self),
-        };
+        let slot = QueueSlot { control: self };
         let acquired = timeout(
             limits.queue_timeout,
             Arc::clone(&self.semaphore).acquire_owned(),
         )
         .await;
-        slot.finish();
+        drop(slot);
         if let Ok(Ok(permit)) = acquired {
-            return Ok(permit);
+            return Some(permit);
         }
         self.rejected_queue_timeout.fetch_add(1, Ordering::AcqRel);
         self.rejected_total.fetch_add(1, Ordering::AcqRel);
-        Err(Rejection::QueueTimeout)
+        None
     }
 }
 
@@ -151,20 +143,12 @@ fn decrement(counter: &AtomicU64) {
 }
 
 struct QueueSlot<'control> {
-    control: Option<&'control AdmissionControl>,
-}
-
-impl QueueSlot<'_> {
-    fn finish(&mut self) {
-        if let Some(control) = self.control.take() {
-            decrement(&control.queued);
-        }
-    }
+    control: &'control AdmissionControl,
 }
 
 impl Drop for QueueSlot<'_> {
     fn drop(&mut self) {
-        self.finish();
+        decrement(&self.control.queued);
     }
 }
 
@@ -242,9 +226,8 @@ async fn admit_request(
     if EXEMPT_PATHS.contains(&scalar_route_path(&request, &gate.scalar_root)) {
         return next.run(request).await;
     }
-    let permit = match control.admit(&limits).await {
-        Ok(permit) => permit,
-        Err(_rejection) => return overloaded(&control.stats()),
+    let Some(permit) = control.admit(&limits).await else {
+        return overloaded(&control.stats());
     };
     control.admitted.fetch_add(1, Ordering::AcqRel);
     let slot = AdmissionSlot {
