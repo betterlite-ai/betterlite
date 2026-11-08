@@ -1,20 +1,19 @@
 use std::time::Duration;
 
-use axum::http::Method;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::secret_read_dispatch::http_transport::HttpError;
+use crate::secret_read_dispatch::http_transport::{HttpError, HttpMethod};
 use crate::secret_read_dispatch::vault_http::VaultHttpTransport;
 use crate::vault::transport::{VaultMethod, VaultRequest, VaultTransport as _};
 
-use super::super::http_server::{Recorded, serve_fixed, serve_redirect, serve_slow};
+use super::super::exchange::{header, reply, scripted};
 
 const TOKEN: &str = "vault-token";
 
-fn request(url: String) -> VaultRequest {
+fn request(path: &str) -> VaultRequest {
     VaultRequest {
         method: VaultMethod::Get,
-        url,
+        url: format!("http://127.0.0.1:8200{path}"),
         token: Some(SecretString::from(TOKEN)),
         namespace: None,
         body: None,
@@ -25,41 +24,39 @@ fn request(url: String) -> VaultRequest {
     }
 }
 
-fn header<'record>(request: &'record Recorded, name: &str) -> Option<&'record str> {
-    let value = request.headers.get(name)?;
-    value.to_str().ok()
-}
-
 #[tokio::test]
 async fn vault_http_transport_sends_the_token_and_namespace() {
-    let (server, recorder) = serve_fixed(200, "{\"ok\":true}");
-    let transport = VaultHttpTransport::default();
-    let mut call = request(server.url("/v1/secret/data/db"));
+    let (exchange, recorder) = scripted(vec![Ok(reply(200, b"{\"ok\":true}"))]);
+    let transport = VaultHttpTransport { exchange };
+    let mut call = request("/v1/secret/data/db");
     call.namespace = Some("team".to_owned());
     let response = transport.send(call).await.expect("a successful reply");
     assert_eq!(response.status, 200);
     assert_eq!(response.body.expose_secret(), "{\"ok\":true}");
-    let requests = recorder.all();
+    let requests = recorder.requests();
     assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].method, Method::GET);
-    assert_eq!(requests[0].path, "/v1/secret/data/db");
+    assert_eq!(requests[0].method, HttpMethod::Get);
+    assert_eq!(requests[0].url, "http://127.0.0.1:8200/v1/secret/data/db");
     assert_eq!(header(&requests[0], "x-vault-token"), Some(TOKEN));
     assert_eq!(header(&requests[0], "x-vault-namespace"), Some("team"));
+    assert_eq!(requests[0].timeout, Duration::from_secs(5));
+    assert!(requests[0].follow_redirects);
+    assert!(requests[0].verify_tls);
+    assert_eq!(requests[0].max_response_bytes, 1024);
 }
 
 #[tokio::test]
 async fn vault_http_transport_posts_a_json_body() {
-    let (server, recorder) = serve_fixed(200, "{}");
-    let transport = VaultHttpTransport::default();
-    let mut call = request(server.url("/v1/auth/approle/login"));
+    let (exchange, recorder) = scripted(vec![Ok(reply(200, b"{}"))]);
+    let transport = VaultHttpTransport { exchange };
+    let mut call = request("/v1/auth/approle/login");
     call.method = VaultMethod::Post;
     call.body = Some(SecretString::from("{\"role_id\":\"id\"}"));
     let response = transport.send(call).await.expect("a successful reply");
     assert_eq!(response.status, 200);
-    let requests = recorder.all();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].method, Method::POST);
-    assert_eq!(requests[0].body, "{\"role_id\":\"id\"}");
+    let requests = recorder.requests();
+    assert_eq!(requests[0].method, HttpMethod::Post);
+    assert_eq!(requests[0].body.as_deref(), Some("{\"role_id\":\"id\"}"));
     assert_eq!(
         header(&requests[0], "content-type"),
         Some("application/json")
@@ -67,10 +64,21 @@ async fn vault_http_transport_posts_a_json_body() {
 }
 
 #[tokio::test]
+async fn vault_http_transport_maps_the_delete_method() {
+    let (exchange, recorder) = scripted(vec![Ok(reply(204, b""))]);
+    let transport = VaultHttpTransport { exchange };
+    let mut call = request("/v1/secret/data/db");
+    call.method = VaultMethod::Delete;
+    let response = transport.send(call).await.expect("a successful reply");
+    assert_eq!(response.status, 204);
+    assert_eq!(recorder.requests()[0].method, HttpMethod::Delete);
+}
+
+#[tokio::test]
 async fn vault_http_transport_rejects_an_oversize_reply() {
-    let (server, _) = serve_fixed(200, &"x".repeat(64));
-    let transport = VaultHttpTransport::default();
-    let mut call = request(server.url("/v1/secret/data/db"));
+    let (exchange, _) = scripted(vec![Ok(reply(200, &[b'x'; 64]))]);
+    let transport = VaultHttpTransport { exchange };
+    let mut call = request("/v1/secret/data/db");
     call.max_response_bytes = 16;
     let error = transport
         .send(call)
@@ -80,56 +88,24 @@ async fn vault_http_transport_rejects_an_oversize_reply() {
 }
 
 #[tokio::test]
-async fn vault_http_transport_times_out() {
-    let (server, _) = serve_slow(Duration::from_millis(500), "{}");
-    let transport = VaultHttpTransport::default();
-    let mut call = request(server.url("/v1/secret/data/db"));
-    call.timeout = Duration::from_millis(50);
+async fn vault_http_transport_surfaces_an_exchange_failure() {
+    let (exchange, _) = scripted(vec![Err(HttpError::Timeout)]);
+    let transport = VaultHttpTransport { exchange };
     let error = transport
-        .send(call)
+        .send(request("/v1/secret/data/db"))
         .await
-        .expect_err("a slow reply should time out");
+        .expect_err("a timeout should fail");
     assert!(matches!(error, HttpError::Timeout));
-}
-
-#[tokio::test]
-async fn vault_http_transport_honours_follow_redirects() {
-    let (server, recorder) = serve_redirect("/second", "moved", "final");
-    let transport = VaultHttpTransport::default();
-    let followed = transport
-        .send(request(server.url("/first")))
-        .await
-        .expect("a followed redirect");
-    assert_eq!(followed.status, 200);
-    assert_eq!(followed.body.expose_secret(), "final");
-    let mut unfollowed_call = request(server.url("/first"));
-    unfollowed_call.follow_redirects = false;
-    let unfollowed = transport
-        .send(unfollowed_call)
-        .await
-        .expect("an unfollowed redirect");
-    assert_eq!(unfollowed.status, 302);
-    assert_eq!(unfollowed.body.expose_secret(), "moved");
-    assert_eq!(recorder.all().len(), 3);
 }
 
 #[test]
 fn vault_http_transport_reads_blocking() {
-    let (server, recorder) = serve_fixed(200, "blocking-body");
-    let transport = VaultHttpTransport::default();
+    let (exchange, recorder) = scripted(vec![Ok(reply(200, b"blocking-body"))]);
+    let transport = VaultHttpTransport { exchange };
     let response = transport
-        .send_blocking(request(server.url("/v1/secret/data/db")))
+        .send_blocking(request("/v1/secret/data/db"))
         .expect("a successful reply");
     assert_eq!(response.status, 200);
     assert_eq!(response.body.expose_secret(), "blocking-body");
-    assert_eq!(recorder.all().len(), 1);
-}
-
-#[tokio::test]
-async fn vault_http_transport_refuses_blocking_inside_a_runtime() {
-    let transport = VaultHttpTransport::default();
-    let error = transport
-        .send_blocking(request("http://127.0.0.1:1/v1/secret/data/db".to_owned()))
-        .expect_err("blocking inside a runtime should fail");
-    assert!(matches!(error, HttpError::BlockingInAsyncRuntime));
+    assert_eq!(recorder.requests().len(), 1);
 }

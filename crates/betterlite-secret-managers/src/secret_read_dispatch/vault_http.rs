@@ -1,17 +1,18 @@
-use reqwest::Method;
+use std::sync::Arc;
+
 use secrecy::ExposeSecret as _;
 
-use super::http_transport::{self, AsyncClients, BlockingClients, HttpError, Request};
+use super::http_transport::{
+    HttpError, HttpExchange, HttpMethod, HttpRequest, HttpResponse, into_reply,
+};
 use crate::vault::transport::{VaultMethod, VaultRequest, VaultResponse, VaultTransport};
 
-#[derive(Default)]
 pub struct VaultHttpTransport {
-    async_clients: AsyncClients,
-    blocking_clients: BlockingClients,
+    pub exchange: Arc<dyn HttpExchange>,
 }
 
 impl VaultHttpTransport {
-    fn call(request: &VaultRequest) -> Request {
+    fn call(request: &VaultRequest) -> HttpRequest {
         let mut headers = Vec::with_capacity(3);
         if let Some(token) = request.token.as_ref() {
             headers.push(("x-vault-token", token.expose_secret().to_owned()));
@@ -22,7 +23,7 @@ impl VaultHttpTransport {
         if request.body.is_some() {
             headers.push(("content-type", "application/json".to_owned()));
         }
-        Request {
+        HttpRequest {
             method: method(request.method),
             url: request.url.clone(),
             headers,
@@ -39,31 +40,38 @@ impl VaultHttpTransport {
     }
 }
 
-const fn method(method: VaultMethod) -> Method {
+const fn method(method: VaultMethod) -> HttpMethod {
     match method {
-        VaultMethod::Get => Method::GET,
-        VaultMethod::Post => Method::POST,
-        VaultMethod::Delete => Method::DELETE,
+        VaultMethod::Get => HttpMethod::Get,
+        VaultMethod::Post => HttpMethod::Post,
+        VaultMethod::Delete => HttpMethod::Delete,
     }
 }
 
-fn vault_response(reply: http_transport::Reply) -> VaultResponse {
-    VaultResponse {
+fn vault_response(response: HttpResponse, limit: usize) -> Result<VaultResponse, HttpError> {
+    let reply = into_reply(response, limit)?;
+    Ok(VaultResponse {
         status: reply.status,
         body: reply.body,
-    }
+    })
 }
 
 impl VaultTransport for VaultHttpTransport {
     type Error = HttpError;
 
     async fn send(&self, request: VaultRequest) -> Result<VaultResponse, HttpError> {
-        let reply = http_transport::send(Self::call(&request), &self.async_clients).await?;
-        Ok(vault_response(reply))
+        let limit = request.max_response_bytes;
+        let response = self.exchange.send(Self::call(&request)).await?;
+        let answer = into_reply(response, limit)?;
+        Ok(VaultResponse {
+            status: answer.status,
+            body: answer.body,
+        })
     }
 
     fn send_blocking(&self, request: VaultRequest) -> Result<VaultResponse, HttpError> {
-        let reply = http_transport::send_blocking(Self::call(&request), &self.blocking_clients)?;
-        Ok(vault_response(reply))
+        let limit = request.max_response_bytes;
+        let response = self.exchange.send_blocking(Self::call(&request))?;
+        vault_response(response, limit)
     }
 }

@@ -1,16 +1,17 @@
-use reqwest::Method;
+use std::sync::Arc;
+
 use secrecy::ExposeSecret as _;
 
-use super::http_transport::{self, AsyncClients, BlockingClients, HttpError, Request};
-use crate::cyberark::transport::{ConjurRequest, ConjurResponse, ConjurTransport, HttpMethod};
+use super::http_transport::{self, HttpError, HttpExchange, HttpMethod, HttpRequest, into_reply};
+use crate::cyberark::transport::{
+    ConjurRequest, ConjurResponse, ConjurTransport, HttpMethod as ConjurMethod,
+};
 
-#[derive(Default)]
 pub struct ConjurHttpTransport {
-    async_clients: AsyncClients,
-    blocking_clients: BlockingClients,
+    pub exchange: Arc<dyn HttpExchange>,
 }
 
-fn spec(request: ConjurRequest<'_>) -> Request {
+fn spec(request: ConjurRequest<'_>) -> HttpRequest {
     let mut headers = Vec::with_capacity(2);
     if let Some(authorization) = request.authorization {
         headers.push(("authorization", authorization.expose_secret().to_owned()));
@@ -18,7 +19,7 @@ fn spec(request: ConjurRequest<'_>) -> Request {
     if let Some(content_type) = request.content_type {
         headers.push(("content-type", content_type.to_owned()));
     }
-    Request {
+    HttpRequest {
         method: method(request.method),
         url: request.url,
         headers,
@@ -31,30 +32,35 @@ fn spec(request: ConjurRequest<'_>) -> Request {
     }
 }
 
-const fn method(method: HttpMethod) -> Method {
+const fn method(method: ConjurMethod) -> HttpMethod {
     match method {
-        HttpMethod::Get => Method::GET,
-        HttpMethod::Post => Method::POST,
+        ConjurMethod::Get => HttpMethod::Get,
+        ConjurMethod::Post => HttpMethod::Post,
     }
 }
 
-fn conjur_response(reply: http_transport::Reply) -> ConjurResponse {
-    ConjurResponse {
+fn conjur_response(response: http_transport::HttpResponse) -> Result<ConjurResponse, HttpError> {
+    let reply = into_reply(response, http_transport::MAX_RESPONSE_BYTES)?;
+    Ok(ConjurResponse {
         status: reply.status,
         body: reply.body,
-    }
+    })
 }
 
 impl ConjurTransport for ConjurHttpTransport {
     type Error = HttpError;
 
     async fn send(&self, request: ConjurRequest<'_>) -> Result<ConjurResponse, HttpError> {
-        let reply = http_transport::send(spec(request), &self.async_clients).await?;
-        Ok(conjur_response(reply))
+        let response = self.exchange.send(spec(request)).await?;
+        let answer = into_reply(response, http_transport::MAX_RESPONSE_BYTES)?;
+        Ok(ConjurResponse {
+            status: answer.status,
+            body: answer.body,
+        })
     }
 
     fn send_blocking(&self, request: ConjurRequest<'_>) -> Result<ConjurResponse, HttpError> {
-        let reply = http_transport::send_blocking(spec(request), &self.blocking_clients)?;
-        Ok(conjur_response(reply))
+        let response = self.exchange.send_blocking(spec(request))?;
+        conjur_response(response)
     }
 }
