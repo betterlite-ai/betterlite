@@ -449,7 +449,7 @@ async fn an_unusable_key_next_to_a_good_one_is_skipped() {
     let key = idp_key();
     let entry = &get_jwks(&key).keys[0];
     let jwks = format!(
-        r#"{{"keys":[{{"kty":"RSA","alg":"RSA-OAEP","use":"enc","kid":"encryption","n":"{}","e":"{}"}},{{"kty":"RSA","alg":"ML-DSA-44","kid":"post-quantum","n":"{}","e":"{}"}},{}]}}"#,
+        r#"{{"keys":[{{"kty":"RSA","alg":"RSA-OAEP","use":"enc","kid":"encryption","n":"{}","e":"{}"}},{{"kty":"RSA","alg":"ML-DSA-44","kid":"post-quantum","n":"{}","e":"{}"}},{{"kty":"EC","crv":"P-521","kid":"es512","x":"AQAB","y":"AQAB"}},{}]}}"#,
         entry.modulus,
         entry.exponent,
         entry.modulus,
