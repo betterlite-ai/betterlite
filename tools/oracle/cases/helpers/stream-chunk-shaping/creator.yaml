@@ -16,7 +16,7 @@ call:
         chunk: {id: chatcmpl-first, created: 100, content: hi, index: 3}
         hidden_params: {provider_response_model: m2, model_id: caller-id, custom_llm_provider: caller}
       - op: creator
-        chunk: {id: chatcmpl-second, created: 999, choices: [{index: 2, delta: {content: z}}], usage: {prompt_tokens: 3, completion_tokens: 4}}
+        chunk: {id: chatcmpl-second, created: 999, object: other, choices: [{index: 2, delta: {content: z}}], usage: {prompt_tokens: 3, completion_tokens: 4}}
       - op: set_model_id
         id: chatcmpl-provider
         chunk:

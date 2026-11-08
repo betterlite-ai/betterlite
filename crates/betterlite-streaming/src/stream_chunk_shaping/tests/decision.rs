@@ -524,6 +524,18 @@ fn thinking_first_visible_content_closes_the_tag_once() {
 }
 
 #[test]
+fn thinking_open_block_keeps_an_empty_content_untouched() {
+    let mut shaper = shaper("gpt-4", Some("openai"));
+    shaper.merge_reasoning_in_choices = true;
+    shaper.thinking.sent_first_block = true;
+    let mut response = chunk("c", 1);
+    response.choices = vec![choice(content_delta(""))];
+    combine_thinking_in_choices(&mut shaper, &mut response);
+    assert_eq!(response.choices[0].delta.content.as_deref(), Some(""));
+    assert!(!shaper.thinking.sent_last_block);
+}
+
+#[test]
 fn thinking_merge_disabled_keeps_the_reasoning_content() {
     let mut shaper = shaper("gpt-4", Some("openai"));
     let mut response = chunk("c", 1);

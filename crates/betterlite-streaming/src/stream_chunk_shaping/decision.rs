@@ -104,7 +104,12 @@ pub fn combine_thinking_in_choices(shaper: &mut ChunkShaper, model_response: &mu
     if !shaper.thinking.sent_first_block || shaper.thinking.sent_last_block {
         return;
     }
-    let Some(visible) = choice.delta.content.take().filter(|text| !text.is_empty()) else {
+    let Some(visible) = choice
+        .delta
+        .content
+        .as_deref()
+        .filter(|text| !text.is_empty())
+    else {
         return;
     };
     choice.delta.content = Some(format!("</think>{visible}"));

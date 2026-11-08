@@ -23,6 +23,7 @@ fn creator_keeps_one_id_created_and_fingerprint_across_the_stream() {
     assert_eq!(second.created, 100);
     assert_eq!(second.system_fingerprint.as_deref(), Some("fp-1"));
     assert_eq!(second.object, "chat.completion.chunk");
+    assert!(!second.extra.contains_key("object"));
 }
 
 #[test]

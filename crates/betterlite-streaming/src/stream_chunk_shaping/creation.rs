@@ -34,6 +34,7 @@ pub fn model_response_creator(
             let mut filtered = object.clone();
             filtered.remove("model");
             filtered.remove("stream");
+            filtered.remove("object");
             from_value(to_value(JsonValue::Object(filtered))?)?
         }
     };
