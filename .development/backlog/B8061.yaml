@@ -1,0 +1,14 @@
+id: B8061
+milestone: M12 python
+title: Python model info, max tokens and the model cost map functions
+status: todo
+depends_on: [B5369, B157, B158, B193, B194, B205, B257]
+file: tasks/B8061-python-model-info.yaml
+covers:
+  - "litellm/litellm_core_utils/get_model_cost_map.py"
+parent: B166
+split_from: B166
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

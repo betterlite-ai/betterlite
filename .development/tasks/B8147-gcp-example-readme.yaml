@@ -1,0 +1,90 @@
+id: B8147
+title: "GCP Terraform module: example root and README"
+description: >-
+  Add the runnable example and the README for the GCP module in packaging/terraform/gcp/. The module (B8144, B8145, B8146) has no provider block, so the example root configures the google provider.
+
+  packaging/terraform/gcp/examples/default/ holds: versions.tf (required_version ">= 1.13.0", google "~> 6.0", random "~> 3.6"), providers.tf (one provider "google" block with project = var.project_id and region = var.region), variables.tf (project_id with no default,
+  region "us-central1", tenant "demo", env "dev", image with no default, litellm_master_key sensitive with no default, lb_domains default [], allow_plaintext_lb default false), main.tf (one module "betterlite" with source = "../.." passing those through),
+  outputs.tf (lb_url, lb_ip, service_url, migration_job_name and cloud_run_service_name from the module), terraform.tfvars.example (every variable with a sample value, master key "sk-change-me" with a comment to replace it), a .terraform.lock.hcl made with
+  `terraform providers lock -platform=linux_amd64 -platform=linux_arm64 -platform=darwin_arm64`, deploystack.json (name, title, description, duration, and the project_id, region, image and litellm_master_key fields in the Cloud Shell deploy format that LiteLLM's example uses)
+  and TUTORIAL.md (a short Cloud Shell walk through: set project, enable the APIs, copy tfvars, init, apply, curl lb_url/health/readiness; plain steps, no secret values).
+
+  packaging/terraform/gcp/README.md has these sections in this order: what the module builds (VPC or your own, Cloud SQL writer and reader, Memorystore, one Cloud Run service, a migration job, an external HTTPS load balancer, two buckets, Secret Manager entries);
+  Quick start (five numbered steps, same shape as the AWS README); Inputs (a table per file, copied from the variables files); Outputs; Deps-only mode (create_runtime = false); Bring your own network (network_id and create_psa_connection); TLS (lb_domains,
+  allow_plaintext_lb, the certificate takes a while to turn ACTIVE); Migration order (the job runs `betterlite-db-admin migrate` through gcloud before the service starts, so the applying machine needs the gcloud CLI and a login); Connection pool; Redis
+  transit encryption (default off, TLS not supported until betterlite reads a server CA file); Not built compared with LiteLLM (collector and metrics sidecars, billing metrics, separate backend and ui services); Tests (`terraform -chdir=packaging/terraform/gcp test`).
+  The README names no secret value and no real project id.
+
+scope:
+  paths:
+    - packaging/terraform/gcp/examples/**
+    - packaging/terraform/gcp/README.md
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/examples/default
+    why: The example files, deploystack.json and TUTORIAL.md to port, trimmed to one service.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/README.md
+    why: README sections and tables.
+
+dod:
+  - text: The example root has the nine files listed and the provider block is only in the example.
+    proof: [gcp-example-layout, gcp-example-provider]
+  - text: The example passes fmt, init with the locked providers and validate, and deploystack.json is valid JSON.
+    proof: [gcp-example-validate, gcp-example-json]
+  - text: The README has the listed sections and every module input and output name appears in it.
+    proof: [gcp-readme-sections, gcp-readme-names]
+
+checks:
+  optional: []
+  commands:
+    - id: gcp-example-layout
+      why: An example file is missing.
+      run: >-
+        for f in versions.tf providers.tf variables.tf main.tf outputs.tf terraform.tfvars.example .terraform.lock.hcl deploystack.json TUTORIAL.md; do test -f "packaging/terraform/gcp/examples/default/$f" || { echo "missing $f"; exit 1; }; done
+    - id: gcp-example-provider
+      why: The provider block is in the module or missing from the example.
+      run: >-
+        grep -q '^provider "google"' packaging/terraform/gcp/examples/default/providers.tf && ! grep -rq '^provider "' --include='*.tf' packaging/terraform/gcp --exclude-dir=examples --exclude-dir=.terraform
+    - id: gcp-example-validate
+      why: The example does not format, initialize or validate.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/gcp-example" TF_IN_AUTOMATION=1 && terraform -chdir=packaging/terraform/gcp/examples/default fmt -check -diff &&
+        terraform -chdir=packaging/terraform/gcp/examples/default init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/gcp/examples/default validate
+    - id: gcp-example-json
+      why: deploystack.json is not valid JSON.
+      run: >-
+        jq -e . packaging/terraform/gcp/examples/default/deploystack.json > /dev/null
+    - id: gcp-readme-sections
+      why: A README section is missing.
+      run: >-
+        for s in 'Quick start' 'Inputs' 'Outputs' 'Deps-only' 'Bring your own' 'TLS' 'Migration' 'Connection pool' 'Redis' 'Not built' 'Tests'; do grep -q "^## .*$s" packaging/terraform/gcp/README.md || { echo "missing section $s"; exit 1; }; done
+    - id: gcp-readme-names
+      why: A module variable or output is not in the README.
+      run: >-
+        for f in packaging/terraform/gcp/variables*.tf; do for n in $(grep -o '^variable "[a-z_0-9]*"' "$f" | cut -d'"' -f2); do grep -q "\`$n\`" packaging/terraform/gcp/README.md || { echo "README lacks variable $n"; exit 1; }; done; done;
+        for n in $(grep -o '^output "[a-z_0-9]*"' packaging/terraform/gcp/outputs.tf | cut -d'"' -f2); do grep -q "\`$n\`" packaging/terraform/gcp/README.md || { echo "README lacks output $n"; exit 1; }; done
+
+oracle_cases: []
+
+deviations:
+  - what: One module call with a single service and image variable that has no default.
+    why: The module runs one service and there is no published betterlite image name yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/examples/default/main.tf
+
+out_of_scope:
+  - "A GitHub Actions workflow that runs these checks."
+  - "The AWS example and README. Owned by B8143."
+  - "The root packaging/terraform/README.md. Owned by B154."
+
+pitfalls:
+  - "The lock file must come from `terraform providers lock` for the three platforms, never by hand."
+  - "`jq` is pinned in checks.yaml; use it for the JSON check, not python."
+  - "Never put a real master key or project id in terraform.tfvars.example, deploystack.json or TUTORIAL.md."
+  - "The README checks read the variables files by glob, so a variable added later also needs a README row."
+
+review_level: standard
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

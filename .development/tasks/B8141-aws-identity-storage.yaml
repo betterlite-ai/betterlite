@@ -1,0 +1,170 @@
+id: B8141
+title: "AWS Terraform module: secrets, IAM, bucket, cluster and database bootstrap"
+description: >-
+  Add the identity and storage layer to the AWS module started by B8140, in packaging/terraform/aws/: Secrets Manager secrets, the ECS task roles,
+  the S3 bucket that also holds the proxy config, the ECS cluster with its log groups, and the one-off task that creates the IAM-authenticated
+  database user. Nothing here starts betterlite; B8142 does. After this part `terraform validate` passes with the B8140 files.
+
+  variables_identity.tf declares litellm_master_key (string, sensitive, default ""), litellm_license (same), ui_password (same), extra_secrets
+  (map(string), {}: environment variable name to a Secrets Manager ARN, optionally with a JSON key suffix as ECS allows),
+  otel_headers_secret_arn (string, ""), proxy_config (any, {}), s3_force_destroy (bool, false) and log_retention_days (number, 30).
+  LiteLLM has gateway_extra_secrets and backend_extra_secrets; betterlite has one service, so there is one extra_secrets.
+
+  secrets.tf: random_password.master_key (48 characters, no special, at least 4 lower, upper and numeric) and aws_secretsmanager_secret.master_key named
+  "${local.name}-master-key" with recovery_window_in_days 0 and a version whose value is coalesce(var.litellm_master_key, "sk-${random_password.master_key.result}").
+  Optional secrets with a count: license (named "-license", only when litellm_license is not empty), ui_password ("-ui-password"), db_master_password
+  ("-db-master-password", when create_database, holding JSON with username, password, host, port and dbname), database_url ("-database-url", when local.byo_database)
+  and redis_url ("-redis-url", when local.byo_redis). Each secret has a secret_version resource. Tags are local.tags.
+
+  iam.tf: data.aws_iam_policy_document.task_assume (ecs-tasks.amazonaws.com), aws_iam_role.task_execution with the AWS-managed AmazonECSTaskExecutionRolePolicy attached, aws_iam_policy.secrets_access
+  with secretsmanager:GetSecretValue on the master key, license, ui_password, database_url and redis_url secrets, the ARNs in var.extra_secrets (the first seven colon-separated
+  fields, so a JSON-key suffix is stripped) and var.otel_headers_secret_arn when set, attached to the execution role. aws_iam_role.task is the runtime role. When create_database it gets an
+  rds-db:connect policy for arn:aws:rds-db:<region>:<account>:dbuser:<cluster_resource_id>/<db_username>, built from data.aws_caller_identity.current.
+  s3.tf: random_id.s3_suffix (4 bytes), aws_s3_bucket.this named "${local.name}-${suffix}" with force_destroy = var.s3_force_destroy, versioning enabled, AES256 default encryption, all four public
+  access block flags true, and an s3_access policy (ListBucket and GetBucketLocation on the bucket; GetObject, PutObject, DeleteObject, AbortMultipartUpload, ListMultipartUploadParts on its objects) attached to the task role.
+  aws_s3_object.proxy_config exists only when proxy_config has keys: key "config/config.yaml", content yamlencode(var.proxy_config), content_type "application/yaml".
+  ecs_cluster.tf: aws_ecs_cluster.this named local.name with containerInsights enabled, and log groups "/ecs/${local.name}/betterlite", ".../migrations" (when database_enabled) and
+  ".../bootstrap-db" (when create_database), all with retention var.log_retention_days.
+
+  bootstrap.tf ports the Aurora user bootstrap. With create_database it adds a policy letting the execution role read the db_master_password secret, a Fargate task definition aws_ecs_task_definition.bootstrap_db
+  (256 CPU, 512 MiB, image postgres:16-alpine, PG* variables from the cluster, PGPASSWORD from the secret's password key, command that pipes BOOTSTRAP_SQL into psql with ON_ERROR_STOP=1) and
+  terraform_data.bootstrap_db. The SQL creates var.db_username if it does not exist, grants rds_iam, all privileges on the database and schema public, and default privileges on tables and sequences.
+  The terraform_data resource has a local-exec step that runs the task with the aws CLI, waits for it to stop, reads the container exit code and fails the apply when it is not 0. It runs on apply only and
+  tests never reach it.
+
+  Tests, in tests/identity.tftest.hcl and tests/bootstrap.tftest.hcl with mocked aws and random providers (the aws mock overrides aws_iam_policy_document json with a parsable policy, and aws_rds_cluster
+  with a cluster_resource_id): identity.tftest.hcl checks that an empty litellm_master_key still yields a secret version starting with "sk-" (the value is the mocked random result), that an empty license and ui_password create no
+  secrets, that the secrets_access policy document is built from the expected ARN list, and that proxy_config = {} creates no S3 object while a non-empty map does. bootstrap.tftest.hcl checks that create_database = true
+  gives one bootstrap task definition and one terraform_data, and create_database = false with a database_url gives none.
+
+scope:
+  paths:
+    - packaging/terraform/aws/variables_identity.tf
+    - packaging/terraform/aws/secrets.tf
+    - packaging/terraform/aws/iam.tf
+    - packaging/terraform/aws/s3.tf
+    - packaging/terraform/aws/ecs_cluster.tf
+    - packaging/terraform/aws/bootstrap.tf
+    - packaging/terraform/aws/tests/identity.tftest.hcl
+    - packaging/terraform/aws/tests/bootstrap.tftest.hcl
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/secrets.tf
+    why: Secret names, which ones are conditional, the master key generation and the bootstrap-only master password secret.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/iam.tf
+    why: Task roles, the secrets policy with the ARN trimming local, and the rds-db:connect policy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/s3.tf
+    why: Bucket hardening, the access policy and the uploaded proxy config object.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/bootstrap.tf
+    why: The bootstrap SQL, the Fargate psql task and the apply-time runner (the migration runner in the same file belongs to B8142).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/ecs.tf#L1-L36
+    why: Cluster and log group definitions.
+  - url: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/secrets-envvar-secrets-manager.html
+    why: The valueFrom ARN forms with a JSON key suffix that the ARN-trimming local has to handle.
+
+dod:
+  - text: variables_identity.tf declares the eight variables with the stated types and defaults, the three secret strings marked sensitive.
+    proof: [aws-identity-variables]
+  - text: The master key secret always exists and falls back to a generated sk- key; license, ui_password, database_url and redis_url secrets exist only when their input is set.
+    proof: [aws-identity-tests, aws-secret-literals]
+  - text: The execution role reads only the listed secrets, the task role gets the S3 and rds-db:connect policies, and extra secret ARNs are trimmed to their first seven fields.
+    proof: [aws-identity-tests, aws-iam-literals]
+  - text: The bucket is versioned, encrypted and blocks public access, and the proxy config object appears only when proxy_config has keys.
+    proof: [aws-identity-tests, aws-bucket-literals]
+  - text: The ECS cluster and the three log groups exist with the retention variable.
+    proof: [aws-cluster-literals]
+  - text: The bootstrap task and runner exist only with create_database, create the IAM user with the stated SQL and fail the apply on a non-zero exit code.
+    proof: [aws-bootstrap-tests, aws-bootstrap-literals]
+  - text: The module still passes fmt and validate with B8140's files.
+    proof: [aws-fmt, aws-validate]
+
+checks:
+  optional: []
+  commands:
+    - id: aws-fmt
+      why: A Terraform file is not formatted the way terraform fmt writes it.
+      run: >-
+        test -f packaging/terraform/aws/secrets.tf && terraform -chdir=packaging/terraform/aws fmt -check -recursive -diff
+    - id: aws-validate
+      why: The module does not validate with the new files.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/aws" TF_IN_AUTOMATION=1 && test -f packaging/terraform/aws/bootstrap.tf &&
+        terraform -chdir=packaging/terraform/aws init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/aws validate
+    - id: aws-identity-variables
+      why: A variable is missing or a secret string is not sensitive.
+      run: >-
+        for v in litellm_master_key litellm_license ui_password extra_secrets otel_headers_secret_arn proxy_config s3_force_destroy log_retention_days; do grep -q "^variable \"$v\"" packaging/terraform/aws/variables_identity.tf || { echo "missing variable $v"; exit 1; }; done &&
+        test "$(grep -c 'sensitive *= *true' packaging/terraform/aws/variables_identity.tf)" -ge 3
+    - id: aws-secret-literals
+      why: A secret name or its condition differs from the description.
+      run: >-
+        for s in '-master-key' '-license' '-ui-password' '-db-master-password' '-database-url' '-redis-url'; do grep -q "\${local.name}$s" packaging/terraform/aws/secrets.tf || { echo "missing $s"; exit 1; }; done &&
+        grep -q 'sk-\${random_password.master_key.result}' packaging/terraform/aws/secrets.tf && grep -q 'recovery_window_in_days *= *0' packaging/terraform/aws/secrets.tf
+    - id: aws-iam-literals
+      why: A role, policy or the ARN trimming is missing.
+      run: >-
+        grep -q 'ecs-tasks.amazonaws.com' packaging/terraform/aws/iam.tf && grep -q 'AmazonECSTaskExecutionRolePolicy' packaging/terraform/aws/iam.tf &&
+        grep -q 'rds-db:connect' packaging/terraform/aws/iam.tf && grep -q 'slice(split(":", v), 0, 7)' packaging/terraform/aws/iam.tf && grep -q 'secretsmanager:GetSecretValue' packaging/terraform/aws/iam.tf
+    - id: aws-bucket-literals
+      why: The bucket lost versioning, encryption or the public access block.
+      run: >-
+        grep -q 'aws_s3_bucket_versioning' packaging/terraform/aws/s3.tf && grep -q 'AES256' packaging/terraform/aws/s3.tf && grep -q 'restrict_public_buckets *= *true' packaging/terraform/aws/s3.tf &&
+        grep -q 'config/config.yaml' packaging/terraform/aws/s3.tf && grep -q 'yamlencode(var.proxy_config)' packaging/terraform/aws/s3.tf
+    - id: aws-cluster-literals
+      why: The cluster or a log group is missing.
+      run: >-
+        grep -q 'containerInsights' packaging/terraform/aws/ecs_cluster.tf && grep -q '/ecs/\${local.name}/betterlite' packaging/terraform/aws/ecs_cluster.tf &&
+        grep -q '/ecs/\${local.name}/migrations' packaging/terraform/aws/ecs_cluster.tf && grep -q '/ecs/\${local.name}/bootstrap-db' packaging/terraform/aws/ecs_cluster.tf &&
+        grep -q 'retention_in_days *= *var.log_retention_days' packaging/terraform/aws/ecs_cluster.tf
+    - id: aws-bootstrap-literals
+      why: The bootstrap SQL, image or failure handling is not what the description says.
+      run: >-
+        grep -q 'GRANT rds_iam TO' packaging/terraform/aws/bootstrap.tf && grep -q 'postgres:16-alpine' packaging/terraform/aws/bootstrap.tf && grep -q 'ON_ERROR_STOP=1' packaging/terraform/aws/bootstrap.tf &&
+        grep -q 'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES' packaging/terraform/aws/bootstrap.tf && grep -q 'exit 1' packaging/terraform/aws/bootstrap.tf && grep -q 'aws ecs wait tasks-stopped' packaging/terraform/aws/bootstrap.tf
+    - id: aws-identity-tests
+      why: The identity plan tests fail or are missing.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/aws" TF_IN_AUTOMATION=1 && test -f packaging/terraform/aws/tests/identity.tftest.hcl &&
+        terraform -chdir=packaging/terraform/aws init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/aws test -filter=tests/identity.tftest.hcl
+    - id: aws-bootstrap-tests
+      why: The bootstrap plan tests fail or are missing.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/aws" TF_IN_AUTOMATION=1 && test -f packaging/terraform/aws/tests/bootstrap.tftest.hcl &&
+        terraform -chdir=packaging/terraform/aws init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/aws test -filter=tests/bootstrap.tftest.hcl
+
+oracle_cases: []
+
+deviations:
+  - what: One extra_secrets map replaces gateway_extra_secrets and backend_extra_secrets, and there is no separate ui task role.
+    why: betterlite is one service, so one set of secrets and one runtime role.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/iam.tf#L22-L40
+  - what: The module has no billing metrics secrets (client certificate, key and CA certificate).
+    why: The three secrets only feed the enterprise metering variables. Not built in this module.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/secrets.tf
+  - what: The proxy config object key is config/config.yaml, not config/litellm-config.yaml.
+    why: The file is read by betterlite, so it does not carry LiteLLM's name; the key is passed to the service in LITELLM_CONFIG_BUCKET_OBJECT_KEY, so nothing else depends on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/s3.tf#L90-L103
+
+out_of_scope:
+  - "terraform_data.migration and the migrations task definition in bootstrap.tf and migrations.tf. They need the shared environment block, so B8142 owns them."
+  - "The aws_iam_role.ui_task role. There is no UI container, so no role."
+  - "Billing metrics secrets and their IAM grants. Not built; see the deviations."
+  - "Network, database, cache and security groups. Owned by B8140."
+
+pitfalls:
+  - "The master password secret holds JSON, and ECS reads one field with the ARN plus ':password::' as valueFrom. The IAM policy lists the plain ARN, so do not add the suffix there."
+  - "A secret with recovery_window_in_days 0 is deleted at once on destroy; leaving the default 30 makes a destroy and re-apply fail on the name still being scheduled for deletion."
+  - "The bootstrap CREATE USER sits in a DO block that swallows duplicate_object, so a second apply does not fail; the GRANT lines run every time and are safe to repeat."
+  - "terraform_data.bootstrap_db must depend_on the writer instance and the secret version, or the task starts before Aurora accepts connections."
+  - "The rds-db:connect resource uses cluster_resource_id (db-ABC...), not the cluster identifier; with the identifier IAM auth is denied at runtime and the plan still passes."
+  - "mock_provider gives aws_rds_cluster.cluster_resource_id a random string only if the mock says so; set it in the test or the policy ARN is empty."
+  - "The local-exec interpreter is bash with set -euo pipefail; keep it, since the exit-code test depends on pipefail."
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

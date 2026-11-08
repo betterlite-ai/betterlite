@@ -1,0 +1,154 @@
+id: B3621
+title: Pass-through Bedrock and Comprehend Medical routes
+description: >-
+  Register LiteLLM's AWS pass-through routes as the module bedrock_comprehend_routes in crates/betterlite-server.
+  Three routes live here: the /bedrock catch-all (which hands every non-agent-runtime endpoint to B3620 and itself serves the Bedrock agent runtime), POST /comprehendmedical/{operation}, and POST /comprehendmedical (the AWS SDK shape).
+  The module reads its values from injected parts: the general_settings map (B002), an environment reader (B198 forbids global env reads), B594's credential resolver, B595's SigV4 signer and B3615's create_pass_through_route.
+  Every name below is at most 30 characters.
+
+  Routes. All three require the authenticated key (B052's user_api_key_auth).
+  `/bedrock/{endpoint:path}` takes GET, POST, PUT, DELETE and PATCH (five methods; B3620's text names four, PATCH is served too). `/comprehendmedical/{operation}` and `/comprehendmedical` take POST only; any other method is axum's 405. There is no /v1, /openai or other alias. The architect adds the three routes to the server route table once.
+
+  Shared state keys. A signed request is sent from request state, not from the incoming body. Before calling the handler from create_pass_through_route, set two request-state values with B3600's keys: LITELLM_PASS_THROUGH_CUSTOM_BODY_STATE_KEY holds the parsed JSON object, and LITELLM_PASS_THROUGH_RAW_BODY_STATE_KEY holds the exact bytes that were signed. Serialize the JSON once, sign those bytes, send those bytes. B3615 clears both keys afterwards.
+
+  `bedrock_proxy_route(endpoint, request, response, auth, deps)` replaces bedrock_proxy_route. Steps in order:
+  1. Call B3618's create_request_copy for the request and drop the result (LiteLLM calls it and ignores it).
+  2. Read `aws_region_name` from the env var AWS_REGION_NAME only (empty or unset means None). The other two region vars are not used on this route.
+  3. If B3620's is_agent_runtime_route(endpoint) is false, return B3620's bedrock_llm_proxy_route(endpoint, request, response, auth, router, deps) unchanged. Nothing below runs.
+  4. If B3620's agent_runtime_disabled(general_settings) is true, answer HTTP 403 with the plain string detail "bedrock-agent-runtime pass-through is disabled on this proxy." This check comes after step 3, so model endpoints are never blocked by it.
+  5. The base is `https://bedrock-agent-runtime.<region>.<suffix>` where suffix is B198's get_aws_dns_suffix(region). A None region renders as the text "None" in the host, as LiteLLM's f-string does; do not add a check.
+  6. Build the target with B3618's provider_target_url(base, endpoint). It drops a query or fragment in the endpoint and adds a leading slash, which is exactly what LiteLLM does here with httpx.URL(endpoint).path and join_base_and_endpoint_path.
+  7. Read the JSON body with B1100's body read. A failure is B1100's own 400 (see deviations).
+  8. Sign with B595's sign_aws_json_post, run the way B595's run_aws_signing runs it (off the request task). Inputs: credentials from B594's get_credentials called with no arguments (ambient AWS_* env, profile and role resolution, not the region var), service name "bedrock", the region from step 2 (None allowed), the target URL, the serialized body and the single header Content-Type: application/json.
+  9. The call is streaming when the substring "stream" occurs anywhere in the full target URL string (scheme, host, path and query). The request body is not looked at. A path such as /agents/x/stream hits it; an agent id that contains "stream" also does.
+  10. Custom headers are B3603's upstream_headers_for_bedrock_agent_runtime_route(request, auth, signed_headers). Caller headers survive except LiteLLM credentials, any name the signer set, and content-length, host and accept-encoding; the signed headers win. Do not rebuild this filter here.
+  11. Build the handler with B3615's create_pass_through_route(endpoint = the original endpoint string, target = the signed request's URL, custom_headers, is_streaming_request). Set the two request-state values, call the handler with the request, the response and the key, and return what it returns.
+
+  `comprehend_medical_route(operation, request, response, auth, deps)` replaces comprehend_medical_proxy_route. The operation is the path segment, so it is never empty on the {operation} route. Steps in order; every failure is an HTTPException with a plain string detail:
+  1. Supported operations are the items of B3651's `supported_operations()` in betterlite-core::relay::comprehend_medical, the keys of its tariff table (DetectEntitiesV2, DetectPHI, InferICD10CM, InferRxNorm, InferSNOMEDCT). Case-sensitive match. Otherwise 400 with detail "Unsupported Comprehend Medical operation: <operation>. Supported operations: <names sorted, joined with ', '>". Sorted order is byte order: DetectEntitiesV2, DetectPHI, InferICD10CM, InferRxNorm, InferSNOMEDCT.
+  2. `aws_passthrough_region()` replaces _resolve_aws_passthrough_region. It returns the first non-empty value of AWS_REGION_NAME, AWS_REGION, AWS_DEFAULT_REGION in that order, else None. None gives 400 "AWS region not found. Set AWS_REGION_NAME in the proxy environment."
+  3. Read the JSON body with B1100's body read. A read failure is 400 with detail equal to the failure's message text (a plain string, not an object).
+  4. A body that is not a JSON object (array, string, number, bool, null) is 400 "Request body must be a JSON object".
+  5. A body object with a `stream` key, whatever its value, is 400 "'stream' is not a Comprehend Medical request member".
+  6. Target `https://comprehendmedical.<region>.<suffix>/` (suffix from B198). Sign with B595's sign_aws_json_post: credentials from B594's get_credentials with aws_region_name set to the region and nothing else, service name "comprehendmedical", the region, the target, the serialized body, and the headers Content-Type: application/x-amz-json-1.1 and X-Amz-Target: ComprehendMedical_20181030.<operation>. The constant `COMPREHEND_TARGET_PREFIX` is "ComprehendMedical_20181030".
+  7. Build the handler with create_pass_through_route(endpoint = the operation, target = the signed URL, custom_headers = the signed request's headers exactly, custom_llm_provider "comprehendmedical", not streaming). No caller header is forwarded on this route. Set the two request-state values like the Bedrock route, call the handler and return its result. B3651's logging reads the operation from the x-amz-target header the signer returned, so keep that header in the custom headers.
+
+  `comprehend_sdk_route(request, response, auth, deps)` replaces comprehend_medical_sdk_proxy_route. Read the `x-amz-target` request header (case-insensitive name, missing means empty). Split at the first ".": the part before it must equal COMPREHEND_TARGET_PREFIX and the part after it must be non-empty, otherwise 400 with detail "Expected an X-Amz-Target header of the form ComprehendMedical_20181030.<Operation>" (the text ends with the literal characters <Operation>). Then return comprehend_medical_route with that operation. A header "ComprehendMedical_20181030.A.B" gives operation "A.B" and so the unsupported-operation 400.
+scope:
+  paths:
+    - crates/betterlite-server/src/bedrock_comprehend_routes.rs
+    - crates/betterlite-server/src/bedrock_comprehend_routes/**
+    - tools/oracle/cases/server/bedrock-comprehend-routes/**
+    - tools/oracle/helpers/b3621.py
+    - tools/oracle/helpers/b3621/**
+    - tools/oracle/src/helpers/server/b3621.rs
+    - tools/oracle/src/helpers/server/b3621/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1254-L1343
+    why: The /bedrock decorator (five methods) and bedrock_proxy_route, with the agent-runtime branch, the signing and the two request-state values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1346-L1361
+    why: COMPREHEND_MEDICAL_TARGET_PREFIX and the two settings readers; the region fallback order is here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1364-L1469
+    why: Both Comprehend Medical routes, their validation order, error texts and the signing call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1854-L1870
+    why: The agent-runtime predicates that step 3 and 4 call (B3620 builds them).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2491-L2493
+    why: The Bedrock never-forwarded header set that B3603 owns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2592-L2600
+    why: upstream_headers_for_bedrock_agent_runtime_route, which B3603 owns and this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1733-L1767
+    why: sign_aws_json_post and run_aws_signing (B595), the exact signing inputs both routes pass.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L346-L360
+    why: get_credentials parameters (B594); the Bedrock route passes none, the Comprehend route passes aws_region_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/aws_partition.py#L38-L39
+    why: get_aws_dns_suffix (B198); a None or empty region gives amazonaws.com.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/comprehend_medical_passthrough_logging_handler.py#L17-L27
+    why: The tariff table whose keys are the supported operations (B3651).
+dod:
+  - text: The /bedrock route accepts GET, POST, PUT, DELETE and PATCH, and the two Comprehend routes accept only POST.
+    proof: [route-table-tests]
+  - text: An endpoint with none of the agent-runtime fragments goes to bedrock_llm_proxy_route unchanged, before the disabled check, the signer and the handler factory are touched.
+    proof: [bedrock-dispatch-tests]
+  - text: An agent-runtime endpoint is answered 403 with the disabled message when the setting is on, and the check runs only after the dispatch test.
+    proof: [agent-gate-tests, oracle]
+  - text: The agent-runtime target is https://bedrock-agent-runtime.<region>.<suffix> plus the endpoint path with query and fragment dropped, uses only AWS_REGION_NAME, and renders a missing region as the text None.
+    proof: [agent-url-tests]
+  - text: The agent-runtime request is signed for service bedrock with the serialized body and the one Content-Type header, the signed bytes are the bytes in the raw-body state value, the parsed object is in the custom-body value, and the streaming flag is a substring test over the full URL.
+    proof: [agent-signing-tests]
+  - text: The agent-runtime custom headers come from B3603's filter with the signed headers, and the handler is built with the original endpoint and the signed URL.
+    proof: [agent-headers-tests]
+  - text: comprehend_medical_route checks in order the operation, the region (three env vars in order), the body read, the object shape and the stream key, each with its exact 400 text.
+    proof: [comprehend-checks-tests, oracle]
+  - text: comprehend_medical_route signs for service comprehendmedical with the X-Amz-Target and JSON 1.1 content-type headers, passes only the signed headers to the handler, uses custom_llm_provider comprehendmedical, and sets both request-state values.
+    proof: [comprehend-signing-tests]
+  - text: comprehend_sdk_route reads x-amz-target case-insensitively, rejects a wrong prefix or empty operation with the exact 400 text, and forwards the part after the first dot.
+    proof: [comprehend-sdk-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: route-table-tests
+      why: a route path or method is missing, or Comprehend accepts a method other than POST
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bedrock_comprehend_routes::tests::route_table(::|$)/)'
+    - id: bedrock-dispatch-tests
+      why: a model endpoint is not handed to bedrock_llm_proxy_route, or the agent-runtime path runs for it
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bedrock_comprehend_routes::tests::bedrock_dispatch(::|$)/)'
+    - id: agent-gate-tests
+      why: the disabled 403 is missing, has another text, or runs before the dispatch test
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bedrock_comprehend_routes::tests::agent_gate(::|$)/)'
+    - id: agent-url-tests
+      why: the agent-runtime host, path join or region source is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bedrock_comprehend_routes::tests::agent_url(::|$)/)'
+    - id: agent-signing-tests
+      why: the agent-runtime signing inputs, signed bytes, state values or streaming flag are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bedrock_comprehend_routes::tests::agent_signing(::|$)/)'
+    - id: agent-headers-tests
+      why: caller headers are not filtered through B3603 or the handler gets the wrong endpoint or target
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bedrock_comprehend_routes::tests::agent_headers(::|$)/)'
+    - id: comprehend-checks-tests
+      why: a Comprehend validation step is missing, out of order, or has the wrong text
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bedrock_comprehend_routes::tests::comprehend_checks(::|$)/)'
+    - id: comprehend-signing-tests
+      why: the Comprehend signing inputs, forwarded headers, provider name or state values are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bedrock_comprehend_routes::tests::comprehend_signing(::|$)/)'
+    - id: comprehend-sdk-tests
+      why: the SDK route reads the wrong header, splits at the wrong dot, or has the wrong 400 text
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bedrock_comprehend_routes::tests::comprehend_sdk(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/server/bedrock-comprehend-routes/agent-runtime-disabled-bool.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/agent-runtime-disabled-string.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-unsupported-operation.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-no-region.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-body-not-object.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-stream-member.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-sdk-missing-target.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-sdk-wrong-prefix.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-sdk-empty-operation.yaml
+deviations:
+  - what: The agent-runtime route reads its body through B1100, so an unreadable body gets B1100's 400, and the Comprehend route puts that read failure's message in the 400 detail string.
+    why: LiteLLM's Bedrock branch puts the raw exception object into detail, which cannot be encoded as JSON, and its parser message text is Python's. B3620 already takes B1100's 400 for the model path.
+  - what: Settings and environment variables arrive through injected parts (the general_settings map and an environment reader), not from proxy globals or os.environ.
+    why: betterlite wires dependencies through constructors; a client sees the same values.
+out_of_scope:
+  - "bedrock_llm_proxy_route, handle_bedrock_count_tokens, handle_bedrock_passthrough_router_model, _is_bedrock_agent_runtime_route and _is_bedrock_agent_runtime_passthrough_disabled: B3620 owns them; this task calls them."
+  - "_upstream_headers_for_bedrock_agent_runtime_route, _caller_headers_without_litellm_secrets and _HEADERS_NEVER_FORWARDED_TO_BEDROCK: B3603."
+  - "create_request_copy and provider_target_url (join of base and endpoint path): B3618 and B3600. create_pass_through_route and the state-key cleanup: B3615."
+  - "_proxy_general_settings and _json_request_body: not built; the settings map is injected and B1100 reads the body."
+  - "get_credentials, sign_aws_json_post and run_aws_signing: B594 and B595. get_aws_dns_suffix: B198."
+  - "COMPREHEND_MEDICAL_SUPPORTED_OPERATIONS and the Comprehend Medical cost logging: B3651 (tariff table) and B3606 (dispatch)."
+  - "The /bedrock and /comprehendmedical entries in LiteLLMRoutes.llm_api_routes (proxy/_types.py L493-L494) and the /bedrock prefix check in auth_utils.py L2047: the auth route tables, not this module."
+pitfalls:
+  - "The disabled check runs after the agent-runtime test, so a model endpoint is served even when disable_bedrock_agent_runtime_passthrough is true."
+  - "The /bedrock route reads only AWS_REGION_NAME, while the Comprehend route tries AWS_REGION_NAME, AWS_REGION and AWS_DEFAULT_REGION; do not share one reader."
+  - "With no region, the agent-runtime host becomes bedrock-agent-runtime.None.amazonaws.com and the request goes out anyway; LiteLLM does not return a 400 here."
+  - "get_credentials gets no argument on the Bedrock route but aws_region_name on the Comprehend route; the second changes which region the role and STS lookup uses."
+  - "The signature covers the exact body bytes, so the bytes in the raw-body state value must be the ones passed to the signer, never a second serialization of the parsed object."
+  - "Streaming on the agent-runtime route is a substring test of \"stream\" over the whole URL, not a body or header check."
+  - "The Comprehend route forwards none of the caller's headers; only the signed set (authorization, x-amz-date, x-amz-target, content-type, token) goes upstream."
+  - "A Comprehend body with \"stream\": false is still rejected; only the key's presence counts."
+  - "The unsupported-operation message lists the names sorted, not in tariff-table order."
+  - "The SDK route splits on the first dot only, so an operation that holds more dots stays whole and fails the supported-operation check."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

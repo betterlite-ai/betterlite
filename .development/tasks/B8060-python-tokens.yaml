@@ -1,0 +1,129 @@
+id: B8060
+title: Python token counting, encode, decode and image token helpers
+description: >-
+  After `import betterlite as litellm`, `litellm.token_counter(...)`, `litellm.encode(...)`, `litellm.decode(...)` and the
+  image token helpers must work as in LiteLLM. Counting itself is Rust (B196 text and messages, B197 and B258 images, B259
+  model names, B195 tokenizers). This task adds the native family `tokens` and the Python functions over it. Python turns
+  arguments into JSON and builds results. No counting rule is written in Python.
+
+
+  Native family `tokens`, as B5659 describes the pattern: `crates/betterlite-python/src/tokens.rs` has one `pub(crate) fn
+  register(module: &Bound<'_, PyModule>) -> PyResult<()>`, code sits in `src/tokens/**`, and the types are in
+  `python/betterlite/_native_tokens.pyi`. B5369 declares the `tokens` family in `lib.rs` and `_native.pyi` with a stub `register` that this task fills. Functions: `token_count(request_json)` over B196's token_count (the same call
+  B5659's `count_tokens` makes), `encode_text(request_json)` and `decode_tokens(request_json)` over B195's engines,
+  `load_tokenizer(request_json)` for `create_pretrained_tokenizer` and `create_tokenizer`, `image_tokens(request_json)`,
+  `image_tile_count(request_json)`, `image_type(bytes)`, `image_dimensions(request_json)` and `modified_max_tokens(request_json)`
+  over B197, B258 and B196. Pure conversions between JSON text and the Rust request types sit in `src/tokens/convert.rs`,
+  need no interpreter, and have tests whose names start with `tokens_request_` and `tokens_result_`.
+
+
+  Python lives in `python/betterlite/_tokens/`, files under 300 lines, with an explicit `__all__` in `__init__.py`. Names and signatures follow LiteLLM: `token_counter(model="",
+  custom_tokenizer=None, text=None, messages=None, count_response_tokens=False, tools=None, tool_choice=None,
+  use_default_image_token_count=False, default_token_count=None)` from utils.py L2550-L2586 returns 0 when
+  `litellm.disable_token_counter is True` (read at call time from `betterlite._settings`) and otherwise runs the L400-L466
+  rules: `text` with `messages` raises `ValueError("text and messages cannot both be set")`, `text` with tools or tool_choice
+  raises "tools or tool_choice cannot be set if using text", neither raises "Either text or messages must be provided". A
+  list `text` joins only its `str` items. `messages` may hold `Message` objects, which go through `model_dump()` first (what
+  `convert_list_message_to_dict` does).
+
+
+  A custom tokenizer is the dict LiteLLM builds, `{"type": "huggingface_tokenizer", "tokenizer": <handle>}`, where the
+  handle is a small class `NativeTokenizer` that wraps the id returned by `load_tokenizer` and frees it when dropped. `encode(model="",
+  text="", custom_tokenizer=None)` returns a list of ints, `decode(model="", tokens=(), custom_tokenizer=None,
+  skip_special_tokens=True)` returns text, `create_pretrained_tokenizer(identifier, revision="main", auth_token=None)` and
+  `create_tokenizer(json)` return the dict. An unknown custom tokenizer type raises `ValueError`.
+
+
+  The image helpers keep LiteLLM's names and returns: `get_modified_max_tokens`, `resize_image_high_res`,
+  `calculate_tiles_needed`, `high_detail_image_token_upper_bound(base_tokens=85)`, `get_image_type`, `get_image_dimensions`,
+  `calculate_img_tokens`, plus `openai_tokenizer_encoding_name` and `uses_legacy_message_accounting`. `offload_token_count` is a
+  plain async wrapper over `asyncio.to_thread` limited by a semaphore of `TOKEN_COUNTER_MAX_CONCURRENT_COUNTS`. The
+  one-line `openai_tokenizer_encoding` (L658) returns the tiktoken object in LiteLLM and raises `AttributeError` here, the
+  same deviation B158 states for `encoding`.
+
+
+  Tests import both packages and compare them on a fixed list of inputs: plain text, each message role, a tool list,
+  `tool_choice`, a `data:` image URL with `use_default_image_token_count`, and a long text over the sampling threshold. A
+  URL image needs the network, so the tests send base64 data only.
+scope:
+  paths:
+  - crates/betterlite-python/src/tokens.rs
+  - crates/betterlite-python/src/tokens/**
+  - crates/betterlite-python/python/betterlite/_native_tokens.pyi
+  - crates/betterlite-python/Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-python/python/betterlite/_tokens/**
+  - crates/betterlite-python/tests/test_tokens.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2472-L2586
+  why: encode, decode, the two tokenizer builders and the compatibility token_counter.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L58-L131
+  why: get_modified_max_tokens.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L134-L340
+  why: Image resize, tile count, header probes and calculate_img_tokens.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L343-L361
+  why: offload_token_count and its limiter.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L400-L466
+  why: The public token_counter and its argument checks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L658-L690
+  why: Encoding name, legacy accounting check and model name fix.
+dod:
+- text: "`token_counter` gives LiteLLM's count for text, messages, tools and `tool_choice`, and raises the same three `ValueError` messages."
+  proof: [tokens-counter]
+- text: "`disable_token_counter = True` makes `token_counter` return 0, read at call time."
+  proof: [tokens-counter]
+- text: "`encode`, `decode`, `create_pretrained_tokenizer` and `create_tokenizer` round-trip text like LiteLLM, including `skip_special_tokens`."
+  proof: [tokens-codec]
+- text: The image helpers return LiteLLM's values for the same bytes, sizes and detail levels.
+  proof: [tokens-images]
+- text: "`get_modified_max_tokens` gives LiteLLM's value for the buffer percent and buffer number cases."
+  proof: [tokens-images]
+- text: JSON conversions for every native function parse without an interpreter, and a malformed text gives an error, not a panic.
+  proof: [tokens-native]
+- text: The `_tokens` package passes ruff and strict basedpyright.
+  proof: [python-lint]
+- text: >-
+    This task adds every Cargo.toml dependency it uses and no unused ones.
+  proof: [tokens-counter]
+checks:
+  optional: []
+  commands:
+  - id: tokens-counter
+    why: A count or an error message differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_tokens.py -k "counter"
+  - id: tokens-codec
+    why: A tokenizer round trip differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_tokens.py -k "codec"
+  - id: tokens-images
+    why: An image helper returns another number.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_tokens.py -k "image or modified_max"
+  - id: tokens-native
+    why: A request or result conversion breaks or panics.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^tokens::/)'
+  - id: python-lint
+    why: A strict type error in the tokens package.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`openai_tokenizer_encoding` raises `AttributeError`, and a custom tokenizer dict holds a `NativeTokenizer`, not a `tokenizers.Tokenizer`."
+  why: No tiktoken or tokenizers object exists in the wheel, and B195 owns the engines in Rust.
+- what: "`offload_token_count` limits work with a semaphore on a thread pool, not anyio's `CapacityLimiter`."
+  why: anyio is not a dependency of the wheel.
+- what: This task has no helper oracle cases.
+  why: The pytest file compares both packages directly, and the Rust counting cases belong to B196 and B197.
+out_of_scope:
+- "Counting rules, tokenizer selection and image geometry are Rust (B196, B197, B258, B259, B195). Only argument handling is built here."
+- "`_get_tiktoken_count_function`, `_MessageCountParams`, `_count_*` and `_format_*` helpers (token_counter.py L364-L1051) are private to the Rust counter."
+- "`acount_tokens` is B158. Provider token counting endpoints are B510, B565, B585 and B641."
+- "`trim_messages`, `get_token_count` and `process_messages` (utils.py L7494-L7720) belong to B5366."
+pitfalls:
+- "A `text` that is a list drops non-`str` items silently, so pass the joined string to Rust, not the list."
+- "`count_response_tokens=True` skips the tools and `tool_choice` extra, so send the flag to Rust and do not add the extra in Python."
+- "`use_default_image_token_count=None` means False, and the Rust request must carry a bool."
+- "`decode` with `skip_special_tokens=False` must reach the Hugging Face engine, and an OpenAI engine ignores it."
+- "A `NativeTokenizer` must hold its id until the dict is dropped, or a later `encode` sees a freed handle."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

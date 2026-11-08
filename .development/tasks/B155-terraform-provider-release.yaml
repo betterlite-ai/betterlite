@@ -1,0 +1,114 @@
+id: B155
+title: Terraform provider docs, release files and offline release-shape checks
+description: >-
+  This is the last part of the Terraform provider entry. B7760 keeps the Go source and B7761 audits its endpoints; this task
+  keeps everything else in LiteLLM's terraform/provider/ and proves the provider can be released and loaded by terraform
+  without publishing anything. Copy from the pin into packaging/terraform-provider/ without editing code: docs/index.md,
+  docs/resources/*.md (22 files), docs/data-sources/*.md (33 files), examples/model_additional_params.tf, .goreleaser.yml,
+  .gitignore, Makefile, LICENSE (Apache 2.0), terraform-registry-manifest.json, README.md, RELEASING.md and CHANGELOG.md.
+  Only prose that names a LiteLLM location changes: README.md, RELEASING.md and CHANGELOG.md say the source of truth is
+  terraform/provider/ in BerriAI/litellm and that releases mirror it into BerriAI/terraform-provider-litellm. In betterlite's copy,
+  say the directory is packaging/terraform-provider/, keep the version-follows-gateway rule (the provider version equals the
+  betterlite version it was audited against), and keep the GPG and goreleaser sections as they are. Do not invent a release
+  workflow and do not add a tag or publish step; the architect decides where releases come from (see the deviation).
+  Three checks prove the release shape with no network after the module cache is filled. The first cross-builds main.go with
+  CGO_ENABLED=0 for linux/amd64, linux/arm64, darwin/arm64 and windows/amd64, the targets .goreleaser.yml builds. The second
+  builds the provider, points a terraform CLI config at it with dev_overrides for registry.terraform.io/BerriAI/litellm, runs
+  terraform providers schema -json in a throwaway folder under target/, and requires 25 resource schemas and 33 data source
+  schemas, so terraform really starts the binary and reads its schema over the plugin protocol. The third checks the files:
+  the manifest has version 1 and protocol 6.0, .goreleaser.yml keeps CGO_ENABLED=0, the checksum and signs sections and
+  release prerelease auto.
+  The docs of three resources (organization, organization_member, organization_member_add) do not exist at the pin; do not add them.
+scope:
+  paths:
+    - packaging/terraform-provider/docs/**
+    - packaging/terraform-provider/examples/**
+    - packaging/terraform-provider/.goreleaser.yml
+    - packaging/terraform-provider/.gitignore
+    - packaging/terraform-provider/Makefile
+    - packaging/terraform-provider/LICENSE
+    - packaging/terraform-provider/README.md
+    - packaging/terraform-provider/RELEASING.md
+    - packaging/terraform-provider/CHANGELOG.md
+    - packaging/terraform-provider/terraform-registry-manifest.json
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/.goreleaser.yml#L1-L81
+    why: The build matrix, ldflags, checksum, GPG signs and release prerelease settings the checks look for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/terraform-registry-manifest.json
+    why: Registry manifest with version 1 and protocol 6.0.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/RELEASING.md#L1-L40
+    why: The release flow whose LiteLLM-specific lines (project-releaser, rsync into the mirror) are the lines to reword.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/README.md#L1-L60
+    why: The source-of-truth and versioning paragraphs and the usage example.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/litellm/provider.go#L1-L108
+    why: The resource and data source names the schema check counts.
+dod:
+  - text: The docs, examples, release files and licence are copied, with 22 resource docs and 33 data source docs.
+    proof: [release-files]
+  - text: README.md, RELEASING.md and CHANGELOG.md name packaging/terraform-provider and no longer claim terraform/provider/ in BerriAI/litellm is the source of truth.
+    proof: [release-prose]
+  - text: The provider cross-builds without cgo for linux/amd64, linux/arm64, darwin/arm64 and windows/amd64.
+    proof: [cross-build]
+  - text: terraform starts the built provider through dev_overrides and its schema lists 25 resources and 33 data sources.
+    proof: [terraform-schema]
+  - text: The registry manifest and goreleaser settings are intact.
+    proof: [release-files]
+checks:
+  optional: []
+  commands:
+    - id: release-files
+      why: a docs, release or manifest file is missing or changed in a way the registry or goreleaser reads
+      run: >-
+        test "$(ls packaging/terraform-provider/docs/resources | wc -l)" = 22 && test "$(ls packaging/terraform-provider/docs/data-sources | wc -l)" = 33 &&
+        test -f packaging/terraform-provider/docs/index.md && test -f packaging/terraform-provider/examples/model_additional_params.tf && test -f packaging/terraform-provider/LICENSE &&
+        cd packaging/terraform-provider &&
+        jq -e '.version == 1 and (.metadata.protocol_versions | index("6.0") != null)' terraform-registry-manifest.json &&
+        /usr/bin/grep -a -q 'CGO_ENABLED=0' .goreleaser.yml && /usr/bin/grep -a -q '^checksum:' .goreleaser.yml &&
+        /usr/bin/grep -a -q '^signs:' .goreleaser.yml && /usr/bin/grep -a -q 'prerelease: auto' .goreleaser.yml
+    - id: release-prose
+      why: README, RELEASING or CHANGELOG still name LiteLLM's directory as the source of truth
+      run: >-
+        cd packaging/terraform-provider &&
+        /usr/bin/grep -a -q 'packaging/terraform-provider' README.md && /usr/bin/grep -a -q 'packaging/terraform-provider' RELEASING.md &&
+        ! /usr/bin/grep -a -q 'is the source of truth for the provider' README.md &&
+        ! /usr/bin/grep -a -q 'project-releaser' RELEASING.md
+    - id: cross-build
+      why: the provider does not build for a release target without cgo
+      run: >-
+        cd packaging/terraform-provider &&
+        for target in linux/amd64 linux/arm64 darwin/arm64 windows/amd64; do
+        CGO_ENABLED=0 GOOS="${target%/*}" GOARCH="${target#*/}" go build -trimpath -o /dev/null . || exit 1; done
+    - id: terraform-schema
+      why: terraform cannot start the built provider or its schema lost a resource or data source
+      run: >-
+        out="$PWD/target/terraform-provider-check" && rm -rf "$out" && mkdir -p "$out/plugin" "$out/work" &&
+        (cd packaging/terraform-provider && CGO_ENABLED=0 go build -o "$out/plugin/terraform-provider-litellm" .) &&
+        printf 'provider_installation {\n  dev_overrides {\n    "registry.terraform.io/BerriAI/litellm" = "%s"\n  }\n  direct {}\n}\n' "$out/plugin" > "$out/cli.tfrc" &&
+        printf 'terraform {\n  required_providers {\n    litellm = { source = "BerriAI/litellm" }\n  }\n}\n' > "$out/work/main.tf" &&
+        cd "$out/work" && TF_CLI_CONFIG_FILE="$out/cli.tfrc" terraform providers schema -json |
+        jq -e '.provider_schemas | to_entries | length == 1 and (.[0].value.resource_schemas | length) == 25 and (.[0].value.data_source_schemas | length) == 33'
+oracle_cases: []
+deviations:
+  - what: The provider's docs say the source of truth is packaging/terraform-provider/ in betterlite, and no release workflow, mirror repository or tag step is shipped.
+    why: LiteLLM releases through its private project-releaser pipeline and a split repository that betterlite does not have; publishing is out of scope, so only the release inputs are kept and checked.
+  - what: The provider keeps registry source BerriAI/litellm and module path github.com/BerriAI/terraform-provider-litellm.
+    why: Existing Terraform configurations name that source; a betterlite user changes only api_base and api_key.
+out_of_scope:
+  - "B7760 owns the Go source in litellm/, main.go, go.mod and go.sum, and the gofmt, vet, build and test checks."
+  - "B7761 owns tools/endpointaudit and the comparison of every provider call with betterlite's OpenAPI document."
+  - "Publishing, tagging, GPG signing and the Terraform Registry ingest need a real release and are not checked here."
+  - "A terraform plan or apply against a running gateway needs a database; the route tasks' oracle cases cover the wire format."
+  - "terraform/litellm/ (AWS and GCP deployment modules) is B154."
+pitfalls:
+  - The schema check needs dev_overrides because the provider is not in any registry; terraform prints a warning about it and still exits 0, so do not treat the warning as a failure.
+  - Without a required_providers block terraform resolves the provider as hashicorp/litellm, so the throwaway main.tf must name source "BerriAI/litellm" exactly as the override key does.
+  - examples/model_additional_params.tf uses var.litellm_api_key and var.openai_api_key without declaring them, so terraform validate on that file fails at the pin; the check does not validate it.
+  - The registry manifest says protocol 6.0 while the SDK v2 provider serves protocol 5 in practice; keep the file as it is, since the registry reads it.
+  - The CHANGELOG has a note that versions 0.1.0 to 0.4.0 sit on their own line; keep that history, and reword only the line that names terraform/provider/ as the source of truth.
+  - 25 resources and 33 data sources are the counts at the pin; docs/resources has 22 files because organization, organization_member and organization_member_add have no page.
+  - A cross-build to windows/amd64 and darwin/arm64 needs no extra toolchain only because CGO_ENABLED=0 is set; leave it in the command.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

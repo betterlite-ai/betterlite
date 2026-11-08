@@ -2,7 +2,7 @@ id: B3682
 milestone: M6 guardrails
 title: Guardrail factory registry and persistent records
 status: todo
-depends_on: [B3660, B3662, B3681, B5471, B726]
+depends_on: [B3660, B3662, B3681, B3814, B5471, B726]
 file: tasks/B3682-guardrail-registry-records.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_registry.py"

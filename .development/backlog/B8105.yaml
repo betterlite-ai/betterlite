@@ -1,0 +1,14 @@
+id: B8105
+milestone: M3 providers
+title: Manus files API config
+status: todo
+depends_on: [B171, B1015, B1128]
+file: tasks/B8105-manus-files.yaml
+covers:
+  - "litellm/llms/manus/files/**"
+parent: B050
+split_from: B050
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

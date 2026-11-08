@@ -1,0 +1,136 @@
+id: B7840
+title: Python Responses types, the mock response and the response-format class helper
+description: >-
+  The Python Responses functions (B7841 and B7842) return objects, and `text_format` takes a pydantic class. This task writes
+  those pieces in plain Python so the functions only move JSON. It is Python only: no Rust file changes. The wheel depends
+  only on python-dotenv, so nothing here imports pydantic or openai. Use B5657's `ResponseObject` base (read it in
+  `python/betterlite/types/utils/`) for every class below. It gives item access, `get`, `model_dump`, `__eq__` and extra
+  fields kept as attributes.
+
+
+  Types, in `python/betterlite/types/responses/`. `main.py` follows litellm/types/responses/main.py L1-L173 and
+  `__init__.py` has an explicit `__all__`. The classes are `GenericResponseOutputItemContentAnnotation`, `OutputText`,
+  `OutputFunctionToolCall` (its `phase` defaults to None), `OutputImageGenerationCall`, `OutputCodeInterpreterCallLog`,
+  `OutputCodeInterpreterCall`, `CustomToolCallOutputItem` (`id` and `status` default to None), `GenericResponseOutputItem`,
+  `DeleteResponseResult` (with `_hidden_params`, a new dict per object) and the `DecodedResponseId` TypedDict (`total=False`).
+  `build_code_interpreter_log_outputs(content)` returns None unless `content` is a dict. It joins `stdout` with `"STDERR: "`
+  plus `stderr` and returns one `OutputCodeInterpreterCallLog(type="logs", logs=...)`, or None when the joined text is empty.
+  `build_web_search_call(tool_id, tool_input, result, status=None)` returns a plain `ResponseObject` with the OpenAI
+  `ResponseFunctionWebSearch` shape. Its `id` is `ws_<tool_id>`, its `type` is `web_search_call`, and its `status` is the
+  argument, else "failed" when `result["content"]` is a dict whose `type` is `web_search_tool_result_error`, else "completed".
+  Its `action` has `type` "search", `query` (the string from `tool_input["query"]`, "" otherwise), `queries` (`[query]` when
+  the query is a non-empty string, else `[]`) and `sources`: one `{"type": "url", "url": ...}` for each item of
+  `result["content"]` that is a dict with `type` `web_search_result` and a string `url`. Content that is a string or bytes
+  counts as no items.
+
+
+  The classes litellm/types/llms/openai.py L1339-L1507 define for a Responses result have no other Python owner at this pin,
+  and the functions need them, so they are built here in `types/responses/api_response.py`: `ResponseAPIUsage`,
+  `WebSearchToolUsage`, `ResponsesToolUsage` and `ResponsesAPIResponse`. `ResponseAPIUsage` has `input_tokens`, `output_tokens`
+  and `total_tokens` (ints), the two details fields and `cost`, and a `cost` given as a dict becomes its `total_cost`.
+  `ResponsesAPIResponse` keeps every field and default of the source. A `usage` dict becomes a `ResponseAPIUsage`, and a
+  `reasoning` value with `model_dump` becomes a dict. `model_dump` drops `status`, `content` and `encrypted_content` when
+  they are None, from output items of type `reasoning` only (L1451-L1475). The `output_text` property joins the `text` of every
+  `output_text` content item of every `message` output item, for dict items and for object items. `_hidden_params` is a new
+  dict per object. `ResponsesAPIStatus` is the `Literal` of L1385.
+
+
+  `mock_responses_api_response(mock_response=...)` (litellm/responses/main.py L105-L154) goes in `types/responses/mock.py` and
+  returns a `ResponsesAPIResponse` built from the same literal dict, with the default text of the source. Copy that literal
+  value for value.
+
+
+  Response-format helper, `python/betterlite/llms/base_llm/base_utils.py`, from litellm/llms/base_llm/base_utils.py
+  L140-L212. `_dict_to_response_format_helper(response_format, ref_template=None)` returns the dict unchanged unless
+  `ref_template` is set and `type` is "json_schema". Then it deep-copies the dict and rewrites every `$ref` inside
+  `json_schema.schema` to `ref_template.format(model=<last path part>)`. The source walks with an explicit stack and a
+  visited set of `id()` values, so a shared sub-dict is rewritten once. Keep that. `type_to_response_format_param(response_format,
+  ref_template=None)` returns None for None, uses the dict helper for a dict, and for a class calls `model_json_schema` on it.
+  The source calls openai's `to_strict_json_schema` when `ref_template` is None and `model_json_schema(ref_template=...)`
+  otherwise. The result is `{"type": "json_schema", "json_schema": {"schema": schema, "name": cls.__name__, "strict": True}}`.
+  A value that is not a class with a callable `model_json_schema` raises `TypeError(f"Unsupported response_format type -
+  {response_format}")`. The class check reads the attribute through a `typing.Protocol`, since pydantic is no dependency of the
+  wheel. openai is not one either, and no maintained crates.io or PyPI package outside openai has the function, so port
+  `_ensure_strict_json_schema` and `resolve_ref` from openai/lib/_pydantic.py L35-L135 (about 70 lines, listed under
+  deviations). The port covers `$defs`, `definitions`, `additionalProperties: false` on objects, `required` set to every
+  property, `items`, `anyOf`, a single-entry `allOf` that is merged in, a `None` default that is dropped, and a `$ref` next to
+  other keys that is inlined. Write it with plain loops and no recursion helper beyond the function itself.
+
+
+  Tests build each class from both packages with the same arguments and compare `model_dump()`. The strict-schema test uses a
+  pydantic model of its own (pydantic comes with the LiteLLM side of the test environment) with a nested model, a list of
+  models, an Optional field with a None default and a field with a description next to a `$ref`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/responses/**
+  - crates/betterlite-python/python/betterlite/llms/base_llm/base_utils.py
+  - crates/betterlite-python/tests/test_responses_types.py
+  - crates/betterlite-python/tests/test_response_format_helper.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/main.py#L1-L173
+  why: The output item classes, the two builders, DeleteResponseResult and DecodedResponseId.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1339-L1507
+  why: ResponseAPIUsage, the tool usage classes and ResponsesAPIResponse with its validators and output filter.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L105-L154
+  why: The mock response literal.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L140-L212
+  why: The ref-template helper and the class branch of type_to_response_format_param.
+- url: https://github.com/openai/openai-python/blob/main/src/openai/lib/_pydantic.py
+  why: The strict schema function that LiteLLM calls and this task ports.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1036-L1067
+  why: The one caller of type_to_response_format_param for Responses, which B7841 reproduces.
+dod:
+- text: Every class and builder in types/responses/main.py builds and dumps as in LiteLLM, including the web search and code interpreter builders.
+  proof: [responses-types]
+- text: "`ResponsesAPIResponse` and `ResponseAPIUsage` dump, coerce `usage`, `reasoning` and `cost`, filter reasoning nulls and compute `output_text` as in LiteLLM."
+  proof: [responses-api-response]
+- text: "`mock_responses_api_response` gives the same `model_dump()` as LiteLLM for the default and a custom text."
+  proof: [responses-mock]
+- text: "`type_to_response_format_param` gives LiteLLM's dict for None, a dict, a dict with a ref template, a class, and a class with a ref template, and refuses anything else with the same message."
+  proof: [response-format]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: responses-types
+    why: A class default or a builder field differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_responses_types.py -k "output_item or builder or delete_result"
+  - id: responses-api-response
+    why: A response drops its usage object, keeps reasoning nulls or returns the wrong output_text.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_responses_types.py -k "api_response or usage or output_text"
+  - id: responses-mock
+    why: The mock literal differs by one value.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_responses_types.py -k mock
+  - id: response-format
+    why: A pydantic class turns into a different schema, or a ref template is skipped.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_response_format_helper.py
+  - id: python-lint
+    why: The shared types are where an untyped dict would creep in.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The classes are not pydantic models, so `model_validate`, `model_fields` and `model_json_schema` are missing on them.
+  why: The wheel depends only on python-dotenv. They keep attributes, item access, `model_dump` and the defaults.
+- what: "`build_web_search_call` returns a `ResponseObject`, where LiteLLM returns openai's `ResponseFunctionWebSearch`."
+  why: The wheel does not depend on the openai package. The dumped dict is the same.
+- what: The strict schema function is ported into `base_utils.py` and does not import openai.
+  why: openai is not a wheel dependency, no other package carries this function, and it is about 70 lines.
+- what: "`type_to_response_format_param` accepts any class with a callable `model_json_schema`, where LiteLLM requires a pydantic `BaseModel` subclass."
+  why: The wheel cannot import pydantic. A pydantic model passes either check.
+out_of_scope:
+- litellm/types/responses/streaming_websocket.py has Protocol classes and `ResponsesWebSocketRequestDefaults` for the proxy websocket relay. No Python user code calls them at the pin, and B943 owns the websocket relay in Rust.
+- The Responses event classes and the other types in litellm/types/llms/openai.py are B167. This task builds only the four result classes above, and B167 should import them from `betterlite.types.responses`.
+- The None branch and dict branch of the Rust `type_to_response_format_param` are B2202. This file is their Python twin for callers in the wheel.
+- '`BaseLiteLLMOpenAIResponseObject` (types/llms/base.py) is B167. `ResponseObject` from B5657 stands in for it.'
+pitfalls:
+- '`_hidden_params` must be a fresh dict per object, as `PrivateAttr(default_factory=dict)` makes it, and `DeleteResponseResult` has one too.'
+- 'The reasoning filter removes a key only when its value is None and its name is `status`, `content` or `encrypted_content`, and only for output items whose `type` is `reasoning`. Other None values stay.'
+- 'A `ref_template` rewrite works on a deep copy, so the caller''s dict must stay unchanged after the call.'
+- 'The strict-schema rule that unravels `$ref` next to other keys must run again on the merged schema, or the inlined object lacks `additionalProperties: false`.'
+- '`output_text` has to read both dict items and object items, since a provider response arrives as dicts and a mock arrives as classes.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

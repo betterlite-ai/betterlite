@@ -1,0 +1,235 @@
+id: B4445
+title: Health, history and latest health routes
+description: >-
+  Build the three routes that report model health, in a new betterlite-server module `health_status_routes`, plus the helpers
+  they use. The table store and the persistence functions come from B7640 and the access helpers from B4446. Nothing in
+  this task decides whether a result gets written to history: that is B7640.
+
+  Mounting. One function `health_status_routes(state) -> Router` registers GET /health, GET /health/history and GET /health/latest
+  and the umbrella B130 mounts it once. All three sit behind B052's `user_api_key_auth`, so a missing or wrong key is that
+  pipeline's answer and this module never sees it. The state is built with constructor injection and holds what LiteLLM reads
+  from proxy_server globals: the deployment list (`llm_model_list`, None until a router exists), the router (B844), `user_model`
+  (the CLI model), `health_check_details` (bool), `health_check_concurrency` (Option<usize>), `use_background_health_checks`
+  (bool), the general_settings health filter (B4441's `health_check_filter_kwargs_from_general_settings` result), a
+  `HealthResultsSource` trait with `snapshot() -> HealthCheckResults` that returns the cache the background loop fills, an
+  optional B7640 `HealthCheckRows`, a clock, and a tokio `TaskTracker` the server owns. Read crates/betterlite-server/src/health_cycle.rs
+  (B4443) for `perform_health_check` and its result and take them as they are; define no second cycle seam.
+  `HealthResultsSource` is this task's only new trait: nothing else plans to hand the background cache to a route (see notes).
+
+  Helpers, all in this module.
+  `check_prisma_client(rows) -> Result<&HealthCheckRows, HealthRouteError>` is `_check_prisma_client`: no store gives HTTP 500
+  with detail `{"error": "Database not initialized"}`.
+  `convert_health_check(row) -> serde_json::Value` is `_convert_health_check_to_dict`: an object with exactly these keys in this
+  order: health_check_id, model_name, model_id, status, healthy_count, unhealthy_count, error_message, response_time_ms, details,
+  checked_by, checked_at, created_at. There is no updated_at. checked_at and created_at are Python `datetime.isoformat()` text for a
+  UTC value: `YYYY-MM-DDTHH:MM:SS` plus `.ffffff` (six digits) only when the microseconds are not zero, then `+00:00`. Stored values
+  have millisecond precision, so a value with 123 ms prints `.123000`.
+  `resolve_target_model_name(model, model_id, router) -> Result<Option<String>, HealthRouteError>` is
+  `_health_endpoint_resolve_target_model_name`. An empty or missing model_id returns `model` unchanged. With a model_id and no
+  router, or when the router's get_deployment (B844) errors (log "Error getting deployment for model_id {id}: {err}" at error
+  level first) or returns None, the answer is HTTP 404 with detail `{"error": "Model with ID {model_id} not found"}`. Otherwise
+  it returns the deployment's model_name. model_id wins over model, so an unknown id is a 404 even beside a known name.
+  `perform_health_check_and_save(...)` is `_perform_health_check_and_save`. It runs B4443's `perform_health_check` with the model
+  list, cli_model, target model, details flag, max_concurrency, model_id and the extra arguments (router and team_id on the
+  router path, the settings filter on both). After it returns, and only when a store exists and `cli_model` or `target_model` is
+  not None (the name is cli_model when set, else target_model), it hands B7640's `save_single` to the TaskTracker so the response
+  does not wait for the write. It returns `{"healthy_endpoints", "unhealthy_endpoints", "healthy_count", "unhealthy_count"}`
+  with the two counts being the list lengths.
+
+  GET /health, query `model` and `model_id` (both optional strings). Steps in order: take the settings filter, note the start time,
+  resolve the target name, then `is_admin = is_proxy_admin(caller)` (B4446) and `model_specific_request = bool(model or model_id)`.
+  Post-processing of any result: if model_specific_request and `result.healthy_count` is missing or 0, the response status becomes
+  503 (the body is unchanged). An admin gets the result as it is. Anyone else gets the header `Litellm-Health-Field-Notice` with
+  the value "{fields} are admin-only on this endpoint", where fields are B4441's ADMIN_ONLY_HEALTH_DISPLAY_PARAMS joined with ", "
+  in that set's order, and the result goes through B4446's `strip_admin_only_fields`.
+  Then: (1) when the deployment list is None: if `user_model` is set, run `perform_health_check_and_save` with an empty model list,
+  target None, cli_model = user_model and model_id None, and post-process it; otherwise HTTP 500 detail `{"error": "Model list not
+  initialized"}`. (2) Otherwise compute `allowed_models = health_accessible_model_names(caller, router)` and
+  `restrict = not is_admin or allowed_models is not None` (B4446). Deep-copy the deployment list and, when `restrict`, keep only
+  those that B4446's `caller_may_probe_deployment` accepts. Compute `targeted_ids = resolve_targeted_model_ids(list, model,
+  model_id, caller.team_id)`. When `restrict` and targeted_ids is Some and empty, HTTP 403 with detail `{"error": "key not allowed
+  to health-check model_id {model_id}"}` if model_id is set, else `{"error": "key not allowed to health-check model {model}"}`.
+  (3) With `use_background_health_checks`: if `restrict`, build `allowed_model_ids` from the kept deployments' model_info.id (ids
+  that are non-empty only), use targeted_ids when Some else that set, and filter the cache snapshot with B4446's
+  `filter_health_check_results_by_model_ids`. If targeted_ids is None, the kept list is non-empty and allowed_model_ids is empty,
+  log a warning "health_endpoint: scoped key {user_id} has accessible models {models} but none of the matching deployments carry a
+  model_info.id; background health-check cache will return an empty result." and add `"warnings": ["Some accessible deployments are
+  missing model_info.id and were excluded from this response. Ask a proxy admin to populate model_info.id for these models."]` to the
+  filtered result. Post-process and return. If not `restrict` and targeted_ids is Some, return the post-processed snapshot filtered
+  by targeted_ids. If neither, return the post-processed snapshot as it is. (4) Without background checks: run
+  `perform_health_check_and_save` with the kept list, target_model, no cli_model, model_id, the router, the caller's team_id and
+  user_id, then post-process. Any error in the whole handler is logged at error level "litellm.proxy.proxy_server.py::health_endpoint():
+  Exception occured - {err}" (keep the typo) and re-raised unchanged, so an HTTP error keeps its own status.
+
+  GET /health/history, query `model` (optional), `status_filter` (optional), `limit` (default 100, 1 to 1000), `offset` (default 0,
+  0 or more). A value outside the range is the proxy's usual 422 request-validation answer. Call `check_prisma_client`, then B7640's
+  `history`, and answer `{"health_checks": [convert_health_check(row)...], "total_records": n, "limit": limit, "offset": offset}`
+  with n the number of rows returned. `history` never errors (it returns an empty list), so a failed read is an empty page.
+  An error from the store call itself is caught: log "Error getting health check history: {err}" and answer HTTP 500 with detail
+  `{"error": "Failed to retrieve health check history: {err}"}`. The missing-store 500 is raised before this catch.
+
+  GET /health/latest: `check_prisma_client`, then B7640's `fetch_latest`, and answer `{"latest_health_checks": {key: convert_health_check(row)},
+  "total_models": n}` where key is model_id when non-empty, else model_name. A later row with the same key replaces the earlier one
+  in the object but keeps the earlier position. n is the object's size.
+
+  Error bodies. LiteLLM raises FastAPI HTTPException, which the proxy renders as `{"detail": <detail>}` with that status. Use
+  the error type the proxy already has for that shape (B882 or B746; read crates/betterlite-server/src/ for it) and add no second one.
+
+  Tests live in `health_status_routes::tests` with these prefixes: `convert_` (key order, isoformat forms), `target_` (the model
+  and id rules), `check_` (the two results of check_prisma_client and the 500 shape), `save_` (perform_health_check_and_save: the
+  name choice, the tracker hand-off, the returned counts), `health_` (each numbered step of GET /health with a fake cycle and a fake
+  results source), `history_` and `latest_`. The oracle helper cases drive Python's `_convert_health_check_to_dict` and
+  `_health_endpoint_resolve_target_model_name` with stub objects. HTTP oracle cases run the booted proxy without a database.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/health_status_routes.rs
+    - crates/betterlite-server/src/health_status_routes/**
+    - tools/oracle/cases/health/status/**
+    - tools/oracle/cases/helpers/health-status-routes/**
+    - "tools/oracle/fuzz/corpus/http_case/health-status-*"
+    - "tools/oracle/fuzz/corpus/helper_case/health_status_routes-*"
+    - tools/oracle/helpers/b4445.py
+    - tools/oracle/helpers/b4445/**
+    - tools/oracle/src/helpers/server/b4445.rs
+    - tools/oracle/src/helpers/server/b4445/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L615-L642
+    why: _convert_health_check_to_dict and _check_prisma_client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1042-L1120
+    why: _perform_health_check_and_save and the model_id to model_name lookup with its 404 rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1123-L1294
+    why: GET /health, from its decorator to the re-raise, including the 503 rule, the notice header and the background-cache filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1297-L1366
+    why: GET /health/history and GET /health/latest.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L936-L1039
+    why: The B4446 helpers this route calls; names and results only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1913-L1919
+    why: How an HTTPException is rendered, to match the error body.
+  - url: https://docs.litellm.ai/docs/proxy/health
+    why: The user-facing description of /health, background checks and the history routes.
+
+dod:
+  - text: convert_health_check returns the 12 keys in order, without updated_at, and prints checked_at and created_at in Python isoformat with +00:00 and a six-digit fraction only when it is not zero.
+    proof: [convert-tests, oracle, helper-python]
+  - text: A missing model_id returns the model argument; a model_id with no router, an erroring lookup or no deployment is a 404 with the exact message; a found deployment returns its model_name.
+    proof: [target-tests, oracle, helper-python]
+  - text: A missing store is HTTP 500 with "Database not initialized" on both history and latest.
+    proof: [check-tests, oracle]
+  - text: perform_health_check_and_save names the saved model by cli_model first, saves only with a store and a name, hands the save to the tracker, and returns the lists and their lengths.
+    proof: [save-tests]
+  - text: GET /health answers 500 "Model list not initialized" with no deployment list and no CLI model, and probes the CLI model when one is set.
+    proof: [health-tests]
+  - text: A caller who is not allowed gets 403 with the exact message for a targeted model or model_id, and a restricted caller sees only permitted deployments.
+    proof: [health-tests]
+  - text: With background checks on, the cache is filtered by the allowed or targeted ids, the missing-id warning field appears when no kept deployment has an id, and an unrestricted untargeted caller gets the cache as it is.
+    proof: [health-tests]
+  - text: A model-specific request with zero healthy endpoints answers 503 with the same body, and a non-admin gets the notice header and the stripped body.
+    proof: [health-tests, oracle]
+  - text: History returns the page object with the converted rows, honours the limit and offset ranges with 422 outside them, and a store call error is a 500 with the exact detail.
+    proof: [history-tests, oracle]
+  - text: Latest returns the object keyed by model_id or model_name with the total.
+    proof: [latest-tests]
+  - text: HTTP corpus cases replay through the shared HTTP-case parser.
+    proof: [http-case-corpus]
+  - text: Helper corpus cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: convert-tests
+      why: the row-to-object conversion or the isoformat text is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_status_routes::tests::convert_/)'
+    - id: target-tests
+      why: the model_id lookup or one of its 404 cases is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_status_routes::tests::target_/)'
+    - id: check-tests
+      why: the missing-store error is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_status_routes::tests::check_/)'
+    - id: save-tests
+      why: the perform-and-save helper or its tracker hand-off is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_status_routes::tests::save_/)'
+    - id: health-tests
+      why: a step of GET /health is missing or out of order
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_status_routes::tests::health_/)'
+    - id: history-tests
+      why: GET /health/history is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_status_routes::tests::history_/)'
+    - id: latest-tests
+      why: GET /health/latest is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_status_routes::tests::latest_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4445)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4445 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4445/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added status-route helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/health_status_routes-*")" &&
+        grep -lE '^[[:space:]]+b4445:' tools/oracle/fuzz/corpus/helper_case/health_status_routes-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: http-case-corpus
+      why: the HTTP-case decoder does not replay the new health-status requests
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/http_case/health-status-*")" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/health/status/history-no-database.yaml
+  - tools/oracle/cases/health/status/latest-no-database.yaml
+  - tools/oracle/cases/health/status/history-limit-zero-422.yaml
+  - tools/oracle/cases/health/status/health-unknown-model-id-404.yaml
+  - tools/oracle/cases/helpers/health-status-routes/convert-row.yaml
+  - tools/oracle/cases/helpers/health-status-routes/resolve-target.yaml
+
+deviations:
+  - what: The database write after a live /health probe is handed to a tracker the server owns and drains at shutdown, not a detached task.
+    why: Repository rules forbid detached tasks. The response still does not wait for the write, as in LiteLLM.
+  - what: The background result cache arrives through the `HealthResultsSource` trait, not a module global.
+    why: Dependencies come in through constructors; the filtering and responses are the same.
+  - what: Error bodies reuse the proxy's existing HTTPException rendering.
+    why: LiteLLM relies on FastAPI's default; the status and detail text match.
+
+out_of_scope:
+  - "The table store, aggregation, the persist decision and _save_health_check_to_db: B7640."
+  - "is_proxy_admin, strip_admin_only_fields, health_accessible_model_names, caller_may_probe_deployment, resolve_targeted_model_ids and filter_health_check_results_by_model_ids: B4446. POST /health/test_connection: B4446."
+  - "perform_health_check, the cycle and the strategy router verdict: B4443. Display field sets, targeting and health_check_filter_kwargs_from_general_settings: B4441."
+  - "GET /health/shared-status: B4444. /health/services and /test: B4447. Readiness, liveliness, drain, license and callbacks routes: B4448."
+  - "The code that fills the background result cache and runs the cycle on a timer: B4443 and the proxy_server owner (B124)."
+
+pitfalls:
+  - "model_id beats model: an unknown id is a 404 even when `model` names a real group, and the 404 comes before the access checks."
+  - "The 503 rule looks at `healthy_count` in the result, and a result without that key counts as 0. The body stays the same."
+  - "`restrict` is true for every non-admin and also for an admin whose allowed_models is not None; the 403 message uses model_id when it is set, else model."
+  - "An admin who targets a model with background checks on still gets the cache filtered by targeted_ids; with no target the cache goes out untouched."
+  - "The `warnings` field is added to the filtered copy only when targeted_ids is None, the kept list is non-empty and no kept deployment has a model_info.id."
+  - "The deployment list is deep-copied before filtering, because the probe adds per-call fields to its entries."
+  - "/health/latest keys by model_id or model_name, so two rows with an empty model_id and the same name collapse to one entry."
+  - "The save after a live probe runs only with a store and a non-None model name; a probe of all models (no target, no cli model) writes nothing."
+  - "history catches a store error as HTTP 500, but the missing-store 500 is raised before that catch so its detail has no 'Failed to retrieve' prefix."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

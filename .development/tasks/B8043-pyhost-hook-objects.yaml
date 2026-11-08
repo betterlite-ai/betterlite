@@ -1,0 +1,93 @@
+id: B8043
+title: Hook objects, loaded-object kinds and optional Python libraries
+description: >-
+  Two more things sit between the interpreter and its callers, both in `crates/betterlite-pyhost` and both built on B8041's
+  `CallableHandle`. LiteLLM has no code for either, so the task owns no LiteLLM lines.
+
+
+  First, hook objects. A callback in config.yaml resolves to a function, a `CustomLogger` instance, a `CustomLLM` instance
+  (for `custom_provider_map`), a routing strategy or a class by mistake. `hook_object::HookObject` wraps a `LoadedObject`
+  from B8042 and gives: `kind(host, logger_class) -> LoadedKind`, `has_method(host, name) -> bool`, `method(host, name) ->
+  Option<CallableHandle>` and `call_method(host, tracker, deadline, name, args, kwargs) -> Result<Value, CallError>`. A method
+  that does not exist is `None` or `CallError::NoSuchMethod { name }`, never an AttributeError text. `LoadedKind` follows
+  `_classify_loaded_callback` (callback_utils.py L74-L98): `Logger` when the object is an instance of the class whose dotted
+  name the caller passes to `kind(host, logger_class: &str)`, `Function` for any other callable that is not a type,
+  `Class { module, qualname }` for a type, and `Other { type_name, repr }` for the rest (a string or a dict, for example).
+  The check order is logger first, then type, then callable. An import failure of `logger_class` means "not that class",
+  because the wheel may be absent. The match arms that raise the user-facing message stay with the caller (B165).
+
+
+  `call_method_raw` takes and returns Python objects for hooks that need `ModelResponse`, `UserAPIKeyAuth` or other classes
+  from the wheel. `construct(host, "pkg.mod.Class", kwargs: &Value)` builds one by importing the class and calling it with
+  keyword arguments from a JSON object, so Rust code can hand a typed request without a Python converter module.
+
+
+  Second, optional libraries. B1506 (llm-sandbox), B1546 and B1547 (Riva audio and gRPC) and B1553 (python-dateutil) call
+  Python libraries that Rust has no equivalent for. `optional_library::OptionalLibrary::import(host, module_name,
+  install_hint)` imports on demand and caches the module per name. A missing library is
+  `LibraryError::NotInstalled { module, install_hint }` with the text `{module} is not installed. Install it with: {hint}`,
+  and an ImportError raised inside an installed library stays `LibraryError::Import(PythonError)` and is not reported as
+  missing. `LibraryModule::function("a.b.c")` walks attributes and returns a `CallableHandle`, so
+  `lib.function("soundfile.read")` works. `LibraryModule::call_blocking` runs a call through the `WorkTracker` with an
+  `OwnedTempDir` argument when the caller asks for one: the folder lives until the call returns.
+scope:
+  paths:
+  - crates/betterlite-pyhost/src/hook_object.rs
+  - crates/betterlite-pyhost/src/hook_object/**
+  - crates/betterlite-pyhost/src/optional_library.rs
+  - crates/betterlite-pyhost/src/optional_library/**
+  - crates/betterlite-pyhost/Cargo.toml
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L74-L131
+  why: The classification of a loaded callback into instance, function, class or other.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6457-L6470
+  why: A custom_provider_map handler is loaded as an object and its methods are called by name later.
+- url: https://docs.python.org/3/library/importlib.html#importlib.import_module
+  why: The import call behind OptionalLibrary.
+dod:
+- text: kind returns Logger, Function, Class and Other for a logger instance, a plain function, a class and a string, and a callable logger instance is a Logger.
+  proof: [hook-kind-tests]
+- text: has_method, method and call_method find a method on an instance and give NoSuchMethod for a missing one, for sync and async methods.
+  proof: [hook-method-tests]
+- text: construct builds a class from a JSON object of keyword arguments and call_method_raw passes Python objects through.
+  proof: [hook-method-tests]
+- text: A missing optional library gives NotInstalled with the install hint, and an ImportError inside an installed library does not.
+  proof: [library-tests]
+- text: function("a.b.c") returns a callable for a standard library function and runs it through the pool.
+  proof: [library-tests]
+- text: This task adds the crates it uses to crates/betterlite-pyhost/Cargo.toml, and no unused one.
+  proof: [hook-kind-tests]
+checks:
+  optional: []
+  commands:
+  - id: hook-kind-tests
+    why: Kind classification tests are missing.
+    run: cargo nextest run --locked -p betterlite-pyhost --no-tests=fail -E 'test(/^hook_object::kind::/)'
+  - id: hook-method-tests
+    why: Method lookup, call or construct tests are missing.
+    run: cargo nextest run --locked -p betterlite-pyhost --no-tests=fail -E 'test(/^hook_object::(method|construct)::/)'
+  - id: library-tests
+    why: Optional library tests are missing.
+    run: cargo nextest run --locked -p betterlite-pyhost --no-tests=fail -E 'test(/^optional_library::/)'
+oracle_cases: []
+deviations:
+- what: The logger class is named by the caller as a dotted path and not imported from litellm.
+  why: The wheel is `betterlite`, so the class lives at a different dotted path.
+- what: A missing optional library is a typed error with an install hint.
+  why: LiteLLM lets ImportError escape with Python's own text. The hint is the fix the user needs.
+out_of_scope:
+- Raising the "resolved to the class" and "neither a CustomLogger instance nor a callable" ValueErrors is B165's wiring. This task only reports the kind.
+- The Riva, sandbox and dateutil call sites are B1506, B1546, B1547 and B1553. This task provides the import and call seam.
+- No oracle cases. The behavior is betterlite plumbing; the user-visible messages are compared in B165.
+pitfalls:
+- 'A class is callable, so check `isinstance(obj, type)` before the callable test, or a class by mistake is called as a function.'
+- 'A function decorated with `functools.wraps` is still a function, and a `functools.partial` has no `__qualname__`. Fall back to the type name when logging.'
+- 'ImportError on a library import and ImportError raised inside the library look the same. Compare `e.name` with the module name you asked for.'
+- 'Cache only a successful import. Caching a failure would keep reporting "not installed" after the operator installs it.'
+- 'Do not call a method to test that it exists. Use `getattr(obj, name, None)` and `callable`, since calling a logger hook has side effects.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

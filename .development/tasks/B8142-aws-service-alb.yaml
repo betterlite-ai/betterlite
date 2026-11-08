@@ -1,0 +1,196 @@
+id: B8142
+title: "AWS Terraform module: ECS service, load balancer, autoscaling and outputs"
+description: >-
+  Finish the AWS module in packaging/terraform/aws/: the betterlite ECS service, the migration task, the Application Load Balancer, autoscaling and the outputs.
+  LiteLLM deploys three containers (gateway on 4000, backend on 4001, ui on 3000) behind path rules. betterlite is one binary that serves the API and the
+  admin UI on port 4000 (B5071 image, ENTRYPOINT prod_entrypoint.sh, CMD ["--port", "4000"]), so this module has one task definition, one service and one target group, and no path rules.
+  It uses the names B8140 and B8141 define: local.name, local.tags, local.vpc_id, local.public_subnet_ids, local.private_subnet_ids, local.task_security_group_ids,
+  local.database_enabled, local.byo_database, local.redis_enabled, local.byo_redis, aws_ecs_cluster.this, the execution and task roles, the secrets and the three log groups.
+
+  variables_service.tf (defaults are LiteLLM's gateway defaults): image (string, no default; the validation requires a non-empty value), cpu (1024), memory (4096), desired_count (2),
+  autoscaling_enabled (true), min_capacity (1), max_capacity (10), cpu_target (70), memory_target (80, 0 turns the policy off), target_requests_per_second (0, off),
+  connection_pool_enabled (false), pool_max_db_connections (20, at least 1), pool_max_client_conn (1000, at least 1), extra_env (map(string), {}), acm_certificate_arn (""),
+  allow_plaintext_alb (false), otel_endpoint (""), otel_exporter ("otlp_http"), otel_environment_name ("", falls back to var.env) and otel_capture_message_content ("no_content").
+
+  locals_service.tf builds the container environment as a list of {name, value}: when create_database, IAM_TOKEN_DB_AUTH=true, DATABASE_HOST (cluster endpoint), DATABASE_PORT, DATABASE_USER (var.db_username), DATABASE_NAME,
+  DATABASE_HOST_READ_REPLICA (reader endpoint) and DATABASE_PORT_READ_REPLICA; when create_redis, REDIS_HOST, REDIS_PORT and REDIS_SSL=true; always S3_BUCKET_NAME, S3_REGION_NAME, AWS_REGION and AWS_REGION_NAME;
+  STORE_MODEL_IN_DB=true when database_enabled; when var.otel_endpoint is set, LITELLM_OTEL_V2=true, OTEL_EXPORTER, OTEL_ENDPOINT, OTEL_ENVIRONMENT_NAME, OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT and
+  OTEL_SERVICE_NAME="${local.name}"; when connection_pool_enabled, LITELLM_PGBOUNCER_ENABLED=true, LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS and LITELLM_PGBOUNCER_MAX_CLIENT_CONN; when proxy_config has keys,
+  LITELLM_CONFIG_BUCKET_NAME, LITELLM_CONFIG_BUCKET_OBJECT_KEY (the s3 object key), LITELLM_CONFIG_BUCKET_TYPE=s3, AWS_DEFAULT_REGION and PROXY_CONFIG_HASH=md5(yamlencode(var.proxy_config)) so a config edit makes a new task revision.
+  Then var.extra_env, with any name that also appears in the module-set list removed from the module list, so the caller wins and ECS never sees a duplicate name. The secrets list is LITELLM_MASTER_KEY, LITELLM_LICENSE (if set),
+  UI_PASSWORD (if set), DATABASE_URL (byo_database), REDIS_URL (byo_redis), OTEL_HEADERS (otel_headers_secret_arn set) and every entry of var.extra_secrets, each as {name, valueFrom}.
+  A check block "redis_less_rate_limits_are_per_process" warns when redis_enabled is false and the service can run more than one task (autoscaling max_capacity, or desired_count when autoscaling is off).
+
+  ecs.tf: aws_ecs_task_definition.betterlite (family local.name, awsvpc, FARGATE, cpu and memory from the variables, both IAM roles, one container "betterlite" with image var.image, port 4000, command ["--port", "4000"], awslogs to the betterlite log group, no
+  container health check because the image has no curl; the ALB polls). Preconditions: connection_pool_enabled needs database_enabled, and otel_endpoint set needs otel_exporter not empty. aws_ecs_service.betterlite (Fargate, private subnets, task
+  security groups, no public IP, load balancer block to the target group on container "betterlite" port 4000, deployment_minimum_healthy_percent 50, maximum 200, ignore_changes on desired_count, depends_on the listeners, terraform_data.migration and
+  the secret versions). migrations.tf: aws_ecs_task_definition.migrations (count database_enabled, 512 CPU, 1024 MiB, same image, entryPoint ["betterlite-db-admin"], command ["migrate"], the environment and secrets lists, migrations log group) and
+  terraform_data.migration, which runs the task with the aws CLI after the bootstrap task and fails the apply on a non-zero exit code, in the same style as B8141's bootstrap runner. B1232 owns betterlite-db-admin and its exit codes.
+
+  alb.tf: aws_lb.this (application, internet-facing, ALB security group, public subnets, idle_timeout 120, precondition of at least two public subnets), local.tls_enabled = var.acm_certificate_arn != "", aws_lb_target_group.betterlite (port 4000, HTTP, ip targets,
+  health check path /health/readiness, matcher 200-299, interval 30, timeout 10, thresholds 2 and 3, deregistration_delay 30), the HTTP listener on 80 (forwards to the target group, or redirects to HTTPS with status HTTP_301 when TLS is on; a
+  precondition fails unless TLS is on or allow_plaintext_alb is true) and the HTTPS listener on 443 (count tls_enabled, policy ELBSecurityPolicy-TLS13-1-2-2021-06, forwards to the target group). autoscaling.tf: when autoscaling_enabled, an
+  appautoscaling target on the service with min and max capacity and three target-tracking policies: CPU (ECSServiceAverageCPUUtilization at cpu_target), memory (when memory_target > 0) and requests (when target_requests_per_second > 0, metric
+  ALBRequestCountPerTarget with the lb and target group arn suffixes, target value rate * 60). outputs.tf: alb_dns_name, alb_url (http or https by tls_enabled), ecs_cluster, vpc_id, task_security_group_id, aurora_writer_endpoint and
+  aurora_reader_endpoint (null without the cluster), redis_endpoint ("host:port" or null), s3_bucket, master_key_secret_arn, db_master_password_secret_arn, db_bootstrap_sql and migration_run_command (the aws ecs run-task command line, "" without a database).
+
+  Tests with mocked aws and random providers (the aws mock gives aws_iam_policy_document a parsable json and aws_rds_cluster a cluster_resource_id): tests/service_wiring.tftest.hcl (environment and secrets lists for the managed, supplied-database and no-store cases, caller override of a module-set name, no migration
+  task when there is no database, the redis-less check firing for max_capacity 3 and staying quiet for a single task), tests/connection_pool.tftest.hcl (pool off by default, the three variables when on, the precondition without a database),
+  tests/workload_autoscaling.tftest.hcl (policies per variable combination) and tests/alb_listeners.tftest.hcl (plaintext refused by default, redirect when TLS is on, no HTTPS listener without a certificate).
+
+scope:
+  paths:
+    - packaging/terraform/aws/variables_service.tf
+    - packaging/terraform/aws/locals_service.tf
+    - packaging/terraform/aws/ecs.tf
+    - packaging/terraform/aws/migrations.tf
+    - packaging/terraform/aws/alb.tf
+    - packaging/terraform/aws/autoscaling.tf
+    - packaging/terraform/aws/outputs.tf
+    - packaging/terraform/aws/tests/service_wiring.tftest.hcl
+    - packaging/terraform/aws/tests/connection_pool.tftest.hcl
+    - packaging/terraform/aws/tests/workload_autoscaling.tftest.hcl
+    - packaging/terraform/aws/tests/alb_listeners.tftest.hcl
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/ecs.tf#L55-L186
+    why: The shared environment and secrets lists, the caller-wins filter for OTel names and the proxy config handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/ecs.tf#L330-L470
+    why: Task definition, preconditions and service settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/alb.tf
+    why: Load balancer, listeners, health check and the plaintext guard.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/migrations.tf
+    why: Migration task shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/autoscaling.tf#L1-L60
+    why: The CPU, memory and request-count policies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/outputs.tf
+    why: Output names and their null rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/redis.tf#L40-L51
+    why: The redis-less check block.
+
+dod:
+  - text: The task definition runs one container "betterlite" with port 4000 and command ["--port", "4000"], and the service registers it with the single target group.
+    proof: [aws-ecs-literals, aws-service-tests]
+  - text: The environment and secrets lists match the description for the managed, supplied-store and no-store cases, and a caller extra_env name replaces the module's value.
+    proof: [aws-service-tests, aws-env-literals]
+  - text: The migration task runs betterlite-db-admin migrate before the service, exists only with a database and fails the apply on a non-zero exit code.
+    proof: [aws-migration-literals, aws-service-tests]
+  - text: The ALB has one target group with health path /health/readiness, forwards on 80 or redirects to 443, and refuses plaintext unless allow_plaintext_alb is true.
+    proof: [aws-alb-literals, aws-alb-tests]
+  - text: Autoscaling creates the CPU policy always, the memory policy when memory_target > 0 and the request policy when target_requests_per_second > 0, and nothing when disabled.
+    proof: [aws-autoscaling-tests]
+  - text: The connection pool variables reach the container only when enabled, and enabling without a database fails at plan.
+    proof: [aws-pool-tests]
+  - text: The redis-less check block fires when more than one task can run without Redis.
+    proof: [aws-service-tests]
+  - text: The outputs listed exist and the nullable ones are null without their resource.
+    proof: [aws-output-literals]
+  - text: The whole module passes fmt and validate.
+    proof: [aws-fmt, aws-validate]
+
+checks:
+  optional: []
+  commands:
+    - id: aws-fmt
+      why: A Terraform file is not formatted the way terraform fmt writes it.
+      run: >-
+        test -f packaging/terraform/aws/ecs.tf && terraform -chdir=packaging/terraform/aws fmt -check -recursive -diff
+    - id: aws-validate
+      why: The full module does not validate.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/aws" TF_IN_AUTOMATION=1 && test -f packaging/terraform/aws/outputs.tf &&
+        terraform -chdir=packaging/terraform/aws init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/aws validate
+    - id: aws-ecs-literals
+      why: The container name, port, command or deployment percentages differ from the description.
+      run: >-
+        grep -q 'name *= *"betterlite"' packaging/terraform/aws/ecs.tf && grep -q 'containerPort *= *4000' packaging/terraform/aws/ecs.tf && grep -q '"--port", "4000"' packaging/terraform/aws/ecs.tf &&
+        grep -q 'deployment_minimum_healthy_percent *= *50' packaging/terraform/aws/ecs.tf && grep -q 'deployment_maximum_percent *= *200' packaging/terraform/aws/ecs.tf && grep -q 'assign_public_ip *= *false' packaging/terraform/aws/ecs.tf
+    - id: aws-env-literals
+      why: An environment variable or secret name from the description is missing.
+      run: >-
+        for n in IAM_TOKEN_DB_AUTH DATABASE_HOST DATABASE_HOST_READ_REPLICA DATABASE_PORT_READ_REPLICA REDIS_HOST REDIS_SSL S3_BUCKET_NAME AWS_REGION_NAME STORE_MODEL_IN_DB LITELLM_OTEL_V2 OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT LITELLM_PGBOUNCER_MAX_CLIENT_CONN LITELLM_CONFIG_BUCKET_NAME LITELLM_CONFIG_BUCKET_OBJECT_KEY LITELLM_CONFIG_BUCKET_TYPE PROXY_CONFIG_HASH LITELLM_MASTER_KEY UI_PASSWORD OTEL_HEADERS; do grep -rq "\"$n\"" packaging/terraform/aws/locals_service.tf || { echo "missing $n"; exit 1; }; done
+    - id: aws-migration-literals
+      why: The migration task does not run betterlite-db-admin migrate or does not fail on a bad exit code.
+      run: >-
+        grep -q 'betterlite-db-admin' packaging/terraform/aws/migrations.tf && grep -q '"migrate"' packaging/terraform/aws/migrations.tf && grep -q 'resource "terraform_data" "migration"' packaging/terraform/aws/migrations.tf &&
+        grep -q 'exit 1' packaging/terraform/aws/migrations.tf && grep -q 'aws ecs wait tasks-stopped' packaging/terraform/aws/migrations.tf
+    - id: aws-alb-literals
+      why: Health path, listener ports, redirect status or TLS policy differs.
+      run: >-
+        grep -q '/health/readiness' packaging/terraform/aws/alb.tf && grep -q 'HTTP_301' packaging/terraform/aws/alb.tf && grep -q 'ELBSecurityPolicy-TLS13-1-2-2021-06' packaging/terraform/aws/alb.tf &&
+        grep -q 'deregistration_delay *= *30' packaging/terraform/aws/alb.tf && grep -q 'idle_timeout *= *120' packaging/terraform/aws/alb.tf && ! grep -q 'aws_lb_listener_rule' packaging/terraform/aws/alb.tf
+    - id: aws-output-literals
+      why: An output from the description is missing.
+      run: >-
+        for o in alb_dns_name alb_url ecs_cluster vpc_id task_security_group_id aurora_writer_endpoint aurora_reader_endpoint redis_endpoint s3_bucket master_key_secret_arn db_master_password_secret_arn db_bootstrap_sql migration_run_command; do grep -q "^output \"$o\"" packaging/terraform/aws/outputs.tf || { echo "missing output $o"; exit 1; }; done
+    - id: aws-service-tests
+      why: The wiring plan tests fail or are missing.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/aws" TF_IN_AUTOMATION=1 && test -f packaging/terraform/aws/tests/service_wiring.tftest.hcl &&
+        terraform -chdir=packaging/terraform/aws init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/aws test -filter=tests/service_wiring.tftest.hcl
+    - id: aws-pool-tests
+      why: The connection pool plan tests fail or are missing.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/aws" TF_IN_AUTOMATION=1 && test -f packaging/terraform/aws/tests/connection_pool.tftest.hcl &&
+        terraform -chdir=packaging/terraform/aws init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/aws test -filter=tests/connection_pool.tftest.hcl
+    - id: aws-autoscaling-tests
+      why: The autoscaling plan tests fail or are missing.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/aws" TF_IN_AUTOMATION=1 && test -f packaging/terraform/aws/tests/workload_autoscaling.tftest.hcl &&
+        terraform -chdir=packaging/terraform/aws init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/aws test -filter=tests/workload_autoscaling.tftest.hcl
+    - id: aws-alb-tests
+      why: The listener plan tests fail or are missing.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/aws" TF_IN_AUTOMATION=1 && test -f packaging/terraform/aws/tests/alb_listeners.tftest.hcl &&
+        terraform -chdir=packaging/terraform/aws init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/aws test -filter=tests/alb_listeners.tftest.hcl
+
+oracle_cases: []
+
+deviations:
+  - what: One ECS service, one container and one target group replace the gateway, backend and ui services, and the ALB has no path-pattern rules.
+    why: betterlite serves the API, the management routes and the admin UI from one process on port 4000.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/alb.tf#L80-L204
+  - what: There is no num_workers variable, no --workers flag and no config download command; the task starts the image with --port 4000 only.
+    why: betterlite is one async process and reads the config from the bucket itself through LITELLM_CONFIG_BUCKET_NAME, LITELLM_CONFIG_BUCKET_OBJECT_KEY and LITELLM_CONFIG_BUCKET_TYPE; LiteLLM's boto3 one-liner needs Python.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/ecs.tf#L158-L218
+  - what: The image variable has no default.
+    why: LiteLLM defaults to ghcr.io/berriai/litellm-*:main-stable. betterlite has no published image name yet, so the caller supplies one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/variables.tf#L142-L170
+  - what: There is no migrations_image variable; the migration task uses the same image with betterlite-db-admin as entry point.
+    why: B5071 ships both binaries in one image, so a second image has nothing to add.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/migrations.tf#L12-L45
+  - what: The token-rate autoscaling policy (gateway_target_tokens_per_second and gateway_tokens_metric) is not built.
+    why: It reads a CloudWatch metric published by the Prometheus metrics sidecar, which this module does not run.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/autoscaling.tf#L80-L160
+  - what: Migration memory is 1024 MiB, not 4096.
+    why: The 4 GiB headroom in LiteLLM is for the Prisma Node and Rust engine, which betterlite does not use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/migrations.tf#L19-L24
+
+out_of_scope:
+  - "The collector sidecar (collector_* variables, LITELLM_COLLECTOR_* wiring, tests/collector.tftest.hcl) and the Prometheus metrics sidecar (gateway_metrics_port, gateway_metrics_scrape_cidrs, tests/metrics_sidecar.tftest.hcl). betterlite has no collector process or metrics subcommand to run in a second container yet; B1708 only builds the producer side and B3887 the listener inside the server."
+  - "Billing metrics endpoint, client certificate, key and CA variables and their secrets. Not built in this module."
+  - "The aws_ecs_service and target group for backend and ui, and gateway_path_prefixes. There is one service."
+  - "Secrets, IAM, bucket, cluster and bootstrap. Owned by B8141. Network, database and cache. Owned by B8140."
+  - "The example root and README. Owned by B8143."
+
+pitfalls:
+  - "ECS rejects two environment entries with the same name, so the caller's extra_env must remove the module value with the same name before the lists are joined, not append after it."
+  - "The master key secret goes in `secrets` as valueFrom, never in `environment`; a plan that shows the key in the task definition JSON is a failure."
+  - "The ALB target group needs target_type = \"ip\" for awsvpc tasks, and health_check path /health/readiness, which answers without a key."
+  - "Fargate allows only fixed cpu and memory pairs; the default 1024 and 4096 is valid and the migration pair 512 and 1024 is valid, so do not change one without checking the table."
+  - "The HTTP listener's default_action is a redirect only when TLS is on; with a dynamic redirect block, target_group_arn must be null in that case or the provider rejects the plan."
+  - "ALBRequestCountPerTarget counts per minute, so target_requests_per_second is multiplied by 60."
+  - "aws_ecs_service ignore_changes on desired_count keeps autoscaling from fighting terraform; do not drop it when autoscaling is on."
+  - "A check block only warns; the redis-less test must use expect_failures with the check address, which Terraform treats as a failure for the test run, not a plan error."
+  - "AWS_DEFAULT_REGION is what betterlite reads for the bucket config region (B4143); AWS_REGION alone leaves it at us-east-1."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

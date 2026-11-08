@@ -1,0 +1,71 @@
+id: B167
+title: Python types under litellm.types, package exports and surface test
+description: >-
+  B167 is the umbrella for the Python mirror of `litellm/types`. Its parts B7920 to B7954 each port a group of files into
+  `crates/betterlite-python/python/betterlite/types/` and write no `__init__.py` for a package that more than one part fills. This task finishes the work: it writes those
+  package `__init__.py` files so `from betterlite.types.llms.openai import X` works for every name LiteLLM exports, and adds one test that
+  compares the public names of every ported module with LiteLLM. It is Python only. It starts after every part has merged.
+
+
+  The packages with several parts are: `llms/openai/` (B7920, B7921, B7922: `core`, `chat`, `realtime`), `llms/bedrock/` (B7923 `converse`,
+  B7924 `invoke`), `guardrails/` (B7930, B7931), `integrations/prometheus/` (B7937, B7938) and `proxy/guardrails/guardrail_hooks/` subfolders.
+  Single-part packages that need an `__init__.py` re-export too: `llms/anthropic/`, `llms/gemini/`, `llms/vertex_ai/`,
+  `llms/vertex_ai_audio/`, `llms/openai_evals/`, `interactions/` (the export list is LiteLLM's `interactions/__init__.py`, 139 lines),
+  `mcp/` when B7943 made it a package, and `proxy/policy_engine/` (LiteLLM's `__init__.py` has 97 lines of exports). Each
+  `__init__.py` imports names one by one and lists them in `__all__`; no star imports.
+
+
+  `tests/test_types_surface.py` loads every module path in a list inside the test, imports it from `litellm.types` and from
+  `betterlite.types`, and checks that every public name in the first exists in the second.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/llms/openai/__init__.py
+  - crates/betterlite-python/python/betterlite/types/llms/bedrock/__init__.py
+  - crates/betterlite-python/python/betterlite/types/llms/anthropic/__init__.py
+  - crates/betterlite-python/python/betterlite/types/llms/gemini/__init__.py
+  - crates/betterlite-python/python/betterlite/types/llms/vertex_ai/__init__.py
+  - crates/betterlite-python/python/betterlite/types/llms/vertex_ai_audio/__init__.py
+  - crates/betterlite-python/python/betterlite/types/llms/openai_evals/__init__.py
+  - crates/betterlite-python/python/betterlite/types/guardrails/__init__.py
+  - crates/betterlite-python/python/betterlite/types/integrations/prometheus/__init__.py
+  - crates/betterlite-python/python/betterlite/types/interactions/__init__.py
+  - crates/betterlite-python/python/betterlite/types/mcp/__init__.py
+  - crates/betterlite-python/python/betterlite/types/proxy/policy_engine/__init__.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/__init__.py
+  - crates/betterlite-python/tests/test_types_surface.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/__init__.py#L1-L139
+  why: The export list for interactions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/__init__.py#L1-L97
+  why: The export list for the policy engine.
+out_of_scope:
+- >-
+  Parent package `__init__.py` files such as `types/llms`, `types/proxy` and `types/integrations` are the architect's (see B164). Names LiteLLM imports from the openai, httpx or pydantic packages are not exported.
+pitfalls:
+- >-
+  A name that two parts both define (for example `GenericStreamingChunk` in bedrock.py and databricks.py) lives in two different modules in LiteLLM. Export each only from its own package; do not merge them.
+- >-
+  `guardrails.py` imports the hook files and the hook files import `GuardrailParamUITypes` and `PiiEntityType` back from it. The ported parts avoid a loop (B7930 has the shared names, B7931 comes last). The `__init__.py` imports `core` and `pii` first.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_umbrella.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 900
+  max_new_expects: 0
+review_level: standard

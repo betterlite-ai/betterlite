@@ -59,7 +59,7 @@ description: >-
   noted): `success_callback_names()` (names from B189's registry, via `callback_name`), `cache_report()` (async),
   `redis_configured()`, `log_level()` (name such as "INFO" or "DEBUG") and `version()`. `cache_report` is None when no
   cache exists, the cache type string, or, for a Redis semantic cache, an object `{"type": <type>, "index_info": <value>}`
-  where a failing index lookup becomes the string `index does not exist - error: <error text>`. Build the body: status
+  where a failing index lookup becomes the string `index does not exist - error: <error text>`. The value comes from B4382's `RedisSemanticCache::index_info(&self) -> Result<Json, RedisSemanticError>`, whose Display text is the bare Redis error, so build the string from that text and add no other prefix. Build the body: status
   "healthy", db, cache, litellm_version, success_callbacks, use_aiohttp_transport (false when B173's
   aiohttp_transport_toggle section says disabled, else true), log_level, is_detailed_debug (true when the effective level
   is debug or lower), show_no_redis_warning, show_env_credential_login_warning. With a database configured, db is the
