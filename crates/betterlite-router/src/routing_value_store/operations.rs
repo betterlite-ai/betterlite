@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::slice;
 use std::sync::{Mutex, PoisonError};
 
-use betterlite_context::local_ttl_cache::LocalTtlCache;
+use betterlite_context::local_ttl_cache::{CacheValue, LocalTtlCache};
 
 use super::codec::{from_cache_value, to_cache_value};
 use super::{
@@ -33,6 +33,15 @@ impl RoutingValueStore {
         let Some(encoded) = to_cache_value(value)? else {
             return Ok(());
         };
+        self.store(key, encoded, ttl_seconds)
+    }
+
+    fn store(
+        &self,
+        key: &RouteKey,
+        encoded: CacheValue,
+        ttl_seconds: Option<f64>,
+    ) -> Result<(), StoreError> {
         let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
         cache.set(key.as_ref(), encoded, ttl_seconds)?;
         drop(cache);
@@ -56,14 +65,9 @@ impl RoutingValueStore {
         entries: &[(RouteKey, RouteValue)],
         ttl_seconds: Option<f64>,
     ) -> Result<(), StoreError> {
-        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
         for (key, value) in entries {
-            let Some(encoded) = to_cache_value(value)? else {
-                continue;
-            };
-            cache.set(key.as_ref(), encoded, ttl_seconds)?;
+            self.set(key, value, ttl_seconds)?;
         }
-        drop(cache);
         Ok(())
     }
 
@@ -73,8 +77,7 @@ impl RoutingValueStore {
         values: &[String],
         ttl_seconds: Option<f64>,
     ) -> Result<Vec<String>, StoreError> {
-        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut members = match read(&mut cache, key)? {
+        let mut members = match self.get(key)? {
             StoreRead::Missing => BTreeSet::new(),
             StoreRead::Value(RouteValue::Members(members)) => members,
             StoreRead::Value(_) => {
@@ -86,10 +89,7 @@ impl RoutingValueStore {
         for value in values {
             members.insert(value.clone());
         }
-        if let Some(encoded) = to_cache_value(&RouteValue::Members(members))? {
-            cache.set(key.as_ref(), encoded, ttl_seconds)?;
-        }
-        drop(cache);
+        self.set(key, &RouteValue::Members(members), ttl_seconds)?;
         Ok(values.to_vec())
     }
 
