@@ -75,25 +75,29 @@ fn hostinfo(netloc: &str) -> (&str, Option<&str>) {
 
 pub(super) fn validate_netloc(netloc: &str) -> Result<(), UrlParseError> {
     let open = netloc.contains('[');
-    if open != netloc.contains(']') || (open && !valid_bracketed(netloc)) {
+    if open != netloc.contains(']') {
         return Err(UrlParseError::InvalidIpv6);
     }
-    Ok(())
-}
-
-fn valid_bracketed(netloc: &str) -> bool {
+    if !open {
+        return Ok(());
+    }
     let hostinfo = netloc.rsplit_once('@').map_or(netloc, |(_user, rest)| rest);
     let Some((before, bracketed)) = hostinfo.split_once('[') else {
-        return false;
+        return Err(UrlParseError::InvalidIpv6);
     };
     let Some((host, after)) = bracketed.split_once(']') else {
-        return false;
+        return Err(UrlParseError::InvalidIpv6);
     };
-    if !before.is_empty() || (!after.is_empty() && !after.starts_with(':')) {
-        return false;
-    }
     let address = host
         .split_once('%')
         .map_or(host, |(address, _zone)| address);
-    !address.is_empty() && Ipv6Addr::from_str(address).is_ok()
+    let shaped = before.is_empty()
+        && (after.is_empty() || after.starts_with(':'))
+        && !address.is_empty()
+        && Ipv6Addr::from_str(address).is_ok();
+    if shaped {
+        Ok(())
+    } else {
+        Err(UrlParseError::InvalidIpv6)
+    }
 }

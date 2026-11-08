@@ -18,9 +18,6 @@ deviations:
   - what: A URL that urlparse rejects (an unmatched bracket) warns and is ignored for PROXY_BASE_URL and for upstream_resource=auto, and get_request_base_url returns a typed error for it. LiteLLM lets the ValueError escape as an unhandled 500.
     why: These URLs come from an operator setting, the Host header and the server row; a bad value should not turn every OAuth request into a 500, and the typed error lets the caller answer 4xx. Well-formed values behave identically.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L110-L177
-  - what: A URL with leading C0 controls or spaces, or with tab, CR or LF inside it, is not normalized. Python's urlsplit strips and removes those bytes before parsing.
-    why: An HTTP request target cannot carry raw controls, config scalars are trimmed, and a URL stored in a server row with a stray tab is malformed rather than a behavior a working setup relies on.
-    link: https://github.com/python/cpython/blob/3.13/Lib/urllib/parse.py#L494-L501
-  - what: An IPvFuture bracketed host such as http://[v1.fe80]/ is rejected as an invalid IPv6 URL. Python's urlsplit accepts an IPvFuture literal.
-    why: No browser or MCP client resolves an IPvFuture literal, and accepting it would only carry the address into a URL a client cannot use.
-    link: https://github.com/python/cpython/blob/3.13/Lib/urllib/parse.py#L458-L467
+  - what: Python's urlsplit normalizes control characters away and accepts an IPvFuture bracketed host; betterlite neither strips controls nor accepts IPvFuture.
+    why: A request target cannot carry raw controls, config scalars are trimmed, and no browser or MCP client resolves an IPvFuture literal, so neither case is one a working setup relies on.
+    link: https://github.com/python/cpython/blob/3.13/Lib/urllib/parse.py#L458-L501

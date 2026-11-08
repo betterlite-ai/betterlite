@@ -34,15 +34,12 @@ impl fmt::Debug for RawHeaders {
 
 impl RawHeaders {
     pub fn from_pairs(pairs: &[(&[u8], &[u8])]) -> Result<Self, DuplicateAuthorization> {
-        let mut seen_authorization = false;
-        for (name, _value) in pairs {
-            if !name.eq_ignore_ascii_case(b"authorization") {
-                continue;
-            }
-            if seen_authorization {
-                return Err(DuplicateAuthorization);
-            }
-            seen_authorization = true;
+        let authorizations = pairs
+            .iter()
+            .filter(|(name, _value)| name.eq_ignore_ascii_case(b"authorization"))
+            .count();
+        if authorizations > 1 {
+            return Err(DuplicateAuthorization);
         }
         let mut collapsed: Vec<(String, String)> = Vec::with_capacity(pairs.len());
         for (raw_name, raw_value) in pairs {

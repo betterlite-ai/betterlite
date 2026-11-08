@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import TypeAlias, cast
 from unittest.mock import patch
 
@@ -14,20 +15,6 @@ from starlette.requests import Request
 from starlette.types import Scope
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-HEADER_PAIR_LEN = 2
-
-
-class _ServerFields:
-    def __init__(self, upstream_resource: str | None, url: str | None, server_id: str) -> None:
-        self.upstream_resource = upstream_resource
-        self.url = url
-        self.server_id = server_id
-
-
-class _StubRequest:
-    def __init__(self, base_url: str, headers: dict[str, str]) -> None:
-        self.base_url = base_url
-        self.headers = headers
 
 
 def _string(data: dict[str, Json], name: str) -> str:
@@ -51,22 +38,15 @@ def _boolean(data: dict[str, Json], name: str) -> bool:
     return value
 
 
-def _pair(entry: Json) -> tuple[bytes, bytes]:
-    if not (
-        isinstance(entry, list)
-        and len(entry) == HEADER_PAIR_LEN
-        and all(isinstance(part, str) for part in entry)
-    ):
-        raise ValueError("each header pair is a [name, value] list of strings")
-    parts = cast(list[str], entry)
-    return (parts[0].encode("latin-1"), parts[1].encode("latin-1"))
-
-
 def _headers(data: dict[str, Json]) -> Headers:
     raw = data.get("raw")
     if not isinstance(raw, list):
         raise ValueError("raw must be a list of [name, value] pairs")
-    scope: dict[str, object] = {"type": "http", "headers": [_pair(entry) for entry in raw]}
+    pairs = [
+        (cast(list[str], entry)[0].encode("latin-1"), cast(list[str], entry)[1].encode("latin-1"))
+        for entry in raw
+    ]
+    scope: dict[str, object] = {"type": "http", "headers": pairs}
     return MCPRequestHandler._safe_get_headers_from_scope(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         cast(Scope, scope)
     )
@@ -82,21 +62,12 @@ def _scope(data: dict[str, Json], path_name: str) -> Scope:
 
 
 def _server(data: dict[str, Json]) -> MCPServer:
-    fields = _ServerFields(
-        _optional_string(data, "upstream_resource"),
-        _optional_string(data, "url"),
-        _string(data, "server_id"),
+    fields = SimpleNamespace(
+        upstream_resource=_optional_string(data, "upstream_resource"),
+        url=_optional_string(data, "url"),
+        server_id=_string(data, "server_id"),
     )
     return cast(MCPServer, fields)
-
-
-def _header_servers(data: dict[str, Json]) -> list[str] | None:
-    raw = data.get("header_servers")
-    if raw is None:
-        return None
-    if not isinstance(raw, list) or any(not isinstance(entry, str) for entry in raw):
-        raise ValueError("header_servers must be a list of strings or null")
-    return cast(list[str], raw)
 
 
 def _simple(data: dict[str, Json]) -> object:
@@ -120,16 +91,17 @@ def _simple(data: dict[str, Json]) -> object:
 
 
 def _request_base_url(data: dict[str, Json]) -> object:
-    headers: dict[str, str] = {}
-    for name, key in (
+    header_keys = (
         ("X-Forwarded-Proto", "x_forwarded_proto"),
         ("X-Forwarded-Host", "x_forwarded_host"),
         ("X-Forwarded-Port", "x_forwarded_port"),
-    ):
-        value = _optional_string(data, key)
-        if value is not None:
-            headers[name] = value
-    request = cast(Request, _StubRequest(_string(data, "base_url"), headers))
+    )
+    headers = {
+        name: value
+        for name, key in header_keys
+        if (value := _optional_string(data, key)) is not None
+    }
+    request = cast(Request, SimpleNamespace(base_url=_string(data, "base_url"), headers=headers))
     with patch.object(
         oauth_utils.IPAddressUtils,
         "is_request_from_trusted_proxy",
@@ -184,8 +156,12 @@ def _token_request(data: dict[str, Json]) -> object:
     return {"headers": built.headers, "body": built.body}
 
 
-def _safe_headers(data: dict[str, Json]) -> object:
+def _header_probe(data: dict[str, Json]) -> object:
     headers = _headers(data)
+    if data.get("function") == "litellm_key":
+        present = headers.get(MCPRequestHandler.LITELLM_API_KEY_HEADER_NAME_PRIMARY) is not None
+        value = MCPRequestHandler.get_litellm_api_key_from_headers(headers)
+        return {"value": value, "explicit_header_present": present}
     raw_lookups = data.get("lookups") or []
     if not isinstance(raw_lookups, list):
         raise ValueError("lookups must be a list of strings")
@@ -195,13 +171,6 @@ def _safe_headers(data: dict[str, Json]) -> object:
             raise ValueError("every lookup is a string")
         lookups[entry] = headers.get(entry)
     return {"items": [[name, value] for name, value in headers.items()], "lookups": lookups}
-
-
-def _litellm_key(data: dict[str, Json]) -> object:
-    headers = _headers(data)
-    present = headers.get(MCPRequestHandler.LITELLM_API_KEY_HEADER_NAME_PRIMARY) is not None
-    value = MCPRequestHandler.get_litellm_api_key_from_headers(headers)
-    return {"value": value, "explicit_header_present": present}
 
 
 def _mcp_auth_header(data: dict[str, Json]) -> object:
@@ -216,12 +185,11 @@ def _mcp_auth_header(data: dict[str, Json]) -> object:
     return {"header_name": header_name, "value": value}
 
 
-def _server_auth(data: dict[str, Json]) -> object:
-    return {"value": MCPRequestHandler._get_mcp_server_auth_headers_from_headers(_headers(data))}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-
-
-def _oauth2(data: dict[str, Json]) -> object:
-    return {"value": MCPRequestHandler._get_oauth2_headers_from_headers(_headers(data))}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+def _header_views(data: dict[str, Json]) -> object:
+    headers = _headers(data)
+    if data.get("function") == "server_auth":
+        return {"value": MCPRequestHandler._get_mcp_server_auth_headers_from_headers(headers)}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    return {"value": MCPRequestHandler._get_oauth2_headers_from_headers(headers)}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
 
 
 def _list_header(data: dict[str, Json]) -> object:
@@ -234,21 +202,25 @@ def _list_header(data: dict[str, Json]) -> object:
     return {"value": [s.strip() for s in header.split(",") if s.strip()]}
 
 
-def _target_names(data: dict[str, Json]) -> object:
-    raw_paths = data.get("paths")
-    if not isinstance(raw_paths, list):
-        raise ValueError("paths must be a list of strings")
-    values: list[list[str]] = []
-    for entry in raw_paths:
-        if not isinstance(entry, str):
-            raise ValueError("every path is a string")
-        values.append(MCPRequestHandler.extract_target_server_names_from_path(entry))
-    return {"values": values}
-
-
-def _target_selection(data: dict[str, Json]) -> object:
+def _targets(data: dict[str, Json]) -> object:
+    if data.get("function") == "target_names":
+        raw_paths = data.get("paths")
+        if not isinstance(raw_paths, list):
+            raise ValueError("paths must be a list of strings")
+        values: list[list[str]] = []
+        for entry in raw_paths:
+            if not isinstance(entry, str):
+                raise ValueError("every path is a string")
+            values.append(MCPRequestHandler.extract_target_server_names_from_path(entry))
+        return {"values": values}
     path = _string(data, "path")
-    servers = _header_servers(data)
+    raw = data.get("header_servers")
+    malformed = raw is not None and (
+        not isinstance(raw, list) or any(not isinstance(entry, str) for entry in raw)
+    )
+    if malformed:
+        raise ValueError("header_servers must be a list of strings or null")
+    servers = None if raw is None else cast(list[str], raw)
     if data.get("mode") == "cold_start":
         value = _parse_mcp_server_names_from_path(path, servers)  # pyright: ignore[reportPrivateUsage]
     else:
@@ -269,14 +241,14 @@ _HANDLERS: dict[str, Callable[[dict[str, Json]], object]] = {
     "redact_url": _simple,
     "resolve_resource": _simple,
     "token_request": _token_request,
-    "safe_headers": _safe_headers,
-    "litellm_key": _litellm_key,
+    "safe_headers": _header_probe,
+    "litellm_key": _header_probe,
     "mcp_auth_header": _mcp_auth_header,
-    "server_auth": _server_auth,
-    "oauth2": _oauth2,
+    "server_auth": _header_views,
+    "oauth2": _header_views,
     "list_header": _list_header,
-    "target_names": _target_names,
-    "target_selection": _target_selection,
+    "target_names": _targets,
+    "target_selection": _targets,
 }
 
 

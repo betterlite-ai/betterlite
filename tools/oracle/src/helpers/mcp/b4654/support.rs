@@ -48,26 +48,24 @@ pub(super) fn invalid_operation(name: &str) -> Box<HelperError> {
 }
 
 pub(super) fn function_name(input: &Value) -> Result<&str, Box<HelperError>> {
-    input
-        .get("function")
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            invalid(
-                "InvalidInput",
-                None,
-                "every b4654 call names a function".to_owned(),
-            )
-        })
+    let Some(function) = input.get("function").and_then(Value::as_str) else {
+        return Err(invalid("InvalidInput", None, "no function".to_owned()));
+    };
+    Ok(function)
 }
 
 pub(super) fn string<'input>(
     input: &'input Value,
     name: &str,
 ) -> Result<&'input str, Box<HelperError>> {
-    input
-        .get(name)
-        .and_then(Value::as_str)
-        .ok_or_else(|| invalid("InvalidInput", None, format!("{name} must be a string")))
+    let Some(value) = input.get(name).and_then(Value::as_str) else {
+        return Err(invalid(
+            "InvalidInput",
+            None,
+            format!("{name} must be a string"),
+        ));
+    };
+    Ok(value)
 }
 
 pub(super) fn optional<'input>(input: &'input Value, name: &str) -> Option<&'input str> {
@@ -78,10 +76,14 @@ pub(super) fn optional<'input>(input: &'input Value, name: &str) -> Option<&'inp
 }
 
 pub(super) fn boolean(input: &Value, name: &str) -> Result<bool, Box<HelperError>> {
-    input
-        .get(name)
-        .and_then(Value::as_bool)
-        .ok_or_else(|| invalid("InvalidInput", None, format!("{name} must be a boolean")))
+    let Some(value) = input.get(name).and_then(Value::as_bool) else {
+        return Err(invalid(
+            "InvalidInput",
+            None,
+            format!("{name} must be a boolean"),
+        ));
+    };
+    Ok(value)
 }
 
 pub(super) fn strings<'input>(input: &'input Value, name: &str) -> Option<Vec<&'input str>> {

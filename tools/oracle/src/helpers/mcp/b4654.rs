@@ -21,26 +21,18 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let function = support::function_name(input)?;
         match function {
-            "strip_default_port" => Ok(
-                json!({"netloc": base_url::strip_default_port(support::string(input, "scheme")?, support::string(input, "netloc")?)}),
-            ),
+            "strip_default_port" => Ok(json!({"netloc": strip_value(input)?})),
             "proxy_base_url" => Ok(
                 json!({"value": base_url::normalize_proxy_base_url(support::string(input, "raw")?)}),
             ),
             "request_base_url" => Ok(json!({"base_url": request_base(input)?})),
-            "well_known_root_suffix" => Ok(
-                json!({"value": challenge::well_known_root_suffix(support::optional(input, "server_root_path").unwrap_or_default())}),
-            ),
-            "route_relative_path" => Ok(
-                json!({"value": challenge::route_relative_request_path(support::optional(input, "original_path"), support::optional(input, "path").unwrap_or_default(), support::optional(input, "app_root_path"), support::optional(input, "root_path"))}),
-            ),
+            "well_known_root_suffix" => Ok(json!({"value": well_known_value(input)})),
+            "route_relative_path" => Ok(json!({"value": route_value(input)})),
             "metadata_url" => Ok(json!({"value": metadata(input)})),
             "www_authenticate" => Ok(
                 json!({"value": challenge::passthrough_www_authenticate(&metadata(input), support::boolean(input, "invalid_token")?)}),
             ),
-            "byok_authenticate" => Ok(
-                json!({"value": challenge::byok_www_authenticate(support::optional(input, "proxy_base_url").unwrap_or_default(), support::optional(input, "request_root_path").unwrap_or_default())}),
-            ),
+            "byok_authenticate" => Ok(json!({"value": byok_value(input)})),
             "canonicalize" => Ok(
                 json!({"value": if support::boolean(input, "resource_only").unwrap_or(false) { json!(resource_identity::canonical_resource_uri(support::string(input, "url")?)?) } else { json!(resource_identity::canonicalize_url_identity(support::string(input, "url")?)?) }}),
             ),
@@ -66,6 +58,52 @@ impl Helper for Op {
             other => Err(support::invalid_operation(other)),
         }
     }
+}
+
+fn strip_value(input: &Value) -> Result<String, Box<HelperError>> {
+    if let (Ok(scheme), Ok(netloc)) = (
+        support::string(input, "scheme"),
+        support::string(input, "netloc"),
+    ) {
+        return Ok(base_url::strip_default_port(scheme, netloc));
+    }
+    Err(support::invalid(
+        "InvalidInput",
+        None,
+        "scheme and netloc must be strings".to_owned(),
+    ))
+}
+
+fn well_known_value(input: &Value) -> &str {
+    if let Some(root) = support::optional(input, "server_root_path") {
+        return challenge::well_known_root_suffix(root);
+    }
+    challenge::well_known_root_suffix("")
+}
+
+fn route_value(input: &Value) -> String {
+    if support::optional(input, "path").is_some() {
+        return challenge::route_relative_request_path(
+            support::optional(input, "original_path"),
+            support::optional(input, "path").unwrap_or_default(),
+            support::optional(input, "app_root_path"),
+            support::optional(input, "root_path"),
+        );
+    }
+    String::new()
+}
+
+fn byok_value(input: &Value) -> String {
+    if let (Some(proxy), Some(root)) = (
+        support::optional(input, "proxy_base_url"),
+        support::optional(input, "request_root_path"),
+    ) {
+        return challenge::byok_www_authenticate(proxy, root);
+    }
+    challenge::byok_www_authenticate(
+        support::optional(input, "proxy_base_url").unwrap_or_default(),
+        support::optional(input, "request_root_path").unwrap_or_default(),
+    )
 }
 
 fn request_base(input: &Value) -> Result<String, Box<HelperError>> {
