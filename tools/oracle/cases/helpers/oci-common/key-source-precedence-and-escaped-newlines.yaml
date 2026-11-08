@@ -1,0 +1,19 @@
+kind: helper
+name: oci-common-key-source-precedence-and-escaped-newlines
+call:
+  b5940:
+    function: sign
+    explicit:
+      oci_user: ocid1.user.oc1..aaaa
+      oci_fingerprint: aa:bb:cc
+      oci_tenancy: ocid1.tenancy.oc1..bbbb
+      oci_key: |-
+        -----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCaROE13JhgADUq\nG9yW2Os9gsm75C6c1mBEgfTQTrtqQHAXW2gdbMzoxNLmTm3JaXWAojncAKQqFk/A\noclo5hKrt2B7lj4BgCcXopmGFAzmucZpyc/gcrZH5EwTWG5Ew434kDAoJ1EVNMp/\n4wFgsYChnM5CrlfNV8rEUyouUegF5B5Cd0+DVpsaTzZztyAcQGa6tFH46/4ydnUM\nQMzmv3KsYSsDvmZI1cYaB3Vi9/sKr1UL96Q/VO/36VddUcLOnPwfhOE4KYgvGS/a\nKNEKz70xEaiAgL1oZIxEErBz3B6J5xPNxnvhfneQDLmfj+Glt2G64uB/mFJTdfXD\nzg19Mo6vAgMBAAECggEAKBkQOqpIdueG6heM2i6u0nGs0ugoD38PTa9DvWNBhogS\nOpf5M3DEwBnswY0QL0J4lsNT67HE+eWLvEOxMNFgd/61ltoB6uzu/E84vWd3xP7z\nqiqZHDtk0sHt3jdljf0QaVO9GKrDghITMnOEN6hbiWZTHHTpgIe5vhbpx1llyCXQ\nQmYsljHNxB3LIHjoIOd2/dBrj6G5BDnrbDY8xGTHstUrSxWlZsUgMQ4TyJmK22FA\ne0pQjww3ZI31hoT4hILW+ZYqNryS+V4+mdw6LvQkwjRQzhGXx7Mz8P8jD/tWzz2o\ncN2xulPwf3zF+vB9KkYgpEm9QAgkFTWCmpbda4sUFQKBgQDHZJq8CjWKmAILrrGh\ndrolE0zI51xzxTV745HgidZU+Po2O9Al0HBghFvjJv5AoMX+bMaAwB4dair8xh4C\nGFFK3DHfyJqlajy3csALRSOlZRi1A8HoT9hVjm1i1jDsB1CE76pHhvUBHtfzQSpr\nRkBjR/ic3F0NSzafLMxP5dsLowKBgQDGEMdRl0j+zov3fxoHhwP6PDGV6sLFIryf\nxLo9bHqvvo4gKAuUb0+g/SihwYE5ZY8j9AW7Sudn+9fiwzpKH7TcYV8L2hUEmT7o\nBIpeIlT8T+9gwKFCSYw93CtuGvgIYm99PTE+JO+ZB++o/DOkVUVuifZ7TlSkrLsk\n9wAtcNyhhQKBgGYeq3UVEXjrA1kyXn1gjlOAv/nBLMOKRCswUT0buy8H2TY/igpj\n57o278y14s/8x4rX8Q5t1r6f6mZNnX7bL39UqSKA3ltLvs8BsUPUZD5IOdAznXM6\nuYSQDovpQWMRF/cNvDsn7oFlZ5qJTI1mjIGMkdLctbeiRtZdHkLpaTdbAoGAMcsu\nENkTxNtwXLxbcuECovpXDPWEGcNt4Ey49ZA8F8q0OGlY3+xL/JEokeHv9toNbmB+\nwGNIYd/ymlOyZ8go0+620mf1OL6+Dd52WswOyY/fAlfrMpsC4tpjIL8u9AyrMrUb\nmB/5DGPuYHFnGj1Fw1Bz4vQCW5QBSH3AUaw6C3ECgYBOkxz86C6PVyrw/BAL54SB\naYnpHm+zMJaca5kIllrH18L5Pas93746gSTMPI+h7BmXRTLs3aCSorWPk8B8KMfO\nAU1KIb7lHikc3XHmiJZwkn6fdo5L72jucFMyz2J7x0PbZFQ/MlSuQWuIPRRSs8KJ\nmDHvtKJTftEdGxdGqGZsqA==\n-----END PRIVATE KEY-----
+      oci_key_file: /definitely/missing/oci-key.pem
+    env: {}
+    api_base: https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com/20231130/actions/chat?x=1
+    request: {}
+    headers:
+      content-type: application/json
+env: {}
+compare: {ignore: []}

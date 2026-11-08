@@ -1,0 +1,19 @@
+kind: helper
+name: oci-common-cohere-description-enrichment
+call:
+  b5940:
+    function: description
+    description: Start
+    schema:
+      enum:
+        - a
+        - b
+        - 3
+        - true
+        - null
+      format: date-time
+      minimum: 1
+      maximum: 5.5
+      pattern: "^x$"
+env: {}
+compare: {ignore: []}
