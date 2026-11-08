@@ -79,7 +79,8 @@ fn build_history(
                 role: message.role.clone(),
             });
         };
-        let end = run_end(messages, position, group);
+        // The loop consumes at least one message per turn, so a wrong run end cannot spin it
+        let end = run_end(messages, position, group).max(position.saturating_add(1));
         let run = messages.get(position..end).unwrap_or_default();
         push_entry(&mut history, group, run, position, recovery)?;
         position = end;
