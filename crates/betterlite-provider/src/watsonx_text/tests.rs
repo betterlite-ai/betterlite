@@ -464,7 +464,7 @@ async fn request_converts_the_messages_with_the_model_provider() {
         .await
         .unwrap();
     assert_eq!(body.input.as_deref(), Some("<|user|>\nhi\n<|assistant|>"));
-    assert_eq!(body.parameters, params(r#"{"max_new_tokens":5}"#));
+    assert_eq!(body.parameters, params(r#"{"max_tokens":5}"#));
 }
 
 #[test]
