@@ -32,6 +32,12 @@ pub mod transport_error;
 const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 const POOL_MAX_IDLE_PER_HOST: usize = 32;
 
+#[derive(Clone, Copy)]
+enum Follow {
+    Redirects,
+    Never,
+}
+
 #[derive(Debug, Clone)]
 pub struct ProxiedClient {
     pub client: Client,
@@ -176,26 +182,29 @@ impl ProxiedClient {
         ))
     }
 
-    fn finish(
+    async fn exchange(
         &self,
-        response: Response,
+        built: Request,
         lease: stream::Lease,
+        follow: Follow,
     ) -> Result<StreamResponse, TransportError> {
+        let response = match (self.network_mock, follow) {
+            (true, _) => mock::respond(&built).map_err(TransportError::Mock)?,
+            // boxed so the hop state machine does not ride inside every caller's future
+            (false, Follow::Redirects) => Box::pin(redirect::send(self, built)).await?,
+            (false, Follow::Never) => self
+                .client
+                .execute(built)
+                .await
+                .map_err(TransportError::sending)?,
+        };
         check_headers(response.headers(), self.limits.header_bytes)?;
         Ok(StreamResponse { response, lease })
     }
 
     pub async fn send(&self, request: OutboundRequest) -> Result<StreamResponse, TransportError> {
         let (built, lease) = self.lease(request)?;
-        let response = if self.network_mock {
-            mock::respond(&built).map_err(TransportError::Mock)?
-        } else {
-            self.client
-                .execute(built)
-                .await
-                .map_err(TransportError::sending)?
-        };
-        self.finish(response, lease)
+        self.exchange(built, lease, Follow::Never).await
     }
 
     // provider calls follow redirects the way LiteLLM's httpx clients do, with each hop re-checked
@@ -204,13 +213,7 @@ impl ProxiedClient {
         request: OutboundRequest,
     ) -> Result<StreamResponse, TransportError> {
         let (built, lease) = self.lease(request)?;
-        let response = if self.network_mock {
-            mock::respond(&built).map_err(TransportError::Mock)?
-        } else {
-            // boxed so the hop state machine does not ride inside every caller's future
-            Box::pin(redirect::send(self, built)).await?
-        };
-        self.finish(response, lease)
+        self.exchange(built, lease, Follow::Redirects).await
     }
 
     pub async fn send_buffered(
