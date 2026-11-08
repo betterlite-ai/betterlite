@@ -1,0 +1,17 @@
+kind: helper
+name: content-inspection-non-string-content
+call:
+  b5470:
+    function: has_non_string_content
+    data:
+      messages:
+        - role: user
+          content:
+            - {type: text, text: "hello"}
+        - role: tool
+          content: null
+        - role: assistant
+          content: "plain"
+env: {}
+compare:
+  ignore: []

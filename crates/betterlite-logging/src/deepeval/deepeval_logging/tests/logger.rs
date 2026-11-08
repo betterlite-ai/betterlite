@@ -32,7 +32,7 @@ const FAILURE_KWARGS: &str = r#"{
         "id": "span-id",
         "trace_id": "trace-id",
         "model": "gpt-4o",
-        "error_string": "upstream returned 500",
+        "error_str": "upstream returned 500",
         "response": {"usage": {"prompt_tokens": 3, "completion_tokens": 5}}
     }
 }"#;
