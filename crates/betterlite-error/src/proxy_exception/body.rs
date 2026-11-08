@@ -1,5 +1,7 @@
+use std::collections::BTreeMap;
+
+use betterlite_redact::structured::Payload;
 use serde::Serialize;
-use serde_json::{Map, Value};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ProxyErrorBody {
@@ -8,13 +10,6 @@ pub struct ProxyErrorBody {
     pub error_type: String,
     pub param: Option<String>,
     pub code: String,
-    #[serde(skip_serializing_if = "provider_fields_absent")]
-    pub provider_specific_fields: Option<Map<String, Value>>,
-}
-
-fn provider_fields_absent(fields: &Option<Map<String, Value>>) -> bool {
-    match fields {
-        Some(map) => map.is_empty(),
-        None => true,
-    }
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub provider_specific_fields: BTreeMap<String, Payload>,
 }

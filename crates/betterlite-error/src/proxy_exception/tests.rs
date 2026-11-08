@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use serde_json::{Map, Value};
 
 use super::body::ProxyErrorBody;
 use super::model_access_denied::ModelAccessDeniedProxyException;
@@ -17,7 +16,7 @@ fn exception_with(message: &str, code: ExceptionCode) -> ProxyException {
         code,
         headers: BTreeMap::new(),
         openai_code: None,
-        provider_specific_fields: None,
+        provider_specific_fields: BTreeMap::new(),
     })
 }
 
@@ -51,7 +50,7 @@ fn openai_code_falls_back_to_the_given_code(
         code,
         headers: BTreeMap::new(),
         openai_code,
-        provider_specific_fields: None,
+        provider_specific_fields: BTreeMap::new(),
     };
     let exception = ProxyException::new(init);
     assert_eq!(exception.openai_code.as_deref(), expected);
@@ -102,8 +101,8 @@ fn openai_code_keeps_the_given_code_when_a_message_rule_rewrites_the_code() {
 fn headers_and_provider_fields_pass_through() {
     let mut headers = BTreeMap::new();
     headers.insert("x-request-id".to_owned(), "abc".to_owned());
-    let mut provider_fields = Map::new();
-    provider_fields.insert("provider".to_owned(), Value::String("azure".to_owned()));
+    let mut provider_fields = BTreeMap::new();
+    provider_fields.insert("provider".to_owned(), serde_json::json!("azure"));
     let exception = ProxyException::new(ProxyExceptionInit {
         message: "boom".to_owned(),
         error_type: "bad_request_error".to_owned(),
@@ -111,19 +110,15 @@ fn headers_and_provider_fields_pass_through() {
         code: ExceptionCode::Status(400),
         headers,
         openai_code: None,
-        provider_specific_fields: Some(provider_fields),
+        provider_specific_fields: provider_fields,
     });
     assert_eq!(
         exception.headers.get("x-request-id").map(String::as_str),
         Some("abc")
     );
     assert_eq!(
-        exception
-            .provider_specific_fields
-            .as_ref()
-            .and_then(|fields| fields.get("provider"))
-            .and_then(Value::as_str),
-        Some("azure")
+        exception.provider_specific_fields.get("provider"),
+        Some(&serde_json::json!("azure"))
     );
 }
 
@@ -143,10 +138,10 @@ fn body_carries_provider_specific_fields_when_the_map_has_entries() {
         error_type: "bad_request_error".to_owned(),
         param: None,
         code: "400".to_owned(),
-        provider_specific_fields: Some(Map::from_iter([(
+        provider_specific_fields: BTreeMap::from_iter([(
             "provider".to_owned(),
-            Value::String("azure".to_owned()),
-        )])),
+            serde_json::json!("azure"),
+        )]),
     };
     assert_eq!(
         serde_json::to_string(&body).unwrap(),
@@ -161,26 +156,11 @@ fn body_leaves_out_an_empty_provider_specific_fields_map() {
         error_type: "bad_request_error".to_owned(),
         param: Some("model".to_owned()),
         code: "400".to_owned(),
-        provider_specific_fields: Some(Map::new()),
+        provider_specific_fields: BTreeMap::new(),
     };
     assert_eq!(
         serde_json::to_string(&body).unwrap(),
         r#"{"message":"boom","type":"bad_request_error","param":"model","code":"400"}"#
-    );
-}
-
-#[test]
-fn body_leaves_out_absent_provider_specific_fields() {
-    let body = ProxyErrorBody {
-        message: "boom".to_owned(),
-        error_type: "bad_request_error".to_owned(),
-        param: None,
-        code: "None".to_owned(),
-        provider_specific_fields: None,
-    };
-    assert_eq!(
-        serde_json::to_string(&body).unwrap(),
-        r#"{"message":"boom","type":"bad_request_error","param":null,"code":"None"}"#
     );
 }
 
@@ -224,7 +204,7 @@ fn model_access_denied_carries_no_headers_or_provider_fields() {
     );
     let exception = denied.as_proxy_exception();
     assert!(exception.headers.is_empty());
-    assert!(exception.provider_specific_fields.is_none());
+    assert!(exception.provider_specific_fields.is_empty());
     assert_eq!(exception.param.as_deref(), Some("model"));
     assert_eq!(
         serde_json::to_string(&exception.to_body()).unwrap(),

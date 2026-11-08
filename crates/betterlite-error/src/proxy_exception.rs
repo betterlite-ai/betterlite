@@ -1,14 +1,7 @@
-#![expect(
-    clippy::disallowed_types,
-    clippy::option_if_let_else,
-    clippy::ref_option,
-    reason = "LiteLLM's provider_specific_fields is a dict of provider-defined keys, so it stays an opaque JSON object, and serde hands the field to its skip predicate by reference"
-)]
-
 use std::collections::BTreeMap;
 use std::error::Error;
 
-use serde_json::{Map, Value};
+use betterlite_redact::structured::Payload;
 
 pub mod body;
 pub mod model_access_denied;
@@ -39,7 +32,7 @@ pub struct ProxyExceptionInit {
     pub code: ExceptionCode,
     pub headers: BTreeMap<String, String>,
     pub openai_code: Option<String>,
-    pub provider_specific_fields: Option<Map<String, Value>>,
+    pub provider_specific_fields: BTreeMap<String, Payload>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, derive_more::Display)]
@@ -51,7 +44,7 @@ pub struct ProxyException {
     pub code: String,
     pub openai_code: Option<String>,
     pub headers: BTreeMap<String, String>,
-    pub provider_specific_fields: Option<Map<String, Value>>,
+    pub provider_specific_fields: BTreeMap<String, Payload>,
 }
 
 impl ProxyException {

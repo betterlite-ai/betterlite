@@ -9,7 +9,7 @@ call:
     code: 500
     openai_code: null
     headers: {}
-    provider_specific_fields: null
+    provider_specific_fields: {}
 env: {}
 compare:
   ignore: []

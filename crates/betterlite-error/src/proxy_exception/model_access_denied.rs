@@ -27,7 +27,7 @@ impl ModelAccessDeniedProxyException {
                 code,
                 headers: BTreeMap::new(),
                 openai_code: None,
-                provider_specific_fields: None,
+                provider_specific_fields: BTreeMap::new(),
             }),
             internal_message,
         }

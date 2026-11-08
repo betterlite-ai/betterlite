@@ -4,8 +4,8 @@ use betterlite_error::proxy_enums::special_headers::SpecialHeaders;
 // ast-grep-ignore: no-long-names
 use betterlite_error::proxy_exception::model_access_denied::ModelAccessDeniedProxyException;
 use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExceptionInit};
+use betterlite_redact::structured::Payload;
 use serde::Deserialize;
-use serde_json::{Map, Value};
 
 pub(crate) struct Op;
 
@@ -23,7 +23,7 @@ enum Input {
         #[serde(default)]
         headers: BTreeMap<String, String>,
         #[serde(default)]
-        provider_specific_fields: Option<Map<String, Value>>,
+        provider_specific_fields: BTreeMap<String, Payload>,
     },
     AccessDenied {
         message: String,
