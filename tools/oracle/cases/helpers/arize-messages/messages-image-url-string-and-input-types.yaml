@@ -1,0 +1,16 @@
+kind: helper
+name: messages-image-url-string-and-input-types
+call:
+  b3860:
+    function: set_messages
+    messages:
+      - role: user
+        content:
+          - {type: image_url, image_url: "https://example.com/one.png"}
+          - {type: image, url: "https://example.com/two.png"}
+          - {type: input_image, image_url: {url: "https://example.com/three.png"}}
+          - type: image
+            image_url: {url: "https://example.com/wins.png"}
+            source: {type: base64, data: QUJD}
+env: {}
+compare: {ignore: []}

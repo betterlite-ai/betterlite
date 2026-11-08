@@ -1,0 +1,11 @@
+kind: helper
+name: container-contracts-record-decode-seed
+call:
+  b3360:
+    operation: record_decode
+    records:
+      - {kind: container_object, value: {id: container_seed, object: container, created_at: 1, status: running, name: seeded}}
+      - {kind: file_object, value: {id: file_seed, object: container_file, container_id: container_seed, bytes: null, created_at: 1, path: /seed, source: user}}
+      - {kind: list_response, value: {object: list, data: [], first_id: null, last_id: null, has_more: false}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: "passthrough-www-authenticate"
+call: {"b4654":{"function":"www_authenticate","base_url":"https://base.example.com","route_path":"/foo/mcp","server_name":"foo","server_root_path":"/litellm","invalid_token":true}}
+env: {"SERVER_ROOT_PATH":"/litellm"}
+compare: {"ignore":[]}

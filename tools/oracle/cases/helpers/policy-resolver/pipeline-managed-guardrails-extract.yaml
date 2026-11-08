@@ -1,0 +1,18 @@
+kind: helper
+name: pipeline-managed-guardrails-extract
+call:
+  b3241:
+    policy_memory_matching_resolver:
+      action: managed_guardrails
+      pipelines:
+        - - first
+          - mode: pre_call
+            steps:
+              - guardrail: pii
+              - guardrail: audit
+        - - second
+          - mode: post_call
+            steps:
+              - guardrail: audit
+env: {}
+compare: {ignore: []}

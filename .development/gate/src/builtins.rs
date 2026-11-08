@@ -1,12 +1,15 @@
+pub(crate) mod case_ignores;
 mod crates;
 mod diff_budget;
 pub(crate) mod expect_budget;
 pub(crate) mod file_size;
 pub(crate) mod globs;
 mod lint_table;
+pub(crate) mod module_tree;
 mod scope;
 mod tests;
 mod tools;
+mod workspace;
 
 use crate::development::Development;
 use crate::error::GateError;
@@ -34,5 +37,7 @@ pub(crate) fn run_builtin(id: BuiltinId, context: &Context<'_>) -> Result<Vec<St
         )),
         BuiltinId::FileSize => file_size::check(context),
         BuiltinId::Crates => crates::check(&context.development.root),
+        BuiltinId::ModuleTree => module_tree::check(context),
+        BuiltinId::CaseIgnores => case_ignores::check(context),
     }
 }

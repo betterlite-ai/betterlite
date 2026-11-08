@@ -1,0 +1,11 @@
+kind: helper
+name: excluded-filter-may-return-nothing
+call:
+  b8440:
+    function: drop_excluded
+    deployments:
+      - {model_info: {id: a}}
+      - {model_info: {id: b}}
+    excluded: [a, b, removed-already]
+env: {}
+compare: {ignore: []}

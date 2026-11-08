@@ -7,10 +7,25 @@ use crate::git::git;
 
 pub(crate) struct Facts {
     pub(crate) base: String,
+    pub(crate) tree: Tree,
     pub(crate) changed: Vec<String>,
     pub(crate) untracked: Vec<String>,
     pub(crate) numstat: Vec<NumStat>,
     pub(crate) added_rust_lines: Vec<String>,
+}
+
+pub(crate) struct Tree {
+    pub(crate) head: String,
+    pub(crate) clean: bool,
+}
+
+impl Tree {
+    pub(crate) fn read(root: &Path) -> Result<Self, GateError> {
+        Ok(Self {
+            head: git(root, &["rev-parse", "HEAD"])?.trim().to_owned(),
+            clean: git(root, &["status", "--porcelain", "-z"])?.is_empty(),
+        })
+    }
 }
 
 pub(crate) struct NumStat {
@@ -21,6 +36,7 @@ pub(crate) struct NumStat {
 impl Facts {
     pub(crate) fn collect(root: &Path) -> Result<Self, GateError> {
         let base = resolve_base(root)?;
+        let tree = Tree::read(root)?;
         let untracked: Vec<String> =
             git(root, &["ls-files", "-z", "--others", "--exclude-standard"])?
                 .split('\0')
@@ -52,6 +68,7 @@ impl Facts {
         let added_rust_lines = added_rust_lines(root, &base, &untracked)?;
         Ok(Self {
             base,
+            tree,
             changed,
             untracked,
             numstat,

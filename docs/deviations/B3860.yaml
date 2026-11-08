@@ -1,0 +1,25 @@
+task: B3860
+deviations:
+  - what: >-
+      A Responses API output list whose items are plain objects with a `type` is read like LiteLLM reads
+      Pydantic items. LiteLLM skips a plain dict item, because `hasattr(item, "type")` is false for a
+      dict.
+    why: >-
+      betterlite holds every response as JSON, so it cannot tell a Pydantic item from a dict. The
+      Responses API logging path hands LiteLLM Pydantic items, which is the case this branch exists for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L197-L222
+  - what: >-
+      An embedding vector is written as `[0.1, 0.2]` with numbers in serde_json's shortest form.
+      Python's `str(list)` writes a float below 1e-4 or from 1e16 as `1e-05` style text, and serde_json
+      writes `1e-5`.
+    why: >-
+      The Python float repr is not reproduced. Real embedding values in that range are rare, and the
+      text is a display value in Arize.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L170-L194
+  - what: >-
+      A message whose `content` is an array writes the array's JSON text to `input.value` and
+      `message.content`. LiteLLM writes Python's repr of the list.
+    why: >-
+      The repr is a Python runtime habit that docs/compatibility.md leaves out of the contract. The
+      structured `message.contents` entries carry the same data in a stable shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L41-L59
