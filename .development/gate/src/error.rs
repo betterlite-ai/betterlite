@@ -60,6 +60,8 @@ pub(crate) enum GateError {
     Unavailable { task: String, reason: String },
     #[error("{program} failed: {stderr}")]
     Failed { program: String, stderr: String },
+    #[error("cannot parse {path} as Rust: {source}")]
+    RustParse { path: PathBuf, source: syn::Error },
     #[error("cannot read {what}: {source}")]
     Affected {
         what: String,
