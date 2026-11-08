@@ -27,15 +27,11 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let aws_default_region = lookup.lookup("AWS_DEFAULT_REGION");
-        let session_region = aws_default_region
-            .clone()
-            .or_else(|| aws_config::session_region(lookup));
         Ok(Settings {
             aws_region_name: lookup.lookup("AWS_REGION_NAME"),
             aws_region: lookup.lookup("AWS_REGION"),
-            aws_default_region,
-            session_region,
+            aws_default_region: lookup.lookup("AWS_DEFAULT_REGION"),
+            session_region: aws_config::session_region(lookup),
             aws_bedrock_runtime_endpoint: lookup.lookup("AWS_BEDROCK_RUNTIME_ENDPOINT"),
         })
     }

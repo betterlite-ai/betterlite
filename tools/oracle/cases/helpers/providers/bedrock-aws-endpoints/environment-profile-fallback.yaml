@@ -172,5 +172,92 @@ call:
           aws_credentials: |
             [default]
             region = ap-south-1
+        - optional_params: {}
+          environment:
+            AWS_DEFAULT_REGION: ap-south-1
+            AWS_PROFILE: ghost
+          aws_config: |
+            [default]
+            region = eu-west-1
+            [profile prod]
+            region = ap-south-1
+        - optional_params: {}
+          environment:
+            AWS_DEFAULT_REGION: ap-south-1
+            AWS_PROFILE: ''
+          aws_config: |
+            [default]
+            region = eu-west-1
+        - optional_params: {}
+          environment:
+            AWS_DEFAULT_REGION: us-east-1
+            AWS_PROFILE: prod
+          aws_config: |
+            [default]
+            region = eu-west-1
+            [profile prod]
+            region = ap-south-1
+        - optional_params: {}
+          environment:
+            AWS_DEFAULT_REGION: ap-south-1
+          aws_config: |
+            [default]
+            region = eu-west-1
+            region = us-east-1
+        - optional_params: {}
+          environment:
+            AWS_DEFAULT_REGION: ap-south-1
+          aws_config: |
+            [default]
+            region = eu-west-1
+            [default]
+            region = us-east-1
+        - optional_params: {}
+          environment:
+            AWS_DEFAULT_REGION: ap-south-1
+          aws_credentials: |
+            not an ini file
+              still not
+        - optional_params: {}
+          aws_config: |
+            [default]
+            region = eu-west-1
+          aws_credentials: |
+            not an ini file
+              still not
+        - optional_params: {}
+          aws_config: |
+            [default]
+            region =
+              a = b
+        - optional_params: {}
+          aws_config: |
+            [default]
+            region = eu-west-1
+          aws_credentials: |
+            [default]
+            region =
+              a = b
+        - optional_params: {}
+          environment:
+            AWS_DEFAULT_REGION: ap-south-1
+          aws_config: |
+            [default]
+            region =
+              a = b
+        - optional_params: {}
+          environment:
+            AWS_PROFILE: DEFAULT
+          aws_credentials: |
+            [DEFAULT]
+            region = eu-west-1
+        - optional_params: {}
+          aws_config: |
+            [DEFAULT]
+            x = 1
+            [DEFAULT]
+            region = eu-west-1
+            [default]
+            y = 1
 env: {}
 compare: {ignore: []}

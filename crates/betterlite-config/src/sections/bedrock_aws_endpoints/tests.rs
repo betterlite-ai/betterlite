@@ -9,7 +9,7 @@ use rstest::rstest;
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::bedrock_aws_endpoints::Settings;
 
-use super::aws_config::region_from_texts;
+use super::aws_config::NESTED_REGION;
 
 const CONFIG_WITH_PROFILES: &str =
     "[default]\nregion = eu-west-1\n[profile prod]\nregion = ap-south-1\n";
@@ -44,6 +44,16 @@ fn write(folder: &Path, name: &str, text: &str) -> String {
     let path = folder.join(name);
     fs::write(&path, text).unwrap();
     path.to_str().unwrap().to_owned()
+}
+
+fn file_region(source: &str, profile: Option<&str>) -> Option<String> {
+    let folder = tempfile::tempdir().unwrap();
+    let config = write(folder.path(), "config", source);
+    let mut environment = vec![("AWS_CONFIG_FILE", config.as_str())];
+    if let Some(name) = profile {
+        environment.push(("AWS_PROFILE", name));
+    }
+    session_region(&environment)
 }
 
 #[rstest]
@@ -102,8 +112,15 @@ fn session_region_cases() {
     profile_selection_cases();
     config_file_path_cases();
     region_in_section();
+    repeated_default_cases();
     parser_failure_cases();
     credentials_cases();
+    default_region_errors();
+    parse_errors_ignore_default_region();
+    credentials_parse_errors();
+    nested_region_cases();
+    invalid_utf8_cases();
+    shlex_differences();
 }
 
 fn default_region_cases() {
@@ -219,11 +236,20 @@ fn region_in_section() {
     ];
     for (source, profile, expected) in cases {
         assert_eq!(
-            region_from_texts(Some(source), None, profile).as_deref(),
+            file_region(source, profile).as_deref(),
             Some(expected),
             "{source:?}"
         );
     }
+}
+
+fn repeated_default_cases() {
+    let source = "[DEFAULT]\nx = 1\n[DEFAULT]\nregion = eu-west-1\n[default]\ny = 1\n";
+    assert_eq!(
+        file_region(source, None).as_deref(),
+        Some("eu-west-1"),
+        "{source:?}"
+    );
 }
 
 fn parser_failure_cases() {
@@ -243,17 +269,179 @@ fn parser_failure_cases() {
         ("[profile \"prod]\nregion = eu-west-1\n", Some("prod")),
     ];
     for (source, profile) in cases {
+        assert_eq!(file_region(source, profile), None, "{source:?}");
+    }
+}
+
+fn default_region_errors() {
+    let folder = tempfile::tempdir().unwrap();
+    let config = write(folder.path(), "config", CONFIG_WITH_PROFILES);
+    let file = config.as_str();
+    let ghost = [
+        ("AWS_CONFIG_FILE", file),
+        ("AWS_DEFAULT_REGION", "ap-south-1"),
+        ("AWS_PROFILE", "ghost"),
+    ];
+    assert_eq!(session_region(&ghost), None);
+    let empty = [
+        ("AWS_CONFIG_FILE", file),
+        ("AWS_DEFAULT_REGION", "ap-south-1"),
+        ("AWS_PROFILE", ""),
+    ];
+    assert_eq!(session_region(&empty), None);
+    let empty_default = [
+        ("AWS_CONFIG_FILE", file),
+        ("AWS_DEFAULT_REGION", "ap-south-1"),
+        ("AWS_DEFAULT_PROFILE", ""),
+        ("AWS_PROFILE", "prod"),
+    ];
+    assert_eq!(session_region(&empty_default), None);
+    let known = [
+        ("AWS_CONFIG_FILE", file),
+        ("AWS_DEFAULT_REGION", "us-east-1"),
+        ("AWS_PROFILE", "prod"),
+    ];
+    assert_eq!(session_region(&known).as_deref(), Some("us-east-1"));
+}
+
+fn parse_errors_ignore_default_region() {
+    let folder = tempfile::tempdir().unwrap();
+    let duplicate_key = write(
+        folder.path(),
+        "duplicate-key",
+        "[default]\nregion = eu-west-1\nregion = us-east-1\n",
+    );
+    let duplicate_section = write(
+        folder.path(),
+        "duplicate-section",
+        "[default]\nregion = eu-west-1\n[default]\nregion = us-east-1\n",
+    );
+    let garbage = write(folder.path(), "garbage", "not an ini file\n  still not\n");
+    for path in [
+        duplicate_key.as_str(),
+        duplicate_section.as_str(),
+        garbage.as_str(),
+    ] {
         assert_eq!(
-            region_from_texts(Some(source), None, profile),
+            session_region(&[
+                ("AWS_DEFAULT_REGION", "ap-south-1"),
+                ("AWS_CONFIG_FILE", path),
+            ]),
             None,
-            "{source:?}"
+            "{path:?}"
         );
     }
+    assert_eq!(
+        session_region(&[
+            ("AWS_DEFAULT_REGION", "ap-south-1"),
+            ("AWS_SHARED_CREDENTIALS_FILE", garbage.as_str()),
+        ]),
+        None
+    );
+}
+
+fn credentials_parse_errors() {
+    let folder = tempfile::tempdir().unwrap();
+    let garbage = write(folder.path(), "garbage", "not an ini file\n  still not\n");
+    let config = write(folder.path(), "config", "[default]\nregion = eu-west-1\n");
+    assert_eq!(
+        session_region(&[
+            ("AWS_CONFIG_FILE", config.as_str()),
+            ("AWS_SHARED_CREDENTIALS_FILE", garbage.as_str()),
+        ]),
+        None
+    );
+}
+
+fn nested_region_cases() {
+    let folder = tempfile::tempdir().unwrap();
+    let nested = write(folder.path(), "nested", "[default]\nregion =\n  a = b\n");
+    let nested_path = nested.as_str();
+    assert_eq!(
+        session_region(&[("AWS_CONFIG_FILE", nested_path)]).as_deref(),
+        Some(NESTED_REGION)
+    );
+    assert_eq!(
+        session_region(&[
+            ("AWS_CONFIG_FILE", nested_path),
+            ("AWS_DEFAULT_REGION", "ap-south-1"),
+        ])
+        .as_deref(),
+        Some("ap-south-1")
+    );
+    let scalar = write(folder.path(), "scalar", "[default]\nregion = eu-west-1\n");
+    assert_eq!(
+        session_region(&[
+            ("AWS_CONFIG_FILE", scalar.as_str()),
+            ("AWS_SHARED_CREDENTIALS_FILE", nested_path),
+        ])
+        .as_deref(),
+        Some(NESTED_REGION)
+    );
+}
+
+fn invalid_utf8_cases() {
+    let folder = tempfile::tempdir().unwrap();
+    let invalid = folder.path().join("invalid");
+    fs::write(&invalid, b"[default]\n# \xff\nregion = eu-west-1\n").unwrap();
+    let invalid_path = invalid.to_str().unwrap();
+    let credentials = write(
+        folder.path(),
+        "credentials",
+        "[default]\nregion = ap-south-1\n",
+    );
+    assert_eq!(
+        session_region(&[
+            ("AWS_CONFIG_FILE", invalid_path),
+            ("AWS_SHARED_CREDENTIALS_FILE", credentials.as_str()),
+        ]),
+        None
+    );
+    let config = write(folder.path(), "config", "[default]\nregion = eu-west-1\n");
+    assert_eq!(
+        session_region(&[
+            ("AWS_CONFIG_FILE", config.as_str()),
+            ("AWS_SHARED_CREDENTIALS_FILE", invalid_path),
+        ]),
+        None
+    );
+}
+
+fn shlex_differences() {
+    assert_eq!(
+        file_region("[profile prod #x]\nregion = eu-west-1\n", Some("prod")).as_deref(),
+        Some("eu-west-1")
+    );
+    assert_eq!(
+        file_region("[profile #prod]\nregion = eu-west-1\n", Some("#prod")),
+        None
+    );
+    assert_eq!(
+        file_region("[profile \"a\\$b\"]\nregion = eu-west-1\n", Some("a$b")).as_deref(),
+        Some("eu-west-1")
+    );
 }
 
 fn credentials_cases() {
     credentials_override_cases();
     credentials_path_cases();
+    credentials_default_cases();
+}
+
+fn credentials_default_cases() {
+    let folder = tempfile::tempdir().unwrap();
+    let credentials = write(
+        folder.path(),
+        "credentials",
+        "[DEFAULT]\nregion = eu-west-1\n",
+    );
+    assert_eq!(
+        session_region(&[
+            ("AWS_SHARED_CREDENTIALS_FILE", credentials.as_str()),
+            ("AWS_PROFILE", "DEFAULT"),
+        ]),
+        None
+    );
 }
 
 fn credentials_override_cases() {

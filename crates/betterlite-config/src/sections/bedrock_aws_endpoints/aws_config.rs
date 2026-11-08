@@ -8,7 +8,7 @@ mod path;
 
 use ini::{Section, Value};
 
-type Profile = BTreeMap<String, String>;
+type Profile = BTreeMap<String, Value>;
 type ProfileMap = BTreeMap<String, Profile>;
 
 const CONFIG_VARIABLE: &str = "AWS_CONFIG_FILE";
@@ -18,43 +18,49 @@ const CREDENTIALS_DEFAULT: &str = "~/.aws/credentials";
 const DEFAULT_SECTION: &str = "DEFAULT";
 const DEFAULT_PROFILE: &str = "default";
 
+// boto3 returns a nested region as a dict, which LiteLLM's region validation rejects
+pub(super) const NESTED_REGION: &str = "{nested}";
+
+enum Source {
+    Missing,
+    Text(String),
+    Invalid,
+}
+
+impl Source {
+    fn sections(&self) -> Option<Vec<Section>> {
+        match self {
+            Self::Missing => Some(Vec::new()),
+            Self::Text(text) => ini::parse(text).ok(),
+            Self::Invalid => None,
+        }
+    }
+}
+
 pub(crate) fn session_region<L>(lookup: &L) -> Option<String>
 where
     L: EnvironmentLookup,
 {
+    let config = read_source(lookup, CONFIG_VARIABLE, CONFIG_DEFAULT).sections()?;
+    let credentials = read_source(lookup, CREDENTIALS_VARIABLE, CREDENTIALS_DEFAULT).sections()?;
     let profile = lookup
         .lookup("AWS_DEFAULT_PROFILE")
         .or_else(|| lookup.lookup("AWS_PROFILE"));
-    region_from_texts(
-        read_text(lookup, CONFIG_VARIABLE, CONFIG_DEFAULT).as_deref(),
-        read_text(lookup, CREDENTIALS_VARIABLE, CREDENTIALS_DEFAULT).as_deref(),
-        profile.as_deref(),
-    )
+    let profiles = profile_map(&config, &credentials);
+    if profile
+        .as_deref()
+        .is_some_and(|name| !profiles.contains_key(name))
+    {
+        return None;
+    }
+    let selected = profiles
+        .get(profile.as_deref().unwrap_or(DEFAULT_PROFILE))
+        .and_then(|values| values.get("region"))
+        .map(region_value);
+    lookup.lookup("AWS_DEFAULT_REGION").or(selected)
 }
 
-pub(super) fn region_from_texts(
-    config: Option<&str>,
-    credentials: Option<&str>,
-    profile: Option<&str>,
-) -> Option<String> {
-    let mut profiles = ProfileMap::new();
-    if let Some(source) = config {
-        for section in ini::parse(source).ok()? {
-            if let Some(name) = config_profile_name(&section.name) {
-                profiles.insert(name, scalars(&section.values));
-            }
-        }
-    }
-    if let Some(source) = credentials {
-        overlay_credentials(&mut profiles, ini::parse(source).ok()?);
-    }
-    profiles
-        .get(profile.unwrap_or(DEFAULT_PROFILE))?
-        .get("region")
-        .cloned()
-}
-
-fn read_text<L>(lookup: &L, variable: &str, fallback: &str) -> Option<String>
+fn read_source<L>(lookup: &L, variable: &str, fallback: &str) -> Source
 where
     L: EnvironmentLookup,
 {
@@ -62,9 +68,23 @@ where
     let text = configured.as_deref().unwrap_or(fallback);
     let path = path::expand(lookup, text);
     if path.as_os_str().is_empty() {
-        return None;
+        return Source::Missing;
     }
-    fs::read_to_string(path).ok()
+    let Ok(bytes) = fs::read(path) else {
+        return Source::Missing;
+    };
+    String::from_utf8(bytes).map_or(Source::Invalid, Source::Text)
+}
+
+fn profile_map(config: &[Section], credentials: &[Section]) -> ProfileMap {
+    let mut profiles = ProfileMap::new();
+    for section in config {
+        if let Some(name) = config_profile_name(&section.name) {
+            profiles.insert(name, section.values.clone());
+        }
+    }
+    overlay_credentials(&mut profiles, credentials);
+    profiles
 }
 
 fn config_profile_name(name: &str) -> Option<String> {
@@ -81,24 +101,21 @@ fn config_profile_name(name: &str) -> Option<String> {
     None
 }
 
-fn overlay_credentials(profiles: &mut ProfileMap, sections: Vec<Section>) {
-    let named = sections
-        .into_iter()
-        .filter(|section| section.name != DEFAULT_SECTION);
-    for section in named {
+fn overlay_credentials(profiles: &mut ProfileMap, sections: &[Section]) {
+    for section in sections
+        .iter()
+        .filter(|section| section.name != DEFAULT_SECTION)
+    {
         profiles
-            .entry(section.name)
+            .entry(section.name.clone())
             .or_default()
-            .extend(scalars(&section.values));
+            .extend(section.values.clone());
     }
 }
 
-fn scalars(values: &BTreeMap<String, Value>) -> Profile {
-    values
-        .iter()
-        .filter_map(|(key, value)| match value {
-            Value::Scalar(text) => Some((key.clone(), text.clone())),
-            Value::Nested => None,
-        })
-        .collect()
+fn region_value(value: &Value) -> String {
+    match value {
+        Value::Scalar(text) => text.clone(),
+        Value::Nested => NESTED_REGION.to_owned(),
+    }
 }
