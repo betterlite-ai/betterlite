@@ -1,12 +1,5 @@
-#![expect(
-    clippy::struct_excessive_bools,
-    clippy::too_many_lines,
-    reason = "LiteLLM's MCPServer is a 77-field wire record with nine independent flags, and its unchecked twin names every field once"
-)]
-
 pub mod binding;
 mod methods;
-mod raw;
 mod tests;
 
 use std::collections::BTreeMap;
@@ -23,7 +16,11 @@ use secrecy::ExposeSecret as _;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::credential_contracts::auth_config::oauth::DEFAULT_SUBJECT_TOKEN_TYPE;
 use crate::credential_contracts::errors::CredError;
+
+// The flags use the same alias as crates/betterlite-config, since clippy's max-struct-bools counts plain bools
+pub type ServerFlag = bool;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(transparent)]
@@ -58,7 +55,7 @@ pub struct MCPOAuthIdentityBinding {
     pub require_email_verified: bool,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OAuth2Flow {
     ClientCredentials,
@@ -66,11 +63,10 @@ pub enum OAuth2Flow {
 }
 
 #[derive(Clone, Deserialize, PartialEq, Serialize, derive_more::Display)]
-#[serde(try_from = "raw::RawMCPServer")]
 #[display(
     "MCPServer(server_id={server_id:?}, name={name:?}, transport={transport:?}, auth_type={auth_type:?})"
 )]
-pub struct MCPServer {
+pub struct ServerFields {
     pub server_id: String,
     pub name: String,
     pub alias: Option<String>,
@@ -95,7 +91,8 @@ pub struct MCPServer {
     pub client_id: Option<String>,
     pub client_secret: Option<SecretCredential>,
     pub issuer: Option<String>,
-    pub issuer_is_anchored: bool,
+    #[serde(default)]
+    pub issuer_is_anchored: ServerFlag,
     pub scopes: Option<Vec<String>>,
     pub authorization_url: Option<String>,
     pub token_url: Option<String>,
@@ -116,24 +113,34 @@ pub struct MCPServer {
     pub aws_session_name: Option<String>,
     pub token_exchange_endpoint: Option<String>,
     pub audience: Option<String>,
+    #[serde(default = "default_subject_token_type")]
     pub subject_token_type: String,
     pub id_jag_resource_token_endpoint: Option<String>,
     pub id_jag_resource: Option<String>,
     pub client_private_key: Option<SecretCredential>,
     pub client_private_key_id: Option<String>,
+    #[serde(default = "default_signing_alg")]
     pub client_assertion_signing_alg: String,
+    #[serde(default = "default_token_exchange_profile")]
     pub token_exchange_profile: String,
     pub command: Option<String>,
     pub args: Option<Vec<String>>,
     pub env: Option<BTreeMap<String, String>>,
     pub access_groups: Option<Vec<String>>,
-    pub allow_all_keys: bool,
-    pub available_on_public_internet: bool,
-    pub delegate_auth_to_upstream: bool,
-    pub oauth_passthrough: bool,
+    #[serde(default)]
+    pub allow_all_keys: ServerFlag,
+    #[serde(default = "default_true")]
+    pub available_on_public_internet: ServerFlag,
+    #[serde(default)]
+    pub delegate_auth_to_upstream: ServerFlag,
+    #[serde(default)]
+    pub oauth_passthrough: ServerFlag,
     pub dcr_bridge: Option<bool>,
-    pub per_server_oauth_discovery: bool,
-    pub is_byok: bool,
+    #[serde(default)]
+    pub per_server_oauth_discovery: ServerFlag,
+    #[serde(default)]
+    pub is_byok: ServerFlag,
+    #[serde(default)]
     pub byok_description: Vec<String>,
     pub byok_api_key_help_url: Option<String>,
     pub source_url: Option<String>,
@@ -146,13 +153,47 @@ pub struct MCPServer {
     pub timeout: Option<f64>,
     pub max_concurrent_requests: Option<i64>,
     pub short_prefix: Option<String>,
-    pub allow_sampling: bool,
-    pub allow_elicitation: bool,
+    #[serde(default)]
+    pub allow_sampling: ServerFlag,
+    #[serde(default)]
+    pub allow_elicitation: ServerFlag,
+}
+
+fn default_subject_token_type() -> String {
+    DEFAULT_SUBJECT_TOKEN_TYPE.to_owned()
+}
+
+fn default_signing_alg() -> String {
+    "RS256".to_owned()
+}
+
+fn default_token_exchange_profile() -> String {
+    "rfc8693".to_owned()
+}
+
+const fn default_true() -> ServerFlag {
+    true
+}
+
+#[derive(Clone, Deserialize, PartialEq, Serialize, derive_more::Display)]
+#[serde(try_from = "ServerFields")]
+#[display("{fields}")]
+pub struct MCPServer {
+    #[serde(flatten)]
+    pub fields: ServerFields,
+}
+
+impl TryFrom<ServerFields> for MCPServer {
+    type Error = ServerRecordError;
+
+    fn try_from(fields: ServerFields) -> Result<Self, Self::Error> {
+        Self { fields }.checked()
+    }
 }
 
 impl Debug for MCPServer {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        Display::fmt(self, f)
+        Display::fmt(&self.fields, f)
     }
 }
 

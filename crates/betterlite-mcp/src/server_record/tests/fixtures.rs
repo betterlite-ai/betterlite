@@ -94,3 +94,15 @@ pub(super) const SECRET_SERVER_JSON: &str = r#"{
     "aws_session_token": "session-1",
     "client_private_key": "key-1"
 }"#;
+
+pub(super) const BINDING_SERVER_JSON: &str = r#"{
+    "server_id": "srv",
+    "name": "Server",
+    "transport": "http",
+    "auth_type": "oauth2",
+    "oauth_identity_binding": {
+        "mode": "enforce",
+        "issuer": "https://idp.example",
+        "audiences": ["aud"]
+    }
+}"#;
