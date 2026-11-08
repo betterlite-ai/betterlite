@@ -1,14 +1,14 @@
 id: B4414
 milestone: M8 platform
 title: Read AWS secrets and primary secret maps
-status: todo
+status: done
 depends_on: [B4410, B4413]
 file: tasks/B4414-aws-secret-reads.yaml
 covers:
   - "litellm/secret_managers/aws_secret_manager_v2.py"
 parent: B129
 split_from: B129
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 888
