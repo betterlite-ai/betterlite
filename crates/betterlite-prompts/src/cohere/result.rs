@@ -1,20 +1,20 @@
 use crate::arguments::json::{Json, Object};
 use crate::cohere::content::parts_text;
 use crate::cohere::error::CohereError;
-use crate::cohere::tool_calls::recovered_call;
-use crate::cohere::types::{CohereTool, CohereToolResult};
+use crate::cohere::tool_calls::{Recovery, recovered_call};
+use crate::cohere::types::CohereToolResult;
 use crate::message_content::{Content, Message};
 
 const FUNCTION: &str = "function";
 const RESULT: &str = "result";
 
-pub fn tool_result(
+pub(crate) fn tool_result(
     message: &Message,
-    tool_calls: &[CohereTool],
+    recovery: &mut Recovery<'_>,
     index: usize,
 ) -> Result<CohereToolResult, CohereError> {
     let content = outputs_content(message, index)?;
-    let mut call = recovered_call(message, tool_calls)?;
+    let mut call = recovered_call(message, recovery.tool_calls, &mut recovery.budget)?;
     if message.role == FUNCTION {
         call.name = message
             .name

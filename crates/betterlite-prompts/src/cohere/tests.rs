@@ -5,9 +5,10 @@ use rstest::rstest;
 use crate::arguments::json::{Json, Object};
 use crate::cohere::error::CohereError;
 use crate::cohere::history::cohere_messages_pt_v2;
+use crate::cohere::limits::MAX_ARGUMENT_BYTES;
 use crate::cohere::prompt::cohere_message_pt;
 use crate::cohere::tool_calls::convert_to_cohere_tool_invoke;
-use crate::cohere::types::{CohereMessage, CohereTool};
+use crate::cohere::types::CohereTool;
 use crate::gemini_tool_invokes::limits::MAX_TOOL_CALLS;
 use crate::media::limits::{MAX_MESSAGE_PARTS, MAX_MESSAGES};
 use crate::message_content::{Content, ContentPart, Message};
@@ -60,6 +61,9 @@ enum Scenario {
     MaxToolCalls,
     TooManyParts,
     PartsAtLimit,
+    ArgumentBudgetAtLimit,
+    ArgumentBudgetExceeded,
+    LegacyArgumentBudgetExceeded,
     Preserved(&'static str),
 }
 
@@ -172,6 +176,48 @@ fn parts_message(count: usize) -> Message {
     }
 }
 
+fn padded_arguments(length: usize) -> String {
+    let base = "{\"a\":\"\"}";
+    let pad = "x".repeat(length.saturating_sub(base.len()));
+    format!("{{\"a\":\"{pad}\"}}")
+}
+
+fn budget_messages(arguments_len: usize, tool_message_count: usize) -> Vec<Message> {
+    let mut function = Object::new();
+    function.insert("name".to_owned(), Json::Text("f".to_owned()));
+    function.insert(
+        "arguments".to_owned(),
+        Json::Text(padded_arguments(arguments_len)),
+    );
+    let mut tool = Object::new();
+    tool.insert("id".to_owned(), Json::Text("call_1".to_owned()));
+    tool.insert("type".to_owned(), Json::Text("function".to_owned()));
+    tool.insert("function".to_owned(), Json::Object(function));
+    let mut fields = Object::new();
+    fields.insert(
+        "tool_calls".to_owned(),
+        Json::List(vec![Json::Object(tool)]),
+    );
+    let mut messages = vec![Message {
+        role: "assistant".to_owned(),
+        content: None,
+        name: None,
+        provider_specific_fields: fields,
+    }];
+    let mut message_fields = Object::new();
+    message_fields.insert("tool_call_id".to_owned(), Json::Text("call_1".to_owned()));
+    messages.extend(vec![
+        Message {
+            role: "tool".to_owned(),
+            content: Some(Content::Text("x".to_owned())),
+            name: None,
+            provider_specific_fields: message_fields,
+        };
+        tool_message_count
+    ]);
+    messages
+}
+
 fn run_operation(operation: V2Operation, messages: &[Message]) -> Result<(), CohereError> {
     match operation {
         V2Operation::V2 => cohere_messages_pt_v2(messages).map(drop),
@@ -249,6 +295,26 @@ fn assert_preserved(source: &'static str) {
     messages: r#"[{"role":"user","content":"q"},{"role":"assistant","content":"a"},{"role":"user","content":"next"}]"#,
     message: r#""next""#,
     history: r#"[{"role":"USER","message":"q"},{"role":"CHATBOT","message":"a","tool_calls":[]}]"#,
+}))]
+#[case::tool_result_list_content_is_joined(Scenario::V2(V2Case {
+    messages: r#"[{"role":"tool","tool_call_id":"c","content":[{"type":"text","text":"{\"a\":"},{"type":"image_url","image_url":"https://example.test/a.png"},{"type":"text","text":"1}"}]}]"#,
+    message: r#"{"call":{"name":"","parameters":{}},"outputs":[{"a":1}]}"#,
+    history: "[]",
+}))]
+#[case::null_tool_calls_are_an_empty_list(Scenario::V2(V2Case {
+    messages: r#"[{"role":"assistant","content":"a","tool_calls":null},{"role":"user","content":"next"}]"#,
+    message: r#""next""#,
+    history: r#"[{"role":"CHATBOT","message":"a","tool_calls":[]}]"#,
+}))]
+#[case::legacy_empty_arguments_keep_parameters_empty(Scenario::Legacy(LegacyCase {
+    messages: r#"[{"role":"assistant","content":"a","tool_calls":[{"id":"call_1","type":"function","function":{"name":"no_args","arguments":""}}]},{"role":"tool","tool_call_id":"call_1","content":"x"}]"#,
+    prompt: "a",
+    tool_results: r#"[{"call":{"name":"no_args","parameters":{}},"outputs":[{"result":"x"}]}]"#,
+}))]
+#[case::legacy_later_empty_arguments_keep_earlier_parameters(Scenario::Legacy(LegacyCase {
+    messages: r#"[{"role":"assistant","content":"a","tool_calls":[{"id":"call_1","type":"function","function":{"name":"first","arguments":"{\"a\":1}"}},{"id":"call_1","type":"function","function":{"name":"second","arguments":""}}]},{"role":"tool","tool_call_id":"call_1","content":"ok"}]"#,
+    prompt: "a",
+    tool_results: r#"[{"call":{"name":"second","parameters":{"a":1}},"outputs":[{"result":"ok"}]}]"#,
 }))]
 #[case::legacy_prompt_joins_text_and_reports_tools(Scenario::Legacy(LegacyCase {
     messages: r#"[{"role":"user","content":"one"},{"role":"user","content":"two"},{"role":"system","content":"s1"},{"role":"assistant","content":"call them","tool_calls":[{"id":"call_1","type":"function","function":{"name":"first","arguments":"{\"a\":1}"}}],"function_call":{"name":"legacy","arguments":"{}"}},{"role":"tool","tool_call_id":"call_1","content":"r1"},{"role":"function","name":"legacy_fn","content":"r3"},{"role":"user","content":"final"}]"#,
@@ -337,6 +403,9 @@ fn assert_preserved(source: &'static str) {
 #[case::the_invoke_tool_call_limit_is_accepted(Scenario::InvokeMaxToolCalls)]
 #[case::parts_are_bounded(Scenario::TooManyParts)]
 #[case::the_part_limit_is_accepted(Scenario::PartsAtLimit)]
+#[case::the_argument_budget_is_inclusive(Scenario::ArgumentBudgetAtLimit)]
+#[case::arguments_over_the_budget_are_refused(Scenario::ArgumentBudgetExceeded)]
+#[case::legacy_arguments_over_the_budget_are_refused(Scenario::LegacyArgumentBudgetExceeded)]
 #[case::conversions_do_not_change_the_source(Scenario::Preserved(
     r#"[{"role":"user","content":"q"},{"role":"assistant","content":"call","tool_calls":[{"id":"call_1","type":"function","function":{"name":"f","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call_1","content":"r"}]"#,
 ))]
@@ -391,15 +460,41 @@ fn other_prompts_provider_message_tests_behavior(#[case] scenario: Scenario) {
             let messages = vec![parts_message(MAX_MESSAGE_PARTS)];
             drop(cohere_messages_pt_v2(&messages).unwrap());
         }
+        Scenario::ArgumentBudgetAtLimit => {
+            let messages = budget_messages(MAX_ARGUMENT_BYTES, 1);
+            drop(cohere_messages_pt_v2(&messages).unwrap());
+        }
+        Scenario::ArgumentBudgetExceeded => {
+            let arguments = MAX_ARGUMENT_BYTES.saturating_div(2).saturating_add(1);
+            let messages = budget_messages(arguments, 2);
+            assert!(matches!(
+                cohere_messages_pt_v2(&messages),
+                Err(CohereError::ArgumentBudget { limit }) if limit == MAX_ARGUMENT_BYTES
+            ));
+        }
+        Scenario::LegacyArgumentBudgetExceeded => {
+            let arguments = MAX_ARGUMENT_BYTES.saturating_div(2).saturating_add(1);
+            let messages = budget_messages(arguments, 2);
+            assert!(matches!(
+                cohere_message_pt(&messages),
+                Err(CohereError::ArgumentBudget { limit }) if limit == MAX_ARGUMENT_BYTES
+            ));
+        }
         Scenario::Preserved(source) => assert_preserved(source),
     }
 }
 
 #[test]
-fn cohere_types_round_trip_as_json() {
+fn cohere_tool_result_message_serializes_untagged() {
     let result = cohere_messages_pt_v2(&parse_messages(
         r#"[{"role":"tool","tool_call_id":"call_1","content":"r"}]"#,
     ))
     .unwrap();
-    assert!(matches!(result.message, CohereMessage::ToolResult(_)));
+    assert_eq!(
+        serde_json::to_value(&result.message).unwrap(),
+        serde_json::to_value(parsed_json(
+            r#"{"call":{"name":"","parameters":{}},"outputs":[{"result":"r"}]}"#
+        ))
+        .unwrap()
+    );
 }

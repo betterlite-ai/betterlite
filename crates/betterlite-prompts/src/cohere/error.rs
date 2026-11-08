@@ -10,6 +10,8 @@ pub enum CohereError {
     TooManyParts { limit: usize },
     #[error("the message list has more than {limit} tool calls")]
     TooManyToolCalls { limit: usize },
+    #[error("recovered tool arguments exceed the {limit} byte budget")]
+    ArgumentBudget { limit: usize },
     #[error("message {index} has no content")]
     MissingContent { index: usize },
     #[error("message {index} content is a list, which the Cohere text prompt cannot carry")]

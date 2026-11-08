@@ -1,10 +1,11 @@
 use crate::cohere::content::{content_text, optional_content_text};
 use crate::cohere::error::CohereError;
+use crate::cohere::limits::ArgumentBudget;
 use crate::cohere::result::tool_result;
 use crate::cohere::tool_calls::{
-    collect_tool_calls, convert_to_cohere_tool_invoke, message_tool_calls,
+    Recovery, collect_tool_calls, convert_to_cohere_tool_invoke, message_tool_calls,
 };
-use crate::cohere::types::{ChatHistoryEntry, CohereMessage, CohereTool, CohereV2Messages};
+use crate::cohere::types::{ChatHistoryEntry, CohereMessage, CohereV2Messages};
 use crate::media::limits::MAX_MESSAGES;
 use crate::message_content::Message;
 
@@ -41,29 +42,33 @@ pub fn cohere_messages_pt_v2(messages: &[Message]) -> Result<CohereV2Messages, C
         });
     }
     let tool_calls = collect_tool_calls(messages)?;
+    let mut recovery = Recovery {
+        tool_calls: &tool_calls,
+        budget: ArgumentBudget { spent: 0 },
+    };
     let (last, history) = messages.split_last().ok_or(CohereError::EmptyMessages)?;
     let index = messages.len().saturating_sub(1);
-    let message = returned_message(last, &tool_calls, index)?;
+    let message = returned_message(last, &mut recovery, index)?;
     Ok(CohereV2Messages {
         message,
-        chat_history: build_history(history, &tool_calls)?,
+        chat_history: build_history(history, &mut recovery)?,
     })
 }
 
 fn returned_message(
     message: &Message,
-    tool_calls: &[CohereTool],
+    recovery: &mut Recovery<'_>,
     index: usize,
 ) -> Result<CohereMessage, CohereError> {
     if message.role == TOOL {
-        return tool_result(message, tool_calls, index).map(CohereMessage::ToolResult);
+        return tool_result(message, recovery, index).map(CohereMessage::ToolResult);
     }
     content_text(message.content.as_ref(), index).map(CohereMessage::Text)
 }
 
 fn build_history(
     messages: &[Message],
-    tool_calls: &[CohereTool],
+    recovery: &mut Recovery<'_>,
 ) -> Result<Vec<ChatHistoryEntry>, CohereError> {
     let mut history = Vec::new();
     let mut position = 0_usize;
@@ -76,7 +81,7 @@ fn build_history(
         };
         let end = run_end(messages, position, group);
         let run = messages.get(position..end).unwrap_or_default();
-        push_entry(&mut history, group, run, position, tool_calls)?;
+        push_entry(&mut history, group, run, position, recovery)?;
         position = end;
     }
     Ok(history)
@@ -98,7 +103,7 @@ fn push_entry(
     group: Group,
     run: &[Message],
     offset: usize,
-    tool_calls: &[CohereTool],
+    recovery: &mut Recovery<'_>,
 ) -> Result<(), CohereError> {
     match group {
         Group::User => {
@@ -118,7 +123,7 @@ fn push_entry(
                 history.push(entry);
             }
         }
-        Group::Tools => history.push(tool_entry(run, offset, tool_calls)?),
+        Group::Tools => history.push(tool_entry(run, offset, recovery)?),
     }
     Ok(())
 }
@@ -163,13 +168,13 @@ fn assistant_entry(
 fn tool_entry(
     run: &[Message],
     offset: usize,
-    tool_calls: &[CohereTool],
+    recovery: &mut Recovery<'_>,
 ) -> Result<ChatHistoryEntry, CohereError> {
     let mut tool_results = Vec::with_capacity(run.len());
     for (position, message) in run.iter().enumerate() {
         tool_results.push(tool_result(
             message,
-            tool_calls,
+            recovery,
             offset.saturating_add(position),
         )?);
     }

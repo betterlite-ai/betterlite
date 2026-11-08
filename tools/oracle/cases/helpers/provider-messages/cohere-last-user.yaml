@@ -10,6 +10,7 @@ call:
         content: hi
       - role: assistant
         content: hello
+        tool_calls: null
       - role: user
         content: what now?
 env: {}

@@ -1,6 +1,7 @@
 use crate::cohere::error::CohereError;
+use crate::cohere::limits::ArgumentBudget;
 use crate::cohere::result::tool_result;
-use crate::cohere::tool_calls::collect_tool_calls;
+use crate::cohere::tool_calls::{Recovery, collect_tool_calls};
 use crate::cohere::types::CoherePrompt;
 use crate::media::limits::MAX_MESSAGES;
 use crate::message_content::{Content, Message};
@@ -15,11 +16,15 @@ pub fn cohere_message_pt(messages: &[Message]) -> Result<CoherePrompt, CohereErr
         });
     }
     let tool_calls = collect_tool_calls(messages)?;
+    let mut recovery = Recovery {
+        tool_calls: &tool_calls,
+        budget: ArgumentBudget { spent: 0 },
+    };
     let mut prompt = String::new();
     let mut tool_results = Vec::new();
     for (index, message) in messages.iter().enumerate() {
         if message.role == TOOL {
-            tool_results.push(tool_result(message, &tool_calls, index)?);
+            tool_results.push(tool_result(message, &mut recovery, index)?);
             continue;
         }
         match &message.content {

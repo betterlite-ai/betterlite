@@ -15,3 +15,6 @@ deviations:
   - what: The conversions refuse more than 1024 messages, more than 256 content parts in one message, or more than 1024 tool calls across the list, where LiteLLM walks any size.
     why: Rule bounded-inputs caps what an untrusted request can make the gateway allocate and iterate; the limits are the ones B183 and B232 already apply.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3022-L3140
+  - what: A Cohere conversion recovers matching tool-call arguments under one 8 MiB budget per call, and refuses the conversion with a typed error once the total is over it, where LiteLLM re-parses a matching tool call's arguments for every tool message with no cap.
+    why: One large arguments string named by many tool messages makes LiteLLM parse and copy it once per message, so a single request can allocate gigabytes; the budget bounds that work with the same 8 MiB ceiling B232's message parser applies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2943-L2947

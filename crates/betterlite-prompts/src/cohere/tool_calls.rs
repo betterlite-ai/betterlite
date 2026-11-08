@@ -1,5 +1,6 @@
 use crate::arguments::json::{Json, Object};
 use crate::cohere::error::CohereError;
+use crate::cohere::limits::ArgumentBudget;
 use crate::cohere::types::{CohereCall, CohereTool, CohereToolCall};
 use crate::gemini_tool_invokes::limits::MAX_TOOL_CALLS;
 use crate::message_content::Message;
@@ -72,9 +73,15 @@ fn invoke(tool: &CohereTool, index: usize) -> Result<CohereToolCall, CohereError
     })
 }
 
+pub(crate) struct Recovery<'calls> {
+    pub(crate) tool_calls: &'calls [CohereTool],
+    pub(crate) budget: ArgumentBudget,
+}
+
 pub(crate) fn recovered_call(
     message: &Message,
     tool_calls: &[CohereTool],
+    budget: &mut ArgumentBudget,
 ) -> Result<CohereCall, CohereError> {
     let mut name = String::new();
     let mut parameters = Json::Object(Object::new());
@@ -98,14 +105,18 @@ pub(crate) fn recovered_call(
             .as_ref()
             .and_then(|function| function.name.clone())
             .unwrap_or_default();
-        if let Some(parsed) = arguments_of(tool, index)? {
+        if let Some(parsed) = arguments_of(tool, index, budget)? {
             parameters = parsed;
         }
     }
     Ok(CohereCall { name, parameters })
 }
 
-fn arguments_of(tool: &CohereTool, index: usize) -> Result<Option<Json>, CohereError> {
+fn arguments_of(
+    tool: &CohereTool,
+    index: usize,
+    budget: &mut ArgumentBudget,
+) -> Result<Option<Json>, CohereError> {
     let arguments = tool
         .function
         .as_ref()
@@ -113,6 +124,7 @@ fn arguments_of(tool: &CohereTool, index: usize) -> Result<Option<Json>, CohereE
     let Some(raw) = arguments.filter(|value| !value.is_empty()) else {
         return Ok(None);
     };
+    budget.charge(raw.len())?;
     serde_json::from_str::<Json>(raw)
         .map(Some)
         .map_err(|source| CohereError::Arguments { index, source })
