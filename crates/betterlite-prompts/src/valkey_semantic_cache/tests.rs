@@ -626,6 +626,27 @@ async fn store_writes_a_document_for_the_prompt() {
     assert_eq!(embedder.calls()[0].0, PROMPT);
 }
 
+#[tokio::test]
+async fn store_pipeline_writes_every_pair() {
+    let index = Arc::new(FakeIndex::default());
+    let (cache, _connector) = cache_with(Arc::new(FakeEmbedder::new()), &index);
+    let pairs = vec![
+        ("user-1".to_owned(), Json::Text("first".to_owned())),
+        ("user-2".to_owned(), Json::Text("second".to_owned())),
+    ];
+    cache
+        .async_set_cache_pipeline(&pairs, &kwargs_with_message(PROMPT))
+        .await;
+    let tags: Vec<String> = index
+        .stores()
+        .iter()
+        .map(|(_, fields, _)| fields.litellm_cache_key.clone())
+        .collect();
+    assert_eq!(tags.len(), 2);
+    assert!(tags.contains(&scope_tag("user-1")));
+    assert!(tags.contains(&scope_tag("user-2")));
+}
+
 #[rstest]
 #[case::no_ttl(None, None)]
 #[case::a_ttl(Some(60), Some(60))]
