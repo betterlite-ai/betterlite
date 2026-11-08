@@ -1,0 +1,5 @@
+task: B8440
+deviations:
+  - what: _failover_excluded_ids keeps the ids it was given and lists each one once in first-seen order, and drops entries that are not strings.
+    why: LiteLLM builds the list from a Python set, so its order changes between runs and its membership follows Python equality; a stable list keeps the metadata a spend log records reproducible.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7220-L7245
