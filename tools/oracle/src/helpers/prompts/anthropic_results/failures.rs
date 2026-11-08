@@ -1,4 +1,3 @@
-use betterlite_prompts::anthropic_results::function_invoke::InvokeError;
 use betterlite_prompts::anthropic_results::images::ImageError;
 use betterlite_prompts::anthropic_results::tool_result::ToolResultError;
 
@@ -37,13 +36,6 @@ where
         | ToolResultError::Field { .. }
         | ToolResultError::TooManyParts { .. }
         | ToolResultError::File(_) => None,
-    };
-    helper_failure(status, error.to_string())
-}
-
-pub(super) fn invoke_failure(error: &InvokeError) -> Box<HelperError> {
-    let status = match error {
-        InvokeError::Arguments(_) | InvokeError::Field { .. } => None,
     };
     helper_failure(status, error.to_string())
 }

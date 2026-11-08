@@ -13,7 +13,7 @@ use betterlite_prompts::anthropic_results::tool_result::to_anthropic_tool_result
 use serde::Serialize;
 use tokio::runtime::Runtime;
 
-use super::failures::{helper_failure, image_failure, invoke_failure, tool_result_failure};
+use super::failures::{helper_failure, image_failure, tool_result_failure};
 use super::policies::{CaseSource, NoBlocks, predicate};
 use super::{
     FunctionInvokeCall, ImageChunkCall, ImageParamCall, ReplaceIds, ServerResultCall,
@@ -94,15 +94,15 @@ pub(super) fn tool_result(call: &ToolResultCall) -> HelperResult {
 pub(super) fn function_invoke(call: &FunctionInvokeCall) -> HelperResult {
     let new_id = || call.id.clone();
     let calls = to_anthropic_tool_use(&call.function_call, &new_id)
-        .map_err(|error| invoke_failure(&error))?;
+        .map_err(|error| helper_failure(None, error.to_string()))?;
     ok_value(calls)
 }
 
 pub(super) fn server_tool_result(call: &ServerResultCall) -> HelperResult {
     ok_value(find_server_tool_result(
         &call.tool_id,
-        call.web_search_results.as_deref(),
-        call.tool_results.as_deref(),
+        &call.web_search_results,
+        &call.tool_results,
     ))
 }
 

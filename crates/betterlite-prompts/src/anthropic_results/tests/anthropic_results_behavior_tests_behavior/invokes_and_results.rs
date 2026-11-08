@@ -96,7 +96,7 @@ fn anthropic_results_behavior_tests_behavior_a_non_string_name_field_is_named() 
 fn anthropic_results_behavior_tests_behavior_a_web_search_result_is_found() {
     let web = list(r#"[{"tool_use_id":"search-1","result":"a"}]"#);
     assert_eq!(
-        find_server_tool_result("search-1", Some(&web), None),
+        find_server_tool_result("search-1", &web, &[]),
         Some(&object(r#"{"tool_use_id":"search-1","result":"a"}"#))
     );
 }
@@ -106,7 +106,7 @@ fn anthropic_results_behavior_tests_behavior_a_tool_result_is_found_after_the_we
     let web = list(r#"[{"tool_use_id":"other"}]"#);
     let tools = list(r#"[{"tool_use_id":"code-1","result":"b"}]"#);
     assert_eq!(
-        find_server_tool_result("code-1", Some(&web), Some(&tools)),
+        find_server_tool_result("code-1", &web, &tools),
         Some(&object(r#"{"tool_use_id":"code-1","result":"b"}"#))
     );
 }
@@ -116,7 +116,7 @@ fn anthropic_results_behavior_tests_behavior_the_web_search_result_comes_first()
     let web = list(r#"[{"tool_use_id":"shared","result":"web"}]"#);
     let tools = list(r#"[{"tool_use_id":"shared","result":"tool"}]"#);
     assert_eq!(
-        find_server_tool_result("shared", Some(&web), Some(&tools)),
+        find_server_tool_result("shared", &web, &tools),
         Some(&object(r#"{"tool_use_id":"shared","result":"web"}"#))
     );
 }
@@ -125,7 +125,7 @@ fn anthropic_results_behavior_tests_behavior_the_web_search_result_comes_first()
 fn anthropic_results_behavior_tests_behavior_non_object_candidates_are_skipped() {
     let web = list(r#"[1,"text",{"tool_use_id":"search-2"}]"#);
     assert_eq!(
-        find_server_tool_result("search-2", Some(&web), None),
+        find_server_tool_result("search-2", &web, &[]),
         Some(&object(r#"{"tool_use_id":"search-2"}"#))
     );
 }
@@ -133,16 +133,16 @@ fn anthropic_results_behavior_tests_behavior_non_object_candidates_are_skipped()
 #[test]
 fn anthropic_results_behavior_tests_behavior_a_non_string_tool_use_id_never_matches() {
     let web = list(r#"[{"tool_use_id":5}]"#);
-    assert_eq!(find_server_tool_result("5", Some(&web), None), None);
+    assert_eq!(find_server_tool_result("5", &web, &[]), None);
 }
 
 #[test]
 fn anthropic_results_behavior_tests_behavior_no_match_returns_none() {
     let web = list(r#"[{"tool_use_id":"search-1"}]"#);
-    assert_eq!(find_server_tool_result("missing", Some(&web), None), None);
+    assert_eq!(find_server_tool_result("missing", &web, &[]), None);
 }
 
 #[test]
-fn anthropic_results_behavior_tests_behavior_absent_sequences_return_none() {
-    assert_eq!(find_server_tool_result("id", None, None), None);
+fn anthropic_results_behavior_tests_behavior_empty_sequences_return_none() {
+    assert_eq!(find_server_tool_result("id", &[], &[]), None);
 }

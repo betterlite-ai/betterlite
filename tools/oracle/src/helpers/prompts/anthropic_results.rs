@@ -54,9 +54,9 @@ pub(crate) struct FunctionInvokeCall {
 pub(crate) struct ServerResultCall {
     tool_id: String,
     #[serde(default)]
-    web_search_results: Option<Vec<Json>>,
+    web_search_results: Vec<Json>,
     #[serde(default)]
-    tool_results: Option<Vec<Json>>,
+    tool_results: Vec<Json>,
 }
 
 #[derive(Debug, Deserialize)]
