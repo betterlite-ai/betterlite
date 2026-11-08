@@ -1,0 +1,9 @@
+task: B3844
+deviations:
+  - what: >-
+      A whole number outside the signed 64-bit range reaches the span as a float attribute. LiteLLM
+      hands the Python int to the OTel SDK unchanged and its exporter then fails on that value.
+    why: >-
+      opentelemetry::Value has no wider integer variant, and a float keeps the attribute instead of
+      losing the export. No value LiteLLM's own spans set comes near this range.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry_utils/base_otel_llm_obs_attributes.py#L18-L37

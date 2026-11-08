@@ -89,6 +89,8 @@ description: >-
   Test module names are `polling::tests`, `media_source::tests`, `media_pricing::tests` and `live::tests`; test function names start with the
   prefixes in the checks. Fakes for `JobLookup`, `PollSleeper`, `MediaDurationProbe` and the HTTP layer live in each module's tests.rs.
 
+  The plan registers helper operation b3645 as a not_built stub in tools/oracle/src/helpers/server.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/server/b3645.rs, write tools/oracle/helpers/b3645.py, and leave both registries as they are.
+
 scope:
   paths:
     - Cargo.lock
@@ -110,6 +112,10 @@ scope:
     - "tools/oracle/fuzz/corpus/helper_case/transcribe_media-*"
     - crates/betterlite-transcribe/src/policy/cost.rs
     - crates/betterlite-transcribe/src/policy/tests.rs
+    - tools/oracle/helpers/b3645.py
+    - tools/oracle/helpers/b3645/**
+    - tools/oracle/src/helpers/server/b3645.rs
+    - tools/oracle/src/helpers/server/b3645/**
   lint_tables: false
 
 references:

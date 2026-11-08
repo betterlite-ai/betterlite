@@ -1,0 +1,11 @@
+kind: helper
+name: chain-cycle
+call:
+  b3240:
+    function: inheritance_chain
+    policy_name: a
+    policies:
+      a: {inherit: b}
+      b: {inherit: a}
+env: {}
+compare: {ignore: []}
