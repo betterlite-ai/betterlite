@@ -9,7 +9,7 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 
 mod fixture;
 
-use fixture::{Fixture, fixture};
+use fixture::fixture;
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -49,38 +49,34 @@ async fn count(input: &Input) -> HelperResult {
     let directory = tempfile::tempdir().map_err(|error| failure(error.to_string()))?;
     let built = fixture(settings(input)?, directory.path())?;
     match input.function {
-        Function::TokenCounter => count_request(&built, input).await,
-        Function::DefaultEncoding => count_default_encoding(&built, input).await,
+        Function::TokenCounter => {
+            let selected = input
+                .request
+                .selected()
+                .map_err(|error| failure(error.to_string()))?;
+            let counted = built
+                .counter
+                .count(&input.request.request(selected.as_ref()))
+                .await
+                .map_err(|error| failure(error.to_string()))?;
+            Ok(json!(counted))
+        }
+        Function::DefaultEncoding => {
+            let Some(text) = input.request.text.as_ref() else {
+                return Err(failure("text is required".to_owned()));
+            };
+            let engine = built
+                .default
+                .get()
+                .await
+                .map_err(|error| failure(error.to_string()))?;
+            let joined = text.joined();
+            let ids = engine
+                .encode(joined.as_ref())
+                .map_err(|error| failure(error.to_string()))?;
+            Ok(json!(ids.len()))
+        }
     }
-}
-
-async fn count_request(built: &Fixture, input: &Input) -> HelperResult {
-    let selected = input
-        .request
-        .selected()
-        .map_err(|error| failure(error.to_string()))?;
-    let counted = built
-        .counter
-        .count(&input.request.request(selected.as_ref()))
-        .await
-        .map_err(|error| failure(error.to_string()))?;
-    Ok(json!(counted))
-}
-
-async fn count_default_encoding(built: &Fixture, input: &Input) -> HelperResult {
-    let Some(text) = input.request.text.as_ref() else {
-        return Err(failure("text is required".to_owned()));
-    };
-    let engine = built
-        .default
-        .get()
-        .await
-        .map_err(|error| failure(error.to_string()))?;
-    let joined = text.joined();
-    let ids = engine
-        .encode(joined.as_ref())
-        .map_err(|error| failure(error.to_string()))?;
-    Ok(json!(ids.len()))
 }
 
 fn settings(input: &Input) -> Result<Settings, Box<HelperError>> {

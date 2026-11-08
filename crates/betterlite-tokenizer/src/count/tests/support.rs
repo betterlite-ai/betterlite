@@ -112,11 +112,7 @@ pub(crate) fn settings(max_exact: usize, chunk: usize, disabled: bool) -> Settin
 
 pub(crate) async fn count_request(counter: &Counter, request: &str) -> Result<usize, String> {
     let wire = TokenRequestWire::try_from(request.as_bytes()).map_err(|error| error.to_string())?;
-    let selected = wire.selected().map_err(|error| error.to_string())?;
-    counter
-        .count(&wire.request(selected.as_ref()))
-        .await
-        .map_err(|error| error.to_string())
+    count_wire(counter, &wire).await
 }
 
 pub(crate) async fn count_with_tokenizer(
@@ -134,6 +130,10 @@ pub(crate) async fn count_with_tokenizer(
         tools: None,
         tool_choice: None,
     };
+    count_wire(counter, &wire).await
+}
+
+async fn count_wire(counter: &Counter, wire: &TokenRequestWire) -> Result<usize, String> {
     let selected = wire.selected().map_err(|error| error.to_string())?;
     counter
         .count(&wire.request(selected.as_ref()))

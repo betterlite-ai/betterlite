@@ -53,41 +53,14 @@ async fn count_message(
     message: &Message,
 ) -> Result<usize, CountError> {
     let mut total = params.tokens_per_message;
-    total = total
-        .checked_add(texter.count(&message.role).await?)
-        .ok_or(CountError::Overflow)?;
-    total = total
-        .checked_add(count_fields(texter, message).await?)
-        .ok_or(CountError::Overflow)?;
-    total = total
-        .checked_add(count_calls(texter, message).await?)
-        .ok_or(CountError::Overflow)?;
-    if let Some(name) = &message.name {
+    for text in text_fields(message) {
         total = total
-            .checked_add(texter.count(name).await?)
-            .ok_or(CountError::Overflow)?;
-        total = total
-            .checked_add_signed(params.tokens_per_name)
+            .checked_add(texter.count(text).await?)
             .ok_or(CountError::Overflow)?;
     }
-    Ok(total)
-}
-
-async fn count_fields(texter: &Texter<'_>, message: &Message) -> Result<usize, CountError> {
-    let mut total = 0_usize;
     if let Some(content) = &message.content {
         total = total
             .checked_add(count_content(texter, content).await?)
-            .ok_or(CountError::Overflow)?;
-    }
-    if let Some(id) = &message.tool_call_id {
-        total = total
-            .checked_add(texter.count(id).await?)
-            .ok_or(CountError::Overflow)?;
-    }
-    if let Some(reasoning) = &message.reasoning_content {
-        total = total
-            .checked_add(texter.count(reasoning).await?)
             .ok_or(CountError::Overflow)?;
     }
     if let Some(results) = &message.search_results {
@@ -95,60 +68,63 @@ async fn count_fields(texter: &Texter<'_>, message: &Message) -> Result<usize, C
             .checked_add(count_search_results(texter, results).await?)
             .ok_or(CountError::Overflow)?;
     }
-    for value in message.passthrough.values() {
-        if let Json::Text(text) = value {
-            total = total
-                .checked_add(texter.count(text).await?)
-                .ok_or(CountError::Overflow)?;
-        }
-    }
-    Ok(total)
-}
-
-async fn count_calls(texter: &Texter<'_>, message: &Message) -> Result<usize, CountError> {
-    let mut total = 0_usize;
-    if let Some(tool_calls) = &message.tool_calls {
-        for call in tool_calls {
-            total = total
-                .checked_add(texter.count(&call.function.arguments).await?)
-                .ok_or(CountError::Overflow)?;
-        }
-    }
-    if let Some(call) = &message.function_call {
+    if message.name.is_some() {
         total = total
-            .checked_add(texter.count(&call.arguments).await?)
+            .checked_add_signed(params.tokens_per_name)
             .ok_or(CountError::Overflow)?;
     }
     Ok(total)
 }
 
-async fn count_content(texter: &Texter<'_>, content: &MessageContent) -> Result<usize, CountError> {
-    match content {
-        MessageContent::Text(text) => texter.count(text).await,
-        MessageContent::Parts(parts) => {
-            let mut total = 0_usize;
-            for part in parts {
-                total = total
-                    .checked_add(count_part(texter, part).await?)
-                    .ok_or(CountError::Overflow)?;
-            }
-            Ok(total)
+// every string field LiteLLM counts through its isinstance(str) branch, in any order because the sums commute
+fn text_fields(message: &Message) -> Vec<&str> {
+    let mut texts: Vec<&str> = vec![&message.role];
+    if let Some(name) = &message.name {
+        texts.push(name);
+    }
+    if let Some(id) = &message.tool_call_id {
+        texts.push(id);
+    }
+    if let Some(reasoning) = &message.reasoning_content {
+        texts.push(reasoning);
+    }
+    if let Some(call) = &message.function_call {
+        texts.push(&call.arguments);
+    }
+    if let Some(calls) = &message.tool_calls {
+        for call in calls {
+            texts.push(&call.function.arguments);
         }
     }
+    for value in message.passthrough.values() {
+        if let Json::Text(text) = value {
+            texts.push(text);
+        }
+    }
+    texts
 }
 
-async fn count_part(texter: &Texter<'_>, part: &Part) -> Result<usize, CountError> {
-    match part {
-        Part::Text(text) => texter.count(text).await,
-        Part::Block(block) => {
-            if block.kind != "text" {
+async fn count_content(texter: &Texter<'_>, content: &MessageContent) -> Result<usize, CountError> {
+    let parts = match content {
+        MessageContent::Text(text) => return texter.count(text).await,
+        MessageContent::Parts(parts) => parts,
+    };
+    let mut total = 0_usize;
+    for part in parts {
+        let text = match part {
+            Part::Text(text) => text.as_str(),
+            Part::Block(block) if block.kind == "text" => block_text(block)?,
+            Part::Block(block) => {
                 return Err(CountError::UnsupportedContent {
                     kind: block.kind.clone(),
                 });
             }
-            texter.count(block_text(block)?).await
-        }
+        };
+        total = total
+            .checked_add(texter.count(text).await?)
+            .ok_or(CountError::Overflow)?;
     }
+    Ok(total)
 }
 
 fn block_text(block: &ContentPart) -> Result<&str, CountError> {

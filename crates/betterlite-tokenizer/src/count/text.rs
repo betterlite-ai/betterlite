@@ -45,27 +45,41 @@ impl Texter<'_> {
     }
 
     async fn sampled(&self, text: &str, chars: usize) -> Result<usize, CountError> {
-        let mut sampled = 0_u128;
-        let mut sampled_chars = 0_u128;
+        let mut tally = Tally::default();
         for range in sample_ranges(text, chars, self.max_exact_chars)? {
             let slice = text.get(range).ok_or(CountError::Boundary)?;
-            sampled = sampled
-                .checked_add(
-                    u128::try_from(self.exact(slice).await?)
-                        .map_err(|_conversion| CountError::Overflow)?,
-                )
-                .ok_or(CountError::Overflow)?;
-            sampled_chars = sampled_chars
-                .checked_add(
-                    u128::try_from(slice.chars().count())
-                        .map_err(|_conversion| CountError::Overflow)?,
-                )
-                .ok_or(CountError::Overflow)?;
+            let tokens = self.exact(slice).await?;
+            tally.record(tokens, slice.chars().count())?;
         }
-        let numerator = sampled
-            .checked_mul(u128::try_from(chars).map_err(|_conversion| CountError::Overflow)?)
+        let scalars = u128::try_from(chars).map_err(|_conversion| CountError::Overflow)?;
+        let numerator = tally
+            .tokens
+            .checked_mul(scalars)
             .ok_or(CountError::Overflow)?;
-        round_half_even(numerator, sampled_chars)
+        round_half_even(numerator, tally.scalars)
+    }
+}
+
+// the sampled tokens and the sampled scalar values both feed one rounding step, so they grow together
+#[derive(Debug, Clone, Copy, Default)]
+struct Tally {
+    tokens: u128,
+    scalars: u128,
+}
+
+impl Tally {
+    fn record(&mut self, tokens: usize, scalars: usize) -> Result<(), CountError> {
+        let token_count = u128::try_from(tokens).map_err(|_conversion| CountError::Overflow)?;
+        let scalar_count = u128::try_from(scalars).map_err(|_conversion| CountError::Overflow)?;
+        self.tokens = self
+            .tokens
+            .checked_add(token_count)
+            .ok_or(CountError::Overflow)?;
+        self.scalars = self
+            .scalars
+            .checked_add(scalar_count)
+            .ok_or(CountError::Overflow)?;
+        Ok(())
     }
 }
 
