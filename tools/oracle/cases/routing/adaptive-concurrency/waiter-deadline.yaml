@@ -1,0 +1,38 @@
+kind: probe
+name: waiter-deadline
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_concurrency:
+        initial: 1
+        floor: 1
+        ceiling: 1
+        steps:
+          - {action: acquire, deadline_millis: 60000}
+          - {action: acquire, deadline_millis: 0}
+          - {action: snapshot}
+          - {action: release, id: 0}
+compare:
+  expected_difference:
+    - pointer: /output/adaptive_concurrency/results/1/outcome
+      reference: queued
+      rust: timed_out
+      why: the pinned limiter waits forever, while betterlite denies a wait whose caller deadline already passed
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L39-L55
+    - pointer: /output/adaptive_concurrency/results/1/state/waiters
+      reference: 1
+      rust: 0
+      why: callers whose deadline passed are not stored as waiters
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L33-L33
+    - pointer: /output/adaptive_concurrency/results/2/state/waiters
+      reference: 1
+      rust: 0
+      why: LiteLLM still holds the expired caller in its deque, betterlite already denied it
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L57-L63
+    - pointer: /output/adaptive_concurrency/results/3/state/in_flight
+      reference: 1
+      rust: 0
+      why: the released permit goes to the LiteLLM waiter, while betterlite has nobody left to grant
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L65-L67
+  ignore: []

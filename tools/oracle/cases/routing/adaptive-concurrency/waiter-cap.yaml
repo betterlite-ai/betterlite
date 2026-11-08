@@ -1,0 +1,32 @@
+kind: probe
+name: waiter-cap
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_concurrency:
+        initial: 1
+        floor: 1
+        ceiling: 1
+        steps:
+          - {action: acquire, deadline_millis: 60000}
+          - {action: fill, count: 1025, deadline_millis: 60000}
+          - {action: snapshot}
+compare:
+  expected_difference:
+    - pointer: /output/adaptive_concurrency/results/1/queued
+      reference: 1025
+      rust: 1024
+      why: the pinned deque is unbounded, while betterlite refuses a 1025th waiter with the typed overload result
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L23-L69
+    - pointer: /output/adaptive_concurrency/results/1/overloaded
+      reference: 0
+      rust: 1
+      why: LiteLLM has no overload outcome, so the extra acquisition queues instead of being refused
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L39-L55
+    - pointer: /output/adaptive_concurrency/results/2/state/waiters
+      reference: 1025
+      rust: 1024
+      why: the bounded waiter storage holds at most 1024 waiters
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L33-L33
+  ignore: []
