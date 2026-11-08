@@ -16,6 +16,7 @@ pub mod claude_plugin_read;
 pub mod claude_plugin_write;
 pub mod claude_skill_read;
 pub mod claude_skill_write;
+pub mod container_file_requests;
 pub mod cursor_responses_compat;
 pub mod eval_mutation_routes;
 pub mod eval_read_create_routes;
