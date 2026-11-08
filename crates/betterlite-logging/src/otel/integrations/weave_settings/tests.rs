@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
+use secrecy::ExposeSecret as _;
 
 use super::{WeaveOtelConfig, weave_authorization_header, weave_otel_endpoint};
 use crate::otel::integrations::arize_settings::OtlpProtocol;
@@ -44,7 +45,7 @@ fn config_builds_the_cloud_request() {
     assert_eq!(config.endpoint, "https://trace.wandb.ai/otel/v1/traces");
     assert_eq!(config.project_id, "entity/project");
     assert_eq!(
-        config.otlp_auth_headers,
+        config.otlp_auth_headers.expose_secret(),
         "Authorization=Basic YXBpOmFiYw==,project_id=entity/project"
     );
 }
@@ -58,6 +59,18 @@ fn config_uses_the_configured_host() {
     ]))
     .expect("the config resolves");
     assert_eq!(config.endpoint, "https://wandb.example/otel/v1/traces");
+}
+
+#[test]
+fn config_debug_output_hides_the_api_key() {
+    let config = WeaveOtelConfig::from_env(&environment(&[
+        ("WANDB_API_KEY", "sk-secret-value"),
+        ("WANDB_PROJECT_ID", "entity/project"),
+    ]))
+    .expect("the config resolves");
+    let debug = format!("{config:?}");
+    assert!(!debug.contains("sk-secret-value"));
+    assert!(debug.contains("[REDACTED]"));
 }
 
 #[rstest]

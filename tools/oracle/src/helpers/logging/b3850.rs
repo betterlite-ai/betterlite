@@ -145,18 +145,18 @@ fn config_json(config: ConfigValue<'_>) -> Value {
             "project_name": &values.project_name,
         }),
         ConfigValue::Phoenix(values) => json!({
-            "otlp_auth_headers": &values.otlp_auth_headers,
+            "otlp_auth_headers": values.otlp_auth_headers.as_ref().map(ExposeSecret::expose_secret),
             "protocol": values.protocol.exporter_kind(),
             "endpoint": &values.endpoint,
             "project_name": &values.project_name,
         }),
         ConfigValue::Levo(values) => json!({
-            "otlp_auth_headers": &values.otlp_auth_headers,
+            "otlp_auth_headers": values.otlp_auth_headers.expose_secret(),
             "protocol": values.protocol.exporter_kind(),
             "endpoint": &values.endpoint,
         }),
         ConfigValue::Weave(values) => json!({
-            "otlp_auth_headers": &values.otlp_auth_headers,
+            "otlp_auth_headers": values.otlp_auth_headers.expose_secret(),
             "endpoint": &values.endpoint,
             "project_id": &values.project_id,
             "protocol": values.protocol.exporter_kind(),

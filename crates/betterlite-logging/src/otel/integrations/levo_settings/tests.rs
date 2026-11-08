@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
+use secrecy::ExposeSecret as _;
 
 use super::LevoConfig;
 use crate::otel::integrations::arize_settings::OtlpProtocol;
@@ -26,9 +27,23 @@ fn config_builds_the_collector_request() {
     assert_eq!(config.protocol, OtlpProtocol::Http);
     assert_eq!(config.endpoint, "https://levo.example/v1/traces");
     assert_eq!(
-        config.otlp_auth_headers,
+        config.otlp_auth_headers.expose_secret(),
         "Authorization=Bearer key,x-levo-organization-id=org,x-levo-workspace-id=workspace"
     );
+}
+
+#[test]
+fn config_debug_output_hides_the_api_key() {
+    let config = LevoConfig::from_env(&environment(&[
+        ("LEVOAI_API_KEY", "sk-secret-value"),
+        ("LEVOAI_ORG_ID", "org"),
+        ("LEVOAI_WORKSPACE_ID", "workspace"),
+        ("LEVOAI_COLLECTOR_URL", "https://levo.example/v1/traces"),
+    ]))
+    .expect("the config resolves");
+    let debug = format!("{config:?}");
+    assert!(!debug.contains("sk-secret-value"));
+    assert!(debug.contains("[REDACTED]"));
 }
 
 #[rstest]

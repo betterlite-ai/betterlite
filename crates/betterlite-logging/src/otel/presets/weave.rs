@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::loader::EnvironmentLookup;
+use secrecy::ExposeSecret as _;
 
 use crate::otel::config::{ExporterOwner, ExporterSpec, Settings};
 use crate::otel::integrations::weave_settings::{WeaveOtelConfig, weave_authorization_header};
@@ -24,7 +25,7 @@ impl Preset for WeavePreset {
                     kind: config.protocol.exporter_kind().to_owned(),
                     endpoint: Some(config.endpoint),
                     traces_endpoint: None,
-                    headers: Some(config.otlp_auth_headers),
+                    headers: Some(config.otlp_auth_headers.expose_secret().to_owned()),
                     owner: Some(ExporterOwner::WeaveOtel),
                     options: None,
                     use_simple_processor: None,

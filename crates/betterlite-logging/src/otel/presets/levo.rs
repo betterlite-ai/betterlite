@@ -1,4 +1,5 @@
 use betterlite_config::loader::EnvironmentLookup;
+use secrecy::ExposeSecret as _;
 
 use crate::otel::config::{ExporterOwner, ExporterSpec, Settings};
 use crate::otel::integrations::levo_settings::LevoConfig;
@@ -19,7 +20,7 @@ impl Preset for LevoPreset {
             kind: config.protocol.exporter_kind().to_owned(),
             endpoint: Some(config.endpoint),
             traces_endpoint: None,
-            headers: Some(config.otlp_auth_headers),
+            headers: Some(config.otlp_auth_headers.expose_secret().to_owned()),
             owner: Some(ExporterOwner::Levo),
             options: None,
             use_simple_processor: None,

@@ -1,4 +1,5 @@
 use betterlite_config::loader::EnvironmentLookup;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::arize_settings::OtlpProtocol;
 
@@ -6,9 +7,9 @@ const DEFAULT_ENDPOINT: &str = "http://localhost:6006/v1/traces";
 const PHOENIX_CLOUD_HOST: &str = "app.phoenix.arize.com";
 const TRACES_PATH: &str = "/v1/traces";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct PhoenixConfig {
-    pub otlp_auth_headers: Option<String>,
+    pub otlp_auth_headers: Option<SecretString>,
     pub protocol: OtlpProtocol,
     pub endpoint: String,
     pub project_name: String,
@@ -32,11 +33,15 @@ impl PhoenixConfig {
         };
         let otlp_auth_headers = match environment.lookup("PHOENIX_API_KEY") {
             Some(api_key) => {
+                let secret_key = SecretString::from(api_key);
                 let header = match protocol {
                     OtlpProtocol::Grpc => "authorization",
                     OtlpProtocol::Http => "Authorization",
                 };
-                Some(format!("{header}=Bearer {api_key}"))
+                Some(SecretString::from(format!(
+                    "{header}=Bearer {}",
+                    secret_key.expose_secret()
+                )))
             }
             None if endpoint.contains(PHOENIX_CLOUD_HOST) => {
                 return Err(PhoenixSettingsError::CloudApiKeyMissing);

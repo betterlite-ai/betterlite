@@ -1,15 +1,16 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_config::loader::EnvironmentLookup;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::arize_settings::OtlpProtocol;
 
 pub const WEAVE_BASE_URL: &str = "https://trace.wandb.ai";
 pub const WEAVE_OTEL_ENDPOINT: &str = "/otel/v1/traces";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct WeaveOtelConfig {
-    pub otlp_auth_headers: String,
+    pub otlp_auth_headers: SecretString,
     pub endpoint: String,
     pub project_id: String,
     pub protocol: OtlpProtocol,
@@ -28,14 +29,14 @@ pub enum WeaveSettingsError {
 impl WeaveOtelConfig {
     pub fn from_env(environment: &dyn EnvironmentLookup) -> Result<Self, WeaveSettingsError> {
         let read = |name: &str| environment.lookup(name).filter(|value| !value.is_empty());
-        let api_key = read("WANDB_API_KEY").ok_or(WeaveSettingsError::ApiKey)?;
+        let api_key = SecretString::from(read("WANDB_API_KEY").ok_or(WeaveSettingsError::ApiKey)?);
         let project_id = read("WANDB_PROJECT_ID").ok_or(WeaveSettingsError::ProjectId)?;
         let endpoint = weave_otel_endpoint(read("WANDB_HOST").as_deref());
         Ok(Self {
-            otlp_auth_headers: format!(
+            otlp_auth_headers: SecretString::from(format!(
                 "Authorization={},project_id={project_id}",
-                weave_authorization_header(&api_key)
-            ),
+                weave_authorization_header(api_key.expose_secret())
+            )),
             endpoint,
             project_id,
             protocol: OtlpProtocol::Http,

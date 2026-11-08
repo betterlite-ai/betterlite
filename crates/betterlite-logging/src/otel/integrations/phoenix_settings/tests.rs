@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
+use secrecy::ExposeSecret;
 
 use super::PhoenixConfig;
 use crate::otel::integrations::arize_settings::OtlpProtocol;
@@ -97,13 +98,28 @@ fn config_normalizes_the_collector_endpoint(
 #[case::empty_key_still_counts(&[("PHOENIX_API_KEY", "")], "Authorization=Bearer ")]
 fn config_builds_the_auth_header(#[case] variables: &[(&str, &str)], #[case] expected: &str) {
     let config = PhoenixConfig::from_env(&environment(variables)).expect("the config resolves");
-    assert_eq!(config.otlp_auth_headers.as_deref(), Some(expected));
+    assert_eq!(
+        config
+            .otlp_auth_headers
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some(expected)
+    );
 }
 
 #[test]
 fn config_without_a_key_has_no_headers() {
     let config = PhoenixConfig::from_env(&environment(&[])).expect("the config resolves");
-    assert_eq!(config.otlp_auth_headers, None);
+    assert!(config.otlp_auth_headers.is_none());
+}
+
+#[test]
+fn config_debug_output_hides_the_api_key() {
+    let config = PhoenixConfig::from_env(&environment(&[("PHOENIX_API_KEY", "sk-secret-value")]))
+        .expect("the config resolves");
+    let debug = format!("{config:?}");
+    assert!(!debug.contains("sk-secret-value"));
+    assert!(debug.contains("[REDACTED]"));
 }
 
 #[rstest]

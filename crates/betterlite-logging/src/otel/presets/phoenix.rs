@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::loader::EnvironmentLookup;
+use secrecy::ExposeSecret as _;
 
 use crate::otel::config::{ExporterOwner, ExporterSpec, Settings};
 use crate::otel::integrations::phoenix_settings::PhoenixConfig;
@@ -23,7 +24,9 @@ impl Preset for PhoenixPreset {
             kind: config.protocol.exporter_kind().to_owned(),
             endpoint: Some(config.endpoint),
             traces_endpoint: None,
-            headers: config.otlp_auth_headers,
+            headers: config
+                .otlp_auth_headers
+                .map(|header| header.expose_secret().to_owned()),
             owner: Some(ExporterOwner::ArizePhoenix),
             options: None,
             use_simple_processor: None,
