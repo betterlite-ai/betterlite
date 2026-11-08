@@ -204,3 +204,10 @@ path = "fuzz_targets/openai_threads.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "watsonx_iam_token"
+path = "fuzz_targets/watsonx_iam_token.rs"
+test = false
+doc = false
+bench = false
