@@ -17,7 +17,7 @@ scope:
   - crates/betterlite-core/src/api/assistant_read_delete.rs
   - crates/betterlite-core/src/api/assistant_read_delete/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/assistant_read_delete.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/assistant_read_delete.py
   - tools/oracle/cases/sdk-http/assistant-read-delete/**

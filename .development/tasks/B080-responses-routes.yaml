@@ -61,7 +61,7 @@ scope:
   - tools/oracle/cases/api/responses-routes/**
   - tools/oracle/fixtures/responses-routes/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/responses_public_dispatch.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/responses_public_dispatch.py
   - tools/oracle/cases/sdk-http/responses-public-dispatch/**

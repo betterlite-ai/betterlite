@@ -45,7 +45,7 @@ scope:
   - crates/betterlite-openai/fuzz/fuzz_targets/speech_audio.rs
   - crates/betterlite-openai/fuzz/corpus/speech_audio/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/speech_chat_bridge.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/speech_chat_bridge.py
   - tools/oracle/cases/sdk-http/speech-chat-bridge/**
