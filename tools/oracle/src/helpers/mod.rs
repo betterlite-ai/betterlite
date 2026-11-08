@@ -54,6 +54,7 @@ mod prometheus;
 mod prompts;
 mod provider;
 mod proxy;
+mod pyhost;
 mod rate_limit;
 mod redact;
 mod redis;
@@ -126,7 +127,7 @@ struct Group {
     check: fn(&str, &serde_json::Value) -> Option<Result<(), String>>,
 }
 
-const GROUPS: [Group; 45] = [
+const GROUPS: [Group; 46] = [
     a2a::GROUP,
     anthropic::GROUP,
     auth::GROUP,
@@ -158,6 +159,7 @@ const GROUPS: [Group; 45] = [
     prompts::GROUP,
     provider::GROUP,
     proxy::GROUP,
+    pyhost::GROUP,
     rate_limit::GROUP,
     redact::GROUP,
     redis::GROUP,

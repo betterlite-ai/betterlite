@@ -1,0 +1,14 @@
+id: B8042
+milestone: M12 python
+title: Load a Python object from a config string (get_instance_fn)
+status: todo
+depends_on: [B8041]
+file: tasks/B8042-pyhost-instance-loader.yaml
+covers:
+  - "litellm/proxy/types_utils/**"
+parent: B165
+split_from: B165
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,179 @@
+id: B7326
+title: Container create, list, retrieve and delete routes
+description: >-
+  Register the four container routes of litellm/proxy/container_endpoints/endpoints.py and build the handler behind each, in betterlite-server as module api::container_routes
+  (crates/betterlite-server/src/api/container_routes.rs and container_routes/**), mounted once from a route stub module routes/containers.rs that the architect registers.
+  Each route is registered at the `/v1` prefix and at the bare path, so eight registrations: POST /v1/containers and POST /containers (create, route type acreate_container), GET /v1/containers and
+  GET /containers (list, alist_containers), GET /v1/containers/{container_id} and GET /containers/{container_id} (retrieve, aretrieve_container), DELETE /v1/containers/{container_id} and
+  DELETE /containers/{container_id} (delete, adelete_container). Every route sits behind B756 authentication and reads the authenticated caller (LiteLLM lists user_api_key_auth as a route dependency and as a
+  handler parameter, and it runs once). Use the path syntax the workspace's axum version takes for `{name}` segments. The five container file routes under /containers/{container_id}/files
+  are B3372 and share no path and method with these. The route type text comes from B7430's `ContainerRouteType::name`, not from string literals in this module.
+
+  Wiring. B3371 declares the `ContainerAccess` and `RequestProcessing` traits, `ProviderHints` and `pick_provider`; B3372 shows the same wiring for the file routes. This task builds one `ContainerRoutes`
+  value that holds `Arc<dyn ContainerAccess>`, `Arc<dyn RequestProcessing>` and a new trait `ContainerOwners` declared here. `ContainerOwners` has two async methods, both thin adapters in
+  production over B3362: `list_owned(pages, after, limit, caller, provider)` (B3362's list_owned_containers, where `pages` is a `&dyn ContainerPages`, a trait declared here with
+  `async fn fetch_page(&self, after: Option<String>, limit: Option<i64>) -> Result<Value, ContainerRouteError>`) and `record_owner(reply, caller, provider)` (record_container_owner, which returns
+  the reply it was given). The production `RequestProcessing` is B004's common request processing, which reaches the container route types through B7430's ContainerCall dispatch entry; this task
+  passes the route type name and the data map and nothing else. `ContainerRouteError` is this module's error enum: Body (B1100's body error), Access (B3362's 403 "Forbidden", kept as it is),
+  Owner (an error from record_owner, with its status and detail), Query (a bad `limit`, see list) and Processing (the mapped error that `handle_exception` returns). Each variant keeps its source by `#[from]`.
+
+  Provider pick. For list, retrieve and delete the provider is B3371's `pick_provider` (custom-llm-provider header, then the custom_llm_provider query value, then "openai"; an empty value falls through).
+  Create has one more source between the query value and the default: the `custom_llm_provider` key of the JSON body (B2400's body accessor). So create takes the header, then the query value, then the body
+  value, then "openai", each only when non-empty. Build create's pick from the two `ProviderHints` fields and the body value in this module; do not change pick_provider.
+
+  Create (endpoints.py L29-L158). (1) Read the JSON body into the data map with B1100's body reader; a body failure is B1100's error and never reaches `handle_exception`. (2) Pick the provider as above
+  and set `data["custom_llm_provider"]` to it, replacing any body value. No ownership check: a new container has no id yet. (3) Inside the guarded section call `RequestProcessing::process(data,
+  "acreate_container", caller)` with no model; any failure goes to `handle_exception` once. (4) Outside that guarded section call `ContainerOwners::record_owner(reply, caller, picked provider)` with the
+  provider picked in step 2 (not any provider the reply names). If it fails with an HTTP error (B3362 raises 403 "Unable to record container ownership: caller has no identity scope.", 403 "Forbidden" and
+  500 "Unable to track container"), return that error as `{"detail": ...}` with its status, not through `handle_exception`. If it fails with any other error, log it at error level with the text
+  "Container ownership recording failed after upstream create; returning response with untracked ownership" and return the upstream reply unchanged with status 200. On success return what
+  record_owner returned. The upstream container already exists in the failing cases, and that is LiteLLM's behavior.
+
+  List (L161-L263). `after` (string), `limit` (integer) and `order` (string) are declared query parameters. A `limit` that is not an integer is rejected before the handler runs with HTTP 422 and
+  FastAPI's validation body (detail list with type "int_parsing", loc ["query", "limit"]); the oracle case below pins the exact body. Steps. (1) `query_params` is every query parameter as a map of
+  strings, a repeated key keeping its last value. (2) The provider is `pick_provider`. (3) The base data is `{"query_params": that map, "model": the query value of "model" or null, "order": the order
+  value or null, "custom_llm_provider": the pick}`. Undeclared query names reach data only inside "query_params", and `after` and `limit` are not in the base data. (4) `fetch_page(page_after,
+  page_limit)` builds a fresh copy of the base data plus `after` and `limit` (both keys present, null when absent), then runs `process` with "alist_containers" and no model, with failures going to
+  `handle_exception`. A fresh processor per page means one fetch is one `process` call. (5) If the caller is a proxy admin (B1018's is_proxy_admin: role PROXY_ADMIN), return `fetch_page(after, limit)`
+  unchanged, one upstream call and no filtering. (6) Otherwise return `ContainerOwners::list_owned` with the fetcher, `after`, `limit`, the caller and the pick. B3362 owns the filtering, the 100-item pages and the
+  five-page cap; this task only supplies the fetcher. The ownership lookup is not wrapped in `handle_exception`, but each page fetch inside it is.
+
+  Retrieve (L266-L369) and delete (L372-L475) differ only in the route type ("aretrieve_container", "adelete_container"). Steps. (1) data starts as `{"container_id": the path value}`. No query parameter
+  and no body is forwarded. (2) The provider is `pick_provider`. (3) `ContainerAccess::check_access(container_id, caller, provider)` returns the original container id and the resolved provider (a 403
+  `{"detail": "Forbidden"}` for a caller who does not own the container, admins bypass). (4) `forwarding_params(container_id, original_container_id, resolved_provider)` returns container_id,
+  custom_llm_provider and model_id when present; update data with it, overwriting earlier keys. Steps 3 and 4 run before the guarded section, so a denial is the plain detail body and never
+  goes through `handle_exception`. (5) In the guarded section call `process` with the route type and no model and return the reply unchanged.
+
+  Responses. A success is HTTP 200 with the reply as JSON and the response headers B004 set (the x-litellm-* headers), the same as B3372's file routes. Error bodies from B004 keep its OpenAI error
+  object; the 403 and 500 above are `{"detail": ...}`.
+
+  HTTP oracle cases. These are new routes a client sees, so the branch adds cases under tools/oracle/cases/api/container-routes, run against LiteLLM and betterlite with master_key=sk-test, a second
+  non-admin virtual key (created through the key route) and the OpenAI mock provider's container endpoints (B3363 owns the provider side). They check: create on both prefixes with the data the provider
+  received (a body custom_llm_provider is replaced by the picked one; the header beats the query value, which beats the body value); the list route on both prefixes with admin and with the non-admin key (the
+  non-admin key sees only the containers it created through POST /v1/containers, and limit, order and after reach the provider as strings with an unknown query name absent); a non-integer limit answering 422;
+  retrieve and delete on both prefixes for the owner and for a second key that gets 403 `{"detail": "Forbidden"}` with zero provider requests; and a missing or wrong key giving 401 on all eight paths. Where the fixture needs
+  an owned container it creates one through POST /v1/containers with the owner key. B3372's 403 case relies on this route: its fixture can create containers through it once this task merges.
+
+  Tests in api::container_routes::tests use fakes for the three traits. Name them route_aliases, create_data, create_owner, list_data, list_scope, item_flow, item_access, error_bodies and auth_failures.
+  Budget from about 120 owned LiteLLM lines (four handlers of about 30 lines each; the file-route mount at the end of the file is B3372's call): 280 implementation, 450 tests and 130 oracle fixtures.
+scope:
+  paths:
+    - crates/betterlite-server/src/api/container_routes.rs
+    - crates/betterlite-server/src/api/container_routes/**
+    - crates/betterlite-server/src/routes/containers.rs
+    - crates/betterlite-server/src/routes/containers/**
+    - tools/oracle/cases/api/container-routes/**
+    - tools/oracle/fixtures/container-routes/**
+    - tools/oracle/helpers/b7326.py
+    - tools/oracle/helpers/b7326/**
+    - tools/oracle/src/helpers/server/b7326.rs
+    - tools/oracle/src/helpers/server/b7326/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/endpoints.py#L29-L158
+    why: create_container, from its two decorators through the body read, the provider chain with the body source, the guarded processing call and the ownership recording outside it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/endpoints.py#L161-L263
+    why: list_containers, its declared after, limit and order parameters, the data map, fetch_page and the admin or owned-list split.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/endpoints.py#L266-L369
+    why: retrieve_container, with the access check and forwarding params before the guarded call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/endpoints.py#L372-L475
+    why: delete_container, the same shape as retrieve with route type adelete_container.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/endpoints.py#L478-L483
+    why: The file route mount at the end of the file, which B3372 owns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L52-L81
+    why: The three provider accessors (body, query, header custom-llm-provider) behind the create pick chain.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/resource_ownership.py#L6-L13
+    why: is_proxy_admin, the test that makes list skip the ownership filter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L177-L249
+    why: record_container_owner, whose HTTP errors create lets through and whose other errors it swallows (B3362).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L433-L455
+    why: list_owned_containers and the fetch_page callback shape that the list handler supplies (B3362).
+dod:
+  - text: >-
+      The four routes are registered once each at the /v1 prefix and the bare path with their methods (POST and GET on /containers, GET and DELETE on /containers/{container_id}), the other methods on those paths answer 405, and a request without a valid key gets 401 from B756 with no provider request, on all eight paths.
+    proof: [route-aliases, auth-failures, oracle]
+  - text: >-
+      Create picks the provider from the header, then the query value, then the body value, then "openai", puts it in data over any body value, passes the route type acreate_container with no model, and runs no ownership check before processing.
+    proof: [create-data, oracle]
+  - text: >-
+      Create records the owner after processing with the picked provider; an HTTP error from the recorder is returned with its status and a plain detail body and skips exception handling, any other recorder error is logged and the upstream reply is returned with status 200, and a good record returns what the recorder returned.
+    proof: [create-owner, error-bodies, oracle]
+  - text: >-
+      List builds the data map with the full query map under "query_params", the model query value, order and the pick, adds after and limit (null when absent) per page, and passes route type alist_containers with no model.
+    proof: [list-data, oracle]
+  - text: >-
+      An admin caller gets one unfiltered page fetch, any other caller goes through list_owned with a fetcher that makes one process call per page, and a limit that is not an integer answers 422 before any processing.
+    proof: [list-scope, oracle]
+  - text: >-
+      Retrieve and delete check access with the picked provider, update data with the forwarding result over earlier keys, send only container_id, custom_llm_provider and model_id with route types aretrieve_container and adelete_container, and return the reply unchanged.
+    proof: [item-flow, oracle]
+  - text: >-
+      A caller that does not own the container gets 403 with the body {"detail": "Forbidden"} on retrieve and delete, no provider request is made, and the denial never goes through exception handling.
+    proof: [item-access, error-bodies, oracle]
+  - text: The branch adds HTTP oracle cases for the container create, list, retrieve and delete routes.
+    proof: [new-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: route-aliases
+      why: one of the eight paths is missing, registered twice, or answers the wrong method
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_routes::tests::route_aliases($|::)/)'
+    - id: create-data
+      why: the create provider chain, the data map or the route type is wrong, or an ownership check runs before processing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_routes::tests::create_data($|::)/)'
+    - id: create-owner
+      why: the owner is not recorded, recorded before processing, or its errors are handled the wrong way
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_routes::tests::create_owner($|::)/)'
+    - id: list-data
+      why: the list data map, the null after and limit keys or the route type is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_routes::tests::list_data($|::)/)'
+    - id: list-scope
+      why: admins are filtered, other callers are not, a page fetch is repeated, or a bad limit is accepted
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_routes::tests::list_scope($|::)/)'
+    - id: item-flow
+      why: retrieve or delete skips the forwarding update, sends extra keys, or uses the wrong route type
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_routes::tests::item_flow($|::)/)'
+    - id: item-access
+      why: the access check is missing, runs after processing, or uses a provider other than the pick
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_routes::tests::item_access($|::)/)'
+    - id: error-bodies
+      why: a 403 or 500 is shaped as an OpenAI error object or goes through exception handling
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_routes::tests::error_bodies($|::)/)'
+    - id: auth-failures
+      why: a route is reachable without a valid key or reaches the provider first
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_routes::tests::auth_failures($|::)/)'
+    - id: new-cases
+      why: the branch adds no HTTP oracle cases for the container routes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/container-routes)"
+oracle_cases:
+  - tools/oracle/cases/api/container-routes/container-create.yaml
+  - tools/oracle/cases/api/container-routes/container-create-provider.yaml
+  - tools/oracle/cases/api/container-routes/container-list.yaml
+  - tools/oracle/cases/api/container-routes/container-list-owned.yaml
+  - tools/oracle/cases/api/container-routes/container-list-limit.yaml
+  - tools/oracle/cases/api/container-routes/container-item.yaml
+  - tools/oracle/cases/api/container-routes/container-forbidden.yaml
+  - tools/oracle/cases/api/container-routes/container-auth.yaml
+deviations:
+  - what: The authenticated caller is read once per request.
+    why: LiteLLM lists user_api_key_auth as a route dependency and as a handler parameter, and FastAPI runs it once for both; the client sees the same 401.
+out_of_scope:
+  - "The ownership service (record_container_owner, assert_user_can_access_container, get_container_forwarding_params, list_owned_containers and the 100-item, five-page filter): B3362. This task calls it through the ContainerOwners and ContainerAccess traits."
+  - "pick_provider, ContainerAccess, RequestProcessing and ProviderHints: B3371. The five container file routes, their JSON processor and the register_container_file_endpoints call at endpoints.py L478-L483: B3372."
+  - "The mapping from the four container route types to the SDK calls (route choice, router wrappers, direct calls): B7430. The SDK create, list, retrieve and delete calls: B3369 and B3370."
+  - "ProxyBaseLLMRequestProcessing.base_process_llm_request and _handle_llm_api_exception: B004. Request body decoding: B1100. The provider accessors: B2400. Authentication: B756 and B732. is_proxy_admin: B1018."
+pitfalls:
+  - "Create is the only route that reads the body and the only one whose provider chain has a body step (header, query, body, default); list, retrieve and delete stop at the query value."
+  - "Create has no access check, and its record_owner call sits outside the try block, so a 403 or 500 from it is a plain {\"detail\": ...} after the container already exists upstream."
+  - "A record_owner error that is not an HTTP error is logged and swallowed, so the client still gets the upstream reply with 200 and the container stays untracked (later calls by a non-admin key get 403)."
+  - "List puts `after` and `limit` in each page's data as null keys when absent, but not in the base data; `model` and `order` are always present and null when absent."
+  - "An admin caller's list is one upstream call with the client's own after and limit, while any other caller's list asks upstream for pages of 100 whatever limit the client sent (B3362)."
+  - "`limit` is typed as an integer in LiteLLM's signature, so limit=abc is a 422 from FastAPI before the handler, and it is checked even for admins."
+  - "Retrieve and delete send only container_id, custom_llm_provider and optional model_id, so a client's query string and custom-llm-provider header influence only the pick, never data directly."
+  - "The forwarding update overwrites container_id and custom_llm_provider, so the id the provider receives is the decoded original and not the path value when the path carries a wrapped id."
+  - "The access check and forwarding lookup run before the try block, so a 403 does not become an OpenAI error object; the non-owner and an unknown container look the same (403) because untracked containers are admin-only."
+  - "The custom-llm-provider header is the one with dashes and the query key is custom_llm_provider with underscores; the body key on create uses underscores too."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

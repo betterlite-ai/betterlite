@@ -1,0 +1,114 @@
+id: B8102
+title: LangGraph chat request and response mapping
+description: >-
+  Build the non-streaming half of the LangGraph provider, model langgraph/{assistant_id}, in the module langgraph_chat of
+  betterlite-provider. It covers litellm/types/llms/langgraph.py (typed records) and in litellm/llms/langgraph/chat/transformation.py
+  everything except the streaming wrappers: LangGraphError, provider info, params, URL, assistant id, message conversion,
+  transform_request, content extraction, transform_response, validate_environment, get_error_class, supports_stream_param_in_request_body
+  and should_fake_stream. B8103 owns the streaming methods and builds on the error type defined here.
+
+
+  Records. Define typed records for LangGraphMessage (role human, assistant or system; content), LangGraphInput (messages),
+  LangGraphRequest (assistant_id, input, stream_mode, config, metadata), LangGraphStreamEvent, LangGraphResponseMessage (type,
+  content, id, name), LangGraphResponse (messages, values) and LangGraphParsedResponse (content, role, usage). Only the request
+  and response records are used by code; the stream event and parsed response records have no caller at the pin, so define them
+  without behavior. The Python types file is also listed in B7929's covers (the Python typing task); this task owns the Rust records.
+
+
+  Connection settings. Provider info returns api_base = explicit, else LANGGRAPH_API_BASE, else http://localhost:2024, and api_key =
+  explicit, else LANGGRAPH_API_KEY. Supported OpenAI params are only stream and mapping returns the options unchanged. get_complete_url
+  fails with "api_base is required for LangGraph. Set it via LANGGRAPH_API_BASE env var or api_base parameter." when api_base is None,
+  strips trailing slashes and returns {api_base}/runs/stream when stream is truthy, else {api_base}/runs/wait. validate_environment
+  sets Content-Type application/json and Authorization "Bearer <key>" when a key exists. supports_stream_param_in_request_body is
+  false. should_fake_stream is always false.
+
+
+  Request. Assistant id: optional_params assistant_id when truthy, else the text after the first "/" in the model, else the whole
+  model. Message conversion: role user and any unknown role become human, assistant and system stay; list content goes through the
+  shared content-to-text helper; any other non-string content is turned into its string form; a non-empty metadata object on a message
+  is copied to the converted message. transform_request builds {assistant_id, input: {messages}}. It reads the stream flag from
+  litellm_params stream (not optional_params). When streaming it adds stream_mode = optional_params stream_mode, default
+  messages-tuple. It then copies config, metadata and thread_id from optional_params when the key is present (even with a null value).
+  Note thread_id lands at the top level of the body.
+
+
+  Response. transform_response runs inside one guard: any failure inside it (including bad JSON) raises LangGraphError with the HTTP
+  status and "Error processing response: <error>". Content extraction: from the top-level messages list, walking from the end, the
+  first dict whose type is ai or whose role is assistant gives its content (default empty string); otherwise from values.messages,
+  walking from the end, the first dict with type ai; otherwise log a warning "Could not extract content from LangGraph response,
+  returning raw" and use the JSON text of the whole body (Python json.dumps default separators). The reply is one stop choice, role
+  assistant, model set to the requested model. Usage uses B196's token counter with the gpt-3.5-turbo encoding for the messages and for
+  the reply text; a failure logs "Failed to calculate token usage: <error>" and leaves usage unset. get_error_class returns
+  LangGraphError with status and message. The dispatch in main.py (_complete_langgraph) is B050's.
+scope:
+  paths:
+    - crates/betterlite-provider/src/langgraph_chat.rs
+    - crates/betterlite-provider/src/langgraph_chat/**
+    - tools/oracle/cases/helpers/langgraph-chat/**
+    - tools/oracle/helpers/b8102.py
+    - tools/oracle/helpers/b8102/**
+    - tools/oracle/src/helpers/provider/b8102.rs
+    - tools/oracle/src/helpers/provider/b8102/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/langgraph.py#L1-L67
+    why: Every record shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langgraph/chat/transformation.py#L40-L120
+    why: LangGraphError, provider info env vars and defaults, params and the run URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langgraph/chat/transformation.py#L121-L229
+    why: Assistant id, role conversion and the request body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langgraph/chat/transformation.py#L231-L265
+    why: Reply text extraction and the raw JSON fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langgraph/chat/transformation.py#L399-L504
+    why: Stream flag methods, transform_response, headers, error class and fake stream.
+  - url: https://langchain-ai.github.io/langgraph/cloud/reference/api/api_ref.html
+    why: The /runs/wait and /runs/stream endpoints.
+dod:
+  - text: Provider info, the run URL and the headers follow the defaults and env vars for the stream and wait endpoints.
+    proof: [langgraph-chat-tests, oracle]
+  - text: The assistant id comes from optional_params first, then the model suffix, then the whole model.
+    proof: [langgraph-chat-tests, oracle]
+  - text: Messages convert to human, assistant and system roles with list content flattened and metadata kept.
+    proof: [langgraph-chat-tests, oracle]
+  - text: stream_mode is added only when litellm_params stream is true, and config, metadata and thread_id are copied when present.
+    proof: [langgraph-chat-tests, oracle]
+  - text: Reply text comes from messages, then values.messages, then the raw JSON fallback.
+    proof: [langgraph-chat-tests, oracle]
+  - text: Any failure while building the reply raises the wrapped LangGraphError with the HTTP status.
+    proof: [langgraph-chat-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: langgraph-chat-tests
+      why: the langgraph_chat behavior tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^langgraph_chat::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/langgraph-chat/url-wait-and-stream.yaml
+  - tools/oracle/cases/helpers/langgraph-chat/assistant-id-sources.yaml
+  - tools/oracle/cases/helpers/langgraph-chat/messages-roles-metadata.yaml
+  - tools/oracle/cases/helpers/langgraph-chat/request-stream-mode.yaml
+  - tools/oracle/cases/helpers/langgraph-chat/request-thread-id-config.yaml
+  - tools/oracle/cases/helpers/langgraph-chat/response-messages-last-ai.yaml
+  - tools/oracle/cases/helpers/langgraph-chat/response-values-fallback.yaml
+  - tools/oracle/cases/helpers/langgraph-chat/response-raw-json-fallback.yaml
+  - tools/oracle/cases/helpers/langgraph-chat/response-wrapped-error.yaml
+deviations:
+  - what: Usage uses betterlite's tokenizer (B196), so token counts match LiteLLM only where B196 does.
+    why: LiteLLM calls its own token_counter, which B196 owns.
+out_of_scope:
+  - "llms/langgraph/chat/transformation.py get_streaming_response, get_sync_custom_stream_wrapper, get_async_custom_stream_wrapper and has_custom_stream_wrapper (L267-L403) belong to B8103."
+  - "llms/langgraph/chat/sse_iterator.py belongs to B8103."
+  - "main.py _complete_langgraph and the langgraph arm of the dispatch belong to B050."
+  - "llms/langgraph/__init__.py and llms/langgraph/chat/__init__.py hold only re-exports."
+pitfalls:
+  - transform_request reads the stream flag from litellm_params, so a stream option set only in optional_params gets the /runs/stream URL but no stream_mode.
+  - config, metadata and thread_id are copied on key presence, so a null value is sent as null.
+  - The messages walk accepts type ai OR role assistant, but the values.messages walk accepts type ai only.
+  - A matched message with no content gives an empty string and stops the search; it does not fall through to values.
+  - Content that is not a string and not a list (a number) is stringified, and a content that is a list of blocks goes through the shared flattening helper.
+  - The one guard in transform_response also catches the extraction step, so the error text always starts with "Error processing response:".
+  - The raw fallback is the compact-with-spaces Python json.dumps text, not a re-serialization with different separators.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,9 +1,9 @@
 id: B7321
 milestone: M9 agents and mcp
-title: MCP OAuth upstream flows and JWKS routes
+title: MCP OAuth flows implementation, discovery and gateway token routes
 status: todo
-depends_on: [B6590, B6760, B6595, B4654, B3816, B4719]
-file: null
+depends_on: [B6590, B6760, B4654, B3816, B4719, B4653, B4663, B4666, B4674, B4676, B4731, B7530, B7531, B7532, B7970]
+file: tasks/B7321-mcp-oauth-flows-and-jwks.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py"
 parent: null

@@ -1,0 +1,23 @@
+id: B7950
+milestone: M12 python
+title: Python types for litellm_params, services, caching, tags, tools and other small core files
+status: todo
+depends_on: [B5657]
+file: tasks/B7950-types-core-small-types.yaml
+covers:
+  - "litellm/types/litellm_params.py"
+  - "litellm/types/router_weights.py"
+  - "litellm/types/lar1.py"
+  - "litellm/types/scheduler.py"
+  - "litellm/types/services.py"
+  - "litellm/types/tag_management.py"
+  - "litellm/types/tool_management.py"
+  - "litellm/types/object_permission.py"
+  - "litellm/types/caching.py"
+  - "litellm/types/compression.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

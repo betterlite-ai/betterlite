@@ -1,0 +1,71 @@
+id: B7880
+title: Python container create, list, retrieve and delete
+description: >-
+  This is the first part of the containers entry. It adds `create_container`, `acreate_container`, `list_containers`, `alist_containers`, `retrieve_container`, `aretrieve_container`, `delete_container` and `adelete_container` of litellm/containers/main.py. Rust runs the provider calls (B3369 create and list, B3370 retrieve and delete). Python only collects the arguments into JSON, calls a native session and builds the response objects of B167.
+
+
+  Native side, the family `container_calls`: `src/container_calls.rs` with `register` that adds `NativeContainerSession` and `NativeContainerError`, and `src/container_calls/convert.rs` with tests `request_*` and `error_*`. The architect writes the `lib.rs` line.
+
+
+  Python side, `python/betterlite/containers/_crud.py`. Each sync function keeps the signature of its `@overload` set: `create_container(name, expires_after, file_ids, timeout, custom_llm_provider, extra_headers, extra_query, extra_body, **kwargs)`, `list_containers(after, limit, order, ...)`, `retrieve_container(container_id, ...)` and `delete_container(container_id, ...)`. The `a`-twin has the same parameters and is a coroutine function. `create_container` returns `ContainerObject`, `list_containers` returns `ContainerListResponse`, and `delete_container` returns `DeleteContainerResult`. The created container id is encoded with the model-style id wrapper of `_encode_created_container_id` (L50-L57) when a managed-id context is in kwargs. Build shared argument handling with the B6040 helpers `to_call_payload`, `call_native`, `acall_native` and `read_settings`. Python objects that cannot cross to Rust (`client`, `shared_session`) raise `UnsupportedCallArgument` from B158.
+scope:
+  paths:
+  - crates/betterlite-python/src/container_calls.rs
+  - crates/betterlite-python/src/container_calls/**
+  - crates/betterlite-python/python/betterlite/_native_container_calls.pyi
+  - crates/betterlite-python/python/betterlite/containers/_crud.py
+  - crates/betterlite-python/tests/test_containers_crud.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1-L130
+  why: imports, _encode_created_container_id and acreate_container
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L130-L490
+  why: create_container overloads and body, alist_containers and list_containers
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L491-L920
+  why: retrieve and delete, sync and async
+dod:
+- text: Every function keeps LiteLLM's name and parameters, and a keyword LiteLLM refuses is refused here.
+  proof: [containers-crud-signature]
+- text: "Create, list, retrieve and delete return the same objects as LiteLLM against one local server, on the sync and async paths."
+  proof: [containers-crud-calls]
+- text: A provider error keeps its class and cause, and an unsupported Python object raises `UnsupportedCallArgument`.
+  proof: [containers-crud-errors]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [containers-crud-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: containers-crud-signature
+    why: A caller's keyword is accepted or refused wrongly.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_containers_crud.py -k signature
+  - id: containers-crud-calls
+    why: A result differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_containers_crud.py -k calls
+  - id: containers-crud-errors
+    why: An error class or message changes.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_containers_crud.py -k 'error or unsupported'
+  - id: containers-crud-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^container_calls::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for these calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The `container_id` encoding of a created container is done in Rust, not in Python.
+  why: B3369 owns the id wrapper, and Python must not duplicate it.
+- what: This task has no helper oracle cases.
+  why: The functions call a native session, so pytest compares both packages against one local server.
+out_of_scope:
+- "Container files and the endpoint factory are B7881."
+- "Provider execution belongs to B3369 and B3370."
+pitfalls:
+- "`list_containers` takes `limit` as an int and passes `order` as a string, and neither may be sent when it is None."
+- "`delete_container` returns an object with `deleted` set, not None."
+- "The async twin of `create_container` must not run the sync body inside the event loop."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

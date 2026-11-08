@@ -14,6 +14,7 @@ description: >-
   the environment; async headers pass no project. Bucket names may contain folder paths;
   split them and prepend the path to object names. Download returns bytes only for
   200 status; upload posts JSON and returns parsed response or logs non-200 errors.
+  Expose the sync header operation as the public function sync_construct_request_headers(bucket_name, service_account_path) in betterlite-logging gcs_client. It reads GOOGLE_SECRET_MANAGER_PROJECT_ID from the environment at each call and returns the Authorization and Content-Type headers, as B127 GcsCache expects. betterlite-logging and betterlite-http do not depend on betterlite-cache, so B127 can call it without a crate cycle.
 scope:
   paths:
     - crates/betterlite-logging/src/gcs_client.rs
@@ -63,6 +64,9 @@ dod:
       sync_construct_request_headers mirrors the async version, reads GOOGLE_SECRET_MANAGER_PROJECT_ID
       from environment, uses _ensure_access_token (sync) and _get_token_and_url (sync),
       and returns the same header structure.
+    proof: [header-construction-tests]
+  - text: >-
+      The public function sync_construct_request_headers(bucket_name, service_account_path) exists in betterlite-logging gcs_client, reads GOOGLE_SECRET_MANAGER_PROJECT_ID at call time and returns the Authorization and Content-Type headers B127 GcsCache sends.
     proof: [header-construction-tests]
   - text: >-
       _handle_folders_in_bucket_name splits bucket name using split_configured_cloud_bucket_name,

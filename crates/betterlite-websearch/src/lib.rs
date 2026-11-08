@@ -1,4 +1,6 @@
+pub mod anthropic_followup;
 pub mod call_transformation;
+pub mod chat_responses_followup;
 pub mod execution;
 pub mod loop_eligibility;
 pub mod native_blocks;

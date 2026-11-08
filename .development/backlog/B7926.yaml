@@ -1,0 +1,17 @@
+id: B7926
+milestone: M12 python
+title: Python types for Anthropic messages, tools, skills and response blocks (types/llms/anthropic*)
+status: todo
+depends_on: [B5657, B7921]
+file: tasks/B7926-types-anthropic.yaml
+covers:
+  - "litellm/types/llms/anthropic.py"
+  - "litellm/types/llms/anthropic_messages/**"
+  - "litellm/types/llms/anthropic_skills.py"
+  - "litellm/types/llms/anthropic_tool_search.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

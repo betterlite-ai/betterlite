@@ -1,0 +1,14 @@
+id: B7887
+milestone: M12 python
+title: Python search and OCR functions
+status: todo
+depends_on: [B6040, B158, B167, B3272, B3274, B6809]
+file: tasks/B7887-python-search-ocr.yaml
+covers:
+  - "litellm/{search,ocr}/**"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

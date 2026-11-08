@@ -2,8 +2,8 @@ id: B4848
 milestone: M9 agents and mcp
 title: Expose asynchronous harness runs, sessions and resume
 status: todo
-depends_on: [B4830, B4844, B4846, B4847, B4839, B4840]
-file: null
+depends_on: [B4830, B4844, B4846, B4847]
+file: tasks/B4848-harness-async-api.yaml
 covers:
   - "litellm/harness/runtime.py"
 parent: B143

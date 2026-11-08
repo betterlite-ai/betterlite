@@ -2,11 +2,11 @@ id: B168
 milestone: M12 python
 title: Python MCP and A2A clients
 status: todo
-depends_on: [B158, B140, B142]
-file: null
+depends_on: [B8082, B8083]
+file: tasks/B168-python-mcp-a2a-clients.yaml
 covers:
-  - "litellm/experimental_mcp_client/**"
-  - "litellm/a2a_protocol/{client,main,card_resolver}.py"
+  - "litellm/experimental_mcp_client/__init__.py"
+  - "litellm/a2a_protocol/client.py"
 parent: null
 split_from: null
 resolution: null
