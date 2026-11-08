@@ -73,11 +73,11 @@ where
             | Json::List(_)
             | Json::Object(_) => value.clone(),
         };
-        let written = match &stripped {
-            Json::List(_) | Json::Object(_) => {
-                serde_json::to_string(&stripped).map_or_else(|_source| stripped.clone(), Json::Text)
+        let written = match stripped {
+            container @ (Json::List(_) | Json::Object(_)) => {
+                serde_json::to_string(&container).map_or_else(|_source| container, Json::Text)
             }
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => stripped.clone(),
+            unchanged @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_)) => unchanged,
         };
         span.safe_set_attribute(attribute.value(), &model_value(&written));
     }
