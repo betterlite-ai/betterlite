@@ -254,6 +254,14 @@ fn from_callbacks_counts_response_headers_and_chunk_overrides() {
 }
 
 #[test]
+fn overrides_carry_the_call_info_flag() {
+    let declaring = callback("headers", &[Hook::ResponseHeaders, Hook::AcceptsCallInfo]);
+    let ignoring = callback("headers", &[Hook::ResponseHeaders]);
+    assert!(declaring.overrides().accepts_call_info);
+    assert!(!ignoring.overrides().accepts_call_info);
+}
+
+#[test]
 fn from_callbacks_keeps_guardrails_out_of_moderation_override() {
     let with_guardrail =
         CallbackCapabilities::from_callbacks(&[guardrail("pii", &[Hook::Moderation])]);
