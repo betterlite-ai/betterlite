@@ -1,0 +1,101 @@
+id: B8211
+title: PromptGuard guard API
+description: >-
+  Build the PromptGuard guardrail in betterlite-guardrails (module promptguard, with promptguard/init.rs) and the
+  initializer from promptguard/__init__.py. The guardrail posts the request or response to the PromptGuard Guard API
+  and blocks, redacts or passes the content on the answer. It supports pre_call and post_call.
+
+  Settings. api_key is the argument or PROMPTGUARD_API_KEY, and an empty result is the error PromptGuardMissingCredentials
+  with the message "PromptGuard API key is required. Set PROMPTGUARD_API_KEY in the environment or pass api_key in the
+  guardrail config.". api_base is the argument, else PROMPTGUARD_API_BASE, else "https://api.promptguard.co", with
+  trailing slashes cut off. block_on_error is the argument when it is set, else PROMPTGUARD_BLOCK_ON_ERROR (default
+  "true", and "true", "1" and "yes" in any case mean true). The timeout is the guardrail timeout, or 10.0 when it is
+  not set. The HTTP client is the pooled guardrail client from B173.
+
+  apply_guardrail(inputs, request_data, input_type). Take texts, images, structured_messages and model from inputs.
+  The messages are structured_messages when it is not empty, else one {"role": "user", "content": text} per text,
+  else return inputs unchanged without a call. The payload is {"messages", "direction"} where direction is "input"
+  for a request and "output" for a response, plus "model" when set and "images" when not empty. POST it to
+  the api_base followed by /api/v1/guard with the headers X-API-Key and Content-Type: application/json, then require a 2xx status
+  and read the JSON body. The body has decision, threat_type, event_id, confidence and redacted_messages, all optional.
+  Any failure of the call or the status check: log "PromptGuard API error" at error level, then raise
+  GuardrailRaisedException with the message "PromptGuard API unreachable (block_on_error=True): <error>" when
+  block_on_error is true, else return inputs. The decision defaults to "allow". "block" raises GuardrailRaisedException
+  with blocked_content true and the message "Blocked by PromptGuard: <threat_type> (confidence=<confidence>,
+  event_id=<event_id>)", where threat_type defaults to "unknown", event_id to "" and confidence to 0.0. "redact" with a
+  non-empty redacted_messages replaces structured_messages when the input had them, and replaces texts when the key is
+  in inputs with the text of the user-role messages only (a string content, or the "text" of each part whose type is
+  "text", skipping empty texts). The new texts are used only when that list is not empty. Any other decision returns
+  inputs.
+
+  initialize_promptguard(params, guardrail_name) in promptguard/init.rs returns PromptGuardArgs with api_base, api_key,
+  block_on_error, timeout, event_hook (the mode), default_on and the name (empty string when absent). Fields copy
+  without change, and an absent value stays absent. The guardrail constructor takes the same struct. The registry
+  (B3682) calls the function.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/promptguard.rs
+    - crates/betterlite-guardrails/src/promptguard/**
+    - tools/oracle/cases/guardrails/promptguard-*.yaml
+    - tools/oracle/helpers/b8211.py
+    - tools/oracle/helpers/b8211/**
+    - tools/oracle/src/helpers/guardrails/b8211.rs
+    - tools/oracle/src/helpers/guardrails/b8211/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/promptguard/promptguard.py
+    why: The PromptGuardGuardrail class, with __init__, apply_guardrail and _extract_texts_from_messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/promptguard/__init__.py
+    why: The initializer and the two registry entries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/promptguard.py
+    why: The config model with the field names and descriptions.
+
+dod:
+  - text: Missing key gives the credentials error, and api_base, api_key and block_on_error resolve from the argument, then the environment, then the default.
+    proof: [unit-tests]
+  - text: The request goes to /api/v1/guard with the documented headers and payload for both directions.
+    proof: [oracle]
+  - text: A block decision raises the documented message with blocked_content set.
+    proof: [oracle]
+  - text: A redact decision rewrites structured_messages and the user-role texts as described.
+    proof: [oracle]
+  - text: A failed call raises when block_on_error is true and returns inputs when it is false.
+    proof: [oracle]
+  - text: The initializer copies the settings into PromptGuardArgs.
+    proof: [init-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: unit-tests
+      why: a unit test of the promptguard module fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^promptguard::/)'
+    - id: init-tests
+      why: the initializer arguments differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^promptguard::init::/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/promptguard-allow.yaml
+  - tools/oracle/cases/guardrails/promptguard-block.yaml
+  - tools/oracle/cases/guardrails/promptguard-redact.yaml
+  - tools/oracle/cases/guardrails/promptguard-error-open.yaml
+  - tools/oracle/cases/guardrails/promptguard-error-closed.yaml
+
+deviations:
+  - what: The initializer returns PromptGuardArgs and registers nothing. LiteLLM builds the class and adds it to the callback manager.
+    why: B3682 owns the registry and the registration, as with B3681.
+
+out_of_scope:
+  - The guardrail base class and its event hook plumbing (B5471).
+  - The initializer registry and the registration with the callback manager (B3682).
+  - The Python config model class (B7935).
+
+pitfalls:
+  - A redact answer with an empty redacted_messages changes nothing.
+  - texts are replaced only when the key exists in inputs, and only by user-role text, so assistant text in redacted_messages never lands in texts.
+  - block_on_error is read from the environment only when the argument is None, so an explicit false wins over the environment.
+  - The decision field may be missing or null, and both mean allow.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

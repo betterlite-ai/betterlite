@@ -1,0 +1,86 @@
+id: B8196
+title: "MCP operations: auth headers, BYOK checks and token exchange"
+description: >-
+  Second part of operations.py. This part owns the code that prepares the headers sent to each
+  upstream server and the credential checks that run before a call.
+
+  It owns _client_has_per_server_auth_header, _client_has_passthrough_authorization,
+  _get_user_oauth_extra_headers_from_db, _prefetch_oauth_creds_for_user, _prepare_mcp_server_headers
+  (which per-server header the client sent, which stored credential applies, which token wins, and
+  the call to record_auth_resolution from B8194, passing the request's McpContext from B8191), _merge_gateway_initialize_instructions,
+  _raise_if_initialize_grants_no_mcp_servers, _get_byok_credential, _check_byok_credential and
+  _challenge_missing_token_exchange_subject. A missing BYOK credential and a missing token
+  exchange subject each produce a challenge the client can act on, with the Python's text.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/ops_auth.rs
+    - crates/betterlite-server/src/mcp/ops_auth/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-ops-auth/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-ops-auth-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L681-L935
+    why: Client header checks, OAuth prefetch, header preparation and initialize handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L1624-L1768
+    why: BYOK credential lookup and check, and the token exchange challenge.
+
+dod:
+  - text: >-
+      For each auth type (none, api key, bearer, basic, OAuth, passthrough, token exchange), the
+      prepared headers equal the Python's, and a client header for one server never reaches
+      another server.
+    proof: [auth-tests, auth-oracle]
+  - text: >-
+      A BYOK server without a stored credential returns the Python's challenge. A stored
+      credential passes.
+    proof: [auth-tests, auth-oracle]
+  - text: >-
+      A token exchange server with no subject token returns the Python's challenge.
+    proof: [auth-tests]
+  - text: >-
+      An initialize request that grants no server raises the Python's error, and instructions from
+      several servers merge in the Python's order.
+    proof: [auth-tests, auth-oracle]
+  - text: Every mutant in the header preparation logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: auth-tests
+      why: A branch, message or ordering rule in this task differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^mcp::ops_auth::/)'
+    - id: auth-oracle
+      why: Results or errors differ from LiteLLM on the same input.
+      run: >-
+        cargo run --locked -p betterlite-oracle -- --self-check
+        tools/oracle/cases/helpers/mcp-ops-auth
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - Credential mode resolution and client adaptation (B4667).
+  - Server scoping (B8195).
+  - Listing and execution (B8197, B8198).
+
+pitfalls:
+  - >-
+    Never log a header value. Log the header names and the resolution kind only.
+  - >-
+    The passthrough check reads the Authorization header the client sent. A gateway key in that
+    header is not a passthrough credential. Read lines 714 to 733 for the exact test.
+  - "record_auth_resolution (B8194) takes B8191's McpContext as an argument. _prepare_mcp_server_headers takes the McpContext from its caller and passes it on; nothing reads the request from a static or a task local."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

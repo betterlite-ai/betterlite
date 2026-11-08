@@ -39,7 +39,7 @@ description: >-
   as the helper specifies. Returned rows and audit patches retain the source stored representation.
 
   If model_aliases was supplied, remove it and call B805's model-table upsert, keeping a returned
-  nonnull model_id. JSON-serialize nonnull router_settings, then B124.jsonify_team_object serializes
+  nonnull model_id. JSON-serialize nonnull router_settings, then B8397.jsonify_team_object serializes
   database JSON fields. B803 writes the team, using its conditional budget update when required.
   A None row or None team_id becomes 400 Team doesn't exist. On success, log the team ID, call
   B819.sync_team_access_group_membership, refresh the cached team through B801, then, when B065's
@@ -48,7 +48,7 @@ description: >-
   can remain after a failed final team write. Group sync is AFTER the team write and BEFORE cache
   refresh, unlike B804's create transaction. A sync failure leaves the stored update in place.
 
-  Its own except delegates to B124.handle_exception_on_proxy: HTTPException keeps status but becomes
+  Its own except delegates to B2400.handle_exception_on_proxy: HTTPException keeps status but becomes
   internal_server_error with openai_error_param; ProxyException keeps its type/status/param/code;
   other failures use status_code or 500 and internal_server_error. Compare these fields and content-type
   through the booted proxy, ignoring only /error/message wording. There is no local premium_user branch;
@@ -83,8 +83,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/team_update.rs
     - crates/betterlite-server/src/routes/team_update/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-update/**
     - crates/betterlite-server/src/team_update/fixtures.rs
     - crates/betterlite-server/src/team_update/fixtures/**

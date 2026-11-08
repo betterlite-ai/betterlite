@@ -1,0 +1,28 @@
+kind: helper
+name: braintrust creates the litellm default project once per logger and inserts events
+call:
+  b3962:
+    function: log
+    scenarios:
+      - path: sync
+        calls: 2
+        start_time: "2023-11-14T22:13:20+00:00"
+        end_time: "2023-11-14T22:13:21.500000+00:00"
+        environment: {BRAINTRUST_API_KEY: braintrust-key}
+        api_base: "http://braintrust.test/v1"
+        metadata: {}
+        answers:
+          - {status: 200, body: {id: litellm-project}}
+          - {status: 200, body: {}}
+          - {status: 200, body: {}}
+      - path: async
+        start_time: "2023-11-14T22:13:20+00:00"
+        end_time: "2023-11-14T22:13:21.500000+00:00"
+        environment: {BRAINTRUST_API_KEY: braintrust-key}
+        api_base: "http://braintrust.test/v1"
+        metadata: {}
+        answers:
+          - {status: 200, body: {id: async-default}}
+          - {status: 200, body: {}}
+env: {}
+compare: {ignore: []}

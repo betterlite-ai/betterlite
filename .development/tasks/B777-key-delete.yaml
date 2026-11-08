@@ -1,7 +1,7 @@
 id: B777
 title: Delete keys and retain archived audit rows
 description: >-
-  Implement POST /key/delete and its delete services in source order. B124 KeyRequest defaults keys
+  Implement POST /key/delete and its delete services in source order. B8411 KeyRequest defaults keys
   and key_aliases to null and rejects two falsey lists with 422; when both are supplied keys wins.
   Echo the original requested keys or aliases in deleted_keys, including duplicates and missing
   members of a partially matching request. The route's count assertion compares the request to its
@@ -32,7 +32,7 @@ description: >-
 
 
   After archive insertion snapshot B738 JWT mapping cache keys before the schema's delete cascade.
-  Administrators call B124 delete_data once with all normalized requested tokens; other callers
+  Administrators call B8397 delete_data once with all normalized requested tokens; other callers
   gather deletions for authorized rows and report those row tokens. Preserve failed_tokens in
   the service result, including missing requested tokens when the lengths differ; the HTTP result
   still echoes its request. Broadcast JWT mapping evictions through B878, evict each normalized
@@ -59,7 +59,7 @@ description: >-
 
 
   Register POST /key/delete once and exercise it through B001 HttpCase. Its own except block
-  at L4172-L4175 calls B124 handle_exception_on_proxy: no database and ordinary failures become
+  at L4172-L4175 calls B2400 handle_exception_on_proxy: no database and ordinary failures become
   500 internal_server_error; missing rows 404 and denied ownership 403 also use internal_server_error,
   with openai_error_param and numeric status code. A null delete result raises a 500 ProxyException
   with param keys and passes through unchanged. Messages identify the missing key set, denied
@@ -109,8 +109,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/key_delete.rs
     - crates/betterlite-server/src/routes/key_delete/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-delete/**
     - crates/betterlite-server/src/key_delete/fixtures.rs
     - crates/betterlite-server/src/key_delete/fixtures/**
@@ -181,7 +179,7 @@ deviations:
     why: README secret handling; native delete_logs_redacted checks structured logs on failures.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4069-L4175
 out_of_scope:
-  - B124 owns KeyRequest validation and delete_data; B720 owns archived row contracts; B726/B770
+  - B8411 owns KeyRequest validation and B8397 (proxy/utils.py) delete_data; B720 owns archived row contracts; B726/B770
     own repository adapters. B2314 owns SHA-256 token hashing. This task archives existing stored
     representations and does not encrypt or decode credentials.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),

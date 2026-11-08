@@ -1,0 +1,114 @@
+id: B8213
+title: Qualifire evaluation guardrail
+description: >-
+  Build the Qualifire guardrail in betterlite-guardrails, module qualifire, with qualifire/init.rs for the initializer
+  in qualifire/__init__.py. It sends the conversation to the Qualifire evaluation API and blocks or logs flagged
+  content. It supports pre_call, during_call and post_call.
+
+  Settings. api_key is the argument, else the secret QUALIFIRE_API_KEY, else the environment variable of the same name
+  (the secret lookup is the caller's, passed in as a trait; the environment is the fallback). api_base is the argument,
+  else QUALIFIRE_BASE_URL (secret, then environment), else "https://proxy.qualifire.ai". The other settings are
+  evaluation_id, prompt_injections, hallucinations_check, grounding_check, pii_check, content_moderation_check,
+  tool_selection_quality_check, assertions (list of strings) and on_flagged (default "block"; an empty value also
+  means "block"). Any on_flagged other than "block" or "monitor" is an error with the message "Qualifire guardrail does
+  not support on_flagged=<repr>; only 'block' and 'monitor' are supported.". When no check flag is true, assertions is
+  empty and evaluation_id is not set, prompt_injections becomes true. The same on_flagged check runs on an in-memory
+  update (update_in_memory_litellm_params) before anything is changed, so a rejected update leaves the live guardrail
+  as it was; the value checked is the new on_flagged or, when the update has none, the current one.
+
+  apply_guardrail(inputs, request_data, input_type). Request-level overrides come from the dynamic request body params
+  (B3801): evaluation_id, assertions and on_flagged, each used when present and non-empty. The messages are
+  inputs.structured_messages, else request_data.messages. For a response, the output is the last text and, when there
+  are no messages, the messages are one assistant message with that text. With no messages and some texts, the messages
+  are one user message with the last text. With neither, log at debug level and return inputs. Tools come from
+  request_data.tools.
+
+  Message conversion. Each message becomes {role (default "user"), content}, where list content joins the "text" parts
+  and plain strings with a newline, and any other content is turned into its string form. tool_call_id is copied when
+  set. tool_calls (a list of dicts) become {id, name, arguments} from the function entry, where string arguments are
+  parsed as JSON (a parse failure gives {}) and non-object arguments become {}; the field is set only when at least one
+  call was converted. Tool conversion accepts {"type": "function", "function": {...}} and bare dicts with a "name", and
+  gives {name, description, parameters}; no tools gives none.
+
+  Request. With an evaluation_id: POST to api_base + "/api/evaluation/invoke" with {evaluation_id, input (the content
+  of the last user message when it is a string, else ""), output (or ""), messages, available_tools when any}. Without
+  one: POST to api_base + "/api/evaluation/evaluate" with {messages}, output when set, each enabled flag as true, and
+  tool_selection_quality_check plus available_tools only when tools exist (otherwise log at debug level that the check
+  is skipped), and assertions when not empty. Headers are X-Qualifire-API-Key (empty string if no key) and
+  Content-Type: application/json. The timeout is the guardrail timeout. A non-2xx status is an error.
+
+  Verdict. The answer is flagged when any entry of evaluationResults has an entry in results with a true "flagged". A
+  flagged answer with on_flagged "monitor" logs a warning and lets the request pass. With "block" it raises HTTP 400
+  with detail {"error": "Violated guardrail policy", "qualifire_response": {"score", "status"}}. Any other failure is
+  logged and returned to the caller (it does not fail open).
+
+  initialize_qualifire(params, guardrail_name) in qualifire/init.rs returns QualifireArgs with api_key, api_base,
+  evaluation_id, the six check flags, assertions, on_flagged (default "block"), the name (empty string when absent),
+  event_hook, default_on and timeout. Fields copy without change.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/qualifire.rs
+    - crates/betterlite-guardrails/src/qualifire/**
+    - tools/oracle/cases/guardrails/qualifire-*.yaml
+    - tools/oracle/helpers/b8213.py
+    - tools/oracle/helpers/b8213/**
+    - tools/oracle/src/helpers/guardrails/b8213.rs
+    - tools/oracle/src/helpers/guardrails/b8213/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py
+    why: The QualifireGuardrail class, with the conversion helpers, _run_qualifire_check and apply_guardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/__init__.py
+    why: The initializer and the registry entries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/qualifire.py
+    why: The config model field names.
+
+dod:
+  - text: Settings resolve from the argument, then the secret, then the environment, then the default, and a bad on_flagged is refused at start and on update.
+    proof: [unit-tests]
+  - text: Prompt injection checking turns on only when nothing else is configured.
+    proof: [unit-tests]
+  - text: Messages and tools convert to the Qualifire format as described, including tool call arguments.
+    proof: [unit-tests]
+  - text: The invoke and evaluate requests carry the documented URL, headers and payload.
+    proof: [oracle]
+  - text: A flagged answer blocks with the documented detail, or passes in monitor mode.
+    proof: [oracle]
+  - text: The initializer copies the settings into QualifireArgs.
+    proof: [init-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: unit-tests
+      why: a unit test of the qualifire module fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^qualifire::/)'
+    - id: init-tests
+      why: the initializer arguments differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^qualifire::init::/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/qualifire-evaluate-clean.yaml
+  - tools/oracle/cases/guardrails/qualifire-evaluate-blocked.yaml
+  - tools/oracle/cases/guardrails/qualifire-monitor.yaml
+  - tools/oracle/cases/guardrails/qualifire-invoke.yaml
+  - tools/oracle/cases/guardrails/qualifire-response-tools.yaml
+
+deviations:
+  - what: The initializer returns QualifireArgs and registers nothing.
+    why: B3682 owns the registry and the registration, as with B3681.
+
+out_of_scope:
+  - The guardrail base class, dynamic request body params and event hook plumbing (B5471, B3801).
+  - The initializer registry and the callback registration (B3682).
+  - The Python config model class (B7935).
+
+pitfalls:
+  - A tool call whose arguments are a string that is not JSON gets {} and is still kept.
+  - Only a string content of the last user message goes into "input" for the invoke call.
+  - A score is returned by the API but never decides the verdict. Only the flagged entries do.
+  - An error that is not the 400 block is logged and then raised again, so a Qualifire outage fails the request.
+review_level: standard
+budget:
+  max_changed_lines: 1800
+  max_new_expects: 0

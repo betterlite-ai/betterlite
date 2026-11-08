@@ -1,7 +1,7 @@
 id: B383
 title: Router budget configuration and windows
-description: 'Implement ProviderBudget, DeploymentBudget, TagBudget and BudgetWindow over B071 duration
-  parsing and B360 Decimal storage. Own start/reset keys, initial budgets and catalog registration/removal;
+description: 'Implement ProviderBudget, DeploymentBudget, TagBudget and BudgetWindow over B199 duration
+  parsing (`betterlite_core::duration`, its `parse_budget_duration` and `duration_in_seconds`; betterlite-router has no internal dependencies and betterlite-core depends on betterlite-config, so the betterlite-server part parses the strings and hands the router typed durations) and B360 Decimal storage. Own start/reset keys, initial budgets and catalog registration/removal;
   keep zero budgets intact for B020 fail-open filtering. B326 owns success-spend updates and flushing.
   Configuration boundary keys introduced or consumed here: provider_budget_config, max_budget, budget_duration,
   tag_budget_config. Pinned declaration defaults: max_budget=None; budget_duration=None. Resolve env values

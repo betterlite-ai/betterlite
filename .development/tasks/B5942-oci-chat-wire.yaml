@@ -6,7 +6,7 @@ description: >-
   values and the two OCI chat wire formats, COHERE and GENERIC. B5843 builds the request payload,
   signs and sends it, and calls these functions. Credentials, URLs and signing are not touched here.
 
-  B042 owns the pydantic types in litellm/types/llms/oci.py, so define the Rust equivalents in
+  No task ports litellm/types/llms/oci.py on its own, so define the Rust equivalents in
   this module with serde, skipping None fields on output: OciVendor (COHERE and GENERIC, with the
   GENERIC wire value as the apiFormat for any non-Cohere vendor), OciRole (SYSTEM, USER, ASSISTANT,
   TOOL), the content parts (TEXT with text, IMAGE with imageUrl url and optional detail), OciToolCall
@@ -144,7 +144,7 @@ deviations:
 out_of_scope:
   - B5940 owns the schema cleanup helpers, the Cohere type map, OciError and OciServingMode used here.
   - B5843 owns the request payload wrapper, parameter mapping, vendor lookup, the stream wrapper state, JSON and SSE decoding of the body and chunks, and all HTTP calls.
-  - B042 owns wiring the chat route and the HTTP oracle cases.
+  - B8330 owns wiring the chat route and the HTTP oracle cases.
 pitfalls:
   - Cohere tool-call ids hash the key-sorted JSON of the parameters while the arguments field holds the text in the original key order, so two calls with the same keys in a different order get the same id but different arguments.
   - The message left out of chatHistory is the last user message wherever it sits, so tool messages after it stay in the history.

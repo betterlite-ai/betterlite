@@ -2,7 +2,7 @@ id: B643
 milestone: M3 providers
 title: Bedrock managed S3 object authorization
 status: todo
-depends_on: [B2208, B002, B171, B590, B173, B129, B682, B174]
+depends_on: [B2208, B002, B171, B590, B173, B8500, B682, B174]
 file: tasks/B643-bedrock-services-s3-access.yaml
 covers:
   - "litellm/llms/bedrock/files/transformation.py"

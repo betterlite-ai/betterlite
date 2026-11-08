@@ -1,0 +1,86 @@
+id: B8389
+title: Admin settings views, OTel span close and denial log
+description: >-
+  A few small proxy_server.py pieces that route and error handler tasks call: the read-only general settings view,
+  the close of a server span left open by an error answer, the model access denial log, and the two settings routes
+  the admin UI reads to build its model add and alerting pages. Build crates/betterlite-server/src/admin_settings_views.rs
+  (declared by the skeleton) with `pub fn routes()` like the sibling route modules; the architect's skeleton mounts
+  it. Error enum AdminSettingsError.
+
+  `general_settings_view(state)` returns a read-only snapshot of the resolved general settings from B8380's store (the
+  B081 Anthropic routes and the MCP capability list read it). `log_model_access_denial(error)` logs a warning with
+  B8410's sanitized_internal_message when the error is a ModelAccessDeniedProxyException and does nothing otherwise.
+  `close_error_span(request, status, error)` (_close_dangling_otel_server_span): nothing without a parent server span on
+  the request or without the OTel logger. With OTel V2 on (B3842's is_otel_v2_enabled, treated as off when the check
+  fails) only stamp the error attributes (B3858's record_error_attributes_on_span) for a status of 400 or more and leave
+  the span to its instrumentation. Otherwise set the response status attribute (B3854), stamp the error attributes for
+  400 or more, set the span status to ERROR for 400 or more and OK below, end the span and clear it from the request.
+  Any failure logs at debug "Error closing dangling OTEL SERVER span: {error}".
+
+  GET `/model/settings` (normal key check, not in the schema): one {name, fields} per provider in LiteLLM's provider
+  list order, fields from B5364's get_provider_fields. GET `/alerting/settings` (normal key check, not in the schema):
+  no database is 400 {"detail": {"error": <db not connected>}}; a caller without the admin view (the shared admin-view
+  role predicate) is 400 "{not allowed access}, your role={role}". Read the general_settings row through the config
+  repository (B725). The first entry is slack_alerting (field_type Boolean, the description "Enable slack alerting for
+  monitoring proxy in production: llm outages, budgets, spend tracking failures.", value true when the store's alerting
+  list holds "slack", stored_in_db when the row has alerting, source from B4140's source_for, no default,
+  premium_field false). Then each SlackAlertingArgs field (B4020) named in LiteLLM's allowed table, in field order, with
+  its type from that table (Integer or Float), its description, the live Slack alerting instance's value (B8399, the
+  field default when missing), stored_in_db when the row's alerting_args has it, the source from
+  `nested_setting_source` and the field default (None when the field has none); premium_field is true only for
+  region_outage_alert_ttl. `nested_setting_source(store, db_values, parent, field, default)`: config when the file's
+  parent mapping has the field, else the unset source (default when a default exists, otherwise unset) when the file
+  owns the parent, else db when the row has the field, else the unset source.
+
+  Tests cover each helper and both routes. HTTP oracle cases under tools/oracle/cases/admin-settings/ cover
+  /model/settings with the master key, both routes without a key, and /alerting/settings without a database.
+scope:
+  paths:
+    - crates/betterlite-server/src/admin_settings_views.rs
+    - crates/betterlite-server/src/admin_settings_views/**
+    - tools/oracle/cases/admin-settings/**
+    - tools/oracle/helpers/b8389.py
+    - tools/oracle/helpers/b8389/**
+    - tools/oracle/src/helpers/server/b8389.rs
+    - tools/oracle/src/helpers/server/b8389/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1922-L1963
+    why: The denial log and the dangling span close with the V2 branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2596-L2601
+    why: general_settings_view.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16584-L16754
+    why: /model/settings, _nested_setting_source and /alerting/settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5263-L5266
+    why: _get_field_default, used only by /alerting/settings.
+dod:
+  - text: The span close follows LiteLLM's V1 and V2 branches and never fails the error answer; the denial log fires only for model access denials.
+    proof: [admin-views-tests]
+  - text: /model/settings lists every provider with its fields in LiteLLM's order.
+    proof: [admin-views-tests, oracle]
+  - text: /alerting/settings refuses without a database or admin view and lists slack_alerting then the allowed alerting args with value, source, stored flag and default.
+    proof: [admin-views-tests, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: admin-views-tests
+      why: A settings view, the span close, the denial log or a settings route differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^admin_settings_views::/)'
+oracle_cases:
+  - tools/oracle/cases/admin-settings/model-settings.yaml
+  - tools/oracle/cases/admin-settings/model-settings-no-key.yaml
+  - tools/oracle/cases/admin-settings/alerting-settings-no-database.yaml
+  - tools/oracle/cases/admin-settings/alerting-settings-no-key.yaml
+deviations: []
+out_of_scope:
+  - "The exception handlers that call close_error_span and log_model_access_denial, and the admin-view role predicate, belong to their own proxy_server.py tasks."
+  - "OTel span writers: B3854 and B3858. SlackAlertingArgs: B4020."
+pitfalls:
+  - Under OTel V2 the span stays on the request and is not ended here; only V1 clears it.
+  - slack_alerting's stored_in_db looks at the database row, while its value looks at the resolved store.
+  - Both refusals of /alerting/settings are 400, not 500 or 403.
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

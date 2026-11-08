@@ -2,7 +2,7 @@ id: B3629
 milestone: M5 api families
 title: Pass-through Vertex Live WebSocket route
 status: todo
-depends_on: [B124, B174, B756, B844, B1303, B1304, B3602, B3611, B3612, B3622, B3623, B3628]
+depends_on: [B174, B756, B844, B1303, B1304, B3602, B3611, B3612, B3622, B3623, B3628]
 file: tasks/B3629-passthrough-vertex-live.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"

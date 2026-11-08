@@ -14,10 +14,12 @@ description: >-
   parallel_request_limiter hook and awaits B3046's v3 disconnect release (async_release_max_parallel_requests_on_disconnect) only when that hook is the v3 limiter.
   A missing or older hook is a no-op. Keep this small adapter below B1125 so disconnect cleanup has one owner.
 
+  Also own remove_sensitive_info_from_deployment (openai_endpoint_utils.py L15-L49) as `redact_deployment`, the deployment redaction that the model info routes B849 and B851 call. It removes api_key, client_secret, vertex_credentials, vertex_ai_credentials, aws_access_key_id and aws_secret_access_key from the deployment's litellm_params, then replaces litellm_params with B244's `SensitiveDataMasker::mask_dict` over what is left (depth 0, the default max depth, the default masker like LiteLLM's module-level SENSITIVE_DATA_MASKER), excluding the caller's keys plus default_api_key_tpm_limit and default_api_key_rpm_limit. Other deployment fields stay as they are.
+
   Log the exception before using B872's read-only-transaction classifier. With a database, enqueue
   recovery with reason=postgres_read_only_transaction without awaiting recovery. Use an injected
   recovery-submission interface backed by the server's tracked work queue; shutdown joins its work.
-  B124 owns PrismaClient.recreate_read_only_writer and reconnect execution. A missing database is a no-op.
+  B8396 owns PrismaClient.recreate_read_only_writer and B2323 the reconnect it runs. A missing database is a no-op.
 
   HTTPException becomes internal_server_error at its original status, with B003's normalized nullable
   param. Existing ProxyException retains its fields and headers; a supplied x-litellm-call-id fills only
@@ -50,6 +52,8 @@ scope:
   - Cargo.lock
   lint_tables: false
 references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L15-L49
+  why: remove_sensitive_info_from_deployment, the six removed credential fields and the masker call with the two rate limit keys always excluded.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L52-L81
   why: Own the three provider accessors; header spelling differs from the query/body key and precedence belongs to callers.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8199-L8237
@@ -101,6 +105,9 @@ dod:
     adapter does not retry and cannot double-decrement the acquisition. Native tests use a controlled pending
     release future, not sleeps or helper calls that perform I/O.
   proof: [limiter-release]
+- text: >-
+    redact_deployment removes the six credential fields from litellm_params and masks the rest with the default masker, while litellm_credential_name (when the caller excludes it), default_api_key_tpm_limit and default_api_key_rpm_limit stay unmasked and fields outside litellm_params are untouched.
+  proof: [deployment-redaction]
 checks:
   optional: []
   commands:
@@ -128,6 +135,9 @@ checks:
   - id: limiter-release
     why: realtime disconnect cleanup releases an unsupported limiter or returns before release completes
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::disconnect_limiter_hook($|::)/)'
+  - id: deployment-redaction
+    why: deployment redaction keeps a credential field, masks an excluded or rate limit key, or touches fields outside litellm_params
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::proxy_endpoint_support::tests::deployment_redaction($|::)/)'
   - id: helper-corpus
     why: the new helper tag has no branch-added seed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/proxy-endpoint-support-*)" && grep -qE '^[[:space:]]+proxy_endpoint_support:' tools/oracle/fuzz/corpus/helper_case/proxy-endpoint-support-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -139,8 +149,8 @@ oracle_cases:
 - tools/oracle/cases/helpers/proxy-endpoint-support/known-upload-model.yaml
 deviations: []
 out_of_scope:
-- remove_sensitive_info_from_deployment in openai_endpoint_utils.py remains B124; these API routes do not call it.
-- Other utils.py functions retain existing owners; B124 owns the remaining proxy lifecycle and PrismaClient.recreate_read_only_writer.
+- "The model info routes that call redact_deployment: B849 and B851. The masker itself: B244."
+- Other utils.py functions retain existing owners; B8399 owns the ProxyLogging lifecycle and B8396 PrismaClient.recreate_read_only_writer.
 - B4170 owns bug-report rendering and B4171 the proxy configuration report; this task uses its diagnostic interface.
 - B3046 owns the limiter's disconnect release and B3035 its slot accounting; this task owns only ProxyLogging's hook selection and await.
 - B087, B086, B1032-B1034, B1050-B1051, B1133 and B1075 own their route-specific provider precedence.

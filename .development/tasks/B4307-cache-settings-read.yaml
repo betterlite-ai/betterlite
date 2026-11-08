@@ -4,7 +4,7 @@ description: >-
   Serve GET /cache/settings from crates/betterlite-server. The response has three members: "fields", the catalog of 27 cache
   settings the admin UI renders; "current_values", the effective cache settings with every credential replaced by the
   marker ***REDACTED***; and "redis_type_descriptions", the three texts for node, cluster and sentinel. The route is
-  authenticated with the same dependency as the other management routes (any valid key, not admin only, as in LiteLLM).
+  authenticated with the same dependency as the other management routes (user_api_key_auth; at the pin its route check, route_checks.py non_proxy_admin_allowed_routes_check L268-L365, refuses a non-admin key, since /cache/settings is in no non-admin route list).
 
   Put the catalog in crates/betterlite-server/src/cache_settings_read/fields.rs. It ports CacheSettingsField and the lists
   CACHE_SETTINGS_FIELDS and REDIS_TYPE_DESCRIPTIONS from litellm/types/management_endpoints/cache_settings_endpoints.py. A field
@@ -98,7 +98,7 @@ dod:
 - text: >-
     A repository error, invalid stored JSON or a decrypt failure answers 500 with a detail that starts with "Error fetching cache settings: " and no partial body.
   proof: [stored-read-tests]
-- text: GET /cache/settings answers 401 without a valid key and 200 for any valid key, with fields, current_values and redis_type_descriptions in the body.
+- text: GET /cache/settings answers 401 without a valid key, the admin-only route error for a non-admin key, and 200 for a proxy admin key, with fields, current_values and redis_type_descriptions in the body.
   proof: [route-tests, oracle]
 - text: Settings are read at request time, so a changed environment shows on the next call.
   proof: [route-tests]
@@ -154,11 +154,11 @@ deviations:
 
 out_of_scope:
 - POST /cache/settings/test and the saved-secret merge it uses; B4308 owns them.
-- POST /cache/settings, encryption of the saved row, the audit log row and CacheSettingsManager (init_cache_settings_in_db, update_cache_params); B125 owns them as the umbrella's remaining code, and B4308 owns the test route.
+- POST /cache/settings, encryption of the saved row, the audit log row and CacheSettingsManager (init_cache_settings_in_db, update_cache_params); B8502 owns them, and B4308 owns the test route.
 - parse_stored_settings, resolve_cache_url_precedence, redact_credentials, is_credential_field; B4306 owns them and this task calls them.
 - Reading REDIS_ variables through a secret manager (get_secret); B4321 owns the lookup, this task only passes it a lookup.
 - The CacheConfigRepository table adapter itself; B726 owns it.
-- Building the cache from the settings (redis clients, semantic caches); the cache tasks under B125 and B126 own that.
+- Building the cache from the settings (redis clients, semantic caches); B4299 and B5630 own that.
 
 pitfalls:
 - "Only 17 REDIS_ variables are overlaid. REDIS_NAMESPACE, REDIS_TTL, REDIS_SENTINEL_PASSWORD, REDIS_SERVICE_NAME and REDIS_SENTINEL_NODES are Redis client settings elsewhere but never show up in this response."
@@ -169,7 +169,7 @@ pitfalls:
 - "redis_type is a UI-only key in current_values and in the redis_type field's field_value; it is never stored."
 - "field_value gets the redacted value, so the password field in fields also reads ***REDACTED***."
 - "A stored non-string value such as the integer 6379 or a node list must not be run through string decryption."
-- "The route depends on the key check but not on an admin role; do not add a role check."
+- "The admin gate comes from the shared key check's route rules, as in LiteLLM; do not add a second role check in the handler."
 - "Redaction treats url as a credential even though its name is not sensitive, because Redis URLs can carry a password."
 
 review_level: security

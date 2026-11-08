@@ -1,0 +1,14 @@
+id: B8481
+milestone: M4 keys, spend and management
+title: Install budget reservation, settlement and model budget services
+status: todo
+depends_on: [B753, B755, B970, B1719, B3003, B3006, B8270, B8399]
+file: tasks/B8481-budget-services.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"
+parent: B071
+split_from: B071
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

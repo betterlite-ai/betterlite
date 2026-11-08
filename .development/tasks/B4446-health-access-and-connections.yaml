@@ -131,7 +131,7 @@ out_of_scope:
   - >-
     litellm/proxy/health_endpoints/_health_endpoints.py: Other tasks own remaining health endpoint functions. B4441 owns
     deployment targeting and param resolution (deployments_targeted_by_name, _update_litellm_params_for_health_check).
-    B4443 owns perform_health_check and health-cycle execution. B4445 owns database persistence. B130 (the umbrella) owns
+    B4443 owns perform_health_check and health-cycle execution. B4445 owns database persistence. B4445 also owns
     the main /health and /health/latest routes. The direct ahealth_check invocation (L2212) and credential-field catalog
     (_ADMIN_CONFIG_FIELDS_TO_CLEAR_ON_BASE_OVERRIDE, clientside_credential_keys) ownership is noted in questions.
 pitfalls:

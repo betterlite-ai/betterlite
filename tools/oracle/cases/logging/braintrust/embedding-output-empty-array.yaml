@@ -1,0 +1,61 @@
+kind: helper
+name: braintrust embedding output is an empty array
+call:
+  b3962:
+    function: log
+    scenarios:
+      - path: sync
+        start_time: "2023-11-14T22:13:20+00:00"
+        end_time: "2023-11-14T22:13:21.500000+00:00"
+        environment: {BRAINTRUST_API_KEY: braintrust-key}
+        api_base: "http://braintrust.test/v1"
+        call_id: call-embedding
+        messages: []
+        metadata: {project_id: project-one}
+        response:
+          kind: embedding
+          body:
+            object: list
+            data:
+              - {object: embedding, embedding: [0.1, 0.2], index: 0}
+            model: text-embedding-3-small
+            usage: {prompt_tokens: 4, total_tokens: 4}
+        answers:
+          - {status: 200, body: {}}
+      - path: sync
+        start_time: "2023-11-14T22:13:20+00:00"
+        end_time: "2023-11-14T22:13:21.500000+00:00"
+        environment: {BRAINTRUST_API_KEY: braintrust-key}
+        api_base: "http://braintrust.test/v1"
+        call_type: embedding
+        metadata: {project_id: project-one}
+        response:
+          kind: model_response
+          body:
+            id: chatcmpl-1
+            object: chat.completion
+            created: 1700000000
+            model: gpt-4o
+            choices:
+              - index: 0
+                message: {role: assistant, content: hello}
+                finish_reason: stop
+            usage: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 5}
+        answers:
+          - {status: 200, body: {}}
+      - path: sync
+        start_time: "2023-11-14T22:13:20+00:00"
+        end_time: "2023-11-14T22:13:21.500000+00:00"
+        environment: {BRAINTRUST_API_KEY: braintrust-key}
+        api_base: "http://braintrust.test/v1"
+        metadata: {project_id: project-one}
+        response:
+          kind: image
+          body:
+            created: 1700000000
+            data:
+              - {url: "https://example.com/a.png"}
+        answers:
+          - {status: 200, body: {}}
+env: {}
+compare: {ignore: []}

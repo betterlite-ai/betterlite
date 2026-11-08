@@ -1,0 +1,60 @@
+id: B8388
+title: Health results into the router health state
+description: >-
+  After each background health check cycle LiteLLM writes the results into the router so health-check-driven routing
+  and the healthy-only model listing can use them, and with health check routing on it also counts a failure and cools
+  down each failing deployment. B4444 runs the loop and calls this at the end of each cycle. Build
+  crates/betterlite-server/src/health_router_state.rs (declared by the skeleton). Nothing here returns an error: any
+  failure logs the warning "Failed to write health state to router cache: {error}" and the cycle goes on.
+
+  `exception_status(endpoint, exceptions)` (_get_endpoint_exception_status): the status_code of the live exception for
+  the endpoint's model_id (500 when it has none), else the endpoint's stored exception_status, else 500. The stored
+  value is what the shared cache path keeps, since exception objects do not survive it.
+
+  `write_health_state(router, settings, healthy, unhealthy, exceptions)` (_write_health_state_to_router_cache): with no
+  router, do nothing. When neither enable_health_check_routing nor B842's is_healthy_only_listing_default holds, do
+  nothing. With health_check_ignore_transient_errors, endpoints whose exception_status is 429 or 408 are dropped from the
+  unhealthy list for the state. Build the states with B4443's build_deployment_health_states and, when there are any,
+  store them with B307's set_deployment_health_states and log at debug "health_check_routing_state_updated healthy={n}
+  unhealthy={m}". Stop there unless health check routing is on. Then for each unhealthy endpoint with a model_id and a
+  live exception (stored-only failures are skipped), take its status (500 when it has none), skip 429 and 408 when
+  transient errors are ignored, count a failure for the current minute (B304) and set the cooldown (B308's
+  _set_cooldown_deployments with the router's cooldown_time).
+
+  Tests drive a recording router with healthy, failing, transient and stored-only endpoints. No oracle case: the effect
+  shows only in later routing decisions, which the router tasks cover.
+scope:
+  paths:
+    - crates/betterlite-server/src/health_router_state.rs
+    - crates/betterlite-server/src/health_router_state/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4367-L4466
+    why: _get_endpoint_exception_status and _write_health_state_to_router_cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4675-L4677
+    why: The call at the end of each background cycle.
+dod:
+  - text: Health states are written when routing or the healthy-only listing needs them, with transient failures kept out when configured.
+    proof: [health-state-tests]
+  - text: With health check routing on, each failing deployment with a live exception counts a failure and is cooled down; stored-only and ignored transient failures are not.
+    proof: [health-state-tests]
+  - text: A failure while writing logs the warning and never stops the health cycle.
+    proof: [health-state-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: health-state-tests
+      why: Health results reach the router state or cooldowns differently from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_router_state::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The background loop and its database save: B4444. The health check itself: B4443."
+pitfalls:
+  - The healthy-only listing keeps the cache filled even with routing off, but the failure count and cooldown run only with health check routing on.
+  - The transient filter for the state uses the stored status as a fallback, while the cooldown loop needs a live exception.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

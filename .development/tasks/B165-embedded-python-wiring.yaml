@@ -13,7 +13,8 @@ description: >-
   with no Python hook never pays for an interpreter. `PythonHooks::shutdown()` calls the pool's shutdown, and the server's
   stop path calls it. `HookSlot` names where a value came from, for logs and errors: `CustomAuth`, `CustomKeyGenerate`,
   `CustomKeyUpdate`, `CustomKeyPolicy`, `CustomTeamMetadataValidate`, `CustomSso`, `CustomUiSsoSignInHandler`,
-  `PostCallRules`, `CustomValidate`, `PassThroughAdapter`, `McpToolHandler`, `GuardrailClass`, `CustomProvider` and
+  `PostCallRules`, `CustomValidate`, `PassThroughAdapter`, `McpToolHandler`, `GuardrailClass`, `CustomProvider`, `RoutingPlugin`
+  (B8587), `ClassifierPlugin` (B8587) and
   `Callback(ListKey)`, with `ListKey` being `Callbacks`, `SuccessCallback`, `FailureCallback` or `AuditLogCallbacks`.
   The callers keep reading their own keys (B054, B1220, B1224, B1624, B363, B189) and pass the string value here.
 
@@ -39,6 +40,14 @@ description: >-
   - `load_custom_validate(value)` loads the function and runs `check_literal_true_return` on it, the behavior of
     _types.py L5527-L5533.
 
+  Worker startup hooks. `run_startup_hooks(specs: &[String]) -> Result<(), HooksError>` takes the LITELLM_WORKER_STARTUP_HOOKS
+  specs B8374 reads ('module.path:function_name', blanks already skipped), imports each on the pool in list order with the 60
+  second load deadline, calls the function and awaits it when it returns a coroutine, with the messages B8374 lists: a spec without ":" is
+  "Invalid hook spec '{spec}': expected format is 'module.path:function_name'", success logs "Worker startup hook '{spec}'
+  executed successfully", and a failure logs "Worker startup hook '{spec}' failed: {error}" and returns that error without running
+  the later specs. B8587 wraps this method in the adapter that implements B8374's StartupHooks port in crates/betterlite; this
+  task does not depend on B8374, since that edge would form a cycle.
+
   The downloader: `BucketModuleFetcher` implements pyhost's `ModuleFetcher` by calling B4143's `download_python_module`
   with the matching `BucketType`, and turns its `ModuleDownloadError` into the fetch error. It lives in this task's
   `bucket_fetcher.rs`.
@@ -47,7 +56,7 @@ description: >-
   Python class: `class CustomRoutingStrategyBase` with the two no-op methods `async_get_available_deployment` and
   `get_available_deployment`, same parameter names, order and defaults as types/router.py L890-L935, each returning None.
   Put it in `python/betterlite/_custom_routing/base.py` (explicit `__all__`) and a re-export module
-  `python/betterlite/_custom_routing/__init__.py`. B016 and B363 name these two methods as B165's. The class is re-exported from `betterlite.types.router` and `betterlite.router`. B162 owns both files (no B79xx part covers litellm/types/router.py) and depends on this task, so B162 adds the one import line from `betterlite._custom_routing` to each. This task does not edit them. A pytest file
+  `python/betterlite/_custom_routing/__init__.py`. B016 and B363 name these two methods as B165's. The class is re-exported from `betterlite.types.router` and `betterlite.router`. B8356 owns both files and depends on this task, so B8356 adds the one import line from `betterlite._custom_routing` to each. This task does not edit them. A pytest file
   checks the signatures against LiteLLM's class with `inspect.signature` and that a subclass overriding both methods can be
   called.
 scope:
@@ -81,6 +90,8 @@ dod:
 - text: A remote module is fetched through B4143's download and failures read as in B8042.
   proof: [fetcher-tests]
 - text: A hook that passes its deadline gives a timeout error and shutdown reports jobs still running.
+  proof: [hooks-tests]
+- text: run_startup_hooks runs each LITELLM_WORKER_STARTUP_HOOKS spec in order, awaits coroutines, rejects a spec without ":" with LiteLLM's message and stops at the first failing hook.
   proof: [hooks-tests]
 - text: CustomRoutingStrategyBase has LiteLLM's two methods with the same signatures.
   proof: [routing-base]

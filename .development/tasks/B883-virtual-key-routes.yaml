@@ -100,8 +100,8 @@ description: >-
 
 
   Registry grant scenarios use B2302's completed lookup against equivalent snapshots in the helper cases.
-  General pass_through_endpoints configuration stays rejected until B102 installs its handlers;
-  B102 owns those enabled-route HTTP cases. This task pins its static virtual-route denial
+  General pass_through_endpoints configuration stays rejected until B8379 installs the configured routes at startup;
+  Those enabled-route HTTP cases belong with B8379, since B8379 sits above this task in the dependency graph. This task pins its static virtual-route denial
   through real HTTP before downstream dispatch.
   B1100 registers state/virtual_key_routes.rs as a stub slot, so fill only crates/betterlite-server/src/state/virtual_key_routes.rs and leave state.rs as it is.
 scope:
@@ -120,8 +120,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/virtual_key_routes.rs
     - crates/betterlite-server/src/state/virtual_key_routes/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/virtual-key-routes/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/virtual-key-routes-*

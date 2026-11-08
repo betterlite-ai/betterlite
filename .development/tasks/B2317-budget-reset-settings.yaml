@@ -4,7 +4,7 @@ description: >-
   Move common_utils/timezone_utils.py below auth upserts, management writes and scheduled resets.
   Implement budget_reset records/calculation in betterlite-core and settings normalization in
   betterlite-config. B199 supplies duration parsing and calendar/DST reset calculations; do not
-  copy those algorithms or add a second timezone database. B124 startup and B071 jobs consume
+  copy those algorithms or add a second timezone database. B124 startup and the B3009 to B3013 reset jobs consume
   this completed service, with an injected clock and current settings instead of module globals.
 
   BudgetResetSettings is immutable, with timezone="UTC" and reset_time_of_day=00:00:00. Its
@@ -156,7 +156,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B199 owns duration parsing, word aliases, timezone fallback and calendar/DST arithmetic; this task composes them with validated settings.
-  - B124 installs settings and schedules jobs; B071 owns budget reset persistence, not this shared calculation.
+  - B124 installs settings and schedules jobs; B3010 to B3013 own budget reset persistence, not this shared calculation.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as budget_reset in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/budget_reset.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/budget_reset.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A duration accepted by duration_in_seconds can still fail the monthly reset calculator.

@@ -124,7 +124,7 @@ deviations:
 out_of_scope:
   - B3682/B3683 own guardrail_class_registry (guardrail_registry.py) and the active guardrail enumeration contract from LoggingCallbackManager.
   - B3664/B3665/B3666 own CustomGuardrail class definition and apply_guardrail method.
-  - B124 owns get_initialized_guardrail_with_read_through (registry_read_through.py) used to fetch the routing guardrail by name.
+  - B8231 owns get_initialized_guardrail_with_read_through (registry_read_through.py) used to fetch the routing guardrail by name.
   - B189 owns LoggingCallbackManager.get_custom_loggers_for_type callback enumeration.
   - B302 owns deployment_catalog and Router.deployments_for_request.
   - B321 owns tag_routing and _get_tags_from_request_kwargs.

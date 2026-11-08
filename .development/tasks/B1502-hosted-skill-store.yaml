@@ -43,7 +43,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L25-L214
     why: Creation, owner-filtered reads, the negative sentinel and post-delete cache write.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/constants.py#L9-L24
-    why: Hosted skill prefix and search candidate ceiling; execution constants are carried as typed constants for B095.
+    why: Hosted skill prefix and search candidate ceiling; execution constants are carried as typed constants for B3394.
 dod:
   - text: Owner scope and cache ordering match the independent pinned service on create, list, get and delete failures.
     proof: [skill-store-tests, oracle, skill-store-python]
@@ -75,7 +75,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/hosted-skill-store/hook-warning.yaml
 deviations: []
 out_of_scope:
-  - B1503 turns stored rows into Skill responses; B095 owns public skills endpoints and their authentication.
+  - B1503 turns stored rows into Skill responses; B994 and B995 own the public /v1/skills endpoints and their authentication.
   - B858 decodes persisted skill fields and B1018 supplies resource ownership, including legacy raw user ids.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as hosted_skill_store in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/hosted_skill_store.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/hosted_skill_store.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

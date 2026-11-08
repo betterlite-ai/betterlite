@@ -7,7 +7,7 @@ description: >-
   Put runtime policy in betterlite-core::api::file_upload_routing and settings in
   betterlite-config::api::file_upload_routing. Use B303/B844 catalog access, B1020 authorization,
   B1048 executed-provider probing, B1023/B1024 scans, B235 file extraction, B1027 storage and
-  B1028 SDK upload. The complete router upload facade belongs to B162, not a route caller.
+  B1028 SDK upload. The complete router upload facade belongs to B8353, not a route caller.
 
   files_settings starts unset; set_files_config(None) leaves existing state unchanged. A list
   resolves string values starting os.environ/ through B002 once. loadbalancing uses
@@ -115,7 +115,7 @@ dod:
     B1019, logging DEBUG "Encoded file ID: <old> -> <new> (model: m)". Missing/empty id is unchanged.
     Targets without model produce 500 internal_server_error,param=null,code="500",message="Managed
     files hook not found" in MIT. With no targets, literal-true loadbalancing plus known router_model
-    calls B162; missing router raises HTTPException500 detail.error="LLM Router not initialized.
+    calls B8353; missing router raises HTTPException500 detail.error="LLM Router not initialized.
     Ensure models added to proxy." Otherwise apply team credentials, then matching files_settings
     overrides those values, remove custom_llm_provider from the request and pass the selected
     provider separately. Test source errors and successful upstream multipart capture.

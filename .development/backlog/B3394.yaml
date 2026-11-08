@@ -6,6 +6,7 @@ depends_on: [B189]
 file: tasks/B3394-skills-hook-execution.yaml
 covers:
   - "litellm/proxy/hooks/litellm_skills/main.py"
+  - "litellm/proxy/hooks/litellm_skills/__init__.py"
 parent: B095
 split_from: B095
 resolution: merged

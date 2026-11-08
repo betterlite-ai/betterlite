@@ -1,0 +1,18 @@
+id: B8171
+milestone: M3 providers
+title: DashScope embedding, rerank and shared errors
+status: todo
+depends_on: [B2202, B1013]
+file: tasks/B8171-dashscope-embed-rerank.yaml
+covers:
+  - "litellm/llms/dashscope/common_utils.py"
+  - "litellm/llms/dashscope/embed/__init__.py"
+  - "litellm/llms/dashscope/embed/transformation.py"
+  - "litellm/llms/dashscope/rerank/__init__.py"
+  - "litellm/llms/dashscope/rerank/transformation.py"
+parent: B043
+split_from: B043
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

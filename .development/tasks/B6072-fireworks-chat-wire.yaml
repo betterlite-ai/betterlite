@@ -143,7 +143,7 @@ deviations:
 out_of_scope:
   - B2222 owns lines 534 to 651 of chat/transformation.py (capability lookups, get_model_cost_key, get_provider_info). B6071 owns the option side of FireworksAIConfig. B6070 owns FireworksAIMixin and the key chain.
   - B503 owns the OpenAI transform_request and B504 owns the OpenAI response decoder and chunk_parser this module calls.
-  - B2227 owns _complete_fireworks_ai in litellm/main.py and B041 wires the config into dispatch and the HTTP cases.
+  - B8310 owns _complete_fireworks_ai in litellm/main.py, wires the config into dispatch and adds the HTTP cases.
 pitfalls:
   - 'Fireworks sends a tool call as the message content, often as {"name": ..., "parameters": {...}} with no "arguments", so the parameters map must be serialized into arguments.'
   - The repair runs only when optional_params.tools is non-None, content is non-None and tool_calls is None, and the name "json_tool_call" is never converted.

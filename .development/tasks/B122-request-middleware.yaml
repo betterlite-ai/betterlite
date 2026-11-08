@@ -87,6 +87,9 @@ dod:
     proof: [security-header-tests, oracle]
   - text: The layers are ordered size limit, gzip, security headers, router, with the root path wrap outermost; a 413 has no security headers.
     proof: [stack-tests]
+  - text: >-
+      request_stack installs B8295's Redis request batch layer, the layer that task exports.
+    proof: [stack-tests]
 checks:
   optional: [mutants]
   commands:

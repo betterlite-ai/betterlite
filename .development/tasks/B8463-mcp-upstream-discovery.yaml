@@ -1,0 +1,135 @@
+id: B8463
+title: MCP prompt and resource discovery with a shared cache
+description: >-
+  Build mcp::upstream_discovery in betterlite-server: MCPServerManager's prompt and resource
+  methods (get_prompts_from_server, get_resources_from_server, get_resource_templates_from_server,
+  read_resource_from_server, get_prompt_from_server), the three _create_prefixed_* renames for them,
+  the discovery cache (_DiscoveryCache, _discovery_key, _mcp_discovery_cache_ttl) and
+  invalidate_user_oauth_token_cache. B8197 lists through the first three, B8199 serves prompts/get
+  and resources/read through the last two, and the OAuth and credential routes call the
+  invalidation.
+
+
+  The three listings share one shape. A server the stdio gate blocks returns an empty list (B8461's
+  skip_blocked_stdio with "prompt", "resource" or "resource template"). The request headers are the
+  extra headers with the server's raw static_headers laid over them, None when both are empty. Then
+  B8460's build_stdio_env and obo_subject_token, B8461's create_client, and the client's
+  discovery_auth_fingerprint (B4741). The cache key comes from discovery_key, and the fetch is the
+  client's list_prompts, list_resources or list_resource_templates with raise_on_error (B4746).
+  The names are prefixed and any error logs "Failed to get prompts from server <name>: <error>"
+  ("resources", "resource_templates") and returns an empty list. read_resource_from_server and
+  get_prompt_from_server lay static_headers over the extra headers the same way, build the client
+  and call read_resource(url) or get_prompt with the name and arguments; their errors propagate.
+
+
+  discovery_key(server, auth, mcp_auth_header, extra_headers, stdio_env, subject_token,
+  fingerprint): the server is per-user when requires_per_user_auth is set, B8461's
+  references_user_env is true, delegate_auth_to_upstream is set, or the auth type is
+  oauth2_token_exchange or oauth2_id_jag. A server that is not per-user and has no auth header,
+  extra headers, stdio env or subject token shares one entry, (server_id, None). Otherwise the key
+  is (server_id, sha256 hex of a canonical JSON of the caller identity (user_id and api_key, only
+  for a per-user server with an auth record), the auth header, extra headers, stdio env, subject
+  token and fingerprint)). Empty strings and empty maps count as absent.
+
+
+  DiscoveryCache<T> has one instance per kind. Its ttl comes from the config section
+  mcp_discovery: env LITELLM_MCP_DISCOVERY_CACHE_TTL, default 60 seconds; text that is not a
+  number, not finite or negative logs "Invalid LITELLM_MCP_DISCOVERY_CACHE_TTL; using 60 seconds"
+  and gives 60. With ttl 0 every get fetches. A stored entry is served as a fresh copy. A second
+  caller for a key whose fetch is running waits on that fetch. With 1024 fetches running a new key
+  fetches without caching. A fetch result is stored with the ttl only when that fetch is still the
+  pending one for its key. When the last waiter goes away the pending fetch is removed and cancelled
+  if it has not finished. invalidate(server_id) drops the stored entries and pending fetches of
+  that server. Entries are bounded to 1024, the size LiteLLM gives its InMemoryCache here.
+
+
+  invalidate_user_oauth_token_cache(user_id, server_id) invalidates the three caches for the
+  server, then B4660's per-user OAuth token store and B4662's legacy per-user token cache. Each
+  of those two failures logs a warning ("Failed to invalidate cached MCP OAuth token for user=<u>
+  server=<s>: <error>", "Failed to drop legacy cached MCP OAuth token for user=<u> server=<s>:
+  <error>") and never fails the caller.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/upstream_discovery.rs
+    - crates/betterlite-server/src/mcp/upstream_discovery/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-config/src/sections/mcp_discovery.rs
+    - crates/betterlite-config/src/sections/mcp_discovery/**
+    - tools/oracle/cases/helpers/mcp-upstream-discovery/**
+    - tools/oracle/helpers/b8463.py
+    - tools/oracle/helpers/b8463/**
+    - tools/oracle/src/helpers/server/b8463.rs
+    - tools/oracle/src/helpers/server/b8463/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1716-L1811
+    why: The discovery cache, its limit, pending fetch sharing and the ttl env var.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L4624-L4653
+    why: discovery_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L4667-L4887
+    why: The three listings, read_resource_from_server and get_prompt_from_server.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5571-L5635
+    why: Prompt, resource and template renames.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6379-L6400
+    why: invalidate_user_oauth_token_cache.
+
+dod:
+  - text: >-
+      discovery_key shares one entry exactly when the Python does, and separates two callers of a
+      per-user server.
+    proof: [discovery-tests, oracle]
+  - text: >-
+      Concurrent gets for one key run one fetch, ttl 0 always fetches, a stale fetch after
+      invalidate does not store its result, and the last waiter leaving cancels the fetch.
+    proof: [discovery-tests]
+  - text: >-
+      A listing error returns an empty list with the warning, a read or get error propagates, and
+      names are prefixed only with add_prefix.
+    proof: [discovery-tests, oracle]
+  - text: >-
+      LITELLM_MCP_DISCOVERY_CACHE_TTL loads with its default and falls back to 60 for bad text,
+      NaN, infinity and negative values.
+    proof: [discovery-config-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: discovery-tests
+      why: A cache, key or listing rule differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^mcp::upstream_discovery::/)'
+    - id: discovery-config-tests
+      why: The ttl env var is not read or its fallback differs.
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::mcp_discovery::/)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-upstream-discovery
+
+deviations: []
+
+out_of_scope:
+  - "_invalidate_discovery_lists and _invalidate_server_definition_caches: B6765, which calls invalidate on these caches."
+  - "_get_prompts_from_mcp_servers and the other aggregations: B8197. mcp_get_prompt and mcp_read_resource: B8199."
+  - "MCP client prompt and resource calls: B4746. discovery_auth_fingerprint: B4741."
+  - The HTTP cases for prompts and resources come with the MCP routes in B136.
+
+pitfalls:
+  - >-
+    Prompt and resource paths send the server's raw static_headers, not the env-interpolated ones
+    the tool paths use, and static values win over the extra headers on an equal key.
+  - >-
+    The renames change the items in place, so a cached copy must be cloned before renaming or a
+    second caller sees a doubled prefix.
+  - >-
+    The ttl text is parsed as a float, so "1e2" is 100 seconds and "nan" falls back to 60.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

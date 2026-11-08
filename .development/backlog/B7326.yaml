@@ -6,6 +6,7 @@ depends_on: [B3362, B3371, B7430, B004, B2400, B1100, B1018, B732, B756, B003]
 file: tasks/B7326-container-crud-routes.yaml
 covers:
   - "litellm/proxy/container_endpoints/endpoints.py"
+  - "litellm/proxy/container_endpoints/__init__.py"
 parent: B094
 split_from: B094
 resolution: null

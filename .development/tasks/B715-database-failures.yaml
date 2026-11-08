@@ -21,7 +21,7 @@ description: >-
   stall tracker starts with no hit, records the injected monotonic clock and reports whether
   now-last_hit < window_seconds, strictly less at the boundary. A successful lookup does not clear
   a previous hit. DBLookupStallTracker.clear has no production caller at the pin and is excluded.
-  B130 owns the health consumer's PROXY_DB_LOOKUP_STALL_WINDOW_SECONDS=30 setting and readiness effect;
+  B4448 owns the health consumer's PROXY_DB_LOOKUP_STALL_WINDOW_SECONDS=30 setting and readiness effect;
   this tracker accepts its window argument without another env read.
 
   bounded_db_lookup uses its explicit deadline_seconds whenever non-None, including zero or negative
@@ -45,11 +45,11 @@ description: >-
   tokens, SQL arguments, request bodies, auth objects and span objects never enter event_metadata.
 
   A successful name containing 'PROXY' has a different branch: only when positional args[1] is a
-  dict and B110's _get_parent_otel_span_from_kwargs returns a non-None span does it schedule a success
+  dict and B3847's _get_parent_otel_span_from_kwargs returns a non-None span does it schedule a success
   event. That event uses BATCH_WRITE_TO_DB ('batch_write_to_db'), duration=0.0 and event_metadata=None,
   with the same start/end times and call_type. Do not infer this span from args[0] or fall back to
   the outer parent_otel_span keyword. Missing/malformed positional data or no span silently drops
-  that success metric. Use B110's helper as a dependency rather than copying its metadata precedence.
+  that success metric. Use B3847's helper as a dependency rather than copying its metadata precedence.
 
   On an ordinary exception, emit a DB failure only for the source's PrismaError, httpx.ConnectError
   and httpx.TimeoutException families, represented through B872's native fault categories. This
@@ -63,7 +63,7 @@ description: >-
 
   Only _safe_db_event_metadata gets a pure helper oracle operation, calling the actual Python function
   and the Rust projection with typed inputs. The decorator reads proxy_server globals and must not
-  be called from a HelperCall. Native metric tests inject B012's sink and B110's span resolver; native
+  be called from a HelperCall. Native metric tests inject B012's sink and B3847's span resolver; native
   async tests cover cancellation and deadline effects. B860 supplies Postgres through POSTGRES_TEST_URL
   or testcontainers, with a blocked real SELECT and a committed write whose metric sink fails.
   Check permit release when the owned lookup actually ends, the timeout cause/message, event order,
@@ -154,8 +154,8 @@ out_of_scope:
   - B872 owns exception_handler.py classification, _coerce_timeout, _DBReconnectClient and
     call_with_db_reconnect_retry; B1217 owns unavailable-error chain traversal, policy and 503 projection.
   - B738 owns key lookup's gate acquisition and reconnect timeout 2s/lock timeout 0.1s;
-    B130 owns the health check that reads the stall-window setting and reports degraded readiness.
-  - B012 owns service hook dispatch/exporters; B110 owns _get_parent_otel_span_from_kwargs. This task
+    B4448 owns the health check that reads the stall-window setting and reports degraded readiness.
+  - B012 owns service hook dispatch/exporters; B3847 owns _get_parent_otel_span_from_kwargs. This task
     only selects the DB event shape and success/failure scheduling order.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as database_failures in the db group. Replace the stub Op in tools/oracle/src/helpers/db/database_failures.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/database_failures.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

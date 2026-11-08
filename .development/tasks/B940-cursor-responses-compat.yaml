@@ -39,7 +39,7 @@ description: >-
   "xhigh" and "max"; it returns the stripped base and an optional effort.
   _router_can_serve returns false for a missing router and true only for an
   is_recognized_model result, a team_public_model_names member, or a matching
-  pattern_router.get_pattern result. Resolve a variant only when the requested
+  pattern_router.get_pattern result. betterlite-core may not depend on betterlite-router, so the core part asks the `ServedModelLookup` port, a trait in `crates/betterlite-core/src/api/cursor_responses_compat.rs` with `is_recognized_model`, `is_team_public_model` and `matches_model_pattern`, passed in as an optional trait object (none is the missing router). The server part takes the same port through its constructor, and the wave 17 inference wiring part implements it in betterlite-server over B8351's `CatalogQueries::is_recognized_model` and B302's team public names and pattern router. Resolve a variant only when the requested
   model is a string not already served and its base is served. For chat bodies,
   add reasoning_effort only when the key is absent; for Responses bodies merge
   effort into reasoning unless reasoning is a dict with a truthy existing
@@ -188,7 +188,7 @@ out_of_scope:
 - 'litellm/proxy/proxy_server.py: B004 owns chat_completion L11952-L12102; B014 owns ProxyBaseLLMRequestProcessing.base_process_llm_request and _handle_llm_api_exception; B932 owns the aresponses call reached through responses_api_bridge; B919 owns the ResponsesAPIResponse transform and handler get_model_response_iterator.'
 - 'litellm/proxy/common_utils/http_parsing_utils.py: B1100 owns _read_request_body and _safe_set_request_parsed_body; malformed JSON/form status and request cache storage stay with that decoder.'
 - 'litellm/proxy/auth/user_api_key_auth.py: B732, B756 and B855 own user_api_key_auth, credential extraction, authorization, model grants, budgets and their public error mapping; B940 owns only the dependency ordering and model-body rewrite before that call.'
-- 'litellm/router.py: B302 owns is_recognized_model, team_public_model_names and pattern_router catalog lookup; B940 only applies those booleans to Cursor suffix resolution. B368 owns catalog mutation and is not called by this range.'
+- 'litellm/router.py: B8351 builds `CatalogQueries::is_recognized_model` and B302 owns team_public_model_names and the pattern_router catalog lookup, all in betterlite-router; B940 reads them only through its `ServedModelLookup` port (the wave 17 inference wiring part implements it in betterlite-server) and only applies those booleans to Cursor suffix resolution. B368 owns catalog mutation and is not called by this range.'
 - 'litellm/litellm_core_utils/prompt_templates/common_utils.py: B216 owns convert_custom_tool_format_to_chat_shape and convert_custom_tool_format_to_responses_shape; B940 owns invoking them for Cursor envelopes, not the shared converter implementation.'
 - 'Provider execution, response object definitions, stream event decoding, database repositories and Python package/event-loop facades belong to their existing provider, response, storage and B158-B161 tasks; the oracle never installs litellm-enterprise.'
 pitfalls:

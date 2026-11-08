@@ -1,0 +1,70 @@
+id: B8157
+title: Self-hosted providers dispatch in main.py and Lemonade chat config
+description: >-
+  Last part of the self-hosted provider group. Parts B8150 to B8156 own the provider configs (hosted_vllm, vllm, petals, triton, ollama, docker_model_runner, llamafile, lm_studio, oobabooga, xinference, lemonade cost), and B2220 to B2224 own the model metadata. This task owns what is left: the main.py dispatch and the Lemonade chat config. Put it in the module self_hosted_dispatch of betterlite-provider, and plug it into the dispatch table through B2230's selection, the same way B050 does for the agent platform providers.
+
+  main.py functions: _complete_hosted_vllm L2546-L2589, _complete_oobabooga L3301-L3334, _complete_vllm L4421-L4457, _complete_ollama L4458-L4497, _complete_ollama_chat L4498-L4539, _complete_triton L4540-L4575, _complete_petals L4615-L4654 and _complete_lemonade L4822-L4861, with their arms in the completion dispatch (L5924 hosted_vllm, L5985 oobabooga, L6028-L6042 vllm, ollama, ollama_chat, triton, petals, L6052 lemonade). Each takes the context fields the way B050 lists them, resolves api base and key as the source does (HOSTED_VLLM_API_BASE and HOSTED_VLLM_API_KEY and the like through betterlite-config), and calls the config built by its part. The vllm in-process and petals local branches return the typed error accepted in B8153.
+
+  Embedding and other arms in main.py that pick one of these providers: hosted_vllm L6575, triton L6796, oobabooga L6930, ollama L6941 and xinference L7093 (api base and key fallbacks only). The llamafile and lm_studio branch L6613-L6644 is B1440's compatible_embedding_call: plug those two arms into it and do not copy the branch. utils.py has provider branches for triton, lm_studio, ollama, ollama_chat, petals and hosted_vllm (L3848, L3901, L4057, L4591, L4766-L4788, L4887): build one only when no earlier task's text names that exact branch; grep .development/tasks for the line number first.
+
+  Lemonade chat config (litellm/llms/lemonade/chat/transformation.py): custom_llm_provider L63-L66, get_config L68-L69, get_models L71-L108 and transform_response L224-L255, which sets the reply model to lemonade/ plus the model name so cost works later. The constructor is B2220 and the metadata functions are B2224. get_models lists models over HTTP with the injected client and never a request-supplied URL.
+
+  Ollama model listing (litellm/llms/ollama/common_utils.py): OllamaModelInfo.get_models L93-L134, validate_environment L229-L242 (a no-op that returns an empty map) and get_base_model L244-L249 (returns the model unchanged). get_models takes the base from B2223's get_server_api_base and resolves the key through B2223's get_api_key only when no api_base was passed or a key was given. It sends GET {base}/api/tags over the injected client, with Authorization Bearer {key} only when a key is set. A JSON object with a models list, or a bare JSON list, gives the entries. Each object entry gives its name, else its model, when that is a string, with the ollama/ prefix added unless it is already there. The result is the sorted names without duplicates. Any failure of the request, the status check or the body logs a warning and returns the catalog's ollama models, each with the ollama/ prefix.
+
+  Where the source and this text differ, the source at the pinned commit wins.
+scope:
+  paths:
+    - crates/betterlite-provider/src/self_hosted_dispatch.rs
+    - crates/betterlite-provider/src/self_hosted_dispatch/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/self-hosted-dispatch/**
+    - tools/oracle/helpers/b8157.py
+    - tools/oracle/helpers/b8157/**
+    - tools/oracle/src/helpers/provider/b8157.rs
+    - tools/oracle/src/helpers/provider/b8157/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1-L4861
+    why: The _complete_* functions for these providers (ranges in the description).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/llms/lemonade/chat/transformation.py#L1-L255
+    why: Lemonade get_models and transform_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/common_utils.py#L93-L249
+    why: OllamaModelInfo get_models, validate_environment and get_base_model.
+dod:
+  - text: Each _complete_* function resolves api base, key and headers as LiteLLM does and calls its provider config.
+    proof: [self-hosted-dispatch-tests, self-hosted-dispatch-cases]
+  - text: The dispatch arms reach these functions through the table, and unknown providers still fail as before.
+    proof: [self-hosted-dispatch-tests, self-hosted-dispatch-cases]
+  - text: Lemonade get_models and transform_response match, including the lemonade/ model prefix.
+    proof: [self-hosted-dispatch-tests, self-hosted-dispatch-cases]
+  - text: Ollama get_models lists the /api/tags names with the ollama/ prefix, sorted and without duplicates, sends the bearer header only with a key and falls back to the catalog list on any failure; validate_environment and get_base_model are no-ops.
+    proof: [self-hosted-dispatch-tests, self-hosted-dispatch-cases]
+  - text: New helper cases for these functions exist.
+    proof: [self-hosted-dispatch-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: self-hosted-dispatch-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^self_hosted_dispatch::/)'
+      why: Without this provider code there are no such tests, so the check fails on the base branch.
+    - id: self-hosted-dispatch-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/self-hosted-dispatch)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/helpers/self-hosted-dispatch/complete-base-key.yaml
+  - tools/oracle/cases/helpers/self-hosted-dispatch/arm-selection.yaml
+  - tools/oracle/cases/helpers/self-hosted-dispatch/lemonade-models.yaml
+  - tools/oracle/cases/helpers/self-hosted-dispatch/lemonade-reply.yaml
+  - tools/oracle/cases/helpers/self-hosted-dispatch/ollama-models.yaml
+deviations:
+  []
+out_of_scope:
+  - "Provider configs and transforms belong to B8150 to B8156; model metadata to B2220 to B2224."
+  - "B1440 builds the shared embedding call for llamafile and lm_studio; this task only plugs the two arms into it."
+  - "B050 owns the dispatch table pattern this task follows."
+pitfalls:
+  - "The oracle helper for this task is pre-registered as b8157 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task's to edit."
+  - "main.py line numbers in this text are at the pinned commit; match by function name."
+  - "Some arms also fall back on global litellm.api_base and litellm.api_key before the environment; keep that order."
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

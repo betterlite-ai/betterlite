@@ -4,7 +4,7 @@ description: >-
   Implement the two access-group GET handlers and their unified aliases, plus the shared lower-level
   projection/guard helpers used by B822. _require_proxy_admin permits only proxy_admin; _require_admin_view
   uses B2314 to permit proxy_admin and proxy_admin_viewer. Both reject other roles with 403 detail.error=
-  "Admin-only endpoint. Not allowed to access this.". GET checks this guard BEFORE B124
+  "Admin-only endpoint. Not allowed to access this.". GET checks this guard BEFORE B4711
   get_prisma_client_or_throw, whose missing-DB error is 500 with CommonProxyErrors.db_not_connected_error.
   List reads all groups ordered created_at descending, with no pagination; empty input returns () and
   skips every enrichment query. Lookup uses the exact path ID and returns 404 detail="Access group
@@ -29,7 +29,7 @@ description: >-
   stored_then_carrying_order and empty_projection_no_io cover both directions of drift.
 
   After the team query, concurrently obtain MCP, agent and key display names via B065 resource_display_names,
-  passing B136 config_mcp_servers and B141 global_agent_registry snapshots. Each category receives
+  passing B4731 config_mcp_servers and B141 global_agent_registry snapshots. Each category receives
   first-seen IDs across all groups. B065 owns DB-over-config precedence and key_alias lookup; this task
   maps names back to every original resource ID, retaining duplicates/order and null for missing labels.
   Keys are identified by their stored hashes and names by aliases, never by plaintext key material.
@@ -96,8 +96,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/access_group_read.rs
     - crates/betterlite-server/src/routes/access_group_read/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/access-group-read/**
     - tools/oracle/helpers/b821.py
     - tools/oracle/helpers/b821/**
@@ -204,7 +202,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L815-L847
     why: Unified-access-group aliases use the same handlers and response statuses.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8369-L8377
-    why: B124 missing-database error used after the read-role guard.
+    why: B4711 missing-database error used after the read-role guard.
 dod:
   - text: All named role, response, label, mirror and cache cases in the description pass; Postgres tests
       confirm read projections repair output without mutating stored assignment arrays.

@@ -1,0 +1,21 @@
+id: B8173
+milestone: M3 providers
+title: AI21, MiniMax, ModelScope and Tencent chat configs
+status: todo
+depends_on: [B668, B503, B504, B2221, B2219, B1672, B1425]
+file: tasks/B8173-small-chat-configs.yaml
+covers:
+  - "litellm/llms/ai21/chat/transformation.py"
+  - "litellm/llms/minimax/chat/__init__.py"
+  - "litellm/llms/minimax/chat/transformation.py"
+  - "litellm/llms/modelscope/chat/transformation.py"
+  - "litellm/llms/tencent/__init__.py"
+  - "litellm/llms/tencent/chat/__init__.py"
+  - "litellm/llms/tencent/chat/transformation.py"
+  - "litellm/llms/tencent/cost_calculator.py"
+parent: B043
+split_from: B043
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
