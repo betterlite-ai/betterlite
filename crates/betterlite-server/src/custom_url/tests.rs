@@ -95,7 +95,7 @@ fn get_custom_url_picks_the_base_then_joins_root_path_and_route(
 }
 
 #[test]
-fn custom_urls_forward_with_the_configured_proxy_base() {
+fn custom_urls_match_get_custom_url_with_the_configured_proxy_base() {
     let urls = CustomUrls {
         proxy_base_url: Some("https://api.example.com".to_owned()),
     };
@@ -110,7 +110,7 @@ fn custom_urls_forward_with_the_configured_proxy_base() {
 }
 
 #[test]
-fn custom_urls_forward_without_a_configured_proxy_base() {
+fn custom_urls_match_get_custom_url_without_a_configured_proxy_base() {
     let urls = CustomUrls {
         proxy_base_url: None,
     };
