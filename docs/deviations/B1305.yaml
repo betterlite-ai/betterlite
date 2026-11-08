@@ -1,0 +1,17 @@
+task: B1305
+deviations:
+  - what: A vertex_location with a trailing newline ("us\n") is rejected as an invalid location, where Python's re.match with the $ anchor accepts it and builds a host containing the newline.
+    why: The reject is the point of validate_vertex_location, which exists to keep a client-supplied location out of the host; no working Vertex setup sends a location with a newline.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L439-L440
+  - what: A model name that ends in a newline ("gemini-2\n", "gemini-pro\n") selects v1alpha in betterlite, where Python's version regex matches it as an older Gemini and selects v1beta.
+    why: Python's $ anchor matches before a final newline; the ASCII name checks in betterlite see the newline as any other non-separator character. No registered model id ends in a newline.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L296
+  - what: Fine-tuned endpoint ids and the Gemini version suffix recognize only ASCII digits; Python's str.isdigit and its \d class also accept other digit characters, so a name like "١٢٣" routes to endpoints/ in LiteLLM and to publishers/google/models/ in betterlite.
+    why: A Vertex endpoint id and an API version are ASCII decimals; a model name written in another digit script is not a deployment any working setup addresses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L490-L496
+  - what: A vertex_project that is absent is an error, where LiteLLM's f-string writes the literal "None" into the projects/ path.
+    why: projects/None is a URL no working Vertex setup relies on; the field is required by Google and failing at the call site names it instead of sending a request that cannot succeed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L493-L496
+  - what: uses_embed_content is read from the B193 catalog by exact name (vertex_ai/<model> first, then <model>, with catalog aliases), where litellm.get_model_info also tries case-insensitive, stripped and provider-specific candidates; a differently cased name like "Gemini-Embedding-2" selects predict in betterlite and embedContent in LiteLLM.
+    why: The task scopes the catalog use to this one flag, and the catalog exposes no case-insensitive index; the exact-name miss selects predict, which is also LiteLLM's answer when get_model_info raises, so only a differently cased spelling of a known embedding model differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L480-L489

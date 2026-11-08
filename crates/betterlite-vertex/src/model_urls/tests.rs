@@ -465,6 +465,11 @@ fn malformed_locations() {
         validate_vertex_location(Some("attacker.example/")),
         Err(VertexUrlError::InvalidLocation)
     ));
+    // Python's $ anchor accepts a trailing newline; the location must not carry one into the host
+    assert!(matches!(
+        validate_vertex_location(Some("us\n")),
+        Err(VertexUrlError::InvalidLocation)
+    ));
     assert!(matches!(
         validate_vertex_location(Some("evil.com#")),
         Err(VertexUrlError::InvalidLocation)
@@ -549,4 +554,57 @@ fn gemini_unsupported_modes() {
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:batchEmbedContents"
     );
     assert_eq!(batch_gemini.endpoint, "batchEmbedContents");
+}
+
+#[test]
+fn non_ascii_digits_are_not_endpoint_ids() {
+    assert_eq!(get_fine_tuned_endpoint_id("\u{661}\u{662}\u{663}"), None);
+    assert!(is_gemini_3_or_newer("\u{661}\u{662}\u{663}"));
+    assert!(is_gemini_3_or_newer("gemini-2.\u{665}-pro"));
+}
+
+#[test]
+fn trailing_newline_is_not_an_old_gemini_name() {
+    assert!(is_gemini_3_or_newer("gemini-2\n"));
+    assert!(is_gemini_3_or_newer("gemini-pro\n"));
+}
+
+#[test]
+fn missing_project_is_an_error() {
+    let catalog = catalog();
+    let embedding = get_embedding_url(
+        &catalog,
+        &EmbeddingUrlInput {
+            model: "text-embedding-005",
+            project: None,
+            location: Some("us-central1"),
+            api_version: ApiVersion::V1,
+        },
+    );
+    assert!(matches!(embedding, Err(VertexUrlError::ProjectRequired)));
+    let chat = get_vertex_url(
+        &catalog,
+        &VertexUrlInput {
+            mode: UrlMode::Chat,
+            model: "gemini-2.5-flash",
+            stream: None,
+            project: None,
+            location: Some("us-central1"),
+            api_version: ApiVersion::V1,
+        },
+    );
+    assert!(matches!(chat, Err(VertexUrlError::ProjectRequired)));
+}
+
+#[test]
+fn catalog_lookup_is_case_sensitive() {
+    let catalog = catalog();
+    let other_case = embedding_url(
+        &catalog,
+        "Gemini-Embedding-2",
+        "us-central1",
+        ApiVersion::V1,
+    )
+    .unwrap();
+    assert_eq!(other_case.endpoint, "predict");
 }
