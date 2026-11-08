@@ -53,6 +53,22 @@ fn message_with_parts(count: usize) -> Message {
     }
 }
 
+fn expected_tool_result(count: usize) -> Object {
+    let content = (0..count)
+        .map(|index| {
+            Json::Object(Object::from_iter([
+                ("type".to_owned(), Json::Text("text".to_owned())),
+                ("text".to_owned(), Json::Text(index.to_string())),
+            ]))
+        })
+        .collect();
+    Object::from_iter([
+        ("type".to_owned(), Json::Text("tool_result".to_owned())),
+        ("tool_use_id".to_owned(), Json::Text("call".to_owned())),
+        ("content".to_owned(), Json::List(content)),
+    ])
+}
+
 #[tokio::test]
 async fn anthropic_results_behavior_tests_behavior_a_tool_message_becomes_a_tool_result() {
     let input = message(r#"{"role":"tool","tool_call_id":"call.123","content":"hi"}"#);
@@ -384,6 +400,22 @@ async fn anthropic_results_behavior_tests_behavior_force_base64_downloads_an_htt
             r#"{"type":"tool_result","tool_use_id":"call","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"QUJD"}}]}"#
         )
     );
+}
+
+#[tokio::test]
+async fn anthropic_results_behavior_tests_behavior_a_full_parts_list_still_converts() {
+    let urls = BTreeMap::new();
+    let fetcher = MapSource { data_urls: &urls };
+    let block = to_anthropic_tool_result(
+        &message_with_parts(MAX_MESSAGE_PARTS),
+        false,
+        &fetcher,
+        &RecordingBlocks,
+        &|| GENERATED_ID.to_owned(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(block, expected_tool_result(MAX_MESSAGE_PARTS));
 }
 
 #[tokio::test]
