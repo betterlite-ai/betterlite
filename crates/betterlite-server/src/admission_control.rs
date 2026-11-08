@@ -111,12 +111,16 @@ impl AdmissionControl {
             return Ok(permit);
         }
         let max_queued = u64::try_from(limits.max_queued_requests).unwrap_or(u64::MAX);
-        if self.queued.load(Ordering::Acquire) >= max_queued {
+        let reserved = self
+            .queued
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |queued| {
+                (queued < max_queued).then_some(queued.saturating_add(1))
+            });
+        if reserved.is_err() {
             self.rejected_queue_full.fetch_add(1, Ordering::AcqRel);
             self.rejected_total.fetch_add(1, Ordering::AcqRel);
             return Err(Rejection::QueueFull);
         }
-        self.queued.fetch_add(1, Ordering::AcqRel);
         let mut slot = QueueSlot {
             control: Some(self),
         };

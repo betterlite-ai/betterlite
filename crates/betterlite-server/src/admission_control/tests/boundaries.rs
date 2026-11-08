@@ -1,13 +1,15 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use axum::http::StatusCode;
 use betterlite_config::loader::ConfigLoader;
 use rstest::rstest;
+use tokio::time::{sleep, timeout};
 
 use super::harness::{
-    Behavior, Requests, application, await_queued, await_started, gates, harness, in_flight,
-    release,
+    Behavior, Requests, WAIT, application, await_queued, await_started, gates, harness,
 };
 use crate::admission_control::{AdmissionControl, AdmissionStack, InFlightRequests};
 use crate::routing::admission_control::hot_routes_first;
@@ -17,6 +19,7 @@ enum Boundary {
     QueueFullAtCapacity,
     QueueTimeoutAtTheLimit,
     CancelQueuedDecrements,
+    QueueBoundUnderConcurrency,
     HugeLimitDisables,
     HotRoutesFirst,
     InstallWiresTheStack,
@@ -26,6 +29,7 @@ enum Boundary {
 #[case::queue_full_at_capacity(Boundary::QueueFullAtCapacity)]
 #[case::queue_timeout_at_the_limit(Boundary::QueueTimeoutAtTheLimit)]
 #[case::cancel_queued_decrements(Boundary::CancelQueuedDecrements)]
+#[case::queue_bound_under_concurrency(Boundary::QueueBoundUnderConcurrency)]
 #[case::huge_limit_disables(Boundary::HugeLimitDisables)]
 #[case::hot_routes_first(Boundary::HotRoutesFirst)]
 #[case::install_wires_the_stack(Boundary::InstallWiresTheStack)]
@@ -35,6 +39,7 @@ async fn admission_control_boundaries(#[case] boundary: Boundary) {
         Boundary::QueueFullAtCapacity => queue_full_at_capacity().await,
         Boundary::QueueTimeoutAtTheLimit => queue_timeout_at_the_limit().await,
         Boundary::CancelQueuedDecrements => cancel_queued_decrements().await,
+        Boundary::QueueBoundUnderConcurrency => queue_bound_holds_under_concurrency().await,
         Boundary::HugeLimitDisables => huge_limit_disables().await,
         Boundary::HotRoutesFirst => hot_routes_first_audit(),
         Boundary::InstallWiresTheStack => install_wires_the_stack().await,
@@ -65,10 +70,10 @@ async fn queue_full_at_capacity() {
     assert_eq!(snapshot.queued, 1);
     assert_eq!(snapshot.rejected_queue_full, 1);
     assert_eq!(snapshot.rejected_queue_timeout, 0);
-    release(&harness.gates, "/a");
+    harness.gates.get("/a").unwrap().release.notify_one();
     await_started(&harness.gates, "/b").await;
-    assert_eq!(requests.status("/a").await, StatusCode::OK);
-    assert_eq!(requests.status("/b").await, StatusCode::OK);
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
+    assert_eq!(requests.complete("/b").await.0, StatusCode::OK);
     assert_eq!(harness.stack.admission.stats().queued, 0);
 }
 
@@ -87,8 +92,8 @@ async fn queue_timeout_at_the_limit() {
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(harness.stack.admission.stats().rejected_queue_timeout, 1);
     assert_eq!(harness.stack.admission.stats().queued, 0);
-    release(&harness.gates, "/a");
-    assert_eq!(requests.status("/a").await, StatusCode::OK);
+    harness.gates.get("/a").unwrap().release.notify_one();
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
 }
 
 async fn cancel_queued_decrements() {
@@ -109,10 +114,65 @@ async fn cancel_queued_decrements() {
         (snapshot.admitted, snapshot.queued, snapshot.rejected_total),
         (1, 0, 0)
     );
-    assert_eq!(in_flight(&harness.stack), 1);
-    release(&harness.gates, "/a");
-    assert_eq!(requests.status("/a").await, StatusCode::OK);
+    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 1);
+    harness.gates.get("/a").unwrap().release.notify_one();
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
     assert_eq!(harness.stack.admission.stats().admitted, 0);
+}
+
+async fn queue_bound_holds_under_concurrency() {
+    let gates = gates(&[
+        ("/a", Behavior::Hold),
+        ("/b", Behavior::Immediate),
+        ("/c", Behavior::Immediate),
+        ("/d", Behavior::Immediate),
+    ]);
+    let harness = harness(
+        "general_settings:\n  max_in_flight_requests_per_worker: 1\n  max_queued_requests_per_worker: 1\n  admission_queue_timeout_seconds: 2.0",
+        "",
+        gates,
+    );
+    let mut requests = Requests::default();
+    requests.start(&harness.router, "/a");
+    await_started(&harness.gates, "/a").await;
+    requests.start(&harness.router, "/b");
+    requests.start(&harness.router, "/c");
+    requests.start(&harness.router, "/d");
+    await_one_queued_and_two_rejected(&harness.stack).await;
+    harness.gates.get("/a").unwrap().release.notify_one();
+    let statuses = [
+        requests.complete("/b").await.0,
+        requests.complete("/c").await.0,
+        requests.complete("/d").await.0,
+    ];
+    let admitted = statuses
+        .iter()
+        .filter(|status| **status == StatusCode::OK)
+        .count();
+    let rejected = statuses
+        .iter()
+        .filter(|status| **status == StatusCode::SERVICE_UNAVAILABLE)
+        .count();
+    assert_eq!((admitted, rejected), (1, 2), "{statuses:?}");
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
+    let snapshot = harness.stack.admission.stats();
+    assert_eq!(snapshot.rejected_queue_full, 2);
+    assert_eq!(snapshot.rejected_queue_timeout, 0);
+    assert_eq!(snapshot.queued, 0);
+}
+
+async fn await_one_queued_and_two_rejected(stack: &AdmissionStack) {
+    timeout(WAIT, async {
+        loop {
+            let snapshot = stack.admission.stats();
+            if snapshot.queued == 1 && snapshot.rejected_queue_full == 2 {
+                break;
+            }
+            sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .unwrap();
 }
 
 async fn huge_limit_disables() {
@@ -127,11 +187,11 @@ async fn huge_limit_disables() {
     await_started(&harness.gates, "/a").await;
     requests.start(&harness.router, "/b");
     await_started(&harness.gates, "/b").await;
-    assert_eq!(in_flight(&harness.stack), 2);
-    release(&harness.gates, "/a");
-    release(&harness.gates, "/b");
-    assert_eq!(requests.status("/a").await, StatusCode::OK);
-    assert_eq!(requests.status("/b").await, StatusCode::OK);
+    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 2);
+    harness.gates.get("/a").unwrap().release.notify_one();
+    harness.gates.get("/b").unwrap().release.notify_one();
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
+    assert_eq!(requests.complete("/b").await.0, StatusCode::OK);
 }
 
 fn hot_routes_first_audit() {
@@ -180,6 +240,6 @@ async fn install_wires_the_stack() {
     requests.start(&router, "/b");
     let (status, _headers, _body) = requests.complete("/b").await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    release(&gates, "/a");
-    assert_eq!(requests.status("/a").await, StatusCode::OK);
+    gates.get("/a").unwrap().release.notify_one();
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
 }

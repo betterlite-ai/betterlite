@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::io::Error as IoError;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use axum::Router;
@@ -32,7 +31,7 @@ pub(super) enum Behavior {
 pub(super) struct Gate {
     behavior: Behavior,
     started: Arc<Notify>,
-    release: Arc<Notify>,
+    pub(super) release: Arc<Notify>,
 }
 
 pub(super) type Gates = BTreeMap<String, Gate>;
@@ -204,10 +203,6 @@ impl Requests {
         }
         panic!("the request for {path} never completed")
     }
-
-    pub(super) async fn status(&mut self, path: &str) -> StatusCode {
-        self.complete(path).await.0
-    }
 }
 
 pub(super) async fn await_started(gates: &Gates, path: &str) {
@@ -223,12 +218,4 @@ pub(super) async fn await_queued(stack: &AdmissionStack, queued: u64) {
     })
     .await
     .unwrap();
-}
-
-pub(super) fn release(gates: &Gates, path: &str) {
-    gates.get(path).unwrap().release.notify_one();
-}
-
-pub(super) fn in_flight(stack: &AdmissionStack) -> u64 {
-    stack.in_flight.current.load(Ordering::Acquire)
 }

@@ -1,6 +1,7 @@
 use std::fs::read_to_string;
 use std::str::from_utf8;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use axum::http::StatusCode;
@@ -10,9 +11,7 @@ use tempfile::NamedTempFile;
 use tokio::sync::Semaphore;
 use tracing::subscriber::set_default;
 
-use super::harness::{
-    Behavior, Harness, Requests, await_queued, await_started, gates, harness, in_flight, release,
-};
+use super::harness::{Behavior, Harness, Requests, await_queued, await_started, gates, harness};
 use crate::admission_control::AdmissionControl;
 
 const ENABLED: &str = "general_settings:\n  max_in_flight_requests_per_worker: 1\n  max_queued_requests_per_worker: 0";
@@ -67,7 +66,7 @@ async fn admission_control_behaviors(#[case] scenario: Scenario) {
 
 async fn start_and_wait(harness: &Harness, requests: &mut Requests, path: &str) -> StatusCode {
     requests.start(&harness.router, path);
-    requests.status(path).await
+    requests.complete(path).await.0
 }
 
 #[test]
@@ -130,12 +129,12 @@ async fn disabled_admission() {
         (snapshot.admitted, snapshot.queued, snapshot.rejected_total),
         (0, 0, 0)
     );
-    assert_eq!(in_flight(&harness.stack), 2);
-    release(&harness.gates, "/a");
-    release(&harness.gates, "/b");
-    assert_eq!(requests.status("/a").await, StatusCode::OK);
-    assert_eq!(requests.status("/b").await, StatusCode::OK);
-    assert_eq!(in_flight(&harness.stack), 0);
+    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 2);
+    harness.gates.get("/a").unwrap().release.notify_one();
+    harness.gates.get("/b").unwrap().release.notify_one();
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
+    assert_eq!(requests.complete("/b").await.0, StatusCode::OK);
+    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 0);
 }
 
 async fn immediate_admission() {
@@ -152,7 +151,7 @@ async fn immediate_admission() {
         (snapshot.admitted, snapshot.queued, snapshot.rejected_total),
         (0, 0, 0)
     );
-    assert_eq!(in_flight(&harness.stack), 0);
+    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 0);
 }
 
 async fn bounded_queue() {
@@ -168,11 +167,11 @@ async fn bounded_queue() {
         (snapshot.admitted, snapshot.queued, snapshot.rejected_total),
         (1, 1, 0)
     );
-    assert_eq!(in_flight(&harness.stack), 1);
-    release(&harness.gates, "/a");
+    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 1);
+    harness.gates.get("/a").unwrap().release.notify_one();
     await_started(&harness.gates, "/b").await;
-    assert_eq!(requests.status("/a").await, StatusCode::OK);
-    assert_eq!(requests.status("/b").await, StatusCode::OK);
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
+    assert_eq!(requests.complete("/b").await.0, StatusCode::OK);
     let final_snapshot = harness.stack.admission.stats();
     assert_eq!(
         (
@@ -182,7 +181,7 @@ async fn bounded_queue() {
         ),
         (0, 0, 0)
     );
-    assert_eq!(in_flight(&harness.stack), 0);
+    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 0);
 }
 
 async fn queue_full() {
@@ -207,9 +206,9 @@ async fn queue_full() {
     );
     assert_eq!(snapshot.rejected_queue_full, 1);
     assert_eq!(snapshot.rejected_queue_timeout, 0);
-    assert_eq!(in_flight(&harness.stack), 1);
-    release(&harness.gates, "/a");
-    assert_eq!(requests.status("/a").await, StatusCode::OK);
+    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 1);
+    harness.gates.get("/a").unwrap().release.notify_one();
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
     assert_eq!(harness.stack.admission.stats().admitted, 0);
 }
 
@@ -239,8 +238,8 @@ async fn queue_timeout() {
     );
     assert_eq!(snapshot.rejected_queue_timeout, 1);
     assert_eq!(snapshot.rejected_queue_full, 0);
-    release(&harness.gates, "/a");
-    assert_eq!(requests.status("/a").await, StatusCode::OK);
+    harness.gates.get("/a").unwrap().release.notify_one();
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
 }
 
 async fn health_exempt() {
@@ -273,8 +272,8 @@ async fn health_exempt() {
         StatusCode::SERVICE_UNAVAILABLE
     );
     assert_eq!(harness.stack.admission.stats().rejected_total, 2);
-    release(&harness.gates, "/a");
-    assert_eq!(requests.status("/a").await, StatusCode::OK);
+    harness.gates.get("/a").unwrap().release.notify_one();
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
 }
 
 async fn root_path_boundary() {
@@ -299,8 +298,13 @@ async fn root_path_boundary() {
         start_and_wait(&harness, &mut requests, "/proxy").await,
         StatusCode::SERVICE_UNAVAILABLE
     );
-    release(&harness.gates, "/proxy/chat");
-    assert_eq!(requests.status("/proxy/chat").await, StatusCode::OK);
+    harness
+        .gates
+        .get("/proxy/chat")
+        .unwrap()
+        .release
+        .notify_one();
+    assert_eq!(requests.complete("/proxy/chat").await.0, StatusCode::OK);
 }
 
 async fn stream_holds_slot() {
@@ -312,15 +316,15 @@ async fn stream_holds_slot() {
     requests.start(&harness.router, "/b");
     await_queued(&harness.stack, 1).await;
     assert_eq!(harness.stack.admission.stats().admitted, 1);
-    assert_eq!(in_flight(&harness.stack), 1);
-    release(&harness.gates, "/a");
+    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 1);
+    harness.gates.get("/a").unwrap().release.notify_one();
     await_started(&harness.gates, "/b").await;
     let (status, _, body) = requests.complete("/a").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body.as_ref(), b"firstlast");
-    assert_eq!(requests.status("/b").await, StatusCode::OK);
+    assert_eq!(requests.complete("/b").await.0, StatusCode::OK);
     assert_eq!(harness.stack.admission.stats().admitted, 0);
-    assert_eq!(in_flight(&harness.stack), 0);
+    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 0);
 }
 
 async fn disconnect_releases() {
@@ -332,10 +336,10 @@ async fn disconnect_releases() {
     requests.cancel("/a").await;
     assert_eq!(harness.stack.admission.stats().admitted, 0);
     assert_eq!(harness.stack.admission.stats().queued, 0);
-    assert_eq!(in_flight(&harness.stack), 0);
+    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 0);
     requests.start(&harness.router, "/b");
     await_started(&harness.gates, "/b").await;
-    assert_eq!(requests.status("/b").await, StatusCode::OK);
+    assert_eq!(requests.complete("/b").await.0, StatusCode::OK);
     assert_eq!(harness.stack.admission.stats().rejected_total, 0);
 }
 
@@ -364,12 +368,12 @@ async fn invalid_settings() {
     await_started(&harness.gates, "/a").await;
     requests.start(&harness.router, "/b");
     await_started(&harness.gates, "/b").await;
-    assert_eq!(in_flight(&harness.stack), 2);
+    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 2);
     assert_eq!(harness.stack.admission.stats().rejected_total, 0);
-    release(&harness.gates, "/a");
-    release(&harness.gates, "/b");
-    assert_eq!(requests.status("/a").await, StatusCode::OK);
-    assert_eq!(requests.status("/b").await, StatusCode::OK);
+    harness.gates.get("/a").unwrap().release.notify_one();
+    harness.gates.get("/b").unwrap().release.notify_one();
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
+    assert_eq!(requests.complete("/b").await.0, StatusCode::OK);
 }
 
 async fn omitted_queue() {
@@ -395,12 +399,12 @@ async fn omitted_queue() {
         (snapshot.admitted, snapshot.queued, snapshot.rejected_total),
         (2, 1, 0)
     );
-    release(&harness.gates, "/a");
+    harness.gates.get("/a").unwrap().release.notify_one();
     await_started(&harness.gates, "/c").await;
-    assert_eq!(requests.status("/a").await, StatusCode::OK);
-    assert_eq!(requests.status("/c").await, StatusCode::OK);
-    release(&harness.gates, "/b");
-    assert_eq!(requests.status("/b").await, StatusCode::OK);
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
+    assert_eq!(requests.complete("/c").await.0, StatusCode::OK);
+    harness.gates.get("/b").unwrap().release.notify_one();
+    assert_eq!(requests.complete("/b").await.0, StatusCode::OK);
     assert_eq!(harness.stack.admission.stats().queued, 0);
 }
 
@@ -412,10 +416,10 @@ async fn default_timeout() {
     await_started(&harness.gates, "/a").await;
     requests.start(&harness.router, "/b");
     await_queued(&harness.stack, 1).await;
-    release(&harness.gates, "/a");
+    harness.gates.get("/a").unwrap().release.notify_one();
     await_started(&harness.gates, "/b").await;
-    assert_eq!(requests.status("/a").await, StatusCode::OK);
-    assert_eq!(requests.status("/b").await, StatusCode::OK);
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
+    assert_eq!(requests.complete("/b").await.0, StatusCode::OK);
     assert_eq!(harness.stack.admission.stats().rejected_total, 0);
-    assert_eq!(in_flight(&harness.stack), 0);
+    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 0);
 }
