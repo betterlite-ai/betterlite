@@ -1,0 +1,69 @@
+id: B8607
+title: Mount the Bedrock, Comprehend Medical and speech pass-through routes
+description: >-
+  B8640 builds the shared pass-through state and calls `aws_speech::mount` with a stub body. This task fills crates/betterlite-server/src/app/pass_through/routes/aws_speech.rs (and its folder for tests) so the AWS signed routes of B3621 and the speech routes of B3625 answer through the booted proxy. It takes over their HTTP oracle cases, which could not pass at their own gates.
+  Everything comes from B8640's `PassThroughState`. Read B3621's and B3625's merged deps and fill each field from it: the general_settings map, the environment and secret readers (B198 and B8500), B594's AWS credential resolver and B595's SigV4 signer, the handler Arc for B3615's create_pass_through_route, and for /bedrock the router and the passthrough processor that B3620 calls for every non agent-runtime endpoint. When a field has no source there, stop and report.
+
+  `mount(router, ps)` merges, inside the auth layers:
+  - B3621's router: `/bedrock/{*endpoint}` for GET, POST, PUT, DELETE and PATCH, and `/comprehendmedical/{operation}` and `/comprehendmedical` for POST only;
+  - B3625's router: `/azure_speech/{*endpoint}` and `/azure_speech/` for the five methods, and `/transcribe/{operation}` and `/transcribe` for POST only.
+  A bare `/azure_speech` without the slash is not registered (B3625's deviation), so it reaches the configured endpoint fallback and answers 404 unless a configured endpoint owns it.
+
+  Oracle cases. Take over B3621's 9 cases and B3625's 13 cases at their paths; do not move or rename the files. The Transcribe cases stop at a 400 because the upstream host is fixed; the Azure Speech forward cases use the mock upstream as B3625 describes.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/pass_through/routes/aws_speech.rs
+    - crates/betterlite-server/src/app/pass_through/routes/aws_speech/**
+    - tools/oracle/cases/server/bedrock-comprehend-routes/**
+    - tools/oracle/cases/server/passthrough-speech-routes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1254-L1480
+    why: The /bedrock and /comprehendmedical registrations and their methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1525-L1771
+    why: The /azure_speech and /transcribe registrations and their methods.
+dod:
+  - text: Every path of B3621 and B3625 reaches its handler through the merged app with exactly its listed methods, and other methods answer 405.
+    proof: [registration-tests, oracle]
+  - text: The Bedrock agent-runtime gate, the Comprehend Medical checks, the Azure Speech guard and forward and the Transcribe checks answer through the booted proxy as LiteLLM does.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: registration-tests
+      why: an AWS or speech path is missing, takes the wrong methods, or collides with another family
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::routes::aws_speech::tests::registration(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/server/bedrock-comprehend-routes/agent-runtime-disabled-bool.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/agent-runtime-disabled-string.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-unsupported-operation.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-no-region.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-body-not-object.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-stream-member.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-sdk-missing-target.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-sdk-wrong-prefix.yaml
+  - tools/oracle/cases/server/bedrock-comprehend-routes/comprehend-sdk-empty-operation.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/azure-unsupported-path.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/azure-no-region.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/azure-no-credentials.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/azure-short-audio-forward.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/azure-batch-admin-forward.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-unsupported-operation.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-no-region.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-body-not-object.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-stream-member.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-unpriced-operation.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-sdk-missing-target.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-sdk-wrong-prefix.yaml
+  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-sdk-empty-operation.yaml
+deviations: []
+out_of_scope:
+  - "The route logic, signing and checks: B3620, B3621 and B3625. The shared state: B8640."
+pitfalls:
+  - "`/comprehendmedical` and `/transcribe` take POST only; a GET there is axum's 405, not the fallback's 404."
+  - "`/azure_speech/` with the trailing slash is its own route; register it, or an empty endpoint request falls to the fallback."
+  - "The signed body travels in request state, so the extension the route sets must survive every layer this mount adds; add no layer that rebuilds the request."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

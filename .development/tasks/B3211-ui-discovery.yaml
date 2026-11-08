@@ -22,11 +22,11 @@ description: >-
   1. `UiDiscoveryResponse`, a serde `Serialize` struct with the nine fields above in that order. `proxy_base_url` serializes as null for None. `workers` serializes each entry as `{worker_id, name, url}`.
   2. `UiDiscoveryInputs { settings: ui_discovery::Settings, server_root_path: String, proxy_base_url: Option<String>, sso_configured: bool, hide_default_credentials_hint: bool, workers: Vec<WorkerRegistryEntry> }`, a plain struct the server wiring fills once at startup from the sections and from B881 and B799.
   3. `UiDiscovery::new(inputs: UiDiscoveryInputs) -> UiDiscovery` and `UiDiscovery::response(&self) -> UiDiscoveryResponse`, which applies rules 4, 5, 6 and 7 above.
-  4. `routes(discovery: Arc<UiDiscovery>) -> axum::Router`, with `get` on both paths returning 200 and the JSON with content-type application/json. The router has no auth layer. B078 merges it into the app once; this task does not touch routes.rs, server.rs or state.rs.
+  4. `routes(discovery: Arc<UiDiscovery>) -> axum::Router`, with `get` on both paths returning 200 and the JSON with content-type application/json. The router has no auth layer. B8670 merges it into the app once, outside the auth layers; this task does not touch routes.rs, server.rs or state.rs.
 
   The functions cannot fail, so the module has no error enum. Tests under `ui_discovery::tests` cover: defaults (all false, "" root, null base, empty workers), proxy_base_url "" kept, auto redirect needing sso_configured, each of the two sources of auto redirect, admin_ui_disabled, mcp_stdio_enabled, a non-empty registry giving is_control_plane true with the three worker fields, an empty registry giving false and an empty list, field order in the JSON text, and both paths returning identical bodies with no Authorization header. Config tests under `sections::ui_discovery::` cover each env variable set to true, false and unset, the general_settings key as true, false and absent, either-source-true for auto redirect, an invalid bool failing with the variable name, and `is_mcp_stdio_flag_key` for "LITELLM_ENABLE_MCP_STDIO", "litellm_enable_mcp_stdio" and an unrelated name.
 
-  The oracle cases are helper cases (no route reaches this code until B078 mounts it, and B078 adds the HTTP cases). The Python adapter sets the env, builds the document from LiteLLM's own `has_user_setup_sso`, `should_hide_default_credentials_hint`, `is_mcp_stdio_enabled`, `get_proxy_base_url`, `get_server_root_path` and `UiDiscoveryEndpoints`, and returns the model's JSON.
+  The oracle cases are helper cases (no route reaches this code until B8670 mounts it, and B8670 adds the HTTP cases). The Python adapter sets the env, builds the document from LiteLLM's own `has_user_setup_sso`, `should_hide_default_credentials_hint`, `is_mcp_stdio_enabled`, `get_proxy_base_url`, `get_server_root_path` and `UiDiscoveryEndpoints`, and returns the model's JSON.
 scope:
   paths:
     - crates/betterlite-server/src/ui_discovery.rs
@@ -104,7 +104,7 @@ out_of_scope:
   - "WorkerRegistryEntry (control_plane_endpoints.py): B4470."
   - "Every other function in proxy/utils.py: B124 and the tasks split from it."
   - "The worker_registry config loader and its premium gate (proxy_server.py L7092-L7098): B8590, which refuses the key without a license as open-source LiteLLM does, so workers stays empty."
-  - "Mounting the router into the app and the HTTP oracle cases for the two paths: B078."
+  - "Mounting the router into the app and the HTTP oracle cases for the two paths: B8670."
   - "discovery_endpoints/README.md is documentation only and has no code."
 
 pitfalls:

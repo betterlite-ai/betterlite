@@ -26,8 +26,8 @@ description: >-
   LiteLLM_Config row, merged and upserted, B8397's invalidate_config_param runs, and an audit task is spawned:
   general_settings (setting alert_to_webhook_url adds "slack" to alerting), environment_variables (values encrypted with
   B8382's encrypt_env_for_db), litellm_settings (success_callback normalized, then the union of stored and incoming
-  names), router_settings (typed fields first, then raw keys not in the typed set and not null). It ends with B8381's
-  add_deployment and answers {"message": "Config updated successfully"}. Every failure becomes a ProxyException of type
+  names), router_settings (typed fields first, then raw keys not in the typed set and not null). It ends with add_deployment
+  through B8611's DeploymentSyncPort, an `Arc<dyn DeploymentSyncPort>` that `routes` takes as an argument, and answers {"message": "Config updated successfully"}. Every failure becomes a ProxyException of type
   auth_error: an HTTP error keeps its detail and status, anything else is "Authentication Error, <text>" with 400.
 scope:
   paths:
@@ -81,8 +81,8 @@ oracle_cases:
   - tools/oracle/cases/helpers/config-redaction/environment-variables-all-redacted.yaml
 deviations: []
 out_of_scope:
-  - "Mounting the route and its HTTP oracle cases: the wave 17 config admin wiring part."
-  - "reject_config_owned_writes: B8380. invalidate_config_param: B8397. Env encryption: B8382. add_deployment: B8381. Audit sink: B2330. routing groups: B323."
+  - "Mounting the route and its HTTP oracle cases: B8675."
+  - "reject_config_owned_writes: B8380. invalidate_config_param: B8397. Env encryption: B8382. The add_deployment port: B8611 (B8613 implements it over B8381's DeploymentSync). Audit sink: B2330. routing groups: B323."
   - "The callback role gates used by /get/config/callbacks: B8596. The /config/field and /config/list routes: B8595."
 pitfalls:
   - The audit write is spawned, so a failing audit never fails the update.

@@ -153,8 +153,8 @@ out_of_scope:
   - Shadow evaluation execution (B4084), spending logic (B4081/B4085), verdict parsing and judging (B4080).
   - Snapshot capture and request normalization (B4082).
   - Virtual key and team budget checks; injection of those checks into the spend gate is B4085.
-  - "get_current_spend production implementation: owned by B2321 (betterlite-auth::current_spend); this task receives it as an injected callable."
-  - "increment_spend_counter production implementation: owned by B3015 (betterlite-auth::spend_writes); this task receives it as an injected callable."
+  - "get_current_spend production implementation: owned by B2321 (betterlite-auth::current_spend); this task receives it as an injected callable. B8660 builds the production adapter over the shared spend counter cache."
+  - "increment_spend_counter production implementation: owned by B3015 (betterlite-auth::spend_writes); this task receives it as an injected callable. B8660 builds the production adapter over the shared spend counter cache."
 pitfalls:
   - Reverse jobs validate to exactly one router via the arm_router_names property, which merges router_name and router_names fields.
   - The cache is typed as InMemoryCache with hardcoded capacity four and TTL ten seconds; do not parameterize these.

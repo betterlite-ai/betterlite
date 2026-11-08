@@ -1,0 +1,59 @@
+id: B8632
+title: SSE data generator ports and builder
+description: >-
+  B8604 builds `SseDataGenerator<Key>` (crates/betterlite-server/src/sse_data_generator.rs), LiteLLM's async_data_generator, against ports it declares: `StreamHooks<Key>`, `ErrorStateSource` and `StreamErrorState`, and B8603's `KeepaliveRouter`, plus three constructor values, the global keepalive setting, `expose_fallback_errors` and the `RouterCheck`. This task implements those ports over the real code and adds one builder that the streaming routes call. Code goes in crates/betterlite-server, module `app::inference::stream_generator` (crates/betterlite-server/src/app/inference/stream_generator.rs and stream_generator/: hooks.rs, error_state.rs, keepalive.rs, tests.rs). Add `betterlite-foundry = { path = "../betterlite-foundry" }` to crates/betterlite-server/Cargo.toml for B562. Every name stays at 30 characters or fewer.
+
+
+  `ProxyStreamHooks` implements `StreamHooks<Key>` over `state.shared.proxy_logging` (B8399's ProxyLogging, added to Shared by the foundation part B8612). `Key` is the authenticated caller type that B8394's chunk hook takes as its user_api_key_dict. needs_iterator_wrap and needs_per_chunk_hook return B8390's `needs_iterator_wrap` and `needs_per_chunk_streaming_hook` predicates (crates/betterlite-server/src/guardrails/callback_caps/caps.rs) for the callbacks ProxyLogging holds. wrap_iterator calls B6370's `ProxyStreamWrapper::wrap` (guardrails/proxy_stream_wrapper/chain.rs). That wrapper streams `serde_json::Value` items, so convert on the way in and out: a `StreamItem::Chunk` goes in as its body JSON with `_hidden_params` set from `hidden`, and comes back as a Chunk of the same ChunkKind with `_hidden_params` moved back into `hidden`; Bytes and Text items pass around the wrapper unchanged in their place in the stream; a wrapper error becomes a StreamFailure with kind Other and the error's message. chunk_hook calls B8394's `post_call_streaming_chunk(data, response, user_api_key_dict, str_so_far)` (guardrails/post_call_hooks/chunk.rs) with the same conversion. failure_hook calls B8395's `post_call_failure_hook` (failure_hook/hook.rs) on a clone of the request data, since that hook removes litellm_logging_obj and standard_logging_object from the map it gets; build its error from the StreamFailure (message, type, param and status code) and map its error back to a StreamFailure. fire_deferred_stream_logging calls B6370's `serve_log::fire(request_data)`.
+
+
+  `ResponsesErrorStates` implements `ErrorStateSource`: new_state returns a fresh B937 `ResponsesStreamErrorState` (betterlite-core api::responses_stream_errors) built with the system clock and UUID source B937 takes, wrapped in an adapter that implements `StreamErrorState` by passing the item's chunk JSON to observe_chunk and the failure's fields to format_failure. `RouterKeepalive` implements B8603's `KeepaliveRouter` over the current router of `state.shared.router` (an `Arc<RouterHandle>`), read on every call: deployment_params is B844's deployment lookup by id (Router.get_deployment), giving the deployment's litellm_params as a JSON object and None on a miss; a row that B844 reports as invalid is logged at warning and answers None, as a removed deployment does. group_deployments is B844's model list for the name (Router.get_model_list), each deployment as JSON.
+
+
+  Values. The router check is a plain function `azure_router_check(model: &str) -> bool` in this module that calls B562's is_model_router_call in crates/betterlite-foundry/src/model_router.rs with the model name and no hidden params, and it is passed as B8602's `RouterCheck`. The global keepalive setting is read from B089's `assistant_keepalive` section (config.sections.assistant_keepalive, LiteLLM's litellm_settings.sse_keepalive_ping_interval_seconds, default none) and turned into B7324's `PingSetting`: a number becomes `Seconds`, a string becomes `Text`, absent stays None. `expose_fallback_errors` is `config.sections.fallback_errors.expose_to_caller` from B8602.
+
+
+  Builder. `stream_generator(state: &ServerState, cleanup: Arc<dyn StreamCleanup<Key>>) -> SseDataGenerator<Key>` builds the generator with the three port implementations, the router (None only when the startup router holds no deployments), the three values and the cleanup the caller passes, since the cleanup holds per-request logging (B8633 builds it). Tests in stream_generator/tests.rs drive the generator from the builder with scripted item streams and check that a per-chunk hook from a configured callback edits the chunk, that the iterator wrap runs when a callback asks for it, that a failure reaches the failure hook with an unchanged request map on the caller's side, that a Responses error state formats a failure, that RouterKeepalive answers None for an unknown id and the group's litellm_params for a model name, and that azure_router_check answers true for "model-router" and false for "gpt-4o". The chat route proves the generator over HTTP in B8633.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/app/inference/stream_generator.rs
+  - crates/betterlite-server/src/app/inference/stream_generator/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9582-L9600
+  why: _apply_streaming_chunk_hooks, the call the chunk_hook port stands for.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9830-L9901
+  why: async_data_generator setup, which reads the hook flags, the router, the keepalive setting and the fallback errors flag this task supplies.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9690-L9732
+  why: _keepalive_from_deployment_config, the two router calls RouterKeepalive answers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1291-L1310
+  why: _is_azure_model_router_request, the call azure_router_check replaces.
+dod:
+- text: ProxyStreamHooks forwards the two flags, the iterator wrap, the chunk hook, the failure hook and the deferred logging fire to B8390, B6370, B8394 and B8395, converting chunks both ways without losing hidden params.
+  proof: [generator-port-tests]
+- text: ResponsesErrorStates hands out a fresh B937 state per stream, and RouterKeepalive answers from the startup router with None for an unknown or invalid id.
+  proof: [generator-port-tests]
+- text: stream_generator builds a working generator with azure_router_check, the B089 keepalive setting and the B8602 expose flag.
+  proof: [generator-port-tests]
+checks:
+  optional: []
+  commands:
+  - id: generator-port-tests
+    why: a hook adapter, the error state source, the keepalive router, the router check or the builder is missing or wrong
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::stream_generator::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- "The generator, the chunk helpers and the keepalive resolver: B8604, B8602 and B8603. The hooks behind the ports: B8390, B6370, B8394, B8395 and B937."
+- "The StreamCleanup implementation, the stream snapshot and the chat route that uses the builder: B8633."
+pitfalls:
+- 'B8390 names the per-chunk predicate needs_per_chunk_streaming_hook while the port method is needs_per_chunk_hook; map the names, do not add a second predicate.'
+- 'B8395''s failure hook pops litellm_logging_obj and standard_logging_object from its map, so pass a clone or the generator''s later cleanup sees a stripped request.'
+- 'B6370''s wrapper only sees JSON chunks; bytes and text items must keep their position in the stream, not be dropped or moved to the end.'
+- 'RouterCheck is a plain fn pointer, so azure_router_check cannot capture config; if B562''s function needs B2230 settings, read them inside the function from its own crate, not from a closure.'
+- 'A deployment id the router no longer has answers None; never fall back to the model group, or a stream borrows a sibling deployment''s keepalive policy.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

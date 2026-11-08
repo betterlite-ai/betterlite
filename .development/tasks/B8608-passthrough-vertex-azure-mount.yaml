@@ -1,0 +1,76 @@
+id: B8608
+title: Mount the Vertex AI and Azure pass-through routes
+description: >-
+  B8640 builds the shared pass-through state and calls `vertex_azure::mount` with a stub body. This task fills crates/betterlite-server/src/app/pass_through/routes/vertex_azure.rs (and its folder for tests) so the Vertex routes of B3623, the Vertex Live socket of B3629 and the Azure and Milvus routes of B3624 answer through the booted proxy. It takes over the HTTP oracle cases of B3623 and B3624, which could not pass at their own gates.
+  Everything comes from B8640's `PassThroughState`; never read Shared here. When a deps field has no source there, stop and report.
+
+  Deps built here:
+  - B3623's `VertexRouteDeps`: B8641's KeyAuthAdapter (VertexKeyAuth), VectorAccessAdapter (VertexStoreAccess), CredentialAdapter (VertexCredentialLookup), PassthroughLookup (VertexDeploymentLookup) and RelayAdapter (VertexRelay).
+  - B3629's `VertexLiveDeps`: the one B3602 credential router and the one B1302 token state from ps (the same values CredentialAdapter reads), the B1304 region helpers, ps's WebSocketRelay as `WebSocketRelayPort`, B8641's LiveModelAdapter and LiveFailureAdapter, and ps's `AxumSocketServe` as the socket port its registration calls.
+  - B3624's `AzureMilvusDeps`: B3613's HandlerDeps from ps, the router hop for the Azure router-model relay, and B8641's VectorRegistryAdapter, VectorAccessAdapter and VectorProviderAdapter.
+
+  `mount(router, ps)` merges, inside the auth layers, B3623's `vertex_routes_router` (`/vertex_ai/discovery/{*endpoint}`, `/vertex_ai/{*endpoint}` and `/vertex-ai/{*endpoint}`, five methods each), B3629's registration of `/vertex_ai/live` (a WebSocket upgrade goes to the Live route, every other request to B3623's vertex_aiplatform_route), and B3624's `azure_milvus_router` (`/azure/{*endpoint}`, `/azure_ai/{*endpoint}` and `/milvus/{*endpoint}`, five methods each). axum lets the static `/vertex_ai/live` and `/vertex_ai/discovery/...` win over `/vertex_ai/{*endpoint}`, as FastAPI's order does in LiteLLM.
+
+  Oracle cases. Take over B3623's 7 cases and B3624's 11 cases at their paths; do not move or rename the files. The Vertex Live socket has no HTTP case; B3629's helper cases stay with B3629.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/pass_through/routes/vertex_azure.rs
+    - crates/betterlite-server/src/app/pass_through/routes/vertex_azure/**
+    - tools/oracle/cases/server/vertex-passthrough-routes/**
+    - tools/oracle/cases/server/passthrough-azure-milvus/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2840-L2922
+    why: The Vertex discovery and aiplatform registrations, with the hyphen alias.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12813-L12842
+    why: The /vertex_ai/live WebSocket registration on the app, ahead of the router's /vertex_ai catch-all.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2163-L2340
+    why: The /azure and /azure_ai registrations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L675-L806
+    why: The /milvus registration.
+dod:
+  - text: Every Vertex, Azure and Milvus path reaches its handler through the merged app, /vertex_ai/live sends an upgrade to the Live route and a POST or plain GET to vertex_aiplatform_route, and the merge does not panic.
+    proof: [registration-tests, oracle]
+  - text: The Live route and the HTTP Vertex routes share one credential router and one token state.
+    proof: [deps-tests]
+  - text: The Vertex and Azure and Milvus routes answer through the booted proxy as LiteLLM does.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: registration-tests
+      why: a Vertex, Azure or Milvus path is missing, the Live path swallows HTTP requests, or two routers collide
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::routes::vertex_azure::tests::registration(::|$)/)'
+    - id: deps-tests
+      why: the Live route gets its own credential router or token state, so defaults or cached tokens drift from the HTTP routes
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::routes::vertex_azure::tests::deps(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/server/vertex-passthrough-routes/invalid-key-aiplatform.yaml
+  - tools/oracle/cases/server/vertex-passthrough-routes/invalid-key-hyphen-alias.yaml
+  - tools/oracle/cases/server/vertex-passthrough-routes/invalid-key-discovery.yaml
+  - tools/oracle/cases/server/vertex-passthrough-routes/no-location-400.yaml
+  - tools/oracle/cases/server/vertex-passthrough-routes/bad-location-500.yaml
+  - tools/oracle/cases/server/vertex-passthrough-routes/no-google-credential-401.yaml
+  - tools/oracle/cases/server/vertex-passthrough-routes/discovery-no-credential-401.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-env-forwards.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-ai-prefix-uses-azure.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-no-api-base.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-no-api-key.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-router-model-in-path.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-foreign-deployment-400.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-body-model-group.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/azure-body-form-not-relayed.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/milvus-no-collection-400.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/milvus-collection-not-string.yaml
+  - tools/oracle/cases/server/passthrough-azure-milvus/milvus-no-registry-500.yaml
+deviations: []
+out_of_scope:
+  - "The route logic: B3622, B3623, B3624 and B3629. The adapters: B8641. The shared state and the socket port: B8640."
+pitfalls:
+  - "The hyphen alias `/vertex-ai/{*endpoint}` is a separate registration; leaving it out answers the fallback's 404."
+  - "B3629's Live route and B3623's HTTP route must read the same token state, since LiteLLM caches Vertex tokens at module level for the Live path."
+  - "PassthroughLookup is optional in VertexRouteDeps; pass it even when no router is configured, since it answers no deployment then."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

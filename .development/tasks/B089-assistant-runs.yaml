@@ -13,7 +13,7 @@ description: >-
   data-only SSE frames. Compose B004 create_response, B7324 open_sse_before_first_byte and B005 keepalive interval
   resolution; do not implement another HTTP response relay or SSE decoder.
 
-  Load litellm_settings.sse_keepalive_ping_interval_seconds through B002, default null. B005's existing
+  Load litellm_settings.sse_keepalive_ping_interval_seconds through B002, default null, and keep the raw number or string in the section (none when absent or null) so B8603's resolver applies LiteLLM's global rules; coerce it only where the assistant relay reads it. B005's existing
   per-deployment litellm_params.keepalive_seconds takes precedence only when candidates agree, including
   zero as a hard disable; a client keepalive_seconds never enables it. Config tests own the newly supported
   global key, while B005 retains interval coercion and B004 the generic relay. There is no environment alias.
@@ -109,8 +109,8 @@ dod:
   proof: [run-tests, settings-tests, oracle]
 - text: >-
     config::api::assistant_keepalive::tests::loads_keepalive_interval loads the production Config with the
-    global key absent/null,0,-1,"bad","nan","inf",{},[] and expects disabled, matching B005 coercion;
-    1,"1.5",true become 1,1.5,1 seconds and false disables. The key is not reported as unsupported. These
+    global key absent/null,0,-1,"bad","nan","inf",1,"1.5" and expects the raw number or string back (none for absent and null);
+    the relay's B005 coercion still turns them into disabled or seconds when it reads them. The key is not reported as unsupported. These
     settings and stream-body edge cases enter the existing config_yaml and assistant_body corpora.
   proof: [settings-tests, config-corpus, body-corpus]
 - text: >-

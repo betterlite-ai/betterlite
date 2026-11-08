@@ -44,7 +44,7 @@ description: >-
   page is `<same prefix>/docs/oauth2-redirect`. `swagger_base` is `<server_root_path>/swagger` where the root path gets a
   trailing `/` first when it lacks one (`mount_swagger_ui`: an empty root path gives `/swagger`, `/api` gives `/api/swagger`).
   The static mount serves GET and HEAD at `/swagger/<name>` from `swagger_asset`, and a miss is a 404 in Starlette's plain-text shape (see pitfalls). Last, proxy_server.py L2563-L2569: when `docs_url` is not `/` and `root_redirect_url` is Some, `GET /` redirects to it with
-  status 307. None of these routes asks for authentication. This task registers all of them, so it owns their HTTP
+  status 307. None of these routes asks for authentication. This task builds them in docs_router; B8681 mounts it and owns their HTTP
   oracle cases. The server's Cargo.toml needs `betterlite-openapi` as a path dependency; the architect adds that line in
   the skeleton, so it is not in the scope below.
 scope:
@@ -56,7 +56,6 @@ scope:
     - crates/betterlite-openapi/assets/swagger/**
     - crates/betterlite-server/src/docs_routes.rs
     - crates/betterlite-server/src/docs_routes/**
-    - tools/oracle/cases/docs/**
     - tools/oracle/cases/helpers/docs-pages/**
     - tools/oracle/helpers/b7740.py
     - tools/oracle/helpers/b7740/**
@@ -101,15 +100,17 @@ dod:
       the four files (including "../x", "a/b", "" and "SWAGGER-UI.CSS").
     proof: [docs-pages-tests, oracle]
   - text: >-
-      The booted gateway answers GET / with the swagger page (200, text/html; charset=utf-8), GET /redoc with the ReDoc
+      docs_router answers GET / with the swagger page (200, text/html; charset=utf-8), GET /redoc with the ReDoc
       page, GET /docs/oauth2-redirect with the redirect page, and GET /swagger/swagger-ui.css with the CSS bytes and
       content type text/css; a missing /swagger file is a 404, a POST to a docs page is 405.
-    proof: [docs-routes-tests, oracle]
+    proof: [docs-routes-tests]
   - text: >-
       With NO_DOCS=true the swagger and OAuth2 redirect routes are absent (404), with NO_REDOC=true the ReDoc route is
       absent, with NO_OPENAPI=true none of the three pages exist, and with DOCS_URL=/docs plus ROOT_REDIRECT_URL set,
       GET / answers 307 with that location while /docs serves the page.
-    proof: [docs-routes-tests, oracle]
+    proof: [docs-routes-tests]
+  - text: docs_router is tested with tower's oneshot over its own Router; B8681 mounts it through app::edge::mount_public and proves the HTTP answers with the oracle cases moved there.
+    proof: [docs-routes-tests]
 checks:
   optional: []
   commands:
@@ -132,14 +133,6 @@ checks:
       why: route registration rules (which routes exist under which settings) fail or are missing
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^docs_routes::/)'
 oracle_cases:
-  - tools/oracle/cases/docs/swagger-at-root.yaml
-  - tools/oracle/cases/docs/redoc-page.yaml
-  - tools/oracle/cases/docs/oauth2-redirect-page.yaml
-  - tools/oracle/cases/docs/swagger-asset-css.yaml
-  - tools/oracle/cases/docs/swagger-asset-missing.yaml
-  - tools/oracle/cases/docs/swagger-post-method.yaml
-  - tools/oracle/cases/docs/no-docs-flag.yaml
-  - tools/oracle/cases/docs/docs-url-with-root-redirect.yaml
   - tools/oracle/cases/helpers/docs-pages/swagger-page-root-path.yaml
   - tools/oracle/cases/helpers/docs-pages/docs-url-resolution.yaml
 deviations:
