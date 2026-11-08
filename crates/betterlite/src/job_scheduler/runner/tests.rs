@@ -15,6 +15,8 @@ use crate::job_scheduler::triggers::IntervalTrigger;
 use crate::job_scheduler::{BoxFuture, JobFn, JobSpec, ProxyScheduler, SchedulerState};
 use crate::scheduled_job_stagger::{JobScheduler as _, JobSubmission, NextRunTime, Trigger};
 
+use super::JobRecord;
+
 type SeenRuns = Vec<(String, Vec<DateTime<Utc>>)>;
 
 fn counting_run(counter: &Arc<AtomicUsize>) -> JobFn {
@@ -305,4 +307,68 @@ async fn a_job_whose_trigger_never_fires_again_is_removed() {
     assert_eq!(runs.load(Ordering::SeqCst), 1);
     assert!(scheduler.get_job("once_job").is_none());
     scheduler.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn adding_a_job_wakes_a_sleeping_scheduler() {
+    let mut scheduler = scheduler_with(defaults());
+    let runs = Arc::new(AtomicUsize::new(0));
+    scheduler
+        .add_job(interval_spec("far_job", 3600, counting_run(&runs)))
+        .unwrap();
+    scheduler.start();
+    advance(Duration::from_secs(1)).await;
+    settle().await;
+    scheduler
+        .add_job(interval_spec("new_job", 10, counting_run(&runs)))
+        .unwrap();
+    advance(Duration::from_secs(10)).await;
+    settle().await;
+    assert_eq!(runs.load(Ordering::SeqCst), 1);
+    scheduler.shutdown();
+}
+
+#[tokio::test(start_paused = true)]
+async fn modifying_a_job_wakes_a_sleeping_scheduler() {
+    let mut scheduler = scheduler_with(defaults());
+    let runs = Arc::new(AtomicUsize::new(0));
+    scheduler
+        .add_job(interval_spec("moved_job", 3600, counting_run(&runs)))
+        .unwrap();
+    scheduler.start();
+    advance(Duration::from_secs(1)).await;
+    settle().await;
+    scheduler.modify_job("moved_job", Box::new(IntervalTrigger { seconds: 10 }));
+    advance(Duration::from_secs(10)).await;
+    settle().await;
+    assert_eq!(runs.load(Ordering::SeqCst), 1);
+    scheduler.shutdown();
+}
+
+#[test]
+fn next_wait_sleeps_until_the_earliest_fire_and_short_circuits_a_due_one() {
+    let now = origin();
+    let scheduler = scheduler_with(defaults());
+    let mut inner = scheduler
+        .inner
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    inner.jobs.insert(
+        "later_job".to_owned(),
+        JobRecord {
+            trigger: Arc::new(IntervalTrigger { seconds: 60 }),
+            run: counting_run(&Arc::new(AtomicUsize::new(0))),
+            origin: NextRunTime::Unset,
+            next_fire: Some(now + TimeDelta::hours(2)),
+            period_seconds: Some(60),
+            misfire_grace_seconds: None,
+            max_instances: None,
+        },
+    );
+    let clock = TokioClock::new(now);
+    assert_eq!(inner.next_wait(&clock), Some(Duration::from_secs(3600)));
+    if let Some(job) = inner.jobs.get_mut("later_job") {
+        job.next_fire = Some(now - TimeDelta::seconds(5));
+    }
+    assert_eq!(inner.next_wait(&clock), Some(Duration::from_millis(1)));
 }

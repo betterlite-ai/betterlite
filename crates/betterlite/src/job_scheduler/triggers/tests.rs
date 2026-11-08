@@ -16,6 +16,8 @@ use crate::job_scheduler::SchedulerError;
 
 const LOCAL_ZONE_CASE: &str =
     "job_scheduler::triggers::tests::cron_local_zone_fires_on_apscheduler_instants";
+const LOCAL_ZONE_EDGE_CASE: &str =
+    "job_scheduler::triggers::tests::cron_local_zone_fires_at_the_repeated_hour_edges";
 const LOCAL_ZONE_MARKER: &str = "b8370-local-zone-ok";
 
 fn instant(text: &str) -> DateTime<Utc> {
@@ -190,6 +192,8 @@ fn cron_requires_five_fields(#[case] text: &str, #[case] message: &str) {
 #[case::question_mark_minute("? * * * *", "Unrecognized expression \"?\" for field \"minute\"")]
 #[case::unknown_month("0 0 1 janx *", "Invalid month name \"janx\"")]
 #[case::unknown_weekday("0 3 * * monx", "Invalid weekday name \"monx\"")]
+#[case::last_in_weekday("0 0 * * last", "Invalid weekday name \"last\"")]
+#[case::signed_minute("+5 * * * *", "Unrecognized expression \"+5\" for field \"minute\"")]
 fn cron_rejects_what_apscheduler_rejects(#[case] cron: &str, #[case] message: &str) {
     let error = CronTrigger::from_crontab(cron, CronZone::Utc).unwrap_err();
     assert_eq!(error.to_string(), message);
@@ -257,6 +261,35 @@ fn cron_weekday_ranges_with_equal_ends_fire_once_a_week(#[case] cron: &str) {
     );
 }
 
+#[rstest]
+#[case::star_step(
+    "0 0 * * */2",
+    ["2026-01-02T00:00:00Z", "2026-01-04T00:00:00Z", "2026-01-05T00:00:00Z"]
+)]
+#[case::value_step(
+    "0 0 * * 1/2",
+    ["2026-01-01T00:00:00Z", "2026-01-03T00:00:00Z", "2026-01-06T00:00:00Z"]
+)]
+fn cron_weekday_steps_translate_monday_zero(#[case] cron: &str, #[case] expected: [&str; 3]) {
+    let trigger = CronTrigger::from_crontab(cron, CronZone::Utc).unwrap();
+    let fires = first_fires(&trigger, instant("2026-01-01T00:00:00Z"), 3);
+    assert_eq!(fires, expected.map(instant));
+}
+
+#[test]
+fn cron_a_step_equal_to_the_field_range_is_accepted() {
+    let trigger = CronTrigger::from_crontab("*/59 * * * *", CronZone::Utc).unwrap();
+    let fires = first_fires(&trigger, instant("2026-01-01T00:00:30Z"), 3);
+    assert_eq!(
+        fires,
+        [
+            instant("2026-01-01T00:59:00Z"),
+            instant("2026-01-01T01:00:00Z"),
+            instant("2026-01-01T01:59:00Z"),
+        ]
+    );
+}
+
 fn is_us_eastern() -> bool {
     local_offset_seconds(instant("2026-01-15T12:00:00Z")) == -18_000
         && local_offset_seconds(instant("2026-07-15T12:00:00Z")) == -14_400
@@ -291,6 +324,14 @@ fn cron_local_zone_fires_on_apscheduler_instants() {
             instant("2026-03-09T04:15:00Z"),
         ]
     );
+    println!("{LOCAL_ZONE_MARKER}");
+}
+
+#[test]
+fn cron_local_zone_fires_at_the_repeated_hour_edges() {
+    if !is_us_eastern() {
+        return;
+    }
     // 02:00 is the wall time that ends the repeated hour, and it must fire once, at the EST instant.
     let end_of_repeat = CronTrigger::from_crontab("0 2 * * *", CronZone::Local).unwrap();
     let end_fires = first_fires(&end_of_repeat, instant("2026-11-01T02:30:00Z"), 2);
@@ -301,15 +342,21 @@ fn cron_local_zone_fires_on_apscheduler_instants() {
             instant("2026-11-02T07:00:00Z"),
         ]
     );
+    // A fire one second after the previous one lands on the first pass of the repeated hour.
+    let boundary = CronTrigger::from_crontab("30 1 * * *", CronZone::Local).unwrap();
+    let previous = instant("2026-11-01T05:29:59Z");
+    assert_eq!(
+        boundary.next_fire_time(Some(previous), previous),
+        Some(instant("2026-11-01T05:30:00Z"))
+    );
     println!("{LOCAL_ZONE_MARKER}");
 }
 
-#[test]
-fn cron_local_zone_is_run_under_a_fixed_zone() {
+fn run_in_fixed_zone(case: &str) {
     let exe = current_exe().unwrap();
     let output = Command::new(exe)
         .arg("--exact")
-        .arg(LOCAL_ZONE_CASE)
+        .arg(case)
         .arg("--nocapture")
         .env("TZ", "EST5EDT,M3.2.0,M11.1.0")
         .output()
@@ -324,6 +371,12 @@ fn cron_local_zone_is_run_under_a_fixed_zone() {
             .unwrap()
             .contains(LOCAL_ZONE_MARKER)
     );
+}
+
+#[test]
+fn cron_local_zone_is_run_under_a_fixed_zone() {
+    run_in_fixed_zone(LOCAL_ZONE_CASE);
+    run_in_fixed_zone(LOCAL_ZONE_EDGE_CASE);
 }
 
 #[test]

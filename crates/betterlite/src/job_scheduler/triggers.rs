@@ -82,11 +82,8 @@ impl Trigger for CronTrigger {
         let start = match previous_fire_time {
             Some(previous) => {
                 let bumped = previous.checked_add_signed(TimeDelta::microseconds(1))?;
-                if now < bumped && now != previous {
-                    now
-                } else {
-                    bumped
-                }
+                let start = now.min(bumped);
+                if start == previous { bumped } else { start }
             }
             None => now,
         };
@@ -159,21 +156,11 @@ fn resolve_local(naive: NaiveDateTime, floor: DateTime<Utc>) -> Option<DateTime<
 // The first instant in (start, end] whose UTC offset differs from the start's: where a repeated hour begins.
 fn fold_transition(start: DateTime<Utc>, end: DateTime<Utc>) -> Option<DateTime<Utc>> {
     let initial = local_offset_seconds(start);
-    if local_offset_seconds(end) == initial {
-        return None;
-    }
-    let mut low = start.timestamp();
-    let mut high = end.timestamp();
-    while high.saturating_sub(low) > 1 {
-        let span = high.saturating_sub(low);
-        let middle = DateTime::from_timestamp(low.saturating_add(span.div_euclid(2)), 0)?;
-        if local_offset_seconds(middle) == initial {
-            low = middle.timestamp();
-        } else {
-            high = middle.timestamp();
-        }
-    }
-    DateTime::from_timestamp(high, 0)
+    let span = end.signed_duration_since(start).num_seconds();
+    (1..=span).find_map(|seconds| {
+        let instant = start.checked_add_signed(TimeDelta::try_seconds(seconds)?)?;
+        (local_offset_seconds(instant) != initial).then_some(instant)
+    })
 }
 
 fn local_offset_seconds(time: DateTime<Utc>) -> i32 {

@@ -74,7 +74,7 @@ fn env_duration(
 ) -> Result<Duration, SchedulerError> {
     let seconds = env_number::<f64>(env, name)?.unwrap_or(default);
     // LiteLLM passes a negative float to asyncio.wait, which returns at once; betterlite treats it as zero.
-    if seconds < 0.0_f64 {
+    if seconds.is_sign_negative() {
         return Ok(Duration::ZERO);
     }
     Duration::try_from_secs_f64(seconds).map_err(|_source| SchedulerError::InvalidEnv {

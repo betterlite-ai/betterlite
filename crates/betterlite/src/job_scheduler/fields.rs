@@ -130,11 +130,12 @@ fn normalize_numeric_term(field: CronField, term: &str) -> Result<String, Schedu
         }
         let (minimum, maximum) = field.bounds();
         check_step_against(term, step, maximum.saturating_sub(minimum))?;
-        return match (field, step) {
-            (CronField::DayOfWeek, None) => Ok("*".to_owned()),
-            (CronField::DayOfWeek, Some(width)) => weekday_list(0, 6, width, term),
-            _ => Ok(term.to_owned()),
-        };
+        if field == CronField::DayOfWeek
+            && let Some(width) = step
+        {
+            return weekday_list(0, 6, width, term);
+        }
+        return Ok(term.to_owned());
     }
     let (first, last) = parse_range(field, term, base)?;
     check_numeric(field, term, first, last, step)?;
@@ -169,7 +170,7 @@ fn parse_range(
 
 fn parse_count(field: CronField, expression: &str, text: &str) -> Result<u64, SchedulerError> {
     // APScheduler's value regex is \d+, so a sign or any other byte makes the expression unrecognized.
-    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+    if !text.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err(invalid_expression(field, expression));
     }
     text.parse::<u64>()
