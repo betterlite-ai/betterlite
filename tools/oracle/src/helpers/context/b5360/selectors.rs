@@ -70,7 +70,8 @@ pub(crate) fn responses(_input: &BatchInput, call: &Call) -> CallResult {
 pub(crate) fn vector_stores(_input: &BatchInput, call: &Call) -> CallResult {
     let provider = provider_of(call)?;
     let selected = vector_stores::select_vector_stores_config(provider, call.api_type.as_deref());
-    let suffix = if provider == ProviderId::PgVector {
+    let pg = provider == ProviderId::PgVector;
+    let suffix = if pg {
         "StoreConfig"
     } else {
         "VectorStoreConfig"
