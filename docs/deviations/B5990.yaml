@@ -9,3 +9,6 @@ deviations:
   - what: betterlite-openai pins lru to 0.18.5 instead of the newest 0.19.0.
     why: lru 0.19.0 adds a second lru entry to Cargo.lock, because aws-sdk-s3, reached through betterlite-cache, requires ^0.18.4 and cannot move to 0.19.0; cargo deny's multiple-versions rule then fails with "found 2 duplicate entries for crate 'lru'", and deny.toml is outside this task's scope. 0.18.5 is the newest release that keeps a single lru entry, was released 2026-09-23, and keeps the LruCache::new, get and put calls unchanged.
     link: ""
+  - what: An assistant message with tool_calls that omits content is sent with content null.
+    why: betterlite's typed ChatMessage cannot tell an omitted content from an explicit null, so the two collapse. A null is kept so the tool-call turns OpenAI emits with content null reach the provider unchanged; a message that omitted the key gains it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/chat/transformation.py#L131-L156

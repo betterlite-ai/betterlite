@@ -29,6 +29,11 @@ pub enum HuggingfaceChatError {
     MappingMissing,
     #[error("no provider mapping found for model {model}")]
     NoProviderMapping { model: String },
+    #[error("the provider mapping for {provider} has no {field}")]
+    IncompleteProviderMapping {
+        provider: String,
+        field: &'static str,
+    },
     #[error("the provider mapping response is larger than {limit} bytes")]
     MappingTooLarge { limit: usize },
     #[error("the provider mapping response is not valid JSON")]

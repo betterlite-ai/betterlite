@@ -86,6 +86,16 @@ fn url_api_base(#[case] api_base: &str, #[case] expected: &str) {
 )]
 #[case::only_huggingface_api_base(None, Some("https://other.example"), "None")]
 #[case::empty_hf_api_base(Some(""), Some("https://other.example"), "https://other.example")]
+#[case::env_value_keeps_no_trailing_slash(
+    Some("https://hf.example/v1/"),
+    None,
+    "https://hf.example/v1"
+)]
+#[case::empty_huggingface_api_base(
+    None,
+    Some(""),
+    "https://router.huggingface.co/v1/chat/completions"
+)]
 fn url_env_branches(
     #[case] hf_api_base: Option<&str>,
     #[case] huggingface_api_base: Option<&str>,
@@ -230,16 +240,26 @@ impl ProviderMappingSource for RefusingSource {
     }
 }
 
-struct FixedSource(ProviderMapping);
+struct FixedSource {
+    mapping: ProviderMapping,
+    asked: Mutex<Vec<String>>,
+}
 
 impl ProviderMappingSource for FixedSource {
-    fn mapping(&self, _model_id: &str) -> Result<ProviderMapping, HuggingfaceChatError> {
-        Ok(self.0.clone())
+    fn mapping(&self, model_id: &str) -> Result<ProviderMapping, HuggingfaceChatError> {
+        self.asked
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(model_id.to_owned());
+        Ok(self.mapping.clone())
     }
 }
 
 fn source(mapping: &str) -> FixedSource {
-    FixedSource(from_str(mapping).unwrap())
+    FixedSource {
+        mapping: from_str(mapping).unwrap(),
+        asked: Mutex::new(Vec::new()),
+    }
 }
 
 #[test]
@@ -281,7 +301,7 @@ fn request_max_retries_warns_and_is_dropped() {
 }
 
 #[test]
-fn request_sends_the_mapped_provider_id() {
+fn request_sends_the_mapped_provider_id_and_asks_for_the_model_id() {
     let mapping = source(r#"{"novita": {"status": "live", "providerId": "org/mapped"}}"#);
     let messages = chat_messages(r#"[{"role":"user","content":"hi"}]"#);
     let body = transform_request(
@@ -293,6 +313,65 @@ fn request_sends_the_mapped_provider_id() {
     )
     .unwrap();
     assert_eq!(body.get("model"), Some(&json!("org/mapped")));
+    assert_eq!(*mapping.asked.lock().unwrap(), vec!["org/model".to_owned()]);
+}
+
+#[test]
+fn request_ignores_an_incomplete_entry_for_another_provider() {
+    let mapping = source(
+        r#"{"novita": {"status": "live", "providerId": "org/mapped"}, "other": {"status": "live"}}"#,
+    );
+    let messages = chat_messages(r#"[{"role":"user","content":"hi"}]"#);
+    let body = transform_request(
+        "novita/org/model",
+        &messages,
+        &Object::new(),
+        None,
+        &mapping,
+    )
+    .unwrap();
+    assert_eq!(body.get("model"), Some(&json!("org/mapped")));
+}
+
+#[test]
+fn request_an_incomplete_selected_entry_is_a_typed_error() {
+    let mapping = source(r#"{"novita": {"status": "live"}}"#);
+    let messages = chat_messages(r#"[{"role":"user","content":"hi"}]"#);
+    let error = transform_request(
+        "novita/org/model",
+        &messages,
+        &Object::new(),
+        None,
+        &mapping,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            HuggingfaceChatError::IncompleteProviderMapping { .. }
+        ),
+        "{error}"
+    );
+}
+
+#[rstest]
+#[case::mapped(None)]
+#[case::api_base(Some("http://mock"))]
+fn request_keeps_a_tool_call_turn_content_null(#[case] api_base: Option<&str>) {
+    let mapping = source(r#"{"novita": {"status": "live", "providerId": "org/mapped"}}"#);
+    let messages = chat_messages(
+        r#"[{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]}]"#,
+    );
+    let body = transform_request(
+        "novita/org/model",
+        &messages,
+        &Object::new(),
+        api_base,
+        &mapping,
+    )
+    .unwrap();
+    let turn = body["messages"][0].as_object().unwrap();
+    assert_eq!(turn.get("content"), Some(&Value::Null));
 }
 
 #[test]
@@ -515,7 +594,7 @@ fn mapping_fetch_sends_the_documented_get() {
     let calls = Arc::clone(&hub.calls);
     let cache = ProviderMappingCache::new(Some(SecretString::from("hub-token")), hub);
     let mapping = cache.fetch_provider_mapping("org/model").unwrap();
-    assert_eq!(mapping["novita"].provider_id, "org/model");
+    assert_eq!(mapping["novita"].provider_id.as_deref(), Some("org/model"));
     let recorded = calls.lock().unwrap();
     assert_eq!(recorded.len(), 1);
     assert_eq!(
@@ -544,6 +623,19 @@ fn mapping_fetch_without_a_token_omits_authorization() {
     ))]);
     let calls = Arc::clone(&hub.calls);
     ProviderMappingCache::new(None, hub)
+        .fetch_provider_mapping("org/model")
+        .unwrap();
+    assert_eq!(calls.lock().unwrap()[0].headers.get("Authorization"), None);
+}
+
+#[test]
+fn mapping_fetch_with_an_empty_token_omits_authorization() {
+    let hub = ScriptedHub::with(vec![Reply::Response(response(
+        200,
+        &mapping_body("novita", "live", "org/model"),
+    ))]);
+    let calls = Arc::clone(&hub.calls);
+    ProviderMappingCache::new(Some(SecretString::from("")), hub)
         .fetch_provider_mapping("org/model")
         .unwrap();
     assert_eq!(calls.lock().unwrap()[0].headers.get("Authorization"), None);
@@ -639,7 +731,7 @@ fn mapping_cache_keeps_failures_out() {
     let Ok(mapping) = cache.mapping("org/model") else {
         panic!("the second fetch should succeed");
     };
-    assert_eq!(mapping["novita"].provider_id, "org/model");
+    assert_eq!(mapping["novita"].provider_id.as_deref(), Some("org/model"));
     assert_eq!(calls.lock().unwrap().len(), 2);
 }
 
@@ -662,8 +754,8 @@ fn mapping_cache_evicts_the_least_recently_used_entry() {
 fn mapping_decode_reads_entries() {
     let mapping =
         decode_provider_mapping(mapping_body("novita", "live", "org/model").as_bytes()).unwrap();
-    assert_eq!(mapping["novita"].status, "live");
-    assert_eq!(mapping["novita"].provider_id, "org/model");
+    assert_eq!(mapping["novita"].status.as_deref(), Some("live"));
+    assert_eq!(mapping["novita"].provider_id.as_deref(), Some("org/model"));
 }
 
 #[test]
@@ -707,7 +799,7 @@ fn mapping_decode_rejects_over_one_mebibyte() {
 fn mapping_decode_keeps_unknown_entry_fields_out_of_the_shape() {
     let body = r#"{"inferenceProviderMapping":{"novita":{"status":"live","providerId":"org/model","task":"text-generation"}}}"#;
     let mapping = decode_provider_mapping(body.as_bytes()).unwrap();
-    assert_eq!(mapping["novita"].provider_id, "org/model");
+    assert_eq!(mapping["novita"].provider_id.as_deref(), Some("org/model"));
 }
 
 #[test]

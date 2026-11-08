@@ -52,12 +52,24 @@ fn mapped_model(
             &Headers::new(),
         )));
     };
-    if entry.status == "staging" {
+    let Some(status) = entry.status.as_deref() else {
+        return Err(HuggingfaceChatError::IncompleteProviderMapping {
+            provider: provider.to_owned(),
+            field: "status",
+        });
+    };
+    let Some(provider_id) = entry.provider_id.as_deref() else {
+        return Err(HuggingfaceChatError::IncompleteProviderMapping {
+            provider: provider.to_owned(),
+            field: "providerId",
+        });
+    };
+    if status == "staging" {
         warn!(
             "Model {remaining} is in staging mode for provider {provider}. Meant for test purposes only."
         );
     }
-    Ok(entry.provider_id.clone())
+    Ok(provider_id.to_owned())
 }
 
 fn transformed_messages(
@@ -87,8 +99,21 @@ fn request_body(
     messages: &[ChatMessage],
     optional_params: &Object,
 ) -> Result<Object, HuggingfaceChatError> {
-    let serialized = serde_json::to_value(messages)
+    let mut serialized = serde_json::to_value(messages)
         .map_err(|source| HuggingfaceChatError::MessageEncode { source })?;
+    if let Value::Array(items) = &mut serialized {
+        for item in items {
+            let Value::Object(fields) = item else {
+                continue;
+            };
+            let assistant = fields.get("role").and_then(Value::as_str) == Some("assistant");
+            let tool_call = fields.contains_key("tool_calls");
+            if assistant && tool_call && !fields.contains_key("content") {
+                // LiteLLM forwards a tool-call turn's content: null; the typed message cannot tell null from absent
+                fields.insert("content".to_owned(), Value::Null);
+            }
+        }
+    }
     let mut body = Object::from_iter([
         ("model".to_owned(), Value::String(model.to_owned())),
         ("messages".to_owned(), serialized),

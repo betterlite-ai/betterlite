@@ -106,6 +106,7 @@ const fn class_name(error: &HuggingfaceChatError) -> &'static str {
         HuggingfaceChatError::MissingProviderPrefix { .. }
         | HuggingfaceChatError::MappingMissing
         | HuggingfaceChatError::NoProviderMapping { .. }
+        | HuggingfaceChatError::IncompleteProviderMapping { .. }
         | HuggingfaceChatError::MappingTooLarge { .. }
         | HuggingfaceChatError::MappingDecode { .. }
         | HuggingfaceChatError::Content(_)
@@ -120,6 +121,7 @@ const fn status_code(error: &HuggingfaceChatError) -> Option<u16> {
         HuggingfaceChatError::MissingProviderPrefix { .. }
         | HuggingfaceChatError::MappingMissing
         | HuggingfaceChatError::NoProviderMapping { .. }
+        | HuggingfaceChatError::IncompleteProviderMapping { .. }
         | HuggingfaceChatError::MappingTooLarge { .. }
         | HuggingfaceChatError::MappingDecode { .. }
         | HuggingfaceChatError::MessageEncode { .. } => None,

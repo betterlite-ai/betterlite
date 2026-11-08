@@ -19,5 +19,22 @@ call:
             content:
               - {type: text, text: "hi"}
               - {type: image_url, image_url: "https://example.com/a.png"}
+      - kind: transform_request
+        model: "novita/org/model"
+        messages:
+          - role: assistant
+            content: null
+            tool_calls:
+              - {id: "call_1", type: function, function: {name: lookup, arguments: "{}"}}
+        mapping: {novita: {status: live, providerId: "org/mapped"}}
+      - kind: transform_request
+        model: "novita/org/model"
+        api_base: "http://mock"
+        messages:
+          - role: assistant
+            content: null
+            tool_calls:
+              - {id: "call_1", type: function, function: {name: lookup, arguments: "{}"}}
 env: {}
 compare: {ignore: []}
+

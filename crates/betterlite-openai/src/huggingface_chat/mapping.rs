@@ -20,9 +20,10 @@ pub type ProviderMapping = BTreeMap<String, ProviderMappingEntry>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct ProviderMappingEntry {
-    pub status: String,
+    // an entry for a provider the caller did not ask for may be incomplete, as LiteLLM's dict may be
+    pub status: Option<String>,
     #[serde(rename = "providerId")]
-    pub provider_id: String,
+    pub provider_id: Option<String>,
 }
 
 pub trait ProviderMappingSource {
@@ -100,6 +101,7 @@ impl<G: HubGet> ProviderMappingCache<G> {
             other @ (HuggingfaceChatError::Huggingface(_)
             | HuggingfaceChatError::MissingProviderPrefix { .. }
             | HuggingfaceChatError::NoProviderMapping { .. }
+            | HuggingfaceChatError::IncompleteProviderMapping { .. }
             | HuggingfaceChatError::MappingTooLarge { .. }
             | HuggingfaceChatError::MappingDecode { .. }
             | HuggingfaceChatError::Content(_)
