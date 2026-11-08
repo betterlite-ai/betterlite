@@ -1,0 +1,10 @@
+kind: helper
+name: file-object-null-bytes
+call:
+  b3360:
+    operation: record_decode
+    records:
+      - {kind: file_object, value: {id: file_abc, object: container.file, container_id: container_abc, bytes: null, created_at: 1, path: /mnt/data/a.csv, source: assistant}}
+      - {kind: file_object, value: {id: file_abc, object: container_file, container_id: container_abc, created_at: 1, path: /mnt/data/b.csv, source: user}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: correlation-span-from-caller
+call:
+  b4114:
+    operation: parent_correlation
+    kwargs:
+      metadata:
+        session_id: session
+      litellm_metadata:
+        trace_id: trace
+    caller:
+      team_id: team
+      parent_otel_span: caller-span
+env: {}
+compare: {ignore: []}
