@@ -46,6 +46,12 @@ pub(super) fn downgrade(card: &JsonObject) -> Result<JsonObject, ConvertError> {
     if record.capabilities.is_none() {
         record.capabilities = Some(Capabilities::default());
     }
+    record.name.get_or_insert_default();
+    record.description.get_or_insert_default();
+    record.version.get_or_insert_default();
+    record.default_input_modes.get_or_insert_default();
+    record.default_output_modes.get_or_insert_default();
+    record.skills.get_or_insert_default();
     encode(&record)
 }
 
