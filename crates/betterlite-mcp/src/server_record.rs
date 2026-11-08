@@ -14,6 +14,7 @@ use betterlite_db::mcp_stored_contracts::{
 use chrono::{DateTime, Utc};
 use secrecy::ExposeSecret as _;
 use serde::{Deserialize, Serialize};
+use subtle::ConstantTimeEq as _;
 use thiserror::Error;
 
 use crate::credential_contracts::auth_config::oauth::DEFAULT_SUBJECT_TOKEN_TYPE;
@@ -28,7 +29,13 @@ pub struct SecretCredential(pub StoredSecret);
 
 impl PartialEq for SecretCredential {
     fn eq(&self, other: &Self) -> bool {
-        self.0.0.expose_secret() == other.0.0.expose_secret()
+        bool::from(
+            self.0
+                .0
+                .expose_secret()
+                .as_bytes()
+                .ct_eq(other.0.0.expose_secret().as_bytes()),
+        )
     }
 }
 

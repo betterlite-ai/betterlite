@@ -1771,6 +1771,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "strum",
+ "subtle",
  "thiserror",
  "tokio",
  "tokio-util",
