@@ -1,0 +1,5 @@
+kind: helper
+name: "access-groups-header"
+call: {"b4654":{"function":"list_header","header":"access_groups","raw":[["X-Mcp-Access-Groups",""]]}}
+env: {}
+compare: {"ignore":[]}

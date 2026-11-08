@@ -3,6 +3,7 @@ pub(crate) mod history;
 pub(crate) mod selection;
 mod tests;
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -31,6 +32,7 @@ pub(crate) struct Selection {
 
 pub(crate) enum Outcome {
     Pass,
+    Reused(String),
     Skip(String),
     Fail { why: String, hints: Vec<String> },
 }
@@ -57,19 +59,9 @@ pub(crate) fn commands<'spec>(
     Ok(selected)
 }
 
-fn builtin_outcomes(
-    development: &Development,
-    task: &Task,
-    facts: &Facts,
-    selection: &Selection,
-) -> Vec<(String, u64, Outcome)> {
-    let context = Context {
-        development,
-        task,
-        facts,
-    };
+fn builtin_outcomes(context: &Context<'_>, selection: &Selection) -> Vec<(String, u64, Outcome)> {
     let mut outcomes = Vec::new();
-    for builtin in &development.catalog.base.builtin {
+    for builtin in &context.development.catalog.base.builtin {
         let id = <&str>::from(builtin.id);
         if (!selection.only.is_empty() && !selection.only.iter().any(|selected| selected == id))
             || selection.skip.iter().any(|skipped| skipped == id)
@@ -77,7 +69,7 @@ fn builtin_outcomes(
             continue;
         }
         let started = Instant::now();
-        let outcome = match run_builtin(builtin.id, &context) {
+        let outcome = match run_builtin(builtin.id, context) {
             Ok(problems) if problems.is_empty() => Outcome::Pass,
             Ok(problems) => Outcome::Fail {
                 why: builtin.why.clone(),
@@ -100,7 +92,6 @@ pub(crate) fn run(
 ) -> Result<Verdict, GateError> {
     selection::validate(development, task, selection)?;
     let root = &development.root;
-    let facts = Facts::collect(root)?;
     let log_dir = journal_dir(root, &task.id)?.join("gate");
     fs::create_dir_all(&log_dir).map_err(|source| GateError::Write {
         path: log_dir.clone(),
@@ -108,8 +99,15 @@ pub(crate) fn run(
     })?;
     // a dispatch reads the holder's process group from it to stop a check run whose worker died
     let _held = gate_lock::hold(&log_dir, &mut io::stderr())?;
+    let facts = Facts::collect(root)?;
+    let passed = history::passed(&log_dir, &facts)?;
     let run_dir = history::start(&log_dir)?;
-    let verdict = run_checks(development, task, selection, &facts, &run_dir);
+    let context = Context {
+        development,
+        task,
+        facts: &facts,
+    };
+    let verdict = run_checks(&context, selection, &passed, &run_dir);
     if let Err(error) = &verdict {
         // a dispatch takes a run with neither result.json nor error.txt for one cut off mid-way
         let path = run_dir.join("error.txt");
@@ -119,14 +117,18 @@ pub(crate) fn run(
 }
 
 fn run_checks(
-    development: &Development,
-    task: &Task,
+    context: &Context<'_>,
     selection: &Selection,
-    facts: &Facts,
+    passed: &BTreeMap<String, String>,
     log_dir: &Path,
 ) -> Result<Verdict, GateError> {
+    let Context {
+        development,
+        task,
+        facts,
+    } = *context;
     let root = &development.root;
-    let mut outcomes = builtin_outcomes(development, task, facts, selection);
+    let mut outcomes = builtin_outcomes(context, selection);
     let environment = [
         ("GATE_TASK", task.id.clone()),
         ("GATE_BASE", facts.base.clone()),
@@ -147,14 +149,15 @@ fn run_checks(
         });
         for command in group {
             let started = Instant::now();
-            let outcome = match blocked {
-                Some(message) => Outcome::Skip(message.to_owned()),
-                None => run_command(root, log_dir, command, &environment)?,
+            let outcome = match (blocked, passed.get(&command.id)) {
+                (Some(message), _) => Outcome::Skip(message.to_owned()),
+                (None, Some(run)) => Outcome::Reused(run.clone()),
+                (None, None) => run_command(root, log_dir, command, &environment)?,
             };
             outcomes.push((command.id.clone(), started.elapsed().as_secs(), outcome));
         }
     }
-    history::save(root, log_dir, &facts.base, selection, &outcomes)?;
+    history::save(root, log_dir, facts, selection, &outcomes)?;
     Ok(render(task, &facts.base, log_dir, outcomes))
 }
 
@@ -194,6 +197,11 @@ fn render(
     for (id, seconds, outcome) in outcomes {
         match outcome {
             Outcome::Pass => lines.push(format!("PASS {id} ({seconds}s)")),
+            Outcome::Reused(run) => {
+                lines.push(format!(
+                    "PASS {id}: passed on this commit and base in {run}"
+                ));
+            }
             Outcome::Skip(reason) => lines.push(format!("SKIP {id}: {reason}")),
             Outcome::Fail { why, hints } => {
                 passed = false;
