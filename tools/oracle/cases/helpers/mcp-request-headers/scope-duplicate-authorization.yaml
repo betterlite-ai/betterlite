@@ -1,0 +1,5 @@
+kind: helper
+name: "scope-duplicate-authorization"
+call: {"b4654":{"function":"safe_headers","raw":[["Authorization","a"],["authorization","b"]]}}
+env: {}
+compare: {"ignore":[]}

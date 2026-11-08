@@ -1,0 +1,5 @@
+kind: helper
+name: "canonicalize-identity"
+call: {"b4654":{"function":"canonicalize","url":"HTTP://User:Pw@H:80/x;y?q=1#f"}}
+env: {}
+compare: {"ignore":[]}

@@ -1,0 +1,20 @@
+kind: helper
+name: stream-chunk-shaping-generic-chunk
+call:
+  b5652:
+    state:
+      model: gpt-4
+      provider: openai
+    repeated_chunk_limit: 100
+    steps:
+      - {op: generic_known, chunk: {text: a, is_finished: false, finish_reason: ""}}
+      - {op: generic_known, chunk: {text: a, bogus: 1}}
+      - {op: convert_generic, chunk: {text: hi, is_finished: true, finish_reason: length, index: 2, tool_use: {id: t}}}
+      - {op: convert_generic, chunk: {text: hi, is_finished: false, finish_reason: ""}}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/2/result/id, why: "LiteLLM picks a fresh uuid for every generic chunk"}
+    - {pointer: /value/2/result/created, why: "LiteLLM stamps the generic chunk with the wall clock"}
+    - {pointer: /value/3/result/id, why: "LiteLLM picks a fresh uuid for every generic chunk"}
+    - {pointer: /value/3/result/created, why: "LiteLLM stamps the generic chunk with the wall clock"}

@@ -1,0 +1,23 @@
+kind: helper
+name: gemini-tool-results-corpus-media-result
+call:
+  gemini_tool_results:
+    message:
+      role: tool
+      tool_call_id: call_1
+      name: computer
+      content:
+        - type: text
+          text: "the screen:"
+        - type: image
+          source:
+            type: base64
+            data: QQ
+            media_type: image/png
+        - type: file
+          file_data: "data:application/pdf;base64,Qw"
+    data_urls:
+      "http://example.test/shot.png": "data:image/jpeg;base64,Rg"
+env: {}
+compare:
+  ignore: []

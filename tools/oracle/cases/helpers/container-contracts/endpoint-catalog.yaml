@@ -1,0 +1,7 @@
+kind: helper
+name: endpoint-catalog
+call:
+  b3360:
+    operation: endpoint_catalog
+env: {}
+compare: {ignore: []}

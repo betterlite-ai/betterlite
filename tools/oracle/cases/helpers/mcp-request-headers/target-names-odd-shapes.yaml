@@ -1,0 +1,5 @@
+kind: helper
+name: "target-names-odd-shapes"
+call: {"b4654":{"function":"target_names","paths":["/mcp/x?y=1","/mcp/x#f","/mcp/a?x=1#f","/mcp/a/b?","/mcp/a b","/MCP/a","/mcp/foo/bar,baz","mcp/a","/mcp/"]}}
+env: {}
+compare: {"ignore":[]}

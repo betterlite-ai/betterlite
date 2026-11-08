@@ -6,7 +6,7 @@ use std::time::Duration;
 use betterlite_config::proxy::{ProxyPolicy, ProxyRoute, ProxyServer};
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::{Config, ModelDeployment};
-use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap};
+use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use reqwest::redirect::Policy;
 use reqwest::retry::never;
 use reqwest::{Client, ClientBuilder, Proxy, Request, Response, Url};
@@ -25,11 +25,18 @@ pub mod mock;
 pub mod multipart;
 pub mod outbound;
 pub mod pool;
+mod redirect;
 pub mod stream;
 pub mod transport_error;
 
 const POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 const POOL_MAX_IDLE_PER_HOST: usize = 32;
+
+#[derive(Clone, Copy)]
+enum Follow {
+    Redirects,
+    Never,
+}
 
 #[derive(Debug, Clone)]
 pub struct ProxiedClient {
@@ -160,31 +167,53 @@ impl ProxiedClient {
             })
     }
 
-    pub async fn send(&self, request: OutboundRequest) -> Result<StreamResponse, TransportError> {
+    fn lease(&self, request: OutboundRequest) -> Result<(Request, stream::Lease), TransportError> {
         if self.tracker.is_closed() {
             return Err(TransportError::Closed);
         }
         let token = self.tracker.token();
         let built = request.build(&self.client)?;
-        let response = if self.network_mock {
-            mock::respond(&built).map_err(TransportError::Mock)?
-        } else {
-            if let Some(rejection) = self.rejected(built.url()) {
-                return Err(TransportError::Rejected(rejection));
-            }
-            self.client
-                .execute(built)
-                .await
-                .map_err(TransportError::sending)?
-        };
-        check_headers(response.headers(), self.limits.header_bytes)?;
-        Ok(StreamResponse {
-            response,
-            lease: stream::Lease {
+        Ok((
+            built,
+            stream::Lease {
                 _client: self.client.clone(),
                 _token: token,
             },
-        })
+        ))
+    }
+
+    async fn exchange(
+        &self,
+        built: Request,
+        lease: stream::Lease,
+        follow: Follow,
+    ) -> Result<StreamResponse, TransportError> {
+        let response = match (self.network_mock, follow) {
+            (true, _) => mock::respond(&built).map_err(TransportError::Mock)?,
+            // boxed so the hop state machine does not ride inside every caller's future
+            (false, Follow::Redirects) => Box::pin(redirect::send(self, built)).await?,
+            (false, Follow::Never) => self
+                .client
+                .execute(built)
+                .await
+                .map_err(TransportError::sending)?,
+        };
+        check_headers(response.headers(), self.limits.header_bytes)?;
+        Ok(StreamResponse { response, lease })
+    }
+
+    pub async fn send(&self, request: OutboundRequest) -> Result<StreamResponse, TransportError> {
+        let (built, lease) = self.lease(request)?;
+        self.exchange(built, lease, Follow::Never).await
+    }
+
+    // provider calls follow redirects the way LiteLLM's httpx clients do, with each hop re-checked
+    pub async fn send_following(
+        &self,
+        request: OutboundRequest,
+    ) -> Result<StreamResponse, TransportError> {
+        let (built, lease) = self.lease(request)?;
+        self.exchange(built, lease, Follow::Redirects).await
     }
 
     pub async fn send_buffered(
@@ -197,7 +226,7 @@ impl ProxiedClient {
             .await
     }
 
-    pub async fn post_json(&self, post: JsonPost<'_>) -> Result<UpstreamResponse, HttpError> {
+    pub async fn post_json(&self, post: JsonPost) -> Result<UpstreamResponse, HttpError> {
         let _token = self.tracker.token();
         let body_limit = post.body_limit;
         let request = self.json_request(post, "application/json")?;
@@ -222,22 +251,25 @@ impl ProxiedClient {
         })
     }
 
-    pub fn json_request(
-        &self,
-        post: JsonPost<'_>,
-        accept: &'static str,
-    ) -> Result<Request, HttpError> {
+    pub fn json_request(&self, post: JsonPost, accept: &'static str) -> Result<Request, HttpError> {
         let mut builder = self
             .client
             .post(post.url)
             .timeout(post.timeout)
-            .bearer_auth(post.bearer.expose_secret())
+            .header(AUTHORIZATION, post.authorization.expose_secret())
             .header(ACCEPT, accept)
             .header(CONTENT_TYPE, "application/json");
         for (name, value) in post.headers {
             builder = builder.header(name, value);
         }
-        builder.body(post.body).build().map_err(HttpError::Request)
+        let mut request = builder
+            .body(post.body)
+            .build()
+            .map_err(HttpError::Request)?;
+        if let Some(value) = request.headers_mut().get_mut(AUTHORIZATION) {
+            value.set_sensitive(true);
+        }
+        Ok(request)
     }
 }
 
@@ -252,9 +284,10 @@ pub fn timed_out(error: HttpError) -> HttpError {
     }
 }
 
-pub struct JsonPost<'key> {
+pub struct JsonPost {
     pub url: Url,
-    pub bearer: &'key SecretString,
+    // the whole header value, since a Basic header from api_base userinfo replaces the bearer
+    pub authorization: SecretString,
     pub headers: Vec<(&'static str, String)>,
     pub body: Vec<u8>,
     pub timeout: Duration,
