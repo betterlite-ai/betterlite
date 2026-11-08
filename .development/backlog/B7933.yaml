@@ -1,0 +1,24 @@
+id: B7933
+milestone: M12 python
+title: Python types for guardrail hooks compresr to headroom (types/proxy/guardrails/guardrail_hooks)
+status: todo
+depends_on: [B5657, B7920, B7921, B7929, B7932, B7942]
+file: tasks/B7933-types-guardrail-hooks-b.yaml
+covers:
+  - "litellm/types/proxy/guardrails/guardrail_hooks/compresr.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/conduct.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/crowdstrike_aidr.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/decision_model.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/deepkeep.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/dynamoai.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/enkryptai.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/grayswan.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/guardrails_ai.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/headroom.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,14 @@
+id: B8065
+milestone: M12 python
+title: Python cache key, lookup and write operations
+status: todo
+depends_on: [B5369, B157, B158, B5657, B5658, B4296, B4297, B4298, B4299, B4300, B4302, B4303, B4304]
+file: tasks/B8065-python-cache-ops.yaml
+covers:
+  - "litellm/caching/caching.py"
+parent: B166
+split_from: B166
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

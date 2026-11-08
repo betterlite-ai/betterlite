@@ -12,6 +12,7 @@ pub mod embedding_merge;
 pub mod envelope;
 pub mod evicted_client_closer;
 pub mod factories;
+pub mod gcs_cache;
 pub mod handler;
 pub mod llm_client_cache;
 pub mod native_adapter;

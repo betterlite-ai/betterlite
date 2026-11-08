@@ -1,0 +1,23 @@
+id: B7935
+milestone: M12 python
+title: Python types for guardrail hooks panw_prisma_airs to straiker (types/proxy/guardrails/guardrail_hooks)
+status: todo
+depends_on: [B5657, B7930, B7932]
+file: tasks/B7935-types-guardrail-hooks-d.yaml
+covers:
+  - "litellm/types/proxy/guardrails/guardrail_hooks/panw_prisma_airs.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/pillar.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/presidio.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/promptguard.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/prompt_security.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/qohash.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/qualifire.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/singulr.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/straiker.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

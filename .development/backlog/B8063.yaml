@@ -1,0 +1,14 @@
+id: B8063
+milestone: M12 python
+title: Python cost_per_token, completion_cost and response_cost_calculator
+status: todo
+depends_on: [B5369, B157, B158, B5657, B5658, B068, B193, B205]
+file: tasks/B8063-python-cost-core.yaml
+covers:
+  - "litellm/cost_calculator.py"
+parent: B166
+split_from: B166
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,74 @@
+id: B7887
+title: Python search and OCR functions
+description: >-
+  This task adds the search and OCR functions: `search`, `asearch` (litellm/search/main.py), `search_provider_cost_per_query` (search/cost_calculator.py) and `ocr`, `aocr` (litellm/ocr/dispatch.py). Rust runs the calls (B3272 search, B3274 search cost, B6809 OCR entry).
+
+
+  Native side, the family `search_ocr`: `src/search_ocr.rs` with `register` that adds `NativeSearchSession` and `NativeSearchError`, and `src/search_ocr/convert.rs` with tests `request_*` and `error_*`. The architect writes the `lib.rs` line.
+
+
+  Python side, `python/betterlite/search/main.py`, `cost.py`, `__init__.py` and `python/betterlite/ocr/dispatch.py`, `__init__.py`. `search(query, search_provider, max_results, search_domain_filter, max_tokens_per_page, country, api_key, api_base, timeout, extra_headers, **kwargs)` builds its optional params with `_build_search_optional_params` (L27-L59). It becomes a plain function with the same output. `ocr` and `aocr` take `*args, **kwargs`, bind them to the public request with the four helpers of dispatch.py (L15-L63) and return an `OCRResponse` from B167. A document is a URL, a base64 data URL or bytes. Python objects that cannot cross to Rust (`client`, `shared_session`) raise `UnsupportedCallArgument` from B158.
+scope:
+  paths:
+  - crates/betterlite-python/src/search_ocr.rs
+  - crates/betterlite-python/src/search_ocr/**
+  - crates/betterlite-python/python/betterlite/_native_search_ocr.pyi
+  - crates/betterlite-python/python/betterlite/search/main.py
+  - crates/betterlite-python/python/betterlite/search/cost.py
+  - crates/betterlite-python/python/betterlite/search/__init__.py
+  - crates/betterlite-python/python/betterlite/ocr/dispatch.py
+  - crates/betterlite-python/python/betterlite/ocr/__init__.py
+  - crates/betterlite-python/tests/test_search_ocr.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/main.py#L1-L320
+  why: _build_search_optional_params, asearch and search
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/search/cost_calculator.py#L1-L85
+  why: search_provider_cost_per_query
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/ocr/dispatch.py#L1-L84
+  why: the request binding and the ocr and aocr entry points
+dod:
+- text: Every function keeps LiteLLM's name and parameters, and a keyword LiteLLM refuses is refused here.
+  proof: [search-ocr-signature]
+- text: "Search and OCR return the same results as LiteLLM against one local server, and the cost function gives the same number for the same provider."
+  proof: [search-ocr-calls]
+- text: A provider error keeps its class and cause, and an unsupported Python object raises `UnsupportedCallArgument`.
+  proof: [search-ocr-errors]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [search-ocr-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: search-ocr-signature
+    why: A caller's keyword is accepted or refused wrongly.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_search_ocr.py -k signature
+  - id: search-ocr-calls
+    why: A result differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_search_ocr.py -k calls
+  - id: search-ocr-errors
+    why: An error class or message changes.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_search_ocr.py -k 'error or unsupported'
+  - id: search-ocr-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^search_ocr::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for these calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The OCR request binding keeps `*args, **kwargs` at the public surface.
+  why: LiteLLM does so and callers pass the document either way.
+- what: This task has no helper oracle cases.
+  why: The functions call a native session, so pytest compares both packages against one local server.
+out_of_scope:
+- "Search provider adapters and OCR provider handlers belong to B3272 and B6809."
+pitfalls:
+- "`search_provider_cost_per_query` returns a number from a table in Rust, so Python must not copy the table."
+- "`search` accepts `search_provider` as a required keyword, and the OCR request takes `model` and `document` as required."
+- "The async twin of `ocr` is a plain `async def` wrapper over the same binding."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

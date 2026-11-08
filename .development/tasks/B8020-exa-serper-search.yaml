@@ -1,0 +1,103 @@
+id: B8020
+title: Map Exa AI and Serper search requests and replies
+description: >-
+  Add api::search_providers::exa_ai and api::search_providers::serper to betterlite-core, each a search
+  configuration on the B3270 base hooks (SearchResult, SearchResponse and resolve_server_api_key). Settings
+  load in betterlite-config: exa_ai_search_settings reads EXA_API_KEY (unset) and EXA_API_BASE (default
+  https://api.exa.ai), serper_search_settings reads SERPER_API_KEY (unset) and SERPER_API_BASE (default
+  https://google.serper.dev). Both use POST and the shared key policy: a caller key wins, otherwise the
+  environment key is used only when the caller's api_base host is the default or the configured base. A missing
+  key fails with the source text "EXA_API_KEY is not set. Set `EXA_API_KEY` environment variable." and the same
+  sentence for SERPER_API_KEY. Display names are "Exa AI" and "Serper". Exa sends the key as x-api-key and
+  Serper as X-API-KEY, and both set Content-Type application/json on a copy of the incoming headers.
+
+  Exa request: join a query list with a space, then build query, numResults (from max_results),
+  includeDomains (the search_domain_filter value as given) and userLocation (country as given, no case change),
+  in that order. Copy every other option only when its name is not a unified Perplexity name and not already in
+  the body. When contents is absent add contents {"text": true}. Exa URL: caller base, else EXA_API_BASE, else
+  the default, with /search appended unless the base already ends in /search. There is no trailing-slash
+  trimming, so https://x.test/ becomes https://x.test//search. Exa reply: read results, and map title, url,
+  text (as snippet) and publishedDate (as date); last_updated is null. A missing results key gives an empty
+  list, a missing field gives "", and a null title, url or text is a validation failure as in the source.
+
+  Serper request: join a list with a space, build q, num (from max_results) and gl (country lowercased). A
+  nonempty search_domain_filter list rewrites q as (q) (site:a OR site:b), with no AND; an empty list leaves q
+  alone. Other options are copied under the same not-unified, not-already-set rule. Serper URL: choose caller
+  base, env base or default, trim trailing slashes, then append /search unless already present. Serper reply:
+  read organic, mapping title, link (as url), snippet and date. Only organic is read, so knowledgeGraph and
+  answerBox are dropped.
+
+  Both reply decoders take bounded reply bytes. Add fuzz targets exa_ai_reply and serper_reply with
+  replays_the_exa_ai_corpus and replays_the_serper_corpus. The source files hold 296 nonblank lines in total;
+  plan about 260 production and config lines, 220 test lines and 170 oracle and fuzz lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/search_providers/exa_ai.rs
+    - crates/betterlite-core/src/api/search_providers/exa_ai/**
+    - crates/betterlite-core/src/api/search_providers/serper.rs
+    - crates/betterlite-core/src/api/search_providers/serper/**
+    - crates/betterlite-config/src/providers/exa_ai.rs
+    - crates/betterlite-config/src/providers/exa_ai/**
+    - crates/betterlite-config/src/providers/serper.rs
+    - crates/betterlite-config/src/providers/serper/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/exa_ai_reply.rs
+    - crates/betterlite-core/fuzz/fuzz_targets/serper_reply.rs
+    - crates/betterlite-core/fuzz/corpus/exa_ai_reply/**
+    - crates/betterlite-core/fuzz/corpus/serper_reply/**
+    - tools/oracle/cases/helpers/exa-serper-search/**
+    - tools/oracle/helpers/b8020.py
+    - tools/oracle/helpers/b8020/**
+    - tools/oracle/src/helpers/core_ops/b8020.rs
+    - tools/oracle/src/helpers/core_ops/b8020/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/exa_ai/search/transformation.py#L49-L195
+    why: Exa headers, URL suffix rule, numResults/includeDomains/userLocation mapping, default contents and reply projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/serper/search/transformation.py#L41-L175
+    why: Serper headers, trimmed URL, gl lowercasing, site clause rewrite and organic-only reply.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L137-L189
+    why: The shared server-key host check both validate_environment methods call.
+  - url: https://docs.exa.ai/reference/search
+    why: Exa request fields, to see which names the passthrough can reach.
+dod:
+  - text: Exa settings, headers, URL suffix and request body (including the default contents) match the source.
+    proof: [exa-serper-tests, oracle]
+  - text: Serper settings, headers, trimmed URL, gl and site clause rewrite match the source.
+    proof: [exa-serper-tests, oracle]
+  - text: Both replies project the pinned fields and keep the source failure on null members.
+    proof: [exa-serper-tests, exa-serper-corpus, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: exa-serper-tests
+      why: Exa or Serper mapping, reply projection or settings loading is missing
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::search_providers::(exa_ai|serper)::/) - test(replays_the_exa_ai_corpus) - test(replays_the_serper_corpus) | test(exa_ai_search_settings) | test(serper_search_settings)'
+    - id: exa-serper-corpus
+      why: The Exa or Serper reply decoder has no new corpus inputs
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/exa_ai_reply)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/serper_reply)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_exa_ai_corpus) | test(replays_the_serper_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/exa-serper-search/exa-default-contents.yaml
+  - tools/oracle/cases/helpers/exa-serper-search/exa-url-double-slash.yaml
+  - tools/oracle/cases/helpers/exa-serper-search/exa-passthrough-blocked-names.yaml
+  - tools/oracle/cases/helpers/exa-serper-search/exa-reply-null-text.yaml
+  - tools/oracle/cases/helpers/exa-serper-search/serper-site-clause.yaml
+  - tools/oracle/cases/helpers/exa-serper-search/serper-gl-lowercase.yaml
+  - tools/oracle/cases/helpers/exa-serper-search/serper-organic-only.yaml
+  - tools/oracle/cases/helpers/exa-serper-search/untrusted-base-with-env-key.yaml
+deviations: []
+out_of_scope:
+  - B3270 owns SearchResult, SearchResponse and the key host check; this task only calls them.
+  - The exa_ai and serper package initializers only re-export the config class and build nothing.
+  - B048 puts both configs into the provider registry; B3272 runs them.
+pitfalls:
+  - 'Exa gets contents {"text": true} only when the caller did not pass contents, so a caller contents of {} stays {}.'
+  - Exa does not change the case of country, while Serper lowercases it into gl.
+  - An empty search_domain_filter list leaves Serper's q untouched, and a string value is ignored there.
+  - Exa trims no trailing slash, so a base ending in a slash gives a double slash before search.
+  - Serper copies no caller q, num or gl, because those names are already in the body.
+  - Exa reads text for the snippet, so an Exa result with only highlights or summary gets an empty snippet.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

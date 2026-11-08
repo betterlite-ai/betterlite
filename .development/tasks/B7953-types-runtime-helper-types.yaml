@@ -1,0 +1,66 @@
+id: B7953
+title: Python types for videos, secret managers, pass-through endpoints, prompts and repositories
+description: >-
+  This task ports `videos/main.py`, `videos/utils.py` (148 lines), `secret_managers/` (`main.py`, `get_azure_ad_token_provider.py`),
+  `passthrough_endpoints/` (`assembly_ai`, `managed_id_rewriter`, `pass_through_endpoints`, `tinyfish`), `prompts/init_prompts.py`,
+  `litellm_core_utils/streaming_chunk_builder_utils.py` and `repositories/daily_activity.py` into `crates/betterlite-python/python/betterlite/types/` with the same module paths. It is
+  Python only.
+
+
+  `videos/utils.py` has `DecodedCharacterId(dict)` and functions that encode and decode video and character ids with a provider
+  (`encode_video_id_with_provider`, `decode_video_id_with_provider`, `extract_original_video_id`, `encode_character_id_with_provider`,
+  `decode_character_id_with_provider`, `_add_base64_padding`). A test round-trips ids and feeds bad ids to the decoders to compare errors.
+  `managed_id_rewriter.py` is Protocol classes (`ManagedResourceRow`, `ManagedFileRow`, `ManagedObjectRow`, `ManagedTable` and two
+  specialised tables). `tinyfish.py` has `TinyfishRun` and the function `is_allowed_tinyfish_endpoint`. `repositories/daily_activity.py`
+  has two Enums (`DailyActivityTable`, `ExportType`) and plain classes (`DailyActivityScope`, `KeySpendRow`, `KeyPage`, `KeyMetadataRow`,
+  `ExportRow`). `KeyManagementSettings` in `secret_managers/main.py` extends `LiteLLMPydanticObjectBase` (B7929).
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/videos/**
+  - crates/betterlite-python/python/betterlite/types/secret_managers/**
+  - crates/betterlite-python/python/betterlite/types/passthrough_endpoints/assembly_ai.py
+  - crates/betterlite-python/python/betterlite/types/passthrough_endpoints/managed_id_rewriter.py
+  - crates/betterlite-python/python/betterlite/types/passthrough_endpoints/pass_through_endpoints.py
+  - crates/betterlite-python/python/betterlite/types/passthrough_endpoints/tinyfish.py
+  - crates/betterlite-python/python/betterlite/types/prompts/**
+  - crates/betterlite-python/python/betterlite/types/litellm_core_utils/**
+  - crates/betterlite-python/python/betterlite/types/repositories/**
+  - crates/betterlite-python/tests/test_types_runtime_helper_types.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L1-L148
+  why: Video and character id encode and decode functions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/managed_id_rewriter.py#L1-L88
+  why: Protocol classes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/repositories/daily_activity.py#L1-L159
+  why: Enums and row classes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/tinyfish.py#L1-L34
+  why: TinyfishRun and the endpoint check.
+out_of_scope:
+- >-
+  `passthrough_endpoints/vertex_ai.py` is in B7927. `repositories/__init__.py` is empty and the architect's.
+pitfalls:
+- >-
+  Protocol classes carry no runtime behavior. A test checks that a stub class with the right methods satisfies each Protocol under basedpyright, and `isinstance` only when LiteLLM marks the class `runtime_checkable`.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_runtime_helper_types.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

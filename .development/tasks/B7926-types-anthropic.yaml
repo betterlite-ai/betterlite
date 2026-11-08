@@ -1,0 +1,60 @@
+id: B7926
+title: Python types for Anthropic messages, tools, skills and response blocks (types/llms/anthropic*)
+description: >-
+  Code that talks to Anthropic imports tool, content and usage TypedDicts from `litellm.types.llms.anthropic`. This task ports
+  `anthropic.py` (788 lines, mostly TypedDicts), `anthropic_messages/anthropic_request.py`, `anthropic_messages/anthropic_response.py`,
+  `anthropic_skills.py` and `anthropic_tool_search.py` into the package `crates/betterlite-python/python/betterlite/types/llms/anthropic/`. It is Python only.
+
+
+  `anthropic.py` starts with the tool shapes (`AnthropicMessagesTool`, the computer, web search, code execution, memory,
+  tool search and advisor tools, `ToolReference` and the caller classes), then holds the message content blocks, the request
+  body, the streaming events and usage. It imports `ChatCompletionUsageBlock` from B7921.
+  The response file has five block TypedDicts plus `AnthropicUsage` and `AnthropicMessagesResponse`. `AnthropicMetadata` in the
+  request file is a pydantic model, so it goes on `ResponseObject`. In `anthropic_skills.py` the request and params classes
+  are TypedDicts and the six response classes (`Skill`, `SkillVersion`, the two list responses and the two delete responses) are
+  pydantic models. `anthropic_tool_search.py` is one function, `get_tool_search_beta_header`; port it with the same output for
+  every input in the LiteLLM source.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/llms/anthropic/**
+  - crates/betterlite-python/tests/test_types_anthropic.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic.py#L1-L788
+  why: Tool, content block, request, stream event and usage types.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic_messages/anthropic_response.py#L1-L107
+  why: Response block TypedDicts.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic_skills.py#L1-L167
+  why: Skills request and response types.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic_tool_search.py#L1-L36
+  why: The beta header function.
+out_of_scope:
+- >-
+  Anthropic transformation code belongs to the Rust provider tasks. Only the type definitions and the one header function are ported here.
+pitfalls:
+- >-
+  `anthropic.py` imports `NotRequired`, `ReadOnly` and `Required` from `typing_extensions`. B5369 makes typing_extensions a runtime dependency of the wheel, so import them from there as LiteLLM does, with no `sys.version_info` branch.
+- >-
+  `Skill`, `SkillVersion` and the four response classes are pydantic models in LiteLLM. They must keep `model_dump` output and attribute access through `ResponseObject`.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_anthropic.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv and typing_extensions.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

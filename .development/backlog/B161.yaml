@@ -2,8 +2,8 @@ id: B161
 milestone: M12 python
 title: Python files, batches, fine-tuning, vector stores, assistants, containers, videos, skills, evals, search, OCR, RAG, realtime and passthrough functions
 status: todo
-depends_on: [B158]
-file: null
+depends_on: [B7870, B7871, B7872, B7873, B7874, B7875, B7876, B7877, B7878, B7879, B7880, B7881, B7882, B7883, B7884, B7885, B7886, B7887, B7888, B7889, B7890, B7891]
+file: tasks/B161-python-resource-surface.yaml
 covers:
   - "litellm/{files,batches,fine_tuning,vector_stores,vector_store_files,assistants,containers,videos,skills,evals,search,ocr,rag,realtime_api,passthrough,decisions,sandbox,systemone}/**"
 parent: null
