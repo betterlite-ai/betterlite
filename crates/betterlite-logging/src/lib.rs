@@ -63,6 +63,7 @@ pub mod legacy_dynamodb;
 pub mod legacy_s3;
 pub mod literal_ai;
 pub mod logging_failure;
+pub mod logging_interactions;
 pub mod logging_metadata;
 pub mod logging_pre_post;
 pub mod logging_privacy;

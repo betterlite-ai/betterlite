@@ -1,0 +1,14 @@
+id: B6805
+milestone: M5 api families
+title: Azure Document Intelligence OCR provider
+status: todo
+depends_on: [B6800, B6804]
+file: tasks/B6805-azure-document-intelligence-ocr.yaml
+covers:
+  - "litellm/ocr/**"
+parent: B092
+split_from: B092
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

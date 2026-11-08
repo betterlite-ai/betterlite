@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use serde_json::Value;
 
+use super::embedding_executor;
 use super::error::SdkHttpError;
 use super::native;
 use super::python::PythonSdk;
@@ -40,9 +41,14 @@ impl<'sdk> Sdk<'sdk> {
         env: &BTreeMap<String, String>,
         stop: &Stop<'_>,
     ) -> Execution {
-        match self {
-            Self::Python(python) => python.execute(call, api_base, stop),
-            Self::Native => native::execute(call, api_base, env, stop),
+        match (self, call) {
+            (Self::Python(python), _) => python.execute(call, api_base, stop),
+            (Self::Native, SdkHttpCall::OpenaiChat(chat)) => {
+                native::execute(chat, api_base, env, stop)
+            }
+            (Self::Native, SdkHttpCall::VectorStoreEmbeddingExecutor(embedding)) => {
+                embedding_executor::execute(embedding, api_base, env, stop)
+            }
         }
     }
 }
