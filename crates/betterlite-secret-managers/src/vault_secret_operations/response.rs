@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
@@ -18,13 +19,13 @@ pub struct VaultSecretDataBlock {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum VaultValue {
-    Text(String),
+    Text(SecretString),
     Other(IgnoredAny),
 }
 
 impl VaultSecretReadResponse {
     #[must_use]
-    pub fn value(&self, data_key: &str) -> Option<&str> {
+    pub fn value(&self, data_key: &str) -> Option<&SecretString> {
         let values = self.data.as_ref()?.data.as_ref()?;
         match values.get(data_key)? {
             VaultValue::Text(text) => Some(text),

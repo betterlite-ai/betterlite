@@ -92,10 +92,17 @@ impl Script {
     }
 }
 
-fn response(status: u16, body: &str) -> VaultResponse {
-    VaultResponse {
-        status,
-        body: SecretString::from(body),
+fn settle(reply: Reply) -> Result<VaultResponse, Refused> {
+    match reply {
+        Reply::Failure { failure: true } => Err(Refused),
+        Reply::Answer { status, body } => Ok(VaultResponse {
+            status,
+            body: SecretString::from(body),
+        }),
+        Reply::Failure { failure: false } | Reply::Timeout { .. } => Ok(VaultResponse {
+            status: 500,
+            body: SecretString::from(String::new()),
+        }),
     }
 }
 
@@ -109,28 +116,14 @@ impl VaultTransport for Script {
         let timeout = request.timeout;
         let reply = self.answer(&request);
         async move {
-            match reply {
-                Reply::Failure { failure: true } => Err(Refused),
-                Reply::Failure { failure: false } | Reply::Timeout { timeout: false } => {
-                    Ok(response(500, ""))
-                }
-                Reply::Timeout { timeout: true } => {
-                    sleep(timeout.saturating_add(Duration::from_secs(1))).await;
-                    Ok(response(500, ""))
-                }
-                Reply::Answer { status, body } => Ok(response(status, &body)),
+            if matches!(reply, Reply::Timeout { timeout: true }) {
+                sleep(timeout.saturating_add(Duration::from_secs(1))).await;
             }
+            settle(reply)
         }
     }
 
     fn send_blocking(&self, request: VaultRequest) -> Result<VaultResponse, Refused> {
-        match self.answer(&request) {
-            Reply::Failure { failure: true } => Err(Refused),
-            Reply::Failure { failure: false } | Reply::Timeout { timeout: false } => {
-                Ok(response(500, ""))
-            }
-            Reply::Timeout { timeout: true } => Ok(response(500, "")),
-            Reply::Answer { status, body } => Ok(response(status, &body)),
-        }
+        settle(self.answer(&request))
     }
 }

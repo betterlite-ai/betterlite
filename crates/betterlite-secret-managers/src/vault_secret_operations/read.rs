@@ -32,7 +32,8 @@ where
     if let CachedLookup::Hit(value) = cached_lookup(manager, &target) {
         return value;
     }
-    finish(manager, &target, async_reply(manager, &target).await)
+    let reply = super::get(manager, &target.url, READ_TIMEOUT).await;
+    finish(manager, &target, reply)
 }
 
 pub(super) fn sync_read<T>(
@@ -60,23 +61,19 @@ where
             return None;
         }
     };
-    let request = read_request(target.url.clone(), token);
+    let request = VaultRequest {
+        method: VaultMethod::Get,
+        url: target.url.clone(),
+        token: Some(token),
+        namespace: None,
+        body: None,
+        client_certificate: None,
+        timeout: READ_TIMEOUT,
+        follow_redirects: true,
+        max_response_bytes: MAX_RESPONSE_BYTES,
+    };
     let reply = super::checked_reply::<T>(manager.transport.send_blocking(request));
     finish(manager, &target, reply)
-}
-
-async fn async_reply<T>(
-    manager: &HashicorpSecretManager<T>,
-    target: &VaultSecretTarget,
-) -> Result<VaultResponse, VaultOperationError<T::Error>>
-where
-    T: VaultTransport,
-{
-    let token = manager
-        .request_token()
-        .await
-        .map_err(|source| VaultOperationError::Authentication { source })?;
-    super::send(manager, read_request(target.url.clone(), token)).await
 }
 
 fn target_for<T>(
@@ -111,20 +108,6 @@ where
     )
 }
 
-const fn read_request(url: String, token: SecretString) -> VaultRequest {
-    VaultRequest {
-        method: VaultMethod::Get,
-        url,
-        token: Some(token),
-        namespace: None,
-        body: None,
-        client_certificate: None,
-        timeout: READ_TIMEOUT,
-        follow_redirects: true,
-        max_response_bytes: MAX_RESPONSE_BYTES,
-    }
-}
-
 fn finish<T>(
     manager: &HashicorpSecretManager<T>,
     target: &VaultSecretTarget,
@@ -140,10 +123,9 @@ where
             return None;
         }
     };
-    if json_object_body(response.body.expose_secret().as_bytes()).is_err() {
-        tracing::error!(
-            "error reading secret from Hashicorp Vault: the response body is not a JSON object"
-        );
+    if let Err(source) = json_object_body(response.body.expose_secret().as_bytes()) {
+        let error = VaultOperationError::<T::Error>::InvalidBody { source };
+        tracing::error!("error reading secret from Hashicorp Vault: {error}");
         return None;
     }
     manager.body_cache().set(&target.url, response.body.clone());

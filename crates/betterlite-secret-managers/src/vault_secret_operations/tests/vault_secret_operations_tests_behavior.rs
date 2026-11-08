@@ -838,17 +838,31 @@ async fn a_write_timeout_returns_its_own_error_status() {
 #[test]
 fn the_read_body_decoder_returns_the_value_at_the_data_key() {
     let parsed = vault_secret_read_body(SECRET_BODY.as_bytes()).unwrap();
-    assert_eq!(parsed.value("key"), Some("sk-from-vault"));
-    assert_eq!(parsed.value("password"), Some("pw-from-vault"));
-    assert_eq!(parsed.value("missing"), None);
+    let exposed = |name| parsed.value(name).map(secrecy::ExposeSecret::expose_secret);
+    assert_eq!(exposed("key"), Some("sk-from-vault"));
+    assert_eq!(exposed("password"), Some("pw-from-vault"));
+    assert_eq!(exposed("missing"), None);
+}
+
+#[test]
+fn a_parsed_read_body_never_prints_the_secret() {
+    let parsed = vault_secret_read_body(SECRET_BODY.as_bytes()).unwrap();
+    let printed = format!("{parsed:?}");
+    assert!(!printed.contains("sk-from-vault"));
+    assert!(!printed.contains("pw-from-vault"));
 }
 
 #[test]
 fn the_read_body_decoder_tolerates_other_values_in_the_data_block() {
     let body = br#"{"data":{"data":{"key":"value","count":2,"nested":{"a":1}}}}"#;
     let parsed = vault_secret_read_body(body).unwrap();
-    assert_eq!(parsed.value("key"), Some("value"));
-    assert_eq!(parsed.value("count"), None);
+    assert_eq!(
+        parsed
+            .value("key")
+            .map(secrecy::ExposeSecret::expose_secret),
+        Some("value")
+    );
+    assert!(parsed.value("count").is_none());
 }
 
 #[rstest]

@@ -1,14 +1,12 @@
 use std::time::Duration;
 
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use crate::cyberark::operation::{OperationStatus, SecretOperation};
 use crate::secret_contracts::options::{DeleteOptions, SecretRotation, SecretWrite};
 use crate::vault::HashicorpSecretManager;
 use crate::vault::target::{VaultSecretParams, VaultSecretTarget};
-use crate::vault::transport::{
-    MAX_RESPONSE_BYTES, VaultMethod, VaultRequest, VaultResponse, VaultTransport,
-};
+use crate::vault::transport::{VaultResponse, VaultTransport};
 
 use super::error::VaultOperationError;
 use super::result::VaultOperationResult;
@@ -139,15 +137,18 @@ where
     let parsed =
         match super::response::vault_secret_read_body(response.body.expose_secret().as_bytes()) {
             Ok(parsed) => parsed,
-            Err(_source) => {
-                tracing::error!("error verifying new secret in Hashicorp Vault");
+            Err(source) => {
+                tracing::error!("error verifying new secret in Hashicorp Vault: {source}");
                 return Ok(Some(VaultOperationResult::Status(SecretOperation {
                     status: OperationStatus::Error,
                     message: "Error verifying new secret".to_owned(),
                 })));
             }
         };
-    if parsed.value(&target.data_key) != Some(rotation.new_secret_value.expose_secret()) {
+    let retrieved = parsed
+        .value(&target.data_key)
+        .map(ExposeSecret::expose_secret);
+    if retrieved != Some(rotation.new_secret_value.expose_secret()) {
         tracing::error!("new secret value mismatch in Hashicorp Vault");
         return Ok(Some(VaultOperationResult::Status(SecretOperation {
             status: OperationStatus::Error,
@@ -195,7 +196,7 @@ async fn fetch_staged<T>(
 where
     T: VaultTransport,
 {
-    match fetch(manager, &target.url, timeout).await {
+    match super::get(manager, &target.url, timeout).await {
         Ok(response) => Ok(response),
         Err(VaultOperationError::Timeout) => Err(FetchProblem::Timeout),
         Err(VaultOperationError::Status { status: 404 }) => {
@@ -217,30 +218,4 @@ where
             )))
         }
     }
-}
-
-async fn fetch<T>(
-    manager: &HashicorpSecretManager<T>,
-    url: &str,
-    timeout: Duration,
-) -> Result<VaultResponse, VaultOperationError<T::Error>>
-where
-    T: VaultTransport,
-{
-    let token = manager
-        .request_token()
-        .await
-        .map_err(|source| VaultOperationError::Authentication { source })?;
-    let request = VaultRequest {
-        method: VaultMethod::Get,
-        url: url.to_owned(),
-        token: Some(token),
-        namespace: None,
-        body: None,
-        client_certificate: None,
-        timeout,
-        follow_redirects: true,
-        max_response_bytes: MAX_RESPONSE_BYTES,
-    };
-    super::send(manager, request).await
 }

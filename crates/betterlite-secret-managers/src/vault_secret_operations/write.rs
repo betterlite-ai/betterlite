@@ -71,7 +71,7 @@ where
     };
     let response = super::send(manager, request).await?;
     json_object_body(response.body.expose_secret().as_bytes())
-        .map_err(|_source| VaultOperationError::InvalidBody)?;
+        .map_err(|source| VaultOperationError::InvalidBody { source })?;
     Ok(VaultOperationResult::Response(VaultJsonResponse {
         body: response.body,
     }))
