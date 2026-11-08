@@ -2,7 +2,7 @@ id: B251
 milestone: M1 openai data plane
 title: Failure callback dispatch and partial usage
 status: todo
-depends_on: [B247, B248, B191, B254, B011]
+depends_on: [B247, B248, B191, B254, B011, B8740, B3931]
 file: tasks/B251-logging-failure.yaml
 covers:
   - "litellm/litellm_core_utils/litellm_logging.py"

@@ -1,0 +1,91 @@
+id: B8641
+title: Pass-through port adapters over shared state
+description: >-
+  The pass-through route tasks declare small traits for everything that LiteLLM reads from proxy_server globals (llm_router, proxy_logging_obj, the vector store registries) and test with fakes. This task writes the production value for each of those traits, so B8640 can build the route deps. Code goes in crates/betterlite-server/src/app/pass_through/ports.rs and ports/ (logging.rs, router.rs, vector.rs, vertex.rs, tokens.rs, tests.rs).
+  Every adapter is a struct that holds what it needs from `Shared` (B8610 adds the struct and the `vector_stores` field, B8611 the `router` and `router_views` fields, B8612 the `proxy_logging` and `general_settings` fields) and forwards each call to the task that owns the behavior. No adapter copies logic from the task it calls. Read each trait's merged name and signature before writing its impl; when a trait or a backing function named below is not on the branch, stop and report.
+  `PassThroughPorts::new(shared: &Shared)` builds every adapter once and holds each as an `Arc`, so B8640 clones what each route family needs.
+
+  Logging (logging.rs).
+  - `HooksAdapter` implements B6510's `ProxyHooks` over `shared.proxy_logging` (B8399's ProxyLogging). pre_call_hook calls ProxyLogging's pre_call_hook with the key, the body map, call type `pass_through_endpoint` and the logging object handle from PreCallInput, and returns the map it gets back. post_call_response_headers_hook, post_call_success_hook and post_call_failure_hook call the ProxyLogging methods of the same names (B8394 and B8395 build them). A ProxyLogging error becomes B6510's PassThroughError with the same status and detail.
+  - `LiveFailureAdapter` implements B3629's `LiveFailurePort`. It calls HooksAdapter's post_call_failure_hook with the key, B6510's `FailureCause::Other(error_text)`, an empty request data map and no traceback, and drops the result, as LiteLLM ignores what the hook returns there.
+
+  Router (router.rs). Each adapter below reads the router once per call with `shared.router_views.current()` (B8611) and works on what it returns. None means no router is configured: LiveModelAdapter then returns an empty list and PassthroughLookup returns no deployment, which give the same answers as LiteLLM's missing llm_router in B3629 and B3622. B7324's DeploymentLookup is not here, since B8611's router_views implements it.
+  - `LiveModelAdapter` implements B3629's `LiveModelPort`: B844's get_model_list() with no arguments.
+  - `PassthroughLookup` implements B3622's `VertexDeploymentLookup`: B396's get_available_deployment_for_pass_through(model). An error from B396 is the trait's LookupError with the same text.
+  - `AllowlistAdapter` implements B3628's `ModelAllowlistPort`: B885's enforced_model_allowlists for the key, returned in the order B885 gives them.
+
+  Vector stores (vector.rs). These back the three ports of B3624 and one of B3623.
+  - `VectorRegistryAdapter` implements `VectorRegistryPort` over B1062 (is_index, index by name) and B1063 (store by name). has_index_registry and has_store_registry are true only when the registry that LiteLLM keeps in `litellm.vector_store_index_registry` and `litellm.vector_store_registry` exists. Both live in `shared.vector_stores` (B8610).
+  - `VectorAccessAdapter` implements `VectorAccessPort`: assert_store_access is B1061's assert_user_can_access_vector_store, check_index_endpoint is B1061's is_allowed_to_call_vector_store_endpoint (keep only its error), and assert_admin_for_index_create is B1060's assert_proxy_admin_for_vector_store_index_management with operation `create`. The same struct implements B3623's `VertexStoreAccess` (managed_store with B1061's get_litellm_managed_vector_store, assert_access with assert_user_can_access_vector_store).
+  - `VectorProviderAdapter` implements `VectorProviderPort`. `VectorProvider::AzureAi` goes to B558's AzureAIVectorStoreConfig and `VectorProvider::Milvus` to B7892's MilvusProviderPorts: auth_headers is get_auth_credentials, complete_url is get_complete_url, has_config is true for both.
+
+  Vertex (vertex.rs). The rest of B3623's ports.
+  - `KeyAuthAdapter` implements `VertexKeyAuth` with B052's key authentication given an explicit api key string. The auth error passes through unchanged.
+  - `CredentialAdapter` implements `VertexCredentialLookup` with B3602's get_vertex_credentials(project, location) on the one credential router the server holds (the same value B3629's VertexLiveDeps gets).
+  - `RelayAdapter` implements `VertexRelay` with B3615's create_pass_through_route over the one `Arc<PassThroughHandler>` (B3613) the server builds, then calls the returned handler with the request, response and key. A ProxyException becomes `RelayError::Proxy`, anything else `RelayError::Other` with its text.
+
+  Bedrock token counting (tokens.rs). `CountTokensAdapter` implements B3620's `CountTokensBackend` with B641's handle_count_tokens_request. A B641 Bedrock failure becomes `CountTokensFailure::Bedrock` with its status, message and upstream response headers; any other error becomes `CountTokensFailure::Other` with its text.
+
+  Config writes. B8520's `GeneralSettingsStore` is backed by `shared.general_settings`. When B8612's type already implements B8520's trait, `PassThroughPorts` holds it as is; when B8612 declares its own trait, write `SettingsAdapter` here that forwards get_field and update_field and keeps the status and detail of each error unchanged.
+
+  Tests (tests.rs). One test group per file, each with a recording double of the backing service where the service is a trait, or a small real value (a Router built from a two deployment config, an in memory credential router) where it is a struct. Each test checks that the call reaches the backing service with the right arguments and that its result or error comes back unchanged.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/pass_through/ports.rs
+    - crates/betterlite-server/src/app/pass_through/ports/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3551-L3556
+    why: _get_llm_router, the global read LiveModelPort and the router adapters replace.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3078-L3094
+    why: _websocket_relay and _proxy_model_allowlists, the FastAPI bindings the relay and allowlist ports replace.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L680-L806
+    why: milvus_proxy_route, where the vector registries, access checks and provider configs are read from litellm globals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3690-L3705
+    why: The Live route's failure scope, which calls proxy_logging_obj.post_call_failure_hook with empty request data.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1057-L1133
+    why: handle_bedrock_count_tokens, which calls the Bedrock CountTokens handler the backend adapter wraps.
+dod:
+  - text: HooksAdapter forwards all four ProxyHooks methods to ProxyLogging and LiveFailureAdapter calls the failure hook with empty request data.
+    proof: [logging-tests]
+  - text: The router adapters call get_model_list, the pass-through selection and the allowlist intersection with the given arguments, and each answers as if no router existed when current() gives None.
+    proof: [router-tests]
+  - text: The vector adapters call the registry, access and provider functions for both Milvus and Azure AI and pass access errors through with their status.
+    proof: [vector-tests]
+  - text: The Vertex adapters authenticate with the explicit key, read credentials from the shared credential router and relay through create_pass_through_route.
+    proof: [vertex-tests]
+  - text: CountTokensAdapter maps a Bedrock failure to the Bedrock variant with its status, message and headers, and any other error to Other.
+    proof: [tokens-tests]
+checks:
+  optional: []
+  commands:
+    - id: logging-tests
+      why: a ProxyHooks call or the Live failure hook goes to the wrong ProxyLogging method or loses its arguments
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::ports::tests::logging(::|$)/)'
+    - id: router-tests
+      why: a router adapter calls the wrong router function or mishandles a missing router
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::ports::tests::router(::|$)/)'
+    - id: vector-tests
+      why: a vector port reaches the wrong registry, access check or provider config
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::ports::tests::vector(::|$)/)'
+    - id: vertex-tests
+      why: a Vertex route port authenticates, reads credentials or relays wrongly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::ports::tests::vertex(::|$)/)'
+    - id: tokens-tests
+      why: the CountTokens backend maps a Bedrock failure wrongly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::ports::tests::tokens(::|$)/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B3618's RouterPassthrough and B7324's LlmRequestProcessor and ExceptionMapper: B8694 writes their production values, over B8690 to B8693."
+  - "B3612's socket adapters: B8642. The mount and the deps structs: B8640."
+  - "The ProxyLogging value and its hooks: B8399 and its parts. The router itself: B8611. The general settings store: B8612."
+pitfalls:
+  - "LiteLLM ignores what post_call_failure_hook returns in the Live route; LiveFailureAdapter must not turn a hook error into a socket close."
+  - "LiveModelPort takes get_model_list with no arguments, the whole list in config order, not one model group."
+  - "The Vertex credential router is one shared value; a fresh one per call loses what set_default_vertex_config wrote."
+  - "has_index_registry is false when the registry is absent, not when it is empty; an empty registry still answers true."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

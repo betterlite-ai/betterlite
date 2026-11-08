@@ -36,7 +36,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/tag_report_query.rs
     - crates/betterlite-server/fuzz/corpus/tag_report_query/**
-    - tools/oracle/cases/http/spend-tag-reports/**
     - tools/oracle/helpers/b1723.py
     - tools/oracle/helpers/b1723/**
     - tools/oracle/src/helpers/server/b1723.rs
@@ -50,10 +49,12 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4397-L4502
     why: Date-ignoring raw tags and inclusive daily tag aggregation.
 dod:
-  - text: Key/user spend tables enforce their own-user scope and never return password fields.
-    proof: [tag-report-tests, oracle]
-  - text: Raw and daily tag APIs keep distinct date/filter behavior, complete result sets and exact error envelopes.
-    proof: [tag-report-tests, tag-report-corpus, oracle]
+  - text: Key/user spend tables enforce their own-user scope and never return password fields. B8662 proves it over HTTP.
+    proof: [tag-report-tests]
+  - text: Raw and daily tag APIs keep distinct date/filter behavior, complete result sets and exact error envelopes. B8662 proves it over HTTP.
+    proof: [tag-report-tests, tag-report-corpus]
+  - text: The handlers answer through tower's oneshot over the module's own Router with fake ports; B8662 merges them through B069's spend routes and proves them over HTTP.
+    proof: [tag-report-tests]
 checks:
   optional: []
   commands:
@@ -63,12 +64,7 @@ checks:
     - id: tag-report-corpus
       why: The report query parser has no new comma/date/null boundary corpus.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/tag_report_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_tag_report_query_corpus)'
-oracle_cases:
-  - tools/oracle/cases/http/spend-tag-reports/key-and-user-self-scope.yaml
-  - tools/oracle/cases/http/spend-tag-reports/missing-user-password-and-db.yaml
-  - tools/oracle/cases/http/spend-tag-reports/raw-tags-ignore-dates.yaml
-  - tools/oracle/cases/http/spend-tag-reports/all-tags-comma-whitespace-and-rounding.yaml
-  - tools/oracle/cases/http/spend-tag-reports/tag-names-and-missing-date-errors.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - B1721 owns activity/provider charts, B1722 exception/reset/end-user diagnostics, B1724 monthly aggregates and B1725 estimates/team/provider-budget output.

@@ -1,0 +1,63 @@
+id: B8802
+title: Production request and router ports for the shared pre-call step
+description: >-
+  B8801's PreCallStep reaches the router, the request preparation and the database-backed checks only through B8800's ports. This task backs the request and router ports with the code their owners build, takes the hook ports from B8805, and returns the production step. The chat and embeddings routes (B8803), the route modules (B8804), the pass-through pipeline (B8694) and the A2A mount (B8648) all run this one step. Code goes in crates/betterlite-server/src/app/inference/pre_call.rs and app/inference/pre_call/ (adapters.rs, key.rs, tests.rs), plus the key fields in crates/betterlite-auth/src/resolved_key/auth.rs. Every name stays at 30 characters or fewer.
+
+  `pre_call_step(state: &Arc<ServerState>) -> Arc<PreCallStep<UserAPIKeyAuth>>` builds the ports and the settings from the server state. Callers call it once when they build their routes and keep the Arc. Settings: config.sections.fallback_errors, config.sections.pre_call, `CliOverrides` with every value unset (the binary has no such flags; user_model too), and the general settings from `shared.general_settings` (B8612) in the form B1102's resolve_inference_model takes. The hook ports come from B8805's `pre_call_hook_ports(state)`. The logger resolver is `state.callback_loggers.resolver()` (B8742's slot), so the per-call logging state the step builds resolves dynamic callbacks (B248) the same way the rest of the server does. The tracer is B3930's NullTracer.
+
+  key.rs and resolved_key/auth.rs. UserAPIKeyAuth (B732, merged) has no `aliases` or `router_settings` field and keeps its fields pub(crate). Add `aliases` (a JSON object, empty by default) and `router_settings` (a JSON value, None by default) to it, filled from the same key and team row fields LiteLLM's UserAPIKeyAuth reads, and add the public readers `aliases()`, `router_settings()` and `team_id()`. Then implement B8800's `PreCallKey` for UserAPIKeyAuth over those readers.
+
+  adapters.rs, one adapter per request or router port:
+  `RequestPreparer` over B1103's add_litellm_data_to_request stage, the one ServerState holds in its request_setup slot.
+  `VectorStoreAccess` over B1061's assert_user_can_access_vector_store_id (core::api::vector_endpoint_access).
+  `RouterSettingsSource` over B881's _get_hierarchical_router_settings (the auth_context_sources slot).
+  `RouterView` over `shared.router` (B8611): resolved_models from B844's resolved_litellm_models, arm_prefetch from Router.arm_routing_read_prefetch, fallbacks from the router's fallbacks setting, fallback_models from B016's get_fallback_model_group (a model group match first, else the generic `*` entry), and authorize_alias from B886's can_key_call_resolved_model with the router's model list and the router. With no deployments in the startup router the port is None, which is LiteLLM's no-router branch.
+  `StreamOptionsCheck` over B175's get_supported_openai_params: true when its answer lists stream_options, false when it has no answer or fails.
+
+  Tests in app/inference/pre_call/tests.rs (`app::inference::pre_call::tests::`) build a ServerState from a two-deployment config.yaml with a local mock upstream and drive the production step. Key router settings with a model_group_alias rewrite the model, and a target the key may not call fails with 403. A rate-limited first group falls back to the next. litellm_settings.model_alias_map, key aliases and general_settings.always_include_stream_usage reach the data. With no router the port is None. A pre_call guardrail from B8805's ports blocks the request. The key reader tests go in resolved_key::auth::tests.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference/pre_call.rs
+    - crates/betterlite-server/src/app/inference/pre_call/**
+    - crates/betterlite-auth/src/resolved_key/auth.rs
+    - crates/betterlite-auth/src/resolved_key/auth/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1913-L2241
+    why: Each collaborator the pre-call step calls, with the arguments it passes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2243-L2359
+    why: The router fallbacks and fallback model groups the RouterView answers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L334
+    why: assert_user_can_access_vector_store_id, which VectorStoreAccess forwards to.
+dod:
+  - text: pre_call_step builds every port from the server state, takes the hook ports from B8805 and the logger resolver from the callback_loggers slot, and leaves the router port out when the startup router has no deployments.
+    proof: [ports-tests]
+  - text: UserAPIKeyAuth carries aliases and router_settings with their defaults and has public aliases, router_settings and team_id readers.
+    proof: [key-tests]
+  - text: The production step rewrites and authorizes a key alias target, falls back after a local rate limit, applies the pre_call config keys and key aliases, and blocks on a pre_call guardrail.
+    proof: [ports-tests]
+checks:
+  optional: []
+  commands:
+    - id: ports-tests
+      why: a port is backed by the wrong owner, misses an argument or exists without a router
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::pre_call::tests::/)'
+    - id: key-tests
+      why: the key fields or their readers are missing or have the wrong defaults
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^resolved_key::auth::tests::/)'
+oracle_cases: []
+deviations:
+  - what: The pre-call step sends no Datadog APM span tags; it uses B3930's NullTracer.
+    why: The server holds no tracer yet. tag_call_id and tag_request are still called, so tags appear once a tracer is wired.
+out_of_scope:
+  - "The step and its ports: B8801 and B8800. The hook ports (PreCallHooks, GuardrailMerge, CompressionArming, TagBudgets, RetrievalPipelines): B8805. Handing the step to routes: B8803, B8804, B8694 and B8648."
+  - "The functions behind each adapter: B1103, B1061, B881, B844, B016, B886 and B175."
+  - "B8560's prompt dispatch: the step never reaches it. Prompt templates run inside pre_call_hook (B8393's prompt.rs through B8399)."
+pitfalls:
+  - "fallback_models must try the exact model group before the `*` entry, as get_fallback_model_group does."
+  - "authorize_alias runs before the alias is written, so a key that may not call the target gets 403 and keeps its model."
+  - "UserAPIKeyAuth flattens its views into JSON, so the new fields must not change the serialized key for callers that already read it."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -12,7 +12,7 @@ description: >-
   `resolve_env_refs(params)` replaces each string value starting with "os.environ/" with its secret lookup and leaves
   the rest (_resolve_coordination_redis_env_refs). `build_usage_redis(params)` (_build_redis_usage_cache) takes
   startup_nodes from the params or, when absent, parses REDIS_CLUSTER_NODES as JSON; any non-empty node list gives a
-  cluster client with the other params, else a plain client (host, url or sentinel) from B5630's RedisCache.
+  cluster client with the other params, else a plain client (host, url or sentinel) from B5630's RedisCache, both built through the one LiveClientFactory the caller passes in.
   `env_has_redis_target(env)` (_environment_has_redis_connection_target) is true when B4306's REDIS_* kwargs carry host
   or url, or REDIS_CLUSTER_NODES or REDIS_SENTINEL_NODES is set; it builds nothing. `build_from_env(env)` returns None
   without a target, else build_usage_redis on those kwargs. `attach_usage_redis(redis, enable_auth_cache, caches)`
@@ -27,7 +27,7 @@ description: >-
   sentinel_nodes". Startup stops on both. `init_from_db(persisted, litellm_settings, router)`
   (_init_coordination_redis_from_db) takes the block B1652 read from the database (None is None, a read error is
   logged by the caller), warns "coordination_redis saved in the database names no connection target; ignoring it." when
-  it has no target, else builds, attaches and gives the router the client when its cache has no Redis yet.
+  it has no target, else builds and attaches the client and returns it; B8613 gives it to the router with attach_redis.
   `init_env_fallback(env, litellm_settings)` (_init_coordination_redis_env_fallback) never fails: a build error or an
   unreachable Redis (ping with a 2 second timeout, or a false ping) logs LiteLLM's warning and returns None.
   `buffer_redis(settings, usage_redis, env)` (_get_transaction_buffer_redis_cache) returns usage_redis when there is
@@ -90,7 +90,7 @@ pitfalls:
   - The CLI SSO session cache gets Redis whenever there is one, even with enable_redis_auth_cache unset, because the browser login can land on another worker.
   - An explicit block or a cache backend that fails is a startup error, but the inferred REDIS_* fallback must never stop a proxy that ran in memory before.
   - REDIS_CLUSTER_NODES is parsed only when the params carry no startup_nodes, and an empty list falls back to a plain client.
-  - The database block gives the router the client only when the router cache has no Redis of its own.
+  - The database block's client reaches the router only when the router cache has no Redis of its own, and B8613 does that with attach_redis, so init_from_db never touches the router.
 review_level: security
 budget:
   max_changed_lines: 1500

@@ -36,6 +36,8 @@ scope:
     - tools/oracle/helpers/b3939/**
     - tools/oracle/src/helpers/logging/b3939.rs
     - tools/oracle/src/helpers/logging/b3939/**
+    - crates/betterlite-logging/src/registry/catalog/datadog_metrics.rs
+    - crates/betterlite-logging/src/registry/catalog/datadog_metrics/**
   lint_tables: false
 
 references:
@@ -45,6 +47,8 @@ references:
     why: TypedDict definitions for DatadogMetricPoint, DatadogMetricSeries and DatadogMetricsPayload.
 
 dod:
+  - text: "The Datadog metrics logger records latency and request metrics from the async success and failure events of CallbackLogger, and registry/catalog/datadog_metrics.rs builds it for datadog_metrics (tests named callback_logger_* under datadog::metrics and registry/catalog/datadog_metrics/tests.rs)."
+    proof: [callback-logger]
   - text: Gauge metrics are created for total latency, provider latency and overhead latency from timing fields in kwargs and hidden_params.
     proof: [latency-metrics]
   - text: Count metric is created per request with status_code tag from error_information or 200 default.
@@ -63,6 +67,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: callback-logger
+      why: datadog_metrics has no builder or records nothing from logger events
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::datadog_metrics::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog::metrics::(.*::)?callback_logger_/)'
     - id: latency-metrics
       why: latency calculations are missing or incorrect
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog::metrics::(.*::)?datadog_metrics::tests::latency(::|$)/)'

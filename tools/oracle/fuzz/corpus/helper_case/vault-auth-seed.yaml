@@ -1,0 +1,23 @@
+kind: helper
+name: vault_auth_seed
+env: {}
+compare: {ignore: []}
+call:
+  b4416:
+    env:
+      HCP_VAULT_APPROLE_ROLE_ID: role-id
+      HCP_VAULT_APPROLE_SECRET_ID: secret-id
+      HCP_VAULT_NAMESPACE: admin
+    routes:
+      - route: "POST http://127.0.0.1:8200/v1/auth/approle/login"
+        replies:
+          - {status: 200, body: '{"auth":{"client_token":"hvs.seed","lease_duration":60}}'}
+    steps:
+      - {op: token}
+      - {op: advance, ms: 1000}
+      - {op: namespaces}
+      - {op: token_blocking}
+      - op: target
+        name: DB_PASSWORD
+        params: {secret_manager_settings: {namespace: teams/team-a, mount: kv-prod, data: password}}
+      - {op: value, body: '{"data":{"data":{"password":"s3cret"}}}', data_key: password}

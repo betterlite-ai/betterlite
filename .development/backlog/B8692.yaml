@@ -1,0 +1,14 @@
+id: B8692
+milestone: M5 api families
+title: Core LlmPassthrough dispatch entry and route choice
+status: todo
+depends_on: [B8690, B6460, B014]
+file: tasks/B8692-llm-passthrough-entry.yaml
+covers:
+  - "litellm/proxy/route_llm_request.py"
+parent: B101
+split_from: B101
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

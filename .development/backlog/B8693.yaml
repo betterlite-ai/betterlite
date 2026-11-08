@@ -1,0 +1,15 @@
+id: B8693
+milestone: M5 api families
+title: Passthrough reply shaping and exception mapping
+status: todo
+depends_on: [B7324, B3600, B3678, B3801, B6370, B004, B5103, B1103]
+file: tasks/B8693-passthrough-reply-shaping.yaml
+covers:
+  - "litellm/proxy/common_request_processing.py"
+  - "litellm/llms/pass_through/guardrail_translation/handler.py"
+parent: B101
+split_from: B101
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

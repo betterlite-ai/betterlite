@@ -1,7 +1,7 @@
 id: B3427
 title: Eval update delete and cancellation routes
 description: >-
-  Register POST, DELETE and POST `/v1/evals/{eval_id}`, `/v1/evals/{eval_id}` and `/v1/evals/{eval_id}/cancel` routes in `betterlite-server::api::eval_mutation_routes`,
+  Register POST, DELETE and POST `/v1/evals/{eval_id}`, `/v1/evals/{eval_id}` and `/v1/evals/{eval_id}/cancel` routes in `betterlite-server::api::eval_mutation_routes` (returned by `pub fn routes(..)`, which B8775 mounts and proves over HTTP; test the handlers here with tower's oneshot over that Router),
   then mount the router in B096's composition. Decode optional request bodies with orjson before the try block and apply model selection precedence:
   body `model` (truthy), then query `model`, then header `x-litellm-model`. For all three routes, path `eval_id` overwrites any body value unconditionally.
   A present body `custom_llm_provider`, even when null, is not replaced by the query default `openai`; only apply the default when the key is entirely absent from the body.
@@ -12,7 +12,6 @@ scope:
   paths:
     - crates/betterlite-server/src/api/eval_mutation_routes.rs
     - crates/betterlite-server/src/api/eval_mutation_routes/**
-    - tools/oracle/cases/evals/mutation/**
     - Cargo.toml
     - deny.toml
     - tools/oracle/helpers/b3427.py
@@ -80,27 +79,13 @@ checks:
     - id: response-contracts
       why: response models do not use Eval and DeleteEvalResponse/CancelEvalResponse from B3420
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::eval_mutation_routes::tests::response_contracts(::|$)/)'
-oracle_cases:
-  - tools/oracle/cases/evals/mutation/update-eval-basic.yaml
-  - tools/oracle/cases/evals/mutation/update-eval-model-body.yaml
-  - tools/oracle/cases/evals/mutation/update-eval-model-query.yaml
-  - tools/oracle/cases/evals/mutation/update-eval-model-header.yaml
-  - tools/oracle/cases/evals/mutation/update-eval-provider-body.yaml
-  - tools/oracle/cases/evals/mutation/update-eval-provider-null.yaml
-  - tools/oracle/cases/evals/mutation/delete-eval-basic.yaml
-  - tools/oracle/cases/evals/mutation/delete-eval-model-body.yaml
-  - tools/oracle/cases/evals/mutation/delete-eval-path-override.yaml
-  - tools/oracle/cases/evals/mutation/delete-eval-provider-null.yaml
-  - tools/oracle/cases/evals/mutation/cancel-eval-basic.yaml
-  - tools/oracle/cases/evals/mutation/cancel-eval-model-header.yaml
-  - tools/oracle/cases/evals/mutation/cancel-eval-provider-default.yaml
-  - tools/oracle/cases/evals/mutation/malformed-json-body.yaml
+oracle_cases: []
 deviations:
   - what: "Request body decoding (JSON parse errors) occurs before the try/catch block so malformed bodies return 400 with a parse error, not a 500 from the handler. This is a safety boundary between parsing and processing, not a deviation from LiteLLM."
     why: "LiteLLM's FastAPI route handler implicitly parses bodies as part of the request lifecycle; betterlite's explicit decode before try/catch preserves the same error surface (400 on bad JSON) without changing the visible contract."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_evals_endpoints/endpoints.py#L352-L354"
 out_of_scope:
-  - "ProxyBaseLLMRequestProcessing.base_process_llm_request implementation and its internal processing steps; this task only calls it."
+  - "ProxyBaseLLMRequestProcessing.base_process_llm_request implementation and its internal processing steps; this task only calls it. Its pre-call step is B8801's shared PreCall step (take `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state constructor; the part that mounts these routes passes B8802's pre_call_step(state))."
   - "ProxyBaseLLMRequestProcessing._handle_llm_api_exception implementation; this task only catches and delegates to it."
   - "Authentication and user_api_key_auth dependency injection; B756 or another auth task owns that."
   - "The concrete operation implementations (aupdate_eval, adelete_eval, acancel_eval) owned by B3422 and B3423; routes only dispatch to them."

@@ -1,0 +1,63 @@
+id: B8645
+title: Build the agent access services the server shares
+description: >-
+  The agent auth tasks built their logic in crates/betterlite-auth behind ports and left the production implementations to the server: B4778 (AccessGroupReads, CallerReads), B4779 (AgentGrants, built from its collaborators), B4780 (GrantSources, TargetAgents, HumanSources) and B8100 (A2aAgentLookup). Nothing implements them yet, so no agent check can run in the server. This task writes those implementations in betterlite-server and one struct that bundles the built services, so the auth stages (B8646), the managed admission port (B8544) and the agent routes (B8647, B8648) all take the same objects. It mounts nothing and changes no slot.
+
+  Where. Module `app::agents::services`, files crates/betterlite-server/src/app/agents/services.rs and services/** (one file per adapter: access_groups.rs, callers.rs, grants.rs, targets.rs, humans.rs, a2a_lookup.rs, plus tests.rs). The skeleton declares `pub(crate) mod services;` in app/agents.rs; do not edit app/agents.rs, app.rs, state.rs, state/shared.rs or server.rs. Read the real files first and use their exact type and method names: crates/betterlite-auth/src/agent_registry (B4776), agent_store (B4773), agent_access_groups and agent_caller (B4778), agent_permission_handler (B4779), agent_access (B4780), crates/betterlite-server/src/registry_read_through (B8231), crates/betterlite-provider/src/a2a_chat (B8100), and state/shared.rs for the Shared field types. No statics, no trait objects, native async fn in traits, every collaborator comes in through a constructor.
+
+  1. `AgentServices` (services.rs) holds the registry, the agents read-through, `store: Option<AgentIdentityStore>`, `access_groups`, `callers`, `grants` and `access` (the B4780 AgentAccessResolver over the three adapters below). Build it with `AgentServices::new(config: &Config, shared: &Shared) -> AgentServices`. `shared.agents` (B8612) is an `Arc<SharedAgents>` with the fields `registry` (the AgentRegistry) and `read_through` (the one agents RegistryReadThrough of the process, B8231, with the AgentSync and DbObjects adapters B8612 wrote); keep a clone of that Arc and read both fields from it and never build a second registry or read-through. `shared.db` is an Option<Arc<PostgresStore>>: the store is Some exactly when it is Some, built over B4773's repositories with `shared.auth_cache` as its cache (LiteLLM passes user_api_key_cache), and None without a database. Every field is cheap to clone (Arc or a handle), and AgentServices derives Clone.
+
+  2. AccessGroupReads for B4778 (access_groups.rs, `ServerAccessGroupReads`). has_database is `shared.db` being Some. agent_access_group_ids(agent_id): look the agent up with registry.get_agent_by_id, then get_agent_by_name; on a miss call the read-through's attempt(agent_id) once and, when it returns true, look up again by id and by name; return the agent's access_group_ids, or an empty Vec when it is still unknown. It never fails. access_group(id, check_db_only) forwards to B737's get_access_object with the same flag, the database and the auth cache.
+
+  3. CallerReads for B4778 (callers.rs, `ServerCallerReads`). team(team_id) forwards to B737's get_team_object with its default flags. user(user_id) forwards to B736's get_user_object with user_id_upsert false, no sso id, no email and check_db_only unset. Both pass the database, the auth cache and the proxy logging handle those readers take.
+
+  4. AgentGrants (B4779) is built once in AgentServices::new with the constructor it defines: the AgentAccessGroups from item 2, B737's team loader, B747's unified group lookup and the registry. GrantSources for B4780 (grants.rs, `ServerGrantSources`): key_team_access forwards to resolve_key_team_agent_access, caller_access to agent_caller_access, key_access_strict to get_allowed_agents_for_key with strict true, access_group_ceiling to the AgentGrants method of that name, and managed_ceilings to AgentAccessGroups::resolve_managed_agent_ceilings with each ceiling reduced to its agent_ids. A GrantError or AccessGroupsError becomes AgentAccessError through the From conversion those tasks define; if one is missing, add the match in grants.rs, keep the status and message.
+
+  5. TargetAgents for B4780 (targets.rs, `StoreTargets`): has_database is `shared.db` being Some; agent(agent_id) forwards to the store's agent method. With no store it answers Ok(None) and is never asked, since B4780 checks has_database first.
+
+  6. HumanSources for B4780 (humans.rs, `ServerHumanSources`): reload_admitted_key forwards to B4679's reload_admitted_key, reload_admitted_user to B4673's, admitted_subject_sources to B4671's and effective_contexts to B4672's build_effective_auth_contexts. Keep Some(empty set) and None of allowed_team_ids apart when forwarding.
+
+  7. A2aAgentLookup for B8100 (a2a_lookup.rs, `RegistryA2aLookup` over the registry): agent_by_name(name) is registry.get_agent_by_name(name) mapped to RegisteredA2aAgent with the agent's agent_card_params and litellm_params (an absent map becomes an empty object). The inference wiring passes it to B8100's function; this task only builds it.
+
+  Tests in app::agents::services::tests use a real AgentRegistry, a read-through over a fake resync, and in-memory fakes for B737, B736 and the store reads where those tasks expose ports. They check that two AgentServices built from one Shared hold the same SharedAgents (Arc::ptr_eq), and the forwarding of every adapter above.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/agents/services.rs
+    - crates/betterlite-server/src/app/agents/services/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L198-L213
+    why: _agent_from_registry and get_agent_with_read_through, the lookup order AccessGroupReads follows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L239-L251
+    why: resolve_managed_agent builds the store from the client with user_api_key_cache, and does nothing without a client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8982-L8995
+    why: The registry the services read is the one the startup load fills under the reconcile lock (B8384 owns that load).
+dod:
+  - text: AgentServices::new takes the registry and the read-through from shared.agents, builds the identity store only when a database exists, and builds every resolver once from the same registry.
+    proof: [services-tests]
+  - text: ServerAccessGroupReads finds an agent by id, then by name, then once through the read-through, and answers an empty list for an unknown agent.
+    proof: [services-tests]
+  - text: ServerCallerReads, ServerGrantSources, StoreTargets and ServerHumanSources forward each method to the function named above with the same flags, and keep None and an empty team set apart.
+    proof: [services-tests]
+  - text: RegistryA2aLookup maps a registered agent to its two maps and answers None for an unknown name.
+    proof: [services-tests]
+checks:
+  optional: []
+  commands:
+    - id: services-tests
+      why: an agent port adapter is missing, builds its own registry or read-through, or forwards to the wrong function or flag
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::agents::services::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The registry type and its startup load: B4776, B8612 (config agents through B8590) and B8384 (database agents). The read-through and its AgentSync and DbObjects adapters: B8231 and B8612."
+  - "Installing these services into the auth stages: B8646. The managed admission port: B8544. Building route state and mounting agent routes: B8647 and B8648."
+pitfalls:
+  - The store must be None without a database, not a store that fails, because B4781 and B8544 answer the 503 policy_unavailable only when they get None.
+  - The read-through is tried once per lookup and only after both registry lookups miss; a true answer means look again, not that the agent exists.
+  - A second read-through built here would have its own miss cache and its own 20 per 5 s budget; always clone the one in shared.agents.
+  - B4778's agent_access_group_ids cannot fail, so a read-through error or a false answer both end in an empty list.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

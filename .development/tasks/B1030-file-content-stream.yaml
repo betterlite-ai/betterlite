@@ -21,7 +21,7 @@ scope:
   - crates/betterlite-core/src/api/file_content_stream.rs
   - crates/betterlite-core/src/api/file_content_stream/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/file_content_stream.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/file_content_stream.py
   - tools/oracle/cases/sdk-http/file-content-stream/**
