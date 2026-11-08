@@ -12,3 +12,29 @@ deviations:
       Both live in betterlite-openai, outside this task, so embed_query can classify the refusal
       (a body-shape failure is not an execution failure) but cannot read the record the body held.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/vector_store/transformation.py#L343
+  - what: >-
+      An embeddings answer that lacks a top-level field the typed EmbeddingResponse requires (object,
+      model or usage), or whose usage is null or lacks prompt_tokens or total_tokens, is a
+      ValidationError and no vector comes back. LiteLLM returns the first vector for these bodies,
+      since it reads only response.data[0]["embedding"].
+    why: >-
+      The typed decode inside the B1058 executor requires those fields and the body is dropped when it
+      fails, so embed_query has no record to read. The decode lives in betterlite-openai, outside this
+      task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/vector_store/transformation.py#L343
+  - what: >-
+      A 200 answer whose body is an error object such as {"error":{"message":"x","type":"y"}} is a
+      ValidationError without the "Failed to generate embedding for query: " prefix. LiteLLM raises
+      inside executor.embed for this body, so its caller gets a plain Exception with that prefix.
+    why: >-
+      The decode failure carries no body, and a missing data field looks the same as a missing usage
+      field, so embed_query cannot tell an error body from the other refused shapes above. Keeping
+      them apart needs the body kept by the decode in betterlite-openai, outside this task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/vector_store/transformation.py#L342
+  - what: >-
+      The error-object check of the embeddings response conversion is not reached for a 200 body
+      that carries a meaningful error: betterlite reports the shape refusal instead of that error.
+    why: >-
+      LiteLLM raises it at the conversion step inside executor.embed. Same cause as the entry above:
+      the typed decode reports a missing field and not the error value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L587
