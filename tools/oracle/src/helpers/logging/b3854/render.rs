@@ -52,14 +52,14 @@ where
         .map_err(|error| invalid(&error.to_string()))?;
     let first = spans.first().ok_or_else(|| invalid("no exported span"))?;
     Ok(json!({
-        "attributes": attributes_json(first),
+        "attributes": pairs_json(&first.attributes),
         "events": events_json(first),
     }))
 }
 
-fn attributes_json(span: &SpanData) -> Value {
+fn pairs_json(attributes: &[KeyValue]) -> Value {
     Value::Array(
-        span.attributes
+        attributes
             .iter()
             .map(|pair| json!([pair.key.to_string(), attribute_json(pair)]))
             .collect(),
@@ -84,11 +84,7 @@ fn events_json(span: &SpanData) -> Value {
             .map(|event| {
                 json!({
                     "name": event.name.as_ref(),
-                    "attributes": event
-                        .attributes
-                        .iter()
-                        .map(|pair| json!([pair.key.to_string(), value_json(&pair.value)]))
-                        .collect::<Vec<_>>(),
+                    "attributes": pairs_json(&event.attributes),
                 })
             })
             .collect(),

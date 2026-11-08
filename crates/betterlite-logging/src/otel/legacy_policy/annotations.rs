@@ -21,15 +21,8 @@ pub fn set_team_attributes<S>(span: &mut S, team_id: Option<&str>, team_alias: O
 where
     S: Span,
 {
-    if let Some(value) = team_id.filter(|text| !text.is_empty()) {
-        span.safe_set_attribute(TEAM_ID_ATTRIBUTE, &OtelModelValue::String(value.to_owned()));
-    }
-    if let Some(value) = team_alias.filter(|text| !text.is_empty()) {
-        span.safe_set_attribute(
-            TEAM_ALIAS_ATTRIBUTE,
-            &OtelModelValue::String(value.to_owned()),
-        );
-    }
+    write_text(span, TEAM_ID_ATTRIBUTE, team_id);
+    write_text(span, TEAM_ALIAS_ATTRIBUTE, team_alias);
 }
 
 pub fn write_team_attributes<S>(span: &mut S, payload: &BTreeMap<String, OtelModelValue>)
@@ -43,7 +36,11 @@ where
     let team_alias = metadata
         .and_then(|fields| fields.get("user_api_key_team_alias"))
         .and_then(OtelModelValue::as_str);
-    set_team_attributes(span, team_id, team_alias);
+    let attributes = [
+        (TEAM_ID_ATTRIBUTE, team_id),
+        (TEAM_ALIAS_ATTRIBUTE, team_alias),
+    ];
+    write_optional(span, attributes);
 }
 
 pub fn write_identity_attributes<S>(
@@ -56,26 +53,25 @@ pub fn write_identity_attributes<S>(
     S: Span,
 {
     let metadata = payload.get("metadata").and_then(OtelModelValue::as_object);
-    write_request_route(span, metadata);
+    let route = metadata
+        .and_then(|fields| fields.get("user_api_key_request_route"))
+        .and_then(OtelModelValue::as_str);
+    write_text(span, http::ROUTE, route);
     write_team_metadata(span, litellm_params, baggage_team_metadata_keys);
     let flat = flatten_metadata(metadata);
     for (key, value) in promoted_metadata(&flat, baggage_metadata_keys) {
         span.safe_set_attribute(&key, &OtelModelValue::String(value));
     }
-    write_model_attributes(span, payload);
-}
-
-fn write_request_route<S>(span: &mut S, metadata: Option<&BTreeMap<String, OtelModelValue>>)
-where
-    S: Span,
-{
-    let route = metadata
-        .and_then(|fields| fields.get("user_api_key_request_route"))
-        .and_then(OtelModelValue::as_str)
-        .filter(|text| !text.is_empty());
-    if let Some(value) = route {
-        span.safe_set_attribute(http::ROUTE, &OtelModelValue::String(value.to_owned()));
-    }
+    let model_group = payload.get("model_group").and_then(OtelModelValue::as_str);
+    let hidden_model = payload
+        .get("hidden_params")
+        .and_then(OtelModelValue::as_object)
+        .and_then(|fields| fields.get("litellm_model_name"))
+        .and_then(OtelModelValue::as_str);
+    let provider_model =
+        hidden_model.or_else(|| payload.get("model").and_then(OtelModelValue::as_str));
+    write_text(span, MODEL_GROUP_ATTRIBUTE, model_group);
+    write_text(span, litellm::PROVIDER_MODEL, provider_model);
 }
 
 fn write_team_metadata<S>(
@@ -98,62 +94,34 @@ fn write_team_metadata<S>(
     }
 }
 
-fn write_model_attributes<S>(span: &mut S, payload: &BTreeMap<String, OtelModelValue>)
-where
-    S: Span,
-{
-    let model_group = payload
-        .get("model_group")
-        .and_then(OtelModelValue::as_str)
-        .filter(|text| !text.is_empty());
-    if let Some(group) = model_group {
-        span.safe_set_attribute(
-            MODEL_GROUP_ATTRIBUTE,
-            &OtelModelValue::String(group.to_owned()),
-        );
-    }
-    let hidden_model = payload
-        .get("hidden_params")
-        .and_then(OtelModelValue::as_object)
-        .and_then(|fields| fields.get("litellm_model_name"))
-        .and_then(OtelModelValue::as_str)
-        .filter(|text| !text.is_empty());
-    let provider_model = hidden_model.or_else(|| {
-        payload
-            .get("model")
-            .and_then(OtelModelValue::as_str)
-            .filter(|text| !text.is_empty())
-    });
-    if let Some(model) = provider_model {
-        span.safe_set_attribute(
-            litellm::PROVIDER_MODEL,
-            &OtelModelValue::String(model.to_owned()),
-        );
-    }
-}
-
 pub fn set_service_tier_attributes<S>(span: &mut S, payload: &BTreeMap<String, OtelModelValue>)
 where
     S: Span,
 {
-    let requested = payload
-        .get("model_parameters")
-        .and_then(OtelModelValue::as_object)
-        .and_then(|fields| fields.get("service_tier"))
-        .and_then(OtelModelValue::as_str);
-    if let Some(tier) = resolved_service_tier(None, None, requested) {
-        span.safe_set_attribute(
-            REQUESTED_TIER_ATTRIBUTE,
-            &OtelModelValue::String(tier.to_owned()),
-        );
+    let requested = object_text(payload, &["model_parameters", "service_tier"]);
+    let requested_tier = resolved_service_tier(None, None, requested);
+    write_text(span, REQUESTED_TIER_ATTRIBUTE, requested_tier);
+    let response = object_text(payload, &["response", "service_tier"]);
+    let usage = object_text(payload, &["metadata", "usage_object", "service_tier"]);
+    let served_tier = resolved_service_tier(response, usage, None);
+    write_text(span, SERVED_TIER_ATTRIBUTE, served_tier);
+}
+
+fn write_optional<S>(span: &mut S, attributes: [(&str, Option<&str>); 2])
+where
+    S: Span,
+{
+    for (key, value) in attributes {
+        write_text(span, key, value);
     }
-    let response_tier = object_text(payload, &["response", "service_tier"]);
-    let usage_tier = object_text(payload, &["metadata", "usage_object", "service_tier"]);
-    if let Some(tier) = resolved_service_tier(response_tier, usage_tier, None) {
-        span.safe_set_attribute(
-            SERVED_TIER_ATTRIBUTE,
-            &OtelModelValue::String(tier.to_owned()),
-        );
+}
+
+fn write_text<S>(span: &mut S, key: &str, value: Option<&str>)
+where
+    S: Span,
+{
+    if let Some(text) = value.filter(|text| !text.is_empty()) {
+        span.safe_set_attribute(key, &OtelModelValue::String(text.to_owned()));
     }
 }
 
