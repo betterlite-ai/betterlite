@@ -629,14 +629,31 @@ async fn a_chunk_without_a_model_id_leaves_the_memo_alone() {
     let fake = fake_router(
         FakeRouter::default()
             .deployment("dep-1", r#"{"keepalive_seconds": 5}"#)
-            .group("gpt", r#"[{"litellm_params": {"keepalive_seconds": 5}}]"#),
+            .group("gpt", r#"[{"litellm_params": {"keepalive_seconds": 7}}]"#),
     );
     let mut resolver = resolver_for(&fake, r#"{"model": "gpt"}"#, None);
     let hidden = map(r#"{"model_id": "dep-1"}"#);
     assert_seconds(resolver.resolve(&hidden), 5.0);
-    assert_seconds(resolver.resolve(&JsonObject::new()), 5.0);
+    assert_seconds(resolver.resolve(&JsonObject::new()), 7.0);
     assert_seconds(resolver.resolve(&hidden), 5.0);
     assert_eq!(fake.deployment_calls(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_chunk_without_a_model_id_does_not_restart_the_memo_ttl() {
+    let fake = fake_router(
+        FakeRouter::default()
+            .deployment("dep-1", r#"{"keepalive_seconds": 5}"#)
+            .group("gpt", r#"[{"litellm_params": {"keepalive_seconds": 7}}]"#),
+    );
+    let mut resolver = resolver_for(&fake, r#"{"model": "gpt"}"#, None);
+    let hidden = map(r#"{"model_id": "dep-1"}"#);
+    assert_seconds(resolver.resolve(&hidden), 5.0);
+    advance(Duration::from_secs(3)).await;
+    assert_seconds(resolver.resolve(&JsonObject::new()), 7.0);
+    advance(Duration::from_secs(3)).await;
+    assert_seconds(resolver.resolve(&hidden), 5.0);
+    assert_eq!(fake.deployment_calls(), 2);
 }
 
 #[tokio::test(start_paused = true)]
