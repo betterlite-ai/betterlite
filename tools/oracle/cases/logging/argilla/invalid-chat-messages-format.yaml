@@ -1,0 +1,26 @@
+# get_chat_messages raises Exception("Invalid chat messages format: {payload_messages}") for an empty list, a scalar or a list whose first item is not an object
+kind: helper
+name: argilla-invalid-chat-messages-format
+call:
+  b3960:
+    scenarios:
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: chat_messages
+            payload: {messages: [], response: "done"}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: chat_messages
+            payload: {messages: "hi", response: "done"}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: chat_messages
+            payload: {messages: [1, 2], response: "done"}
+env: {}
+compare: {ignore: []}
