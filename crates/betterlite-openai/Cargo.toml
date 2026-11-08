@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
+betterlite-context = { path = "../betterlite-context" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-prompts = { path = "../betterlite-prompts" }

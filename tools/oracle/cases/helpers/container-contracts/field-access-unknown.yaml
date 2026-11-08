@@ -1,0 +1,9 @@
+kind: helper
+name: field-access-unknown
+call:
+  b3360:
+    operation: record_field
+    record: {kind: container_object, value: {id: container_abc, object: container, created_at: 1, status: running, name: kept}}
+    names: [id, object, created_at, status, name, expires_after, last_active_at, container_id, hidden_params, unknown]
+env: {}
+compare: {ignore: []}
