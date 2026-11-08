@@ -5,7 +5,7 @@ use crate::redis_counters::RedisCountersError;
 use crate::redis_counters::set_max::SET_MAX_LUA;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
 
-use super::support::{DEFAULT_TTL, counters, direct_settings, transport};
+use super::support::{ADMISSION, DEFAULT_TTL, counters, direct_settings, transport};
 
 #[tokio::test]
 async fn async_set_max_sends_the_max_script_with_the_value_and_ttl_as_text() {
@@ -25,7 +25,7 @@ async fn async_set_max_sends_the_max_script_with_the_value_and_ttl_as_text() {
         ["EVAL", SET_MAX_LUA, "1", "ns:limit", "5.5", "120"]
     );
     assert_eq!(gate.enters(), vec!["async_set_max"]);
-    assert_eq!(gate.exits(), vec![41]);
+    assert_eq!(gate.exits(), vec![ADMISSION]);
 }
 
 #[tokio::test]
