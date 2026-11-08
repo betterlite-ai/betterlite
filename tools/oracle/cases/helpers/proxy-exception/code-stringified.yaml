@@ -1,0 +1,15 @@
+kind: helper
+name: proxy-exception-code-stringified
+call:
+  b8410:
+    kind: exception
+    message: upstream rejected the request
+    type: bad_request_error
+    param: model
+    code: 400
+    openai_code: null
+    headers: {}
+    provider_specific_fields: null
+env: {}
+compare:
+  ignore: []

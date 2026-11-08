@@ -1,0 +1,15 @@
+kind: helper
+name: proxy-exception-tag-routing-401
+call:
+  b8410:
+    kind: exception
+    message: "Not allowed to access model due to tags configuration"
+    type: key_model_access_denied
+    param: model
+    code: 400
+    openai_code: null
+    headers: {}
+    provider_specific_fields: null
+env: {}
+compare:
+  ignore: []
