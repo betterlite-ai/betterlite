@@ -1,11 +1,11 @@
 id: B4789
 title: Relay A2A message and task subscription streams
 description: >-
-  Build module a2a_stream in crate betterlite-proxy (crates/betterlite-proxy/src/agent_endpoints/a2a_stream.rs and a2a_stream/**). It turns the two streaming A2A calls into Server-Sent Events: message/stream and tasks/resubscribe. No HTTP route calls it yet. The B141 route handler does, after it has found the agent, checked access and built the forwarding headers. Dependencies come in through constructors and generics, as in agent_endpoints/databricks_oauth. No statics, no trait objects, native async traits. The skeleton declares the module in agent_endpoints.rs, so do not edit that file.
+  Build module a2a_stream in crate betterlite-proxy (crates/betterlite-proxy/src/agent_endpoints/a2a_stream.rs and a2a_stream/**). It turns the two streaming A2A calls into Server-Sent Events: message/stream and tasks/resubscribe. No HTTP route calls it yet. B8589's route handler does, after it has found the agent, checked access and built the forwarding headers. Dependencies come in through constructors and generics, as in agent_endpoints/databricks_oauth. No statics, no trait objects, native async traits. The skeleton declares the module in agent_endpoints.rs, so do not edit that file.
 
   Split the code into these files, each under 300 lines. error.rs holds the error enums, ports.rs the traits, framing.rs the SSE framing, lines.rs the line splitter, event_source.rs the upstream reader, keepalive.rs the ping wrapper, and a2a_stream.rs the two public relay functions. All JSON is serde_json::Value, and `JsonStream` is `futures_util::stream::BoxStream<'static, Result<serde_json::Value, StreamError>>`. Add futures-util, betterlite-core, betterlite-a2a (for the B6950 params record) and tokio with the "time" feature to crates/betterlite-proxy/Cargo.toml.
 
-  Ports (ports.rs). Each is wired by B141 over the task named in its comment.
+  Ports (ports.rs). Each is wired by B8589 over the task named in its comment.
   - `StreamEventConverter { fn convert(&self, event: serde_json::Map<String, Value>, request_id: Option<&Value>) -> serde_json::Map<String, Value> }`. The real impl wraps normalize_stream_event of B4812 with the version the agent is served at.
   - `UpstreamAgentStream { fn stream(&self, open: StreamOpen) -> JsonStream }`. The real impl wraps asend_message_streaming of B4814. The method is not async: the stream connects when it is first polled, like LiteLLM's async generator, so every failure arrives as an Err item. StreamOpen { request_id: Value, params: MessageSendParamsV03, api_base: Option<String>, litellm_params: Option<BTreeMap<String, Value>>, agent_id: Option<String>, metadata: Option<Value>, proxy_server_request: Option<Value>, agent_extra_headers: Option<Vec<(String, String)>> }. MessageSendParamsV03 is the record B6950 defines in betterlite-a2a send_params.
   - `StreamHooks { fn serve(&self, events: JsonStream) -> HookedStream }` with `HookedStream = BoxStream<'static, Result<Value, StreamFailure>>`. The real impl wraps LiteLLM's ProxyBaseLLMRequestProcessing.async_streaming_data_generator: the proxy iterator hook, the per-chunk post-call hook, and on an error the post_call_failure_hook plus the redacted message. StreamFailure is `Rejected { status: u16, detail: String }` (LiteLLM's HTTPException) or `Failed { message: String }` (the final message text, already redacted).
@@ -52,7 +52,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L412-L563
     why: The message/stream relay, its invalid-params stream, the converter step per chunk and the two error paths.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L977-L1032
-    why: The two call sites in invoke_agent_a2a (message/stream and tasks/resubscribe), which B141 wires to these functions.
+    why: The two call sites in invoke_agent_a2a (message/stream and tasks/resubscribe), which B8589 wires to these functions.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/sse_keepalive.py#L22-L90
     why: >-
       coerce_keepalive_interval, the ": ping" comment and the idle-gap ping loop this task rewrites.
@@ -116,9 +116,9 @@ deviations:
   - what: Failures are typed values (StreamError, StreamFailure, StreamAbort) and the route layer decides how a Rejected failure or an abort reaches the client. LiteLLM re-raises HTTPException from inside the generator.
     why: This task has no HTTP framework, and the status line is already sent once the first byte went out.
 out_of_scope:
-  - "The invoke_agent_a2a route, method dispatch, agent lookup, access check, trace id check, header merge, guardrail merge and the get_agent_card route are B141. _PASCAL_TO_WIRE belongs there too, it only feeds the method switch."
+  - "The invoke_agent_a2a route, method dispatch, agent lookup, access check, trace id check, header merge, guardrail merge and the get_agent_card route are B8589. _PASCAL_TO_WIRE belongs there too, it only feeds the method switch."
   - "build_message_send_params is B6950. This task calls it."
-  - "normalize_stream_event and normalize_request_params are B4812, reached through the StreamEventConverter port. B141 wires it."
+  - "normalize_stream_event and normalize_request_params are B4812, reached through the StreamEventConverter port. B8589 wires it."
   - "asend_message_streaming and the native or bridge choice behind it are B4814, reached through the UpstreamAgentStream port."
   - "async_streaming_data_generator, the proxy streaming hooks, failure hook and message redaction are B004's common request processing in betterlite-server, reached through the StreamHooks port."
   - "_forward_jsonrpc, the header helpers, _enforce_inbound_trace_id and the push url check are B4788."

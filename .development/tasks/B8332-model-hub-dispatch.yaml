@@ -1,0 +1,106 @@
+id: B8332
+title: Hugging Face, Replicate and Predibase dispatch in main.py
+description: >-
+  The wiring part for the three model hub providers of B042. The provider modules are planned elsewhere: B5990 (Hugging Face chat and the provider mapping), B5991 (Hugging Face embedding), B5848 (Hugging Face rerank), B5847 (Replicate predictions and polling) and B5846 (Predibase). Each of them reads no environment, makes no HTTP call of its own, or takes a trait the caller backs, and each left the main.py side to the umbrella. This task builds that side in the module model_hub_dispatch of betterlite-provider: the dispatch functions and their arms through B2230's selection (as B050 and B8157 do), the credential chains, the trait implementations on B173's pooled client, the Hugging Face embedding request, and the HTTP oracle cases. Add betterlite-tokenizer to betterlite-provider's dependencies if it is missing; it does not depend on betterlite-provider.
+
+
+  _complete_huggingface (main.py L3181-L3221, arm L5979-L5980). The key is the context value, else litellm.huggingface_key, else HF_TOKEN, else HUGGINGFACE_API_KEY, else litellm.api_key; headers is the context value, else the global headers. Call the shared HTTP completion handler with the context provider and base. Back B5990's HubGet with a GET on the pooled client that returns status, headers and body, and pass HUGGINGFACE_API_KEY alone as its Hub token. Embedding arm (L6759-L6774): the key is the context value, else litellm.huggingface_key, else HUGGINGFACE_API_KEY, else litellm.api_key, with no HF_TOKEN step. Build the request with B5991's prepare, passing an HuggingfaceEnv whose HF_API_BASE and HUGGINGFACE_API_BASE fields are set whenever the variable exists, even empty, because handler.py tests membership in os.environ. Back B5991's PipelineTagSource with GET https://huggingface.co/api/models/{model} (no auth header, no status check, pipeline_tag from the JSON) and its OrdinaryEncoder with B195's cl100k_base. Then send the body as LiteLLM's embedding() and aembedding() do (embedding/handler.py L231-L392): log pre_call with the input, the key and {complete_input_dict, headers, api_base}, POST the JSON text on the dispatch client or the pooled client, log post_call with the input, the key, {complete_input_dict} and the reply, decode the reply as JSON, fail with HuggingfaceError 500 and the error value when the object has an error key, and otherwise hand it to B5991's process_embedding_response. There is no status check, so a 4xx JSON body without error is processed like a 200. Rerank: take the Hugging Face branch of the rerank config selection (utils.py L8880-L8881) and give B5848's config the key from api_key, litellm.huggingface_key, HUGGINGFACE_API_KEY and the base from api_base, litellm.api_base, HF_API_BASE, HUGGINGFACE_API_BASE (rerank/transformation.py L262-L282), plus B196's text counter for its TextTokenCounter.
+
+
+  _complete_replicate (L2773-L2824, arm L5960-L5962: the model contains "replicate", or the provider is replicate, or the model is a catalog model whose litellm_provider is replicate). The key is the context value, else litellm.replicate_key, else litellm.api_key, else REPLICATE_API_KEY, else REPLICATE_API_TOKEN. The base is the context value, else litellm.api_base, else REPLICATE_API_BASE, else "https://api.replicate.com/v1". custom_prompt_dict is the context table, else the global one. Build B5847's ReplicatePolling with from_env_values over DEFAULT_REPLICATE_POLLING_RETRIES (5), DEFAULT_REPLICATE_POLLING_DELAY_SECONDS (1), REPLICATE_POLLING_DELAY_SECONDS (0.5) and REPLICATE_MODEL_NAME_WITH_ID_LENGTH (64), give it the pooled transport and a sleeper over tokio::time::sleep, and choose OutputPolicy Lenient when acompletion is true and Strict otherwise. When optional_params stream is exactly true, log post_call with the messages, the resolved key and the returned stream as original_response.
+
+
+  _complete_predibase (L3936-L3992, arm L6007-L6008). tenant_id is popped tenant_id, else popped predibase_tenant_id, else litellm.predibase_tenant_id, else PREDIBASE_TENANT_ID; with none, fail with ValueError text "Missing Predibase Tenant ID - Required for making the request. Set dynamically (e.g. `completion(..tenant_id=<MY-ID>)`) or in env - `PREDIBASE_TENANT_ID`." The base is the context value, else popped api_base, else popped base_url, else litellm.api_base, else PREDIBASE_API_BASE. The key is the context value, else litellm.api_key, else litellm.predibase_key, else PREDIBASE_API_KEY. Pass B2202's DEFAULT_MAX_TOKENS value (default 4096) and B196's counter as B5846's TokenCounter, then return its result for both the stream and non-stream paths.
+
+
+  Config. Add the section model_hub_credentials with litellm_settings.huggingface_key, replicate_key, predibase_key and predibase_tenant_id, all default None. Environment values are read when the call runs, through betterlite-env; an empty value is unset except for the two embedding base variables above. The four Replicate polling variables are read once at startup, as LiteLLM reads them at import.
+
+
+  Plan about 400 lines of module code, 260 of tests and 60 for the section and the cases. Where the source and this text differ, the source at the pinned commit wins.
+scope:
+  paths:
+    - crates/betterlite-provider/src/model_hub_dispatch.rs
+    - crates/betterlite-provider/src/model_hub_dispatch/**
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-config/src/sections/model_hub_credentials.rs
+    - crates/betterlite-config/src/sections/model_hub_credentials/**
+    - Cargo.lock
+    - tools/oracle/cases/providers/model-hub/**
+    - tools/oracle/helpers/b8332.py
+    - tools/oracle/helpers/b8332/**
+    - tools/oracle/src/helpers/provider/b8332.rs
+    - tools/oracle/src/helpers/provider/b8332/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2773-L2824
+    why: _complete_replicate, its key and base chains and the stream post_call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3181-L3221
+    why: _complete_huggingface and its HF_TOKEN step.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3936-L3992
+    why: _complete_predibase, the popped keys and the tenant id error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5960-L6008
+    why: The replicate, huggingface and predibase arms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6759-L6774
+    why: The huggingface embedding arm and its key chain.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/embedding/handler.py#L37-L392
+    why: The pipeline tag GET, the URL choice and the POST with its logging and error check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/rerank/transformation.py#L262-L282
+    why: The rerank key and base chains the caller resolves.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8880-L8881
+    why: The huggingface branch of the rerank config selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L97-L98
+    why: The Replicate polling defaults.
+dod:
+  - text: _complete_huggingface, _complete_replicate and _complete_predibase resolve key, base, headers and tenant id in LiteLLM's order and call their modules.
+    proof: [model-hub-dispatch-tests, oracle]
+  - text: The Hugging Face embedding arm sends the same URL, headers and body, logs pre_call and post_call, and fails on an error key as LiteLLM does.
+    proof: [model-hub-dispatch-tests, oracle]
+  - text: The Hugging Face rerank selection gets its key and base from LiteLLM's chain.
+    proof: [model-hub-dispatch-tests, oracle]
+  - text: Replicate picks the output policy by path and logs post_call for a stream; Predibase fails with the tenant id text when none is set.
+    proof: [model-hub-dispatch-tests, oracle]
+  - text: The arms reach these functions through the dispatch table, and an unknown provider still fails as before.
+    proof: [model-hub-dispatch-tests]
+  - text: The four litellm_settings keys load into the model_hub_credentials section.
+    proof: [model-hub-config-tests]
+  - text: New HTTP cases for these providers exist.
+    proof: [model-hub-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: model-hub-dispatch-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^model_hub_dispatch::/)'
+      why: No model_hub_dispatch test exists on the base branch.
+    - id: model-hub-config-tests
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::model_hub_credentials::/)'
+      why: The section is only a stub before this task.
+    - id: model-hub-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/providers/model-hub)"
+      why: Without added case files the oracle proof has nothing of this task to compare.
+oracle_cases:
+  - tools/oracle/cases/providers/model-hub/huggingface-chat.yaml
+  - tools/oracle/cases/providers/model-hub/huggingface-chat-stream.yaml
+  - tools/oracle/cases/providers/model-hub/huggingface-embedding.yaml
+  - tools/oracle/cases/providers/model-hub/huggingface-embedding-error.yaml
+  - tools/oracle/cases/providers/model-hub/huggingface-rerank.yaml
+  - tools/oracle/cases/providers/model-hub/replicate-no-poll-url.yaml
+  - tools/oracle/cases/providers/model-hub/predibase-chat.yaml
+  - tools/oracle/cases/providers/model-hub/predibase-missing-tenant.yaml
+deviations:
+  - what: Reply ids LiteLLM generates and token usage it estimates are compared as present, not equal.
+    why: The ids are random and usage depends on each side's tokenizer.
+out_of_scope:
+  - "B5990, B5991, B5848, B5847 and B5846 own the provider transforms; only calls to them and the traits they take are here."
+  - "B5653 reads the Replicate and Predibase stream chunks and B5654 drives the stream; this task returns what the modules return."
+  - "B2454 runs the rerank HTTP call and B1079 the rerank dispatch around it; this task only hands them the Hugging Face config."
+  - "The huggingface branch of text_completion (main.py L7574-L7600) belongs to the text completion owner, not to this task."
+  - "Databricks, Snowflake and OCI are B8330; SAP, watsonx and SageMaker are B8331."
+pitfalls:
+  - "The chat key chain has HF_TOKEN between litellm.huggingface_key and HUGGINGFACE_API_KEY, while the embedding and rerank chains skip HF_TOKEN."
+  - "The Predibase pops sit inside an or chain, so once tenant_id is found predibase_tenant_id stays in optional_params, and a context base leaves api_base and base_url there too."
+  - "Replicate puts litellm.api_key before both REPLICATE_* variables, and Predibase puts it before litellm.predibase_key."
+  - "The replicate arm matches any model name that contains replicate, but only after every arm before L5960 has had its turn."
+  - "Hugging Face cases set api_base to the mock and pass input_type feature-extraction for embeddings, so no request leaves for huggingface.co."
+  - "Replicate create plus poll cannot be an HTTP case. The mock answers the case field upstream in arrival order, but it listens on a random port and only case env values get its address through {{upstream}}; reply bodies are sent as written. LiteLLM polls the urls.get address from the create reply, so the poll cannot reach the mock. Test create, the processing retries, the poll delay and the failed status with a recording transport in the model_hub_dispatch tests. The one Replicate HTTP case, replicate-no-poll-url.yaml, answers create with a body that has no urls.get and compares LiteLLM's 400 error that starts with LiteLLM Error - prediction url is None."
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

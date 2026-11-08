@@ -95,7 +95,7 @@ deviations: []
 out_of_scope:
   - "get_search_tool_by_name_from_db at litellm/proxy/search_endpoints/search_tool_registry.py:246-272: no caller at the pin (14 lines). Build no implementation or test cases."
   - "AvailableSearchProvider at litellm/types/search.py:73-77: no caller at the pin (3 lines, owned by B3270 for path accounting)."
-  - "ProxyConfig._init_search_tools_in_db, parse_search_tools, and reload_search_tools_from_db: config orchestration and proxy setup owned elsewhere."
+  - "ProxyConfig._init_search_tools_in_db, parse_search_tools, and reload_search_tools_from_db: B8384."
   - "Database schema and Prisma client: provided by existing infrastructure. This task uses SearchToolsRepository and PrismaClient as they are."
 pitfalls:
   - "litellm_params and search_tool_info are serialized as JSON strings with safe_dumps, which persists credentials unchanged (no redaction). This preserves the secret-bearing data at rest."

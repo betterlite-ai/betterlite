@@ -1,7 +1,7 @@
 id: B4788
 title: Prepare A2A forwarding and route agent model names
 description: >-
-  Build two modules in the existing agent_endpoints folder of crate betterlite-proxy: a2a_forwarding and a2a_routing. They hold the checks and helpers that run before an A2A call is sent to an agent's own URL, plus the routing of a model name that starts with "a2a/". No HTTP route calls them yet. B4789 (stream relay) and the B141 route handler do. Add `pub mod a2a_forwarding;` and `pub mod a2a_routing;` to crates/betterlite-proxy/src/agent_endpoints.rs. Dependencies come in through constructors and generics, as in agent_endpoints/databricks_oauth. No statics, no trait objects, native async traits.
+  Build two modules in the existing agent_endpoints folder of crate betterlite-proxy: a2a_forwarding and a2a_routing. They hold the checks and helpers that run before an A2A call is sent to an agent's own URL, plus the routing of a model name that starts with "a2a/". No HTTP route calls them yet. B4789 (stream relay) and B8589's route handler do. Add `pub mod a2a_forwarding;` and `pub mod a2a_routing;` to crates/betterlite-proxy/src/agent_endpoints.rs. Dependencies come in through constructors and generics, as in agent_endpoints/databricks_oauth. No statics, no trait objects, native async traits.
 
   Part one, a2a_forwarding.
 
@@ -33,7 +33,7 @@ description: >-
 
   The "no url configured" branch in LiteLLM (L63-L67) cannot happen here, because AgentCard.url is required in the typed record. Do not write it.
 
-  Oracle. Only the four pure functions get helper cases: jsonrpc_error, caller_identity_headers, forwarding_headers and validate_push_url's scheme check (a case file may only use urls that fail on the scheme or that are plain public https hosts; leave DNS to the Rust unit tests). A route-level case comes with B141.
+  Oracle. Only the four pure functions get helper cases: jsonrpc_error, caller_identity_headers, forwarding_headers and validate_push_url's scheme check (a case file may only use urls that fail on the scheme or that are plain public https hosts; leave DNS to the Rust unit tests). A route-level case comes with B8589.
 scope:
   paths:
     - crates/betterlite-proxy/src/agent_endpoints.rs
@@ -106,13 +106,13 @@ oracle_cases:
   - tools/oracle/cases/agents/a2a-forwarding/push-url-private-host-rejected.yaml
 deviations:
   - what: Failures return typed ForwardingError and RoutingError values. LiteLLM raises HTTPException (400, 403) and ProxyModelNotFoundError. The messages are the same; the caller picks the status.
-    why: The route layer is B141's, and Rust errors carry no HTTP framework.
+    why: The route layer is B8589's, and Rust errors carry no HTTP framework.
   - what: The no-url branch of route_a2a_agent_request is dropped.
     why: AgentCard.url is a required field in betterlite, so the state cannot exist.
   - what: forward_jsonrpc fails with ForwardingError::Status for a non-2xx answer with a non-JSON body. LiteLLM calls httpx raise_for_status, which raises HTTPStatusError.
     why: There is no httpx. The caller turns both into the same internal error.
 out_of_scope:
-  - "The message/send, message/stream and card routes, the SSE relay (_a2a_sse_event_source, _forward_jsonrpc_sse, _handle_stream_message) are B4789 and B141."
+  - "The message/send, message/stream and card routes, the SSE relay (_a2a_sse_event_source, _forward_jsonrpc_sse, _handle_stream_message) are B4789 and B8589."
   - "_build_message_send_params is B6950."
   - "_served_version and the 0.3/1.0 conversion are B4811 and B4812."
   - "resolve_a2a_hop_auth_header stays B050's. This task only calls it through the HopAuth port."

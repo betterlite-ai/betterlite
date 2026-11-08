@@ -1,3 +1,4 @@
+pub mod a2a_routes;
 pub mod admin_actions;
 pub mod agent_listing;
 pub mod agent_lookup;

@@ -1,0 +1,14 @@
+id: B8272
+milestone: M4 keys, spend and management
+title: Serve model insights and task insights routes
+status: todo
+depends_on: [B003, B732, B860, B1734]
+file: tasks/B8272-model-insights-routes.yaml
+covers:
+  - "litellm/proxy/management_endpoints/model_insights_endpoints.py"
+parent: B075
+split_from: B075
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

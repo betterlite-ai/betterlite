@@ -113,7 +113,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L851-L904
     why: The background entry point, its latest-map key rule and its never-raise wrapper.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4335-L4362
-    why: The only caller of the background save and the checked_by value it passes (B124 and B4444 own the caller).
+    why: The only caller of the background save and the checked_by value it passes (B4444 owns the caller).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1377-L1396
     why: Column types, defaults and the four indexes of the table.
 
@@ -222,7 +222,7 @@ deviations:
 
 out_of_scope:
   - "The routes /health, /health/history and /health/latest, _perform_health_check_and_save, _convert_health_check_to_dict, _check_prisma_client and _health_endpoint_resolve_target_model_name: B4445."
-  - "perform_health_check and the endpoint record types: B4443. The window gate, pod lock and fire-and-forget scheduling in _schedule_background_health_check_db_save: B4444 and the proxy_server owner (B124)."
+  - "perform_health_check and the endpoint record types: B4443. The window gate, pod lock and fire-and-forget scheduling in _schedule_background_health_check_db_save: B4444."
   - "The HealthCheckRepository table binding in table_repositories.py: B726. This task writes plain statements through PostgresStore."
   - "Prisma client lifecycle, reconnect and every other PrismaClient method in utils.py: B124 parts. The health methods L6893-L6990 are built here, since nothing else calls them; B124 must not plan them again."
 

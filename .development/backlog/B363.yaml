@@ -2,7 +2,7 @@ id: B363
 milestone: M2 routing
 title: Routing and classifier plugin bridge
 status: todo
-depends_on: [B165, B334, B330, B331, B343, B301, B361, B002]
+depends_on: [B165, B334, B330, B331, B343, B301, B361, B002, B8351]
 file: tasks/B363-routing-plugins.yaml
 covers:
   - "router_plugins.json"

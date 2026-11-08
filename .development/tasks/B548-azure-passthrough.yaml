@@ -15,7 +15,7 @@ description: >-
   L176-L207; AzurePassthroughConfig.handle_logging_collected_chunks L209-L231.
 
 
-  B101 owns RelayShape, logged_relay_shape, replace_path_segment and strip_leading_model_segment; B103 owns OpenAIPassthroughLoggingHandler._build_complete_streaming_response.
+  B3570 owns RelayShape, logged_relay_shape, replace_path_segment and strip_leading_model_segment; B3636 owns OpenAIPassthroughLoggingHandler._build_complete_streaming_response.
 
 
   Reuse OpenAIResponsesAPIConfig.parse_terminal_event_from_stream_chunks from B508 (litellm/llms/openai/responses/transformation.py);

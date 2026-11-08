@@ -5,6 +5,7 @@ status: done
 depends_on: [B002, B172, B3840]
 file: tasks/B3842-otel-settings.yaml
 covers:
+  - "litellm/integrations/otel/__init__.py"
   - "litellm/integrations/otel/model/{config,destination}.py"
   - "litellm/integrations/otel/plumbing/otlp_tls.py"
 parent: B110

@@ -1,0 +1,64 @@
+id: B8390
+title: Callback capability flags and the proxy callback traits
+description: >-
+  LiteLLM keeps every configured callback (loggers, proxy hooks and guardrails) in one list, `litellm.callbacks`, and ProxyLogging asks that list the same questions on every request: is there a guardrail, does any callback override the pre-call hook, which callbacks wrap a stream. `_callback_capabilities` (utils.py L2778-L2878) answers them once and caches the answer until the list changes. This task builds that answer and the two traits every later ProxyLogging task dispatches through. Nothing here runs a hook.
+
+  Code goes in crates/betterlite-server/src/guardrails/callback_caps.rs and callback_caps/ (traits.rs, caps.rs, errors.rs, tests.rs).
+
+  traits.rs. `ProxyCallback` is one resolved callback. Python finds overrides by looking at the class dictionary; betterlite asks the callback instead: `fn overrides(&self) -> HookOverrides`, a plain struct of bools named after the LiteLLM methods: `pre_call` (async_pre_call_hook defined on the callback's own class), `moderation` (async_moderation_hook defined on any class between the callback's class and CustomLogger, the `_overrides_hook` walk at L1141-L1147), `post_call_success`, `post_call_failure`, `response_headers` (async_post_call_response_headers_hook on its own class), `streaming_chunk` (async_post_call_streaming_hook differs from CustomLogger's), `streaming_iterator` (async_post_call_streaming_iterator_hook on its own class), `apply_guardrail` (apply_guardrail on its own class), `filter_listed_models` (async_filter_listed_models anywhere below CustomLogger), plus `accepts_call_info` (the response headers hook takes a `litellm_call_info` parameter, `_accepts_litellm_call_info` L487-L492). The trait also has `fn class_name(&self) -> &str`, `fn is_base_logger(&self) -> bool` (the plain CustomLogger class, skipped for every flag), `fn enforces_request_content(&self) -> bool`, `fn use_native_lifecycle_hooks(&self) -> bool` and `fn guardrail(&self) -> Option<&dyn GuardrailCallback>`. The async hook methods themselves (pre_call, moderation, post_call_success, post_call_failure, response_headers, streaming_chunk, filter_listed_models) are declared here with the argument lists of the LiteLLM methods, request data as `serde_json::Map<String, Value>`, and a default body that returns "not overridden"; the dispatcher tasks B8392 to B8395 call them. `GuardrailCallback` adds `guardrail_name() -> Option<&str>`, `run_in_parallel()`, `scan_raw_request()`, `use_native_during_call_hook()`, `event_hook_is_set()`, `moderation_check() -> Option<&str>`, `should_run_guardrail(data, event) -> Result<bool, GuardrailGateError>` and `mark_pre_call_hook_ran(data)`. Adapters over B5471's settings, B3665's gate and B3666's marker are written by the wiring task B8399; tests here use fakes.
+
+  caps.rs. `CallbackCapabilities` holds the flags of `_CallbackCapabilities` (L1115-L1138) with LiteLLM's defaults (all false, empty lists): has_post_call_response_headers, has_iterator_override, has_streaming_chunk_override, has_guardrail, has_pre_call_override, has_content_enforcer, has_moderation_override, iterator_overrides (callback and kind, `Override` or `ApplyGuardrail`), resolved_callbacks and listed_models_filters. `CallbackCapabilities::from_callbacks(&[Arc<dyn ProxyCallback>])` walks the list in order like L2802-L2860: every callback goes into resolved_callbacks; the base logger sets nothing; a guardrail sets has_guardrail, and only a non-guardrail with a moderation override sets has_moderation_override; a streaming iterator override adds an `Override` entry, else an `apply_guardrail` override without native lifecycle hooks adds an `ApplyGuardrail` entry; has_iterator_override is true for any iterator override or any `ApplyGuardrail` entry; a pre-call override sets has_pre_call_override, and has_content_enforcer too when enforces_request_content is true. `CallbackCache` replaces the class-level dict: it keeps one computed value keyed by the list's identity (length plus each Arc pointer), recomputes when that changes, and is owned by the ProxyLogging value, so there is no global. The predicates are methods: `has_post_call_response_headers_callbacks`, `has_streaming_callbacks` (iterator or chunk override or guardrail), `has_streaming_chunk_hook_overrides` and `needs_per_chunk_streaming_hook` (chunk override or guardrail), `needs_iterator_wrap` (has_iterator_override) and `has_during_call_guardrails` (has_guardrail). `partition_post_call(&self) -> (Vec<guardrail>, Vec<other>)` is `_partition_post_call_callbacks` (L590-L607). `combined_callback_list(dynamic, global)` is `get_combined_callback_list` (L1697-L1700): the global list as is when dynamic is None, else dynamic then global with duplicates dropped, first one kept.
+
+  errors.rs. `ProxyHookError` is the error every hook method returns, an enum the dispatchers match on: `Http { status, detail }` (FastAPI HTTPException), `Proxy(ProxyException)` with its code string, `GuardrailRaised`, `SensitiveDataRoute { session_id, route_to_model, guardrail_name, sticky_session_routing, detection_info }`, `ModifyResponse { message, model, guardrail_name, detection_info, original_response }`, `RejectedRequest { message, model }` and `Other(String)`. `is_client_error(&ProxyHookError) -> bool` is `_is_client_error_exception` (L529-L534): an HTTP error below 500, a ProxyException whose code is not a number of 500 or more, anything else false. `changes_request_flow` is `_exception_changes_request_flow` (L537-L544): true only for SensitiveDataRoute and ModifyResponse.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/callback_caps.rs
+    - crates/betterlite-server/src/guardrails/callback_caps/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2778-L2878
+    why: _callback_capabilities, the walk and every flag rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1115-L1147
+    why: _CallbackCapabilities fields and defaults, _overrides_hook and _overrides_moderation_hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2891-L2923
+    why: The capability predicates other tasks call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L484-L544
+    why: _accepts_litellm_call_info, _is_client_error_exception and _exception_changes_request_flow.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L590-L607
+    why: _partition_post_call_callbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1697-L1700
+    why: get_combined_callback_list, called from litellm_logging.py.
+dod:
+  - text: from_callbacks sets each flag by LiteLLM's rules, including the guardrail-versus-moderation split, the Override-before-ApplyGuardrail order and the content enforcer needing a pre-call override.
+    proof: [caps-tests]
+  - text: CallbackCache recomputes only when the list length or a member changes.
+    proof: [caps-tests]
+  - text: The predicates, partition_post_call and combined_callback_list answer like LiteLLM.
+    proof: [caps-tests]
+  - text: is_client_error and changes_request_flow classify every ProxyHookError variant.
+    proof: [caps-tests]
+checks:
+  optional: []
+  commands:
+    - id: caps-tests
+      why: a capability flag, the cache, a predicate or an error classifier is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::callback_caps::/)'
+oracle_cases: []
+deviations:
+  - what: Overrides are declared by each callback through HookOverrides instead of found by reading class dictionaries and signatures.
+    why: Rust has no class dictionary or inspect.signature. The flags carry the same meaning, so what a user sees does not change.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2802-L2860
+out_of_scope:
+  - "Running any hook: B8392 (guardrail execution and during_call), B8393 (pre_call), B8394 (post_call, MCP, headers, per-chunk) and B8395 (failure)."
+  - "The streaming iterator chain that reads iterator_overrides: B6370."
+  - "Adapters from real callbacks to ProxyCallback and the ProxyLogging value that owns CallbackCache: B8399."
+pitfalls:
+  - A guardrail never sets has_moderation_override, even when it defines async_moderation_hook, because the elif at L2827 only runs for non-guardrails.
+  - A class that defines both the iterator hook and apply_guardrail gets one Override entry, not two.
+  - has_content_enforcer needs async_pre_call_hook on the callback's own class and enforces_request_content exactly true.
+  - The moderation and listing-filter checks walk parent classes up to CustomLogger, while the other flags look only at the callback's own class.
+  - combined_callback_list keeps the dynamic callbacks first and drops a later duplicate, not an earlier one.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

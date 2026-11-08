@@ -9,7 +9,7 @@ description: >-
   Own team_endpoints.py L2568-L2642. Check database availability before body/path consistency: no DB is
   HTTPException 500 with detail.error, mismatched non-null body team_id is 400. Exclude team_id and unset
   fields from the patch. Only a present metadata field triggers a team lookup; a missing row is 404.
-  Treat non-dictionary stored metadata as {}, apply B124's RFC 7386 projection, then validate the entire
+  Treat non-dictionary stored metadata as {}, apply B8231's apply_json_merge_patch (RFC 7386, json_merge_patch.rs), then validate the entire
   UpdateTeamRequest with the path ID. Metadata omission preserves the stored value; null, nested deletion,
   arrays and scalar replacements retain the dependency's semantics. Non-metadata fields use the existing
   update semantics. The local except at L2641-L2642 calls handle_exception_on_proxy: HTTPException becomes
@@ -31,8 +31,6 @@ scope:
     - crates/betterlite-server/src/team_merge_patch/**
     - crates/betterlite-server/src/routes/team_merge_patch.rs
     - crates/betterlite-server/src/routes/team_merge_patch/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/cases/management/team-merge-patch/**
     - tools/oracle/helpers/b2370.py
@@ -46,7 +44,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8241
     why: Error projection called by this route.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/json_merge_patch.py#L10-L38
-    why: B124 owns the merge algorithm and its 64-object-depth rejection.
+    why: B8231 owns the merge algorithm and its 64-object-depth rejection.
 dod:
   - text: >-
       Cases database_before_id_mismatch, body_id_mismatch, metadata_team_missing, metadata_absent,
@@ -74,7 +72,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B806 owns update_team; B1205 owns _set_budget_reset_at and handle_update_object_permission.
-  - B124 owns apply_json_merge_patch and handle_exception_on_proxy; B1231 owns PatchTeamRequest and UpdateTeamRequest decoding.
+  - B8231 owns apply_json_merge_patch and B2400 (proxy/utils.py) handle_exception_on_proxy; B1231 owns PatchTeamRequest and UpdateTeamRequest decoding.
   - The remaining team_endpoints.py functions retain the ownership partition enumerated in B1205 out_of_scope; this adapter moves only patch_team.
 pitfalls:
   - A patch without metadata does not perform this adapter's missing-team lookup; its error comes from update_team.

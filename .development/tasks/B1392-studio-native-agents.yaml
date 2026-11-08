@@ -4,7 +4,7 @@ description: >-
   Implement studio_agents for gemini/agents/transformation.py, whose 236 nonblank
   noncomment lines define create/list/get/delete/list-versions behavior. Export provider-local
   StudioAgent and page/delete records with typed id/name and explicit provider extensions;
-  B141 will bind these to its agent registry contracts. Build B1331's resolved base plus
+  B3501 selects this config for the gemini provider and B3502 to B3505 send and expose its calls. Build B1331's resolved base plus
   /v1beta/agents, directly concatenating name and /versions for item operations as the source
   does. Do not invent additional native methods. Copy caller headers, force Content-Type
   application/json, and refuse a truthy litellm_params.api_base without a truthy explicit
@@ -47,7 +47,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/agents/transformation.py#L1-L294
     why: Native Agents API auth rule, operation targets, body allowlist and response fallbacks.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L346-L403
-    why: Future B141 facade shape preserves nullable identity and extra provider fields.
+    why: B4771's facade shape preserves nullable identity and extra provider fields.
 dod:
   - text: Studio agent preparation prevents environment-key fallback on custom bases and forwards only native create fields.
     proof: [studio-agent-tests, studio-agent-python, oracle]
@@ -83,7 +83,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/studio-agents/successful-empty-delete.yaml
 deviations: []
 out_of_scope:
-  - B141 owns agent proxy routes, persistence and identity permissions; this task supplies native provider records without registering routes.
+  - Agent proxy routes belong to B4784 to B4787, persistence to B4777 and identity permissions to B4780 and B4781; B3501 to B3505 call this config. This task supplies native provider records without registering routes.
   - _LITELLM_INTERNAL_KEYS has no caller at the pin; create uses the explicit three-key allowlist instead.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as studio_agents in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/studio_agents.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/studio_agents.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

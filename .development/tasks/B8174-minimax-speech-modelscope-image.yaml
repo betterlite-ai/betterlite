@@ -1,0 +1,105 @@
+id: B8174
+title: MiniMax text to speech and ModelScope images
+description: >-
+  Build minimax_speech and modelscope_image in crates/betterlite-openai. They cover
+  litellm/llms/minimax/text_to_speech/transformation.py and litellm/llms/modelscope/image_generation/transformation.py. The
+  three __init__.py files (minimax, minimax/text_to_speech, modelscope/image_generation) only re-export, and the factory
+  get_modelscope_image_generation_config(model) in the last one returns ModelscopeImageConfig for any model. Nothing reads an
+  environment variable. The caller passes each key and base as a plain argument. B1135 owns the speech request and result
+  records, B511 owns the image records and B2202 owns BaseLLMException.
+
+  minimax_speech. Options are voice, response_format and speed. Voice names map as alloy to male-qn-qingse, echo to
+  male-qn-jingying, fable to female-shaonv, onyx to male-qn-badao, nova to female-yujie, shimmer to female-tianmei. Any other
+  voice name is sent unchanged, and a missing voice is male-qn-qingse. Formats are mp3, pcm, wav and flac, and any other value
+  becomes mp3. Speed is clamped to 0.5 through 2.0 and defaults to 1.0. The option instructions is dropped. extra_body is
+  merged into the body. Other options pass through. The key is api_key, else the global key, else the MINIMAX_API_KEY value.
+  The URL is the base (api_base, else the MINIMAX_API_BASE value, else https://api.minimax.io) plus /v1/t2a_v2. The body is
+  {model, text, stream: false, output_format (default "hex"), voice_setting: {voice_id, speed, vol: 1.0, pitch: 0},
+  audio_setting: {sample_rate: 32000, bitrate: 128000, format, channel: 1}} plus every extra_body key not already present.
+  The reply decoder works on the bytes. A non-zero base_resp.status_code gives MinimaxException with the status_msg text. A
+  reply with an audio_url gives MinimaxException status 500, "URL output format is not yet supported". The audio is
+  data.audio, else data.audio_file. It is hex decoded, and when hex decoding fails it is base64 decoded. The result is the
+  binary audio with the format as content type. The decoder gets a fuzz target.
+
+  modelscope_image. Options are n, size, response_format and user. Unsupported options are dropped when drop_params is true
+  and otherwise raise the OpenAI-style unsupported error of the base. Other keys are copied. The URL is the base trimmed of
+  trailing "/" (api_base, else the MODELSCOPE_API_BASE value, else https://api-inference.modelscope.cn/v1) plus
+  /images/generations. The key is api_key, else the MODELSCOPE_API_KEY value, else a ValueError "MODELSCOPE_API_KEY is not
+  set. Please set it via environment variable or pass api_key parameter." Headers are Content-Type application/json and
+  Authorization Bearer. The body is {model, prompt} plus every option whose name does not start with "_". The reply decoder:
+  a body that is not JSON gives an error whose class depends on the status (400 bad request, 401 authentication, 500 and above
+  server error, any other status a generic error). A body with an "error" key gives "ModelScope error: {message}". Otherwise
+  each data item becomes {url, b64_json, revised_prompt} with absent fields left out. It gets a fuzz target.
+
+  Size. About 300 nonblank, non-comment LiteLLM lines. Plan 300 production, 340 tests, 80 adapters, 90 fuzz and 20 wiring
+  lines. No split.
+scope:
+  paths:
+    - crates/betterlite-openai/src/minimax_speech.rs
+    - crates/betterlite-openai/src/minimax_speech/**
+    - crates/betterlite-openai/src/modelscope_image.rs
+    - crates/betterlite-openai/src/modelscope_image/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/minimax_speech_reply.rs
+    - crates/betterlite-openai/fuzz/fuzz_targets/modelscope_image_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/minimax_speech_reply/**
+    - crates/betterlite-openai/fuzz/corpus/modelscope_image_reply/**
+    - tools/oracle/cases/helpers/minimax-modelscope/**
+    - tools/oracle/helpers/b8174.py
+    - tools/oracle/helpers/b8174/**
+    - tools/oracle/src/helpers/openai/b8174.rs
+    - tools/oracle/src/helpers/openai/b8174/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/minimax/text_to_speech/transformation.py
+    why: Voice map, body shape, hex and base64 audio decoding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/modelscope/image_generation/transformation.py
+    why: Options, URL, body and reply conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/modelscope/image_generation/__init__.py
+    why: The config factory.
+dod:
+  - text: The MiniMax speech options, voice map, clamps and body match LiteLLM.
+    proof: [minimax-modelscope-tests, oracle]
+  - text: The speech reply decoder handles hex, base64 fallback, non-zero status and URL output.
+    proof: [minimax-modelscope-tests, oracle]
+  - text: ModelScope image options, URL, key rule, body and reply conversion match LiteLLM.
+    proof: [minimax-modelscope-tests, oracle]
+  - text: Malformed replies fail with typed errors and do not panic, and both corpora replay.
+    proof: [minimax-modelscope-corpus]
+  - text: The new oracle cases exist and call this task's helper.
+    proof: [minimax-modelscope-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: minimax-modelscope-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^(minimax_speech|modelscope_image)::/) - test(/replays_the_/)'
+      why: An OpenAI speech config would send the OpenAI body to t2a_v2 and read raw audio bytes instead of hex.
+    - id: minimax-modelscope-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/minimax_speech_reply.rs && test -f crates/betterlite-openai/fuzz/fuzz_targets/modelscope_image_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/minimax_speech_reply)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/modelscope_image_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_minimax_speech_reply_corpus) + test(replays_the_modelscope_image_reply_corpus)'
+      why: Both reply bodies come from the network and need fuzz targets with replayed corpora.
+    - id: minimax-modelscope-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/minimax-modelscope)" && /usr/bin/grep -rlE '^  b8174:' tools/oracle/cases/helpers/minimax-modelscope
+      why: Without cases that call the B8174 helper nothing compares these functions with LiteLLM.
+oracle_cases:
+  - tools/oracle/cases/helpers/minimax-modelscope/speech-params-and-body.yaml
+  - tools/oracle/cases/helpers/minimax-modelscope/speech-reply.yaml
+  - tools/oracle/cases/helpers/minimax-modelscope/image-params-and-url.yaml
+  - tools/oracle/cases/helpers/minimax-modelscope/image-body-and-reply.yaml
+deviations:
+  - what: A speech or image reply with a field of the wrong type fails with a typed error, status 500.
+    why: LiteLLM raises a raw TypeError or KeyError there. 500 is its generic status for an unclassified exception (to be confirmed by the architect, see notes).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/minimax/text_to_speech/transformation.py
+out_of_scope:
+  - B1135 owns the speech provider contract and B511 the image records. B2202 owns BaseLLMException.
+  - B8173 owns MiniMax chat. B1430 owns the native Messages policy.
+  - B2230 and B5360 own picking a config from the provider name. B8312 owns wiring.
+pitfalls:
+  - The MiniMax base here has no /v1. The path /v1/t2a_v2 is added to it, unlike the chat base that already carries /v1.
+  - The default output_format is "hex" and the audio is decoded from hex. Base64 is only the fallback when hex decoding fails.
+  - An unknown response_format becomes mp3. An unknown voice name is sent unchanged.
+  - extra_body keys never overwrite keys the config already set.
+  - Speed outside 0.5 to 2.0 is clamped, it is not an error.
+  - ModelScope drops body keys that start with an underscore.
+  - The ModelScope JSON failure picks the error class by status, and the "error" key text gets the prefix ModelScope error and a space.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

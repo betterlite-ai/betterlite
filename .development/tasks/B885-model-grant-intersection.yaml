@@ -83,8 +83,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/model_grant_intersection.rs
     - crates/betterlite-server/src/state/model_grant_intersection/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/model-grant-intersection/**
     - crates/betterlite-server/src/auth/model_grant_intersection.rs
     - crates/betterlite-server/src/auth/model_grant_intersection/**

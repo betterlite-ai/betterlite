@@ -1,0 +1,86 @@
+id: B8194
+title: MCP debug headers and upstream error previews
+description: >-
+  Port mcp_debug.py. When a request carries the header x-litellm-mcp-debug, the gateway adds
+  x-mcp-debug-* response headers: how each server's auth was resolved (MCPAuthDiagnostics,
+  record_auth_resolution) and masked copies of the secrets involved (MCPDebug.mask_secret,
+  build_debug_headers, maybe_build_debug_headers). The auth diagnostics travel in the request
+  scope under the key litellm.mcp.auth_diagnostics, so a response wrapper can read them when it
+  sends the first message.
+
+  The second half builds safe error previews for failed upstream calls: URL cleaning
+  (safe_upstream_url), secret collection from headers and bodies, masking, body previews limited
+  to 512 characters, a capture of at most 16384 bytes within 1 second, and the descriptions
+  describe_upstream_response and describe_upstream_http_failure. Only content-type,
+  content-length and accept headers are shown unmasked.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/debug.rs
+    - crates/betterlite-server/src/mcp/debug/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-debug/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-debug-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_debug.py#L130-L405
+    why: Debug header names, auth diagnostics and the response wrapper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_debug.py#L406-L626
+    why: Secret masking, body previews, capture limits and upstream failure descriptions.
+
+dod:
+  - text: >-
+      The debug header is read case-insensitively, and only a request that carries it gets
+      x-mcp-debug headers.
+    proof: [debug-tests, debug-oracle]
+  - text: >-
+      Auth diagnostics record one resolution per server and render the same summary and header
+      values as the Python for zero, one and several servers.
+    proof: [debug-tests, debug-oracle]
+  - text: >-
+      No preview, header value or URL shows a secret taken from a header, a query string or a JSON
+      body field with a sensitive name. Previews cut at 512 characters.
+    proof: [debug-tests, debug-oracle]
+  - text: >-
+      The error capture stops at 16384 bytes or 1 second and never fails the request.
+    proof: [debug-tests]
+  - text: Every mutant in the masking logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: debug-tests
+      why: A branch, message or ordering rule in this task differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^mcp::debug::/)'
+    - id: debug-oracle
+      why: Results or errors differ from LiteLLM on the same input.
+      run: >-
+        cargo run --locked -p betterlite-oracle -- --self-check
+        tools/oracle/cases/helpers/mcp-debug
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - "Where the auth resolution is recorded: the header preparation task (B8196) calls record_auth_resolution."
+
+pitfalls:
+  - >-
+    Masking must run on every value that can reach a log or a header, including values found
+    inside nested JSON. A case needs a secret in a nested field.
+  - >-
+    The auth diagnostics belong to one request. Keep them in the request extensions, not in a
+    static.
+  - "record_auth_resolution reads the active request through get_active_mcp_request_ctx in LiteLLM. Here it takes B8191's McpContext as an argument, so the caller passes the request scope in and nothing ambient is read."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,14 @@
+id: B8461
+milestone: M9 agents and mcp
+title: "MCP upstream client creation and credential resolution"
+status: todo
+depends_on: [B8460, B6590, B6762, B4667, B4662, B8194, B4742, B4744, B4740, B4716, B6594, B4714, B8191, B8254]
+file: tasks/B8461-mcp-upstream-client.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

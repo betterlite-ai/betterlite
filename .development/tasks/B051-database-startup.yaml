@@ -2,7 +2,7 @@ id: B051
 title: Database startup, migration jobs and readiness
 description: >-
   Compose DatabaseEndpoints, native pools, MigrationRecovery, RequestLogIndexes, heartbeat, credential
-  refresh and MigrationDriftCheck at startup; expose database state to B130 readiness without implementing
+  refresh and MigrationDriftCheck at startup; expose database state to B4448 readiness without implementing
   its HTTP route. Wire only startup services B710-B719, B731, B854 and B857 and tools/betterlite-db-admin
   migrate. Preserve existing rows and drain owned tasks/pools at shutdown. The migration job waits for
   index completion; the server schedules it without delaying readiness.
@@ -164,7 +164,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prisma_migration.py#L23-L36
     why: Own main; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1835-L1873
-    why: B130 consumes DB state for 503 status/db readiness except the configured DB-unavailable fallback.
+    why: B4448 consumes DB state for 503 status/db readiness except the configured DB-unavailable fallback.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/migrations-job.yaml#L40-L55
     why: Migration-job entrypoint replacement.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L1031-L1036
@@ -251,12 +251,12 @@ deviations:
     why: Official images set these obsolete native-runtime inputs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py#L57-L278
   - what: betterlite-db-admin migrate replaces python migrations/run.py and prisma_migration.py; exit
-      2 is unrecoverable migration failure, exit 1 is exhausted retries. B121 owns --skip_server_startup
+      2 is unrecoverable migration failure, exit 1 is exhausted retries. B8375 owns --skip_server_startup
       and forwards to this operation.
     why: Native SQL migrations do not run Prisma or Node.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1426-L1447
 out_of_scope:
-  - migrations/Dockerfile packaging belongs to B151; py.typed is a Python typing marker with no native
+  - migrations/Dockerfile is not built, since B5071's images carry betterlite-db-admin and B5070's entrypoint runs its migrate; py.typed is a Python typing marker with no native
     runtime counterpart, while migration_lock.toml records the already-preserved PostgreSQL provider.
   - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
     production fallback.

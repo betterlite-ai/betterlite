@@ -5,7 +5,7 @@ description: >-
   SSOAuthenticationHandler.get_sso_login_redirect, get_generic_sso_redirect_response and
   should_use_sso_handler. Despite its Python name this entry supports Google, Microsoft,
   generic OIDC, SAML and the local password form. DISABLE_ADMIN_UI defaults absent and
-  uses the existing boolean conversion; disabled UI returns B124's page before other work.
+  uses the existing boolean conversion; disabled UI returns B4263's page before other work.
   Reuse its missing-environment page, B1618 callback URL helper and B1613 CLI flow validation.
   CLI state includes user_code only when allow_cli_sso_verification_uri_complete is enabled;
   existing_key remains ignored. A configured general_settings.custom_ui_sso_sign_in_handler

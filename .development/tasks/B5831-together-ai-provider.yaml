@@ -4,7 +4,7 @@ description: >-
   Build four pure modules in betterlite-openai: together_ai_chat, together_ai_completion, together_ai_rerank and
   together_ai_cost. They cover litellm/llms/together_ai/** (chat/transformation.py, completion/transformation.py,
   rerank/transformation.py, rerank/handler.py, cost_calculator.py). Nothing here does HTTP, reads an env var, reads the
-  process clock or looks the model catalog up. The caller passes keys, bases and every catalog answer in. B041 wires the
+  process clock or looks the model catalog up. The caller passes keys, bases and every catalog answer in. B8310 wires the
   modules into dispatch and adds the HTTP cases.
 
   together_ai_chat. TogetherAIChatConfig extends the OpenAI chat base, so B668 (option policy, map_openai_params) and
@@ -187,7 +187,7 @@ out_of_scope:
   - B1686 owns the cost dispatch condition (cost_calculator.py L1777-L1780) and the pricing that runs on the category name this task returns.
   - completion/handler.py is a docstring and chat/__init__.py, embed.py hold only the TogetherAIConfig alias of TogetherAIChatConfig, so there is no logic to build. Together embeddings run through the OpenAI embeddings path (main.py L6502-L6508), owned by B024.
   - Together credentials (TOGETHER_AI_API_KEY, TOGETHER_AI_TOKEN, TOGETHERAI_API_KEY, TOGETHER_AI_API_BASE) are resolved in get_llm_provider_logic.py, owned by B174.
-  - _complete_together_ai in main.py and the ProviderConfigManager entry for TogetherAIChatConfig belong to B041, which wires dispatch and adds the HTTP cases. This task touches neither dispatch file.
+  - _complete_together_ai in main.py belongs to B8310, which wires dispatch and adds the HTTP cases; the ProviderConfigManager entry for TogetherAIChatConfig is B2230's selection. This task touches neither dispatch file.
 pitfalls:
   - The unsupported-params error for a false verdict has status 500, not 400, and lists only the tool params that were actually passed, joined with ", ".
   - A missing catalog entry (verdict None) never fails; it logs a warning and sends the params on, so only an entry that says false can drop or reject.

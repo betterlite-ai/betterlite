@@ -193,7 +193,7 @@ out_of_scope:
   - B1425 owns the OpenAI-like embedding transport that databricks_embedding hands its URL and headers to.
   - B507 owns OpenAIResponsesAPIConfig.transform_responses_api_request and the other inherited Responses methods.
   - B1672 owns generic_cost_per_token. B1686 owns the call-price dispatch that picks databricks_cost for provider databricks.
-  - Reading DATABRICKS_API_BASE, DATABRICKS_API_KEY, litellm.databricks_key and the embedding call site in litellm/main.py is B042's wiring. B042 also reads the environment into DatabricksEnv, sends the OAuth request and registers DatabricksEmbeddingConfig and DatabricksResponsesAPIConfig in dispatch.
+  - Reading DATABRICKS_API_BASE, DATABRICKS_API_KEY, litellm.databricks_key and the embedding call site in litellm/main.py is B8330's wiring. B8330 also reads the environment into DatabricksEnv, sends the OAuth request and registers DatabricksEmbeddingConfig and DatabricksResponsesAPIConfig in dispatch.
   - B4782 owns the separate agent endpoint token cache in the proxy crate. It shares no code with this task.
 pitfalls:
   - A non-None api_key sets Authorization after the OAuth branch ran, so with all three OAuth variables set a supplied key still wins and the token request is made anyway.

@@ -54,7 +54,7 @@ description: >-
   duplicate key winning; nested values are not recursively frozen. Native fixtures distinguish a trusted snapshot
   from a JSON mapping. kms_owner_precedence: resolve_s3_encryption_key_id and resolve_s3_bucket_owner call _resolve_s3_setting
   with s3_encryption_key_id/AWS_S3_ENCRYPTION_KEY_ID or s3_bucket_owner/AWS_S3_BUCKET_OWNER. Choose the first nonempty
-  string from litellm_params then optional_params, otherwise B129 get_secret_str(env), then None. Ignore explicit
+  string from litellm_params then optional_params, otherwise B8500 get_secret_str(env), then None. Ignore explicit
   nonstrings and empty strings, retain whitespace strings, and do not trim or validate KMS/account syntax. These
   two settings may come from request optional_params, unlike trusted bucket authorization. s3_model_helpers: CommonBatchFilesUtils
   construction creates B590 BaseAWSLLM. Its model helper removes one exact leading bedrock/ and otherwise preserves
@@ -81,7 +81,7 @@ description: >-
 
   All four environment variables and their four deployment settings default None. The real B002 loader cases for
   deployment bucket names feed the immutable B1021 credential snapshot; request fields do not. Environment bucket
-  lookups use os.getenv semantics, whereas KMS/owner lookups use B129 secret resolution. Reuse B2208 allow_legacy_cloud_file_ids
+  lookups use os.getenv semantics, whereas KMS/owner lookups use B8500 secret resolution. Reuse B2208 allow_legacy_cloud_file_ids
   configuration. Separate S3 static credentials belong to B644, not this authorization task.
 
 
@@ -243,7 +243,7 @@ dod:
   - helper-python
 - text: 'kms_owner_precedence: resolve_s3_encryption_key_id and resolve_s3_bucket_owner call _resolve_s3_setting
     with s3_encryption_key_id/AWS_S3_ENCRYPTION_KEY_ID or s3_bucket_owner/AWS_S3_BUCKET_OWNER. Choose the first
-    nonempty string from litellm_params then optional_params, otherwise B129 get_secret_str(env), then None. Ignore
+    nonempty string from litellm_params then optional_params, otherwise B8500 get_secret_str(env), then None. Ignore
     explicit nonstrings and empty strings, retain whitespace strings, and do not trim or validate KMS/account syntax.
     These two settings may come from request optional_params, unlike trusted bucket authorization.'
   proof:
@@ -373,7 +373,7 @@ checks:
   - id: case-kms-owner-precedence
     why: resolve_s3_encryption_key_id and resolve_s3_bucket_owner call _resolve_s3_setting with s3_encryption_key_id/AWS_S3_ENCRYPTION_KEY_ID
       or s3_bucket_owner/AWS_S3_BUCKET_OWNER. Choose the first nonempty string from litellm_params then optional_params,
-      otherwise B129 get_secret_str(env), then None. Ignore explicit nonstrings and empty strings, retain whitespace
+      otherwise B8500 get_secret_str(env), then None. Ignore explicit nonstrings and empty strings, retain whitespace
       strings, and do not trim or validate KMS/account syntax. These two settings may come from request optional_params,
       unlike trusted bucket authorization.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_access_cases::case_[0-9]+_kms_owner_precedence$/)'

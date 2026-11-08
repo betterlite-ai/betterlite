@@ -28,7 +28,7 @@ description: >-
   and raise B682 BedrockError preserving response status,text,headers and response. Catch timeout separately as
   status 408 with Timeout error occurred. and B682 default fields. A malformed successful JSON body is not mislabeled
   as an HTTP-status failure. embedding_credentials: Call B590 pop_aws_auth_params, then pop aws_region_name from
-  the caller options. If the region is None, read B129 get_secret AWS_REGION_NAME and then AWS_REGION; only string
+  the caller options. If the region is None, read B8500 get_secret AWS_REGION_NAME and then AWS_REGION; only string
   values count, including empty strings, and AWS_REGION overrides AWS_REGION_NAME. If still None use us-west-2.
   An explicit region bypasses both lookups and is not validated by this helper. Any bearer_token other than None,
   including empty string, bypasses B594 resolve_credentials and returns credentials=None. Otherwise resolve with
@@ -154,7 +154,7 @@ dod:
   proof:
   - parser-corpus
 - text: 'embedding_credentials: Call B590 pop_aws_auth_params, then pop aws_region_name from the caller options.
-    If the region is None, read B129 get_secret AWS_REGION_NAME and then AWS_REGION; only string values count, including
+    If the region is None, read B8500 get_secret AWS_REGION_NAME and then AWS_REGION; only string values count, including
     empty strings, and AWS_REGION overrides AWS_REGION_NAME. If still None use us-west-2. An explicit region bypasses
     both lookups and is not validated by this helper. Any bearer_token other than None, including empty string,
     bypasses B594 resolve_credentials and returns credentials=None. Otherwise resolve with the extracted auth fields
@@ -226,7 +226,7 @@ checks:
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_embedding_io_corpus$/)'
   - id: case-embedding-credentials
     why: Call B590 pop_aws_auth_params, then pop aws_region_name from the caller options. If the region is None,
-      read B129 get_secret AWS_REGION_NAME and then AWS_REGION; only string values count, including empty strings,
+      read B8500 get_secret AWS_REGION_NAME and then AWS_REGION; only string values count, including empty strings,
       and AWS_REGION overrides AWS_REGION_NAME. If still None use us-west-2. An explicit region bypasses both lookups
       and is not validated by this helper. Any bearer_token other than None, including empty string, bypasses B594
       resolve_credentials and returns credentials=None. Otherwise resolve with the extracted auth fields and chosen

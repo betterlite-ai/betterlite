@@ -52,7 +52,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L145-L325
     why: The complete AliceGuardrail class with __init__, apply_guardrail, _evaluate, _enforce, _apply_replacements, _mask_rejected and _on_unreachable.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/__init__.py#L11-L35
-    why: The initialize_guardrail function and guardrail_initializer_registry, guardrail_class_registry registries that B107 owns; B3752 provides the AliceGuardrail class these registries wrap.
+    why: The initialize_guardrail function and guardrail_initializer_registry, guardrail_class_registry registries, which B8521 ports as Alice argument function and registry arm; B3752 provides the AliceGuardrail class these registries wrap.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L327-L373
     why: The _json_safe helper for bounded serialization with credential stripping and depth/cycle limits.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/alice.py

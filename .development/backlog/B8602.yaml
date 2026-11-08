@@ -1,0 +1,14 @@
+id: B8602
+milestone: M8 platform
+title: Streaming chunk shaping and SSE frame helpers
+status: todo
+depends_on: [B398]
+file: tasks/B8602-stream-chunk-shaping.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"
+parent: B7980
+split_from: B7980
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

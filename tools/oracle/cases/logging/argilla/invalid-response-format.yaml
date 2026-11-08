@@ -1,0 +1,32 @@
+# get_str_response raises Exception("Invalid response format: {response}") for a non-str, non-dict response and reads choices[0].message.content from a dict
+kind: helper
+name: argilla-invalid-response-format
+call:
+  b3960:
+    scenarios:
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: response
+            payload: {messages: [{role: user, content: hi}], response: 5}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: response
+            payload: {messages: [{role: user, content: hi}], response: []}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: response
+            payload: {messages: [{role: user, content: hi}], response: {}}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: response
+            payload: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}
+env: {}
+compare: {ignore: []}

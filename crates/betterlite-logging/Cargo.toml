@@ -33,6 +33,7 @@ parquet2 = { version = "0.17.2", default-features = false, features = ["snappy"]
 pep440_rs = "0.7.3"
 percent-encoding.workspace = true
 prost = "0.14.4"
+rand = { version = "0.10.3", default-features = false, features = ["std_rng"] }
 regex.workspace = true
 rust_decimal.workspace = true
 ryu = "1.0.23"

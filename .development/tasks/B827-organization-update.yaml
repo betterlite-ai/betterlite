@@ -5,7 +5,7 @@ description: >-
   L699-L808), handle_update_object_permission L811-L835, DELETE /organization/delete (decorator
   L1000-L1005, function L1006-L1057) and _delete_organization_keys L1060-L1079 in organization_endpoints.py.
   Compose B2342's v2 registration exactly once. B826 supplies router wiring, scope checks and shared
-  write contracts; B124 supplies legacy/response records and jsonify_object. B052 handles authentication.
+  write contracts; B8412 supplies legacy/response records and B2362 jsonify_object. B052 handles authentication.
   Neither owned route has management_endpoint_wrapper or handle_exception_on_proxy, and neither
   wraps its work in a transaction. Preserve the difference from B2342's transactional PATCH.
 
@@ -13,7 +13,7 @@ description: >-
   string in detail.error. Legacy update then requires caller.user_id is not null, else 400
   "Cannot associate a user_id to this action. Check `/key/info` to validate if 'user_id' is set.". Empty
   string passes this initial check. Use B003's existing JSON body reader, pass the parsed value through
-  B826.handle_nested_budget_structure_in_organization_update_request, then construct B124's
+  B826.handle_nested_budget_structure_in_organization_update_request, then construct B8412's
   LiteLLM_OrganizationTableUpdate. JSON parsing/shape/model failures occur inside the handler and have
   no local 422 translation; retain B003's unhandled-error boundary rather than pretending this is the
   v2 typed extractor. Ordinary unhandled failures become JSON 500 with error.message="Internal server
@@ -33,7 +33,7 @@ description: >-
   then call B157._update_dictionary: ignore top-level null updates; convert numeric strings through
   its integer/float rules; shallow-merge one nested object level, retaining nested nulls; otherwise
   replace the value. Numeric-looking strings inside lists or nested objects are not recursively
-  converted. Empty metadata does not clear old keys. Apply B124.jsonify_object. If a nonnull permission
+  converted. Empty metadata does not clear old keys. Apply B2362 jsonify_object. If a nonnull permission
   was supplied, owned handle_update_object_permission calls B816.handle_update_object_permission_common
   with current permission ID and DB; add returned ID only if nonnull, returning the same mutable payload
   after the common helper's removal of object_permission. Cases legacy_metadata_merge_depth,
@@ -86,8 +86,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/organization_update.rs
     - crates/betterlite-server/src/routes/organization_update/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/organization-update/**
     - tools/oracle/helpers/b827.py
     - tools/oracle/helpers/b827/**

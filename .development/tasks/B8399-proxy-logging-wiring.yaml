@@ -1,0 +1,69 @@
+id: B8399
+title: Assemble ProxyLogging and wire its hooks into the proxy
+description: >-
+  The parts B8390 to B8395 and B8401 build ProxyLogging's pieces behind traits. This task builds the one `ProxyLogging` value the server holds, implements those traits over the real callbacks, router, caches and alerting, and hands the hook services to the tasks that asked for them. It also adds the HTTP oracle cases the parts left to it. Code goes in crates/betterlite-server/src/proxy_logging.rs and proxy_logging/ (state.rs, startup.rs, adapters.rs, ports.rs, tests.rs), following the composition style of .development/tasks/B8157-self-hosted-dispatch.yaml.
+
+  state.rs. `ProxyLogging::new(user_api_key_cache, premium_user)` holds what LiteLLM's __init__ sets (L1194-L1232): an internal usage DualCache with a 1 second in-memory TTL (`InternalUsageCache` is a forwarder over it and is not a separate type), the cache control check, alerting None, alerting_threshold 300, alert_types DEFAULT_ALERT_TYPES, alert_to_webhook_url None, the SlackAlerting value (B4021), service logging, the spend update writer, an empty proxy hook map, B8390's `CallbackCache`, and the three started flags. No email logger: `_get_email_logger_class` needs litellm_enterprise. `update_values` (L1294-L1347) stores each given value, and when any alerting value changed schedules the deprecation check, updates SlackAlerting, and for slack or ms_teams alerting registers SlackAlerting as a callback when daily_reports, outage_alerts or region_outage_alerts is an alert type, and its response_taking_too_long_callback as a success callback; a Redis cache goes to the usage cache, the spend update buffer and the pod lock manager.
+
+  startup.rs. `startup_event(router, redis_usage_cache)` (L1234-L1292) in LiteLLM's order: SlackAlerting gets the router, update_values with the Redis cache, init callbacks, the scheduled daily report when daily_reports is an alert type and not yet started, the hanging request check when llm_requests_hanging is, then the deprecation check when alerting is set and it has not started. `init_callbacks` (L1349-L1425): register each `PROXY_HOOKS` entry from litellm/proxy/hooks/__init__.py (parallel_request_limiter, cache_control_check, the max iterations and max budget per session limiters, sensitive_data_routing and the rest of the open-source map, not ENTERPRISE_PROXY_HOOKS), skipping one that needs the database when there is none with the debug line "Skipping proxy hook %s: it requires a database and no prisma client is configured"; register service logging; resolve string callbacks through B189's registry; add every resolved logger to the success, failure and async lists; route string success and failure callbacks to their event. `get_proxy_hook(name)` reads the map.
+
+  adapters.rs. Implement B8390's `ProxyCallback` and `GuardrailCallback` over B189's registered callbacks, B5471's guardrail settings, B3665's gate and B3666's marker; B6370's `CallbackSet` and `PipelineSource` over B8390 and B8391 (plus B8393's handle_pipeline_result); B8391's `DeploymentGuardrails`, B8392's `GuardrailBalancer` and B8398's `ListingRouter` over the router; B8393's `PromptTemplates` over B4058; B8394's `A2aText`; B8393's `AlertHooks` and B8395's ports over SlackAlerting and the logging object; B8396's `HealthFailureReporter` and `ProxyStateSink`. Pass B3680's `MetadataGuardrailRecorder` (LiteLLM's add_guardrail_to_applied_guardrails_header) wherever a hook takes an `AppliedGuardrailRecorder`.
+
+  ports.rs. The services other tasks inject: the ProxyLogging hooks service B084 and B1126 take (pre_call, post_call_failure), the guardrails-only pre-call port B1023 calls with `guardrails_only` and `has_pre_call_guardrails`, the failure hook port B941 records, and the disconnect release B2400 selects. Each forwards to the part that owns the behavior.
+
+  HTTP oracle cases in tools/oracle/cases/guardrails/proxy-logging/ boot the proxy with `generic_guardrail_api` guardrails (B3771) against the mock provider: a pre_call guardrail that blocks a chat request (status, error type and message), a during_call guardrail that blocks, a post_call guardrail that blocks the response, and a passing guardrail whose name shows in the x-litellm-applied-guardrails response header.
+scope:
+  paths:
+    - crates/betterlite-server/src/proxy_logging.rs
+    - crates/betterlite-server/src/proxy_logging/**
+    - tools/oracle/cases/guardrails/proxy-logging/**
+    - tools/oracle/helpers/b8399.py
+    - tools/oracle/helpers/b8399/**
+    - tools/oracle/src/helpers/server/b8399.rs
+    - tools/oracle/src/helpers/server/b8399/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1185-L1445
+    why: ProxyLogging construction, startup, update_values, proxy hooks, callback init and update_request_status.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/__init__.py
+    why: PROXY_HOOKS and get_proxy_hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py
+    why: Where ProxyLogging is created and startup_event is called.
+dod:
+  - text: ProxyLogging starts with LiteLLM's defaults and update_values registers SlackAlerting by the alerting rules.
+    proof: [wiring-tests]
+  - text: startup_event starts the daily report, hanging request and deprecation tasks once each, and init_callbacks registers the open-source proxy hooks, skipping database hooks without a database.
+    proof: [wiring-tests]
+  - text: The adapters and ports forward to the parts that own each behavior.
+    proof: [wiring-tests]
+  - text: Pre, during and post call guardrail blocks and the applied guardrails header match LiteLLM through the booted proxy.
+    proof: [oracle]
+  - text: >-
+      adapters.rs implements B8464's McpGuardrailHooks: pre_call_hook forwards to B8393's PreCallHook::run, during_call_hook to B8392's during_call_hook, and the payload conversions to B8401.
+    proof: [wiring-tests]
+checks:
+  optional: []
+  commands:
+    - id: wiring-tests
+      why: ProxyLogging state, startup, callback init or a port is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^proxy_logging::/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/proxy-logging/pre-call-block.yaml
+  - tools/oracle/cases/guardrails/proxy-logging/during-call-block.yaml
+  - tools/oracle/cases/guardrails/proxy-logging/post-call-block.yaml
+  - tools/oracle/cases/guardrails/proxy-logging/applied-guardrails-header.yaml
+deviations:
+  - what: No email logger is created, so email budget alerts never send.
+    why: The email loggers ship only in litellm_enterprise; open-source LiteLLM leaves email_logging_instance None too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1215-L1220
+out_of_scope:
+  - "Hook behavior: B8390 to B8395 and B8401. The streaming wrapper: B6370."
+  - "Enterprise proxy hooks (ENTERPRISE_PROXY_HOOKS, managed_files) and email loggers: not built."
+pitfalls:
+  - startup_event and update_values can both schedule the deprecation check, so the started flag must be checked in one place.
+  - The SlackAlerting callback is added only for daily_reports, outage_alerts or region_outage_alerts, but the response time callback for any slack or ms_teams alerting.
+  - init_callbacks replaces string callbacks in place, keeping their position in the list, since hook order follows the list.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

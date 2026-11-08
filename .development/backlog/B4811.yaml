@@ -6,6 +6,7 @@ depends_on: []
 file: tasks/B4811-a2a-proxy-cards.yaml
 covers:
   - "litellm/proxy/a2a/agent_card.py"
+  - "litellm/proxy/a2a/__init__.py"
 parent: B142
 split_from: B142
 resolution: merged

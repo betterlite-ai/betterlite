@@ -1,0 +1,15 @@
+id: B8356
+milestone: M12 python
+title: Python Router class and constructor
+status: todo
+depends_on: [B158, B165, B5078, B6022, B8355, B8584, B8440]
+file: tasks/B8356-python-router-class.yaml
+covers:
+  - "litellm/router.py"
+  - "litellm/types/router.py"
+parent: B162
+split_from: B162
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

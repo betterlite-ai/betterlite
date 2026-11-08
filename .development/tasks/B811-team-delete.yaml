@@ -2,8 +2,9 @@ id: B811
 title: Delete and archive teams with reference cleanup
 description: >-
   Implement POST /team/delete as the source's ordered deletion workflow, not one transaction. Missing
-  database is 500 detail.error="No db connected"; null team_ids is 400 "No team id passed in". Empty
-  lists succeed with deleted_teams=[] and duplicates are not normalized. Read each requested team and
+  database is 500 detail.error="No db connected"; null team_ids fails request validation before the handler runs (team_ids is a required list[str]): 422 in B003's validation envelope with a list_type error ("Input should be a valid list") at body.team_ids, even with no database, so the handler's 400 "No team id passed in" branch is unreachable. Empty
+  lists succeed with deleted_teams=[]. B8412's DeleteTeamRequest decodes team_ids through distinct_team_ids. That validator keeps
+  the first occurrence of each id in input order, so a repeated id is read, archived, audited and deleted once. Read each requested team and
   authorize B800 TEAM_OR_ORG_ADMIN before any archive write. Both missing rows and read exceptions become
   404 "Team not found, passed team_id=..."; model validation is outside that catch. Scope denial uses
   B800 team_access_denied. Cases delete_empty_and_null, all_targets_before_archive, read_error_is_404
@@ -21,7 +22,7 @@ description: >-
   to B065 rather than a new config key here.
 
   Fetch key rows and B738 JWT mapping cache keys, archive nonempty keys through B777, delete team keys
-  through B124, then issue B784 deletion audit events, B734 key-cache invalidation and B878 JWT eviction.
+  through B8397, then issue B784 deletion audit events, B734 key-cache invalidation and B878 JWT eviction.
   Next call B836 delete_team_models. A failure at any stage preserves prior archives, deletions and
   scheduled events. Sweep every user with SQL array_remove(teams,$1) WHERE $1=ANY(teams), once per input
   ID, then delete memberships. Resolve member cache IDs from the saved roster after this first sweep:
@@ -75,8 +76,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/team_delete.rs
     - crates/betterlite-server/src/routes/team_delete/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-delete/**
     - crates/betterlite-server/src/team_delete/fixtures.rs
     - crates/betterlite-server/src/team_delete/fixtures/**
@@ -119,6 +118,9 @@ references:
 dod:
   - text: The named archive, identity, scope and cache cases in the description pass; only the final team
       deletion plus second sweep rolls back together, and every earlier effect remains observable.
+    proof:
+      - behavior-tests
+  - text: A team id repeated in team_ids is handled once, in first-seen order, because the handler takes B8412's deduped DeleteTeamRequest.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers

@@ -115,7 +115,7 @@ deviations:
     why: AWS charges per started unit; LiteLLM uses the same rounding and fallback on unsupported operations.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/comprehend_medical_passthrough_logging_handler.py#L37-L42
 out_of_scope:
-  - HTTP routing and passthrough request forwarding. B102 owns route registration.
+  - HTTP routing and passthrough request forwarding. B3619 (Cursor, TypeSafe) and B3621 (Comprehend Medical) own route registration.
   - Cost accounting, budgets and spend tracking. B190 provides logging payloads that downstream tasks record.
   - Provider authentication, request validation and upstream error handling.
   - Batch operations and async polling. These service handlers only process single synchronous calls.

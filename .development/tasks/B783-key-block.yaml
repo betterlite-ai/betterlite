@@ -1,12 +1,12 @@
 id: B783
 title: Block keys and check key health
 description: >-
-  Implement POST /key/block and /key/unblock with B124 BlockKeyRequest (required key), plus
+  Implement POST /key/block and /key/unblock with BlockKeyRequest (required key), plus
   POST /key/health for the authenticated caller's logging callbacks. Health does not test model
   authorization or provider credentials: it uses a mock completion with no provider API request.
   All three routes have B865 wrappers, but block/unblock have no local except block.
 
-  Block/unblock first require DB, then B124 is_valid_api_key: sk- followed by one or more ASCII
+  Block/unblock first require DB, then is_valid_api_key: sk- followed by one or more ASCII
   alphanumeric/underscore/hyphen characters, or exactly 64 hexadecimal characters, total length
   3..100. The docstring's minimum 20 is wrong. Hash sk- input with B2314; retain supplied hash
   case. Invalid format is 400 bad_request_error, param key, code 400. _check_key_admin_access
@@ -17,14 +17,15 @@ description: >-
   Cases block_key_format_boundaries, block_hash_case_preserved, block_proxy_admin,
   block_team_admin, block_team_org_admin, block_personal_owner_denied and block_viewer_denied
   run for both mutations. Messages identify invalid format, missing key or required admin scope.
+  No other task declares BlockKeyRequest or is_valid_api_key, so this task builds both in betterlite-server's key_block::request module.
 
   Both routes load the target again after authorization. Missing now is ProxyException 404
   not_found_error,param key,code 404. Thus an admin's missing-key envelope differs from a
   non-admin's initial HTTPException detail.error. Cases block_missing_admin_vs_member and
   block_target_removed_between_reads compare both. Denial HTTPExceptions also retain detail.error
-  without type/param/code; missing DB is an ordinary exception handled by B124's outer 500
+  without type/param/code; missing DB is an ordinary exception handled by B8591's outer 500
   error {message,type=internal_server_error} without param/code. Database-unavailability mapping
-  remains B731/B124. Cases block_no_database and block_permission_error_shape pin this distinction.
+  remains B731's. Cases block_no_database and block_permission_error_shape pin this distinction.
 
   If B2330 audit policy is enabled, schedule its audit BEFORE updating: fresh UUID/time,
   changed_by from the opt-in header resolver, caller.api_key, table LiteLLM_VerificationToken,
@@ -105,8 +106,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/key_block.rs
     - crates/betterlite-server/src/routes/key_block/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-block/**
     - tools/oracle/helpers/b783.py
     - tools/oracle/helpers/b783/**
@@ -131,6 +130,9 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2049-L2080
     why: Outer unhandled-exception mapping used by block/unblock without a route except block.
 dod:
+  - text: This task builds BlockKeyRequest and is_valid_api_key in key_block::request, and block_key_format_boundaries covers both accepted shapes and the 3..100 length bounds.
+    proof:
+      - behavior-tests
   - text: All named block/unblock and health cases above pass; native health_capture_cleanup and
       health_details_redacted cover the explicit deviations without changing 200 unhealthy behavior.
     proof:
@@ -165,7 +167,7 @@ deviations:
       health_details_redacted prove the difference.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7630-L7703
 out_of_scope:
-  - B2304 owns callback decryption, B2330 audit policy/records/sink, B124 request/key-format contracts,
+  - B2304 owns callback decryption, B2330 audit policy/records/sink,
     B2314 hashing, B770 settings timestamps, B800 TeamAccess, B737 team lookup and B734 invalidation.
     B1137/B1103 prepare requests; B004/B012 execute mock completions and callbacks.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),

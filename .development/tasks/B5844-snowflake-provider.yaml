@@ -3,7 +3,7 @@ title: Snowflake Cortex chat, Claude messages and embedding transforms
 description: >-
   Build the Snowflake Cortex transforms in betterlite-provider as one module, snowflake, with submodules config, request,
   messages, response, stream and embedding (litellm/llms/snowflake/**). Everything is a pure function. Credentials, the
-  base URL and the account id are plain arguments: B042 reads SNOWFLAKE_JWT and SNOWFLAKE_ACCOUNT_ID and does the HTTP
+  base URL and the account id are plain arguments: B8330 reads SNOWFLAKE_JWT and SNOWFLAKE_ACCOUNT_ID and does the HTTP
   calls. The module needs betterlite-provider to depend on betterlite-anthropic and betterlite-prompts (neither depends
   on betterlite-provider, so there is no cycle). Define SnowflakeError for the three ValueError texts and the embedding
   error class SnowflakeException (message, status_code, headers) on top of the B2202 base error.
@@ -121,7 +121,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/snowflake/embedding/transformation.py#L14-L65
     why: Embed URL, request body, nested embedding unwrap and error class.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4655-L4700
-    why: The dispatch B042 owns, which only calls the config through the shared HTTP handler.
+    why: The dispatch B8330 owns, which only calls the config through the shared HTTP handler.
   - url: https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api
     why: The Cortex REST endpoints and the PAT and keypair JWT token types.
 dod:
@@ -189,7 +189,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/snowflake/embedding.yaml
 deviations: []
 out_of_scope:
-  - B042 owns _complete_snowflake and the embedding branch in main.py (L7297-L7298), the SNOWFLAKE_JWT and SNOWFLAKE_ACCOUNT_ID env reads, get_llm_provider_logic (L811-L815), the HTTP calls, provider registration in dispatch and the HTTP oracle cases.
+  - B8330 owns _complete_snowflake and the embedding branch in main.py (L7297-L7312), the SNOWFLAKE_JWT and SNOWFLAKE_ACCOUNT_ID env reads, the HTTP calls, provider registration in dispatch and the HTTP oracle cases. B211 (done) owns the get_llm_provider_logic branch (L811-L815).
   - SnowflakeBase.validate_environment in common_utils.py has no caller at the pin (the configs use SnowflakeBaseConfig), so it is not built and has no case.
   - SnowflakeConfig.get_config only calls the parent and the class has no config attributes, so B2202's get_config covers it.
   - "The Anthropic helpers stay with their owners and are only called here: B578 extract_response_content, B579 calculate_usage, B571 normalize_cache_control_in_anthropic_payload, B581 and B582 the Anthropic chunk parser, B222 convert_to_anthropic_tool_result and create_anthropic_image_param, B223 select_anthropic_content_block_type_for_file and anthropic_process_openai_file_message, B183 async_inline_remote_media."

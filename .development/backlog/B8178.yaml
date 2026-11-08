@@ -1,0 +1,18 @@
+id: B8178
+milestone: M3 providers
+title: GigaChat embedding, file upload and pass-through
+status: todo
+depends_on: [B7325, B8177, B2202, B3570, B3627]
+file: tasks/B8178-gigachat-embed-files-pass.yaml
+covers:
+  - "litellm/llms/gigachat/embedding/__init__.py"
+  - "litellm/llms/gigachat/embedding/transformation.py"
+  - "litellm/llms/gigachat/file_handler.py"
+  - "litellm/llms/gigachat/passthrough/__init__.py"
+  - "litellm/llms/gigachat/passthrough/transformation.py"
+parent: B043
+split_from: B043
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
