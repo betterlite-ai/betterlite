@@ -12,6 +12,10 @@ cargo-fuzz = true
 betterlite-tokenizer = { path = ".." }
 libfuzzer-sys = "0.4.9"
 [[bin]]
+name = "token_request"
+path = "fuzz_targets/token_request.rs"
+test = false
+[[bin]]
 name = "token_tool_format"
 path = "fuzz_targets/token_tool_format.rs"
 test = false

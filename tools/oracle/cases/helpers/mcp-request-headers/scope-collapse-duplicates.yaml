@@ -1,0 +1,5 @@
+kind: helper
+name: "scope-collapse-duplicates"
+call: {"b4654":{"function":"safe_headers","raw":[["X-Test","one"],["x-test","two"],["X-Test","three"],["X-Litellm-Api-Key","k1"]],"lookups":["x-test","X-TEST","x-litellm-api-key","absent"]}}
+env: {}
+compare: {"ignore":[]}

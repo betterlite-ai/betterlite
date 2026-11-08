@@ -1,0 +1,5 @@
+kind: helper
+name: policy-resolver-pipelines-seed
+call: {"b3241": {policy_memory_matching_resolver: {action: resolve_pipelines, policies: {pipeline-policy: {guardrails: {add: [pii]}, pipeline: {steps: [{guardrail: pii}]}}}, attachments: [{policy: pipeline-policy, scope: "*"}], context: {model: gpt-4}}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: response-usage-empty-object
+call:
+  b3860:
+    function: set_response
+    response:
+      usage: {}
+env: {}
+compare: {ignore: []}

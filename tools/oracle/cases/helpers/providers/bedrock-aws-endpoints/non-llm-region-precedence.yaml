@@ -1,0 +1,22 @@
+kind: helper
+name: non-llm-region-precedence
+call:
+  bedrock_aws_endpoints:
+    non_llm_region_name:
+      cases:
+        - explicit: us-east-1
+          environment: {AWS_REGION_NAME: ap-south-1, AWS_REGION: ap-northeast-1}
+        - explicit: null
+          environment: {AWS_REGION_NAME: ap-south-1, AWS_REGION: ap-northeast-1}
+        - explicit: null
+          environment: {AWS_REGION_NAME: ap-south-1}
+        - explicit: null
+          environment: {}
+        - explicit: null
+          environment: {AWS_REGION_NAME: ''}
+        - explicit: null
+          environment: {AWS_REGION_NAME: ap-south-1, AWS_REGION: ''}
+        - explicit: ''
+          environment: {}
+env: {}
+compare: {ignore: []}

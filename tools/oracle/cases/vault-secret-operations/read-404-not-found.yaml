@@ -1,0 +1,14 @@
+kind: helper
+name: vault-secret-operations-read-404-not-found
+env: {}
+compare: {ignore: []}
+call:
+  b4417:
+    env:
+      HCP_VAULT_TOKEN: token
+    routes:
+      - route: "GET http://127.0.0.1:8200/v1/secret/data/MISSING"
+        replies:
+          - {status: 404, body: '{"errors":[]}'}
+    steps:
+      - {op: read, name: MISSING}

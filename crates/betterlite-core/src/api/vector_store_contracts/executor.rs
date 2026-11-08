@@ -145,7 +145,11 @@ fn apply_call_options(
     configuration: &Params,
 ) -> Result<(), VectorStoreEmbeddingError> {
     if let Some(base) = text_option(configuration, "api_base")? {
-        base.clone_into(&mut deployment.api_base);
+        deployment
+            .override_base(base)
+            .map_err(|source| VectorStoreEmbeddingError::Embedding {
+                source: EmbeddingError::Endpoint { source },
+            })?;
     }
     if let Some(key) = text_option(configuration, "api_key")? {
         deployment.api_key = Some(SecretString::from(key.to_owned()));

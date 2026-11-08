@@ -1,0 +1,5 @@
+kind: helper
+name: "redact-resource-url"
+call: {"b4654":{"function":"redact_url","url":"https://user:pass@Host.Example:8443/mcp/s/token?x=1#f"}}
+env: {}
+compare: {"ignore":[]}

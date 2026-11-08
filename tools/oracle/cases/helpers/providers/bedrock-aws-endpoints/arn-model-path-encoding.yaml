@@ -1,0 +1,22 @@
+kind: helper
+name: arn-model-path-encoding
+call:
+  bedrock_aws_endpoints:
+    bedrock_model_id:
+      cases:
+        - optional_params: {model_id: ''}
+          model: ignored
+        - optional_params: {model_id: 'arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude'}
+          model: ignored
+        - optional_params: {model_id: 'ABCxyz019_.-~'}
+          model: ignored
+        - optional_params: {model_id: 'a b+c'}
+          model: ignored
+        - optional_params: {model_id: '%3A'}
+          model: ignored
+        - optional_params: {model_id: 'modèle'}
+          model: ignored
+        - optional_params: {}
+          model: 'arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude'
+env: {}
+compare: {ignore: []}

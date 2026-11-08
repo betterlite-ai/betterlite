@@ -1,0 +1,31 @@
+kind: helper
+name: token-count-tool-choice
+call:
+  token_count:
+    function: token_counter
+    model: gpt-3.5-turbo
+    messages:
+      - role: system
+        content: be brief
+      - role: user
+        content: hi
+    tools:
+      - type: function
+        function:
+          name: get_weather
+          description: Get weather
+          parameters:
+            type: object
+            properties:
+              city:
+                type: string
+                description: City name
+              days:
+                type: integer
+            required: [city]
+    tool_choice:
+      type: function
+      function:
+        name: get_weather
+env: {}
+compare: {ignore: []}

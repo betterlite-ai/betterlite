@@ -285,7 +285,8 @@ pub(crate) fn invoke(call: &HelperCall) -> HelperOutput {
     match result {
         Ok(value) => HelperOutput {
             ok: true,
-            value: Some(value),
+            // the Python side reads a null value as absent, so a Rust null goes out the same way
+            value: (!value.is_null()).then_some(value),
             error: None,
             warnings: Vec::new(),
             effects: Vec::new(),
