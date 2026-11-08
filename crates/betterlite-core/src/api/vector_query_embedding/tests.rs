@@ -74,12 +74,12 @@ impl VectorStoreEmbeddingExecutor for ScriptedExecutor {
         _query: &str,
         _configuration: &Params,
     ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
-        let Some(body) = &self.0 else {
-            return Err(VectorStoreEmbeddingError::DuplicateArgument {
+        self.0
+            .as_deref()
+            .ok_or_else(|| VectorStoreEmbeddingError::DuplicateArgument {
                 name: "input".to_owned(),
-            });
-        };
-        decode(body)
+            })
+            .and_then(decode)
     }
 }
 
@@ -104,19 +104,17 @@ impl VectorStoreRouter for FakeRouter {
 
     async fn embedding(
         &self,
-        entry: EmbeddingEntry,
+        _entry: EmbeddingEntry,
         model: &str,
-        input: &[String],
-        configuration: Params,
+        _input: &[String],
+        _configuration: Params,
     ) -> Result<EmbeddingResponse, BaseLlmException> {
-        ScriptedExecutor(None)
-            .embed(entry, model, &input.join(" "), &configuration)
-            .await
-            .map_err(|error| BaseLlmException {
-                status_code: 404,
-                message: error.to_string(),
-                headers: BTreeMap::new(),
-            })
+        let message = format!("no deployment for {model}");
+        Err(BaseLlmException {
+            status_code: 404,
+            message,
+            headers: BTreeMap::new(),
+        })
     }
 }
 
