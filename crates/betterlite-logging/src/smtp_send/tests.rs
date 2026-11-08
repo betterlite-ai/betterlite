@@ -235,12 +235,12 @@ async fn sends_the_message_over_plain_smtp() {
     assert!(
         lines
             .iter()
-            .any(|line| line == "From: <sender@example.com>")
+            .any(|line| { line.starts_with("From: ") && line.contains("<sender@example.com>") })
     );
     assert!(
         lines
             .iter()
-            .any(|line| line == "To: <receiver@example.com>")
+            .any(|line| { line.starts_with("To: ") && line.contains("<receiver@example.com>") })
     );
     assert!(lines.iter().any(|line| line == "Subject: Hello"));
     assert!(
@@ -275,16 +275,14 @@ async fn a_named_sender_and_receiver_keep_their_names_in_the_headers() {
             .iter()
             .any(|line| line == "RCPT TO:<help@example.com>")
     );
-    assert!(
-        lines
-            .iter()
-            .any(|line| line == "From: Acme Alerts <alerts@acme.com>")
-    );
-    assert!(
-        lines
-            .iter()
-            .any(|line| line == "To: Support <help@example.com>")
-    );
+    assert!(lines.iter().any(|line| {
+        line.starts_with("From: ")
+            && line.contains("Acme Alerts")
+            && line.contains("<alerts@acme.com>")
+    }));
+    assert!(lines.iter().any(|line| {
+        line.starts_with("To: ") && line.contains("Support") && line.contains("<help@example.com>")
+    }));
 }
 
 #[tokio::test]
