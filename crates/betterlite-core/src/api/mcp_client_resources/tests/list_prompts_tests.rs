@@ -10,10 +10,11 @@ use betterlite_mcp::client::sessions::stream::StreamFailure;
 use serde_json::Map;
 
 use super::fixture::{
-    BrokenResourceError, FakeRuntime, Script, ScriptedFailure, Step, capture, lock, protocol,
-    session_client,
+    BrokenResourceError, FakeRuntime, FakeSession, Script, ScriptedFailure, Step, capture,
+    fake_session, lock, protocol, session_client,
 };
 use crate::api::mcp_client_resources::failure::is_broken_stream;
+use crate::api::mcp_client_resources::list::{Prompts, list_from_session};
 use crate::api::mcp_client_resources::operations::McpResourceOperations as _;
 use crate::api::mcp_client_resources::pagination::METHOD_NOT_FOUND;
 use crate::api::mcp_client_resources::settings::ResourceSettings;
@@ -78,6 +79,25 @@ async fn an_unknown_capability_set_still_calls_the_server() {
 }
 
 #[tokio::test]
+async fn the_session_entry_point_collects_every_page() {
+    let mut session: FakeSession<ScriptedFailure> = fake_session(script_with(vec![
+        Step::Ready(page(&["one"], Some("second"))),
+        Step::Ready(page(&["two"], None)),
+    ]));
+    let items = list_from_session::<_, Prompts>(
+        &mut session,
+        Duration::from_secs(60),
+        Duration::from_secs(30),
+        false,
+        "https://mcp.example.com/mcp",
+    )
+    .await
+    .unwrap();
+    let names: Vec<&str> = items.iter().map(|prompt| prompt.name.as_str()).collect();
+    assert_eq!(names, ["one", "two"]);
+}
+
+#[tokio::test]
 async fn every_prompt_page_is_collected_in_cursor_order() {
     let script = script_with(vec![
         Step::Ready(page(&["one"], Some("second"))),
@@ -107,7 +127,11 @@ async fn a_first_page_method_not_found_returns_an_empty_list() {
     let mut client = session_client(runtime, Duration::from_secs(60));
     let prompts = client.list_prompts(&settings(), true).await.unwrap();
     assert!(prompts.is_empty());
-    assert!(captured.text().contains("unsupported"));
+    assert!(
+        captured
+            .text()
+            .contains("unsupported by https://mcp.example.com/mcp")
+    );
 }
 
 #[tokio::test]

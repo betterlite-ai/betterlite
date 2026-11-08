@@ -69,7 +69,7 @@ async fn a_failure_keeps_its_cause_and_logs_the_traceback() {
     assert!(text.contains("get_prompt failed"));
     assert!(text.contains("prompt exploded"));
     assert!(text.contains("WARN"));
-    assert!(text.contains("https://mcp.example.com/mcp"));
+    assert!(text.contains("Server: https://mcp.example.com/mcp"));
 }
 
 #[tokio::test]

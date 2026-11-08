@@ -206,6 +206,13 @@ pub(crate) struct FakeSession<Source> {
     marker: PhantomData<Source>,
 }
 
+pub(crate) fn fake_session<Source>(script: Script) -> FakeSession<Source> {
+    FakeSession {
+        script: Arc::new(Mutex::new(script)),
+        marker: PhantomData,
+    }
+}
+
 pub(crate) struct FakeSessionContext<Source> {
     script: Arc<Mutex<Script>>,
     marker: PhantomData<Source>,
