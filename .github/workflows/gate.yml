@@ -242,7 +242,7 @@ jobs:
           PART: ${{ matrix.part }}
           TASK: ${{ needs.find.outputs.task }}
         run: |
-          lint=(fmt clippy deny shear hooks similarity file-size workflows)
+          lint=(fmt clippy deny shear hooks similarity file-size module-tree case-ignores workflows)
           if [[ -n $TASK ]]; then
             local_checks=$(cargo gate list "$TASK" --local) || exit 1
             mapfile -t lint < <(awk '/^[^ ]/ {print $1}' <<<"$local_checks")

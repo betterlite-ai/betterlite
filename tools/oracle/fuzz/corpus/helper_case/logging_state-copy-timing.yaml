@@ -1,0 +1,19 @@
+kind: helper
+name: logging-state-copy-timing
+call:
+  logging_state:
+    instances:
+      - init:
+          model: gpt-4o
+          messages: "hello"
+          stream: false
+          call_type: completion
+          start_time: "2026-01-01T00:00:00+00:00"
+          litellm_call_id: call-timed
+          function_id: fn-timed
+        clock_step_millis: 250
+        operations:
+          - op: update_messages
+            messages: [{"role": "user", "content": "next"}]
+env: {}
+compare: {ignore: []}

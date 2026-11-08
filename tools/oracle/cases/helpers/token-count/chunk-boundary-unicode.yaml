@@ -1,0 +1,11 @@
+kind: helper
+name: token-count-chunk-boundary-unicode
+call:
+  token_count:
+    function: token_counter
+    model: gpt-3.5-turbo
+    text: "Héllo, 世界! 👋 the quick brown fox"
+    chunk_size_chars: 1
+env:
+  TIKTOKEN_ENCODE_CHUNK_SIZE_CHARS: "1"
+compare: {ignore: []}

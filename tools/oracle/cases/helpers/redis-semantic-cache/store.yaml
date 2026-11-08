@@ -1,0 +1,13 @@
+kind: helper
+name: redis-semantic-cache-store
+call:
+  b4382:
+    operation: store
+    key: scope-1
+    input: "the responses prompt"
+    ttl: 60
+    vector: [0.25, 0.5, 0.75]
+    value: {choices: [{message: {content: "cached"}}]}
+env: {}
+compare:
+  ignore: []

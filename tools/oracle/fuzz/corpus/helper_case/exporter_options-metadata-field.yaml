@@ -1,0 +1,10 @@
+kind: helper
+name: exporter-options-metadata-field
+call:
+  b3931:
+    operation: metadata_field
+    request_kwargs:
+      litellm_metadata: null
+      metadata: {user: someone}
+env: {}
+compare: {ignore: []}
