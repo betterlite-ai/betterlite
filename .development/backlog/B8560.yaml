@@ -1,0 +1,14 @@
+id: B8560
+milestone: M7 observability
+title: Per-call prompt manager selection and hook dispatch
+status: todo
+depends_on: [B247, B189, B4058, B4123, B4125, B4126, B8253, B1062, B1063]
+file: tasks/B8560-prompt-hook-dispatch.yaml
+covers:
+  - "litellm/litellm_core_utils/litellm_logging.py"
+parent: B117
+split_from: B117
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

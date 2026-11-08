@@ -176,9 +176,9 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/fireworks-catalog-metadata/provider-defaults.yaml
 deviations: []
 out_of_scope:
-- Fireworks constructors/configuration and transport remain B041 except the constructor moved to the shared metadata
-  factory B2220. Common utils session-affinity/auth helpers remain B041/B176; other chat transformations remain
-  B041.
+- Fireworks constructors/configuration and transport remain B6070 to B6072 and B8310 except the constructor moved to the shared metadata
+  factory B2220. Common utils session-affinity/auth helpers remain B6070/B176; other chat transformations remain
+  B6071 and B6072.
 - 'Function ownership inventory litellm/llms/fireworks_ai/chat/transformation.py: _map_reasoning_effort L53-L61;
   _extract_fireworks_hidden_params L64-L80; _json_schema_response_format L83-L84; _bool_from_kwargs L90-L95; effort_from_chat_template_kwargs
   L98-L108; FireworksAIConfig.get_config L197-L199; FireworksAIConfig.validate_environment L201-L225; FireworksAIConfig.get_supported_openai_params
@@ -188,7 +188,7 @@ out_of_scope:
   FireworksAIConfig.transform_request L653-L683; FireworksAIConfig._handle_message_content_with_tool_calls L685-L708;
   FireworksAIConfig.transform_response L710-L764; FireworksAIConfig.get_model_response_iterator L766-L776; FireworksAIConfig._get_openai_compatible_provider_info
   L778-L788; FireworksAIConfig.get_models L790-L817; FireworksAIConfig.get_api_key L819-L826; FireworksAIChatCompletionStreamingHandler.chunk_parser
-  L830-L838 belong to B041.'
+  L830-L838 belong to B6071 and B6072.'
 - 'Function ownership inventory litellm/llms/fireworks_ai/chat/transformation.py: FireworksAIConfig.__init__ L163-L195
   belong to B2220.'
 pitfalls:

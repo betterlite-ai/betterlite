@@ -5,7 +5,7 @@ description: >-
   constructor, async_get_chat_completion_prompt, _scanned_context_messages, _scan_through, _augment_messages
   and _search_one, plus the runtime/outcome/augmentation records at source lines 69-348. B2483 owns the
   seven pure query/context/failure-policy helpers, B1063 selects stores with database fallback, B1064
-  executes searches and B104 supplies guardrail decisions/scans. Runtime router/database handles are
+  executes searches and B8666 supplies guardrail decisions/scans through the injected seam. Runtime router/database handles are
   injected; absent proxy runtime/import leaves each handle null. A router search handle is supplied by
   the caller when available, so this hook does not import the router that consumes it.
 
@@ -92,7 +92,7 @@ dod:
     llm_provider=openai,body={type:guardrail_intervention,param:null,code:guardrail_blocked}. Expect that
     same class,status=400,type=guardrail_intervention,param=null,code=guardrail_blocked and source message
     "litellm.BadRequestError: blocked"; later scans stop. This is outside the augmentation catch and never
-    becomes annotate-success. Other guardrail construction/mapping remains B104's contract.
+    becomes annotate-success. Other guardrail construction/mapping stays with B8666.
   proof: [retrieval-tests, oracle, python-adapter]
 - text: Every new vector_retrieval_context SDK seed replays through B2401, including zero-request fallbacks.
   proof: [sdk-corpus]
@@ -119,7 +119,7 @@ deviations: []
 out_of_scope:
 - B2483 owns _scan_request, _extract_query_from_messages, _context_messages, _messages_with_context, _context_message, _requested_vector_store_ids and _configured_failure_mode as whole functions.
 - B090 owns the two post-call decoration hooks; B1063 owns authorized store selection and B1064 search execution.
-- B104 owns guardrail selection/execution semantics and their errors. Router implementation remains behind the injected runtime search handle.
+- B3665 owns guardrail selection (should_run_guardrail), and B5471 the guardrail call contract and its GuardrailFailure errors. Router implementation remains behind the injected runtime search handle.
 pitfalls:
 - Store litellm_params is expanded last and can override the actual search id/query while diagnostics retain the original registry id.
 - Error mode runs after every selected store search, so a first failure does not skip later stores.

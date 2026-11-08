@@ -1,0 +1,171 @@
+id: B7324
+title: Common request processing helpers
+description: >-
+  Build the shared pieces of LiteLLM's litellm/proxy/common_request_processing.py that the pass-through, RAG and Responses routes call: the SSE keepalive wrapper that opens a response before the first upstream byte, the error frames it ends with, the keepalive interval lookup, the passthrough request processor, and the stream generator selector. Everything goes in crates/betterlite-server. Every name below is at most 30 characters.
+
+  Module keepalive_interval. `PingSetting` is the closed set `Seconds(f64)` or `Text(String)` (LiteLLM's `float | str | None`; None is `Option::None`). `coerce_keepalive_interval(setting: Option<&PingSetting>) -> Option<Duration>` replaces coerce_keepalive_interval (sse_keepalive.py L22-L30). None gives None. A Text value is parsed like Python's float(): surrounding whitespace is ignored, a sign, a decimal point, an exponent and single underscores between digits are accepted, and anything else gives None. A value that is not finite or is zero or below gives None. A value that Duration cannot hold also gives None.
+  `agreed_keepalive_interval(deployments, global_interval)` replaces resolve_ttft_keepalive_interval (sse_keepalive.py L180-L199) and `keepalive_seconds_of` replaces _keepalive_param. `deployments` is a slice of JSON objects. For each one read `litellm_params.keepalive_seconds`: a JSON number or string counts, anything else (a missing key, null, a bool, an array, an object, or a `litellm_params` that is not an object) counts as "no value". Collect the distinct values, where two numbers are equal when they are equal as f64 and a string never equals a number. When exactly one distinct value remains (a missing value is a value too), coerce that one. In every other case, an empty slice included, coerce `global_interval`. A deployment value of 0 therefore turns the interval off, since coercion rejects it, and does not fall back to the global value.
+  `ttft_keepalive_interval(request_data, deployments, global_interval)` replaces ttft_keepalive_interval (common_request_processing.py L1129-L1144). `request_data` is the JSON object. It returns None unless `request_data["stream"]` is the JSON bool true. `deployments` is what the router lists for the requested model: the caller passes the list for `request_data["model"]` when that is a JSON string and a router exists, and an empty slice otherwise. The lookup itself is the trait `DeploymentLookup` declared here with one method `deployments_for(&self, model_name: &str) -> Vec<Value>`; B8611's router views implement it over the router listing, and tests use a fake. A small `ttft_interval_for(lookup: Option<&dyn DeploymentLookup>, request_data, global_interval)` does the model check and the lookup, then calls the function above. The global value is the `litellm.sse_keepalive_ping_interval_seconds` setting (B002, default none).
+
+  Module sse_error_frames. `SseFailure` is the typed input that stands for LiteLLM's exception: `status_code: Option<u16>`, `code: Option<String>` (ProxyException's stringified code), `error_type: Option<String>`, `param: Option<String>`, `detail: Option<Value>` (an HTTPException's detail), `provider_specific_fields: Option<Map<String, Value>>`.
+  `exception_detail_parts(detail: &Value) -> (String, Option<Map>)` replaces serialize_http_exception_detail (L570-L598). A string gives (the string, None). An object: if `error` is a string, give (that string, the object); else if `error` is an object whose `message` is a string, give (that message, the object); else if the object's own `message` is a string, give (that message, the object); else give (the object as JSON text, the object). Any other JSON value gives (its text, None).
+  `sse_error_payload(failure: &SseFailure) -> (u16, Map)` replaces sse_error_payload (L929-L951). The status is `status_code`; when missing, `code` if it is non-empty ASCII digits; else 500. The message comes from exception_detail_parts of `detail`, and a failure with no detail uses the text "Error processing stream start". `type` is `error_type` unless it is missing or the text "None"; then 401 gives authentication_error, 403 permission_error, 429 rate_limit_error, any other status below 500 invalid_request_error and the rest internal_server_error. `param` is `param` unless it is missing or the text "None"; then JSON null. `code` is the status as a string. The object has the keys message, type, param, code in that order. The merged fields are the failure's own provider_specific_fields with the structured fields from exception_detail_parts laid over them; they are added as a last key `provider_specific_fields` only when the merge is not empty.
+  `sse_error_frames(error: &Map) -> [String; 2]` replaces _sse_error_frames (L954-L956): `data: {"error": <error>}\n\n` and then `data: [DONE]\n\n`. JSON text follows docs/compatibility.md.
+
+  Module first_byte_sse. `open_sse_before_first_byte(produce_response, ping_interval_seconds, media_type, on_late_failure)` replaces open_sse_before_first_byte (L1213-L1288) with its helpers _relay_late_response (L1170-L1186) and _sanitized_late_failure (L1189-L1210). `produce_response` is a future of `Result<ProducedResponse, SseFailure>`. `ProducedResponse` is the closed set `Streaming(StreamedResponse)` (status, headers, a boxed byte stream) or `Plain(Response)` (a complete axum response). `ping_interval_seconds` is `Option<PingSetting>`, `media_type` is a `&str` that callers set to "text/event-stream" by default, and `on_late_failure` is `Option<&dyn LateFailureHook>`. The trait `LateFailureHook` has one async method `late_failure(&self, failure: &SseFailure) -> Result<Option<SseFailure>, HookRaised>`; `HookRaised` is `Replacement(SseFailure)` (the hook raised an HTTP error to put in the frame) or `Broken(String)` (any other failure of the hook). The function returns `Result<Response, SseFailure>`.
+  Steps. Coerce the interval; with None just await the future and return its result converted to a response (an Err comes back unchanged). Otherwise wait for the future for one interval. If it finished, return it exactly as above and write nothing early. If not, log at info "no upstream response after %ss, opening the SSE response early and sending keepalives" and return a 200 response now, with content-type `media_type; charset=utf-8` and the headers `Cache-Control: no-cache` and `X-Accel-Buffering: no`. Its body is a stream that owns the future and polls it itself, so dropping the body drops the future (the client left, so the upstream call is cancelled); do not spawn a task. The body writes the bytes `: ping\n\n`, waits one interval, and repeats while the future is not finished. When the future finishes with Err, log at error "request failed after its SSE keepalive had opened the response: %s", ask the hook for the replacement (below), build sse_error_payload from the result, write the two sse_error_frames and end. When it finishes with Ok(Streaming), relay every chunk unchanged. When it finishes with Ok(Plain), write `data: ` + the body bytes (or `{}` when the body is empty) + `\n\n`, then `data: [DONE]\n\n`; the status and headers of that response are lost because the 200 line is already sent.
+  Hook answer: with no hook the original failure is used. A hook that returns Some(replacement) gives the replacement, Ok(None) gives the original, `Replacement(f)` gives f, and `Broken` is logged at error "post_call_failure_hook raised while reporting a late failure: %s" and gives the original.
+
+  Module passthrough_processor. `PassthroughCall<Key, Router>` is the record every passthrough route builds: `record: IndexMap<String, Value>` (the data map, key order kept), `request: axum::http::request::Parts`, `response_headers: HeaderMap` (the headers of the response object the route owns), `key: Key`, `router: Option<Router>`, `model: Option<String>`. `Key` and `Router` are the key and router handle types of the route, so this module names neither. The trait `PassthroughProcessor<Key, Router>` has one async method `process_passthrough(&self, call: PassthroughCall<Key, Router>) -> Result<Response, Self::Error>` and an associated `type Error`. B3620 and the other passthrough route tasks import both from here.
+  `LlmPassthroughProcessor` implements it and replaces base_passthrough_process_llm_request (L3074-L3132) plus the exception mapping every caller wraps around it. It is built with two ports, both declared here, and nothing else. `LlmRequestProcessor` has one async method `base_process_llm_request(&self, call: BaseProcessCall<Key, Router>) -> Result<ProcessedReply, Self::Error>`. `BaseProcessCall` borrows the same fields as PassthroughCall plus `route_type`, which this task always sets to the text "allm_passthrough_route". `ProcessedReply` is the closed set `Streaming(Response)`, `Direct(Response)` and `Upstream(UpstreamReply)`, and `UpstreamReply` is `{ status: StatusCode, headers: HeaderMap, body: Bytes }` with the body already read. `ExceptionMapper` has one async method `handle_llm_api_exception(&self, error: E, key: &Key) -> Mapped`; its result is what the route returns as the error. B8694's LlmPipeline implements LlmRequestProcessor and B8693's PassthroughErrors implements ExceptionMapper (the base_process_llm_request pipeline, _handle_llm_api_exception, proxy_logging_obj, general_settings, proxy_config and the user_* CLI values live behind them); tests use recording fakes.
+  Steps. Call the port. Streaming and Direct replies are returned as they are. An Upstream reply becomes a response with the upstream status, the body, and the headers from betterlite-http's get_response_headers(upstream headers, no call id, custom headers = `response_headers` of the call). That function drops content-length, transfer-encoding, content-encoding, server, date, connection and keep-alive from both maps. An Err from the port goes through the mapper and is returned.
+
+  Module data_generator_select. `AsyncDataGenerator` is the port for LiteLLM's async_data_generator (proxy_server.py L9830-L10079) with the associated types `Response` and `Stream` and one method `generate(&self, input: GeneratorInput<Self::Response, Key>) -> Self::Stream`, so the port names no stream type (B8604 implements it with its own source type); `GeneratorInput<Response, Key>` holds `response: Response`, `key`, `request_data` (a JSON map) and `request: Option<Parts>`, plus `responses_stream_errors: bool`. `SelectDataGenerator<G>` is built with the port and the flag, and `select(response, key, request_data, request)` replaces select_data_generator (proxy_server.py L10082-L10096) by calling the port with the flag it was built with. The Python call sites that pass `responses_stream_errors=True` through functools.partial (Responses routes) build it with true; every other site builds it with false. async_data_generator itself and its helpers are not built here (see out_of_scope).
+
+  Tests live in tests.rs files next to each module. The first-byte tests use tokio's paused clock (`tokio::time::pause`) so they do not sleep. Helper oracle cases cover the pure functions with the operation named b7324.
+scope:
+  paths:
+  - crates/betterlite-server/src/keepalive_interval.rs
+  - crates/betterlite-server/src/keepalive_interval/**
+  - crates/betterlite-server/src/sse_error_frames.rs
+  - crates/betterlite-server/src/sse_error_frames/**
+  - crates/betterlite-server/src/first_byte_sse.rs
+  - crates/betterlite-server/src/first_byte_sse/**
+  - crates/betterlite-server/src/passthrough_processor.rs
+  - crates/betterlite-server/src/passthrough_processor/**
+  - crates/betterlite-server/src/data_generator_select.rs
+  - crates/betterlite-server/src/data_generator_select/**
+  - tools/oracle/cases/helpers/common-request-processing/**
+  - tools/oracle/helpers/b7324.py
+  - tools/oracle/helpers/b7324/**
+  - tools/oracle/src/helpers/server/b7324.rs
+  - tools/oracle/src/helpers/server/b7324/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/sse_keepalive.py#L8-L30
+  why: The ping constants and coerce_keepalive_interval, which rejects None, non-numbers, non-finite values and zero or below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/sse_keepalive.py#L180-L206
+  why: resolve_ttft_keepalive_interval and _keepalive_param, the "all deployments agree" rule and the explicit 0 disable.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L570-L598
+  why: serialize_http_exception_detail, the four detail shapes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_error_payload.py#L16-L61
+  why: error_status_code, openai_error_type and openai_error_param, the status and type fallbacks sse_error_payload applies.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L929-L961
+  why: sse_error_payload, the two end frames and the two no-buffering headers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1121-L1144
+  why: The no-buffering header values and ttft_keepalive_interval.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1170-L1288
+  why: _relay_late_response, _sanitized_late_failure and open_sse_before_first_byte with the fast path, the ping loop, the late failure frames and the teardown.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3074-L3132
+  why: base_passthrough_process_llm_request, the route type and the three result branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1028-L1054
+  why: A caller of the processor; the except clause that maps failures through _handle_llm_api_exception.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L348-L378
+  why: get_response_headers, which the Upstream branch uses (built in betterlite-http by B3600).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10082-L10096
+  why: select_data_generator and its keyword-only responses_stream_errors flag.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L264
+  why: The one place that binds responses_stream_errors=True with functools.partial.
+dod:
+- text: >-
+    coerce_keepalive_interval returns None for None, a non-number text, a text like "inf", zero, a negative value and a value Duration cannot hold,
+    and returns the seconds for 5, "5", " 2.5 " and "1e1".
+  proof: [keepalive-tests, oracle, helper-python]
+- text: >-
+    agreed_keepalive_interval uses the one keepalive_seconds value all deployments share (5 and 5.0 are the same value, "5" is another),
+    uses the global value when they differ, when one has no value, or when the list is empty, and returns None for a shared 0 even with a global value set.
+  proof: [keepalive-tests, oracle, helper-python]
+- text: ttft_keepalive_interval returns None unless stream is the JSON bool true, and looks up deployments only for a string model with a router.
+  proof: [keepalive-tests]
+- text: >-
+    exception_detail_parts gives the four detail shapes (string, flat error string, nested error.message, top-level message) and the JSON text fallback,
+    and sse_error_payload gives the status, type, param and code fallbacks, the default message, the key order and the merged provider_specific_fields.
+  proof: [error-frame-tests, oracle, helper-python]
+- text: sse_error_frames gives the error frame and then the DONE frame, in that order.
+  proof: [error-frame-tests]
+- text: >-
+    open_sse_before_first_byte with no usable interval awaits the future and returns its result or its error unchanged,
+    and with an interval returns the same result with nothing written early when the future finishes inside one interval.
+  proof: [first-byte-tests]
+- text: >-
+    When the future is slower than one interval the 200 response opens with a ping, repeats the ping every interval, carries the content type with charset=utf-8
+    and the Cache-Control and X-Accel-Buffering headers, and relays a streaming result unchanged.
+  proof: [first-byte-tests]
+- text: >-
+    A late Plain result is written as one data frame followed by the DONE frame, with {} for an empty body.
+    A late failure is written as the error frame and the DONE frame, using the hook's replacement when it gives one,
+    the hook's raised replacement when it raises one, and the original when the hook is missing, gives none or breaks.
+  proof: [first-byte-tests]
+- text: Dropping the response body while the future is still pending drops the future.
+  proof: [first-byte-tests]
+- text: >-
+    LlmPassthroughProcessor sends route type "allm_passthrough_route" and the call fields to the port, returns Streaming and Direct replies as they are,
+    turns an Upstream reply into a response with the upstream status, body and filtered headers merged with the call's response headers,
+    and returns a port failure through the exception mapper.
+  proof: [passthrough-tests]
+- text: SelectDataGenerator calls the port with the flag it was built with, true and false.
+  proof: [select-tests]
+checks:
+  optional: []
+  commands:
+  - id: keepalive-tests
+    why: the interval coercion, the deployment agreement rule or the stream gate is missing or wrong
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^keepalive_interval::/)'
+  - id: error-frame-tests
+    why: the detail shapes, the status and type fallbacks or the end frames are missing or wrong
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^sse_error_frames::/)'
+  - id: first-byte-tests
+    why: the fast path, the ping loop, the late frames, the hook rules or the drop behavior is missing or wrong
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^first_byte_sse::/)'
+  - id: passthrough-tests
+    why: the passthrough processor sends the wrong route type, mishandles a reply branch or skips the exception mapper
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_processor::/)'
+  - id: select-tests
+    why: the generator selector drops or inverts the responses_stream_errors flag
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^data_generator_select::/)'
+  - id: helper-python
+    why: the pure functions have no pinned LiteLLM comparison through the b7324 helper
+    run: test -f tools/oracle/helpers/b7324.py && grep -qE '^[[:space:]]+b7324:' tools/oracle/fuzz/corpus/helper_case/b7324-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/common-request-processing/coerce-text-and-numbers.yaml
+- tools/oracle/cases/helpers/common-request-processing/coerce-rejected-values.yaml
+- tools/oracle/cases/helpers/common-request-processing/agreed-interval-same-value.yaml
+- tools/oracle/cases/helpers/common-request-processing/agreed-interval-explicit-zero.yaml
+- tools/oracle/cases/helpers/common-request-processing/agreed-interval-mixed-types.yaml
+- tools/oracle/cases/helpers/common-request-processing/exception-detail-shapes.yaml
+- tools/oracle/cases/helpers/common-request-processing/error-payload-status-fallbacks.yaml
+- tools/oracle/cases/helpers/common-request-processing/error-payload-merged-fields.yaml
+deviations:
+- what: The router listing, the generator, the request pipeline and the exception mapper are traits (DeploymentLookup, AsyncDataGenerator, LlmRequestProcessor, ExceptionMapper), and the passthrough route state (proxy_logging_obj, general_settings, proxy_config, the user_* values) sits behind them.
+  why: LiteLLM reads these from proxy_server globals and imports them inside the functions; betterlite wires dependencies through constructors. What a client sees is the same.
+- what: A late streaming response is relayed by dropping its stream, with no separate close call.
+  why: Python must aclose the upstream generator by hand; in Rust dropping the stream closes the upstream connection.
+- what: The keepalive wrapper polls the upstream future inside the response body instead of running it in a task, so a vanished client cancels it by dropping the body.
+  why: rules.yaml async-hygiene forbids detached tasks; the visible behavior (ping, replay, cancel on disconnect) is the same.
+- what: The passthrough processor returns the exception mapper's result for a port failure; LiteLLM's callers do that mapping in their own except clause.
+  why: Every caller does the same mapping, so it lives in one place and the route tasks only forward the result.
+- what: An interval that Duration cannot hold counts as no interval.
+  why: Python would raise OverflowError inside asyncio; the response stays unwrapped instead.
+out_of_scope:
+- "async_data_generator (proxy_server.py L9830-L10079) and _apply_streaming_chunk_hooks are built by B8604 (Proxy SSE data generator), which implements the AsyncDataGenerator port declared here. The chunk shaping and SSE frame helpers (L9344-L9623: _get_client_requested_model_for_streaming, the fallback metadata helpers, _restamp_streaming_chunk_model, the serializers, the usage artifact check and _pop_complete_sse_frame) are B8602, and the keepalive helpers (L9626-L9827: _iter_with_keepalive, _keepalive_from_deployment_config, _resolve_keepalive_seconds, _make_keepalive_resolver) are B8603. The merged chat streaming relay (stream_chat and relay_sse in crates/betterlite-server/src/routes/chat/streaming.rs) relays chat SSE only and does not do the restamp, fallback metadata or keepalive work. This task only builds the selector and the AsyncDataGenerator port in front of it. See notes."
+- "ProxyBaseLLMRequestProcessing.base_process_llm_request, _process_llm_request, common_processing_pre_call_logic, get_custom_headers, create_response, _handle_llm_api_exception, async_streaming_data_generator and the rest of the class: no task builds the shared class. The LlmRequestProcessor and ExceptionMapper ports stand in for it. For the chat route the merged code is chat_completion and execute_chat (LlmRequestProcessor), failure (ExceptionMapper, ChatError to response) and success_headers, stream_headers and failure_headers in crates/betterlite-server/src/routes/chat/headers.rs (get_custom_headers), all under crates/betterlite-server/src/routes/chat.rs."
+- "proxy_exception_from_http_exception (L601-L614) and the response-cost, guardrail and Azure model-router helpers (L1291-L1600): their callers are outside this task."
+- "_UpstreamClosingStreamingResponse, _aclose_late_response, _buffer_first_chunk_honoring_disconnect and the client disconnect helpers (L286-L475, L809-L926): they exist for create_response and the Starlette close protocol, and no function built here calls them."
+- "wrap_passthrough_sse_bytes_with_keepalive_pings, advance_sse_tail, seal_open_sse_frame and the rest of sse_keepalive.py: B005 covers the file and no function built here calls them."
+- "get_response_headers (betterlite-http, B3600) and the HTTP body read: this task calls them."
+- "The route handlers that call open_sse_before_first_byte and the processor: B3615, B3620, B3627, B3628, B3465 and the other passthrough and RAG tasks."
+pitfalls:
+- 'The late Plain replay writes `data: ` plus the body bytes, and `{}` when the body is empty, under the 200 line that is already sent, so an upstream error body reaches the client as a data frame and the real status is lost.'
+- 'The early response content-type is `text/event-stream; charset=utf-8`, because Starlette adds the charset to every text media type; the caller''s media_type argument has no charset.'
+- 'The first ping is written right after the first interval passes, not at time zero, so a future that finishes inside the interval writes no byte and the response is byte-identical to an unwrapped one.'
+- 'A plain failure with no detail uses the message "Error processing stream start", not the failure''s own text; only HTTPException-style failures carry a detail.'
+- 'The error type text "None" (the string) counts as missing for type and param, and param then becomes JSON null; code is always the status as a string.'
+- 'The status of a failure is its status_code even when code also exists; code is used only when status_code is missing, and only when it is all ASCII digits.'
+- 'agreed_keepalive_interval treats a deployment with no keepalive_seconds as its own value, so one deployment without the key makes the group disagree and the global value wins.'
+- 'A shared keepalive_seconds of 0 disables the interval even when the global value is set, because coercion turns 0 into None before the global value is considered.'
+- 'ttft_keepalive_interval answers None for stream values other than the JSON bool true, such as the string "true" or 1.'
+- 'The passthrough processor''s route type is "allm_passthrough_route" and nothing else; the upstream reply headers keep the route''s own response headers on top, and content-length from either map is dropped.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

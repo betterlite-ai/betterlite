@@ -36,7 +36,7 @@ description: >-
   id, created, model, optional usage and the choices with object "chat.completion.chunk". A missing key anywhere in that
   block becomes OpenRouterError 400, headers {"Content-Type": "application/json"}, message "KeyError: '{key}', Got
   unexpected response from OpenRouter: {chunk}". get_model_response_iterator only picks this parser for B010's iterator
-  lifecycle, so B010 and B042 wire it and no iterator is built here.
+  lifecycle, so B010 and B8311 wire it and no iterator is built here.
 
 
   openrouter_embedding. validate_environment starts from HTTP-Referer = OR_SITE_URL or "https://litellm.ai", X-Title =
@@ -114,7 +114,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/decisions/transformation.py#L1-L19
     why: The only provider_reported_cost override and the decisions endpoint names.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3444-L3518
-    why: Read-only context for what _complete_openrouter does before these transforms run (B041 owns it).
+    why: Read-only context for what _complete_openrouter does before these transforms run (B8311 owns it).
 dod:
   - text: Chat params, cache_control placement, the extra_body merge and the usage.include default match OpenrouterConfig.
     proof: [chat-tests, helper-python, oracle]
@@ -179,7 +179,7 @@ deviations:
   - what: The KeyError text names the missing key and prints the chunk as compact JSON, not as a Python dict.
     why: Python's dict repr is not reproducible (docs/compatibility.md), so the helper cases only send chunks whose text is the same in both, such as {}.
 out_of_scope:
-  - B041 owns _complete_openrouter and the embedding branch in litellm/main.py (L3444-L3518, L6687 and after), including OPENROUTER_API_BASE and OR_API_KEY resolution, litellm.openrouter_key, the HTTP-Referer and X-Title headers for chat, OpenrouterConfig.get_config merging, registering these configs in dispatch and the HTTP oracle cases. B041 also owns litellm/types/llms/openrouter.py, so the OpenRouterErrorMessage TypedDict is not built; chunk_parser uses plain locals.
+  - B8311 owns _complete_openrouter and the embedding branch in litellm/main.py (L3444-L3518, L6687 and after), including OPENROUTER_API_BASE and OR_API_KEY resolution, litellm.openrouter_key, the HTTP-Referer and X-Title headers for chat, OpenrouterConfig.get_config merging, registering these configs in dispatch and the HTTP oracle cases. litellm/types/llms/openrouter.py only holds TypedDicts and is not built, so the OpenRouterErrorMessage TypedDict is not built either; chunk_parser uses plain locals.
   - B668, B503 and B504 own the inherited OpenAIGPTConfig methods (get_complete_url, validate_environment, get_api_key for chat, the base cache_control removal, transform_request and transform_response). Chat reaches them through injected calls.
   - B010 owns BaseModelResponseIterator framing, DONE handling and close semantics. B2214 owns its constructor and string-chunk helpers. This task supplies only the parsed-chunk projection.
   - B506 to B509 own every OpenAIResponsesAPIConfig method that OpenRouterResponsesAPIConfig inherits, including transform_responses_api_request.

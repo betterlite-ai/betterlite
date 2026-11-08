@@ -5,7 +5,7 @@ description: >-
   betterlite-server::api::audio_routes. Own audio_speech,audio_transcriptions and the complete
   _audio_speech_chunk_generator immediately before their decorators. B014 dispatches aspeech/atranscription
   to B1083/B1082. B756 authenticates, B1103 enriches request data and supplies shared error helpers, B004
-  resolves/logs call ids and custom response headers, B124 executes hooks and schedules status updates.
+  resolves/logs call ids and custom response headers, B8399 executes hooks and schedules status updates.
 
   Speech parses JSON and merges the trusted x-litellm-call-id over any body id. Transcription gets B1101's
   ordered form data, removes file, then merges the trusted id. Both fill user from authenticated user_id only
@@ -150,8 +150,8 @@ deviations:
   why: A positive finite chunk size is required by bounded-inputs and avoids an unbounded or invalid chunk iterator.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L557-L559
 out_of_scope:
-- B1101 owns get_form_data/check_file_size_under_limit; B1102 owns resolve_inference_model; B1103 request enrichment/error header helpers; B004 common processing/logging headers and B124 proxy hooks.
-- B1083/B1084 own SDK speech, B1082 SDK transcription, B1003 MIME and B004 binary response iteration; other proxy_server.py functions stay with their route/service owners under B124's coverage.
+- B1101 owns get_form_data/check_file_size_under_limit; B1102 owns resolve_inference_model; B1103 request enrichment/error header helpers; B004 common processing/logging headers and B8399 proxy hooks.
+- B1083/B1084 own SDK speech, B1082 SDK transcription, B1003 MIME and B004 binary response iteration; other proxy_server.py functions stay with their route/service owners.
 - B1122 owns every base transcription contract function; none is part of route registration here.
 pitfalls:
 - Transcription uses moderation_model precedence, not completion_model, despite being an audio route.

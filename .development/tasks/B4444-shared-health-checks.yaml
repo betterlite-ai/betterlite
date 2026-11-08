@@ -18,6 +18,8 @@ description: >-
 
   Register GET /health/shared-status, authenticated via B052's user_api_key_auth, which checks a proxy_server flag (e.g., use_shared_health_check) and returns early if shared checks are disabled. If Redis is not configured, report redis_available: false. On error, return HTTP 500 with a descriptive error dict.
 
+  Also run the background loop of `_run_background_health_check` (proxy_server.py L4503) and its save caller (L4300-L4362), as `health_shared::background_loop`: each cycle runs perform_shared_health_check, fills `HealthResultsCache` (the latest results, declared in health_shared), the type that implements B4445's `HealthResultsSource` and that this task hands to B4445, and then saves the changed results by calling B7640's `save_background` through the window gate, which takes the pod lock of B1690 (job name `background_health_check_db_save`, no reentry) and keeps it after a completed save but releases it when the save reports failure or is cancelled. After the save each cycle passes its healthy and unhealthy endpoints and the per-model exceptions to B8388's `write_health_state`. The loop task runs on the server's `TaskTracker`, so it is never detached.
+
 scope:
   paths:
     - crates/betterlite-server/src/health_shared.rs
@@ -83,6 +85,8 @@ dod:
     proof: [error-handling-tests]
   - text: Cached results do not include the per-model exception map tracked in-process; exception_status is omitted from cached dicts.
     proof: [cache-exception-tests]
+  - text: The background loop fills HealthResultsCache, the HealthResultsSource implementation, and saves changed results through B7640 once per window under the pod lock, releasing the lock only when the save fails or is cancelled.
+    proof: [background-loop-tests]
 
 checks:
   optional: []
@@ -129,6 +133,9 @@ checks:
     - id: cache-exception-tests
       why: Cached results must exclude in-process exception map
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::cache_exceptions(::|$)/)'
+    - id: background-loop-tests
+      why: the background loop leaves the cache stale, saves more than once per window or holds the lock after a failed save
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_shared::background_loop(::|$)/)'
 
 oracle_cases:
   - tools/oracle/cases/health/shared-status-disabled.yaml

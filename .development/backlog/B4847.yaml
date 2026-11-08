@@ -3,7 +3,7 @@ milestone: M9 agents and mcp
 title: Execute bounded harness turns with approvals and final results
 status: todo
 depends_on: [B4830, B4831, B4844, B4846]
-file: null
+file: tasks/B4847-harness-turn-execution.yaml
 covers:
   - "litellm/harness/runtime.py"
 parent: B143

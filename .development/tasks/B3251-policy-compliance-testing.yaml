@@ -1,0 +1,192 @@
+id: B3251
+title: Batch policy and guardrail compliance testing
+description: >-
+  Build the compliance test route POST /utils/test_policies_and_guardrails and the `apply_policies` function behind it, all in betterlite-server. An admin sends a list of
+  guardrail inputs plus policy names and/or guardrail names. The route runs every input through the guardrails separately and returns, per input, the final inputs and the list of
+  guardrail failures. It never fails because a guardrail failed. When the body has an `agent_id`, the route also sends each input to that model as a chat request, and runs the
+  model's answer through a "response rejection" guardrail, so the UI can show which answers were refusals. B3240 and B3241 give the policy registry and `resolve_policy_guardrails`,
+  B3682 gives the live guardrail registry, B5471 gives `GuardrailContract` and `GuardrailApiInputs`, B3803 gives `CustomCodeGuardrail` (crates/betterlite-guardrails/src/custom_code.rs) and `RESPONSE_REJECTION_GUARDRAIL_CODE`,
+  B3668 gives `process_output_response` (crates/betterlite-server/src/guardrails/chat_guardrail_translation/rewrites.rs), the completed-response guardrail pass. Use their exact names as they exist when you start, and re-implement none of them. LiteLLM's `get_policy_registry()` global and
+  the fresh `GuardrailRegistry()` it builds per call become handles passed in through constructors, with no module-level state.
+
+  Put it in crates/betterlite-server/src/policy_compliance_routes.rs and policy_compliance_routes/ with these files. `request.rs` holds `TestPoliciesRequest` and its decoder
+  `decode_test_request(bytes: &[u8]) -> Result<TestPoliciesRequest, ComplianceRequestError>`. Fields: `policy_names` (optional list of strings), `guardrail_names` (optional list of strings),
+  `inputs_list` (list of `GuardrailApiInputs`, default empty), `request_data` (JSON object, default empty), `input_type` (`request` or `response`, default `request`) and `agent_id` (optional
+  string). Any other body field is ignored. A wrong type, or an `input_type` other than the two values, is the shared 422 response. Each input is decoded as `GuardrailApiInputs`, which ignores
+  keys it does not know. `apply.rs` holds `apply_policies`. `agent.rs` holds the chat call and the response-rejection pass. `routes.rs` holds the state struct and the route. `error.rs`
+  holds `ComplianceRequestError`.
+
+  `apply_policies(policy_names, inputs, request_data, input_type, guardrail_names) -> ApplyPoliciesResult` follows endpoints.py L120-L211. `ApplyPoliciesResult` has `inputs` and
+  `guardrail_errors` (a list of `GuardrailErrorEntry { guardrail_name, message }`). It collects names into one sorted, de-duplicated set. First every entry of `guardrail_names`. Then, when
+  `policy_names` is non-empty and the policy registry is initialized, each policy name goes through B3240's `resolve_policy_guardrails(name, all policies, no context)` and its
+  guardrails join the set. A policy name the registry does not hold adds nothing (the resolver returns no guardrails for it; read B3240 for the exact result). When the registry is not
+  initialized, log at debug `apply_policies: policy engine not initialized, skipping policy-resolved guardrails` and add nothing. An empty set returns the inputs untouched with no errors.
+  Otherwise walk the names in sorted order and look each one up in B3682's handler through `get_initialized_guardrail_callback`. Not found: log at debug `apply_policies: guardrail
+  '<name>' not found, skipping` and go on. Found but it has no `apply_guardrail` of its own: log at debug `apply_policies: guardrail '<name>' has no apply_guardrail, skipping` and go on.
+  Otherwise call its `apply_guardrail` with the running inputs, a mutable copy of `request_data`, the `input_type` and no logging target, and pass the returned inputs to the next guardrail. A
+  failure is caught, logged at debug `apply_policies: guardrail '<name>' failed: <text>`, pushed as `GuardrailErrorEntry { guardrail_name, message: <failure text> }`, and the running inputs stay
+  as they were before that guardrail. Every other guardrail still runs. Declare the lookup as a small trait the state takes, `ComplianceGuardrails`, with one method that answers `NotFound`,
+  `NoApplyGuardrail` or `Done(Result<GuardrailApiInputs, GuardrailFailure>)` for a name, inputs, request data and input type. The production implementation wraps B3682's handler and
+  matches on the callback's spec to reach each class task's `apply_guardrail`; tests use a fake. The trait keeps `GuardrailContract`'s `impl Future` return off the route state.
+
+  `agent.rs`, for a request with `agent_id` set, runs after `apply_policies` for each input. Build the chat body with `chat_body_from_inputs(inputs, agent_id, request_data)` (endpoints.py
+  L214-L231): `model` is the `agent_id`, `stream` is false, `messages` come from `structured_messages` when it is non-empty, else from `texts` (one `user` message with the single text, or
+  one `user` message with all texts joined by `\n`), else one `user` message with the text `Hello`. When `request_data` is non-empty, its keys are merged into the body's `metadata` object, creating
+  it when absent. Send the body to the chat completion path as an in-process call with the same authenticated principal as the route, through an injected trait `AgentChat` with one async
+  method taking B004's typed chat request and the principal and returning the typed chat response or a proxy error. The route state takes a `Box<dyn AgentChat>` or a generic for it (the
+  B8790 builds the production one in its agent_chat.rs over B8630's router completion; see the task notes). Use B004's request type for the body and put `metadata` in its passthrough field. Do not build a fake HTTP
+  request as LiteLLM does with `_request_with_json_body`. The answer is stored as `agent_response`: the chat response as JSON with fields the provider never set left out
+  (`model_dump(exclude_unset=True)`). A failure of the chat call is not caught here and fails the whole route (see error mapping).
+
+  Then run the answer through the response-rejection guardrail. Build B3803's custom-code guardrail from B3803's `RESPONSE_REJECTION_GUARDRAIL_CODE` with the guardrail name
+  `response_rejection`. Build it once per request, on the first input that needs it, and reuse it. Read the answer back into B3668's typed completed-response record and call B3668's
+  `process_output_response` with that guardrail and the principal. Any failure of the read-back or the pass is caught: take the failure's HTTP detail when it is an object with an `error`
+  key and use that string, else use the detail's text when there is one, else the failure's own text, and push `GuardrailErrorEntry { guardrail_name: "response_rejection", message }` after the
+  errors `apply_policies` produced. The guardrail only blocks `response` input, and its block is an HTTP 400 whose detail is `{"error": <reason>, "guardrail": "response_rejection",
+  "detection_info": {...}}`, so a refusal such as "I can't help with that" gives the message `Response indicates the model rejected the user request.`.
+
+  The route (endpoints.py L280-L380) is POST `/utils/test_policies_and_guardrails`, tag `utils`, in the standard authenticated group (B732 owns the principal; the auth
+  group is mounted by B8790 inside the auth layers), wrapped by B865's management completion wrapper as `@management_endpoint_wrapper` does. The path is in no role list, so route access follows the shared route checks for an
+  unlisted path; do not special-case it. The route loops over `inputs_list` in order and, for each input, runs `apply_policies`, copies `inputs` and `guardrail_errors` into the item, adds
+  `agent_response` and the response-rejection step when `agent_id` is set, and appends the item. The answer is 200 `{"results": [item, ...]}`. An empty or missing `inputs_list` gives `{"results":
+  []}` and runs nothing, and no check requires `inputs`. Any error that escapes (the chat call, the guardrail registry) is turned into the OpenAI-style proxy error by B2400's
+  `handle_exception_on_proxy`: an HTTP error keeps its status and message with type `internal_server_error`. Add one cargo-fuzz target `compliance_request` that feeds arbitrary bytes to
+  `decode_test_request`. The test named `replays_the_compliance_request_corpus` replays its corpus.
+
+  Tests. Native tests live under `policy_compliance_routes::tests` with prefixes `apply_` (the set building, skip rules, error capture, running inputs), `agent_` (chat body building, the
+  `agent_response` shape, the response-rejection messages and the once-per-request build), `route_` (status mapping, ordering, empty list, management wrapper use) and `decode_`. Use fakes
+  for `ComplianceGuardrails` and `AgentChat`, and B3241's registries filled by hand for policy resolution. Oracle. HTTP cases go in tools/oracle/cases/policies/compliance/ and send the real
+  request to the booted proxy with the master key `oracle-master`, no database and no `policies` config. See the case list under oracle_cases. Compare status and body, and ignore
+  the fields of `agent_response` that differ on every run (ids, `created`).
+
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-server/src/policy_compliance_routes.rs
+    - crates/betterlite-server/src/policy_compliance_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/compliance_request.rs
+    - crates/betterlite-server/fuzz/corpus/compliance_request/**
+    - tools/oracle/helpers/b3251.py
+    - tools/oracle/helpers/b3251/**
+    - tools/oracle/src/helpers/server/b3251.rs
+    - tools/oracle/src/helpers/server/b3251/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L81-L117
+    why: Result records GuardrailErrorEntry, ApplyPoliciesResult, ApplyPoliciesPerItemResult and ApplyPoliciesListResult, with the optional agent_response key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L120-L211
+    why: apply_policies, with the name set, the sorted walk, the skip rules and the per-guardrail error capture.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L214-L258
+    why: _chat_body_from_inputs and the fake request that carries the body to chat_completion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L261-L380
+    why: TestPoliciesAndGuardrailsRequest and the route from its decorators, with the agent call and the response_rejection pass.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L272-L281
+    why: get_initialized_guardrail_callback, the name lookup (B3682 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L369-L430
+    why: The block branch of _process_result, which sets the 400 detail the error message is read from (B3803 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/response_rejection_code.py#L35-L73
+    why: RESPONSE_REJECTION_GUARDRAIL_CODE and its phrase list (B3803 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L383-L488
+    why: process_output_response, the completed-response pass the route calls (B3668 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
+    why: GenericGuardrailAPIInputs, the per-input record (B5471 owns GuardrailApiInputs).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8240
+    why: handle_exception_on_proxy, the error mapping for anything that escapes the route (B2400 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L76-L80
+    why: The prefix /utils/test_policies_and_guardrails loads this module, next to /policy/.
+
+dod:
+  - text: >-
+      apply_policies unions guardrail_names with the guardrails its policy names resolve to, sorts and de-duplicates them, and returns the inputs untouched with no errors
+      when the set is empty or the policy registry is not initialized and no guardrail name was given.
+    proof: [apply-tests]
+  - text: >-
+      apply_policies skips a name with no live callback and a callback with no apply_guardrail of its own, runs the others in sorted order with each result feeding the next,
+      and records a failing guardrail as an error entry while keeping the inputs from before it and still running the rest.
+    proof: [apply-tests]
+  - text: >-
+      The chat body for agent_id uses structured_messages first, then texts (one text as is, several joined by a newline), then a `Hello` user message, sets stream false, and merges
+      request_data into metadata.
+    proof: [agent-tests]
+  - text: >-
+      With agent_id set, each item carries agent_response (the chat answer without unset fields), and an answer that matches a rejection phrase adds a response_rejection error entry with
+      the guardrail's reason, after the apply_policies entries.
+    proof: [agent-tests]
+  - text: >-
+      A failure while reading the answer back or in the rejection pass becomes a response_rejection error entry (detail.error when the detail is an object with that key, else the detail text,
+      else the failure text), and a failure of the chat call fails the whole request through the proxy error mapping.
+    proof: [agent-tests, route-tests]
+  - text: >-
+      POST /utils/test_policies_and_guardrails returns 200 with one result per input in order, `{"results": []}` for an empty or missing inputs_list, 422 for a wrong body type or an input_type
+      outside request and response, and 401 without a key.
+    proof: [route-tests]
+  - text: >-
+      The route runs inside B865's management completion wrapper and builds the response-rejection guardrail once per request.
+    proof: [route-tests]
+  - text: >-
+      The body decoder rejects malformed bytes and wrong shapes without panicking, ignores unknown fields, and has committed corpus inputs.
+    proof: [request-corpus, route-tests]
+
+  - text: The handlers are tested with tower's oneshot over the module's own Router and fake ports. B8790 mounts the routes and owns their HTTP oracle cases, so write no HTTP case here.
+    proof: [route-tests]
+checks:
+  optional: []
+  commands:
+    - id: apply-tests
+      why: the guardrail name set, the skip rules, the error capture or the input chaining of apply_policies is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^policy_compliance_routes::.*tests::apply_/)'
+    - id: agent-tests
+      why: the chat body, the agent_response shape or the response_rejection step is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^policy_compliance_routes::.*tests::agent_/)'
+    - id: route-tests
+      why: the route, its status mapping, its result order or the body decoder is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^policy_compliance_routes::.*tests::(route_|decode_)/) - test(replays_the_compliance_request_corpus)'
+    - id: request-corpus
+      why: the request decoder has no committed malformed-input regressions or no replay test
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/compliance_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_compliance_request_corpus)'
+oracle_cases: []
+
+deviations:
+  - what: The 422 body for a bad request body uses the server's shared validation response and wording, not FastAPI's `loc` and `msg` strings.
+    why: Every route in the server shares one validation response; the status code matches.
+  - what: The guardrail lookup and the policy registry are handles passed in at construction, not a global callback manager and `get_policy_registry()`.
+    why: Rust code here has no module-level state; the lookup answers the same names LiteLLM's does.
+  - what: The response_rejection guardrail is built once per request, on the first input that needs it, not once per input.
+    why: The guardrail holds no per-input state, so a client cannot tell; it saves a compile per input.
+  - what: A guardrail failure message is the Display text of B5471's `GuardrailFailure`, not Python's `str()` of the exception.
+    why: "Python prints an HTTP error as status, colon, detail repr, which Rust cannot reproduce. No oracle case reaches it, since the oracle proxy has no guardrail that fails."
+  - what: The agent call is an in-process call through the `AgentChat` trait with B004's typed request, not a fake Starlette request posted to `/v1/chat/completions`.
+    why: Rust has no request-object trick; the principal and body are the same, so the model, key limits and logging see the same call.
+  - what: The unreachable `raise ValueError("Either inputs or inputs_list must be provided")` after the return (endpoints.py L378) is not built.
+    why: Code after a `return` never runs.
+
+out_of_scope:
+  - "B3250 owns POST /policy/validate, GET /policy/list, GET /policy/info/{policy_name} and POST /policy/test (endpoints.py L383-L604). B3249 owns POST /policy/templates/test (L1123-L1265). B3252 and B3253 own the template routes (L607-L1120)."
+  - "GuardrailApplyError (endpoints.py L67-L78): no caller at the pin, nothing raises it."
+  - "B3240 owns resolve_policy_guardrails. B3241 owns the policy and attachment registries. B3682 owns the guardrail registry and get_initialized_guardrail_callback. B5471 owns GuardrailContract, GuardrailApiInputs and GuardrailFailure."
+  - "B3803 owns CustomCodeGuardrail, its block and result handling and the response-rejection program. B3668 owns process_output_response for completed chat responses."
+  - "B865 owns the management completion wrapper. B2400 owns handle_exception_on_proxy. B004 owns the chat completion path and its request type."
+  - "The production AgentChat implementation and the production ComplianceGuardrails implementation that reach the chat handler and each guardrail class: B8666 implements ComplianceGuardrails and B8790 implements AgentChat. This task writes the traits and fakes."
+  - "The mount of this route into the app and the list of route modules: B8790."
+  - "The imports of sse_keepalive and CustomGuardrail's other paths in endpoints.py: used only by other routes in the file."
+
+pitfalls:
+  - "A failing guardrail never fails the request: its text goes in `guardrail_errors` and the next guardrail still runs on the inputs from before the failure, so one bad guardrail cannot hide the rest."
+  - "Names run in sorted string order, not in policy order, and a name that comes from both `guardrail_names` and a policy runs once."
+  - "Policy names resolve with no match context, so a policy whose `condition.model` would not match still adds its guardrails."
+  - "A guardrail with no `apply_guardrail` of its own is skipped even when it is found, so a request that names only such guardrails returns the inputs untouched and no error."
+  - "`input_type` is the one value for every input and every guardrail; only `request` or `response` is accepted, and `request` is the default."
+  - "The response_rejection guardrail returns allow for `request` input, so it only matters because the route runs the chat answer through it as a response."
+  - "The agent answer is checked against 16 fixed lowercase phrases by substring after lowercasing (`i can't help with that`, `i cannot assist` and the rest), so a long answer that quotes a phrase is flagged."
+  - "A failure in the chat call is not caught per item: the first one ends the request and drops the results already built."
+  - "`request_data` is merged into the chat body's `metadata`, not the top level, and is also the request data the guardrails see."
+  - "`agent_response` is the chat answer without fields the provider never set, so a field set to null by the provider stays and one it omitted is absent."
+  - "An unknown key inside one `inputs_list` item is dropped from the echoed `inputs`, because the item is decoded as GenericGuardrailAPIInputs."
+  - "`policy_names` with an uninitialized registry is not an error: it logs at debug and adds nothing."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

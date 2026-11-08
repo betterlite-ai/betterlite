@@ -1,0 +1,17 @@
+id: B8172
+milestone: M3 providers
+title: DashScope image generation and Qwen brand variants
+status: todo
+depends_on: [B8170, B8171, B2202]
+file: tasks/B8172-dashscope-image-family.yaml
+covers:
+  - "litellm/llms/dashscope/image_generation/__init__.py"
+  - "litellm/llms/dashscope/image_generation/transformation.py"
+  - "litellm/llms/dashscope/qwen_ai_platform.py"
+  - "litellm/llms/dashscope/qwencloud.py"
+parent: B043
+split_from: B043
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

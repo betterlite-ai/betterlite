@@ -1,0 +1,68 @@
+id: B8276
+title: Serve the decisions and SystemOne routes
+description: >-
+  Register LiteLLM's four decisions routes from proxy/decisions_endpoints/endpoints.py in betterlite-server: `POST /v1/systemone` and `POST /systemone` (SystemOne format, route type `asystemone`), and `POST /v1/decisions` and `POST /decisions` (OpenAI Decisions format, route type `adecisions`). Each pair shares one handler and sits behind the normal key check. Code in `crates/betterlite-server/src/decisions_routes.rs` and its folder; `pub fn routes()` is built like the sibling route modules and B8634 mounts it. The wire records and their validation are B3510's (`DecisionsRequestBody` for SystemOne, `OpenAIDecisionRequestBody` for decisions); the calls are B3515's `asystemone` and `adecisions`. This task is the HTTP layer between them.
+
+  Handler steps, the same for both pairs; only the body validator and the route type differ.
+  (1) Read the raw body and parse it as a JSON object into a map of string to value. If that fails (bad JSON, or a body that is not an object) answer through the shared exception handler with a 400 bad request error, message `Invalid Decisions request: <validation text>` and an empty `model`.
+  (2) Validate the map against the route's body validator, after removing the key `safety_identifier` from a copy (that field is checked later, not here). If it fails, answer the same 400 with `Invalid Decisions request: <validation text>`, where `model` is the body's `model` as text (empty when absent). The original map, with `safety_identifier` still in it, is what goes on.
+  (3) Run the request through the same pipeline B085 uses for rerank: authenticated request preparation (B1103), B8393's pre-call hook (`PreCallHook::run`), then dispatch with the route type (with a router, the router's `adecisions` or `asystemone` through B6021's generic dispatch branch in B8354's call type table; without one, B3515's `adecisions` or `asystemone`), `model` none and no stream generator (streaming is not supported). Streaming bodies are not special-cased here.
+  (4) The answer is the pipeline's response as JSON (an ORJSON response). A failure in step 3 runs B8395's failure hook (`post_call_failure_hook`) and then goes through the shared exception handler (B003's `ProxyException` serialization, as B085 does), not the raw error. Steps 1 and 2 use the same handler, so they also give the usual proxy error body with the 400 status.
+
+  State. The route state takes the request preparation, the dispatch handle and the shared exception handler by constructor, as B085 does. Tests use fakes for those and the real B3510 validators.
+
+  The OpenAPI request-body examples that LiteLLM attaches to these routes (`inline_request_body`) are for the generated schema; the architect's schema work owns them, not this task.
+scope:
+  paths:
+    - crates/betterlite-server/src/decisions_routes.rs
+    - crates/betterlite-server/src/decisions_routes/**
+    - tools/oracle/helpers/b8276.py
+    - tools/oracle/helpers/b8276/**
+    - tools/oracle/src/helpers/server/b8276.rs
+    - tools/oracle/src/helpers/server/b8276/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/decisions_endpoints/endpoints.py#L78-L170
+    why: The error builder, the safety_identifier rule, body parsing and the shared processing function.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/decisions_endpoints/endpoints.py#L173-L256
+    why: The four decorators and the two handlers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/decisions_endpoints/__init__.py#L1-L1
+    why: The package marker; it holds no code.
+dod:
+  - text: The four routes exist on exactly their paths for POST, each behind the key check, and a request with no valid key gets the usual 401 body. Tests drive the handlers with tower's oneshot over the module's own Router and fake ports; B8634 mounts the routes and proves them over HTTP.
+    proof: [route-tests]
+  - text: The two systemone paths validate against the SystemOne body and dispatch asystemone; the two decisions paths validate against the OpenAI body and dispatch adecisions.
+    proof: [flow-tests]
+  - text: 'A body that is not a JSON object, or that fails validation, answers 400 with a message starting "Invalid Decisions request: " before any dispatch.'
+    proof: [flow-tests]
+  - text: safety_identifier is ignored by the validation but stays in the data passed to dispatch.
+    proof: [flow-tests]
+  - text: A failure in dispatch is answered through the shared exception serialization, and a success returns the response as JSON.
+    proof: [flow-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: route-tests
+      why: a route path, method or key check is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^decisions_routes::tests::route_/)'
+    - id: flow-tests
+      why: the body parsing, validation, dispatch or error answers are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^decisions_routes::tests::flow_/)'
+oracle_cases: []
+deviations:
+  - what: "The text after Invalid Decisions request:  comes from B3510's validators, not from Pydantic's multi-line error text."
+    why: Pydantic's exact wording and line layout have no Rust equivalent; the status, the error type and the prefix match.
+out_of_scope:
+  - "The request and response records and their limits: B3510. The calls asystemone and adecisions: B3515."
+  - "Request preparation: B1103. The pre-call hook: B8393. The failure hook: B8395. The router's adecisions and asystemone: B6021 behind B8354's call type table. The shared exception serialization: B003."
+  - "The OpenAPI examples and response models for the four routes."
+  - "B014's dispatch has no adecisions or asystemone entry. LiteLLM's route_request sends both to the router's generic dispatch (B6021) when a router serves the call and to B3515 otherwise, so the dispatch handle goes there."
+pitfalls:
+  - "The key check runs before the body is read, so a bad body with no key is a 401, not a 400."
+  - "safety_identifier is removed only for the validation copy; the dispatch data keeps it."
+  - "The 400 for an unparsable body has an empty model; the 400 for a failed validation uses the body's model text."
+  - "There is no stream branch: a body with stream true is not handled specially at this layer."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -15,13 +15,13 @@ description: >-
   PATCH requires DB then effective store_model_in_db=true. Reuse decode_sso_record for the
   request and add decode_stored_sso_settings(bytes) for JSON-string before/cleanup rows.
   Capture an existing truthy row, parse it when it is a string, and decrypt dictionary values
-  through B124/B1600 for the audit before-image. Load current config before publishing the
+  through B8382/B1600 for the audit before-image. Load current config before publishing the
   full model dump, including null/default fields. For each of B120's sixteen SSO_FIELD_ENV_VARS,
   truthy values replace the live value and falsey values clear it. Publish this through B1646's
   runtime environment overlay, consumed by the SSO composition's per-request snapshot.
-  Encrypt string values with B1600 through B124's _encrypt_env_variables contract, preserving
+  Encrypt string values with B1600 through B8382's encrypt_env (_encrypt_env_variables) contract, preserving
   non-string nulls and structured mappings, and upsert the JSON-string row. Submit config audit
-  with action updated and the SSO table name after the upsert; audit redaction stays B124's.
+  with action updated and the SSO table name after the upsert; audit redaction stays B8594's.
   Finally read the environment_variables config row, parse string storage when needed, remove
   only the sixteen mapped environment names, update its JSON representation and invalidate
   that parameter. A missing row needs no cleanup. Cleanup failure returns the source's 500

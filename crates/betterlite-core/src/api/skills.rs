@@ -1,3 +1,4 @@
+pub mod continuation;
 pub mod create;
 pub mod get_delete;
 pub mod hook;

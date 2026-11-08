@@ -1,0 +1,11 @@
+kind: helper
+name: anthropic-results-image-format-override
+call:
+  anthropic_results:
+    function: anthropic_image_chunk
+    openai_image_url: "data:image/png;base64,AAA"
+    format: image/gif
+    data_urls: {}
+env: {}
+compare:
+  ignore: []

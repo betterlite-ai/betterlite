@@ -1,0 +1,20 @@
+kind: sdk_http
+name: vector-store-router-embedding-metadata
+env: {OPENAI_API_KEY: sk-direct}
+call:
+  vector_store_embedding_executor:
+    model: openai/text-embedding-3-small
+    query: hello
+    configuration: {model: ignored, input: ignored, metadata: {keep: "yes", team: old}, dimensions: 2}
+    metadata: {team: new, user_api_key_team_id: t}
+    router:
+      - model_name: openai/text-embedding-3-small
+        litellm_params: {model: openai/text-embedding-3-small, api_key: sk-router}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{object: embedding, index: 0, embedding: [0.25, 0.5]}], model: text-embedding-3-small, usage: {prompt_tokens: 1, total_tokens: 1}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{object: embedding, index: 0, embedding: [0.25, 0.5]}], model: text-embedding-3-small, usage: {prompt_tokens: 1, total_tokens: 1}}
+compare: {headers: [], headers_present: [], upstream_headers: [authorization], ignore: []}

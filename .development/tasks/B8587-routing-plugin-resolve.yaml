@@ -1,0 +1,80 @@
+id: B8587
+title: Python routing plugin resolution and startup hooks adapter
+description: >-
+  Two startup pieces need betterlite's embedded Python host (B165), so they wait for it in this task and the plain checks
+  of B8378 and the lifespan of B8374 do not.
+
+  Routing plugins. A complexity router config and router_settings can name routing and classifier plugins as Python
+  dotted paths ("module.attr"). LiteLLM resolves them at config load with get_instance_fn, so a bad module refuses startup
+  instead of failing the first request. Build crates/betterlite-server/src/routing_plugins.rs (declared by the skeleton)
+  with the error enum `PluginResolveError` (thiserror) and three functions over B165's `PythonHooks`:
+  `resolve_routing_plugins(hooks: Option<&PythonHooks>, paths, config_path, label)` loads every string entry with
+  `load_hook(HookSlot::RoutingPlugin, path)`, in order, and returns the handles. `resolve_classifier_plugin(hooks, path,
+  config_path, label)` does the same for one path with `HookSlot::ClassifierPlugin`.
+  `resolve_complexity_plugins(hooks, model_name, config, config_path)` ports resolve_complexity_router_plugins: when
+  complexity_router_config.plugins is a list, resolve it with the label "complexity_router_config.plugins on model
+  {model_name!r}"; when classifier_plugin is a string, resolve it with "complexity_router_config.classifier_plugin on
+  model {model_name!r}"; anything else is left alone. Non-string entries cannot come from YAML here.
+
+  The interface check runs on each loaded object. A routing plugin needs an async `run(context)` and a classifier an async
+  `classify(context)`; otherwise fail with `PluginResolveError::NotRoutingPlugin` or `NotClassifierPlugin`, whose texts are
+  LiteLLM's: "{label} entry {path!r} resolved to {repr}, which does not implement the RoutingPlugin interface (an async
+  `run(context)` method). Fix the referenced module before starting the proxy." and the ClassifierPlugin form ("an async
+  `classify(context)` method"). A load failure keeps B165's HooksError as its source. When `hooks` is None (no Python
+  host) and any plugin path is present, fail with `PluginResolveError::PythonHostMissing`, naming the config key from
+  the label.
+
+  Startup hooks adapter. B8374 defines the `StartupHooks` port in crates/betterlite (one async `run(specs) -> Result<(),
+  StartupHookError>`, carried in LifespanInputs as an Option). Build `crates/betterlite/src/startup_hooks_py.rs` (declared
+  by the skeleton) with `PyStartupHooks { hooks: Arc<PythonHooks> }` implementing that port by calling B165's
+  `PythonHooks::run_startup_hooks(specs)` and turning its HooksError into StartupHookError. B165 owns the spec parsing,
+  the order and the log lines; this adapter only forwards. B165 cannot host it, because B165 depending on B8374 forms a
+  dependency cycle.
+
+  Tests run both through a fake Python host: good and bad routing and classifier plugins, a sync `def classify`, a
+  missing host, and a startup hook list whose second spec fails. No oracle case: LiteLLM's answer is a refused startup
+  with the same text, which the helper cases cannot drive without loading user modules.
+scope:
+  paths:
+    - crates/betterlite-server/src/routing_plugins.rs
+    - crates/betterlite-server/src/routing_plugins/**
+    - crates/betterlite/src/startup_hooks_py.rs
+    - crates/betterlite/src/startup_hooks_py/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4965-L5028
+    why: resolve_routing_plugins and resolve_complexity_router_plugins with the interface check and the two labels.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5138-L5158
+    why: resolve_classifier_plugin and its async classify check.
+dod:
+  - text: Routing and classifier plugin paths resolve through the Python host in order, and an object without the async method fails with LiteLLM's interface text naming the config key.
+    proof: [routing-plugin-tests]
+  - text: Without a Python host, any plugin path fails with PythonHostMissing naming the config key, and a config without plugin paths passes.
+    proof: [routing-plugin-tests]
+  - text: PyStartupHooks forwards the specs to run_startup_hooks and returns its failure as StartupHookError.
+    proof: [startup-hooks-tests]
+checks:
+  optional: []
+  commands:
+    - id: routing-plugin-tests
+      why: Plugin resolution, the interface check or PythonHostMissing is missing or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routing_plugins::/)'
+    - id: startup-hooks-tests
+      why: The StartupHooks adapter over PythonHooks is missing or does not forward a failure
+      run: >-
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^startup_hooks_py::/)'
+oracle_cases: []
+deviations:
+  - what: Routing and classifier plugin paths need betterlite's embedded Python host; without it, startup fails naming the config key.
+    why: The plugins are Python objects; this follows the startup hooks decision for B8374.
+out_of_scope:
+  - "The deployment checks and the model id pin: B8378. The Python host, HookSlot and run_startup_hooks: B165. The StartupHooks port and calling it: B8374."
+  - "Calling these at config load (L5015 for a complexity router, L6978 for router_settings.plugins): the router build from config calls them, as it calls B8378's checks."
+pitfalls:
+  - A sync `def run` or `def classify` passes Python's runtime_checkable isinstance, so the check must also require the method to be async.
+  - "B8378 pins the model id from the raw params before these paths are swapped for loaded objects; keep that order when both run on one deployment."
+review_level: standard
+budget:
+  max_changed_lines: 900
+  max_new_expects: 0

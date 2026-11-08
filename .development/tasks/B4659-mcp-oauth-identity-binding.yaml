@@ -1,0 +1,232 @@
+id: B4659
+title: MCP upstream OAuth identity binding
+description: >-
+  An MCP server can be marked so that a per-user OAuth token is only stored for the person it belongs to. Without this, a user signed in upstream as one account can finish the OAuth flow and have that token saved under a different gateway user (a confused deputy). In LiteLLM the code is oauth_identity_binding.py (423 lines). Before the token endpoint returns, stores or caches an exchanged token, it checks the upstream id_token (signature from the issuer's JWKS, issuer, audience, expiry, nonce), reads one claim from it, and compares that claim with the gateway caller's own identity. In enforce mode a mismatch answers 403 and nothing is stored. In audit mode it only logs. B4675, B4676, B4679 and the stored-token code (B4713, B4715) call this module, so every public name below is spelled as written.
+
+
+  Put the code in the new module oauth_identity_binding of betterlite-mcp: crates/betterlite-mcp/src/oauth_identity_binding.rs holds the types, the port traits and the re-exports, and the submodules are proof, principal, id_token, jwks, refresh and enforce, each with a tests.rs beside it. Add to crates/betterlite-mcp/Cargo.toml: jsonwebtoken (jsonwebtoken.workspace = true, B762 adds it to the workspace with its features), subtle (subtle.workspace = true), caseless = "0.2.2" (already used by betterlite-roi) and tracing is already there. The binding policy type comes from B6590, in crates/betterlite-mcp/src/server_record.rs: MCPServer (fields server_id and oauth_identity_binding: Option<MCPOAuthIdentityBinding>) and MCPOAuthIdentityBinding with mode (Disabled, Audit, Enforce), issuer, jwks_url, audiences, principal_claim, caller_field (UserEmail or UserId) and require_email_verified. Read that file for the exact enum names and use them, do not copy the types.
+
+
+  Ports. LiteLLM takes three async callables with production defaults. The module has no globals and betterlite-mcp cannot reach the database, the pool or the active-user code, so each is a trait taken as a generic parameter (native async fn in the trait, not dyn), like B4658's SubjectStore. JsonGet has `async fn get_json(&self, url: &str) -> Result<serde_json::Value, JsonGetError>` and stands for the Oauth2Check pooled client: a non-2xx status or a body that is not JSON is an Err whose Display text is the cause. ActiveUserEmail has `async fn active_user_email(&self, user_id: &str) -> Option<String>` and stands for load_active_user_by_id with the cache source: None for every failure and for a user with no email. UserCredentialStore has `async fn oauth_credential(&self, user_id: &str, server_id: &str) -> Result<Option<StoredOAuthCredential>, CredentialReadError>` where StoredOAuthCredential holds refresh_token: Option<SecretString> and identity_binding_proof: Option<String>. B137 wires the production implementations, so this task tests with fakes.
+
+
+  Public API, all in oauth_identity_binding. RefreshOwnership is Proven (the gateway unwrapped the refresh token from its own sealed envelope) or Presented(SecretString). A grant with no ownership is Option<RefreshOwnership> = None. VerifiedRefreshToken { refresh_token: SecretString, binding_proof: String }. BindingDenied { code: RejectionCode, description: String, server_id: String } with RejectionCode::PrincipalMismatch ("oauth_principal_mismatch") and RejectionCode::BindingFailed ("oauth_identity_binding_failed"), as_str on the code, status() -> u16 giving 403, and detail() -> serde_json::Value giving the object {"error": code, "error_description": description, "server_id": server_id, "credential_owner": "caller", "credential_stored": false}. The trait BindingValidator is LiteLLM's Protocol that B4676 and the refresher take: `async fn validate(&self, server: &MCPServer, token_response: &serde_json::Map<String, serde_json::Value>, litellm_user_id: Option<&str>, grant_type: &str, refresh_ownership: Option<&RefreshOwnership>) -> Result<Option<String>, BindingDenied>`. The struct IdentityBinder<J, U, S, K> holds jwks: IssuerJwks<J>, users: U (ActiveUserEmail), store: S (UserCredentialStore) and a clock `Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>`. It implements BindingValidator and also has the inherent `enforce_oauth_identity_binding(&self, server, token_response, litellm_user_id, grant_type, refresh_ownership, expected_nonce: Option<&str>) -> Result<Option<String>, BindingDenied>`, which the authorization_code path calls with the transaction nonce. The name enforce_oauth_identity_binding is exactly 30 characters, the limit, so do not lengthen it or any other name here. Also public: `current_binding_proof(users: &impl ActiveUserEmail, binding, user_id, server_id) -> Option<String>` and `credential_binding_matches(users: &impl ActiveUserEmail, binding, user_id, server_id, stored_proof: Option<&str>) -> bool`.
+
+
+  proof. binding_proof(binding, user_id, server_id, principal) -> String is the lowercase SHA-256 hex of the text Python's json.dumps(..., sort_keys=True) writes for the 5-item array ["oidc-nonce-v1", server_id, user_id, principal, binding dumped as a JSON object]. The stored value is compared with proofs LiteLLM already wrote, so the bytes must match exactly: separators ", " and ": ", keys sorted, and ensure_ascii, meaning every char above 0x7f is written as \uXXXX in lowercase hex, an astral char as a surrogate pair, while 0x7f itself stays raw; quote, backslash, \n, \r, \t, \b, \f use their short escapes and other controls below 0x20 use \u00xx. serde_json's compact writer differs, so write a small serde_json Formatter for this, in proof.rs. The binding object has the keys audiences (array, order kept), caller_field ("user_email" or "user_id"), issuer, jwks_url (string or null), mode ("audit" or "enforce"), principal_claim and require_email_verified (true or false). A worked line: for server_id "srv", user_id "u1", principal "a@b.c" and the default binding with issuer "https://i", audiences ["x"], mode enforce, the text is ["oidc-nonce-v1", "srv", "u1", "a@b.c", {"audiences": ["x"], "caller_field": "user_email", "issuer": "https://i", "jwks_url": null, "mode": "enforce", "principal_claim": "email", "require_email_verified": true}]. current_binding_proof asks the caller principal (below) and gives None when it is None or empty, otherwise the proof. credential_binding_matches is false when stored_proof is None or empty, false when current_binding_proof is None, and otherwise a constant-time comparison (subtle ConstantTimeEq on the bytes).
+
+
+  principal. caller_principal(users, binding, user_id) -> Option<String>: for caller_field UserId it is user_id itself, with no lookup. For UserEmail it is users.active_user_email(user_id). principals_match(upstream, caller, binding) -> bool: when principal_claim == "email" or caller_field is UserEmail, compare Unicode default case-folded (caseless::default_case_fold_str, the same as Python's casefold) trimmed text; otherwise compare exactly. upstream_principal(claims, binding) -> Result<String, Rejection> reads claims[principal_claim]; it must be a non-empty string, else the rejection "id_token has no usable '<claim>' claim". When principal_claim == "email" and require_email_verified, claims["email_verified"] must be the JSON value true (the string "true" is not enough), else "id_token email is not verified (email_verified is not true)".
+
+
+  id_token. verify_id_token(id_token: &str, keys: &[serde_json::Value], binding, now: DateTime<Utc>) -> Result<serde_json::Map<String, serde_json::Value>, Rejection>. This function reads bytes from an upstream server, so it is the fuzzed decoder (see Fuzz). It never panics and every failure is a Rejection with code BindingFailed. Step one, pick the key: read the unverified header; a header that does not parse gives "invalid id_token header or issuer signing key". Take header "kid" (missing or null means no kid). If there is no kid, the first key in the list is used, whatever it is. With a kid, the first key whose own "kid" equals it. No match gives "id_token signing key (kid='<kid>') not found in the issuer's JWKS". The chosen key is converted to a decoding key; a failure gives "invalid id_token header or issuer signing key" and the next key is not tried. Step two, verify the signature with jsonwebtoken, switching its own exp, nbf, aud and iss checks off and clearing its required claims, because the claim rules below are applied by hand: allowed algorithms are RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384 only (see the ES512 deviation). A header alg outside the list, including none and every HS*, fails. Failures read "id_token validation failed: <cause>". Step three, claims, zero leeway. iss, exp, aud, sub and iat must all be present and not null. A present iat must be a number and not in the future (iat > now fails). A present nbf must be a number and nbf > now fails. exp must be a number and exp <= now fails (an exp equal to now is expired). iss must be a string equal to binding.issuer. aud, which must be non-empty, is a string or an array of strings (any other shape fails) and passes when at least one entry of binding.audiences is among the token's audiences. sub must be a string. jti, if present, must be a string. Numbers may be integers or floats; a float is cut toward zero like Python's int().
+
+
+  jwks. IssuerJwks<J: JsonGet> has a constructor taking the JsonGet and a clock, and `async fn issuer_keys(&self, binding) -> Result<Vec<serde_json::Value>, JwksError>`. The URL is binding.jwks_url when it is set and non-empty. Otherwise it GETs discovery_url = issuer with trailing "/" characters removed + "/.well-known/openid-configuration" and takes the "jwks_uri" string from the answer; a missing, non-string or empty value is the error "OIDC discovery at <discovery_url> returned no jwks_uri". Discovery is not cached and runs on every call that has no jwks_url, because LiteLLM only caches by the resolved JWKS URL. The JWKS document is cached under its URL for 3600 seconds (fixed): a hit returns the cached array. A miss GETs the URL, and the answer must be an object with a "keys" array, else the error "JWKS document at <url> has no 'keys' array" and nothing is cached. keys_from_document(document, url) -> Result<Vec<serde_json::Value>, JwksError> is that check and is also fuzzed. The cache is a Mutex'd map inside IssuerJwks, never a static, and an entry is expired when now is strictly after its expiry, like LiteLLM's InMemoryCache. There is no stale copy, no retry and no single-flight, so two misses at once both fetch. The token's jku and x5u headers are never used.
+
+
+  refresh. A refresh_token grant whose token response has no id_token cannot be checked against a principal, so ownership of the refresh token is checked instead. evaluate_refresh_ownership(store, users, binding, user_id: Option<&str>, server_id, ownership) -> Result<String, Rejection>: None gives "refresh_token grant without an id_token carries no refresh token to prove ownership of"; Proven gives "an identity envelope alone does not prove upstream principal binding" (the envelope never carries the upstream principal, so it can't stand in for an id_token); Presented needs a user_id, else "the request carries no resolvable LiteLLM user identity to bind the credential to". It then calls load_stored_refresh_token(store, users, binding, user_id, server_id) -> Option<VerifiedRefreshToken>: store.oauth_credential, and an Err, a missing row, a credential_binding_matches that is false (with the stored identity_binding_proof), or a missing or empty refresh_token or proof all give None. Any store error fails closed as None and never surfaces. If the result is None or its refresh_token differs from the presented one (constant-time), the rejection is "the presented refresh_token is not the caller's stored credential for this server". Otherwise the result is the stored binding_proof, which is returned as the proof.
+
+
+  enforce. enforce_oauth_identity_binding does this in order. No binding on the server, or a mode that is not Audit or Enforce, returns Ok(None) with no work. Then it evaluates: (1) token_response["id_token"]; when it is not a non-empty string, a grant_type other than "refresh_token" is the rejection "the upstream token response carries no id_token to bind the credential to a principal", and "refresh_token" goes to evaluate_refresh_ownership and returns its result. (2) litellm_user_id missing or empty gives "the request carries no resolvable LiteLLM user identity to bind the credential to". (3) issuer_keys; an Err gives "could not fetch the issuer's JWKS: <error>". (4) verify_id_token. (5) when grant_type == "authorization_code" and (mode is Enforce or expected_nonce is Some), the token's "nonce" claim must be a string and expected_nonce a non-empty value that is equal in constant time, else "id_token nonce does not match the authenticated authorization transaction"; note that the audit mode with no expected nonce skips this. (6) upstream_principal. (7) caller_principal; None or empty gives "the LiteLLM user has no '<caller_field>' to compare the upstream principal against", with caller_field spelled user_email or user_id. (8) principals_match false gives code PrincipalMismatch with the description "The browser account does not match the selected credential owner." (9) success gives binding_proof(binding, user_id, server_id, caller). On a success string, Enforce mode returns Ok(Some(proof)) and Audit returns Ok(None). On a rejection, Audit logs tracing::warn "oauth_identity_binding audit: server=<id> user=<id> grant=<grant> rejected=<code> (<description>)" and returns Ok(None), and Enforce returns Err(BindingDenied). The refresh-ownership success path returns the stored proof the same way.
+
+
+  Port for betterlite-db. B4715 (betterlite-db) cannot import this crate, so it declares the trait `OauthBindingPort` in its module oauth_token_resolution. Implement that trait for IdentityBinder in the enforce submodule (its tests sit in enforce/tests.rs), with Server = MCPServer, Ownership = RefreshOwnership and Denied = BindingDenied. Its enforce calls enforce_oauth_identity_binding with expected_nonce None, and its proof_matches reads the server oauth_identity_binding and calls credential_binding_matches, giving false when the server has no binding. Add betterlite-db to crates/betterlite-mcp/Cargo.toml if B6590 has not yet.
+
+  Tests use fakes for the three ports, a fixed now, and ids made up for the test. Signed id_tokens in tests are made with a throwaway RSA key and a throwaway EC P-256 key stored as test fixtures in the tests.rs files or a fixtures folder under the module, and their JWKs sit beside them. No route reaches this code yet (B4675 and B4676 add the callers), so the HTTP oracle cases come with the umbrella B137. This task has helper cases for the pure behavior: the helper operation b4659 takes a field function (binding_proof, principals_match, credential_binding_matches or enforce). The Python side builds the MCPServer and MCPOAuthIdentityBinding from the case and calls _binding_proof, _principals_match, credential_binding_matches or enforce_oauth_identity_binding, with the three LiteLLM injection points (jwks_fetcher, caller_principal_loader, stored_refresh_token_loader) replaced by functions that return what the case lists. The Rust side calls the production functions through fakes built from the same case. Each case returns either the proof string or the error detail (status, error, error_description, server_id). Signed id_tokens go into the cases as literal strings made once with a throwaway key and exp 9999999999 (year 2286) and iat 1700000000, because LiteLLM reads the real clock; an expired case uses exp 1. Cases ignore /error_description for any signature or JWT library message, with the reason that the text is PyJWT's, and compare it for the messages this task spells out. Add an mcp-oauth-identity-binding-* seed to the helper_case corpus for each function.
+
+
+  Fuzz. verify_id_token reads an id_token an upstream server wrote, and keys_from_document reads the JWKS body. The cargo-fuzz target oauth_id_token in crates/betterlite-mcp/fuzz feeds arbitrary bytes, read as lossy UTF-8, to verify_id_token with a fixed RSA JWK and a fixed binding, and the same bytes parsed with serde_json::from_slice to keys_from_document. The test oauth_identity_binding::id_token::tests::replays_the_id_token_corpus replays crates/betterlite-mcp/fuzz/corpus/oauth_id_token through both. Add corpus files: a valid compact token, a token with each part cut, one with an alg of none, and a JWKS document with no keys array. Register the bin in crates/betterlite-mcp/fuzz/Cargo.toml and add serde_json to its dependencies.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/oauth_identity_binding.rs
+    - crates/betterlite-mcp/src/oauth_identity_binding/**
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/fuzz/Cargo.toml
+    - crates/betterlite-mcp/fuzz/fuzz_targets/oauth_id_token.rs
+    - crates/betterlite-mcp/fuzz/corpus/oauth_id_token/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/mcp-oauth-identity-binding/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-oauth-identity-binding-*
+    - tools/oracle/helpers/b4659.py
+    - tools/oracle/helpers/b4659/**
+    - tools/oracle/src/helpers/mcp/b4659.rs
+    - tools/oracle/src/helpers/mcp/b4659/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_identity_binding.py#L1-L96
+    why: Module intent, the allowed algorithm list, the 3600 second JWKS cache constant, the three injection points and the refresh ownership types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_identity_binding.py#L98-L180
+    why: JWKS fetch and discovery, signing key selection by kid, the PyJWT decode call with its required claims, and the principal claim and email_verified rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_identity_binding.py#L182-L260
+    why: Caller principal loading, the stored refresh token loader that fails closed, the proof hash, credential_binding_matches and the principal comparison.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_identity_binding.py#L261-L423
+    why: Refresh ownership, the order of every check in _evaluate_binding, and the audit versus enforce outcome with the 403 detail shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L51-L68
+    why: MCPOAuthIdentityBinding fields and defaults, which also feed the proof.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L284-L291
+    why: A binding that is not disabled needs gateway managed per-user OAuth and no upstream delegation (B6590 enforces it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1200-L1270
+    why: The token endpoint callers, the early refresh check with an empty token response, and the nonce passed on the authorization_code path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/authz_code_refresher.py#L118-L180
+    why: The BindingValidator caller that checks first with an empty token response and again with the real one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1845-L1960
+    why: refresh_user_oauth_token, which calls credential_binding_matches then enforce_oauth_identity_binding and stores the proof (B4715).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/per_user_oauth_store.py#L150-L210
+    why: Where credential_binding_matches gates a cached or stored token before it is served.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L286-L353
+    why: load_active_user_by_id, the lookup behind the ActiveUserEmail port (B4658 owns it).
+  - url: https://pyjwt.readthedocs.io/en/stable/api.html#jwt.decode
+    why: PyJWT's decode options and the order claims are validated in, which the Rust claim checks copy.
+  - url: https://docs.rs/jsonwebtoken/latest/jsonwebtoken/struct.Validation.html
+    why: The Validation switches to turn off, since the claim rules here are applied by hand.
+dod:
+  - text: "binding_proof gives the lowercase SHA-256 hex of Python's json.dumps text with sorted keys, comma-space and colon-space separators and ensure_ascii escapes, byte for byte, for ASCII, non-ASCII and astral characters in the ids and the issuer."
+    proof: [proof-tests, helper-oracle, helper-tests, helper-python]
+  - text: "credential_binding_matches is false for a missing or empty stored proof, a proof for another user, server, principal or binding, and a caller with no principal, and true only for the current proof."
+    proof: [proof-tests, helper-oracle, helper-tests, helper-python]
+  - text: "principals_match trims and case-folds for an email claim or a user_email caller and compares exactly otherwise, and caller_principal gives the user id itself for caller_field user_id without a lookup."
+    proof: [principal-tests, helper-oracle, helper-tests, helper-python]
+  - text: "upstream_principal needs a non-empty string claim and, for email with require_email_verified, an email_verified that is JSON true."
+    proof: [principal-tests, helper-oracle, helper-tests, helper-python]
+  - text: "verify_id_token accepts RS, PS and ES256/384 tokens and rejects none, HS256, EdDSA, ES512, a bad signature and a key that does not match the algorithm."
+    proof: [id-token-tests, helper-oracle, helper-tests, helper-python]
+  - text: "Key selection takes the first key when the token has no kid, the first key with the same kid otherwise, and gives the not found rejection when none matches."
+    proof: [id-token-tests, helper-oracle, helper-tests, helper-python]
+  - text: "The claim checks require iss, exp, aud, sub and iat, reject exp equal to now, a future iat or nbf, a wrong issuer, an audience outside the binding list, a non-string sub or jti, and accept aud as a string or a list."
+    proof: [id-token-tests, helper-oracle, helper-tests, helper-python]
+  - text: "verify_id_token and keys_from_document never panic on arbitrary bytes and the added corpus replays through them."
+    proof: [token-corpus]
+  - text: "IssuerJwks uses jwks_url when set, otherwise discovers it from the trimmed issuer, fetches discovery every time, caches only the JWKS document for 3600 seconds and not on error, and reports the discovery and no keys array errors."
+    proof: [jwks-tests]
+  - text: "A refresh_token grant with no id_token passes only when the presented refresh token equals the caller's stored one and the stored proof still matches, fails for None and for a Proven envelope, and fails closed on a store error."
+    proof: [refresh-tests, helper-oracle, helper-tests, helper-python]
+  - text: "enforce_oauth_identity_binding does nothing for no binding or a disabled one, follows the nine steps in order, checks the nonce only for authorization_code when enforce or a nonce is given, and fails with the exact descriptions the task spells out."
+    proof: [enforce-tests, helper-oracle, helper-tests, helper-python]
+  - text: "Enforce returns the proof on success and BindingDenied with status 403 and the five-key detail on a rejection, and audit returns no proof, logs the warning on a rejection and never errors."
+    proof: [enforce-tests, helper-oracle, helper-tests, helper-python]
+  - text: "IdentityBinder implements B4715's OauthBindingPort, enforce calls enforce_oauth_identity_binding with no nonce and proof_matches is false for a server with no binding."
+    proof: [enforce-tests]
+  - text: "The oracle cases and the corpus seeds agree with LiteLLM on binding_proof, principals_match, credential_binding_matches and enforce."
+    proof: [helper-oracle, helper-tests, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: proof-tests
+      why: the proof text differs from Python's json.dumps or the match check accepts a stale proof
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_identity_binding::proof::tests::/)'
+    - id: principal-tests
+      why: the principal comparison or the claim rules differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_identity_binding::principal::tests::/)'
+    - id: id-token-tests
+      why: the id_token verification accepts a forbidden algorithm, picks the wrong key or skips a claim rule
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_identity_binding::id_token::tests::/) - test(replays_the_id_token_corpus)'
+    - id: token-corpus
+      why: the oauth_id_token fuzz target, its added corpus or its replay test is missing or fails
+      run: >-
+        test -f crates/betterlite-mcp/fuzz/fuzz_targets/oauth_id_token.rs &&
+        grep -q oauth_id_token crates/betterlite-mcp/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-mcp/fuzz/corpus/oauth_id_token)" &&
+        cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(replays_the_id_token_corpus)'
+    - id: jwks-tests
+      why: the JWKS fetch, discovery or cache rules differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_identity_binding::jwks::tests::/)'
+    - id: refresh-tests
+      why: the refresh token ownership check passes a token that is not the caller's stored credential
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_identity_binding::refresh::tests::/)'
+    - id: enforce-tests
+      why: the order of the checks, the mode handling or the 403 detail differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_identity_binding::enforce::tests::/)'
+    - id: helper-tests
+      why: the helper adapter does not reach the production functions
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mcp::b4659::/) - test(/replays_the_/)'
+    - id: helper-oracle
+      why: the helper cases are missing or differ from LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/mcp-oauth-identity-binding)" &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/mcp-oauth-identity-binding
+    - id: helper-python
+      why: the Python helper adapter is unchanged or fails the strict checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4659.py tools/oracle/helpers/b4659)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no newly added mcp-oauth-identity-binding seed reaches the shared parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-oauth-identity-binding-*')" &&
+        grep -lE 'b4659"?:' tools/oracle/fuzz/corpus/helper_case/mcp-oauth-identity-binding-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/proof-ascii-ids.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/proof-non-ascii-and-astral.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/proof-null-jwks-url-and-user-id-field.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/match-stored-proof-equal.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/match-stored-proof-other-user.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/match-no-caller-principal.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/principals-email-casefold-trim.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/principals-sub-claim-exact.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-no-binding-noop.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-success-rs256.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-success-es256.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-audit-success-no-proof.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-audit-mismatch-no-error.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-mismatch-403.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-no-id-token-code-grant.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-no-user-id.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-kid-not-found.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-token-without-kid-first-key.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-expired-token.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-wrong-issuer.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-wrong-audience.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-audience-list-any-match.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-missing-sub.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-email-not-verified.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-email-verified-string-true.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-hs256-token-refused.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-bad-signature.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-nonce-match.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-nonce-missing-in-enforce.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-nonce-skipped-in-audit.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-jwks-fetch-failure.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-refresh-stored-token-match.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-refresh-other-token.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-refresh-envelope-proven.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-identity-binding/enforce-refresh-no-ownership.yaml
+deviations:
+  - what: An id_token signed with ES512 is rejected with oauth_identity_binding_failed in all modes. LiteLLM accepts it.
+    why: The jsonwebtoken crate has no ES512, and B762 carries a separate RustCrypto p521 path. Failing closed is safe, and the open question for the architect is whether to reuse B762's verifier.
+  - what: Every failure while verifying the signature or the claims becomes a binding rejection (403 in enforce mode). LiteLLM only catches PyJWT's InvalidTokenError, so a key whose type does not fit the token's alg raises InvalidKeyError and escapes as a 500.
+    why: A failing check must never turn into a server error or a skipped check.
+  - what: The 403 or audit description for a signature or claim failure carries the Rust library's cause text and not PyJWT's.
+    why: The wording comes from different libraries. The code and every description this task spells out stay the same, and the oracle cases ignore /error_description for these.
+  - what: The JWKS cache belongs to the IssuerJwks value B8621 builds, not to a module-level InMemoryCache, and it has no 200 item cap.
+    why: The repo rules forbid module-level state, and one entry per configured issuer never reaches the cap. The 3600 second lifetime and the strict expiry check are kept.
+  - what: Outbound JWKS and discovery requests use the B173 pooled client through the JsonGet port, so its timeouts and body size caps apply, and they replace httpx's defaults.
+    why: Every outbound request in betterlite goes through the pool.
+  - what: Trimming uses Rust's trim, which does not strip the four ASCII separators 0x1c to 0x1f that Python's str.strip removes.
+    why: Only matters for an account name that starts or ends with one of those control characters.
+out_of_scope:
+  - "bridge_token_flow.load_active_user_by_id: B4658 owns it. The production ActiveUserEmail is a thin impl on B4658's ActiveSubjects (load_active_user with the cache source, keeping user_email), written in B8621."
+  - "get_user_oauth_credential and the credential decryption: B4713 owns them. The production UserCredentialStore over them is written in B8621."
+  - "The production JsonGet over the B173 pooled client with httpxSpecialProvider.Oauth2Check semantics: written in B8621, since betterlite-mcp does not depend on betterlite-http."
+  - "discoverable_endpoints.py token and authorize routes: B4675 and B4676 call enforce_oauth_identity_binding and pass the nonce. refresh_user_oauth_token in db.py: B4715. per_user_oauth_store.py and authz_code_refresher.py: their owners call credential_binding_matches and BindingValidator."
+  - "MCPServer and MCPOAuthIdentityBinding and the rule that a binding needs gateway managed per-user OAuth: B6590."
+  - "Disabling the direct oauth-user-credential POST in enforce mode: that check is in the route, not in this file."
+pitfalls:
+  - audit mode returns no proof even when the check passes, so a stored credential for an audit server never carries identity_binding_proof; only enforce mode returns the string.
+  - The early refresh check in discoverable_endpoints and the refresher passes an empty token response, so the refresh branch must work on {} and must not need an id_token.
+  - Discovery is fetched on every call without a jwks_url, since the cache key is the resolved JWKS URL; caching the discovery answer would change when a rotated jwks_uri is noticed.
+  - A token with no kid takes the first key of the JWKS even when that key is for encryption, and a token with a kid does not match a JWKS key that has no kid.
+  - exp equal to the current second is expired, while an iat or nbf equal to the current second is valid.
+  - The nonce check reads grant_type == "authorization_code" and not the mode alone, so audit mode with an expected nonce checks it and enforce with no nonce fails.
+  - The proof contains the whole binding, so changing audiences, issuer or jwks_url of a server makes every stored credential fail credential_binding_matches and forces a new sign-in.
+  - email_verified must be the JSON boolean true; the string "true" and 1 are not verified.
+  - A case-folded comparison also applies when principal_claim is "sub" but caller_field is user_email; only the pair sub plus user_id compares exactly.
+  - load_stored_refresh_token swallows every store error and returns None, so a database outage reads as "not the caller's stored credential" and not as a 500.
+  - The Proven envelope never passes alone, because an envelope the gateway sealed says nothing about which upstream account the refresh token belongs to.
+  - Python's json.dumps keeps 0x7f raw but escapes every char above it, and writes an astral char as two \ud8xx\udcxx escapes; serde_json's default writer would keep them raw and give another hash.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,19 @@
+kind: helper
+name: phoenix-preset-project-alias
+call:
+  b3850:
+    function: phoenix_preset
+    environment:
+      PHOENIX_COLLECTOR_PROJECT_NAME: alias-project
+    base:
+      exporters:
+        - kind: otlp_http
+          endpoint: https://collector.example/v1/traces
+          headers: x-collector=1
+      mapper_names: [genai]
+      resource_attributes:
+        deployment.environment: test
+env:
+  PHOENIX_COLLECTOR_PROJECT_NAME: alias-project
+compare:
+  ignore: []

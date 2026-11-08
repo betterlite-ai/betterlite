@@ -1,0 +1,73 @@
+id: B8156
+title: Ollama generate config and embedding handler
+description: >-
+  Build the Ollama generate config and the embedding transforms in betterlite-provider as crates/betterlite-provider/src/ollama_generate.rs and its folder. Pure transforms only; the HTTP calls and the main.py dispatch stay with B8157.
+
+  completion/transformation.py: _OllamaGenerateReasoning (from_response, split), OllamaConfig (get_config, get_required_params, get_supported_openai_params, map_openai_params, _supports_function_calling, _get_max_tokens, get_api_key, get_model_info, get_error_class, transform_response, uses_async_transform_request, async_transform_request, transform_request, validate_environment, get_complete_url, get_model_response_iterator) and OllamaTextCompletionResponseIterator (_handle_string_chunk, chunk_parser). The key and base lookup, runtime model info and OllamaError are built by B2223; call them instead of copying. async_transform_request fetches image data, so it takes the injected client.
+
+  completion/handler.py: TokenEncoder, OllamaEmbeddingResponse, _prepare_ollama_embedding_payload, _process_ollama_embedding_response and the request and reply parts of ollama_embeddings and ollama_aembeddings. The proxy always takes the async path, so build one embedding function over (status, body).
+
+  Replies and stream lines come from the network. Decode them with typed structs; a field of the wrong type is an error, never a default. Add a fuzz target for the generate reply.
+
+  Where the source and this text differ, the source at the pinned commit wins.
+scope:
+  paths:
+    - crates/betterlite-provider/src/ollama_generate.rs
+    - crates/betterlite-provider/src/ollama_generate/**
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/ollama_generate_reply.rs
+    - crates/betterlite-provider/fuzz/corpus/ollama_generate_reply/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/ollama-generate-embed/**
+    - tools/oracle/helpers/b8156.py
+    - tools/oracle/helpers/b8156/**
+    - tools/oracle/src/helpers/provider/b8156.rs
+    - tools/oracle/src/helpers/provider/b8156/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/transformation.py#L1-L589
+    why: Generate config, reasoning split, reply and stream iterator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/handler.py#L1-L135
+    why: Embedding payload and reply.
+dod:
+  - text: Generate params, request body, URL and headers match, including image data and format.
+    proof: [ollama-generate-embed-tests, ollama-generate-embed-cases]
+  - text: Replies give the same content, reasoning split, usage and finish reason, and stream chunks match.
+    proof: [ollama-generate-embed-tests, ollama-generate-embed-cases]
+  - text: Embedding payload, reply and usage match, with the same error for a bad reply.
+    proof: [ollama-generate-embed-tests, ollama-generate-embed-cases]
+  - text: The reply decoder rejects malformed bodies without panicking and its corpus replays.
+    proof: [ollama-generate-embed-corpus]
+  - text: New helper cases for these functions exist.
+    proof: [ollama-generate-embed-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: ollama-generate-embed-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^ollama_generate::/)'
+      why: Without this provider code there are no such tests, so the check fails on the base branch.
+    - id: ollama-generate-embed-corpus
+      run: test -f crates/betterlite-provider/fuzz/fuzz_targets/ollama_generate_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/ollama_generate_reply)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_ollama_generate_reply_corpus)'
+      why: Bytes come from outside and need a fuzz target with a replayed corpus.
+    - id: ollama-generate-embed-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/ollama-generate-embed)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/helpers/ollama-generate-embed/param-mapping.yaml
+  - tools/oracle/cases/helpers/ollama-generate-embed/request-body.yaml
+  - tools/oracle/cases/helpers/ollama-generate-embed/reply-text.yaml
+  - tools/oracle/cases/helpers/ollama-generate-embed/reasoning-split.yaml
+  - tools/oracle/cases/helpers/ollama-generate-embed/stream-chunks.yaml
+  - tools/oracle/cases/helpers/ollama-generate-embed/embedding.yaml
+deviations:
+  []
+out_of_scope:
+  - "B8157 owns the ollama dispatch in main.py."
+  - "B2223 owns the api key and base lookup and runtime model info. B8155 owns the chat config and OllamaError; the generate config's get_error_class returns that type. This task builds _convert_image and _reencode_as_jpeg (common_utils.py L19-L42): its generate transform is their only caller."
+  - "The sync branches have no proxy caller and are not built."
+pitfalls:
+  - "The oracle helper for this task is pre-registered as b8156 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task's to edit."
+  - "The reasoning split depends on the model reply fields; read _OllamaGenerateReasoning before writing transform_response."
+  - "Embedding token counts come from the injected token encoder, and a failed encode gives 0."
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

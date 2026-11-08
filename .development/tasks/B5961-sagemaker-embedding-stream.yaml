@@ -153,7 +153,7 @@ out_of_scope:
   - "`SagemakerError` is B5960's. The HTTP call, signing, the `boto3` embedding call and wrapping the decoder in CustomStreamWrapper are B5840."
   - The Voyage config is B1420, Cohere's legacy reply projection is B1418, and Bedrock's Cohere request builder is B627; only calls into them are here.
   - B005 owns the data-prefix strip function and the stream wrapper; B599 owns frame decoding.
-  - The provider-config lookups in `utils.py` (`get_provider_embedding_config`, supported-parameter lists) that call `get_model_config` belong to B042.
+  - The provider-config lookups in `utils.py` (`get_provider_embedding_config`, supported-parameter lists) that call `get_model_config` belong to B8331 (the sagemaker embedding config branch) and B175 (the supported-parameter lists).
 pitfalls:
   - The `data:` strip removes only the first prefix, with or without a space, and `\n\n` is removed from the whole text, so a payload with a blank line in a string value loses it.
   - A partial JSON object stays in the buffer across events, and a later event that completes it yields one chunk; a buffer that never parses yields None only at the end.

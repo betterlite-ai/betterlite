@@ -1,7 +1,7 @@
 id: B356
 title: Start and stop automatic-router shadow evaluations
 description: 'Implement shadow evaluation start/stop endpoints using B345 input validation, B380 response
-  models and B118 job runtime through B051 repository services. Preserve conflict, target-direction, seed-failure
+  models and B4083''s shadow job loading and attempt persistence through B051 repository services. Preserve conflict, target-direction, seed-failure
   and stop-state behavior. Authenticate before repository access and never retry an ambiguous write by
   generating a second job ID. Keep the integration adapter in betterlite-server in this task module; consume
   predecessor public interfaces without editing their implementation crates. Implement the owned native
@@ -109,7 +109,7 @@ deviations:
     limit. Existing structural field limits remain unchanged.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1580-L1800
 out_of_scope:
-- Executing shadow requests or writing the judge, owned by B118.
+- Executing shadow requests or writing the judge, owned by B4084 (shadow calls and judgments) and B4085 (the evaluation pipeline).
 - Changing tables or adding uniqueness constraints outside B051.
 - B380 owns shadow evaluation lifecycle response models; consume its tested public interface.
 - 'litellm/proxy/management_endpoints/auto_router_endpoints.py: B051 owns: _TeamTable.find_unique (L97-L97),

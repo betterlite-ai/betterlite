@@ -1,0 +1,107 @@
+id: B8740
+title: CallbackLogger trait, logger event and logger sink
+description: >-
+  betterlite has loggers for many LiteLLM callbacks, but nothing hands them a finished call. In LiteLLM every logger
+  subclasses CustomLogger (litellm/integrations/custom_logger.py), and the success and failure handlers call its event
+  methods on each registered logger. This task adds the Rust side of that contract: one trait every logger implements,
+  the event it receives, a registry sink that holds a logger, and the port that turns a callback name into a logger.
+  Later parts deliver events through it (B250, B251), resolve names into it (B8741, B8742) and implement it (each
+  logger task).
+
+
+  Code goes in crates/betterlite-logging/src/callback_logger.rs and callback_logger/ (event.rs, resolver.rs,
+  error.rs, tests.rs). The skeleton declares `pub mod callback_logger;` in lib.rs. You also change two files of the
+  merged callback registry: registry/sink.rs and registry.rs.
+
+
+  The trait. `pub trait CallbackLogger: Send + Sync`, written with `#[async_trait]` (async-trait is already a
+  dependency of the crate). `fn callback_name(&self) -> &str` is required: the configured name, used in warnings and
+  in Debug output. Every other method has a default body, because CustomLogger's own methods do nothing (L141-L193)
+  and most loggers override only one or two. `fn turn_off_message_logging(&self) -> bool` and
+  `fn redacts_messages_itself(&self) -> bool` both default to false; they are the two values LiteLLM reads from a
+  logger before it redacts the payload for it (L87-L100, L894-L895). The sync events are `fn log_success_event`,
+  `fn log_failure_event` and `fn log_stream_event`, each `(&self, event: &LoggerEvent) -> Result<(), LoggerError>`.
+  The async events are `async fn async_log_success_event`, `async_log_failure_event` and `async_log_stream_event`,
+  each `(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError>`, so a logger can move the event into a queue
+  without a copy. The defaults return Ok(()).
+
+
+  event.rs. `pub struct LoggerEvent { pub payload: Arc<StandardLoggingPayload>, pub dynamic_params:
+  Arc<StandardCallbackDynamicParams>, pub stream: bool }`. Both types are B254's (crates/betterlite-logging/src/fields.rs).
+  LiteLLM passes kwargs, response_obj, start_time and end_time, but every value a betterlite logger reads is a field
+  of the standard logging payload (times, call type, response, error information, metadata) or of the dynamic
+  params (per request credentials). No raw kwargs map exists in betterlite.
+
+
+  error.rs. `LoggerError` is a thiserror enum with one variant, `Delivery { callback: String, message: String }`,
+  shown as "callback {callback} failed: {message}". A logger maps its own error into it.
+
+
+  resolver.rs. `pub trait LoggerResolver: Send + Sync` with `fn resolve(&self, name: &str, params: &BTreeMap<String,
+  String>) -> Result<Option<Arc<dyn CallbackLogger>>, RegistryError>`. params are the trusted callback variables of the
+  request (empty at startup). Err means the name is unknown or its logger is not built in betterlite. Ok(None) means
+  LiteLLM's builder gave None for it (an arm that falls through or an init error it logs and skips, L5181-L5188).
+  B8741's catalog and B8742's server slot implement it.
+
+
+  Registry. In registry/sink.rs add `CallbackSink::Logger(Arc<dyn CallbackLogger>)`. The enum derives Debug today and
+  a trait object has no Debug, so write Debug by hand: the Logger variant prints its callback_name. `deliver` keeps its
+  behavior for Tracing and Channel and returns Ok(()) for a Logger sink without calling it: a phase event carries no
+  call, and loggers get their events from the dispatch in B250 and B251. In registry.rs add
+  `pub fn loggers(&self, phase: CallbackPhase) -> Vec<Arc<dyn CallbackLogger>>`: the Logger sinks of the entries whose
+  phases contain the phase, in registration order, skipping Tracing and Channel sinks. This is the list B250 walks for
+  Success and Stream and B251 walks for Failure.
+
+
+  Tests in callback_logger/tests.rs use small fake loggers that record calls: a logger that overrides only
+  async_log_success_event gets that call and the other five methods return Ok without effect; LoggerError shows the
+  callback name; `CallbackRegistry::loggers` lists a logger registered in the callbacks list for Success, Failure and
+  Stream, a logger registered only in the failure list for Failure alone, keeps registration order and skips Tracing
+  and Channel sinks; `deliver` on a Logger sink returns Ok and does not call the logger; Debug of a Logger sink shows
+  its name.
+scope:
+  paths:
+    - crates/betterlite-logging/src/callback_logger.rs
+    - crates/betterlite-logging/src/callback_logger/**
+    - crates/betterlite-logging/src/registry.rs
+    - crates/betterlite-logging/src/registry/sink.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L65-L193
+    why: CustomLogger's constructor flags and the six log event methods this trait mirrors, all with empty bodies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L894-L974
+    why: redacts_messages_itself and the redaction that reads the two flags before an async event.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3132-L3191
+    why: The sync success branch that calls log_stream_event or log_success_event on a CustomLogger.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3477-L3525
+    why: The async success branch, with the redaction call and the stream event for a chunk without a complete response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5181-L5188
+    why: An init error is logged and the builder returns None, which is the Ok(None) of the resolver.
+dod:
+  - text: CallbackLogger has a required callback_name, two message flags defaulting to false, and six event methods whose defaults do nothing and return Ok.
+    proof: [logger-tests]
+  - text: LoggerEvent carries B254's payload and dynamic params, and LoggerError names the callback that failed.
+    proof: [logger-tests]
+  - text: CallbackSink has a Logger variant with a hand written Debug, deliver ignores it, and CallbackRegistry::loggers lists loggers by phase in registration order.
+    proof: [logger-tests]
+checks:
+  optional: []
+  commands:
+    - id: logger-tests
+      why: the trait, the event, the sink variant or the phase listing is missing or wrong
+      run: grep -q 'Logger(Arc<dyn CallbackLogger>)' crates/betterlite-logging/src/registry/sink.rs && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^callback_logger::/) | test(/^registry::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Proxy hooks of CustomLogger (async_pre_call_hook, async_post_call_success_hook, async_post_call_failure_hook, async_moderation_hook, the streaming hooks, async_post_call_response_headers_hook, async_filter_listed_models, async_post_mcp_tool_call_hook, logging_hook and async_logging_hook): B8390's ProxyCallback, dispatched by B8393, B8394 and B8395."
+  - "log_pre_api_call, async_log_pre_api_call and log_post_api_call: B249 dispatches them; only the OTel V2 and New Relic loggers override them."
+  - "async_log_audit_log_event: B065. The router events (log_success_fallback_event, log_failure_fallback_event, log_model_group_rate_limit_error, deployment hooks, pre_call_check): the router tasks. get_chat_completion_prompt: B4058's PromptManagementBackend."
+  - "Payload truncation, redaction, base64 stripping and handle_callback_failure: B3931. Calling the events: B250 and B251. Resolving names: B8741 and B8742."
+pitfalls:
+  - CallbackSink derives Clone today, and Arc<dyn CallbackLogger> clones fine, but Debug must be written by hand or the derive fails to compile.
+  - loggers() reads each entry's phases, not its lists, so a logger in the callbacks list also answers for Stream, as LiteLLM's function_setup copies callbacks into every event list.
+  - The async event takes Arc<LoggerEvent>, not a reference, because async_trait boxes the future and a borrowed event would tie the queue to the caller's stack.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

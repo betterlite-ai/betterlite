@@ -105,8 +105,8 @@ out_of_scope:
   - Counter initialization or spending writes (B3015).
   - Counter read operations or spending queries (B3014).
   - Collect entity and window reservation counters (B3002 owns _get_budget_counters and its helpers at lines 481–908).
-  - Budget reservation lease renewal, unbilled-route handling and reserve_budget_for_request (B071 owns lines 225–347).
-  - Release of unbound reservations from middleware (B071).
+  - Budget reservation lease renewal, unbilled-route handling and reserve_budget_for_request (B8480 owns L109-L148 and L225-L347).
+  - Release of unbound reservations from middleware (B8270, wired to this task by B8481).
   - Callback registration or event delivery (B012, B1690).
   - Per-model or per-session budget limits enforcement (B3006, B3007).
 pitfalls:

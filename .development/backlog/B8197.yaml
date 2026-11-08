@@ -1,0 +1,13 @@
+id: B8197
+milestone: M9 agents and mcp
+title: "MCP operations: listing tools, prompts and resources"
+status: todo
+depends_on: [B8195, B8196, B4731, B8462, B8463]
+file: tasks/B8197-mcp-ops-listing.yaml
+covers: []
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

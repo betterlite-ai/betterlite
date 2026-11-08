@@ -55,7 +55,7 @@ description: >-
   (L2250-L2263), `_unmask_response_event` (L2265-L2328), `_mask_response_completed` (L2330-L2408), and
   `_enforce_or_reject_frame` (L2410-L2437).
 
-  Direct inputs are B071's project-quota callback, B104's Presidio implementation and separate unmask function,
+  Direct inputs are B3042's project-quota callback (`enforce_project_io_token_quota_for_frame`, a rate-limit hook at the pin, not a budget), B104's Presidio implementation and separate unmask function,
   B163's `RateLimitError`, B171's helper protocol, B902's WebSocket/default types and Presidio callback shape,
   B903's response-ID and encrypted-item wrapper codecs, B904's encrypted input-item traversal, B925's JSON/type
   helpers and quota protocol, and B732's authenticated key record. B925 owns the source `_UnmasksPiiText` protocol

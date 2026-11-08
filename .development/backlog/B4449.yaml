@@ -2,7 +2,7 @@ id: B4449
 milestone: M8 platform
 title: Native health entry point dispatch
 status: todo
-depends_on: [B6750, B4440, B176, B5656, B1083, B1082, B998, B999, B3338, B1014, B1127, B1129, B932, B3515, B3300]
+depends_on: [B6750, B4440, B176, B5656, B1083, B1082, B998, B999, B3338, B1014, B1127, B1129, B932, B3515, B3300, B6809]
 file: tasks/B4449-health-entry-native.yaml
 covers:
   - "litellm/main.py"

@@ -1,0 +1,13 @@
+id: B8386
+milestone: M8 platform
+title: Model latency and exception metrics routes
+status: todo
+depends_on: [B052, B714, B8399]
+file: tasks/B8386-model-metrics-routes.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

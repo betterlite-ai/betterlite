@@ -85,8 +85,8 @@ oracle_cases:
   - tools/oracle/cases/helpers/google-guardrail-text/per-chunk-utf8-replacement.yaml
 deviations: []
 out_of_scope:
-  - B104 owns guardrail selection/execution policy and BaseTranslation user-metadata normalization; this leaf receives the resolved callback and metadata.
-  - B098 owns native GenAI routes and B160 SDK object exposure; neither route registration nor Python runtime integration is introduced here.
+  - B3665 owns guardrail selection/execution policy and B3661 BaseTranslation user-metadata normalization; this leaf receives the resolved callback and metadata.
+  - B3506 owns native GenAI routes and B160 SDK object exposure; neither route registration nor Python runtime integration is introduced here.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as google_guardrail_text in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/google_guardrail_text.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/google_guardrail_text.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Existing context keys are preserved even when their value is None.

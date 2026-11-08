@@ -1,0 +1,14 @@
+id: B7530
+milestone: M9 agents and mcp
+title: MCP OAuth state, sealed codes, state cookie and token rules
+status: todo
+depends_on: [B4650, B4654, B4655]
+file: tasks/B7530-mcp-oauth-state-codes.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py"
+parent: B136
+split_from: B7321
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

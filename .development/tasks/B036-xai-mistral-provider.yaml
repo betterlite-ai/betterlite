@@ -9,7 +9,7 @@ description: >-
   to B1407/B1410. Use B249 hooks and B186's existing error classification. Cover chat,
   embeddings, Responses, realtime, speech, transcription, files and native batches only
   where the selected provider has the matching leaf. Expose B1401's login service through
-  the provider's auth constructor; B151 still owns the actual CLI. Bind B1402's model and
+  the provider's auth constructor; B8375 still owns the actual CLI. Bind B1402's model and
   usage helpers, B1412's completion records and B1413's execution without another parser.
 
   Own main.py _complete_xai, _complete_mistral, _complete_text_completion_codestral,
@@ -27,7 +27,7 @@ description: >-
   responses/ occurrence from the model. Implement MistralEmbeddingConfig's empty defaults
   and encoding_format-only mapping, including an explicit null, over B006 transport.
 
-  Also implement mistral_ocr_guardrail using B104's translation interface and metadata
+  Also implement mistral_ocr_guardrail using B3661's translation interface and metadata
   projection. Request hooks see a nonempty string document_url or image_url as text;
   ignore their replacement text. Response hooks receive only truthy page markdown and
   write returned texts back to those original indices; short results leave trailing
@@ -148,7 +148,7 @@ out_of_scope:
   - B500's main.py callable inventory remains authoritative for all other dispatchers; only its three named provider dispatchers, Mistral embedding arm and the xAI bridge arm move here.
   - B500 and the OpenAI leaf tasks retain every other class/function in openai/openai.py; MistralEmbeddingConfig is the sole extraction.
   - B004, B006, B202, B080, B083, B1125, B1032, B1033, B1034, B087, B1050, B1051, B1133, B086 and B092 own route factories; this task adds bindings and alias cases without registering routes.
-  - B104 owns generic guardrail metadata conversion, B151 the login command and B068 final pricing integration; no managed-file hook is introduced here.
+  - B3661 owns generic guardrail metadata conversion (BaseTranslation user metadata), B8375 the login command and B068 final pricing integration; no managed-file hook is introduced here.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as mistral_ocr_translation in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/mistral_ocr_translation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/mistral_ocr_translation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Mistral and Codestral key and base precedence settings belong in their own sections, crates/betterlite-config/src/sections/mistral_credentials.rs and sections/codestral_credentials.rs, each a Section over its own env keys. They do not belong under src/providers, since providers/xai.rs and providers/mistral.rs there are leaf settings owned by B1400 through B1413.

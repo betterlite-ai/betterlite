@@ -17,6 +17,12 @@ description: >-
   LiteLLM's writer_wrapper; B709 for schema definitions of LiteLLM_Lens, LiteLLM_LensRun
   and LiteLLM_LensWorker tables. Use Decimal for monetary amounts in Worker records
   consistently with B4500.
+
+  Signatures that B4505 calls. `update<E>(&self, lens_id: &str, transform: impl FnMut(Lens) -> Result<Lens, E>, attempts: u32, changed_only: bool) -> Result<Option<Lens>, LensUpdateError<E>>`,
+  where `LensUpdateError<E>` is `Repository(LensRepositoryError)` or `Transform(E)`. The transform is fallible because LiteLLM's sample freeze raises a 409 inside it
+  (endpoints.py L411-L416): an `Err` from the transform ends `update` at once with `Transform(e)`, writes nothing and is not retried. Only a lost version race retries, and
+  the transform runs again on the fresh lens each time (hence `FnMut`). Callers whose transform cannot fail use `Infallible` as `E`.
+  `heartbeat(&self, worker_id: &str, now: &str) -> Result<(), LensRepositoryError>` takes the timestamp as text, the Python isoformat string, and stores it as text in `last_seen` (repository.py L160-L165); it does not parse or reformat it.
 scope:
   paths:
     - crates/betterlite-db/src/lens_repository.rs
@@ -51,6 +57,8 @@ dod:
     proof: [lens-create-tests]
   - text: update(lens_id, transform, attempts=8, changed_only=False) performs up to eight optimistic-update attempts, calling _try_update each time.
     proof: [optimistic-update-tests]
+  - text: A transform that returns Err ends update at once with LensUpdateError::Transform, runs no CTE write and is not retried, while a lost version race still retries the transform up to the attempt count.
+    proof: [optimistic-update-tests]
   - text: "_try_update fetches the current lens, applies the transform, checks version equality with a CTE, archives displaced jobs only on successful update, and returns (completed, updated) tuple where completed indicates success."
     proof: [version-race-tests]
   - text: "update(lens_id, ...) returns None immediately without attempting the CTE when the lens_id does not exist in the database."
@@ -71,7 +79,7 @@ dod:
     proof: [revocation-aware-update-tests]
   - text: revoke_worker(worker_id) sets the revoked flag to true in the worker's data jsonb.
     proof: [worker-revocation-tests]
-  - text: heartbeat(worker_id, now) updates the last_seen timestamp in the worker's data jsonb.
+  - text: heartbeat(worker_id, now) updates the last_seen timestamp in the worker's data jsonb. now is the isoformat text and is stored unchanged.
     proof: [worker-heartbeat-tests]
 checks:
   optional: []

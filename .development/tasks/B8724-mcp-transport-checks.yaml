@@ -1,0 +1,127 @@
+id: B8724
+title: MCP transport request checks and routing peeks
+description: >-
+  The skeleton already declares this task's fuzz [[bin]] with an empty target file; fill that target and add the crate dependency it needs, without a second [[bin]] entry.
+
+
+  Before an MCP request reaches a transport, server.py runs a set of small checks and readers over the raw request: the Origin check, the protocol version check, the client application allowlist, the server names in the path, the caller fingerprint that binds a session, and peeks into the first bytes of the body. They are pure functions over headers, paths and bytes, so they get helper oracle cases. Code goes in betterlite-server, module mcp::transport_checks (crates/betterlite-server/src/mcp/transport_checks.rs) with the submodules gates, routing and peek, each with a tests.rs. Headers come in as http::HeaderMap; a lookup by name is case insensitive and takes the first value unless a step says all values.
+
+
+  gates.
+
+  1. reject_disallowed_origin(origins: &[String], headers) -> Result<(), McpHttpError> is reject_disallowed_mcp_origin. origins is the CORS list B8591's cors_config builds from LITELLM_CORS_ORIGINS (["*"] when unset). When "*" is not in it and any Origin header value (all of them) is not in it, fail with 403 and detail "Invalid Origin header".
+
+  2. unsupported_protocol_version(headers, configured: &[String]) -> Option<String>: every mcp-protocol-version value decoded as Latin-1 and trimmed; the first non-empty value outside configured is returned. version_refusal(value, configured) is the 400 body LiteLLM sends: {"jsonrpc": "2.0", "id": null, "error": {"code": -32600, "message": "Unsupported MCP-Protocol-Version <value>; supported: <configured joined by \", \">"}}. B8727 passes B8190's configured_versions().
+
+  3. proxy_error_to_http(code: Option<&str>, message, headers) -> McpHttpError is _proxy_exception_to_http_exception: status is the code parsed as an integer after trimming, else 500; detail is the message; headers are kept, and an empty map counts as none.
+
+  4. The client allowlist. allowlist_from_settings(general_settings) -> Option<McpClientAllowlist> calls B8191's load_mcp_client_allowlist on the general_settings snapshot it is given; it is LiteLLM's _load_mcp_client_allowlist, which re-reads general_settings on every request, so the caller passes the current snapshot each time. jwt_client_field_set(general_settings) -> bool is true when that allowlist exists and its jwt_field is set; B8621 fills B4666's jwt_client_field_set from it. reject_disallowed_client(allowlist: Option<&McpClientAllowlist>, headers, auth: Option<&UserAPIKeyAuth>) -> Result<(), McpHttpError> is reject_disallowed_mcp_client: an auth that B4672's is_ui_session_credential accepts passes untouched; otherwise B8191's check_mcp_client_allowed with the auth's jwt_claims (None without auth) and the headers; a rejection logs the warning "Rejected MCP request from a disallowed client application: {details}" and fails with 403 whose detail is the rejection's response body object {"error": "Forbidden", "details": ...}.
+
+  McpHttpError { status: u16, detail: serde_json::Value, headers: Vec<(String, String)> } is the error every check returns; B8727 renders it.
+
+
+  routing.
+
+  5. servers_in_path(path) -> Option<Vec<String>> is _get_mcp_servers_in_path, all branches: "/mcp/sse" and "/mcp/sse/messages" (trailing slashes ignored) give None; when the first two non-empty segments are X and "mcp" with X not "mcp", Some([X]); otherwise a match of ^/mcp/([^?#]+) where the captured text holds a comma: strip a trailing path that matches /([^/,]+(/[^/,]+)*)$ and split the rest on commas, trimmed, empties dropped; without a comma the name is the first one or two segments (^([^/]+(/[^/]+)?)); no match gives None. B4654's extract_target_server_names_from_path is not a replacement: it turns None into an empty list, and here None means "use the x-mcp-servers header" while Some(empty) overrides it.
+
+  6. session_id_header(headers) -> Option<String> is _get_session_id_from_scope (first mcp-session-id).
+
+  7. owner_fingerprint(auth: Option<&UserAPIKeyAuth>, oauth2_headers: Option<&BTreeMap<String, String>>, client_ip: Option<&str>) -> String is _owner_fingerprint_for, first match wins: a non-empty api_key gives "key:" plus the lowercase SHA-256 hex of its UTF-8 bytes; a non-empty user_id gives "user:" plus its hash; a non-empty oauth2 "Authorization" (else "authorization") gives "oauth:" plus its hash; a non-empty client ip gives "ip:" plus its hash; else "anonymous".
+
+  8. authorization_header(headers) is the first Authorization value decoded as Latin-1. forwarded_authorization(headers) is _get_forwarded_auth_from_scope: that value only when an x-litellm-api-key header is present, else None.
+
+
+  peek.
+
+  9. PEEK_LIMIT is 4096 (_MCP_ROUTING_PEEK_MAX_BYTES). peek_routing_body(body: axum::body::Body) -> (Body, Bytes) is _read_request_body_for_routing: read frames until the body ends or PEEK_LIMIT bytes have been kept, keep at most PEEK_LIMIT bytes for sniffing, and return a body that replays every frame read so far followed by the rest of the original stream, so a large body is never buffered whole.
+
+  10. is_initialize_request(bytes) is _is_initialize_request: empty is false, bytes that parse as a JSON object with "method" equal to "initialize" are true, anything else is false.
+
+  11. initialize_client_info(bytes) -> Option<ClientInfo> is _extract_initialize_client_info: the bytes must validate as the SDK's InitializeRequest (method "initialize", params with protocolVersion, capabilities and clientInfo with name and version, under their camelCase names); then the clientInfo name and version, else None.
+
+  12. has_top_level_method(text) is _jsonrpc_text_has_top_level_method, ported character for character: a depth aware scan of a possibly truncated envelope that is true only when a key named method is found at the root object's depth.
+
+  13. is_jsonrpc_response(bytes) is the inline test in handle_streamable_http_mcp: when the bytes parse as JSON, true for an object with "jsonrpc" equal to "2.0", an "id" key, no "method" key and a "result" or "error" key; when they do not parse (the peek cut them), true when the lossy UTF-8 text contains "\"jsonrpc\"" and "\"result\"" or "\"error\"" and has_top_level_method is false.
+
+  Fuzz: the cargo-fuzz target mcp_routing_peek in crates/betterlite-server/fuzz feeds arbitrary bytes to is_initialize_request, initialize_client_info and is_jsonrpc_response, and their lossy text to has_top_level_method. Corpus in crates/betterlite-server/fuzz/corpus/mcp_routing_peek, replay test replays_the_mcp_routing_corpus in peek's tests.
+
+
+  Helper oracle cases (kind: helper, the b8724 operation) in tools/oracle/cases/helpers/mcp-transport-checks/ compare against LiteLLM's server.py functions: servers-in-path (_get_mcp_servers_in_path over the sse paths, the /{server}/mcp form, comma lists with and without a tail, a slash inside a name, "/mcp", "/mcp/" and "/mcp/,,"), owner-fingerprint (_owner_fingerprint_for for each branch and the empty string cases), initialize-detection (_is_initialize_request), client-info (_extract_initialize_client_info with a full, a partial and a broken initialize), top-level-method-scan (_jsonrpc_text_has_top_level_method with nested and truncated envelopes) and forwarded-authorization (_get_forwarded_auth_from_scope with and without x-litellm-api-key).
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/transport_checks.rs
+    - crates/betterlite-server/src/mcp/transport_checks/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/mcp_routing_peek.rs
+    - crates/betterlite-server/fuzz/corpus/mcp_routing_peek/**
+    - tools/oracle/cases/helpers/mcp-transport-checks/**
+    - "tools/oracle/fuzz/corpus/helper_case/mcp-transport-checks-*"
+    - tools/oracle/helpers/b8724.py
+    - tools/oracle/helpers/b8724/**
+    - tools/oracle/src/helpers/server/b8724.rs
+    - tools/oracle/src/helpers/server/b8724/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L107-L143
+    why: The peek limit, the protocol version header name, reject_disallowed_mcp_origin and unsupported_protocol_version.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L194-L245
+    why: _jsonrpc_text_has_top_level_method.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L414-L433
+    why: _proxy_exception_to_http_exception.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1074-L1137
+    why: _get_mcp_servers_in_path, _load_mcp_client_allowlist and reject_disallowed_mcp_client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1173-L1258
+    why: The session id reader, the owner fingerprint, the initialize test and the client info reader.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1377-L1425
+    why: _read_request_body_for_routing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1826-L1852
+    why: The Authorization readers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/client_allowlist.py#L114-L171
+    why: load_mcp_client_allowlist and check_mcp_client_allowed, which B8191 builds.
+dod:
+  - text: The Origin, protocol version, proxy error and client allowlist gates refuse with LiteLLM's status and body, skip the allowlist for a dashboard session, and jwt_client_field_set answers from the allowlist's jwt_field.
+    proof: [gates-tests]
+  - text: servers_in_path keeps LiteLLM's None and empty list answers apart on every branch.
+    proof: [routing-tests, oracle]
+  - text: owner_fingerprint picks key, user, oauth, ip or anonymous in LiteLLM's order with its hashes, and forwarded_authorization returns Authorization only next to x-litellm-api-key.
+    proof: [routing-tests, oracle]
+  - text: peek_routing_body keeps at most 4096 bytes and the returned body replays the whole request; the initialize, client info, top level method and response tests match LiteLLM.
+    proof: [peek-tests, oracle]
+  - text: Newly added corpus entries for the routing peeks replay without panic.
+    proof: [routing-corpus]
+checks:
+  optional: []
+  commands:
+    - id: gates-tests
+      why: a gate's condition, status or body differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::transport_checks::gates::/)'
+    - id: routing-tests
+      why: the path servers, the session header, the fingerprint or the Authorization readers differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::transport_checks::routing::/)'
+    - id: peek-tests
+      why: the peek limit, the body replay or a body test differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::transport_checks::peek::/) - test(replays_the_mcp_routing_corpus)'
+    - id: routing-corpus
+      why: the routing peeks have no adversarial replay cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/mcp_routing_peek)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_mcp_routing_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-transport-checks/servers-in-path.yaml
+  - tools/oracle/cases/helpers/mcp-transport-checks/owner-fingerprint.yaml
+  - tools/oracle/cases/helpers/mcp-transport-checks/initialize-detection.yaml
+  - tools/oracle/cases/helpers/mcp-transport-checks/client-info.yaml
+  - tools/oracle/cases/helpers/mcp-transport-checks/top-level-method-scan.yaml
+  - tools/oracle/cases/helpers/mcp-transport-checks/forwarded-authorization.yaml
+deviations: []
+out_of_scope:
+  - "load_mcp_client_allowlist, check_mcp_client_allowed and the rest of client_allowlist.py: B8191. is_ui_session_credential: B4672. configured_versions: B8190. The CORS origin list: B8591."
+  - "Where each check runs and how its error is rendered: B8727."
+pitfalls:
+  - "The Origin check reads every Origin header, so a request with one allowed and one unknown Origin is refused."
+  - "\"/mcp/,,\" gives Some of an empty list, which replaces the header servers with nothing; \"/mcp/sse\" gives None, which keeps them."
+  - "owner_fingerprint skips empty strings at every step, so an empty api_key falls through to user_id, not to a hash of the empty string."
+  - "has_top_level_method must ignore a method key nested in a result object; reading it as top level would take the session lock and deadlock the tool call that waits for this response."
+  - "The peek keeps at most 4096 bytes for sniffing but the replayed body must carry every frame it read, including the part past the limit."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

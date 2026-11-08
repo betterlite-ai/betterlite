@@ -1,0 +1,72 @@
+id: B7924
+title: Python types for Bedrock embeddings, images, rerank, batches, AgentCore and Invoke Agent (types/llms/bedrock L495-L1261 and two agent files)
+description: >-
+  Bedrock's non-Converse calls have their own request and response shapes, and users import them from
+  `litellm.types.llms.bedrock`, `litellm.types.llms.bedrock_agentcore` and `litellm.types.llms.bedrock_invoke_agents`. This
+  task ports L495-L1261 of the first file and both agent files into `crates/betterlite-python/python/betterlite/types/llms/bedrock/invoke/` and
+  `crates/betterlite-python/python/betterlite/types/llms/bedrock_agentcore.py` plus `crates/betterlite-python/python/betterlite/types/llms/bedrock_invoke_agents.py`. It is Python only. The umbrella B167 writes
+  `llms/bedrock/__init__.py`, which merges this part with B7923.
+
+
+  From bedrock.py: the Cohere and Amazon Titan embedding requests and responses (L498-L560), the TwelveLabs Marengo embedding and
+  async invoke shapes (L565-L727, including the Marengo 3 segmentation, input and request classes), the Nova embedding shapes
+  (L751-L851), Stability, Nova Canvas and Titan image shapes (L857-L1010), `BedrockPreparedRequest`, the rerank request classes
+  (L1021-L1068), `AmazonDeepSeekR1StreamingResponse`, the batch input, output and tag classes (L1080-L1190), `AwsAuthParams`,
+  `BedrockCreateBatchRequest`, `BedrockCreateBatchResponse`, `BedrockGetBatchResponse`, `BedrockToolBlock`,
+  `BedrockInvokeAnthropicMessagesRequest` and `BedrockBatchRecordKind`. Several short names between the classes (L561, L594-L597,
+  L618, L691, L728-L748, L852) are type aliases or Literals; keep each one.
+
+
+  `bedrock_agentcore.py` holds 17 TypedDicts for the AgentCore request, the streamed events and the parsed response.
+  `bedrock_invoke_agents.py` holds 16 TypedDicts for Invoke Agent event headers, traces, chunk payloads and events.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/llms/bedrock/invoke/**
+  - crates/betterlite-python/python/betterlite/types/llms/bedrock_agentcore.py
+  - crates/betterlite-python/python/betterlite/types/llms/bedrock_invoke_agents.py
+  - crates/betterlite-python/tests/test_types_bedrock_invoke_agents.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L495-L1010
+  why: Embedding, Marengo, Nova, image and prepared request shapes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L1021-L1261
+  why: Rerank, batch, auth and Anthropic invoke request shapes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock_agentcore.py#L1-L134
+  why: AgentCore request, event and parsed response types.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock_invoke_agents.py#L1-L129
+  why: Invoke Agent trace and event types.
+dod:
+- text: Every name in the three LiteLLM files from this range exists with the same keys, required keys and Literal values.
+  proof: [names]
+- text: Aliases and Literals between the classes (batch record kind, Marengo input kinds, Nova embedding purpose lists) hold the same values.
+  proof: [aliases]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A request or event shape is missing a name or key.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_bedrock_invoke_agents.py -k names
+  - id: aliases
+    why: A Literal or alias differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_bedrock_invoke_agents.py -k aliases
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+- >-
+  L1-L494 of bedrock.py belongs to B7923. Nothing in the agent files is skipped.
+pitfalls:
+- >-
+  `TwelveLabsMarengo3MultiInput` and the Marengo 3 request classes share `TwelveLabsMarengo3RequestBase` (L657); keep the base so the keys do not repeat.
+- >-
+  `BedrockToolBlock` (L1191) is a different name from the Converse `ToolBlock` in B7923; keep both exports.
+- >-
+  `AwsAuthParams` (L1117) carries credentials. The port is a plain TypedDict and nothing in it may log values.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

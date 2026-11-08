@@ -1,0 +1,18 @@
+id: B8521
+milestone: M6 guardrails
+title: Third-party guardrail registry arms
+status: todo
+depends_on: [B3662, B3681, B3682, B8210, B8211, B8212, B8213, B8214, B8215, B8216, B8217, B8218, B8219, B8254, B8290, B3702, B3765, B3776, B3777, B3780, B3783, B3784, B3785, B3792, B3793, B3794, B3803, B3809, B3815]
+file: tasks/B8521-hook-registry-arms.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_registry.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/alice/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/cato_networks/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/dynamoai/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/enkryptai/__init__.py"
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,122 @@
+id: B8215
+title: Singulr guardrail
+description: >-
+  Build the Singulr guardrail in betterlite-guardrails, module singulr, with singulr/init.rs for the initializer in
+  singulr/__init__.py. It posts chat requests, chat responses and MCP tool calls to the Singulr gateway and blocks when
+  the answer says so. Supported hooks: pre_call, post_call, logging_only, pre_mcp_call and post_mcp_call.
+
+  Settings. singulr_api_key is the argument or SINGULR_API_KEY. singulr_api_base is the argument, else SINGULR_API_BASE,
+  else "http://localhost:8003", trimmed and with trailing slashes cut. A plain http base whose host is not "localhost"
+  or "127.0.0.1" is refused at start with a message that says the endpoint must use HTTPS (the text names the base and
+  never the key). singulr_application_id is the argument or SINGULR_ENFORCEMENT_ENTITY_ID. singulr_guardrail_id is the
+  argument or SINGULR_GUARDRAIL_ID. block_on_error is the argument when set, else SINGULR_BLOCK_ON_ERROR (default
+  "true"; "true", "1" and "yes" in any case are true). The timeout is the argument or 30.0.
+
+  Request headers: Content-Type: application/json, X-Singulr-Gateway-Token (the key), X-Singulr-Enforcement-Entity-Id
+  (application id) and X-Singulr-Guardrail-Id, with every header whose value is empty left out. Every call is a POST to
+  api_base + "/api/v1/ai-gateway/litellm-v2" through the pooled guardrail client (B173) with the timeout above.
+
+  Answer: JSON with should_block (bool, default false) and blocking_due_to (optional string). Failures of the call: an
+  HTTP error status, a transport error, or an answer that does not parse into that shape. Each is logged at error
+  level. With block_on_error true each raises GuardrailRaisedException with the message "Singulr API returned HTTP
+  <status>: <body>", "Singulr API unreachable (block_on_error=True): <error>" or "Singulr API returned an invalid
+  response: <error>". With block_on_error false the call counts as allowed. A should_block answer raises
+  GuardrailRaisedException with status 400, blocked_content true and the message "Blocked by Singulr, Blocking due to
+  <blocking_due_to or 'unknown'>".
+
+  Metadata. Four containers are searched in this order: request_data.litellm_metadata, request_data.metadata,
+  request_data.litellm_params.litellm_metadata, request_data.litellm_params.metadata; empty ones are skipped. The first
+  non-empty value wins for each of user_api_key_alias, user_api_key_user_id, user_api_key_user_email,
+  user_api_key_org_id, user_api_key_org_alias, user_api_key_team_id and user_api_key_team_alias. user_api_key_user_role
+  is the role string of the first container whose "user_api_key_auth" holds a key auth object with a role. The metadata
+  sent is the map of the non-empty values, or none when all are empty.
+
+  apply_guardrail(inputs, request_data, input_type, logging_obj). A call is an MCP call when the logging object's call
+  type, or else request_data.call_type, is "call_mcp_tool"; when neither exists, it is an MCP call if request_data has
+  "mcp_tool_name" or the model starts with "MCP:". Four cases:
+  - request, chat: messages are structured_messages when not empty, else one user message per text. With no messages,
+    no images and no tools, return inputs. The payload is {correlation_id: request_data.litellm_call_id, model_name:
+    inputs.model, guardrail_scope: "request", messages, images, tools, metadata}.
+  - request, MCP: payload {guardrail_scope: "mcp_request", tool_name (mcp_tool_name, else name), tool_arguments
+    (mcp_arguments, else arguments), mcp_server_name, metadata}. Return inputs after the check.
+  - response, chat: content is the texts joined by a newline (none when no texts). Each tool call in inputs.tool_calls
+    becomes {id, type (default "function"), function {name, arguments}}, where object arguments are written as JSON
+    text, and a call missing its id, function, name or arguments is skipped. The payload is {correlation_id,
+    guardrail_scope: "response", model_name: request_data.model, messages: request_data.messages, images, response:
+    {role: "assistant", content, tool_calls}, metadata}.
+  - response, MCP: with no texts return inputs. Payload {model_name: request_data.model, guardrail_scope:
+    "mcp_response", tool_result: texts, metadata}.
+  Any other input_type returns inputs. Keys with no value are written as JSON null, as pydantic does.
+
+  initialize_singulr(params, guardrail_name) in singulr/init.rs returns SingulrArgs. singulr_api_base is
+  params.singulr_api_base, else params.api_base. singulr_api_key is params.singulr_api_key, else params.api_key. The
+  application id, guardrail id and block_on_error copy through, and so do timeout, event_hook, default_on and the name
+  (empty string when absent).
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/singulr.rs
+    - crates/betterlite-guardrails/src/singulr/**
+    - tools/oracle/cases/guardrails/singulr-*.yaml
+    - tools/oracle/helpers/b8215.py
+    - tools/oracle/helpers/b8215/**
+    - tools/oracle/src/helpers/guardrails/b8215.rs
+    - tools/oracle/src/helpers/guardrails/b8215/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/singulr/singulr.py
+    why: The SingulrGuardrail class, with the metadata helpers, the four payload builders, _call_api and apply_guardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/singulr/__init__.py
+    why: The initializer, which falls back from the singulr_ fields to api_base and api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/singulr.py
+    why: The payload and answer models and the config model.
+
+dod:
+  - text: Settings resolve from the argument, then the environment, then the default, and plain http to a non-local host is refused.
+    proof: [unit-tests]
+  - text: Headers leave out empty values and the metadata follows the container order.
+    proof: [unit-tests]
+  - text: The four cases (chat request, chat response, MCP request, MCP response) send the documented payloads.
+    proof: [oracle]
+  - text: A should_block answer raises with status 400 and the documented message.
+    proof: [oracle]
+  - text: HTTP, transport and parse failures raise when block_on_error is true and pass when it is false.
+    proof: [oracle]
+  - text: The initializer falls back from the singulr_ fields to api_base and api_key.
+    proof: [init-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: unit-tests
+      why: a unit test of the singulr module fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^singulr::/)'
+    - id: init-tests
+      why: the initializer arguments differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^singulr::init::/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/singulr-request-allowed.yaml
+  - tools/oracle/cases/guardrails/singulr-request-blocked.yaml
+  - tools/oracle/cases/guardrails/singulr-response-tool-calls.yaml
+  - tools/oracle/cases/guardrails/singulr-mcp-request.yaml
+  - tools/oracle/cases/guardrails/singulr-mcp-response.yaml
+  - tools/oracle/cases/guardrails/singulr-http-error.yaml
+
+deviations:
+  - what: The initializer returns SingulrArgs and registers nothing.
+    why: B3682 owns the registry and the registration, as with B3681.
+
+out_of_scope:
+  - The guardrail base class and event hook plumbing (B5471).
+  - The initializer registry and the callback registration (B3682).
+  - The Python payload and config model classes (B7935).
+
+pitfalls:
+  - The timeout is set after the base constructor runs, so a timeout in the base kwargs never wins over the argument or 30.0.
+  - A tool call without an id is dropped from the response payload, not sent with an empty id.
+  - The HTTP status failure message includes the response body text.
+  - The MCP check uses the logging object's call type first and the request fields only when that is absent.
+review_level: standard
+budget:
+  max_changed_lines: 1800
+  max_new_expects: 0

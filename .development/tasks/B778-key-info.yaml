@@ -24,7 +24,7 @@ description: >-
   compare those fields; error messages identify missing key, access denial or database failure
   with betterlite wording under README Decisions.
 
-  POST /v2/key/info is hidden from OpenAPI and has no management wrapper. B124 KeyRequest requires
+  POST /v2/key/info is hidden from OpenAPI and has no management wrapper. B8411 KeyRequest requires
   at least one truthy keys/key_aliases list; a null body has the route's 422 missing-data error.
   Copy keys or start with [], append non-null tokens found by alias, and avoid any token query
   when that list is empty. No rows returns an empty info array; inaccessible rows are silently
@@ -33,15 +33,15 @@ description: >-
   including null for aliases-only requests, and info follows query order. Cases v2_aliases_only,
   v2_keys_plus_aliases, v2_unknown_alias_no_unbounded_query, v2_missing_rows_empty,
   v2_foreign_rows_filtered, v2_dump_fallback, v2_projection_difference and v2_null_body_422 cover
-  these paths. The route's L4340-L4343 except block applies B124 handle_exception_on_proxy, so
+  these paths. The route's L4340-L4343 except block applies B2400 handle_exception_on_proxy, so
   its explicit 422 becomes internal_server_error/code 422; schema validation still precedes it.
 
   Both routes prefer a truthy row model_max_budget, otherwise the budget relation's dict value,
-  and call B071 build_model_max_budget_usage with entity_type KEY and the key hash. B770 parses
+  and call B3005's build_model_max_budget_usage with entity_type KEY and the key hash. B770 parses
   stored budget windows; no windows omits budget_limits_usage, while windows with no nonempty
   string budget_duration produce {}. Concurrent window reads retain input order, with duplicate
-  durations taking the last result. B124 get_current_spend receives spend:key:<hash>:window:<duration>,
-  fallback_spend 0.0, window_entity_type Key, entity ID/hash, duration and B071 get_budget_window_start.
+  durations taking the last result. B2321 get_current_spend receives spend:key:<hash>:window:<duration>,
+  fallback_spend 0.0, window_entity_type Key, entity ID/hash, duration and B2325's get_budget_window_start (betterlite_auth::budget_primitives::window_start::budget_window_start).
   max_budget accepts numeric values or float-parseable strings, including bool as 0/1; absent,
   unsupported and unparsable values become null. Round current_spend to four decimals. V2 requires
   a truthy token before usage lookup; GET calls the window helper regardless. Cases
@@ -105,8 +105,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/key_info.rs
     - crates/betterlite-server/src/routes/key_info/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-info/**
     - tools/oracle/helpers/b778.py
     - tools/oracle/helpers/b778/**
@@ -166,7 +164,7 @@ oracle_cases:
   - tools/oracle/cases/management/key-info/other-user-denied.yaml
 deviations: []
 out_of_scope:
-  - B071 owns model usage and budget-window start calculations; B124 owns get_current_spend,
+  - B3005 owns model usage and B2325 budget-window start calculations; B2321 owns get_current_spend,
     get_data, KeyRequest and exception projection. B770 owns stored-window decoding and prefix
     hashing; B2314 owns its hash implementation. This task never reconstructs a stored secret.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),

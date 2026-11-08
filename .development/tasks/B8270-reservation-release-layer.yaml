@@ -1,0 +1,80 @@
+id: B8270
+title: Release unclaimed budget reservations when a request ends
+description: >-
+  Build `release_layer` in betterlite-server, the port of LiteLLM's `BudgetReservationReleaseMiddleware`. It is a tower layer that wraps the whole router. When a request has finished, it looks for the budget reservation that authentication stamped for that request and, if no cost callback has claimed it, releases it. Without this, a handler that never starts a logged LLM call (batch cancel, file content, any route with no cost callback) leaves its reservation pinned on the spend counters until the reservation's TTL runs out.
+
+  Why a slot. LiteLLM reads `request.state.budget_reservation` after the app returns, and auth writes it there while the request runs. A Rust request is moved into the handler, so the layer cannot read request extensions afterwards. Instead the layer puts a `ReservationSlot` into the request extensions before it calls the inner service and keeps a clone. `ReservationSlot` is a cheap clone around a shared cell holding `Option<ReservationHandle>`, with `set(handle)` and `take()`. B1225 is the code that, after a successful or skipped reservation, copies the token's reservation to request state; it calls `ReservationSlot::set` there and depends on this task. This task owns the slot type and exposes it.
+
+  `ReservationHandle` is the reservation record B3003 defines in betterlite-auth::reservation_settlement (the same shared record the `callback_bound` and `finalized` stamps live on). Use that type; do not copy it. The layer takes the release step through a constructor argument, a trait `ReservationReleaser` with one async method `release(&self, reservation: &ReservationHandle)`. B8481 wires it to B3003's `release_unbound_budget_reservation`, which does nothing when `callback_bound` is true and otherwise calls `release_or_invalidate_budget_reservation`. This task does not decide whether to release; it only calls the releaser for every stamped reservation and lets B3003 skip the bound ones, as LiteLLM does.
+
+  Behavior, in order. (1) Only HTTP requests are wrapped. A request whose scope is not http or websocket passes through untouched (the lifespan scope in ASGI; in Rust there is no such request, so the layer wraps every request). (2) Insert the slot, call the inner service, and keep the result. (3) After the inner service returns, whether it returned a response or an error, take the slot. If it holds a reservation, await `release`. If the slot is empty, do nothing. (4) Return the inner result unchanged. A failure of `release` is returned to the layer's caller as a logged error only; it never replaces the response (LiteLLM's `finally` block would let the exception from release propagate, but B3003's release function already catches its own failures and invalidates the counters, so the layer has nothing left to report; log at `error` if the trait returns an error and still return the inner response).
+
+  Timing. The release runs when the handler future completes, which for a streaming response is when the response head is built, not when the last body chunk is sent. LiteLLM's ASGI middleware waits until the whole response is sent. Streaming handlers always run a cost callback that claims the reservation (`callback_bound`), so the early call finds a bound reservation and does nothing. Record this in the deviations.
+
+  Module layout: `crates/betterlite-server/src/middleware/budget_release.rs` for the layer and the trait, `.../budget_release/slot.rs` for the slot, and `.../budget_release/error.rs` for the error enum. The architect's skeleton declares the module in `middleware.rs` , and the edge part (B8680) installs the layer with the releaser from shared.budget, directly inside the Redis batch layer (proxy_server.py L2470 adds it just before that one, and a later `add_middleware` call wraps the earlier ones). Do not edit those files.
+scope:
+  paths:
+    - crates/betterlite-server/src/middleware/budget_release.rs
+    - crates/betterlite-server/src/middleware/budget_release/**
+    - tools/oracle/cases/budget-release/**
+    - tools/oracle/helpers/b8270.py
+    - tools/oracle/helpers/b8270/**
+    - tools/oracle/src/helpers/server/b8270.rs
+    - tools/oracle/src/helpers/server/b8270/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/budget_reservation_release_middleware.py#L1-L33
+    why: The whole middleware, including the scope filter and the finally block.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L468-L478
+    why: release_unbound_budget_reservation, the function the layer is wired to.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3170-L3205
+    why: Where auth stamps request.state.budget_reservation, with the comment that the release middleware reads it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2470
+    why: The add_middleware line that fixes the layer's place in the stack.
+dod:
+  - text: A request whose handler stamps a reservation into the slot and returns gets exactly one release call with that reservation, after the handler has returned.
+    proof: [layer-tests]
+  - text: A request that stamps nothing gets no release call, and the handler's response is returned unchanged.
+    proof: [layer-tests]
+  - text: A handler that fails (an error response or an error from the inner service) still gets its stamped reservation released, and the original result is returned unchanged.
+    proof: [layer-tests]
+  - text: A releaser that returns an error is logged and does not change the response.
+    proof: [layer-tests]
+  - text: Two concurrent requests each release only their own reservation.
+    proof: [layer-tests]
+  - text: A request that does not need a database and has no reservation answers the same status and body as before the layer was installed (booted proxy).
+    proof: [new-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: layer-tests
+      why: the layer does not release a stamped reservation, releases an unstamped one, or changes the response
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::budget_release::tests::/)'
+    - id: new-cases
+      why: the layer has no booted-proxy parity case on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/budget-release)"
+oracle_cases:
+  - tools/oracle/cases/budget-release/health-liveness-unchanged.yaml
+  - tools/oracle/cases/budget-release/unauthorized-unchanged.yaml
+deviations:
+  - what: The reservation moves from the request to the layer through a ReservationSlot in request extensions, where LiteLLM reads request.state.
+    why: A Rust request is consumed by the handler, so state written during the request cannot be read from the request afterwards.
+  - what: The release runs when the inner service returns, which for a streaming response is before the last body chunk is sent.
+    why: The layer sees the response head only. Streaming calls are claimed by their cost callback (callback_bound), so the early call is a no-op for them.
+  - what: A websocket upgrade is released when the upgrade response is returned, not when the socket closes.
+    why: An axum upgrade handler returns before the socket task ends. The realtime route (B1125) releases its own reservation on close.
+out_of_scope:
+  - "release_unbound_budget_reservation, release_or_invalidate_budget_reservation and the callback_bound and finalized stamps: B3003."
+  - "Copying the token's reservation into the slot after admission: B1225 calls ReservationSlot::set (its text says so)."
+  - "The order of layers in the stack: B122. Installing this layer with its releaser: the edge part (B8680)."
+  - "The realtime route's own release on socket close: B1125."
+pitfalls:
+  - "The slot is written during the request and read after it, so it must be shared (an Arc around a mutex-guarded option), not stored in the request that the handler consumes."
+  - "Take the reservation out of the slot when releasing, so a second layer pass or a retry can never release it twice; B3003's finalized stamp is the second guard, not the first."
+  - "A reservation with callback_bound true must reach the releaser anyway; the skip decision lives in B3003's function, and tests here use a fake releaser that records every call."
+  - "The inner service can return an error value instead of a response; release in both cases before returning the result."
+  - "Do not hold the slot's lock across the await on release."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

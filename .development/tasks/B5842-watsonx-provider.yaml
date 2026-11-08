@@ -122,7 +122,7 @@ out_of_scope:
   - B5970 owns IBMWatsonXMixin, get_api_params, the IAM token, WatsonxError and the endpoint paths used here.
   - B5971 owns chat and B5972 owns text generation and the prompt functions.
   - B1013 owns BaseRerankConfig and the rerank records, B515 the Whisper config this one extends, B1001 process_audio_file, and B3570 BasePassthroughConfig and format_url. get_models on the passthrough config only calls the base method, which B3570's covers own.
-  - B3627 owns the /watsonx proxy route in llm_passthrough_endpoints.py, including the version query parameter it adds. B042 owns the main.py and rerank_api/main.py credential call sites, dispatch wiring and HTTP oracle cases.
+  - B3627 owns the /watsonx proxy route in llm_passthrough_endpoints.py, including the version query parameter it adds. B8331 owns the main.py credential call site (the watsonx embedding arm), the embedding and rerank config selection branches, dispatch wiring and HTTP oracle cases; B1079 owns the watsonx branch of rerank_api/main.py.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as b5842 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task''s to edit.'
   - Embedding deployment models get no deployment path because EMBEDDINGS has no placeholder, so format changes nothing.

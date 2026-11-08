@@ -1,11 +1,12 @@
 id: B085
 title: Rerank routes
 description: >-
-  Mount POST /v2/rerank, /v1/rerank and /rerank once, with B756 authentication and B124 proxy hooks.
+  Mount POST /v2/rerank, /v1/rerank and /rerank once, with B756 authentication and the proxy hooks: B8393's pre-call hook (`PreCallHook::run`), B8395's failure hook (`post_call_failure_hook`) and B8395's `update_request_status`.
   Implement the complete endpoints.py handler in betterlite-server::api::rerank_routes. Decode
   its JSON object body, overwrite body.litellm_call_id with B004's resolved x-litellm-call-id,
   prepare authenticated request data with B1103, then await the pre-call hook with call_type=rerank.
-  B014 route_request uses route_type=arerank and B1014 executes it. Preserve unknown body fields;
+  route_request with route_type=arerank calls the router's arerank, which B8352's `RouterSingleCalls`
+  runs (deployment pick and fallbacks), and B1014's arerank executes the chosen call. Preserve unknown body fields;
   this route does not declare query or documents as FastAPI-required fields. Do not add an HTTP
   422 schema check that runs before the SDK. Neither URL query parameters nor path aliases
   change the rerank payload.
@@ -24,7 +25,7 @@ description: >-
   with a configured master key and B1139/B856 virtual-key fixtures where required. No helper adapter.
   Own 98 nonblank/non-comment lines including decorators, excluding imports. Budget 125 handler,
   130 tests,125 HTTP fixtures,60 fuzz/replay and 30 wiring =470 lines.
-  B1100 registers routes/rerank.rs as a stub, so fill only crates/betterlite-server/src/routes/rerank.rs and leave routes.rs and state.rs as they are.
+  B1100 registers routes/rerank.rs as a stub, so fill only crates/betterlite-server/src/routes/rerank.rs and leave routes.rs and state.rs as they are. The router side of the arerank dispatch (B8352's RouterSingleCalls) is an Option port in the route state: routes/rerank.rs passes None, so every call takes the no-router branch, until B8636 fills it from app::inference::router_calls(state).
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
@@ -98,8 +99,8 @@ oracle_cases:
 - tools/oracle/cases/rerank-routes/rerank-error-envelopes.yaml
 deviations: []
 out_of_scope:
-- The only callable in endpoints.py is owned here; B1014/B1079 own SDK rerank execution, B1103 request enrichment and B014 dispatch.
-- B004 supplies call-id resolution and custom headers; B003 owns shared error fields and ProxyException serialization; B124 proxy hooks are injected.
+- The only callable in endpoints.py is owned here; B1014/B1079 own SDK rerank execution, B1103 request enrichment and B8352 the router's arerank dispatch.
+- B004 supplies call-id resolution and custom headers; B003 owns shared error fields and ProxyException serialization; B8393's pre-call hook and B8395's failure hook and update_request_status are injected.
 pitfalls:
 - The route's JSON union puts the trusted call id on the right, so a body value cannot replace it.
 - Rerank falls back to the request call id when hidden metadata lacks one; copying image-route behavior would lose it.

@@ -1,0 +1,14 @@
+id: B8295
+milestone: M8 platform
+title: Redis request batch middleware
+status: todo
+depends_on: [B4331]
+file: tasks/B8295-redis-batch-layer.yaml
+covers:
+  - "litellm/proxy/middleware/redis_request_batch_middleware.py"
+parent: B126
+split_from: B126
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

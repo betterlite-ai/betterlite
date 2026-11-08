@@ -32,7 +32,7 @@ description: >-
   for validate_object_id. Use B737 team/alias lookup, B742 route expansion, B886 can_team_access_model,
   B871 team_model_aliases, B883 pass-through grants, B761 AgentLookup and B869 HeaderTeam.
   Move the two-line has_legacy_identity predicate from agent_endpoints/identity.py L11-L12 into
-  this leaf: the B141 registry depends on auth and cannot be called in reverse. It tests presence
+  this leaf: the B4776 registry depends on auth and cannot be called in reverse. It tests presence
   of the identity key even when its value is null. Registry reads are injected through AgentLookup.
 
   agent_absent, agent_id_before_name, agent_unknown, agent_managed, agent_identity_present and
@@ -132,8 +132,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/jwt_team_selection.rs
     - crates/betterlite-server/src/state/jwt_team_selection/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/jwt-team-selection/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-team-selection-*
@@ -267,7 +265,7 @@ oracle_cases:
   - tools/oracle/cases/auth/jwt-team-selection/provisional-header-errors.yaml
 deviations: []
 out_of_scope:
-  - B141 owns agent_endpoints/identity.py reject_legacy_identity (L15-L17) and the agent registry;
+  - B4772 owns agent_endpoints/identity.py reject_legacy_identity (L15-L17) and B4776 the agent registry;
     this task owns only its lower-level has_legacy_identity predicate and consumes AgentLookup.
   - 'litellm/proxy/auth/handle_jwt.py: B053 owns JWTAuthManager.auth_builder (L2391-L2420), JWTAuthManager.authenticate_jwt
     (L2423-L2432), JWTAuthManager.resolve_identity (L2435-L2446), JWTAuthManager._resolve_claim_identity

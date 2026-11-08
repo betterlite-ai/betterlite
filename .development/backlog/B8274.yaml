@@ -1,0 +1,15 @@
+id: B8274
+milestone: M4 keys, spend and management
+title: Serve the public agent skills index and archive routes
+status: todo
+depends_on: [B003, B2226, B3210, B3212, B7323]
+file: tasks/B8274-agent-skills-routes.yaml
+covers:
+  - "litellm/proxy/discovery_endpoints/__init__.py"
+  - "litellm/proxy/discovery_endpoints/agent_skills_endpoints.py"
+parent: B078
+split_from: B078
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,95 @@
+id: B7877
+title: Python vector_store_files functions
+description: >-
+  A vector store holds files, and `litellm.vector_store_files.create(vector_store_id=..., file_id=...)` attaches one. The
+  package has twelve functions: `create`, `list`, `retrieve`, `retrieve_content`, `update`, `delete` and an `a` twin of each.
+  The provider work is Rust (B1072 create and list, B1073 retrieve, B1074 update and delete, B1111 provider choice).
+
+
+  Native side, the family `vector_files`: `src/vector_files.rs` with `register` that adds `NativeVectorFileSession` and
+  `NativeVectorFileError`; methods `create`, `list`, `retrieve`, `retrieve_content`, `update`, `delete` and `a` twins, each
+  `(payload_text, blobs)`. Conversion is in `src/vector_files/convert.rs`, tests `request_*` and `error_*`. The architect writes
+  the `lib.rs` lines.
+
+
+  Python side, `python/betterlite/vector_store_files/main.py` and `__init__.py`, with the export list at the pin. Every
+  parameter after `*` is keyword only: `create(*, vector_store_id, file_id, attributes=None, chunking_strategy=None,
+  extra_headers=None, extra_query=None, extra_body=None, timeout=None, custom_llm_provider=None, **kwargs)`, `list(*,
+  vector_store_id, after, before, filter, limit, order, extra_headers, extra_query, timeout, custom_llm_provider)`,
+  `retrieve` and `retrieve_content` with `vector_store_id`, `file_id`, `extra_headers`, `timeout`, `custom_llm_provider`,
+  `update` with `attributes` and `extra_body`, and `delete`. A test compares signatures for all twelve. Sync functions accept
+  the flag named like their twin (`acreate=True`, `alist=True`, and so on) and return a coroutine. `_ensure_provider` (L35)
+  turns a missing provider into the default and `_prepare_registry_credentials` (L39) merges the registry key: both are Rust
+  and Python passes `custom_llm_provider` unchanged. Results are the vector store file classes from B167.
+scope:
+  paths:
+  - crates/betterlite-python/src/vector_files.rs
+  - crates/betterlite-python/src/vector_files/**
+  - crates/betterlite-python/python/betterlite/_native_vector_files.pyi
+  - crates/betterlite-python/python/betterlite/vector_store_files/**
+  - crates/betterlite-python/tests/vector_files_server.py
+  - crates/betterlite-python/tests/test_vector_store_files.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L35-L181
+  why: provider guard, registry credentials, acreate and create
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L182-L415
+  why: alist, list, aretrieve and retrieve
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L416-L644
+  why: retrieve_content and update
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L645-L730
+  why: adelete and delete
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/__init__.py#L1-L28
+  why: exports
+dod:
+- text: All twelve functions keep LiteLLM's signatures, including the keyword-only marker.
+  proof: [vsf-signature]
+- text: Create, list, retrieve, retrieve_content, update and delete give the same objects as LiteLLM against one server.
+  proof: [vsf-calls]
+- text: Each sync function returns a coroutine under its flag, and the `a` names are coroutine functions.
+  proof: [vsf-async]
+- text: A provider error keeps its class and cause, and `client` raises `UnsupportedCallArgument`.
+  proof: [vsf-error]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [vsf-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: vsf-signature
+    why: A keyword is refused or allowed positionally.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_vector_store_files.py -k signature
+  - id: vsf-calls
+    why: An object reads back different.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_vector_store_files.py -k calls
+  - id: vsf-async
+    why: The flag or coroutine is wrong.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_vector_store_files.py -k async
+  - id: vsf-error
+    why: Error class or client check is wrong.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_vector_store_files.py -k error
+  - id: vsf-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^vector_files::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for the file calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`client` is refused with `UnsupportedCallArgument`."
+  why: A Python HTTP client can't drive the Rust one (B158).
+- what: This task has no helper oracle cases.
+  why: pytest compares both packages against one local server.
+out_of_scope:
+- "`_ensure_provider` and `_prepare_registry_credentials` belong to B1111 and B1062."
+- "litellm/vector_store_files/utils.py (`VectorStoreFileRequestUtils`) belongs to B1071."
+pitfalls:
+- "`list` and `retrieve` have no `extra_body`, and `retrieve` has no `extra_query`; only `create` and `update` take a body. Keep each signature as it is."
+- "`retrieve_content` is not a prefix of `retrieve`, so a flag named `aretrieve` must not trigger the content call."
+- "`filter` shadows a builtin name in `list`; keep the name, as callers pass it by keyword."
+- "`attributes` holds scalars only, and None is not sent, but an empty dict is."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

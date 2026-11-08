@@ -2,7 +2,7 @@ id: B5656
 milestone: M12 python
 title: Completion execution, call target and model probe
 status: todo
-depends_on: [B011, B014, B196, B201, B255, B500, B502, B2204, B2219, B4122, B5364, B5367, B5368, B5651, B5654, B5655]
+depends_on: [B011, B014, B196, B201, B255, B500, B502, B2204, B2219, B4122, B5364, B5367, B5368, B5651, B5654, B5655, B8294]
 file: tasks/B5656-completion-call.yaml
 covers:
   - "litellm/main.py"

@@ -49,8 +49,10 @@ description: >-
 
   delete_team_models reads and deletes exact model IDs for all team_ids in one transaction through
   B1230's prefix-and-model_info filter. After commit, publish a config change with object_type
-  litellm_proxymodeltable only when IDs were deleted. Then under B124's MODEL_RECONCILE_LOCK remove
+  litellm_proxymodeltable only when IDs were deleted. Then under the model reconcile lock remove
   those IDs from the auto-router catalog and, if a router exists, call B302.delete_deployment for each.
+  That lock is LiteLLM's MODEL_RECONCILE_LOCK (proxy_server.py L2595). This task defines it as `ModelReconcileLock`, a
+  cloneable handle over one tokio::sync::Mutex<()> built once at startup and passed in (no static); B8381 and B8384 take the same handle.
   A publish failure leaves rows deleted and prevents the later local removal. A database rollback
   prevents both publication and router removal. Return the deleted IDs, including an empty list.
 

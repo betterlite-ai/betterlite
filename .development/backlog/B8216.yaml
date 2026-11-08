@@ -1,0 +1,14 @@
+id: B8216
+milestone: M6 guardrails
+title: Zscaler AI Guard
+status: todo
+depends_on: [B173, B3662, B5471]
+file: tasks/B8216-zscaler-ai-guard.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/zscaler_ai_guard/**"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

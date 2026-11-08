@@ -1,0 +1,238 @@
+id: B123
+title: OpenAPI document assembly, error response table and snapshot check
+description: >-
+  Build the OpenAPI document that betterlite serves at `openapi_url`, in the existing crate betterlite-openapi, on top of
+  B4230's `add_request_schema` and `JsonObject`/`JsonTree` types. The swagger pages and the `/swagger` assets are B7740's.
+  LiteLLM builds the document in `get_openapi_schema()` (proxy_server.py L1806-L1846): FastAPI's `get_openapi`, then
+  WebSocket stubs, then `CustomOpenAPISpec.add_llm_api_request_schema_body`, then lazy-feature stubs, then
+  `ensure_unique_openapi_operation_ids`, then the `servers` entry when SERVER_ROOT_PATH is set. betterlite has no FastAPI
+  to introspect, so routes arrive as plain typed data (see `RouteDoc`). The lazy-feature step does not exist (see deviations).
+
+
+  New modules, all pure, no I/O except the exporter binary:
+
+  1. `error_responses`. `error_responses() -> Vec<ErrorStatus>` with `ErrorStatus { status: u16, description: String }`, and
+  `error_response_schema() -> JsonObject`, the `ErrorResponse` component. LiteLLM builds `ERROR_RESPONSES`
+  (swagger_utils.py L1-L53) from `LITELLM_EXCEPTION_TYPES`, one entry per status where a later exception overwrites an
+  earlier one and the key keeps its first position. `get_status_code` reads a class-level `status_code` (the openai
+  subclasses have one, litellm's own classes set it only in `__init__`) and otherwise gives 408 for `Timeout`, 503 for
+  `APIConnectionError` and 500. The description is the class docstring cleaned with `inspect.cleandoc`, or the class name
+  when it has none. By reading, the final table in key order is 401 AuthenticationError, 404 NotFoundError, 400
+  ContentPolicyViolationError, 422 UnprocessableEntityError, 408 Timeout, 403 PermissionDeniedError, 429 (the cleaned
+  RateLimitError docstring, a multi-line text), 500 JSONSchemaValidationError, 503 APIConnectionError. Do not trust this
+  reading: the oracle helper's LiteLLM side must print the real table and the Rust table must equal it. The schema
+  `ErrorResponse` has one required property `detail`, an object that allows extra keys, with the example
+  `{"error": {"message": "Error message", "type": "error_type", "param": "error_param", "code": "error_code"}}`; copy its
+  exact JSON from what FastAPI emits for the pydantic model, again through the helper.
+
+  2. `operation_ids`. `stable_operation_id(name, path_format, methods) -> String` is `_generate_stable_operation_id`
+  (proxy_server.py L1648-L1653): replace every non-word character of `name + path_format` with `_`, and append `_<method
+  lowercase>` only when the route has exactly one method (methods sorted first). `ensure_unique_operation_ids(document:
+  &mut JsonObject, reserved: Option<&mut BTreeSet<String>>)` is `ensure_unique_openapi_operation_ids` (L1684-L1724) with
+  its helper `_strip_operation_id_method_suffix` (L1677-L1681), keeping the visiting order: paths in document order, then
+  methods in each path item's order, only the eight methods delete, get, head, options, patch, post, put, trace, and only
+  operations whose `operationId` is a string. An id is rewritten when it occurs more than once in the document, or is in
+  the reserved set, or was already taken by an earlier operation; the new id is the id without a trailing `_<method>`
+  plus `_<this operation's method>`, and when that is taken too, `_2`, `_3` and so on are appended after the method. After
+  the loop the used ids are copied into the reserved set when one was passed.
+
+  3. `websocket_stubs`. `inject_websocket_stubs(document, routes: &[WebsocketRoute])` is
+  `_inject_websocket_stubs_into_openapi_schema` (L1762-L1803). `WebsocketRoute { path, name: Option<String>, query_params:
+  Vec<QueryParam> }`, `QueryParam { name, required }`. For each route the stub path is the route path cut at the first `{`
+  with trailing `?` characters removed. The path item is created when absent and keeps its existing operations. A `get`
+  stub is added only when the path item has no `get`: summary `WebSocket: <name or stub path>`, description `WebSocket
+  connection endpoint`, operationId `websocket_<name>` or, with no name, `websocket_` plus the stub path with every `/`
+  replaced by `_`, parameters from the query params (`in: query`, schema `{"type": "string"}`), responses
+  `{"101": {"description": "WebSocket Protocol Switched"}}` and tags `["WebSocket"]`.
+
+  4. `llm_request_bodies`. `add_llm_request_bodies(document, schemas: &LlmRequestSchemas)` is the leftover of
+  `CustomOpenAPISpec` (custom_openapi_spec.py L14-L31 and L292-L400) that B4230 left to this task. `LlmRequestSchemas {
+  chat_completion, embedding, responses: Option<JsonObject> }` are the JSON Schemas of ProxyChatCompletionRequest,
+  EmbeddingRequest and ResponsesAPIRequestParams; the caller supplies them and None means LiteLLM's ImportError or
+  schema-failure branch, which skips that endpoint silently. Order: chat completion, embedding, responses. Each calls B4230's
+  `add_request_schema` with the schema name and these exact path lists. Chat completion, name `ProxyChatCompletionRequest`:
+  `/v1/chat/completions`, `/chat/completions`, `/engines/{model}/chat/completions`,
+  `/openai/deployments/{model}/chat/completions`. Embedding, name `EmbeddingRequest`: `/v1/embeddings`, `/embeddings`,
+  `/engines/{model}/embeddings`, `/openai/deployments/{model}/embeddings`. Responses, name `ResponsesAPIRequestParams`:
+  `/v1/responses`, `/responses`, `/openai/v1/responses`. The path strings use `{model}`, not FastAPI's `{model:path}`.
+
+  5. `document_builder`. The glue. `RouteDoc { path, method, name, summary: Option<String>, tags, parameters:
+  Vec<ParamDoc>, request_body: Option<JsonObject>, error_responses: bool }` is one HTTP operation; `ParamDoc { name,
+  location, required, schema }`. `OpenApiInfo { title, version, description }`. `DocumentInputs { info, routes,
+  websockets: Vec<WebsocketRoute>, llm_schemas: LlmRequestSchemas, server_root_path }`, serde-derived so a JSON file can
+  hold it. `build_document(&DocumentInputs) -> JsonObject` returns `openapi: "3.1.0"`, `info`, `paths`, `components`.
+  Each route becomes an operation with `operationId` from `stable_operation_id`, a `summary` (the given one, else FastAPI's
+  default: the name with `_` replaced by spaces and each word capitalized), the tags, the parameters, the request body, and
+  responses `200` (`Successful Response`, JSON content with an empty schema); when `error_responses` is true, one more
+  response per `ErrorStatus`, each `{"description": ..., "content": {"application/json": {"schema": {"$ref":
+  "#/components/schemas/ErrorResponse"}}}}`, and the `ErrorResponse` component is added. Then in this order:
+  `inject_websocket_stubs`, `add_llm_request_bodies`, `ensure_unique_operation_ids` (no reserved set), and last, when
+  `server_root_path` is non-empty, `servers: [{"url": "/" + root.trim('/')}]` (so "/" gives "/"). The default title is
+  `LiteLLM API` and the default description is `Proxy Server to call 100+ LLMs in the OpenAI format. [**Customize Swagger
+  Docs**](https://docs.litellm.ai/docs/proxy/enterprise#swagger-docs---custom-routes--branding)` followed by a blank line
+  and the three UI link lines built from the root path (proxy_server.py L1031-L1051); expose them as
+  `default_info(server_root_path, version) -> OpenApiInfo`. `build_document` never fails; LiteLLM's compat wrapper and its
+  minimal-schema fallback exist only for pydantic errors (see out_of_scope).
+
+  6. `snapshot_render` and the exporter. `render_snapshot(&JsonObject) -> String` writes the document with object keys
+  sorted at every level, two-space indent, and one trailing newline (the format of LiteLLM's `main()` in
+  _lazy_openapi_snapshot.py: `json.dumps(..., indent=2, sort_keys=True) + "\n"`). `check_snapshot(committed: &str,
+  rendered: &str) -> Result<(), SnapshotDrift>` is Ok only on byte equality and otherwise names which `paths` keys were
+  added, removed or changed, so the failure message is readable. The binary `src/bin/export_openapi.rs` takes
+  `--write <inputs.json> <out.json>` (regenerates the file) or `--check <inputs.json> <out.json>` (exit 1 with the drift
+  and the exact `--write` command to run when the file differs or is missing). This is how betterlite keeps a generated
+  schema file honest, the same job as LiteLLM's check-ui-api-types.yml: nobody edits the generated file by hand, a
+  change in code or inputs is followed by `--write`, and the `--check` run in the gate fails on any difference. The
+  committed pair is crates/betterlite-openapi/tests/fixtures/document_inputs.json (hand-written: the 11 LLM paths of part
+  4 as POST routes, one route with `error_responses: true` at `/openai/deployments/{model}/chat/completions`, one websocket
+  at `/v1/realtime`, root path empty) and crates/betterlite-openapi/tests/fixtures/openapi.generated.json (produced only by
+  the binary). B8681 serves the document at openapi_url; a server-wide route list waits for a route catalog; see notes.
+scope:
+  paths:
+    - crates/betterlite-openapi/src/error_responses.rs
+    - crates/betterlite-openapi/src/error_responses/**
+    - crates/betterlite-openapi/src/operation_ids.rs
+    - crates/betterlite-openapi/src/operation_ids/**
+    - crates/betterlite-openapi/src/websocket_stubs.rs
+    - crates/betterlite-openapi/src/websocket_stubs/**
+    - crates/betterlite-openapi/src/llm_request_bodies.rs
+    - crates/betterlite-openapi/src/llm_request_bodies/**
+    - crates/betterlite-openapi/src/document_builder.rs
+    - crates/betterlite-openapi/src/document_builder/**
+    - crates/betterlite-openapi/src/snapshot_render.rs
+    - crates/betterlite-openapi/src/snapshot_render/**
+    - crates/betterlite-openapi/src/bin/export_openapi.rs
+    - crates/betterlite-openapi/src/bin/export_openapi/**
+    - crates/betterlite-openapi/tests/fixtures/**
+    - tools/oracle/cases/helpers/openapi-document/**
+    - tools/oracle/helpers/b123.py
+    - tools/oracle/helpers/b123/**
+    - tools/oracle/src/helpers/openapi/b123.rs
+    - tools/oracle/src/helpers/openapi/b123/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/swagger_utils.py#L1-L53
+    why: "ErrorResponse model, get_status_code, _error_description and the ERROR_RESPONSES dict comprehension with its overwrite order."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L970-L991
+    why: "LITELLM_EXCEPTION_TYPES, the ordered list that decides which class wins each status code (InternalServerError appears twice)."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L442-L453
+    why: "RateLimitError's docstring, the only exception docstring that reaches the table."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11942-L11951
+    why: "ERROR_RESPONSES is attached to one decorator only, the /openai/deployments/{model:path}/chat/completions alias; the other three chat decorators have no responses= argument."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1648-L1724
+    why: "_generate_stable_operation_id, the method set, _strip_operation_id_method_suffix and ensure_unique_openapi_operation_ids."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1757-L1803
+    why: "_inject_websocket_stubs_into_openapi_schema."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1806-L1846
+    why: "get_openapi_schema: the order of the assembly steps and the servers entry."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/custom_openapi_spec.py#L292-L400
+    why: "add_request_schema and the three endpoint decorators with their schema names; the path lists are at L14-L31."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_openapi_snapshot.py#L112-L156
+    why: "The snapshot file format (sorted keys, indent 2, trailing newline) written by main(); the generator itself is not built."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1031-L1051
+    why: "The title and description text, minus the enterprise-only DOCS_TITLE and DOCS_DESCRIPTION override."
+dod:
+  - text: >-
+      error_responses() equals the table LiteLLM's ERROR_RESPONSES holds, same statuses in the same order with the same
+      descriptions (nine entries by the reading above), and error_response_schema() equals the ErrorResponse component
+      FastAPI emits for it.
+    proof: [error-responses-tests, oracle]
+  - text: >-
+      stable_operation_id appends the lowercase method only for single-method routes and replaces every non-word
+      character, so name `chat_completion` with path_format `/engines/{model}/chat/completions` and one POST gives
+      `chat_completion_engines__model__chat_completions_post`.
+    proof: [operation-ids-tests, oracle]
+  - text: >-
+      ensure_unique_operation_ids rewrites an id that repeats, an id in the reserved set and an id taken earlier, strips
+      only a trailing known method token before adding the operation's own method, adds `_2`, `_3` on further clashes,
+      leaves unique ids and non-string ids alone, and fills the reserved set when given one.
+    proof: [operation-ids-tests, oracle]
+  - text: >-
+      inject_websocket_stubs adds a get stub at the path cut at `{` with trailing `?` removed, keeps every existing
+      operation on that path, skips the stub when a get exists, and builds operationId and summary from the route name or
+      the stub path.
+    proof: [websocket-stubs-tests, oracle]
+  - text: >-
+      add_llm_request_bodies registers the three components and decorates exactly the 4, 4 and 3 listed paths in the
+      order chat, embedding, responses, and an absent schema leaves its endpoint and component untouched.
+    proof: [llm-request-bodies-tests, oracle]
+  - text: >-
+      build_document runs websocket stubs, request bodies, unique ids and the servers entry in that order, attaches the
+      error responses and the ErrorResponse component only to routes that ask for them, sets servers only for a
+      non-empty root path, and default_info gives the LiteLLM API title and the description with the three UI links.
+    proof: [document-builder-tests]
+  - text: >-
+      render_snapshot sorts keys at every depth with two-space indent and one trailing newline, check_snapshot names added,
+      removed and changed paths on drift, and the committed generated fixture is exactly what the exporter writes from the
+      committed inputs.
+    proof: [snapshot-render-tests, openapi-snapshot-check]
+checks:
+  optional: []
+  commands:
+    - id: error-responses-tests
+      why: the error response table or its schema is wrong or untested
+      run: cargo nextest run --locked -p betterlite-openapi --no-tests=fail -E 'test(/^error_responses::/)'
+    - id: operation-ids-tests
+      why: stable ids or the uniqueness rewrite are wrong or untested
+      run: cargo nextest run --locked -p betterlite-openapi --no-tests=fail -E 'test(/^operation_ids::/)'
+    - id: websocket-stubs-tests
+      why: websocket stubs are wrong or untested
+      run: cargo nextest run --locked -p betterlite-openapi --no-tests=fail -E 'test(/^websocket_stubs::/)'
+    - id: llm-request-bodies-tests
+      why: the three request body decorators are wrong or untested
+      run: cargo nextest run --locked -p betterlite-openapi --no-tests=fail -E 'test(/^llm_request_bodies::/)'
+    - id: document-builder-tests
+      why: the assembly order, error responses and servers entry are wrong or untested
+      run: cargo nextest run --locked -p betterlite-openapi --no-tests=fail -E 'test(/^document_builder::/)'
+    - id: snapshot-render-tests
+      why: the snapshot format or the drift report is wrong or untested
+      run: cargo nextest run --locked -p betterlite-openapi --no-tests=fail -E 'test(/^snapshot_render::/)'
+    - id: openapi-snapshot-check
+      why: the committed generated file must equal what the exporter writes from the committed inputs
+      run: cargo run --locked -p betterlite-openapi --bin export_openapi -- --check crates/betterlite-openapi/tests/fixtures/document_inputs.json crates/betterlite-openapi/tests/fixtures/openapi.generated.json
+oracle_cases:
+  - tools/oracle/cases/helpers/openapi-document/error-response-table.yaml
+  - tools/oracle/cases/helpers/openapi-document/error-response-schema.yaml
+  - tools/oracle/cases/helpers/openapi-document/stable-id-single-method.yaml
+  - tools/oracle/cases/helpers/openapi-document/stable-id-multi-method.yaml
+  - tools/oracle/cases/helpers/openapi-document/unique-ids-duplicates.yaml
+  - tools/oracle/cases/helpers/openapi-document/unique-ids-reserved.yaml
+  - tools/oracle/cases/helpers/openapi-document/unique-ids-suffix-counter.yaml
+  - tools/oracle/cases/helpers/openapi-document/websocket-stub-new-path.yaml
+  - tools/oracle/cases/helpers/openapi-document/websocket-stub-existing-get.yaml
+  - tools/oracle/cases/helpers/openapi-document/websocket-stub-braced-path.yaml
+  - tools/oracle/cases/helpers/openapi-document/llm-bodies-all-three.yaml
+  - tools/oracle/cases/helpers/openapi-document/llm-bodies-missing-schema.yaml
+deviations:
+  - what: The document is built from typed route entries (`RouteDoc`) and not from route handlers, so request and response schemas of ordinary routes appear only when the route entry carries them.
+    why: axum has no route introspection and no pydantic models. LiteLLM's FastAPI output for every management route cannot be reproduced mechanically; B8681 supplies the entries.
+  - what: The `openapi` field is "3.1.0" and the document has no lazy-feature stub paths, no `/lazy/warm` tag stubs and no `lazy` snapshot fragments.
+    why: LiteLLM registers some routers on first use and shows placeholders until then. betterlite registers every route at startup, so `/openapi.json` always lists the real routes; the committed `_lazy_openapi_snapshot.json` and its generator have no purpose here.
+  - what: Operation ids of multi-method routes are built from an explicit single method per `RouteDoc`, so they never depend on set iteration order.
+    why: LiteLLM needs `_stabilize_multi_method_route_ids` and `_normalize_operation_ids` because FastAPI derives the id suffix from a Python set; betterlite has no set to order.
+  - what: The enterprise-only `DOCS_FILTERED` branch (`custom_openapi`) and the `DOCS_TITLE` and `DOCS_DESCRIPTION` overrides are not built.
+    why: They run only when `premium_user` is true, an enterprise license check betterlite does not have; the open-source path is `get_openapi_schema`.
+  - what: The served `/openapi.json` is the built document in insertion order as compact JSON; only the committed snapshot file is key-sorted and indented.
+    why: LiteLLM's route answer is FastAPI's JSONResponse and its snapshot file is a different artifact in a different format; each keeps its own.
+out_of_scope:
+  - "litellm/proxy/openapi.json (7 KB hand-written OpenAPI sketch of /chat/completions and a few more paths): no caller at the pin; nothing in litellm loads or serves it."
+  - "litellm/proxy/_lazy_openapi_snapshot.json (1.8 MB) and the generator litellm/proxy/_lazy_openapi_snapshot.py: only inject_lazy_stubs in _lazy_features.py reads them, and betterlite has no lazy route loading (see deviations)."
+  - "litellm/proxy/common_utils/openapi_schema_compat.py get_openapi_schema_with_compat: it patches pydantic's GenerateSchema._unknown_type_schema so FastAPI survives types like openai.Timeout, and falls back to an empty document on PydanticSchemaGenerationError. There is no pydantic here, so nothing can fail the same way."
+  - "litellm/proxy/common_utils/custom_openapi_spec.py everything except the leftover decorators in part 4: B4230 owns the schema transforms, inline_request_body and the helper functions. _extract_field_schema has no caller at the pin (B4230 lists it too)."
+  - "litellm/proxy/common_utils/swagger_utils.py is built here; litellm/proxy/swagger/** (the four static files) is B7740's."
+  - "Registering the openapi_url route and choosing the full route list for the document is B8681's job (see notes); this task registers no route and has no HTTP oracle cases."
+pitfalls:
+  - ERROR_RESPONSES is attached to one decorator only, `/openai/deployments/{model:path}/chat/completions`. The `engines`, `/chat/completions` and `/v1/chat/completions` operations have only the plain 200, so error_responses is a per-route flag and not a default.
+  - The status table collapses 20 exception classes into nine statuses; InternalServerError is listed twice and 400 is claimed by five classes. The winner is the last class in the list, not the first or the most specific.
+  - litellm's own exception classes set status_code in __init__, so `hasattr(cls, "status_code")` is false for them, while the openai base classes have it as a class attribute. A Rust table that follows the instance status codes gets 401 and 429 right and 503 or 500 wrong.
+  - Only RateLimitError has a docstring, and cleandoc keeps its blank lines and the `:attr:` markup as written; every other description is the bare class name.
+  - The websocket stub path is cut at the first `{`, so `/openai/deployments/{model}/realtime` becomes `/openai/deployments/`, and a trailing `?` is stripped but a trailing `/` is kept.
+  - A websocket route that shares its path with an HTTP route must not erase the HTTP operations; only an existing `get` blocks the stub.
+  - The request body decorators use `{model}` in their path list, while FastAPI paths in the document are `{model}` too; a list written with `{model:path}` matches nothing and silently skips the endpoint.
+  - ensure_unique_operation_ids visits operations in document order and the first operation with a duplicated id is rewritten too, not just the later copies, because the rewrite test is "count greater than one".
+  - The `servers` entry is written for the root path "/" as "/", since `"/" + "/".strip("/")` is "/".
+  - Snapshot key sorting must also sort inside examples and schema properties, because json.dumps(sort_keys=True) sorts every object; an array keeps its order.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,93 @@
+id: B7876
+title: Python vector_stores retrieve, list, update, delete and the package
+description: >-
+  This is the last part of the vector stores entry. It adds `retrieve`, `list`, `update`, `delete` and their `a` twins
+  (`aretrieve`, `alist`, `aupdate`, `adelete`), and it writes `vector_stores/main.py` and `__init__.py`. The Rust work is
+  B1065 (read) and B1066 (write).
+
+
+  Native side, the family `vector_manage`: `src/vector_manage.rs` with `register` that adds `NativeVectorManageSession` and
+  `NativeVectorManageError`, with methods `retrieve`, `list`, `update`, `delete` and their `a` twins. Conversion is in
+  `src/vector_manage/convert.rs`, tests `request_*` and `error_*`. The architect writes the `lib.rs` lines.
+
+
+  Python side, `python/betterlite/vector_stores/_manage.py`. Parameters: `retrieve(vector_store_id, extra_headers, extra_query,
+  extra_body, timeout, custom_llm_provider, **kwargs)`, `list(after, before, limit, order, ...)`, `update(vector_store_id, name,
+  expires_after, metadata, ...)` and `delete(vector_store_id, ...)`. The sync names shadow builtins inside the module, so
+  annotations use `builtins.list`. Sync functions accept `aretrieve=True`, `alist=True`, `aupdate=True` and `adelete=True` and
+  return a coroutine then. The results are `VectorStore`, `VectorStoreListResponse` and `VectorStoreDeleteResponse` (B167).
+  `main.py` re-exports the twelve names of this part and B7875 with an explicit `__all__`, and `__init__.py` re-exports
+  the same twelve names, as at the pin. The registry (`vector_store_registry.py`) is Rust
+  (B1062), and nothing in Python needs it here.
+scope:
+  paths:
+  - crates/betterlite-python/src/vector_manage.rs
+  - crates/betterlite-python/src/vector_manage/**
+  - crates/betterlite-python/python/betterlite/_native_vector_manage.pyi
+  - crates/betterlite-python/python/betterlite/vector_stores/_manage.py
+  - crates/betterlite-python/python/betterlite/vector_stores/main.py
+  - crates/betterlite-python/python/betterlite/vector_stores/__init__.py
+  - crates/betterlite-python/tests/test_vector_manage.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L494-L626
+  why: aretrieve and retrieve
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L627-L778
+  why: alist and list
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L779-L933
+  why: aupdate and update
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L934-L1040
+  why: adelete and delete
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/__init__.py#L1-L3
+  why: package exports
+dod:
+- text: All eight functions keep LiteLLM's signatures.
+  proof: [vm-signature]
+- text: Retrieve, list, update and delete give the same objects as LiteLLM against one server, and each sync function returns a coroutine under its flag.
+  proof: [vm-calls]
+- text: A provider error keeps its class and cause, and `client` raises `UnsupportedCallArgument`.
+  proof: [vm-error]
+- text: "`betterlite.vector_stores.main` exports the twelve names of both parts."
+  proof: [vm-package]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [vm-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: vm-signature
+    why: A caller's keyword is refused.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_vector_manage.py -k signature
+  - id: vm-calls
+    why: An object reads back different.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_vector_manage.py -k calls
+  - id: vm-error
+    why: Error class or client check is wrong.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_vector_manage.py -k error
+  - id: vm-package
+    why: A name is missing.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_vector_manage.py -k package
+  - id: vm-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^vector_manage::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for the vector management calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`client` is refused with `UnsupportedCallArgument`."
+  why: A Python HTTP client can't drive the Rust one (B158).
+- what: This task has no helper oracle cases.
+  why: pytest compares both packages against one local server.
+out_of_scope:
+- "`create`, `search` and the mock helpers are B7875."
+- "litellm/vector_stores/vector_store_registry.py belongs to B1062."
+pitfalls:
+- "`list` takes `after`, `before`, `limit` and `order`, and `retrieve` and `delete` take no body fields, so keep each signature as it is."
+- "A function named `list` in a module that also uses the `list` type is a trap, so use `builtins.list` for every annotation."
+- "`update` sends only fields that are not None, so an explicit empty `metadata` dict must still be sent."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

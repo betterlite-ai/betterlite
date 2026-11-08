@@ -150,7 +150,7 @@ deviations:
   why: The accepted product decision removes licensing gates and ships all MIT features.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L915-L935
 out_of_scope:
-- Budget CRUD and account reservations (B059/B071).
+- Budget CRUD (B059) and account reservations (B8480 reserves budget for a request and renews its lease, B8481 installs settlement).
 - Prometheus exporter (B111).
 - 'litellm/router_strategy/budget_limiter.py: B326 owns: _sum_increments_by_key (L98-L103), RouterBudgetLimiting._increment_spend_in_current_window
   (L392-L412), RouterBudgetLimiting._get_redis_increment_queue_lock (L414-L415), RouterBudgetLimiting._detach_queued_increment_operations

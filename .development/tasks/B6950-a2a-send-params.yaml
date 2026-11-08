@@ -1,0 +1,109 @@
+id: B6950
+title: Read A2A 0.3 and 1.0 message send params
+description: >-
+  Build module send_params in betterlite-a2a. It turns the params object of an A2A message/send or message/stream JSON-RPC call into one typed 0.3 MessageSendParams, whichever protocol version the caller spoke. LiteLLM does this in _build_message_send_params (a2a_endpoints.py L102-L117) by trying the a2a-sdk's pydantic model first and falling back to the SDK's protobuf conversion. Neither SDK exists here, so this task writes both paths by hand against the shapes the SDK defines.
+
+  Public API, in send_params.rs and send_params/**. `build_message_send_params(params: &serde_json::Value) -> Result<MessageSendParamsV03, SendParamsError>`. The caller turns an Err into the JSON-RPC error -32602 with the text "Invalid params: " followed by the error's Display. Define the typed 0.3 records in send_params/v03.rs, all with serde camelCase names on output and no field that is None written out: MessageSendParamsV03 { message, configuration, metadata }, MessageV03 { kind "message", message_id, role, parts, context_id, task_id, reference_task_ids, metadata, extensions }, RoleV03 (user, agent), PartV03 (text, file, data, each with kind and optional metadata), FileV03 (bytes with base64 text, or uri; both with optional mime_type and name), SendConfigV03 { accepted_output_modes, blocking, history_length, push_notification_config } and PushConfigV03 { url, id, token, authentication { schemes, credentials } }. Metadata maps are serde_json maps. Own error enum SendParamsError in send_params/error.rs; its Display for every failure starts with "Invalid message/send params: ".
+
+  Path one, the 0.3 shape (send_params/v03.rs). A plain serde pass over the params object. Each field is accepted under its camelCase name or its snake_case name (messageId or message_id, contextId, taskId, referenceTaskIds, acceptedOutputModes, historyLength, pushNotificationConfig, mimeType), and unknown keys anywhere are ignored. message is required. In the message, messageId (string), role ("user" or "agent") and parts (list) are required, kind may be absent or must be "message". A part is text (text string required, kind absent or "text"), file (file required, kind absent or "file") or data (data object required, kind absent or "data"). A file is bytes (base64 text in a bytes key) or uri (a uri key), with optional mimeType and name. Values must have the declared JSON type; a number where a string is declared fails. When any of this fails, go to path two. When params is not a JSON object, fail with the same error and do not try path two.
+
+  Path two, the 1.0 protobuf JSON shape (send_params/v10.rs). LiteLLM parses the params into the SDK's protobuf SendMessageRequest with ParseDict(ignore_unknown_fields=True), then calls to_compat_send_message_request. Read protobuf JSON the same way: keys in camelCase or snake_case, unknown keys ignored, null equals absent. Top-level keys are message, configuration and metadata. Message keys are messageId, contextId, taskId, role, parts, metadata, extensions and referenceTaskIds. Role is the string "ROLE_USER", "ROLE_AGENT", "ROLE_UNSPECIFIED" or the integer 1, 2 or 0; any other string or integer is a parse failure. A part has exactly one content key out of text (string), raw (base64 bytes, standard or url-safe alphabet), url (string) or data (any JSON value), plus optional mediaType, filename and metadata (object). Configuration keys are acceptedOutputModes, taskPushNotificationConfig { url, id, token, authentication { scheme, credentials } }, historyLength and returnImmediately. A type mismatch, an unknown role value or bad base64 is a parse failure and returns the error. The conversion to 0.3, in this order:
+  - role: ROLE_USER becomes user, every other value (including absent) becomes agent.
+  - message: messageId defaults to the empty string; contextId and taskId become None when empty or absent; referenceTaskIds and extensions become None when empty; message metadata becomes None when absent or an empty object.
+  - text part: a text part with the text and the part metadata (an empty object when metadata was sent as one, None when absent).
+  - data part: an object value becomes a data part as is. Any other JSON value (list, string, number, bool, null) becomes the object {"value": v}, and the part metadata gets "data_part_compat": true (the metadata object is created when absent).
+  - raw part: a file part with bytes holding the decoded raw bytes re-encoded as standard padded base64, plus mime_type from mediaType and name from filename (None when empty). url part: a file part with uri and the same two fields.
+  - a part with none of the four content keys fails with "Unknown part content type: None".
+  - configuration: present only when the key is present. accepted_output_modes None when empty; push_notification_config from taskPushNotificationConfig with url (empty string when absent), id and token (None when empty), authentication { schemes: [scheme] or [] when scheme is empty, credentials None when empty } only when the key is present; history_length only when the key is present; blocking is always set to the opposite of returnImmediately, so an absent returnImmediately gives blocking true.
+  - request metadata: present when the key is present, even as an empty object.
+  The SDK turns protobuf Struct numbers into doubles; where an integral double comes back, write it as a JSON integer if the oracle case for numbers in data and metadata shows LiteLLM does.
+
+  No route calls this yet. B4789 (stream relay) and B8589's route handler call it. Cases are helper cases on the pure function; a route-level case comes with B8589.
+scope:
+  paths:
+    - crates/betterlite-a2a/src/send_params.rs
+    - crates/betterlite-a2a/src/send_params/**
+    - tools/oracle/cases/agents/a2a-send-params/**
+    - tools/oracle/helpers/b6950.py
+    - tools/oracle/helpers/b6950/**
+    - tools/oracle/src/helpers/a2a/b6950.rs
+    - tools/oracle/src/helpers/a2a/b6950/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L102-L117
+    why: "The 0.3 first, 1.0 fallback and the ValueError on a protobuf ParseError."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L856-L859
+    why: The message/send call site that turns ValidationError and ValueError into -32602 with the text Invalid params.
+  - url: https://github.com/a2aproject/a2a-python/blob/main/src/a2a/compat/v0_3/conversions.py
+    why: "to_compat_send_message_request, to_compat_message, to_compat_part, to_compat_send_message_configuration and to_compat_push_notification_config, the conversion this task reproduces. Pin to the a2a-sdk version in tools/oracle/litellm/uv.lock."
+  - url: https://github.com/a2aproject/a2a-python/blob/main/src/a2a/compat/v0_3/types.py
+    why: "The 0.3 pydantic models (Message, Part, MessageSendParams, MessageSendConfiguration, PushNotificationConfig) and their required fields."
+  - url: https://protobuf.dev/programming-guides/json/
+    why: "How protobuf JSON names fields, writes bytes and enums, and treats null."
+dod:
+  - text: A params object in the 0.3 shape parses into the typed records, accepting camelCase and snake_case names and ignoring unknown keys.
+    proof: [oracle, send-params-tests]
+  - text: A 0.3 shape that fails validation (wrong role, part without its content key, number for a string) falls back to path two and, when that fails too, returns SendParamsError.
+    proof: [oracle, send-params-tests]
+  - text: A params value that is not an object returns SendParamsError.
+    proof: [send-params-tests]
+  - text: 1.0 role strings and integers map to user for ROLE_USER and to agent for everything else, and an unknown role value is an error.
+    proof: [oracle, send-params-tests]
+  - text: 1.0 text, data, raw and url parts convert as described, including the non-object data value wrapper with data_part_compat and the standard padded base64 for raw bytes.
+    proof: [oracle, send-params-tests]
+  - text: A 1.0 part with no content key returns SendParamsError.
+    proof: [oracle, send-params-tests]
+  - text: 1.0 configuration converts with blocking set to the opposite of returnImmediately, optional fields kept only when sent, and push notification authentication reduced to schemes and credentials.
+    proof: [oracle, send-params-tests]
+  - text: Empty contextId, taskId, referenceTaskIds, extensions and message metadata become None, while request metadata sent as an empty object stays an empty object.
+    proof: [oracle, send-params-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: send-params-tests
+      why: the send_params behavior tests fail or do not exist
+      run: >-
+        cargo nextest run --locked -p betterlite-a2a --no-tests=fail
+        -E 'test(/^send_params::(.*::)?send_params_tests_behavior($|::)/)'
+    - id: helper-python
+      why: the oracle adapter fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/agents/a2a-send-params/v03-camel-case.yaml
+  - tools/oracle/cases/agents/a2a-send-params/v03-snake-case-and-extra-keys.yaml
+  - tools/oracle/cases/agents/a2a-send-params/v03-file-part-bytes-and-uri.yaml
+  - tools/oracle/cases/agents/a2a-send-params/v03-invalid-role-no-fallback-match.yaml
+  - tools/oracle/cases/agents/a2a-send-params/v10-text-message.yaml
+  - tools/oracle/cases/agents/a2a-send-params/v10-role-mapping.yaml
+  - tools/oracle/cases/agents/a2a-send-params/v10-data-part-object-and-scalar.yaml
+  - tools/oracle/cases/agents/a2a-send-params/v10-raw-and-url-parts.yaml
+  - tools/oracle/cases/agents/a2a-send-params/v10-part-without-content.yaml
+  - tools/oracle/cases/agents/a2a-send-params/v10-configuration-blocking.yaml
+  - tools/oracle/cases/agents/a2a-send-params/v10-push-config-authentication.yaml
+  - tools/oracle/cases/agents/a2a-send-params/v10-empty-ids-and-metadata.yaml
+  - tools/oracle/cases/agents/a2a-send-params/v10-unknown-role-string.yaml
+  - tools/oracle/cases/agents/a2a-send-params/params-not-an-object.yaml
+deviations:
+  - what: "The error text after \"Invalid params: \" is betterlite's own. LiteLLM prints a pydantic ValidationError or a protobuf ParseError message."
+    why: Those texts come from two Python libraries and cannot be reproduced; the JSON-RPC code -32602 and the Invalid params prefix are the same.
+  - what: Params that are not a JSON object return the same invalid-params error. LiteLLM raises a TypeError from `**params`, which the route reports as -32603 "Internal error".
+    why: "The declared type of params is an object; a typed error is the honest answer to a list or a string."
+out_of_scope:
+  - "The message/send and message/stream handlers that call this function, the JSON-RPC error responses and the SSE relay are B4789 (streams) and B8589 (route handler)."
+  - "0.3/1.0 conversion of responses, stream events, task requests and agent cards is B4812. This task converts only the send-message request params."
+  - "The completion bridge's own loose MessageSendParams record in completion_bridge::wire is B4803's and stays as it is; callers that need the strict record use this module's."
+  - "Task, artifact, status-update and security-scheme conversions in the SDK's conversions module have no caller on this path."
+pitfalls:
+  - A 1.0 text part with only a text key is also a valid 0.3 text part, because kind defaults to "text". It parses on path one and never reaches the protobuf path; only a different failure (role "ROLE_USER", a data part with a scalar) triggers the fallback.
+  - The 0.3 role enum is lowercase "user" and "agent"; "ROLE_USER" is the usual reason path one fails for a 1.0 caller.
+  - Message metadata uses the SDK's truthiness test on a protobuf Struct, so an empty object becomes None there, while part metadata and request metadata use HasField and keep an empty object. Check both with the empty-ids-and-metadata oracle case before trusting this note.
+  - blocking is always written on a converted configuration and defaults to true, because the SDK computes it as `not return_immediately`.
+  - Dropping a 1.0 field the 0.3 record has no place for (tenant, message-level extensions beyond the list) is silent; do not add pass-through keys.
+  - Base64 for raw parts is decoded and encoded again, so url-safe or unpadded input comes out in the standard padded alphabet.
+  - The oracle adapter should return only an error flag for failures, since the error texts differ on purpose.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

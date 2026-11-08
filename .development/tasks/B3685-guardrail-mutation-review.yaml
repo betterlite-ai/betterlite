@@ -3,7 +3,7 @@ title: Guardrail mutation and submission decisions
 description: >-
   Build the write side of the guardrail admin API in betterlite-server: create, replace, patch and delete a guardrail row, and approve or reject a team submission. Everything goes in crates/betterlite-server/src/guardrails/admin_mutations.rs and admin_mutations/. The read routes are B3684's, register, the submission lists and the custom-code test route are B3686's, and B3687 owns the catalog and apply routes. None of them lives here.
 
-  Routes, all behind the normal key check first. `POST /guardrails`, `PUT /guardrails/{guardrail_id}`, `PATCH /guardrails/{guardrail_id}`, `DELETE /guardrails/{guardrail_id}`, `POST /guardrails/submissions/{guardrail_id}/approve` and `POST /guardrails/submissions/{guardrail_id}/reject`. Expose `pub fn routes<R, S>(state: MutationState<R, S>) -> Router` the way the sibling modules in crates/betterlite-server/src/guardrails/ do and read their pattern first. The architect's skeleton mounts it, so do not touch app.rs. Do not register `GET /guardrails/{guardrail_id}` or `/guardrails/register`: axum panics on a duplicate method and path, and those belong to B3684 and B3686.
+  Routes, all behind the normal key check first. `POST /guardrails`, `PUT /guardrails/{guardrail_id}`, `PATCH /guardrails/{guardrail_id}`, `DELETE /guardrails/{guardrail_id}`, `POST /guardrails/submissions/{guardrail_id}/approve` and `POST /guardrails/submissions/{guardrail_id}/reject`. Expose `pub fn routes<R, S>(state: MutationState<R, S>) -> Router` the way the sibling modules in crates/betterlite-server/src/guardrails/ do and read their pattern first. B8667 mounts it, so do not touch app.rs. Do not register `GET /guardrails/{guardrail_id}` or `/guardrails/register`: axum panics on a duplicate method and path, and those belong to B3684 and B3686.
 
   State and types. `MutationState<R: GuardrailRows, S: ReviewRows>` holds `database: Option<MutationDatabase<R, S>>`, where `None` means the proxy runs without a database. `MutationDatabase` holds `Arc<GuardrailRuntime<R>>` (B3683, crates/betterlite-guardrails/src/guardrail_startup/runtime.rs: `handler()` is a `tokio::sync::RwLock<InMemoryGuardrailHandler>`, `registry()` is B3682's `GuardrailRegistry<R>`) and `Arc<S>`. Types from earlier tasks: `Guardrail`, `LitellmParams`, `BaseLitellmParams`, `PatchGuardrailRequest` with its `sent_fields()` and the decoders `decode_litellm_params` and `decode_patch_request` are B3662's (betterlite-config, sections::guardrail_params). `RegistryError`, `GuardrailRows`, `GuardrailRegistry` and the handler methods `initialize_guardrail`, `delete_in_memory_guardrail` and `sync_guardrail_from_db` are B3682's and B3683's. The admin test is B732's rule that only the exact role `proxy_admin` counts (a `proxy_admin_viewer` is refused). Read each file for exact names before you write code.
 
@@ -32,7 +32,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/guardrail_write_body.rs
     - crates/betterlite-server/fuzz/corpus/guardrail_write_body/**
-    - tools/oracle/cases/guardrails/admin-mutations/**
     - tools/oracle/helpers/b3685.py
     - tools/oracle/helpers/b3685/**
     - tools/oracle/src/helpers/server/b3685.rs
@@ -63,9 +62,9 @@ references:
 
 dod:
   - text: A key check failure answers the usual 401 body on all six routes, and a body that fails validation answers 422 in FastAPI's shape only after the key check passes.
-    proof: [write-body-tests, oracle]
+    proof: [write-body-tests]
   - text: Every route refuses a caller whose role is not exactly proxy_admin with 403 and the right detail text before it looks at the database, and answers 500 "Prisma client not initialized" when there is no database.
-    proof: [write-route-tests, review-route-tests, oracle]
+    proof: [write-route-tests, review-route-tests]
   - text: Create writes the row, starts the guardrail in memory as a db guardrail, answers with the request plus the new id, deletes the row and answers 400 on a configuration error, and still answers 200 on any other start error.
     proof: [write-route-tests]
   - text: Replace and patch answer 404 for a missing row, write the row, sync memory, and on a configuration error write the old values back and answer 422. Patch merges only the sent params keys over the stored ones, and an empty guardrail_info object replaces the stored one.
@@ -77,6 +76,8 @@ dod:
   - text: The write and patch body decoders never panic on any bytes and the fuzz corpus replays.
     proof: [decoder-corpus]
 
+  - text: The handlers are tested with tower's oneshot over the module's own Router and fake ports. B8667 mounts the routes and owns their HTTP oracle cases, so write no HTTP case here.
+    proof: [write-route-tests]
 checks:
   optional: []
   commands:
@@ -103,17 +104,7 @@ checks:
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/guardrail_write_body)" &&
         cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_guardrail_write_corpus)'
 
-oracle_cases:
-  - tools/oracle/cases/guardrails/admin-mutations/create-no-key.yaml
-  - tools/oracle/cases/guardrails/admin-mutations/create-missing-guardrail-422.yaml
-  - tools/oracle/cases/guardrails/admin-mutations/create-no-database.yaml
-  - tools/oracle/cases/guardrails/admin-mutations/replace-no-database.yaml
-  - tools/oracle/cases/guardrails/admin-mutations/patch-bad-name-422.yaml
-  - tools/oracle/cases/guardrails/admin-mutations/patch-no-database.yaml
-  - tools/oracle/cases/guardrails/admin-mutations/delete-no-database.yaml
-  - tools/oracle/cases/guardrails/admin-mutations/approve-no-key.yaml
-  - tools/oracle/cases/guardrails/admin-mutations/approve-no-database.yaml
-  - tools/oracle/cases/guardrails/admin-mutations/reject-no-database.yaml
+oracle_cases: []
 
 deviations:
   - what: The 200 body of create and replace carries `litellm_params` as B3662 serializes it (the keys set plus the base defaults), where LiteLLM dumps every field of every provider mixin as null.

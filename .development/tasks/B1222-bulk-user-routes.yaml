@@ -70,8 +70,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/bulk_user.rs
     - crates/betterlite-server/src/routes/bulk_user/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/bulk-user-routes/**
     - tools/oracle/helpers/b1222.py
     - tools/oracle/helpers/b1222/**

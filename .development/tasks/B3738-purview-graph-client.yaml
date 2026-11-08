@@ -127,7 +127,7 @@ out_of_scope:
   - "Graph API _graph_post implementation (owned by B173, HTTP client acquisition and POST)"
   - "CustomGuardrail constructor and cooperative super().__init__ call (belongs to B104)"
   - "Standard guardrail logging integration (belongs to B104)"
-  - "Configuration environment variable resolution for tenant_id, client_id, client_secret (belongs to B002/B129)"
+  - "Configuration environment variable resolution for tenant_id, client_id, client_secret (belongs to B002/B8500)"
   - "Purview DLP evaluation logic and hook registration (belongs to B3739, B3740)"
   - "Entra OBO token acquisition for Agent 365 (belongs to B3741)"
 

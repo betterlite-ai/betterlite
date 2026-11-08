@@ -6,7 +6,7 @@ description: >-
   imports, no code). Cloudflare speaks the OpenAI chat wire format, so chat is only the endpoint and credential rules of
   CloudflareChatConfig; the base option mapping, request body and reply conversion are B668, B503 and B504 and are not
   repeated. Everything here is a pure function. The account id and the key come in as plain arguments the caller already
-  read (CLOUDFLARE_ACCOUNT_ID and the key chain in _complete_cloudflare are B041's), and no config section is added.
+  read (CLOUDFLARE_ACCOUNT_ID and the key chain in _complete_cloudflare are B8310's), and no config section is added.
 
   cloudflare_chat. Define CloudflareError in its own error file, built from a status code and a message. It becomes the
   existing ProviderError (crates/betterlite-openai/src/error.rs) with request method POST and url https://api.cloudflare.com,
@@ -85,7 +85,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/call.py#L170-L245
     why: Read-only context for which model (canonical or request) reaches the URL and the body.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4576-L4615
-    why: Read-only context for the key and base chain before these rules run (B041 owns it).
+    why: Read-only context for the key and base chain before these rules run (B8310 owns it).
   - url: https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/
     why: The /ai/v1 OpenAI-compatible base that the /ai/run rewrite points at.
 dod:
@@ -143,7 +143,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/cloudflare-wire/decisions-unwrap-response.yaml
 deviations:
   - what: The two LiteLLM ValueError cases (missing account id, missing key) are typed errors in the module. The wire status a client sees for them is set by whoever wires the call.
-    why: A Rust function returns a typed error, not an exception. Mapping it to an HTTP status belongs to B041 and the shared error mapping, and this task has no route.
+    why: A Rust function returns a typed error, not an exception. Mapping it to an HTTP status belongs to B8310 and the shared error mapping, and this task has no route.
   - what: The environment value of CLOUDFLARE_ACCOUNT_ID is an argument, and the decisions config stores it at construction.
     why: Provider modules take credentials from the caller, so tests need no process state. The default base is computed from that stored value.
 out_of_scope:
@@ -151,7 +151,7 @@ out_of_scope:
   - B2202 owns BaseLLMException and the ProviderError projection CloudflareError builds on. B241 and B5115 own the Cloudflare exception mapping ("Authentication error", "must have required property") in exception_mapping_utils.
   - B3511 owns the DecisionsProviderConfig trait and its defaults. B3513 picks CloudflareDecisionsConfig in get_provider_decisions_config, and B3514 sends the request.
   - B2230 owns the provider to CloudflareChatConfig selection, and B2220 and B2222 own model metadata (nothing in this folder reads it).
-  - B041 owns _complete_cloudflare (litellm/main.py L4576), the key chain api_key, litellm.cloudflare_api_key, litellm.api_key, CLOUDFLARE_API_KEY and the base chain api_base, litellm.api_base, CLOUDFLARE_API_BASE, the missing-key check in utils.py L6957, dispatch wiring and the HTTP oracle cases. This task touches neither dispatch file.
+  - B8310 owns _complete_cloudflare (litellm/main.py L4576), the key chain api_key, litellm.cloudflare_api_key, litellm.api_key, CLOUDFLARE_API_KEY and the base chain api_base, litellm.api_base, CLOUDFLARE_API_BASE, dispatch wiring and the HTTP oracle cases. The missing-key check in utils.py L6957 is part of validate_environment, and B5364 builds that function. This task touches neither dispatch file.
   - litellm/llms/cloudflare/chat/handler.py has no code at the pin (a module docstring and imports), so there is nothing to build.
 pitfalls:
   - The /ai/run rewrite runs on the trimmed copy but any other explicit api_base is returned with its trailing slash, and only the base join afterwards trims it.

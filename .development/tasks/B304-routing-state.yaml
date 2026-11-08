@@ -127,6 +127,7 @@ out_of_scope:
 - Store implementation and state codecs (B360).
 - B382 owns request-scoped routing read batches; consume its tested public interface.
 - B397 owns router success and failure callback integration; consume its tested public interface.
+- "B8350 builds `success_minute_key` (sync_deployment_callback_on_success) in `betterlite_router::router_predicates`. The success callback takes the deployment id from it before it calls `increment_deployment_successes_for_current_minute`, and does not rebuild the key rules."
 pitfalls:
 - No lock may be held across a Redis await.
 - Test Redis behind an injected store and include a real local Redis smoke test with a bounded test-owned

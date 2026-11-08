@@ -4,7 +4,7 @@ description: >-
   Implement betterlite-db::database_tokens with DatabaseTokenAuth, IamEndpoint, token URL construction
   and expiry hints. Own token_auth.py except B2307's token_auth_flag_enabled; own db_url_settings.py's
   token_auth and token branches L410-L435/L476-L500, and pgbouncer.py::database_url_is_pooled. Consume
-  B2308's RDS signer, B129's Azure credential provider and B710's resolved endpoint fields. The parent
+  B2308's RDS signer, B677's Azure credential provider and B710's resolved endpoint fields. The parent
   startup service chooses this strategy before invoking the password-only branch; B710 never calls
   back up into this task. Token refresh and connection replacement remain in B854.
 
@@ -18,7 +18,7 @@ description: >-
   AZURE_POSTGRESQL_AUTH. Azure builds one process-wide provider for the explicit scope
   https://ossrdbms-aad.database.windows.net/.default, regardless of AZURE_SCOPE. Reuse that provider
   across writer, reader and refresh calls; a failed provider construction is retried on a later call,
-  while successful caching does not freeze one token forever. B129 owns credential inference and its
+  while successful caching does not freeze one token forever. B677 owns credential inference and its
   Azure env inputs, errors and logging.
 
   IamEndpoint stores host, string port, user, database name and optional schema=None. build_url
@@ -72,7 +72,7 @@ description: >-
   exceeding those bounds yields the unreadable-expiry result with a redacted debug reason. Test exact
   boundary values, malformed UTF-8/base64/JSON, duplicate exp fields, integer extremes and encoded-vs-raw
   RDS passwords. This limit and diagnostic redaction are deviations below. URL decoding itself reuses
-  B2307, while B129/B2308 own SDK credential responses.
+  B2307, while B677/B2308 own SDK credential responses.
 
   Pure oracle cases call IAMEndpoint methods and the real expiry parsers; compare values, exception
   categories, exact endpoint errors and debug-vs-silent behavior. Keep cloud provider construction,
@@ -187,7 +187,7 @@ out_of_scope:
   - B711 owns translate_libpq_ssl_params and native TLS/pool policy; B051 sequences apply_to_env and
     applies successful typed updates without changing process globals. B854 owns extraction of the
     decoded password, refresh intervals and reconnect/pool replacement.
-  - B129 owns get_azure_ad_token_provider and its credential types/env selectors. This task passes
+  - B677 owns get_azure_ad_token_provider and its credential types/env selectors. This task passes
     the PostgreSQL scope and caches the returned provider; it does not duplicate Azure credential logic.
   - All pgbouncer.py functions except database_url_is_pooled remain excluded under B711's recorded
     embedded-process deviation; the marker predicate is retained for externally supplied compatibility state.

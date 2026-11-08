@@ -1,0 +1,138 @@
+id: B8741
+title: Callback name list and the logger catalog
+description: >-
+  Two lists stop every callback name today. The callback_settings config section rejects any name in
+  litellm_settings.callbacks, success_callback or failure_callback that is not in `INSTALLED_CALLBACKS`, which is
+  empty. betterlite-logging's `registry::catalog::adapter_for` refuses every name. This task replaces both with one
+  typed name list and a catalog that builds each logger once, so a logger task later fills only its own module and
+  never edits a shared list. LiteLLM's builder is `_init_custom_logger_compatible_class` (litellm_logging.py
+  L4502-L5190) and its lookup twin is `get_custom_logger_compatible_class` (L5315-L5538).
+
+
+  Name list. betterlite-logging depends on betterlite-config, so the list lives in config, in
+  crates/betterlite-config/src/sections/callback_settings/names.rs (the skeleton creates the file and its mod line).
+  It holds `pub enum CallbackName` with one variant per name, `pub const ALL` in the order below,
+  `fn from_name(name: &str) -> Option<CallbackName>` (exact and case sensitive, like LiteLLM's list membership test)
+  and `fn as_str(self) -> &'static str`. The 73 names, in this order: the 55 entries of
+  `_custom_logger_compatible_callbacks_literal` (litellm/__init__.py L121-L177) as they appear there; the 12 success
+  callback names set_callbacks handles that the literal lacks (sentry, slack, traceloop, athina, helicone, lunary,
+  promptlayer, dynamodb, s3, wandb, supabase, greenscale; litellm_logging.py L4437-L4495);
+  `datadog_cost_management` (callback_utils.py L370-L381); and the five keys of
+  litellm/integrations/generic_api/generic_api_compatible_callbacks.json (sample_callback, rubrik, sumologic,
+  qualifire_eval, ramp).
+
+
+  Section. In callback_settings.rs remove INSTALLED_CALLBACKS. A name in any of the three lists is accepted when
+  `CallbackName::from_name` knows it. Any other name still fails the load with ConfigError::Unsupported naming the
+  list path, exactly as today. Settings keeps the names as strings, since B8655 later also accepts a name that has a
+  callback_settings entry with callback_type generic_api.
+
+
+  Catalog. crates/betterlite-logging/src/registry/catalog.rs keeps validate_callback_vars and replaces adapter_for.
+  `pub struct CatalogInputs` holds what a builder needs: `config: Arc<Config>` (the loaded config, for a builder that reads its own section), `http: ProxiedClient` (betterlite-http), `env:
+  Arc<dyn EnvironmentLookup + Send + Sync>` (betterlite-config's lookup, over the process environment in
+  production), `callback_settings: BTreeMap<String, CallbackEntry>` (the section's map; LiteLLM's
+  `_get_custom_logger_settings_from_proxy_server`, L5540-L5553, reads it by name), `tracker: TaskTracker` and
+  `shutdown: CancellationToken` (tokio-util) for the flush loops batch loggers start. `pub struct LoggerCatalog`
+  holds the inputs and a `Mutex<BTreeMap<CallbackName, Arc<dyn CallbackLogger>>>` of built loggers.
+  `LoggerCatalog::resolve(&self, name: &str) -> Result<Option<Arc<dyn CallbackLogger>>, RegistryError>`: an unknown
+  name is `RegistryError::UnavailableAdapter`; a name already built returns the same Arc, as each LiteLLM arm first
+  returns the instance it finds in `_in_memory_loggers`; otherwise it calls the name's builder and stores the result.
+  `LoggerCatalog::existing(&self, name: &str) -> Option<Arc<dyn CallbackLogger>>` returns a built logger and never
+  builds one (get_custom_logger_compatible_class). LoggerCatalog also implements B8740's LoggerResolver by calling
+  resolve and ignoring params: no arm in this crate reads per request variables (the datadog and newrelic team arms
+  are B8655's, in the server).
+
+
+  Builders. catalog.rs matches every CallbackName exhaustively. The skeleton creates an empty module
+  registry/catalog/<name>.rs and its `pub mod <name>;` line for each of these 59 names: every name in the list except
+  the nine the server resolves (prometheus, datadog, litellm_agent, generic_api and the five generic_api compatible
+  names, all B8655's arms) and the five proxy hooks that are not loggers (dynamic_rate_limiter,
+  dynamic_rate_limiter_v3, anthropic_cache_control_hook, vector_store_pre_call_hook, compression_interception). Those
+  fourteen arms return UnavailableAdapter directly. In each of the 59 modules write
+  `pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError>` returning
+  `CatalogError::Unavailable`; the logger task that owns the name replaces that body later. `CatalogError` lives in
+  catalog.rs with two variants: `Unavailable { name }` becomes `RegistryError::UnavailableAdapter { name }` in
+  resolve, and `Init { message }` is logged at error level as "[Non-Blocking Error] Error initializing custom logger:
+  {message}" and resolve gives Ok(None), as LiteLLM's except branch does (L5185-L5187). Four modules are filled here:
+  pagerduty, resend_email, sendgrid_email and smtp_email build a `BaseLogger` (in catalog.rs: it holds the name and
+  keeps every trait default), because without litellm_enterprise LiteLLM binds all four factories to the plain
+  CustomLogger class (L264-L289).
+
+
+  Registry. CallbackRegistry gets `pub fn with_resolver(self, resolver: Arc<dyn LoggerResolver>) -> Self`.
+  register_configured keeps its signature and builds `CallbackSink::Logger` from the resolver's answer for the name.
+  Ok(None) registers nothing and returns a new fourth variant, `Registration::NotBuilt`. A registry without a resolver refuses every name with UnavailableAdapter, as today,
+  so B189's tests and B3683's RegistryStarter keep working.
+
+
+  Tests. sections::callback_settings::tests: langsmith in callbacks, s3 in success_callback and rubrik in
+  failure_callback load; `not_a_callback` and the enterprise name `hide_secrets` still fail with their list path;
+  every entry of ALL round trips through from_name and as_str; ALL has 73 names. registry::catalog::tests: an unknown
+  name and a stub name (langsmith) give UnavailableAdapter naming the callback; prometheus and dynamic_rate_limiter
+  give UnavailableAdapter; pagerduty builds a logger named pagerduty, a second resolve returns the same Arc
+  (Arc::ptr_eq), existing gives None before and Some after; a test builder that returns Init gives Ok(None) and logs
+  once; a registry with the catalog as resolver registers pagerduty as a Logger sink and lists it for Success.
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/callback_settings.rs
+    - crates/betterlite-config/src/sections/callback_settings/**
+    - crates/betterlite-logging/src/registry.rs
+    - crates/betterlite-logging/src/registry/catalog.rs
+    - crates/betterlite-logging/src/registry/catalog/**
+    - crates/betterlite-logging/src/registry/tests.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L121-L180
+    why: The literal of logger compatible names and the known list built from it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4407-L4500
+    why: set_callbacks and the legacy success callback names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4502-L5190
+    why: The builder; each arm returns the instance it already holds, and an error is logged and gives None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5315-L5553
+    why: The lookup twin and the per name settings read from callback_settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L240-L289
+    why: Without litellm_enterprise the pagerduty and email factories are the plain CustomLogger.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L134-L417
+    why: initialize_callbacks_on_proxy, the proxy only names and the enterprise branches.
+dod:
+  - text: CallbackName lists the 73 names in order, from_name and as_str round trip, and the section accepts known names in all three lists while unknown and enterprise names still fail the load.
+    proof: [config-tests]
+  - text: LoggerCatalog builds each name once, reuses the Arc, answers existing without building, turns a stub into UnavailableAdapter and an init error into a logged Ok(None).
+    proof: [catalog-tests]
+  - text: The four enterprise factory names build a do nothing logger, and the server and hook names are refused by this crate.
+    proof: [catalog-tests]
+  - text: CallbackRegistry resolves configured names through an attached resolver and keeps refusing them without one.
+    proof: [catalog-tests, registry-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-tests
+      why: the name list is missing or the section still uses the empty list
+      run: grep -q 'enum CallbackName' crates/betterlite-config/src/sections/callback_settings/names.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::callback_settings::/)'
+    - id: catalog-tests
+      why: the catalog does not cache, misreports a stub or never builds the base loggers
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::/)'
+    - id: registry-tests
+      why: the merged registry behavior broke when register_configured moved to the resolver
+      run: grep -q 'fn with_resolver' crates/betterlite-logging/src/registry.rs && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::tests::/)'
+oracle_cases: []
+deviations:
+  - what: lunary, wandb, mlflow, sentry and slack pass the config load as known names and stop startup with "no callback adapter is installed for '<name>'"; LiteLLM starts and sends to them.
+    why: Each needs a Python SDK LiteLLM imports (lunary, wandb, the mlflow tracking client, sentry_sdk, slack_bolt) and no Rust client is planned; B3967 and B3970 built only the records.
+  - what: A known callback name whose logger betterlite has not built (for example langsmith) passes the config load and stops startup with "no callback adapter is installed for 'langsmith'"; LiteLLM starts and logs to it.
+    why: A logger that silently drops every event would look like working logging; the stub modules are filled one by one by the logger tasks.
+  - what: The proxy hook names of initialize_callbacks_on_proxy (presidio, lakera_prompt_injection, aporia_prompt_injection, detect_prompt_injection, azure_content_safety, batch_redis_requests, websearch_interception, code_interpreter_interception) and the enterprise names still fail the config load with ConfigError::Unsupported.
+    why: They are guardrails and hooks, not loggers, and no task turns their callback names into hook objects yet; enterprise code is not ported.
+out_of_scope:
+  - "The server arms (prometheus, datadog, newrelic team loggers, litellm_agent, generic_api and its compatible names): B8655. The server resolver that asks those arms before this catalog: B8742."
+  - "Each logger's build body: the task that owns the logger (see B8740's dependents) or the adapter parts B8743, B8744, B8745 and B8746."
+  - "_maybe_construct_otel_v2 and _maybe_auto_initialize_arize_phoenix: B3851 and B8746."
+pitfalls:
+  - The literal has 55 names, not 56; datadog_cost_management is only a proxy callbacks name and is not in it.
+  - Never hold the Mutex across a builder call that spawns on the tracker and waits; build first, then lock and insert, and if another caller won the race keep the stored Arc.
+  - names.rs is in betterlite-config, so CatalogInputs may use the config types, but config must never import anything from betterlite-logging.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

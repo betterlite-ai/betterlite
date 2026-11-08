@@ -1,0 +1,204 @@
+id: B4721
+title: MCP administrative create, import, update and delete routes
+description: >-
+  Build the five administrative write routes of the MCP management router in betterlite-server, module mcp::server_admin: create a server, bulk-import connectors, update a server, delete a server, and set the public server list.
+  All five sit under the router prefix /v1/mcp (LiteLLM mounts this router with that prefix only, so there is no /mcp/... or /openai/v1/... alias).
+  The routes are glue. The payload checks, the table writes, the registry mutations, the redaction and the token purge already belong to other tasks, so this task only decides the order of the calls, the role gates, the status codes and the exact error bodies.
+  Errors are FastAPI HTTPException values. A detail that is an object gives {"detail": {"error": "..."}} and a detail that is a string gives {"detail": "..."}. The texts below say which one each error uses. A request body that fails to parse gives FastAPI's 422 with a list under "detail", and that comes from the request types of B4716 and the body extractor, not from this module.
+
+
+  Layout. crates/betterlite-server/src/mcp/server_admin.rs holds ServerAdmin (a struct whose fields are the ports and values the routes need, built by B8627 with a struct literal), the AdminError enum (thiserror, one variant per failure, with a method that gives the HTTP status and the JSON detail) and `routes()` which returns the axum router with the five routes.
+  The files beside it, each with a tests.rs: create.rs (route 1), import.rs (route 2), update.rs (route 3), delete.rs (route 4), public_servers.rs (route 5).
+  No global state. LiteLLM's globals become fields of ServerAdmin: the database handle and writes (B4711, B4712), the registry for reads (B4731 SharedRegistry), the registry mutator (B6765 RegistryMutator), the payload rules and stdio policy (B4716 PayloadRules and StdioPolicy), the token cache port (B4715 UserTokenCaches), and two ports declared in this module for route 5 (below).
+  Every handler of routes 1 to 4 runs inside B865's management_endpoint_wrapper; route 5 does not (its decorator has no wrapper), so build it without that layer. Each route needs a valid key (the Depends(user_api_key_auth) argument); use the same authenticated-caller extractor that B4720 and B4723 use.
+  The litellm_changed_by header that routes 1, 3 and 4 declare is never read. Do not declare it.
+  The name stored as touched_by is the caller's user_id, or the string "default_user_id" (LiteLLM's LITELLM_PROXY_ADMIN_NAME) when the caller has none. Call it touched_by below.
+  The database-missing error is B4711's get_prisma_client_or_throw called with a message. It answers 500 with the object detail {"error": <message>}. Routes 1 and 2 pass "Database not connected. Connect a database to your proxy". Routes 3 and 4 pass "Database not connected. Connect a database to your proxy - https://docs.litellm.ai/docs/simple_proxy#managing-auth---virtual-keys". The two texts are different, keep both exactly.
+  Admin means the caller's role is exactly PROXY_ADMIN (B732's role). PROXY_ADMIN_VIEW_ONLY is not enough for any of these routes.
+
+
+  Route 1. POST /v1/mcp/server creates one server. Body NewMCPServerRequest (B4716). Status 201. Response model LiteLLM_MCPServerTable (B858), every field serialized, nulls kept.
+  Steps, in this order, each stopping the request on failure.
+  a. Database check (500, route 1 text above).
+  b. B4716's validate_and_normalize_payload(payload, rules). A PayloadError becomes 400 with the object detail {"error": <the error's Display text>}.
+  c. B4716's stamp_omitted_oauth2_flow(payload). This route does not call validate_required_fields; that check belongs only to the submission route.
+  d. Role gate: not admin gives 403 with the object detail {"error": "User does not have permission to create mcp servers. You can only create mcp servers if you are a PROXY_ADMIN."}. The validation in b and c runs before this gate, so a non-admin with a bad name gets the 400, not the 403.
+  e. Reserved ids: a server_id equal to "all-team-mcpservers" or "all-proxy-mcpservers" (LiteLLM's SpecialMCPServerName) gives 400 {"error": "MCP Server with id <server_id> is special and cannot be used."}.
+  f. When server_id is set, B4731's resolve_server(server_id) with the manager as the registry, the database read get_mcp_server (B4711) as the DbLookup, no temp lookup and match_name false. Any hit (a database row or a config server) gives 400 {"error": "MCP Server with id <server_id> already exists. Cannot create another."}.
+  g. Force the lifecycle fields: approval_status = active, submitted_by = None, submitted_at = None, whatever the caller sent.
+  h. B4712's create_mcp_server_if_identifier_free(payload, touched_by). Any error from it gives 500 {"error": "Error creating mcp server: <error text>"} and an error-level log "Error creating mcp server: <error text>". A McpIdentifierConflict result gives 400 with the object detail {"error": B4716's identifier_conflict_message(conflict)}.
+  i. B4716's warn_if_id_jag_server_outruns_sso for the created row (the caller computes the gap with B1617's id_jag_assertion_capture_gap, as B4716 describes).
+  j. Registry refresh, best effort: RegistryMutator::add(created) and then RegistryMutator::reload(), both inside one guard. A failure of either is logged at error level with the text "MCP server <server_id> created but in-memory registry refresh failed: <error>" and the request still succeeds, because the row is committed and a 500 would make the caller retry and create a duplicate.
+  k. Return B4717's redact function applied to the created row.
+
+  Route 2. POST /v1/mcp/server/import creates many servers from Anthropic connector JSON. Body ConnectorImportRequest (B4716; mcp_servers as a mapping or a list). Status 200. Response MCPConnectorImportResponse (B4716): imported, skipped, errors, in that field order, each a list.
+  Steps.
+  a. Database check (500, route 1 text), then the role gate: not admin gives 403 {"error": "User does not have permission to import mcp servers. You can only import mcp servers if you are a PROXY_ADMIN."}. Unlike route 1 the database check comes first here too, and the validation of entries happens per entry later, never as a request error.
+  b. conversions = B4716's convert_connector_entries(request, stdio), one outcome per entry in input order (Converted or Failed).
+  c. existing names: B4711's get_all_mcp_servers (it leaves drafts out). The set is the lowercased alias and the lowercased server_name of every row, skipping empty values.
+  d. Classify every conversion by index, using only the state before any create. A Failed conversion stays as it is. A Converted one whose lowercased alias (an absent alias counts as the empty string) is in the existing names becomes Skipped(name, "An MCP server named '<alias>' already exists."). Else, when an earlier entry of the same payload (any index below this one whose outcome is Converted, even one that was itself skipped in this step) has the same lowercased alias, it becomes Skipped(name, "Duplicate connector name '<alias>' in the import payload."). Otherwise it stays Converted.
+  e. Create the Converted entries one at a time in input order, awaiting each before the next, so a later entry sees the rows an earlier entry wrote. For one entry: (1) B4716's validate_and_normalize_payload on conversion.request; a PayloadError becomes Failure(name, <Display text>) and nothing is written. (2) B4712's create_mcp_server_if_identifier_free(request, touched_by); an error becomes Failure(name, <error text>) with an error log "Error importing mcp server <name>: <error>". (3) A McpIdentifierConflict becomes Skipped(name, B4716's identifier_conflict_message(conflict)). (4) Otherwise RegistryMutator::add(created), whose error is only logged ("Imported mcp server <name> committed but in-memory registration failed: <error>"), and the outcome is Imported(name, server_id = created.server_id, alias = created.alias or "").
+  f. When at least one entry was Imported, call RegistryMutator::reload() once. Its error is logged ("MCP connector import committed but registry refresh failed: <error>") and never changes the response.
+  g. Build the response from the outcomes in input order: imported = the Imported ones; skipped = the Skipped ones (from step d and from e.3); errors = the Failed conversions (turned into MCPConnectorImportFailure with the same name and error text) and the Failure outcomes of e.1 and e.2, interleaved in input order.
+  The route does not call stamp_omitted_oauth2_flow and does not look at reserved ids, since converted entries carry no server_id.
+
+  Route 3. PUT /v1/mcp/server updates one server. Body UpdateMCPServerRequest (B4716). Status 202. Response model LiteLLM_MCPServerTable, with the body B4717's redact function returns.
+  LiteLLM treats an omitted field as "keep the stored value" and a field sent as null as "clear it". The set of keys the caller sent is payload.fields_set(). B4716's UpdateMCPServerRequest does not record it, so this module reads the raw JSON body first, keeps its top-level key names as a BTreeSet<String> (fields_set), and then calls UpdateMCPServerRequest::from_value on the same value. B4712's update_mcp_server takes that set.
+  Steps, in this order.
+  a. Database check (500, route 3 text).
+  b. B4716's validate_and_normalize_payload(payload, rules) (400 as in route 1). It runs before the role gate.
+  c. Role gate: not admin gives 403 {"error": "Call not allowed to update MCP server. User is not a proxy admin. route=PUT /v1/mcp/server"}.
+  d. Snapshot the stored row: B4711's get_mcp_server(server_id). Any error is logged at warning level "MCP server <server_id>: could not snapshot the pre-update record; skipping the stale-token check: <error>", the snapshot is treated as absent and read_failed is set. The edit goes on.
+  e. Discovery check, only when the payload's per_server_oauth_discovery is truthy and (the snapshot exists or read_failed). eligible is false when the snapshot is absent (read_failed), otherwise B4716's is_per_server_oauth_discovery_eligible(auth_type, oauth2_flow, delegate_auth_to_upstream), where each value comes from the payload when its name is in fields_set and from the snapshot otherwise. Not eligible gives 400 {"error": "per_server_oauth_discovery is only supported for auth_type oauth2 with oauth2_flow authorization_code and without delegate_auth_to_upstream."}.
+  f. DCR check, only when dcr_bridge is truthy, the payload's auth_type is None (absent or null) and (the snapshot exists or read_failed). stored = the snapshot's auth_type, or None when there is no snapshot. When stored is neither true_passthrough nor oauth_delegate the answer is 400 {"error": "dcr_bridge is only supported for auth_type true_passthrough or oauth_delegate (stored auth_type: <R>). Include the server's auth_type in the update payload or configure one of the client-forwarded token modes first."}, where R is the Python repr of the stored value's string form: the string in single quotes ('oauth2') or None.
+  g. B4712's update_mcp_server(payload, touched_by, fields_set). A McpIdentifierConflict gives 400 {"error": <identifier_conflict_message>}. None gives 404 {"error": "MCP Server not found, passed server_id=<server_id>"}.
+  h. B4716's warn_if_id_jag_server_outruns_sso for the updated row.
+  i. RegistryMutator::update(updated), then RegistryMutator::reload(). Neither is guarded here: an error from either is an unhandled server error (500), because LiteLLM has no try around them in this route.
+  j. Stale token purge. When a snapshot exists and B4715's mcp_oauth_token_identity(snapshot) differs from mcp_oauth_token_identity(updated), call B4715's purge_user_oauth_credentials_for_server(server_id). A purge error is logged at warning level "MCP server <server_id>: failed to purge stale per-user OAuth tokens after config change: <error>" and ignored; a purge count above zero is logged at info level "MCP server <server_id>: purged <n> stale per-user OAuth token(s) after a mint-relevant config change". No snapshot (read failed or absent) means no purge.
+  k. Return B4717's redact function applied to the updated row.
+
+  Route 4. DELETE /v1/mcp/server/{server_id} deletes one server. Status 202 with an empty body (LiteLLM returns a bare Response, so no JSON and no content type).
+  Steps. a. Database check (500, route 3 text). b. Role gate: not admin gives 403 {"error": "Call not allowed to delete MCP server. User is not a proxy admin. route=DELETE /v1/mcp/server"}. c. B4712's delete_mcp_server(server_id); None gives 404 {"error": "MCP Server not found, passed server_id=<server_id>"}. d. RegistryMutator::remove(deleted_row), then RegistryMutator::reload(); neither is guarded, so an error is a 500 after the row is already gone. e. Return the empty 202.
+  B4712 already removes the credential, env var and OAuth client rows and the cached tokens of the server; do not repeat that here.
+
+  Route 5. POST /v1/mcp/make_public sets which servers the AI Hub shows. Body MakeMCPServersPublicRequest { mcp_server_ids: Vec<String> } (declared in this module; a missing field or a non-list is a 422). Status 202.
+  The whole handler body is one guard. An HTTPException passes through; any other error becomes 500 with the string detail <error text> and an error log "Error making agent public: <error>" (LiteLLM's own wording, keep it).
+  Steps. a. Read the stored config through the ConfigStore port (below), before any role check. b. Role gate: not admin gives 403 with the object detail {"error": "Only proxy admins can update public mcp servers. Your role=<role>"}, where <role> is the role's string value as LiteLLM prints it (a key without a role prints None; read how B4720 prints it for the same kind of text). c. For each id in order, B4731's server_by_id(id) with no client ip (config servers and database servers both count); the first unknown id gives 404 with the string detail "MCP Server with ID <id> not found". d. Set config["litellm_settings"]["public_mcp_servers"] = ids (create litellm_settings when it is missing or null). e. ConfigStore::save_config(config). f. PublicServerSetting::set(ids), which updates the live public list in memory. g. Log at debug level "Updated public mcp servers to: <ids> by user: <user_id>". h. Return {"message": "Successfully updated public mcp servers", "public_mcp_servers": <ids>, "updated_by": <caller user_id or null>}, keys in that order.
+  Two ports are declared here for route 5. ConfigStore: get_config() -> serde_json::Value and save_config(Value), the same stored configuration LiteLLM's ProxyConfig reads and writes (B8627 implements it over B8380's ProxyConfigState in shared.proxy_config). PublicServerSetting: set(Vec<String>), which B8627 implements over the live RegistrySettings.public_mcp_servers of B4731.
+
+  Tests use synthetic servers (ids like test-srv-1, names like test-weather, urls like https://mcp.example.test/sse), fakes for every port, a recording fake for the registry mutator and the token purge, and a fake database whose methods can fail on demand. They cover every branch above, including the order of the checks in routes 1, 3 and 5 and the order of the calls to the registry mutator.
+
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/server_admin.rs
+    - crates/betterlite-server/src/mcp/server_admin/**
+    - tools/oracle/helpers/b4721.py
+    - tools/oracle/helpers/b4721/**
+    - tools/oracle/src/helpers/server/b4721.rs
+    - tools/oracle/src/helpers/server/b4721/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L87
+    why: The router prefix /v1/mcp, the only mount point of these routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L982-L992
+    why: get_prisma_client_or_throw, the 500 object detail every route here starts with.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1802-L1898
+    why: Route 1 from its decorator, the check order, the forced lifecycle fields and the best-effort registry refresh.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1900-L2008
+    why: Route 2 from its decorator, the classify and create steps, the single reload and the response assembly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2354-L2418
+    why: Route 4 from its decorator, the delete, the registry removal and the bare 202.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2941-L3095
+    why: Route 3 from its decorator, the snapshot, the discovery and DCR checks, the update, the reload and the token purge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L3097-L3167
+    why: Route 5 from its decorator, the config read before the role check, the id checks and the saved list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1531-L1534
+    why: SpecialMCPServerName, the two reserved server ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1794-L1795
+    why: MakeMCPServersPublicRequest, the body of route 5.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1738
+    why: LITELLM_PROXY_ADMIN_NAME, "default_user_id", the touched_by fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1143-L1154
+    why: The signature of update_mcp_server and its three possible results (row, conflict, None), which route 3 maps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1751-L1762
+    why: mcp_oauth_token_identity, the comparison that decides the purge in route 3.
+  - url: https://docs.litellm.ai/docs/mcp
+    why: The documented admin routes for adding, updating and removing servers.
+
+dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports; B8627 mounts the routes and proves the items below over HTTP with the cases that moved there.
+    proof: [admin-tests]
+  - text: >-
+      POST /v1/mcp/server runs the database check, payload validation, the oauth2 flow stamp, the admin gate, the reserved id check and the existing id check in that order with the exact texts,
+      forces approval_status active and clears submitted_by and submitted_at, answers 201 with the redacted row, and maps a conflict to 400 and a write error to 500.
+    proof: [create-tests]
+  - text: >-
+      A failing registry refresh after a successful create is logged and the route still answers 201 with the redacted row.
+    proof: [create-tests]
+  - text: >-
+      POST /v1/mcp/server/import converts, classifies against existing and earlier aliases, creates entries one at a time in order, reloads the registry once and only when something was imported,
+      and returns imported, skipped and errors lists with LiteLLM's exact skip and error texts; a bad entry never fails the request.
+    proof: [import-tests]
+  - text: >-
+      PUT /v1/mcp/server validates before the admin gate, snapshots the stored row with a swallowed read error, applies the discovery and DCR checks with their read-failed rules,
+      maps conflict to 400 and a missing row to 404, updates and reloads the registry, purges per-user OAuth tokens only when the token identity changed, and answers 202 with the redacted row.
+    proof: [update-tests]
+  - text: >-
+      DELETE /v1/mcp/server/{server_id} checks the database then the admin gate, answers 404 for an unknown id, removes the server from the registry and reloads it, and answers 202 with an empty body.
+    proof: [delete-tests]
+  - text: >-
+      POST /v1/mcp/make_public reads the config before the admin check, answers 403 and 404 with their exact detail shapes, saves litellm_settings.public_mcp_servers, updates the live setting
+      and returns message, public_mcp_servers and updated_by; an unexpected error is a 500 with a string detail.
+    proof: [public-tests]
+  - text: >-
+      The five routes are registered once under /v1/mcp with the methods, paths and status codes in the description, every error body has the object or string detail shape the description names,
+      and a view-only admin is refused by all five.
+    proof: [admin-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: admin-tests
+      why: the route table, the shared error mapping or the role gates of the module are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::server_admin::tests::/)'
+    - id: create-tests
+      why: the create route, its check order, its forced fields or its best-effort registry refresh is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::server_admin::create::/)'
+    - id: import-tests
+      why: the import route, its classification, its per-entry outcomes or its single reload is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::server_admin::import::/)'
+    - id: update-tests
+      why: the update route, its snapshot, its two pre-checks, its reload or its token purge is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::server_admin::update::/)'
+    - id: delete-tests
+      why: the delete route, its 404, its registry removal or its empty 202 is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::server_admin::delete::/)'
+    - id: public-tests
+      why: the make-public route, its config order, its detail shapes or its saved list is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::server_admin::public_servers::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      The 500 text "Error creating mcp server: <error text>" and the 500 detail of make_public carry betterlite's error text for the failed write or config save, not a Python exception string.
+    why: The wrapped error comes from the Rust database and config code, so its wording cannot match Python's repr of a Prisma or driver exception. The prefix, the status and the detail shape are identical.
+  - what: The role text in the make_public 403 prints the role's string value as B2314 and B732 define it; a key without a role prints "None".
+    why: LiteLLM formats the enum or None with Python's str; betterlite follows the text the role task defines.
+
+out_of_scope:
+  - "validate_and_normalize_mcp_server_payload, stamp_omitted_oauth2_flow, warn_if_id_jag_server_outruns_sso, mcp_identifier_conflict_message, raise_mcp_identifier_conflict, _validate_mcp_required_fields and the request and response models: owned by B4716. This task calls them and puts their errors into HTTP bodies."
+  - "get_prisma_client_or_throw, the server table handle, get_mcp_server, get_all_mcp_servers and McpIdentifierConflict: owned by B4711."
+  - "create_mcp_server_if_identifier_free, update_mcp_server and delete_mcp_server, including the credential and token cleanup on delete: owned by B4712."
+  - "mcp_oauth_token_identity and purge_user_oauth_credentials_for_server: owned by B4715."
+  - "_redact_mcp_credentials, _user_is_full_admin and the sanitizers: owned by B4717."
+  - "resolve_mcp_server and get_mcp_server_by_id (resolve_server, server_by_id): owned by B4731. add_server, update_server, remove_server and reload_servers_from_database: owned by B6765."
+  - "management_endpoint_wrapper: owned by B865. The audit log placeholders in routes 3 and 4 (is_audit_logging_enabled followed by pass) do nothing at the pin and are not built."
+  - "ProxyConfig.get_config and save_config: no task owns them yet; route 5 calls them through the ConfigStore port."
+  - "POST /server/register, the submission review routes and the pinned tool routes belong to B4722. The temporary OAuth session route belongs to B4718, the preview routes of rest_endpoints.py to B4729, the read-only catalog and health routes to B4720, the user credential routes to B4723, the env var routes to B4724, the toolset and gateway session routes to B4725 and the OAuth browser routes to B4719."
+
+pitfalls:
+  - Route 1 validates and stamps the payload before the admin gate, so a non-admin sending a server name with the separator character gets 400, not 403; route 2 does the opposite and gates first.
+  - Route 3 also validates before its admin gate, but its database check comes first, so without a database every caller gets the 500 whatever the payload holds.
+  - The server_id existence check in route 1 goes through resolve_server, so an id that only exists in config.yaml is refused with the same "already exists" text as a database row.
+  - Route 1 overwrites approval_status, submitted_by and submitted_at even when the caller sent others, so a caller cannot plant a fake pending entry.
+  - A failed registry add or reload after the insert in routes 1 and 2 is swallowed and logged, while the same calls in routes 3 and 4 are not guarded; do not copy the guard across.
+  - The import classifier tests the existing names first and the in-payload duplicates second, and the duplicate test uses the alias of every earlier Converted entry whatever happened to that entry, so two entries with the same alias that already exists both report "already exists".
+  - Import entries are created strictly one after another, so a duplicate that slipped past classification (same alias after normalization) is caught by the identifier-free insert and reported as a skip with the identifier conflict text, not as an error.
+  - The import errors list mixes conversion failures and create failures in input order, and both are shown as {name, error}; the skipped list is not part of errors.
+  - In route 3 the read_failed case counts as "not eligible" for the discovery check and as "stored auth_type None" for the DCR check, so a snapshot failure turns those two payloads into 400s instead of letting them through.
+  - In route 3 a snapshot of None without a read error (an unknown server) skips both pre-checks, so an unknown server_id with per_server_oauth_discovery still ends in the 404 from step g.
+  - The stored auth_type in the DCR error text is printed as a Python repr, with single quotes around the string ('oauth2') or the bare word None.
+  - The purge compares the identity of the snapshot with that of the row the update returned, and B4715 compares client_id and client_secret decrypted; comparing the stored ciphertext would purge tokens on every save.
+  - Route 4 answers an empty body, not {} and not null, with status 202, and a repeated delete of the same id gives the 404 text, not another 202.
+  - Route 5 reads the config before it checks the role, so a non-admin call still hits the config store, and route 5 has no database check at all.
+  - Route 5 raises the 404 with a plain string under detail ("MCP Server with ID x not found") while its 403 uses the object detail with the key error; every other 4xx in this task uses the object detail.
+  - Route 5 saves the list as given, so an empty list and a list with repeated ids are both accepted and stored unchanged.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -141,20 +141,20 @@ deviations:
 out_of_scope:
   - >-
     Manager execute_mcp_tool, complete_call_tool_result wire conversion and tool calling
-    semantics (Q2 manager leaves).
+    semantics (execute_mcp_tool is B8198's, module mcp::ops_execution; the rest are Q2 manager leaves).
   - >-
     Manager _get_tools_from_server, ID/name lookup, allowed-server resolution and IP filtering
     (Q2 manager).
   - >-
     fire_mcp_tool_call_logging, fire_mcp_tool_call_failure_logging and their logging
-    destinations (Q2 manager).
+    destinations (B8198, module mcp::ops_execution).
   - >-
     Virtual tool handlers: coerce_top_k, handle_agent_search, handle_skill_search,
     handle_mcp_tool_search, handle_mcp_tool_call (Q4 catalog/OpenAPI).
   - >-
     MCPRequestHandler header extraction methods (part of B4726).
   - >-
-    common_processing_pre_call_logic, MCPRequestContext.resolve_guardrail_context, pre-call/
+    common_processing_pre_call_logic (B8801's shared PreCall step, route type call_mcp_tool; take `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state constructor; the part that mounts these routes passes B8802's pre_call_step(state)), MCPRequestContext.resolve_guardrail_context, pre-call/
     guardrail ordering (Q7 shared pre-call service).
   - >-
     acting_user_auth, reject_disallowed_mcp_client, build_effective_auth_contexts,

@@ -37,7 +37,7 @@ description: >-
   Define the shared KeyHash newtype in key_hash.rs as an opaque supplied storage identifier. It
   must not rehash, require a 64-character hex string or reject legacy/custom identifiers. Hashing a
   presented token and the startswith('sk-') conditional belong to the caller's hash_token/
-  _hash_token_if_needed helpers, currently B124; neither helper is called by this repository.
+  _hash_token_if_needed helpers, built by B2362; neither helper is called by this repository.
   Test byte-for-byte preservation of a prehashed identifier and an unusual literal key containing
   SQL punctuation. The old proposed token-hash oracle case was outside this source's behavior.
 
@@ -133,7 +133,7 @@ out_of_scope:
   - deleted_table, _VerificationTokenTables.litellm_deletedverificationtoken,
     _VerificationTokenTransactionManager and _PrismaVerificationTokenDb.tx serve only the unused
     delete_token path. B726 owns the live DeletedVerificationTokenRepository.
-  - B124 owns hash_token/_hash_token_if_needed and PrismaClient's higher-level raw table policy;
+  - B2362 owns hash_token/_hash_token_if_needed and B8397 PrismaClient's remaining table operations;
     this repository does not call those helpers. B777 owns the live key archive/delete workflow.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as key_repository in the db group. Replace the stub Op in tools/oracle/src/helpers/db/key_repository.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/key_repository.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

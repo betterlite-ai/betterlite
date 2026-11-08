@@ -1,0 +1,134 @@
+id: B7844
+title: Python Google GenAI generate-content functions
+description: >-
+  Add `betterlite.google_genai.generate_content`, `agenerate_content`, `generate_content_stream` and
+  `agenerate_content_stream` so they work where LiteLLM's do. The Rust owner of the call is B3489 (GenAI generation and
+  streaming dispatch). It holds the mock response, the `generationConfig` rename, the adapter to chat completions,
+  `systemInstruction` handling and the request body merge. Python collects the arguments and moves JSON and bytes. It adds none
+  of that logic.
+
+
+  Native side, the family `genai`, in `crates/betterlite-python`. It follows B5659's shape: `src/genai.rs` has
+  `pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()>` that adds the class `NativeGenaiSession`, the class
+  `NativeGenaiStream` and the exception `NativeGenaiError` (made with `pyo3::create_exception!`). The architect writes the
+  `mod` and `register` lines in `src/lib.rs` and the import in the `.pyi` package, so never edit `lib.rs`. The session is built
+  from the JSON settings text. Its methods are `generate_content(payload_text, blobs)`, `agenerate_content(payload_text,
+  blobs)`, `generate_content_stream(payload_text, blobs)` and `agenerate_content_stream(payload_text, blobs)`, with the
+  payload from B6040's `to_call_payload`. The blocking ones run on the tokio runtime inside `py.detach`, and the others return
+  awaitables through `future_into_py`. The non-stream methods return the response as JSON text. The stream methods return a
+  `NativeGenaiStream` with `next_chunk()`, `anext_chunk()`, `close()` and `aclose()`, and a chunk is raw bytes of one
+  server-sent event, or None at the end. Read B3489 for the Rust entry names and B5659 for the error JSON keys. Conversions sit
+  in `src/genai/convert.rs` and need no interpreter, with tests that start with `request_` and `error_`.
+
+
+  Python side, the package `python/betterlite/_genai/` with files under 300 lines and an explicit `__all__`, and the package
+  `python/betterlite/google_genai/__init__.py` that re-exports the four names, as litellm/google_genai/__init__.py does. The
+  architect writes one star line in `python/betterlite/__init__.py`. Never edit that file. Use `to_call_payload`,
+  `call_native`, `acall_native`, `read_settings` and `proxy_headers` from B6040's `_endpoints` package and do not write a second
+  copy.
+
+
+  All four functions have the signature `(model, contents, config=None, tools=None, extra_headers=None, extra_query=None,
+  extra_body=None, timeout=None, custom_llm_provider=None, **kwargs)` (litellm/google_genai/main.py L234-L248, L302-L316,
+  L392-L406, L487-L501). A test compares `inspect.signature` for each. The sync functions accept `agenerate_content=True` and
+  `agenerate_content_stream=True` in `kwargs`, pop the one that fits and return a coroutine when it is set. The async functions
+  set that flag. Python passes `generationConfig`, `systemInstruction`, `system_instruction` and `stream` in `kwargs` through
+  unchanged, since Rust renames and strips them. `contents`, `config` and `tools` go as given; a value that is not JSON
+  fails with B6040's conversion error before the call. `timeout` may be an `httpx.Timeout`, which B6040 converts.
+
+
+  `client` in `kwargs` raises B158's `UnsupportedCallArgument` when it is not None, through `to_call_payload`. A
+  `litellm_logging_obj` is dropped. `read_settings` supplies `api_key`, `api_base`, `vertex_project`, `vertex_location` and
+  `vertex_credentials`, read at call time.
+
+
+  Results: a non-stream result is `json.loads` of the text, a plain dict (LiteLLM returns a provider response object whose
+  `model_dump` is the same dict, so tests compare `model_dump()` on the LiteLLM side with the dict on this side). A stream
+  result is a `GenaiStream` with `__iter__`/`__next__` yielding `bytes` for the sync call, and `__aiter__`/`__anext__`
+  yielding `bytes` for the async call, plus `close` and `aclose`. A provider error raises the class from B158's table, with the
+  native error as `__cause__`.
+
+
+  Tests use `tests/genai_server.py`, a local `http.server` in a thread. It answers POST
+  `/v1beta/models/<model>:generateContent` with fixed JSON, and POST `:streamGenerateContent?alt=sse` with two
+  `data: {...}` events. It records each request, and gives a 400 body in Google's error shape when the key is "bad-key". Tests
+  call both packages with the same arguments and compare results, request bodies and stream bytes.
+scope:
+  paths:
+  - crates/betterlite-python/Cargo.toml
+  - crates/betterlite-python/src/genai.rs
+  - crates/betterlite-python/src/genai/**
+  - crates/betterlite-python/python/betterlite/_native_genai.pyi
+  - crates/betterlite-python/python/betterlite/_genai/**
+  - crates/betterlite-python/python/betterlite/google_genai/**
+  - crates/betterlite-python/tests/genai_server.py
+  - crates/betterlite-python/tests/test_google_genai.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L234-L573
+  why: The four public signatures and the async flags the sync functions pop.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/__init__.py
+  why: The four names the package exports.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/streaming_iterator.py#L22-L58
+  why: A stream chunk is the bytes of one server-sent event with a blank line after it.
+- url: https://github.com/PyO3/pyo3-async-runtimes
+  why: The future_into_py bridge.
+dod:
+- text: The four functions keep LiteLLM's signatures.
+  proof: [genai-signature]
+- text: A plain call and a call with config, tools, `systemInstruction` and `extra_body` send the same request body and return the same data as LiteLLM.
+  proof: [genai-call]
+- text: The async functions run on the event loop, and each sync function returns a coroutine when its async flag is True.
+  proof: [genai-async]
+- text: A stream gives the same bytes as LiteLLM on both iteration paths, ends cleanly and closes.
+  proof: [genai-stream]
+- text: A provider 400 raises the right class with the native error as cause, and `client` is refused.
+  proof: [genai-error]
+- text: The native register function adds the session, the stream and the error class, and conversion has tests without an interpreter.
+  proof: [genai-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: genai-signature
+    why: A renamed or reordered parameter breaks positional callers.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_google_genai.py -k signature
+  - id: genai-call
+    why: A request field is dropped or renamed on the way to the provider.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_google_genai.py -k "plain or optional"
+  - id: genai-async
+    why: An async call blocks the loop or a sync flag returns the wrong type.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_google_genai.py -k "async or coroutine"
+  - id: genai-stream
+    why: Stream bytes differ from LiteLLM's or iteration never ends.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_google_genai.py -k stream
+  - id: genai-error
+    why: A provider error shows up as a generic exception, or a client is dropped silently.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_google_genai.py -k "error or client"
+  - id: genai-native
+    why: The native conversion drops a field of the request or the error.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^genai::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Untyped dicts and ignores creep in at the native boundary.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`client` raises `UnsupportedCallArgument`."
+  why: A Python HTTP client can't drive the Rust call, and ignoring it could send a request past a caller's proxy or custom TLS.
+- what: A non-stream result is a plain dict, where LiteLLM returns a provider response object.
+  why: The wheel has no pydantic, and the provider types are not part of the public surface. The data is the same.
+out_of_scope:
+- The mock response, the `generationConfig` rename, the chat-completions adapter, `_merge_native_request_fields` and the provider handler run in Rust (B3489 and its parts).
+- litellm/google_genai/adapters and the streaming logging code are Rust-side concerns.
+- The error table and `UnsupportedCallArgument` are B158, and the payload, runner and settings helpers are B6040.
+pitfalls:
+- 'Do not rename `generationConfig` or strip `stream` in Python. Rust does both, and a second rename would hide a Rust bug.'
+- 'The sync stream function and the async stream function return different iterator kinds. Keep that, or the stream test fails.'
+- 'A stream chunk is bytes, not str. Do not decode it.'
+- 'Pop the async flag from `kwargs` before the payload is built, or it reaches Rust as a request field.'
+- 'Close a stream once: `close` after the end does nothing and does not raise.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
