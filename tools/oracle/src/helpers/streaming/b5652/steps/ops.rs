@@ -120,7 +120,7 @@ pub(super) fn repetition(
 
 pub(super) fn finish_reason(shaper: &mut ChunkShaper) -> Result<Value, Box<HelperError>> {
     serde_json::to_value(&finish_reason_handler(shaper).map_err(|error| shape_error(&error))?)
-        .map_err(|error| serialization_error(&error))
+        .map_err(|error| failure("SerializationError", None, error.to_string()))
 }
 
 pub(super) fn record_usage(shaper: &mut ChunkShaper, step: &Step) -> Value {
@@ -236,16 +236,10 @@ pub(super) fn encoded<T>(value: &T) -> Result<Value, Box<HelperError>>
 where
     T: Serialize,
 {
-    serde_json::to_value(value).map_err(|error| {
-        Box::new(HelperError {
-            class: "SerializationError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
-    })
+    match serde_json::to_value(value) {
+        Ok(serialized) => Ok(serialized),
+        Err(error) => Err(failure("SerializationError", None, error.to_string())),
+    }
 }
 
 fn decimal_json(cost: Decimal) -> Option<Value> {
@@ -254,28 +248,21 @@ fn decimal_json(cost: Decimal) -> Option<Value> {
         .map(Value::Number)
 }
 
-fn serialization_error(error: &serde_json::Error) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "SerializationError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
-}
-
 fn shape_error(error: &StreamShapeError) -> Box<HelperError> {
     let (class, status) = match error {
         StreamShapeError::Repetition { .. } => ("InternalServerError", Some(500_u16)),
         StreamShapeError::Arguments { .. } => ("ValidationError", None),
     };
+    failure(class, status, error.to_string())
+}
+
+fn failure(class: &str, status: Option<u16>, message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: class.to_owned(),
         status,
         error_type: None,
         param: None,
         code: None,
-        message: error.to_string(),
+        message,
     })
 }
