@@ -1,0 +1,11 @@
+kind: helper
+name: pipeline-bad-mode
+call:
+  b3240:
+    function: validate_pipeline
+    pipeline:
+      mode: during_call
+      steps:
+        - {guardrail: pii}
+env: {}
+compare: {ignore: []}

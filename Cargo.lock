@@ -1960,6 +1960,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-openapi",
  "betterlite-paths",
+ "betterlite-policy",
  "betterlite-postgres-fixture",
  "betterlite-prompts",
  "betterlite-provider",
@@ -2050,6 +2051,16 @@ dependencies = [
 [[package]]
 name = "betterlite-policy"
 version = "0.1.0"
+dependencies = [
+ "betterlite-auth",
+ "fancy-regex 0.19.2",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "betterlite-postgres-fixture"
