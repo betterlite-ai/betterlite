@@ -71,8 +71,8 @@ pub fn logging_payload_trace_id(
     fallback_trace_id: &str,
     request_correlation_in_logs: bool,
 ) -> String {
-    let own_trace = params.litellm_trace_id.as_deref();
-    let own_session = params.litellm_session_id.as_deref();
+    let own_trace = params.litellm_trace_id.clone();
+    let own_session = params.litellm_session_id.clone();
     let meta_trace = metadata_text(params, "trace_id");
     let meta_session = metadata_text(params, "session_id");
     let candidates = if request_correlation_in_logs {
@@ -84,8 +84,7 @@ pub fn logging_payload_trace_id(
         .into_iter()
         .flatten()
         .next()
-        .unwrap_or(fallback_trace_id)
-        .to_owned()
+        .unwrap_or_else(|| fallback_trace_id.to_owned())
 }
 
 #[must_use]
@@ -99,16 +98,16 @@ pub fn logging_payload_session_id(
     }
     params
         .litellm_session_id
-        .as_deref()
+        .clone()
         .or_else(|| metadata_text(params, "session_id"))
-        .unwrap_or(fallback_session_id)
-        .to_owned()
+        .unwrap_or_else(|| fallback_session_id.to_owned())
 }
 
-fn metadata_text<'params>(params: &'params LitellmParams, key: &str) -> Option<&'params str> {
+fn metadata_text(params: &LitellmParams, key: &str) -> Option<String> {
     match params.metadata.as_ref()?.get(key)? {
-        Json::Text(text) => Some(text),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+        Json::Text(text) => Some(text.clone()),
+        Json::Number(number) => Some(number.to_string()),
+        Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
 

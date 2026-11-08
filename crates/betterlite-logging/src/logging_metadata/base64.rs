@@ -4,6 +4,7 @@ use rust_decimal::Decimal;
 use rust_decimal::RoundingStrategy;
 use thiserror::Error;
 
+const DEFAULT_MAX_BASE64_LENGTH: i64 = 64;
 const MAX_TRUNCATION_DEPTH: usize = 20;
 const BYTES_PER_KIB: u32 = 0x0400;
 const BYTES_PER_MIB: u32 = 0x0010_0000;
@@ -16,6 +17,8 @@ pub enum Base64Error {
     LengthOverflow,
     #[error("a base64 payload size overflowed the decimal range")]
     SizeOverflow,
+    #[error(transparent)]
+    Env(#[from] betterlite_env::EnvError),
 }
 
 pub struct Base64Truncator {
@@ -29,6 +32,16 @@ impl Base64Truncator {
             data_uri: Regex::new("data:([^;]+);base64,([A-Za-z0-9+/=]+)")?,
             max_payload_length,
         })
+    }
+
+    // MAX_BASE64_LENGTH_FOR_LOGGING defaults to 64, and a value of 0 or below turns truncation off
+    pub fn from_env(raw: Option<&str>) -> Result<Self, Base64Error> {
+        let configured = match raw {
+            Some(text) => betterlite_env::number::<i64>("MAX_BASE64_LENGTH_FOR_LOGGING", text)?,
+            None => None,
+        };
+        let limit = configured.unwrap_or(DEFAULT_MAX_BASE64_LENGTH);
+        Self::new(usize::try_from(limit).unwrap_or(0))
     }
 
     pub fn truncate_messages(&self, messages: &Json) -> Result<Json, Base64Error> {

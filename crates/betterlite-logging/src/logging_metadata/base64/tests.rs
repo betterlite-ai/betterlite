@@ -4,6 +4,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
 
+use super::Base64Error;
 use super::Base64Truncator;
 
 fn messages(encoded: &str) -> Json {
@@ -142,4 +143,33 @@ fn the_input_is_not_modified() {
         .truncate_messages(&original)
         .expect("truncated");
     assert_eq!(serde_json::to_string(&original).expect("encodes"), before);
+}
+
+#[rstest]
+#[case::unset(None, 65, true)]
+#[case::unset_at_the_default(None, 64, false)]
+#[case::empty(Some(""), 65, true)]
+#[case::raised(Some("1000"), 999, false)]
+#[case::raised_and_exceeded(Some("1000"), 1001, true)]
+#[case::zero(Some("0"), 200, false)]
+#[case::negative(Some("-1"), 200, false)]
+fn the_limit_comes_from_the_environment_and_defaults_to_64(
+    #[case] configured: Option<&str>,
+    #[case] length: usize,
+    #[case] truncated: bool,
+) {
+    let original = messages(&format!(r#"{{"content": "{}"}}"#, data_uri(length)));
+    let result = Base64Truncator::from_env(configured)
+        .expect("limit parses")
+        .truncate_messages(&original)
+        .expect("truncated");
+    assert_eq!(result != original, truncated);
+}
+
+#[test]
+fn a_limit_that_is_not_a_number_is_refused() {
+    let Err(error) = Base64Truncator::from_env(Some("lots")) else {
+        panic!("the limit is refused");
+    };
+    assert!(matches!(error, Base64Error::Env(_)));
 }

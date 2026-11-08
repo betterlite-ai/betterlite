@@ -78,9 +78,9 @@ fn declared_tags(
         return Ok(None);
     };
     match fields.get("tags") {
-        None => Ok(None),
+        None | Some(Json::Null) => Ok(None),
         Some(Json::List(items)) => Ok(Some(items.clone())),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
             Err(TagError::TagsType { field })
         }
     }

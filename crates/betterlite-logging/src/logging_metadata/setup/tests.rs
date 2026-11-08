@@ -195,6 +195,19 @@ fn standard_metadata_uses_the_argument_when_the_record_has_no_guardrails() {
 }
 
 #[test]
+fn standard_metadata_keeps_duplicate_guardrails_when_the_record_has_none() {
+    let metadata = metadata("{}");
+    let argument = vec!["a".to_owned(), "a".to_owned()];
+    let mut request = metadata_request(Some(&metadata));
+    request.applied_guardrails = Some(&argument);
+    let record = get_standard_logging_metadata(&request).expect("record");
+    assert_eq!(
+        record.applied_guardrails,
+        Some(vec!["a".to_owned(), "a".to_owned()])
+    );
+}
+
+#[test]
 fn standard_metadata_copies_a_user_api_key_only_when_it_is_a_sha256_digest() {
     let digest = "a".repeat(64);
     let metadata = metadata(&format!(

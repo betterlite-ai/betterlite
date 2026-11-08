@@ -122,6 +122,20 @@ fn a_non_list_tag_value_is_refused_by_field_name() {
 }
 
 #[test]
+fn a_null_metadata_tag_value_falls_back_to_litellm_metadata() {
+    let params = params(r#"{"metadata": {"tags": null}, "litellm_metadata": {"tags": ["b"]}}"#);
+    let tags = get_request_tags(&params, None, &settings(&[], false)).expect("tags");
+    assert_eq!(tags, vec![text("b")]);
+}
+
+#[test]
+fn a_null_tag_value_in_both_sources_gives_no_tags() {
+    let params = params(r#"{"metadata": {"tags": null}, "litellm_metadata": {"tags": null}}"#);
+    let tags = get_request_tags(&params, None, &settings(&[], false)).expect("tags");
+    assert!(tags.is_empty());
+}
+
+#[test]
 fn request_tags_are_empty_without_any_source() {
     let params = params("{}");
     assert!(

@@ -2,8 +2,6 @@
 
 use std::time::{Duration, Instant};
 
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::TraceIdCache;
@@ -173,8 +171,15 @@ fn empty_strings_are_values_the_caller_chose() {
 }
 
 #[test]
-fn a_non_text_metadata_id_is_ignored() {
+fn a_numeric_metadata_id_is_used_as_its_decimal_text() {
     let record = params("{\"metadata\": {\"trace_id\": 7, \"session_id\": 8}}");
+    assert_eq!(logging_payload_trace_id(&record, "generated", true), "7");
+    assert_eq!(logging_payload_session_id(&record, "generated", true), "8");
+}
+
+#[test]
+fn a_boolean_or_list_metadata_id_is_ignored() {
+    let record = params("{\"metadata\": {\"trace_id\": true, \"session_id\": [1]}}");
     assert_eq!(
         logging_payload_trace_id(&record, "generated", true),
         "generated"
@@ -183,11 +188,4 @@ fn a_non_text_metadata_id_is_ignored() {
         logging_payload_session_id(&record, "generated", true),
         "generated"
     );
-}
-
-#[test]
-fn metadata_json_is_built_from_the_wire_shape() {
-    let metadata: IndexMap<String, Json> =
-        serde_json::from_str(r#"{"trace_id": "t"}"#).expect("metadata decodes");
-    assert_eq!(metadata.get("trace_id"), Some(&Json::Text("t".to_owned())));
 }

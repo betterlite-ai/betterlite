@@ -57,17 +57,14 @@ pub fn get_standard_logging_metadata(
     if !source.is_some_and(|fields| fields.contains_key("applied_guardrails")) {
         record.applied_guardrails = request.applied_guardrails.map(<[String]>::to_vec);
     }
-    record.used_client_oauth_token = resolved_oauth_token(
-        request.metadata,
-        request.params,
-        request.custom_llm_provider,
-    );
+    record.used_client_oauth_token = resolved_oauth_token(request);
     let Some(fields) = request.metadata else {
         return Ok(record);
     };
     if let Some(argument) = request
         .applied_guardrails
         .filter(|guardrails| !guardrails.is_empty())
+        && let Some(Json::List(_)) = fields.get("applied_guardrails")
         && let Some(recorded) = record.applied_guardrails.as_ref()
     {
         let merged: IndexSet<&String> = argument.iter().chain(recorded).collect();
@@ -96,19 +93,16 @@ fn prompt_management(request: &StandardMetadataRequest<'_>) -> Option<Json> {
     ])))
 }
 
-fn resolved_oauth_token(
-    metadata: Option<&MetadataMap>,
-    params: Option<&LitellmParams>,
-    custom_llm_provider: Option<&str>,
-) -> Option<bool> {
-    let stamped = params
+fn resolved_oauth_token(request: &StandardMetadataRequest<'_>) -> Option<bool> {
+    let stamped = request
+        .params
         .and_then(|source| source.litellm_metadata.as_ref())
         .and_then(|litellm_metadata| litellm_metadata.get("used_client_oauth_token"))
-        .or_else(|| metadata?.get("used_client_oauth_token"));
+        .or_else(|| request.metadata?.get("used_client_oauth_token"));
     let Some(Json::Bool(client_sent)) = stamped else {
         return None;
     };
-    Some(*client_sent && custom_llm_provider == Some("anthropic"))
+    Some(*client_sent && request.custom_llm_provider == Some("anthropic"))
 }
 
 mod tests;
