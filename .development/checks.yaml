@@ -129,8 +129,10 @@ base:
         if [ -z "$packages" ]; then echo "no package owns the corpus in $dirs"; exit 1; fi
         cargo nextest run --locked --no-tests=warn $packages -E 'test(/replays_the_/)'
     - id: hooks
-      why: the prek pre-commit hooks pass on every file (hygiene, test placement, ast-grep rules, typos, rustfmt)
-      run: prek run --all-files
+      why: the prek pre-commit hooks (hygiene, test placement, ast-grep rules, typos, rustfmt) pass on the files the change touches, and on every file when it touches hook config or tool versions
+      run: |-
+        config=(.pre-commit-config.yaml sgconfig.yml .ast-grep rust-toolchain.toml .development/checks.yaml typos.toml tools/oracle/helpers/pyrightconfig.json tools/oracle/helpers/ruff.toml tools/oracle/litellm/pyproject.toml tools/oracle/litellm/uv.lock)
+        if git diff --quiet "$GATE_BASE" HEAD -- "${config[@]}"; then prek run --from-ref "$GATE_BASE" --to-ref HEAD; else prek run --all-files; fi
     - id: similarity
       why: no two functions are near copies of each other
       run: similarity-rs $(ls -d crates tools 2>/dev/null) --threshold 0.85 --min-lines 8 --skip-test --fail-on-duplicates
