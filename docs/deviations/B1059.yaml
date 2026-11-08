@@ -23,18 +23,22 @@ deviations:
       task.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/vector_store/transformation.py#L343
   - what: >-
-      A 200 answer whose body is an error object such as {"error":{"message":"x","type":"y"}} is a
-      ValidationError without the "Failed to generate embedding for query: " prefix. LiteLLM raises
-      inside executor.embed for this body, so its caller gets a plain Exception with that prefix.
+      A 200 answer whose body carries a meaningful error such as {"error":{"message":"x","type":"y"}}
+      is handled in one of two ways. A body that also lacks a required field of the typed
+      EmbeddingResponse is a ValidationError without the "Failed to generate embedding for query: "
+      prefix. A body that has every required field plus the error returns its first vector. LiteLLM
+      raises for both, so its caller gets a plain Exception with that prefix.
     why: >-
-      The decode failure carries no body, and a missing data field looks the same as a missing usage
-      field, so embed_query cannot tell an error body from the other refused shapes above. Keeping
-      them apart needs the body kept by the decode in betterlite-openai, outside this task.
+      The typed decode inside the B1058 executor has no error field and ignores unknown fields, so it
+      drops the error value. A complete body decodes and its vector comes back as a success. When a
+      required field is missing the decode fails, and the failure carries no body, so embed_query
+      cannot tell an error body from the other refused shapes above. The decode lives in
+      betterlite-openai, outside this task.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/vector_store/transformation.py#L342
   - what: >-
-      The error-object check of the embeddings response conversion is not reached for a 200 body
-      that carries a meaningful error: betterlite reports the shape refusal instead of that error.
+      The error-object check of the embeddings response conversion never runs in betterlite, so a
+      provider error inside a 200 body does not raise.
     why: >-
-      LiteLLM raises it at the conversion step inside executor.embed. Same cause as the entry above:
-      the typed decode reports a missing field and not the error value.
+      LiteLLM raises at that check inside executor.embed when the error has meaningful data. The typed
+      decode in betterlite-openai, outside this task, keeps no error value to check.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L587
