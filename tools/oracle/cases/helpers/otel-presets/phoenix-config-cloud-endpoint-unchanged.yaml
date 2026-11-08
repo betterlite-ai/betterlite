@@ -1,0 +1,13 @@
+kind: helper
+name: phoenix-config-cloud-endpoint-unchanged
+call:
+  b3850:
+    function: phoenix_config
+    environment:
+      PHOENIX_API_KEY: key
+      PHOENIX_COLLECTOR_ENDPOINT: https://app.phoenix.arize.com
+env:
+  PHOENIX_API_KEY: key
+  PHOENIX_COLLECTOR_ENDPOINT: https://app.phoenix.arize.com
+compare:
+  ignore: []

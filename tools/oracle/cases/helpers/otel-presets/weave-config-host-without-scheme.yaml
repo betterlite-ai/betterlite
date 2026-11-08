@@ -1,0 +1,15 @@
+kind: helper
+name: weave-config-host-without-scheme
+call:
+  b3850:
+    function: weave_config
+    environment:
+      WANDB_API_KEY: abc
+      WANDB_PROJECT_ID: entity/project
+      WANDB_HOST: wandb.example
+env:
+  WANDB_API_KEY: abc
+  WANDB_PROJECT_ID: entity/project
+  WANDB_HOST: wandb.example
+compare:
+  ignore: []
