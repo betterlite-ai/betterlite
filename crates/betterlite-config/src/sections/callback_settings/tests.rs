@@ -5,14 +5,93 @@ use std::collections::BTreeMap;
 use indexmap::IndexMap;
 use rstest::rstest;
 
+use super::names::CallbackName;
 use super::{RawCallbackList, Settings};
 use crate::loader::{ConfigError, ConfigLoader};
 
+const EXPECTED_NAMES: [&str; 73] = [
+    "lago",
+    "openmeter",
+    "logfire",
+    "literalai",
+    "litellm_agent",
+    "dynamic_rate_limiter",
+    "dynamic_rate_limiter_v3",
+    "langsmith",
+    "prometheus",
+    "otel",
+    "datadog",
+    "datadog_metrics",
+    "datadog_llm_observability",
+    "galileo",
+    "braintrust",
+    "arize",
+    "arize_phoenix",
+    "langtrace",
+    "gcs_bucket",
+    "azure_storage",
+    "opik",
+    "argilla",
+    "mlflow",
+    "langfuse",
+    "langfuse_otel",
+    "weave_otel",
+    "pagerduty",
+    "humanloop",
+    "azure_sentinel",
+    "gcs_pubsub",
+    "agentops",
+    "anthropic_cache_control_hook",
+    "generic_api",
+    "resend_email",
+    "sendgrid_email",
+    "smtp_email",
+    "deepeval",
+    "s3_v2",
+    "clickhouse",
+    "pointfive",
+    "zerobus",
+    "aws_sqs",
+    "vector_store_pre_call_hook",
+    "dotprompt",
+    "bitbucket",
+    "gitlab",
+    "cloudzero",
+    "focus",
+    "mavvrik",
+    "vantage",
+    "posthog",
+    "levo",
+    "compression_interception",
+    "newrelic",
+    "signoz",
+    "sentry",
+    "slack",
+    "traceloop",
+    "athina",
+    "helicone",
+    "lunary",
+    "promptlayer",
+    "dynamodb",
+    "s3",
+    "wandb",
+    "supabase",
+    "greenscale",
+    "datadog_cost_management",
+    "sample_callback",
+    "rubrik",
+    "sumologic",
+    "qualifire_eval",
+    "ramp",
+];
+
 enum Scenario {
     EmptyLists,
-    KnownName(&'static str),
-    UnknownName,
+    AcceptedName(&'static str, &'static str),
+    RejectedName(&'static str, &'static str),
     EveryList(&'static [&'static str]),
+    NameOrder,
+    NameRoundTrip,
     SettingsScalars,
     SettingsDebugRedacts,
     Capacity(&'static [(&'static str, &'static str)], usize),
@@ -26,6 +105,12 @@ enum Scenario {
     OtelUnknownNested,
     NestedOwnerless,
     CallbackListShapes,
+}
+
+fn assert_every_name_round_trips() {
+    for callback in CallbackName::ALL.iter().copied() {
+        assert_eq!(CallbackName::from_name(callback.as_str()), Some(callback));
+    }
 }
 
 fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
@@ -46,13 +131,24 @@ fn variables(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
 
 #[rstest]
 #[case::empty_lists_load(Scenario::EmptyLists)]
-#[case::known_litellm_name_fails_startup(Scenario::KnownName("langfuse"))]
-#[case::unknown_name_fails_startup(Scenario::UnknownName)]
-#[case::every_unavailable_list_is_named(Scenario::EveryList(&[
+#[case::langsmith_in_callbacks_loads(Scenario::AcceptedName("callbacks", "langsmith"))]
+#[case::s3_in_success_callback_loads(Scenario::AcceptedName("success_callback", "s3"))]
+#[case::rubrik_in_failure_callback_loads(Scenario::AcceptedName("failure_callback", "rubrik"))]
+#[case::not_a_callback_fails_with_its_list_path(Scenario::RejectedName(
+    "callbacks",
+    "not_a_callback"
+))]
+#[case::hide_secrets_fails_with_its_list_path(Scenario::RejectedName(
+    "success_callback",
+    "hide_secrets"
+))]
+#[case::every_unknown_list_is_named(Scenario::EveryList(&[
     "litellm_settings.callbacks",
     "litellm_settings.success_callback",
     "litellm_settings.failure_callback",
 ]))]
+#[case::all_names_are_listed_in_order(Scenario::NameOrder)]
+#[case::every_name_round_trips(Scenario::NameRoundTrip)]
 #[case::callback_settings_scalars_keep_their_text(Scenario::SettingsScalars)]
 #[case::callback_settings_debug_redacts_credentials(Scenario::SettingsDebugRedacts)]
 #[case::capacity_defaults_to_one_hundred(Scenario::Capacity(&[], 100))]
@@ -92,29 +188,39 @@ fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
             assert!(settings.callback_settings.is_empty());
             assert_eq!(settings.max_callbacks, 100);
         }
-        Scenario::KnownName(name) => {
-            let source = format!("litellm_settings:\n  success_callback: [\"{name}\"]\n");
-            let error = load(&source, &[]).unwrap_err();
-            assert!(matches!(error, ConfigError::Unsupported { paths }
-                if paths == ["litellm_settings.success_callback"]));
+        Scenario::AcceptedName(list, name) => {
+            let source = format!("litellm_settings:\n  {list}: [\"{name}\"]\n");
+            let settings = load(&source, &[]).unwrap();
+            let stored = match list {
+                "callbacks" => &settings.callbacks,
+                "success_callback" => &settings.success_callback,
+                _ => &settings.failure_callback,
+            };
+            assert_eq!(stored, &[name.to_owned()]);
         }
-        Scenario::UnknownName => {
-            let error = load(
-                "litellm_settings:\n  callbacks: [\"not_a_litellm_callback\"]\n",
-                &[],
-            )
-            .unwrap_err();
-            assert!(matches!(error, ConfigError::Unsupported { paths }
-                if paths == ["litellm_settings.callbacks"]));
+        Scenario::RejectedName(list, name) => {
+            let source = format!("litellm_settings:\n  {list}: [\"{name}\"]\n");
+            let error = load(&source, &[]).unwrap_err();
+            let path = format!("litellm_settings.{list}");
+            assert!(matches!(error, ConfigError::Unsupported { paths } if paths == [path]));
         }
         Scenario::EveryList(paths) => {
             let error = load(
-                "litellm_settings:\n  callbacks: [langfuse]\n  success_callback: [langfuse]\n  failure_callback: [langfuse]\n",
+                "litellm_settings:\n  callbacks: [not_a_callback]\n  success_callback: [not_a_callback]\n  failure_callback: [not_a_callback]\n",
                 &[],
             )
             .unwrap_err();
             assert!(matches!(error, ConfigError::Unsupported { paths: found } if found == paths));
         }
+        Scenario::NameOrder => {
+            assert_eq!(CallbackName::ALL.len(), 73);
+            let listed: Vec<&str> = CallbackName::ALL
+                .iter()
+                .map(|callback| callback.as_str())
+                .collect();
+            assert_eq!(listed, EXPECTED_NAMES);
+        }
+        Scenario::NameRoundTrip => assert_every_name_round_trips(),
         Scenario::SettingsScalars => {
             let settings = load(
                 "callback_settings:\n  langfuse:\n    endpoint: https://collector\n    capture: true\n    retries: 3\n    timeout: 1.5\n    optional: null\n",

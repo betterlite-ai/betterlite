@@ -10,12 +10,11 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
 use crate::sections::Section;
 
+pub mod names;
 mod tests;
 
 const CAPACITY_VARIABLE: &str = "LITELLM_MAX_CALLBACKS";
 const DEFAULT_CAPACITY: i64 = 100;
-// no exporter is compiled into betterlite yet, so every LiteLLM callback name is unavailable
-const INSTALLED_CALLBACKS: [&str; 0] = [];
 const OTEL_ENTRY: &str = "otel";
 // the nested callback_settings.otel keys RawOtel declares, including its aliases; otel_settings parses them
 const OTEL_NESTED_KEYS: [&str; 11] = [
@@ -157,7 +156,7 @@ fn unavailable_paths(lists: &RawLiteLlm) -> Vec<String> {
         .unwrap_or_default();
     if callbacks
         .iter()
-        .any(|name| !INSTALLED_CALLBACKS.contains(name))
+        .any(|name| names::CallbackName::from_name(name).is_none())
     {
         paths.push("litellm_settings.callbacks".to_owned());
     }
@@ -167,7 +166,7 @@ fn unavailable_paths(lists: &RawLiteLlm) -> Vec<String> {
     ] {
         if names
             .iter()
-            .any(|name| !INSTALLED_CALLBACKS.contains(&name.as_str()))
+            .any(|name| names::CallbackName::from_name(name).is_none())
         {
             paths.push(path.to_owned());
         }
