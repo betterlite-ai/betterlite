@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-mod error;
+mod config;
 mod fake_server;
 mod fakes;
 mod knn;

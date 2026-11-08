@@ -1,4 +1,6 @@
-use betterlite_provider::api::vector_store_contracts::error::VectorStoreEmbeddingError;
+use betterlite_provider::api::vector_store_contracts::error::{
+    VectorStoreContractError, VectorStoreEmbeddingError,
+};
 use betterlite_redis::redis_live_client::LiveClientError;
 use thiserror::Error;
 
@@ -29,6 +31,12 @@ pub enum ValkeyError {
     MaxResultsOutOfRange { value: i64 },
     #[error("Valkey vector store is search-only; create indexes with FT.CREATE directly")]
     SearchOnly,
+    #[error(
+        "Valkey direct vector search runs FT.SEARCH itself; there is no HTTP request or response shape"
+    )]
+    DirectSearch,
+    #[error("api_base is required")]
+    ApiBaseRequired,
     #[error("the embedding call failed: {source}")]
     Embedding {
         #[source]
@@ -44,4 +52,12 @@ pub enum ValkeyError {
     UnexpectedReply { detail: &'static str },
     #[error(transparent)]
     Redis(#[from] LiveClientError),
+}
+
+impl From<VectorStoreContractError> for ValkeyError {
+    fn from(source: VectorStoreContractError) -> Self {
+        match source {
+            VectorStoreContractError::ApiBaseRequired => Self::ApiBaseRequired,
+        }
+    }
 }

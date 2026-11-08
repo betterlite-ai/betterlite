@@ -1,5 +1,5 @@
 use rstest::rstest;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::valkey_vector_store::{build_valkey_url, pack_vector};
 
@@ -40,7 +40,10 @@ fn url_matches_litellm(
     #[case] expected: &str,
 ) {
     let secret = password.map(SecretString::from);
-    assert_eq!(build_valkey_url(host, port, secret.as_ref(), ssl), expected);
+    assert_eq!(
+        build_valkey_url(host, port, secret.as_ref(), ssl).expose_secret(),
+        expected
+    );
 }
 
 #[rstest]
@@ -53,7 +56,7 @@ fn url_matches_litellm(
 fn url_percent_encodes_the_password(#[case] password: &str, #[case] encoded: &str) {
     let secret = SecretString::from(password);
     assert_eq!(
-        build_valkey_url("h", 1, Some(&secret), false),
+        build_valkey_url("h", 1, Some(&secret), false).expose_secret(),
         format!("redis://:{encoded}@h:1")
     );
 }

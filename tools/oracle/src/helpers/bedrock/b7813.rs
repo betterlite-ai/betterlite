@@ -7,7 +7,7 @@ use betterlite_rag::valkey_vector_store::ports::{ValkeyDocument, ValkeyTimeout, 
 use betterlite_rag::valkey_vector_store::query::knn_query;
 use betterlite_rag::valkey_vector_store::reply::search_response;
 use betterlite_rag::valkey_vector_store::{build_valkey_url, pack_vector};
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -104,7 +104,7 @@ impl crate::helpers::Helper for Op {
 
 fn run_call(call: &Call) -> Value {
     match call {
-        Call::Url(url) => json!({"ok": true, "value": url_value(url)}),
+        Call::Url(url) => json!({"ok": true, "value": url_value(url).expose_secret()}),
         Call::Pack(pack) => json!({"ok": true, "value": pack_vector(&pack.vector)}),
         Call::Knn(knn) => outcome(knn_value(knn)),
         Call::Results(results) => outcome(results_value(results)),
@@ -119,7 +119,7 @@ fn outcome(result: Option<Value>) -> Value {
     )
 }
 
-fn url_value(call: &UrlCall) -> String {
+fn url_value(call: &UrlCall) -> SecretString {
     build_valkey_url(
         &call.host,
         call.port,

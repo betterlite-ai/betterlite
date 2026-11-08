@@ -112,9 +112,12 @@ fn document(id: &Value, values: &Value) -> Result<ValkeyDocument, ValkeyError> {
 
 fn text(value: &Value) -> Result<String, ValkeyError> {
     if let Value::BulkString(bytes) = value {
-        return String::from_utf8(bytes.clone()).map_err(|_source| ValkeyError::UnexpectedReply {
-            detail: "a field value is not UTF-8",
-        });
+        // redis-py decodes field bytes with errors="ignore", so the invalid bytes are dropped
+        let mut decoded = String::with_capacity(bytes.len());
+        for chunk in bytes.utf8_chunks() {
+            decoded.push_str(chunk.valid());
+        }
+        return Ok(decoded);
     }
     if let Value::SimpleString(text) = value {
         return Ok(text.clone());

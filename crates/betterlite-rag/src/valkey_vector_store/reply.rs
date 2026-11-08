@@ -5,8 +5,8 @@
 
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
-use std::str::FromStr as _;
 
+use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use betterlite_openai::api::vector_store_records::records::score::Score;
 use betterlite_openai::api::vector_store_records::records::vector::{
     VectorStoreResultContent, VectorStoreSearchResponse, VectorStoreSearchResult,
@@ -72,5 +72,5 @@ fn score_from_distance(distance: &str, id: &str) -> Result<Decimal, ValkeyError>
     };
     let parsed = distance.parse::<f64>().map_err(|_source| invalid())?;
     let score = 1.0_f64 - parsed;
-    Decimal::from_str(&format!("{score:?}")).map_err(|_source| invalid())
+    parse_decimal_lexeme(&format!("{score:?}")).map_err(|_source| invalid())
 }

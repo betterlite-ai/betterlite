@@ -85,7 +85,9 @@ fn params_null_values_take_the_defaults() {
     "a string"
 )]
 fn params_reject_wrong_types(#[case] source: &str, #[case] field: &str, #[case] expected: &str) {
-    let error = ValkeyParams::read(&params(source)).expect_err("the wrong type");
+    let error = ValkeyParams::read(&params(source))
+        .err()
+        .expect("the wrong type");
     assert_eq!(
         error.to_string(),
         format!("the {field} value has the wrong type: expected {expected}")
@@ -94,7 +96,9 @@ fn params_reject_wrong_types(#[case] source: &str, #[case] field: &str, #[case] 
 
 #[test]
 fn params_reject_a_port_out_of_range() {
-    let error = ValkeyParams::read(&params(r#"{"valkey_port":70000}"#)).expect_err("the port");
+    let error = ValkeyParams::read(&params(r#"{"valkey_port":70000}"#))
+        .err()
+        .expect("the port");
     assert_eq!(
         error.to_string(),
         "valkey_port must be between 0 and 65535, got 70000"
@@ -106,7 +110,7 @@ fn params_connection_url_encodes_the_password_and_scheme() {
     let source = r#"{"valkey_host":"valkey.example.com","valkey_port":6380,"valkey_password":"p@ss","valkey_ssl":true}"#;
     let view = ValkeyParams::read(&params(source)).expect("the view");
     assert_eq!(
-        view.connection_url().expect("the url"),
+        view.connection_url().expect("the url").expose_secret(),
         "rediss://:p%40ss@valkey.example.com:6380"
     );
 }
@@ -124,7 +128,10 @@ fn params_connection_url_requires_a_host() {
 #[test]
 fn params_connection_url_keeps_an_empty_host_as_given() {
     let view = ValkeyParams::read(&params(r#"{"valkey_host":""}"#)).expect("the view");
-    assert_eq!(view.connection_url().expect("the url"), "redis://:6379");
+    assert_eq!(
+        view.connection_url().expect("the url").expose_secret(),
+        "redis://:6379"
+    );
 }
 
 #[test]

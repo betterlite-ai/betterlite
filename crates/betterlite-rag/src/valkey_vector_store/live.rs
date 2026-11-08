@@ -26,11 +26,11 @@ pub struct LiveValkeySearchPort {
 impl ValkeyConnector for LiveValkeyConnector {
     async fn connect(
         &self,
-        url: &str,
+        url: &SecretString,
         timeouts: SocketTimeouts,
     ) -> Result<Box<dyn ValkeySearchPort>, ValkeyError> {
         let record = UrlClient {
-            url: SecretString::from(url.to_owned()),
+            url: url.clone(),
             username: None,
             socket_timeout: Some(timeouts.read.as_secs_f64()),
             socket_connect_timeout: Some(timeouts.connect.as_secs_f64()),

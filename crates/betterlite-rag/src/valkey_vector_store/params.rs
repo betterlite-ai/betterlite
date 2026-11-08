@@ -10,7 +10,6 @@ use super::query::{DEFAULT_EMBEDDING_FIELD, DEFAULT_TEXT_FIELD};
 
 pub const DEFAULT_PORT: u16 = 6379;
 
-#[derive(Debug)]
 pub struct ValkeyParams {
     pub embedding_model: Option<String>,
     pub embedding_config: Params,
@@ -60,7 +59,7 @@ impl ValkeyParams {
         })
     }
 
-    pub fn connection_url(&self) -> Result<String, ValkeyError> {
+    pub fn connection_url(&self) -> Result<SecretString, ValkeyError> {
         self.host.as_deref().map_or_else(
             || Err(ValkeyError::HostRequired),
             |host| {

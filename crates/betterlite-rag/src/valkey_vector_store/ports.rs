@@ -4,6 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_provider::api::vector_store_contracts::config::Params;
 use betterlite_provider::api::vector_store_contracts::error::VectorStoreEmbeddingError;
+use secrecy::SecretString;
 
 use super::error::ValkeyError;
 use super::query::ValkeyKnnQuery;
@@ -40,7 +41,7 @@ pub trait ValkeyEmbedder: Send + Sync {
 pub trait ValkeyConnector: Send + Sync {
     async fn connect(
         &self,
-        url: &str,
+        url: &SecretString,
         timeouts: SocketTimeouts,
     ) -> Result<Box<dyn ValkeySearchPort>, ValkeyError>;
 }

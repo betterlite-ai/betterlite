@@ -3,6 +3,7 @@ use std::time::Duration;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use redis::Value;
 use rstest::rstest;
+use secrecy::SecretString;
 
 use super::fake_server::FakeValkey;
 use super::fakes::document;
@@ -57,7 +58,11 @@ async fn live_port_sends_ft_search_through_the_live_client() {
     let connector = LiveValkeyConnector {
         factory: LiveClientFactory::new(None),
     };
-    let url = format!("redis://{}:{}", server.addr.ip(), server.addr.port());
+    let url = SecretString::from(format!(
+        "redis://{}:{}",
+        server.addr.ip(),
+        server.addr.port()
+    ));
     let port = connector
         .connect(
             &url,
@@ -164,11 +169,6 @@ fn wire_reads_an_empty_reply_as_no_documents() {
     Value::BulkString(b"doc".to_vec()),
     Value::Int(2),
 ]))]
-#[case::non_utf8_id(Value::Array(vec![
-    Value::Int(1),
-    Value::BulkString(vec![0xff]),
-    Value::Array(Vec::new()),
-]))]
 #[case::map_result_without_id(Value::Map(vec![(
     Value::BulkString(b"results".to_vec()),
     Value::Array(vec![Value::Map(Vec::new())]),
@@ -176,4 +176,24 @@ fn wire_reads_an_empty_reply_as_no_documents() {
 fn wire_rejects_malformed_replies(#[case] reply: Value) {
     let error = wire::documents(&reply).expect_err("the malformed reply");
     assert!(matches!(error, ValkeyError::UnexpectedReply { .. }));
+}
+
+#[test]
+fn wire_drops_invalid_utf8_bytes_like_redis_py() {
+    let reply = Value::Array(vec![
+        Value::Int(1),
+        Value::BulkString(b"d\xffoc-a".to_vec()),
+        Value::Array(vec![
+            Value::BulkString(b"t\xffext".to_vec()),
+            Value::BulkString(b"fi\xffrst".to_vec()),
+            Value::BulkString(b"vector_distance".to_vec()),
+            Value::BulkString(b"0.5".to_vec()),
+        ]),
+    ]);
+    let documents = wire::documents(&reply).expect("the documents");
+    assert_eq!(documents[0].id, "doc-a");
+    assert_eq!(
+        documents[0].fields.get("text").map(String::as_str),
+        Some("first")
+    );
 }

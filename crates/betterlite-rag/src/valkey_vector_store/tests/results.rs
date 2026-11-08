@@ -147,6 +147,18 @@ fn results_write_the_python_float_digits() {
     );
 }
 
+#[rstest]
+#[case::just_under_one("0.99999994039535522", true)]
+#[case::just_over_one("1.0000000596046448", false)]
+fn results_keep_scores_next_to_zero(#[case] distance: &str, #[case] positive: bool) {
+    let documents = vec![document("doc", &[("vector_distance", distance)])];
+    let response = search_response(&documents, "find", "text").expect("the response");
+    let data = response.data.expect("the data");
+    let score = data[0].score.as_ref().expect("the score").0;
+    assert_eq!(score.is_sign_positive(), positive);
+    assert!(!score.is_zero());
+}
+
 #[test]
 fn results_of_an_empty_reply_are_empty() {
     let response = search_response(&[], "find", "text").expect("the response");

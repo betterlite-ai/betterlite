@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use betterlite_provider::api::vector_store_contracts::config::Params;
 use betterlite_provider::api::vector_store_contracts::error::VectorStoreEmbeddingError;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::valkey_vector_store::error::ValkeyError;
 use crate::valkey_vector_store::ports::{
@@ -187,14 +188,14 @@ impl FakeConnector {
 impl ValkeyConnector for FakeConnector {
     async fn connect(
         &self,
-        url: &str,
+        url: &SecretString,
         timeouts: SocketTimeouts,
     ) -> Result<Box<dyn ValkeySearchPort>, ValkeyError> {
         self.calls
             .lock()
             .expect("the connector log")
             .push(ConnectCall {
-                url: url.to_owned(),
+                url: url.expose_secret().to_owned(),
                 timeouts,
             });
         if self.fail {

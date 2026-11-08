@@ -1,3 +1,4 @@
+pub mod config;
 pub mod error;
 pub mod live;
 pub mod params;
@@ -41,7 +42,7 @@ pub fn build_valkey_url(
     port: u16,
     password: Option<&SecretString>,
     ssl: bool,
-) -> String {
+) -> SecretString {
     let scheme = if ssl { "rediss" } else { "redis" };
     let credentials = match password {
         Some(secret) if !secret.expose_secret().is_empty() => {
@@ -50,7 +51,7 @@ pub fn build_valkey_url(
         }
         Some(_) | None => String::new(),
     };
-    format!("{scheme}://{credentials}{host}:{port}")
+    SecretString::from(format!("{scheme}://{credentials}{host}:{port}"))
 }
 
 #[must_use]
