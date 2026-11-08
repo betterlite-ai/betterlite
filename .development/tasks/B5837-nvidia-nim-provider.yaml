@@ -6,7 +6,7 @@ description: >-
   nvidia_nim_model_groups, nvidia_nim_model_group_in_path, nvidia_nim_router_model_in_endpoint) in betterlite-auth, so
   do not write them again. Nothing here reads an environment variable or a global setting. The caller passes every key
   and base as a plain argument. Dispatch wiring, the credential call sites in main.py and rerank_api/main.py, and the
-  HTTP cases belong to B041.
+  HTTP cases belong to B8310.
 
   Chat (crates/betterlite-openai/src/nvidia_nim_chat.rs, NvidiaNimConfig over B668's OpenAI base config). It overrides
   two methods and inherits the rest. get_supported_openai_params(model) matches the model string exactly, with no prefix
@@ -172,8 +172,8 @@ out_of_scope:
   - B2324 owns is_nvidia_nim_deployment, nvidia_nim_model_groups, nvidia_nim_model_group_in_path and nvidia_nim_router_model_in_endpoint (passthrough L28-L62, betterlite-auth resource_hints).
   - B668, B503 and B504 own everything NvidiaNimConfig inherits from OpenAIGPTConfig (request and reply conversion, URL, headers, streaming). B2230 owns choosing NvidiaNimConfig for the nvidia_nim provider.
   - B1013 owns BaseRerankConfig and the rerank records. B3570 owns BasePassthroughConfig, format_url, strip_leading_model_segment, model_group_from and relayed_body. B2202 owns BaseLLMException.
-  - 'The key and base defaults (chat and embedding base https://integrate.api.nvidia.com/v1 in get_llm_provider_logic.py L645, rerank base in rerank_api/main.py L334-L343), the lazy litellm.nvidiaNimConfig instances, get_supported_openai_params in litellm_core_utils (None for request types other than chat_completion and embeddings) and the utils.py L4839 and L3872 call sites are B041 and the get_optional_params owners.'
-  - B041 owns dispatch wiring of all four families, the OpenAI-client embedding call and the HTTP oracle cases. This task touches no dispatch.rs or operation.rs.
+  - 'The key and base defaults (chat and embedding base https://integrate.api.nvidia.com/v1 in get_llm_provider_logic.py L645, rerank base in rerank_api/main.py L334-L343), the lazy litellm.nvidiaNimConfig instances, get_supported_openai_params in litellm_core_utils (None for request types other than chat_completion and embeddings) and the utils.py L4839 and L3872 call sites are B211 (get_llm_provider defaults), B8310 (the rerank base and dispatch) and the get_optional_params owners; the lazy litellm.nvidiaNimConfig instances are Python module glue and are not built.'
+  - B8310 owns dispatch wiring of all four families, the rerank credential step and the HTTP oracle cases; the OpenAI-client embedding call is B044's arm (main.py L6504-L6555). This task touches no dispatch.rs or operation.rs.
   - The proxy routes and the path-to-model-group lookup that call B2324's functions (auth_utils.py L2057, llm_passthrough_endpoints.py L2111) belong to B746 and B3628.
 pitfalls:
   - max_completion_tokens is rewritten to max_tokens before the supported-list check, so it reaches nvidia/nemotron-4-340b-reward and the gemma models even though their lists do not include it.

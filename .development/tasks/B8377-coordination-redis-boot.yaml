@@ -1,0 +1,97 @@
+id: B8377
+title: Coordination Redis startup and usage cache selection
+description: >-
+  LiteLLM picks one "coordination" Redis at startup and shares it with the spend counter cache, the CLI SSO session
+  cache, the config cache and, when asked, the virtual-key auth cache. The choice comes from, in order,
+  general_settings.coordination_redis, a coordination_redis block saved in the database, the response cache's Redis,
+  and last the REDIS_* environment. B1652 reports the result and B1653 tests connections, and both leave building and
+  attaching the client here. Build crates/betterlite-server/src/coord_redis_boot.rs (declared by the skeleton).
+  Error enum CoordRedisError.
+
+  Functions, ported from proxy_server.py:
+  `resolve_env_refs(params)` replaces each string value starting with "os.environ/" with its secret lookup and leaves
+  the rest (_resolve_coordination_redis_env_refs). `build_usage_redis(params)` (_build_redis_usage_cache) takes
+  startup_nodes from the params or, when absent, parses REDIS_CLUSTER_NODES as JSON; any non-empty node list gives a
+  cluster client with the other params, else a plain client (host, url or sentinel) from B5630's RedisCache, both built through the one LiveClientFactory the caller passes in.
+  `env_has_redis_target(env)` (_environment_has_redis_connection_target) is true when B4306's REDIS_* kwargs carry host
+  or url, or REDIS_CLUSTER_NODES or REDIS_SENTINEL_NODES is set; it builds nothing. `build_from_env(env)` returns None
+  without a target, else build_usage_redis on those kwargs. `attach_usage_redis(redis, enable_auth_cache, caches)`
+  (_attach_redis_usage_cache) attaches it to the spend counter cache with litellm.default_redis_ttl, to the CLI SSO
+  session cache with CLI_SSO_SESSION_TTL_SECONDS (always, never gated), to the config cache, and to B733's auth cache only
+  when litellm_settings.enable_redis_auth_cache is exactly true, logging LiteLLM's two info lines.
+
+  Startup paths: `init_from_config(config)` (ProxyConfig._init_coordination_redis): absent block is None; a non-mapping
+  block is CoordRedisError::NotMapping with "general_settings.coordination_redis must be a mapping of Redis connection
+  params"; B8411's CoordinationRedisParams validates the resolved block, and one with no target fails with
+  "general_settings.coordination_redis needs a connection target: set one of host, url, startup_nodes, or
+  sentinel_nodes". Startup stops on both. `init_from_db(persisted, litellm_settings, router)`
+  (_init_coordination_redis_from_db) takes the block B1652 read from the database (None is None, a read error is
+  logged by the caller), warns "coordination_redis saved in the database names no connection target; ignoring it." when
+  it has no target, else builds and attaches the client and returns it; B8613 gives it to the router with attach_redis.
+  `init_env_fallback(env, litellm_settings)` (_init_coordination_redis_env_fallback) never fails: a build error or an
+  unreachable Redis (ping with a 2 second timeout, or a false ping) logs LiteLLM's warning and returns None.
+  `buffer_redis(settings, usage_redis, env)` (_get_transaction_buffer_redis_cache) returns usage_redis when there is
+  one, else, when B8373's wants_buffer_redis is true, build_from_env.
+
+  Tests use a fake Redis factory and assert the source order, the cluster choice, attachment targets and every error
+  and warning text. Helper cases (operation b8377 with an `operation:` field) cover the pure parts: env ref resolution,
+  the cluster-or-plain decision from params and REDIS_CLUSTER_NODES, env_has_redis_target, and the two config errors.
+  The worker writes them under tools/oracle/cases/helpers/coordination-redis-boot/.
+scope:
+  paths:
+    - crates/betterlite-server/src/coord_redis_boot.rs
+    - crates/betterlite-server/src/coord_redis_boot/**
+    - tools/oracle/cases/helpers/coordination-redis-boot/**
+    - tools/oracle/helpers/b8377.py
+    - tools/oracle/helpers/b8377/**
+    - tools/oracle/src/helpers/server/b8377.rs
+    - tools/oracle/src/helpers/server/b8377/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4861-L4962
+    why: The env ref resolver, client builder, env target predicate, env builder and cache attachment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5862-L5953
+    why: _init_coordination_redis with its two errors and the env fallback with the 2 second ping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10258-L10321
+    why: The database block path and the transaction buffer Redis.
+dod:
+  - text: build_usage_redis picks a cluster client for any startup_nodes or REDIS_CLUSTER_NODES and a plain client otherwise, after resolving os.environ/ values.
+    proof: [redis-boot-tests, oracle, helper-python]
+  - text: The config block fails startup with LiteLLM's two messages, and the database block and env fallback only warn.
+    proof: [redis-boot-tests, oracle, helper-python]
+  - text: attach_usage_redis always backs the spend counter, CLI SSO and config caches and the auth cache only with enable_redis_auth_cache true.
+    proof: [redis-boot-tests]
+  - text: The env fallback treats a malformed env value, a ping error, a timeout and a false ping as no Redis.
+    proof: [redis-boot-tests]
+checks:
+  optional: []
+  commands:
+    - id: redis-boot-tests
+      why: A coordination Redis source, builder, attachment or warning is missing or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^coord_redis_boot::/)'
+    - id: helper-python
+      why: The strict oracle adapter for the coordination Redis cases fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8377)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8377 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8377/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/coordination-redis-boot/env-refs-resolved.yaml
+  - tools/oracle/cases/helpers/coordination-redis-boot/cluster-from-env-nodes.yaml
+  - tools/oracle/cases/helpers/coordination-redis-boot/env-target-sentinel.yaml
+  - tools/oracle/cases/helpers/coordination-redis-boot/block-not-mapping.yaml
+  - tools/oracle/cases/helpers/coordination-redis-boot/block-without-target.yaml
+deviations: []
+out_of_scope:
+  - "CoordinationRedisParams: B8411. Reading the persisted block and reporting the source: B1652. The test route: B1653."
+  - "The response cache Redis itself (_init_cache): B5630. The call order at startup: B8374."
+pitfalls:
+  - The CLI SSO session cache gets Redis whenever there is one, even with enable_redis_auth_cache unset, because the browser login can land on another worker.
+  - An explicit block or a cache backend that fails is a startup error, but the inferred REDIS_* fallback must never stop a proxy that ran in memory before.
+  - REDIS_CLUSTER_NODES is parsed only when the params carry no startup_nodes, and an empty list falls back to a plain client.
+  - The database block's client reaches the router only when the router cache has no Redis of its own, and B8613 does that with attach_redis, so init_from_db never touches the router.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

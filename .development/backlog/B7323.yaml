@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Proxy custom URL builder
 status: todo
 depends_on: []
-file: null
+file: tasks/B7323-proxy-custom-url.yaml
 covers:
   - "litellm/proxy/utils.py"
 parent: null

@@ -1,0 +1,57 @@
+id: B8395
+title: ProxyLogging failure hook, proxy-only error logging and alert dispatch
+description: >-
+  Port what ProxyLogging does when a request fails and how it fans alerts out: `post_call_failure_hook` (utils.py L3197-L3314), the proxy-only error logging it starts (L3316-L3474), the failure fields lifted onto the request for spend logs (L861-L1112), and the alert entry points `update_request_status`, `failed_tracking_alert`, `budget_alerts`, `alerting_handler`, `failure_handler` and `_init_response_taking_too_long_task` (L1427-L1445, L3032-L3195, L4158-L4168). Code goes in crates/betterlite-server/src/failure_hook.rs and failure_hook/ (hook.rs, proxy_only.rs, lift.rs, alerts.rs, tests.rs). The logging object, Slack alerting, email alerting, service logging and the token counter come in through traits in failure_hook/ports.rs that B8399 implements.
+
+  hook.rs. `post_call_failure_hook(request_data, error, user_api_key_dict, error_type, route, traceback)` in order: invalidate the baseline cache estimate with "failed_request" when the logging object has a baseline context; set the request status to fail; when `llm_exceptions` is an alert type and B8390's `is_client_error` is false, start an alert "LLM API call failed: `{error}{litellm_debug_info}`" (redacted, level High) without waiting; drop `standard_logging_object`; when the error is proxy-only, run proxy_only.rs; merge lift.rs's fields; drop `litellm_logging_obj`; redact the traceback; call every callback's post_call_failure hook. The first returned or raised HTTP error becomes the answer; other errors are logged as "[Non-Blocking] Error in async_post_call_failure_hook callback" and ignored.
+
+  proxy_only.rs. `is_proxy_only_error(error, error_type, route)` (L3316-L3346): needs a route that is an LLM API or info route (B207's route checks), then an HTTP, Proxy or GuardrailRaised error, or error_type auth_error. `handle_proxy_only_error` (L3348-L3448): without a logging object, create one for the route (or IGNORE_THIS) with a new litellm_call_id when missing and add the key's sanitized metadata; split request fields into litellm params (the LoggedLiteLLMParams keys) and optional params (all but model, user and the logging object); stamp deployment attribution; pick the input from messages, prompt or input with call types acompletion, atext_completion or aembedding; prefer the route's single call type; stop for pass_through; mark `LITELLM_LOGGING_NO_UPSTREAM_LLM_CALL`; call pre_call with an empty api_key; then the async failure handler and a spawned sync one, with a traceback only when `log_client_error_tracebacks` is set or the error is not an expected client error.
+
+  lift.rs. `failure_fields_to_lift`, `failure_usage_to_lift`, `estimate_dispatched_failure_usage`, `count_request_input_tokens`, `system_prompt_text`, `prompt_block_text`, `reached_deployment`, `stamp_deployment_attribution`, `deployment_attribution_for_model_group` and `call_type_for_route`, with `_INPUT_ESTIMABLE_CALL_TYPES` and `PROXY_REJECTED_BEFORE_ROUTING_KEY` as LiteLLM spells them. Recovered stream usage wins; otherwise a dispatched failure with an estimable call type gets input-only usage with cost 0.0; a count of 0 or a tokenizer error gives none. Only fields that are not None are lifted.
+
+  alerts.rs. `update_request_status` writes `request_status:{call_id}` locally with ttl alerting_threshold plus 100, only when alerting is set. `budget_alerts(type, call_info)` sends to Slack for slack, ms_teams or webhook alerting; its email branch needs the enterprise email logger (`_get_email_logger_class`, litellm_enterprise only), so open-source LiteLLM never sends it and it is not built. A soft_budget with alert_emails still passes the early return when alerting is unset. `alerting_handler` formats "Level: `{level}`\nTimestamp: `{HH:MM:SS}`\n\nMessage: {message}", adds the PROXY_BASE_URL line (from B7323's `proxy_base_url` section) and the Langfuse trace link, sends to Slack or Teams, and for sentry captures the message or fails with "Missing SENTRY_DSN from environment". `failure_handler` runs only with the db_exceptions alert type, builds the message from an HTTP detail (text or JSON) plus up to 1000 traceback characters, redacts it, starts the alert "DB read/write call failed: {message}", reports a DB service failure and captures the error.
+scope:
+  paths:
+    - crates/betterlite-server/src/failure_hook.rs
+    - crates/betterlite-server/src/failure_hook/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3032-L3474
+    why: The alert entry points, post_call_failure_hook and proxy-only error logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L861-L1112
+    why: The failure usage estimate, deployment attribution and the lifted fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1427-L1445
+    why: update_request_status.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4158-L4168
+    why: _init_response_taking_too_long_task.
+dod:
+  - text: post_call_failure_hook runs its steps in LiteLLM's order and returns the first HTTP error a callback returns or raises.
+    proof: [failure-tests]
+  - text: Proxy-only errors are recognised by route and error type and logged once through a created or existing logging object.
+    proof: [failure-tests]
+  - text: Failure fields lift recovered usage, an input-only estimate for dispatched failures, and deployment attribution.
+    proof: [failure-tests]
+  - text: Alerts go to Slack, email and sentry by LiteLLM's alerting rules, with the formatted message.
+    proof: [failure-tests]
+checks:
+  optional: []
+  commands:
+    - id: failure-tests
+      why: the failure hook, proxy-only logging, failure lifting or alert dispatch is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^failure_hook::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "SlackAlerting itself (budget_alerts, send_alert, response_taking_too_long): B4021 and B4025. Email alerting: B4022."
+  - "The logging object's failure handlers: B012's parts. Spend log rows for failures: B1720."
+  - "HTTP oracle cases through the booted proxy: B8399."
+pitfalls:
+  - The llm_exceptions alert is skipped for client errors, so a 4xx HTTP error or a ProxyException with a code below 500 sends nothing.
+  - A soft_budget alert with alert_emails and alerting unset passes the first check but then sends nothing, because the email logger is enterprise-only.
+  - handle_proxy_only_error returns before pre_call when the logging object's call type is pass_through.
+  - stamp_deployment_attribution never sets litellm_params.model_info, since router cooldown callbacks key off it.
+  - Errors raised by one failure callback do not stop the next one.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

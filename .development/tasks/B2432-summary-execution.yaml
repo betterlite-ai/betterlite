@@ -5,7 +5,7 @@ description: >-
   functions from B972 into betterlite-core::api::summary_execution. Their 228 nonblank/non-comment physical
   lines are compact.py L1019-L1111 and L1160-L1380. B972 becomes the editor dispatcher and depends on this task.
   Use B968 result/constants, B969 settings/access, B970 budget/rate checks and B971 history/prompt helpers.
-  Call B014's completion pipeline; B162 owns Router.acompletion but has no task file, so inject a typed optional
+  Call B014's completion pipeline; B6020 owns Router.acompletion in betterlite-sdk router_completion, so inject a typed optional
   routed-completion interface, with a concrete B004 mock-provider executor in tests. Do not implement the router
   or depend on the later Messages handler. General settings are read through B969; no DEFAULT_MAX_TOKENS read.
 
@@ -21,7 +21,7 @@ scope:
   - crates/betterlite-core/src/api/summary_execution.rs
   - crates/betterlite-core/src/api/summary_execution/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/summary_execution.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/summary_execution.py
   - tools/oracle/cases/sdk-http/summary-execution/**
@@ -124,7 +124,7 @@ deviations: []
 out_of_scope:
 - B969 owns compact.py L97-L392; B970 owns L395-L627; B971 owns L73-L92,L630-L1016,L1114-L1157.
 - B972 owns dispatcher.py, B973/B974 integrate this editor into Messages calls, and B081 converts trigger validation to HTTP.
-- B014/B162 own direct/routed completion orchestration and B071/B072/B068 own actual summary usage charging.
+- B014/B6020 own direct/routed completion orchestration and B8481 (settlement)/B072/B068 own actual summary usage charging.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as summary_extraction in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/summary_extraction.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/summary_extraction.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - No configured summary model disables summarization; it does not silently use the main request model.

@@ -1,0 +1,13 @@
+id: B8381
+milestone: M8 platform
+title: Database deployment sync, DB callbacks and config sync subscribers
+status: todo
+depends_on: [B8379, B8380, B8382, B8384, B016, B379, B836, B878, B1659, B3273, B4144, B8397, B8611]
+file: tasks/B8381-deployment-sync.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

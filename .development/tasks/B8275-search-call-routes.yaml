@@ -1,0 +1,73 @@
+id: B8275
+title: Serve the search call and search tool list routes
+description: >-
+  Register LiteLLM's search call routes from proxy/search_endpoints/endpoints.py in betterlite-server: `POST /v1/search/{search_tool_name}`, `POST /search/{search_tool_name}`, `POST /v1/search`, `POST /search`, and `GET /v1/search/tools`, `GET /search/tools`. All six sit behind the normal key check. The code goes in `crates/betterlite-server/src/search_call_routes.rs` and its folder; `pub fn routes()` is built like the sibling route modules and B8634 mounts it. The `/search_tools` management routes are B3275's, not these. The search itself is B3272 (`asearch`) and the tool pick and fallback is B3273; this task is the HTTP layer in front of them. Route type for dispatch is `asearch`; B014's dispatch has no search entry, so step (4) names the real targets.
+
+  Search call. Read the raw body and parse it as JSON. Bad JSON, or a body that is not an object, is an unhandled error in LiteLLM (it happens before the try block), so it answers the server's generic 500 from B003, not a typed error. Then:
+  (1) If the URL has `search_tool_name`, it overwrites the body's `search_tool_name` (the URL wins).
+  (2) If `search_tool_name` is now a non-empty string: set `model` to it. Check the key with B749's `can_key_call_search_tool(name, caller)`; if the caller has a `team_id`, read the team with B737's `get_team_object` and check `can_team_call_search_tool(name, team_object)`. On any failure log at error "Search tool authorization failed for <name>: <error>" and let the error through unchanged (its status and body are B749's and B737's, not wrapped here). Then look in the router's search tools (B3273's list) for the first entry whose `search_tool_name` equals the name; if there is one: when its `litellm_params.search_provider` is truthy, set `custom_llm_provider` to it; create `metadata` as `{}` when the body has none; set `metadata.model_group` to the name. If the router has no search tools or none matches, the body goes on untouched.
+  (3) Make sure `metadata` is an object (anything else, or absent, becomes `{}`). If the caller has `team_metadata` that is not null, set `metadata.user_api_key_team_metadata`. If it has a `team_id` that is not null, set `metadata.user_api_key_team_id`.
+  (4) Run the request through the same pipeline B085 uses for rerank, with route type `asearch` and `model` none: authenticated request preparation (B1103), B8393's pre-call hook (`PreCallHook::run`), then the search call through the dispatch handle: with a router, the router's `asearch` (B3273's search with fallbacks, reached through B8354's call type table), otherwise B3272's `asearch`. The answer is the search response as JSON (an ORJSON response). A failure in this step runs B8395's failure hook (`post_call_failure_hook`) and then goes through the shared exception handler (B003's `ProxyException` serialization, as B085 does), not the raw error. The body shapes, defaults and limits of the query are B3272's.
+
+  List tools. `GET /v1/search/tools` and `GET /search/tools` return `{"object": "list", "data": [...]}` with one item per entry of the router's search tools, in order: `search_tool_name` and `search_provider` (from `litellm_params.search_provider`; null when absent), plus `description` only when `search_tool_info.description` is a non-empty string. There is no role or visibility filter on this route (B3275's `/search_tools/list` has one; this does not). No router or no tools gives `data: []`. Any unexpected error logs "Error listing search tools: <error>" with the stack and answers 500 `{"detail": "<error text>"}`.
+
+  Wiring. The route state takes, by constructor: a `SearchToolSource` trait that returns the router's current search tool list (B3273's entry type), B749's two checks and B737's team lookup as traits, the B1103 preparation and the dispatch handle B085 takes. Tests use fakes.
+scope:
+  paths:
+    - crates/betterlite-server/src/search_call_routes.rs
+    - crates/betterlite-server/src/search_call_routes/**
+    - tools/oracle/helpers/b8275.py
+    - tools/oracle/helpers/b8275/**
+    - tools/oracle/src/helpers/server/b8275.rs
+    - tools/oracle/src/helpers/server/b8275/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/endpoints.py#L17-L240
+    why: The four POST decorators and the search handler, including the body edits.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/endpoints.py#L241-L309
+    why: The two GET decorators and list_search_tools.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5351-L5403
+    why: The key and team checks the handler calls (B749 owns them).
+dod:
+  - text: The six routes exist on exactly their paths and methods, each behind the key check, and a request with no valid key gets the usual 401 body. Tests drive the handlers with tower's oneshot over the module's own Router and fake ports; B8634 mounts the routes and proves them over HTTP.
+    proof: [route-tests]
+  - text: A URL tool name overrides the body's, and a non-empty name sets model, runs the key check, and runs the team check only when the key has a team.
+    proof: [call-tests]
+  - text: A matching router tool sets custom_llm_provider (when its provider is truthy) and metadata.model_group; no match leaves the body alone.
+    proof: [call-tests]
+  - text: metadata becomes an object, and the team metadata and team id keys are set only when the caller has them.
+    proof: [call-tests]
+  - text: The call is dispatched with route type asearch, and a failure in it is answered through the shared exception serialization.
+    proof: [call-tests]
+  - text: The list route returns object list with search_tool_name and search_provider per tool, adds description only when it is non-empty, and answers an empty list without a router.
+    proof: [list-tests]
+  - text: An unexpected error in the list route answers 500 with detail set to the error text.
+    proof: [list-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: route-tests
+      why: a route path, method or key check is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^search_call_routes::tests::route_/)'
+    - id: call-tests
+      why: the search handler body edits, checks or dispatch are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^search_call_routes::tests::call_/)'
+    - id: list-tests
+      why: the search tool list route is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^search_call_routes::tests::list_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "asearch and the provider call: B3272. Tool selection, retries and fallbacks: B3273. The /search_tools management routes: B3275."
+  - "The permission functions and the team lookup themselves: B749 and B737. Request preparation: B1103. The pre-call hook: B8393. The failure hook: B8395. The router's asearch: B3273 behind B8354's call type table."
+  - "B014's dispatch has no asearch entry. LiteLLM's route_request calls the router's asearch for this route type, so the dispatch handle goes to B3273, or to B3272 without a router."
+pitfalls:
+  - "The search handler has no visibility filter and no database gate; a proxy with no database still serves /v1/search from the config tools."
+  - "The authorization errors are raised outside the try block that wraps the pipeline, so they keep their own status codes and are not converted by the exception handler."
+  - "A body with `metadata` set to a non-object value and a matching tool crashes in LiteLLM (500) because model_group is written before the object check; do not try to fix that, keep the order of the steps."
+  - "`GET /v1/search/tools` must not be taken as a tool named `tools` by the POST path-parameter route: the methods differ, so keep them separate."
+  - "An empty search_tool_name in the body ('') counts as no name, so no checks run and model is not set."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

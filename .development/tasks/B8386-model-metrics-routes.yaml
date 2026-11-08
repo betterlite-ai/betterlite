@@ -1,0 +1,77 @@
+id: B8386
+title: Model latency and exception metrics routes
+description: >-
+  The admin UI's model dashboard reads four routes from proxy_server.py that aggregate spend and error logs per model
+  group. Build crates/betterlite-server/src/model_metrics_routes.rs (declared by the skeleton) with `pub fn routes()`
+  like the sibling route modules; B8676 mounts it. All four are GET, behind the normal key check
+  (B052) and nothing more, hidden from the OpenAPI schema, and read through the reader (B714). Query parameters:
+  _selected_model_group, startTime and endTime (ISO datetimes), and api_key and customer where noted. Error enum
+  ModelMetricsError.
+
+  Without a database each route fails with a ProxyException of type internal_error, param "None" and code 500;
+  /model/streaming_metrics uses the "db not connected" message from CommonProxyErrors and the other three "Prisma
+  Client is not initialized". api_key and customer of None or "undefined" become the text "null", which the SQL reads
+  as no filter.
+
+  `/model/streaming_metrics` (time to first token, default window the last 7 days, model group default none): when
+  start and end fall on the same day, one row per request_id with its time to first token; otherwise the daily
+  average per api_base and model. Rows skip cache hits and rows whose completionStartTime is null or equals endTime.
+  `/model/metrics` (default window DAYS_IN_A_MONTH days, model group default "gpt-4-32k"): daily average latency per
+  completion token per api_base and model, only groups with completion tokens, filtered by api_key and end_user when
+  given. Both build the same shape: the series name is the model, or the api_base when it contains "https://", cut at
+  "/openai/"; entries are sorted by their key (the day or the request id) and returned as {"data": [{"date": key,
+  name: value, ...}], "all_api_bases": [names]}.
+
+  `/model/metrics/slow_responses` (model group default "gpt-4-32k"): per api_base, total_count and slow_count, where
+  slow means a duration of at least the alerting threshold in seconds (the Slack alerting instance's
+  alerting_threshold from B8399, else DEFAULT_SLACK_ALERTING_THRESHOLD, 300), ordered by slow_count; each api_base is
+  cut at "/openai/" and a null becomes "". `/model/metrics/exceptions`: from the error logs, per model name (joined to
+  api_base with "-" when api_base is not empty), total_exceptions and a count per exception type, at most 200 rows;
+  the answer is {"data": [{"model", "total_exceptions", <type>: count...}], "exception_types": [types]}.
+
+  Tests run each query against fixed rows through the repository fake. HTTP oracle cases under
+  tools/oracle/cases/model-metrics/ cover each route without a database and one route without a key; the oracle proxy
+  has no database, so these are the answers a client can compare.
+scope:
+  paths:
+    - crates/betterlite-server/src/model_metrics_routes.rs
+    - crates/betterlite-server/src/model_metrics_routes/**
+    - tools/oracle/helpers/b8386.py
+    - tools/oracle/helpers/b8386/**
+    - tools/oracle/src/helpers/server/b8386.rs
+    - tools/oracle/src/helpers/server/b8386/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15532-L15953
+    why: The four routes, their SQL, defaults and response shapes.
+dod:
+  - text: "The handlers are tested with tower's oneshot over the module's own Router and fake ports; B8676 runs the HTTP oracle cases through the booted proxy."
+    proof: [route-oneshot]
+  - text: Each route answers 500 internal_error with LiteLLM's message without a database and 401 without a key. B8676 proves it over HTTP.
+    proof: [metrics-route-tests]
+  - text: Streaming and latency metrics group by request or day, name series by model or api_base, sort by key and list the api bases.
+    proof: [metrics-route-tests]
+  - text: Slow responses use the alerting threshold and exceptions pivot counts by exception type.
+    proof: [metrics-route-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: route-oneshot
+      why: the handlers are not tested with tower's oneshot over the module's own Router and fake ports
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_metrics_routes::tests::oneshot_/)'
+    - id: metrics-route-tests
+      why: A metrics route path, default, filter, grouping or response shape is missing or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_metrics_routes::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The spend and error log tables and their writers: the spend log tasks. The Slack alerting settings: B8399."
+pitfalls:
+  - The exceptions query filters only on the window and model group; LiteLLM passes api_key as a fourth bind its SQL never names, so do not add an api_key filter.
+  - The same-day streaming query uses the request id as the series key, so its "date" field holds a request id.
+  - The exceptions window compares endTime, not startTime, against the end of the range.
+review_level: standard
+budget:
+  max_changed_lines: 1200
+  max_new_expects: 0

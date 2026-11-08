@@ -1,0 +1,13 @@
+id: B8597
+milestone: M8 platform
+title: Adaptive router state and the root route
+status: todo
+depends_on: [B052, B339, B2314]
+file: tasks/B8597-reload-admin-routes.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

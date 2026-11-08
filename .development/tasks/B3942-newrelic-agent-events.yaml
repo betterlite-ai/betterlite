@@ -21,6 +21,9 @@ description: >-
   them. Return unhealthy from async_health_check when credentials are missing, agent is
   not installed, or application is disabled, and emit a LiteLLMConnectionTest custom event
   when healthy.
+
+  Functions of litellm/integrations/newrelic/newrelic.py this task builds, and no others: the NewRelicLogger class with __init__, _get_newrelic_params, _get_litellm_version, _emit_supportability_metric, _check_and_emit_periodic_metric, _record_summary_event, _record_message_events, _record_error_metric, _process_success, async_health_check, log_pre_api_call, log_post_api_call, log_success_event, async_log_success_event, log_failure_event and async_log_failure_event. B3941 builds the extraction helpers.
+
 scope:
   paths:
     - crates/betterlite-logging/src/newrelic_agent.rs
@@ -43,6 +46,8 @@ references:
     why: New Relic agent API contract for register_application, application(), record_custom_event and record_custom_metric.
 oracle_cases: []
 dod:
+  - text: "The New Relic agent logger implements CallbackLogger, with the success and failure events it records as AI events, so the newrelic arm of B8746 returns it when V2 is off (tests named callback_logger_* in newrelic_agent)."
+    proof: [callback-logger]
   - text: Missing newrelic module import falls back to None without crashing; integration disables with diagnostic warning.
     proof: [agent-init-tests]
   - text: NEW_RELIC_LICENSE_KEY and NEW_RELIC_APP_NAME resolve from environment variables through injected configuration, missing either disables integration with warning.
@@ -82,6 +87,9 @@ dod:
 checks:
   optional: [mutants]
   commands:
+    - id: callback-logger
+      why: the agent logger cannot serve the global newrelic name
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent::(.*::)?callback_logger_/)'
     - id: agent-init-tests
       why: agent initialization, credential resolution, registration and backoff state tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent::(.*::)?newrelic_agent_init_behavior($|::)/)'
@@ -112,7 +120,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L836-L840
 out_of_scope:
   - Extraction of trace_id, completion_id, vendor, model names, usage, finish_reason, duration, request params and message content (B3941 owns _parse_bool_env, record_content, _get_trace_context, _extract_completion_id, _get_vendor, _get_model_names, _extract_usage, _get_finish_reason, _to_epoch_ms, _get_duration, _get_request_params, _extract_message_content, _extract_all_messages).
-  - Orchestration of team-scoped New Relic logger selection and credential routing (B113 owns team handler composition and cache integration).
+  - Orchestration of team-scoped New Relic logger selection and credential routing (B8251 owns team handler composition and cache integration).
   - New Relic metric API logger (B3943 and B3944 own metric payload building and delivery).
   - Configuration loading and environment variable resolution (B002's loader supplies NEW_RELIC_LICENSE_KEY, NEW_RELIC_APP_NAME and newrelic_params).
   - Request/response logging callback registration and dispatch (B189 owns logging callback manager and custom logger registry).

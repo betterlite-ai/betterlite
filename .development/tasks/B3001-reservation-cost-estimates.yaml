@@ -15,7 +15,7 @@ description: >-
   eligible deployment can be served without under-reservation. Load model info from the
   router's cached metadata services (cached_deployment_model_info, cached_model_group_info)
   when available, falling back to litellm.get_model_info, and retain the cache-generation
-  order and error behavior. Input-cost estimates floor cancellations; output estimates
+  order and error behavior. betterlite-auth may not depend on betterlite-router, so these reads go through the `RouterModelInfo` port, a trait in `crates/betterlite-auth/src/reservation_cost.rs` with `get_model_list`, `cached_deployment_model_info` and `cached_model_group_info`, passed as an optional trait object (none when there is no router). B8611's RouterView implements it in betterlite-server over B844 to B846's services and B8351's `CatalogQueries::cached_model_group_info`, and B8660 passes `shared.router_views.current()` into the reservation call. Input-cost estimates floor cancellations; output estimates
   account for concurrent reservations. Estimate image-generation cost only when mode is
   image_generation or image_edit, and sum both output_ and input_cost_per_image fields
   when present, since naming is inconsistent across provider catalogs. Guard against
@@ -154,8 +154,8 @@ deviations: []
 out_of_scope:
   - B3000 owns _to_float, _to_int and _get_value; this task calls betterlite-auth::budget_values's versions directly.
   - B746 owns get_model_from_request and route parsing.
-  - B844/B845/B846 own Router.get_model_list, cached_deployment_model_info and cached_model_group_info
-    method implementations; this task calls those services as-is.
+  - B844/B845/B846 own Router.get_model_list and cached_deployment_model_info, and B8351 builds `CatalogQueries::cached_model_group_info`
+    over B847's cached group info; this task reads them only through its `RouterModelInfo` port and does not rebuild them.
   - B1666 owns select_tier_for_input, tier_rate and tiered-pricing table structure.
   - B1695 owns count_input_tokens and count_input_tokens_for_model implementations and tokenizer dispatch.
   - B2225 owns litellm.get_model_info implementation and the public model catalog.

@@ -1,0 +1,106 @@
+id: B8214
+title: Semantic guard hook and match action
+description: >-
+  Build the semantic guard guardrail class in betterlite-guardrails, module semantic_guard_hook, with
+  semantic_guard_hook/init.rs for the initializer in semantic_guard/__init__.py. The route loader and the templates are
+  B3808's work (module semantic_guard); this task builds the class that owns a built semantic router, checks text
+  against it and applies the match action. Supported hooks: pre_call and post_call, and pre_call is the default hook.
+
+  Constructor. It takes the name, the router handle, embedding_model, similarity_threshold, route_templates,
+  custom_routes_file, custom_routes, on_flagged_action (default "block") and the event hook settings. It asks B3808's
+  loader for the routes using the global threshold. No routes is the error "SemanticGuardrail: no routes configured.
+  Provide route_templates or custom_routes.". Then it builds the semantic router from the routes with B3808 and the
+  encoder from B327 (never a second embedding service). It stores the route count and logs at info level the name, the
+  route count, the embedding model and the threshold. guardrail_provider is "semantic_guard".
+
+  Pre-call check (async_pre_call_hook). Take the request messages for the call type (B3801). With no messages, return.
+  The user text is the content of the last message whose role is "user": a string as it is, or for a list the "text" of
+  each dict part (empty when missing) and the string form of other parts, joined by a single space. No user message or
+  an empty text returns. Score the text with the semantic router. The router answer may be one choice or a list, and
+  the first choice of a non-empty list is used. If the choice has a non-empty route name, run the match action with the
+  route name, the similarity score (or none) and the text.
+
+  Post-call check (async_post_call_success_hook). The response text is every choice's message content joined by a
+  newline: a string content as it is, a list content as the "text" strings of its dict parts joined by a space, and
+  other content as nothing; empty texts are skipped. No choices or an empty text returns the response unchanged. The
+  rest is the same as the pre-call check, with the response text, and the response is returned.
+
+  Match action. The violation message is "Request blocked by semantic guardrail '<name>'. Matched route: <route>". A
+  warning is logged with the route, score and action. When on_flagged_action is "passthrough", the guardrail raises its
+  passthrough exception (B5471) with the message, the request data and the detection info {route_name,
+  similarity_score, guardrail}. For any other value it raises HTTP 400 with detail {"error": <message>, "route":
+  <route>, "similarity_score": <score>, "type": "semantic_guard_violation"}.
+
+  initialize_semantic_guard(params, guardrail_name, router_present) in semantic_guard_hook/init.rs returns
+  SemanticGuardArgs or a start error. The name is required ("SemanticGuard: guardrail_name is required") and is checked
+  first. A missing router handle is "SemanticGuard requires llm_router for embeddings. Configure a model_list with an
+  embedding model.". embedding_model is the param or DEFAULT_SEMANTIC_GUARD_EMBEDDING_MODEL, and similarity_threshold
+  is the param or DEFAULT_SEMANTIC_GUARD_SIMILARITY_THRESHOLD (0.75) where an explicit zero also takes the default, as
+  in LiteLLM's `or`. route_templates, custom_routes_file, custom_routes and on_flagged_action (default "block") copy
+  through. default_on is false when absent. The constants are in litellm/constants.py (lines 171 to 174); read them there.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/semantic_guard_hook.rs
+    - crates/betterlite-guardrails/src/semantic_guard_hook/**
+    - tools/oracle/cases/guardrails/semantic-guard-hook-*.yaml
+    - tools/oracle/helpers/b8214.py
+    - tools/oracle/helpers/b8214/**
+    - tools/oracle/src/helpers/guardrails/b8214.rs
+    - tools/oracle/src/helpers/guardrails/b8214/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/semantic_guard.py
+    why: The SemanticGuardrail class, the text extraction helpers and _handle_match.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/__init__.py
+    why: The initializer, its defaults and the router requirement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py
+    why: DEFAULT_SEMANTIC_GUARD_EMBEDDING_MODEL and DEFAULT_SEMANTIC_GUARD_SIMILARITY_THRESHOLD.
+
+dod:
+  - text: A guardrail with no routes is refused with the documented message.
+    proof: [unit-tests]
+  - text: User text and response text are extracted as documented for string, list and mixed content.
+    proof: [unit-tests]
+  - text: A matching route blocks with 400 and the documented detail, or raises the passthrough exception in passthrough mode.
+    proof: [oracle]
+  - text: No match, an empty text and no messages let the call through unchanged.
+    proof: [oracle]
+  - text: The initializer applies the documented checks and defaults, including an explicit zero threshold taking the default.
+    proof: [init-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: unit-tests
+      why: a unit test of the semantic_guard_hook module fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard_hook::/)'
+    - id: init-tests
+      why: the initializer arguments differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard_hook::init::/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/semantic-guard-hook-block.yaml
+  - tools/oracle/cases/guardrails/semantic-guard-hook-passthrough.yaml
+  - tools/oracle/cases/guardrails/semantic-guard-hook-no-match.yaml
+  - tools/oracle/cases/guardrails/semantic-guard-hook-response.yaml
+
+deviations:
+  - what: The initializer returns SemanticGuardArgs and registers nothing.
+    why: B3682 owns the registry and the registration, as with B3681.
+  - what: The module is named semantic_guard_hook, not semantic_guard.
+    why: B3808 already owns the module semantic_guard for the route loader.
+
+out_of_scope:
+  - The route loader, the templates and the router composition (B3808), and the encoder (B327).
+  - The guardrail base class, passthrough exception and message selection by call type (B5471, B3801).
+  - The initializer registry and the callback registration (B3682).
+
+pitfalls:
+  - Only the last user message is scored in the pre-call check, never earlier turns.
+  - The router answer may be a list, and an empty list means no match.
+  - A route choice with an empty name is not a match.
+  - A threshold of 0 in the params becomes 0.75, because LiteLLM uses an or-chain there.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

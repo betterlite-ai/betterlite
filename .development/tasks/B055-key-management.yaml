@@ -54,8 +54,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/key_management.rs
     - crates/betterlite-server/src/routes/key_management/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-management/**
     - tools/oracle/helpers/b055.py
     - tools/oracle/helpers/b055/**

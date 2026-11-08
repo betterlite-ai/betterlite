@@ -1,0 +1,199 @@
+id: B4666
+title: MCP upstream grant bridging and credential-write authorization
+description: >-
+  The gateway can stand between an MCP client and an upstream OAuth server. At the token endpoint it exchanges the upstream code, then seals the upstream grant into a bearer the client holds (an access envelope, and a refresh envelope when the upstream sent a refresh token). Before it spends the single-use upstream code it must know who the caller is, and it must refuse in a way the client can act on. A second set of checks decides whether a caller may store a per-user OAuth credential for a server. In LiteLLM this is the second half of bridge_token_flow.py (L408-L990). B4658 owns the first half (L35-L405: key and user reloads, key_is_active, master_key_admin_auth, ActiveSubjects) and this task calls it. The token and credential routes in discoverable_endpoints.py (B7321) and the other token flows call this code, so every name below is public and spelled as written.
+
+
+  The code goes in three modules. The pure part, which needs only envelope types, goes in betterlite-mcp as the new module bridge_mint (crates/betterlite-mcp/src/bridge_mint.rs, with the submodules lifetime, grant, error and finish, each with a tests.rs beside it). The parts that read the request, the key store or the JWT machinery need betterlite-server, so they go there as mcp::bridge_prepare (submodules mint and refresh) and mcp::credential_write (submodules resolve, jwt and authorize), each with a tests.rs. betterlite-server already depends on betterlite-mcp, auth and models (B4658 adds betterlite-mcp), so no new crate edge appears and betterlite-mcp imports nothing from betterlite-server or betterlite-auth. Add to a Cargo.toml only what a module needs and the crate lacks (secrecy, serde_json, chrono, tracing and http are expected to be there already).
+
+
+  bridge_mint::lifetime. UpstreamLifetime is Seconds(the integer type of B4651's UpstreamTokenGrant.expires_in), Unspecified or Expired. classify_upstream_lifetime(raw: Option<&serde_json::Value>) -> UpstreamLifetime copies _classify_upstream_lifetime. Unspecified for None, null, a bool, an array or an object. A JSON number is read as f64. A string is read the way Python's float() reads it: trim Python whitespace, accept one underscore between two digits, accept inf, infinity and nan in any case with an optional sign, and anything else is Unspecified. NaN and either infinity are Unspecified, since int() of them raises in LiteLLM (so "-inf" is Unspecified, not Expired). Then a value of 0 or below is Expired, tested on the float and not on the truncated integer, and anything above 0 is Seconds(max(1, truncate toward zero)), so 0.4 gives Seconds(1) and 3600.9 gives Seconds(3600). A value above the integer type's maximum saturates to the maximum, and B4651's builder then answers lifetime unrepresentable.
+
+
+  bridge_mint::grant. UpstreamGrantRejection is NoAccessToken or ExpiredLifetime. grant_from_token_response(token_response: &serde_json::Value) -> Result<UpstreamTokenGrant, UpstreamGrantRejection> copies _bridge_grant_from_token_response. Anything that is not an object, or has no non-empty string access_token, is NoAccessToken. Lifetime Expired is ExpiredLifetime (checked after the access token). token_type is the response string when it is a non-empty string, otherwise "Bearer". scope is the response string when non-empty, otherwise None. The grant's refresh_token is always None (the edge forwards only token_type and access_token; the refresh envelope carries the upstream refresh token on its own). expires_in is the Seconds value or None for Unspecified. upstream_refresh_credential(token_response) -> Option<RefreshCredential> needs a non-empty string refresh_token, reads refresh_expires_in the same way (Expired gives None, so a dead refresh token degrades to an access-only response), and takes the same scope rule.
+
+
+  bridge_mint::error. BridgeMintError has eleven values: NoIdentity, JwtClientPolicyUnsupported, InvalidRefresh, IdentityUnavailable, IdentityFaulted, IdentityUnresolvable, NotConfigured, NoUpstreamToken, UpstreamTokenExpired, UpstreamLifetimeUnrepresentable and TooLarge. to_oauth_error(&self) -> OauthError (B4674's type, which already carries the no-store headers) gives these statuses, codes and descriptions, with the descriptions copied from _bridge_mint_error_response word for word: NoIdentity 400 invalid_request, JwtClientPolicyUnsupported 400 invalid_request, InvalidRefresh 400 invalid_grant, IdentityUnavailable 503 temporarily_unavailable, IdentityFaulted 503 temporarily_unavailable, IdentityUnresolvable 500 server_error, NotConfigured 500 server_error, NoUpstreamToken 502 server_error, UpstreamTokenExpired 502 server_error, UpstreamLifetimeUnrepresentable 502 server_error, TooLarge 502 server_error. mint_error_from_failure(ReloadUserFailure) -> BridgeMintError is NoActiveKey to NoIdentity, Unavailable to IdentityUnavailable, Faulted to IdentityFaulted, Unresolvable to IdentityUnresolvable. refresh_error_from_failure is the same except NoActiveKey gives InvalidRefresh. mint_error_from_rejection maps NoAccessToken to NoUpstreamToken and ExpiredLifetime to UpstreamTokenExpired. ReloadUserFailure is B4674's enum in betterlite_mcp::gateway_dcr.
+
+
+  bridge_mint::finish. BridgeMintReady { identity: EnvelopeIdentity, keys: EnvelopeKeys } and BridgeRefreshReady { ready: BridgeMintReady, upstream_refresh_token: SecretString, upstream_scope: Option<String> } are defined here and built by the server modules below. BridgeTokenBody { access_token: String, expires_in: i64, refresh_token: Option<String> } has body() giving the JSON object {"access_token", "token_type": "Bearer", "expires_in"} plus "refresh_token" only when it is Some. finish_bridge_mint(ready, server_id: &str, token_response: &serde_json::Value, now: DateTime<Utc>) -> Result<BridgeTokenBody, BridgeMintError> is phase 3, after the upstream exchange. Order: grant_from_token_response (rejection lifted by mint_error_from_rejection), then B4653's build_bridge_token_response(identity, grant, keys, now). The B4651 unrepresentable-lifetime result is UpstreamLifetimeUnrepresentable and any other non-sealed result is TooLarge. expires_in is max(0, sealed expiry in whole seconds truncated minus now in seconds rounded up), so the client is never told the bearer outlives the point admission rejects it. The refresh envelope comes from seal_refresh_envelope(identity, token_response, keys, now, server_id) -> Option<String>: None without a refresh credential; B4653's build_bridge_refresh_token_response sealed gives its bearer string; any failure logs at warn "bridge mint: the upstream refresh token is too large to seal into a refresh envelope for server=%s; issuing an access-only response, so the client re-authenticates at access expiry" and gives None, so the exchange still succeeds with an access-only body. The route (B7321) adds B4654's TOKEN_NO_CACHE_HEADERS to the success body.
+
+
+  bridge_prepare, phase 1, before the upstream exchange. Every precondition lives here so no failure can burn the single-use code or rotate a refresh token. BridgePrep<S: SubjectStore, J: JwtAdmission> is a struct literal with subjects: ActiveSubjects<S> (B4658), jwt: J and settings: BridgeMintSettings { master_key: Option<SecretString>, jwt_client_field_set: bool }. B8621 fills the settings: jwt_client_field_set is true when general_settings holds a client allowlist that names a jwt_field (LiteLLM's load_mcp_client_allowlist(...).jwt_field, whose general_settings reader is B8724's jwt_client_field_set, so it arrives as a plain bool). mint::prepare_bridge_mint(&self, headers: &HeaderMap, server_id: &str, bridge_identity: Option<&str>) -> Result<BridgeMintReady, BridgeMintError>, where bridge_identity is the litellm_user_id recovered from the gateway authorization code. Order: no master key (None or empty) is NotConfigured. Derive keys with B4653's envelope_keys_from_master_key. A bridge_identity gives a user_id identity, nothing else is read. Otherwise take the presented token with B4658's litellm_key_from_request. A JWT (betterlite_auth::resolved_key::credential::is_jwt) with jwt_client_field_set is JwtClientPolicyUnsupported before any resolution. Otherwise the JWT goes to credential_write's resolve_jwt_auth with no write route, and only a key result with a non-empty token hash gives a key_hash identity on that hash, everything else is NoIdentity (an unmapped JWT never becomes a user subject, because that would drop its JWT-only restrictions). A token that is not a JWT goes to subjects.resolve_active_key, with a failure lifted by mint_error_from_failure, and a success gives a key_hash identity on its key_hash. The identity constructors are B4651's (LiteLLM's key_hash_identity and user_identity; read crates/betterlite-mcp/src/envelope for the Rust names).
+
+
+  refresh::prepare_bridge_refresh(&self, server_id: &str, refresh_value: Option<&str>, now: DateTime<Utc>) -> Result<BridgeRefreshReady, BridgeMintError>. No master key is NotConfigured. A missing or empty value is InvalidRefresh. Otherwise open it with B4653's open_bridge_refresh_envelope(value, keys, now, server_id) and anything but an opened envelope is InvalidRefresh (not a refresh envelope, unreadable, expired, or minted for another server). Then subjects.revalidate_subject(&identity) (B4658): a failure is lifted by refresh_error_from_failure, so an inactive or deleted subject is InvalidRefresh (invalid_grant) while an outage is still 503 and a gateway fault 500. The ready value carries the opened identity, the keys, the unwrapped upstream refresh token and its sealed scope. Identity comes from the envelope, never from the HTTP request, so this function takes no headers.
+
+
+  credential_write. These decide who may store a per-user OAuth credential. CredentialWrites<S, J, C, L> holds subjects: ActiveSubjects<S>, jwt: J (JwtAdmission), checks: C (WriteChecks) and servers: L (B4672's ContextServers port, which stands for global_mcp_server_manager.get_allowed_mcp_servers). The ports are traits with native async fn used as generic parameters, no dyn, and B8621 writes the production implementations over B760, B766, B877, B883 and B1221 (this task does not call those modules). JwtAdmission has: enabled() -> bool, true only when general_settings enable_jwt_auth is the boolean true, premium_user is the boolean true and a database connection exists; mapping_configured() -> bool (litellm_jwtauth.is_virtual_key_mapping_configured); map_to_key(token) -> Result<JwtKeyMapping, JwtFault>, covering auth_jwt, the custom_validate callable and _resolve_jwt_to_virtual_key, where JwtKeyMapping is Mapped(UserAPIKeyAuth), Rejected (custom_validate said no) or NotMapped; resolve_identity(token) -> Result<JwtIdentity, JwtFault> (JWTAuthManager.resolve_identity, JwtIdentity from B760 with user_id and user_object); and authorize(token, route, headers, method) -> Result<AuthorizedJwt, JwtFault> where AuthorizedJwt holds user_object: Option<LiteLLMUserTable> and key: UserAPIKeyAuth (authorize_jwt then user_api_key_auth_from_result). JwtFault is one opaque error with a kind name for logs. WriteChecks has one method, admit_write(auth, route) -> Result<(), WriteDenied>, which runs RouteChecks.is_virtual_key_allowed_to_call_route and then the centralized common checks with empty request data.
+
+
+  resolve::resolve_request_auth(&self, headers, method, write_route: Option<&str>) -> Option<ResolvedRequestAuth>, ResolvedRequestAuth being Key(UserAPIKeyAuth) or Jwt(JwtIdentity). A presented JWT goes to jwt::resolve_jwt_auth. Anything else uses subjects.resolve_active_key and gives Key on success, None on any failure. jwt::resolve_jwt_auth(&self, headers, method, token, write_route) -> Option<ResolvedRequestAuth>: not enabled() is None. If mapping_configured(): map_to_key; Rejected is None, Mapped(key) is Key(key) unless subjects.key_owner_deactivated(&key) or the key is not active (B4658's key_is_active at store.now()), in which case None, and NotMapped continues. With no write_route, resolve_identity gives Jwt(identity) unless identity.user_object is a SCIM-deactivated user (user_scim_deactivated), which is None. With a write_route, authorize(...) gives Key(authorized.key) unless authorized.user_object is SCIM-deactivated. Every JwtFault logs at debug "OAuth JWT identity could not be validated (%s)" with the fault kind and gives None, so the public OAuth exchange stays available and an unvalidated identity never writes.
+
+
+  authorize::extract_user_id(&self, headers, method) -> Option<String> resolves with no write route and gives the Jwt identity's user_id or the Key's active_key_user_id (B4658's subject_state), and does not check write permission, since it only picks the user for identity binding. authorize_oauth_credential_request(&self, headers, method, server_id) -> Option<String> resolves with the write route "/v1/mcp/server/{server_id}/oauth-user-credential" and gives a user id only for a Key (a Jwt identity never writes) whose active_key_user_id is non-empty and for which can_store_oauth_credential is true. can_store_oauth_credential(&self, headers_and_method, auth: &UserAPIKeyAuth, server_id) -> bool runs checks.admit_write(auth, write_route) and then B4672's can_access_mcp_server(auth, server_id, servers). Any Err logs at debug "OAuth credential write not authorized (%s)" and gives false, so an authorization failure never writes.
+
+
+  Tests use fakes for SubjectStore (B4658), JwtAdmission, WriteChecks and ContextServers, a fixed now and made-up ids. HTTP: no route reaches this code yet (B7321 and the other token flows add the callers), so the umbrella B137 adds the HTTP oracle cases. This task has helper cases for the pure functions. The helper operation b4666 takes a function field: classify_lifetime, grant_from_response, refresh_credential, error_response, lift_failure and finish. The Python side calls _classify_upstream_lifetime, _bridge_grant_from_token_response, _upstream_refresh_credential, _bridge_mint_error_response (status and body), the three lift functions and _finish_bridge_mint with a made-up master key; the Rust side calls the production functions. Cases that return envelopes ignore /access_token and /refresh_token in compare.ignore, and the Rust tests open those two strings with B4653's functions to check identity, lifetime and scope instead. Cases use a fixed now, so no clock is read.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/bridge_mint.rs
+    - crates/betterlite-mcp/src/bridge_mint/**
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-server/src/mcp/bridge_prepare.rs
+    - crates/betterlite-server/src/mcp/bridge_prepare/**
+    - crates/betterlite-server/src/mcp/credential_write.rs
+    - crates/betterlite-server/src/mcp/credential_write/**
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - tools/oracle/cases/helpers/mcp-upstream-grant-bridging/**
+    - "tools/oracle/fuzz/corpus/helper_case/mcp-upstream-grant-bridging-*"
+    - tools/oracle/helpers/b4666.py
+    - tools/oracle/helpers/b4666/**
+    - tools/oracle/src/helpers/mcp/b4666.rs
+    - tools/oracle/src/helpers/mcp/b4666/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L408-L466
+    why: _extract_user_id_from_request, authorize_oauth_credential_request, _resolve_request_auth and can_store_oauth_credential, with the write route and the fail-closed except.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L469-L539
+    why: _resolve_jwt_auth, the enable_jwt_auth and premium_user gate, the mapped-key branch, and the identity and authorize_jwt branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L542-L604
+    why: Upstream lifetime classification and the grant check, including why the refresh token is not sealed in the access envelope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L607-L760
+    why: The three-phase design comment, the mint error taxonomy, the status table and the three lift functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L762-L891
+    why: Phase 1 for the authorization_code grant and the refresh_token grant, in the order they check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/bridge_token_flow.py#L894-L990
+    why: Phase 3, the expires_in arithmetic, the refresh envelope and the access-only degrade.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1095-L1130
+    why: Where the refresh grant calls prepare before the upstream exchange and maps the failure value to a response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1195-L1210
+    why: Where the authorization_code grant prepares with the bridge identity before the exchange.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1280-L1340
+    why: The credential-write check before storing a token and the finish call after the exchange.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L895-L915
+    why: The authorize step that calls authorize_oauth_credential_request for a gateway credential.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L144-L148
+    why: JWTIdentity, the shape the JWT branch returns when no write route is given.
+  - url: https://www.rfc-editor.org/rfc/rfc6749#section-5.2
+    why: The token endpoint error body that every BridgeMintError renders as.
+dod:
+  - text: "classify_upstream_lifetime gives Unspecified for null, bool, array, object and unparseable text, NaN and both infinities, Expired for 0, negative and negative-zero values, Seconds(1) for a value between 0 and 1, Seconds of the truncated value otherwise, and reads Python float text such as ' 12 ', '1_0', '1e3' and 'Infinity'."
+    proof: [lifetime-tests, helper-oracle, helper-tests, helper-python]
+  - text: "grant_from_token_response rejects a non-object, a missing or empty access_token and an Expired lifetime, defaults token_type to Bearer, drops an empty scope, never keeps a refresh_token and leaves expires_in None for an Unspecified lifetime."
+    proof: [grant-tests, helper-oracle, helper-tests, helper-python]
+  - text: "upstream_refresh_credential returns None without a non-empty refresh_token or with a non-positive refresh_expires_in, and otherwise carries the token, the scope and the classified lifetime."
+    proof: [grant-tests, helper-oracle, helper-tests, helper-python]
+  - text: "Every BridgeMintError renders the status, OAuth code and description of _bridge_mint_error_response, and the three lift functions map each ReloadUserFailure as the description says, with NoActiveKey giving NoIdentity on mint and InvalidRefresh on refresh."
+    proof: [error-tests, helper-oracle, helper-tests, helper-python]
+  - text: "finish_bridge_mint seals an access envelope that opens to the prepared identity, reports expires_in as truncated expiry minus rounded-up now and never below 0, adds a refresh envelope only when the upstream sent a usable refresh token, and degrades to an access-only body when the refresh token cannot be sealed."
+    proof: [finish-tests, helper-oracle, helper-tests, helper-python]
+  - text: "finish_bridge_mint fails with NoUpstreamToken, UpstreamTokenExpired, UpstreamLifetimeUnrepresentable and TooLarge for the matching upstream response or seal result."
+    proof: [finish-tests, helper-oracle, helper-tests, helper-python]
+  - text: "prepare_bridge_mint fails with NotConfigured without a master key, ignores everything else when a bridge identity is given, refuses a JWT with a client jwt field before resolving it, mints a key_hash identity for a key or a mapped JWT and NoIdentity for an unmapped JWT, and lifts each key resolution failure."
+    proof: [prepare-mint-tests]
+  - text: "prepare_bridge_refresh fails with NotConfigured, InvalidRefresh for a missing, foreign, expired or non-envelope value and for an inactive subject, keeps 503 and 500 for outages and faults, and returns the unwrapped upstream refresh token and scope."
+    proof: [prepare-refresh-tests]
+  - text: "resolve_jwt_auth gives None when JWT auth is not enabled, when a mapped key is inactive or its owner is SCIM-deactivated, when custom validation rejects, and on any JwtFault, and takes the identity path without a write route and the authorize path with one."
+    proof: [jwt-auth-tests]
+  - text: "authorize_oauth_credential_request gives a user id only for a key with a non-empty active user id that passes admit_write and can_access_mcp_server, never for a JWT identity, and any check error gives None."
+    proof: [authorize-tests]
+  - text: "extract_user_id gives the JWT identity's user_id or the active key's user_id without checking write permission."
+    proof: [authorize-tests]
+  - text: "The oracle cases and the corpus seeds agree with LiteLLM on the six pure operations."
+    proof: [helper-oracle, helper-tests, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: lifetime-tests
+      why: the upstream lifetime is read differently from Python's float and int rules
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^bridge_mint::lifetime::tests::/)'
+    - id: grant-tests
+      why: the upstream grant or refresh credential is validated differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^bridge_mint::grant::tests::/)'
+    - id: error-tests
+      why: a mint error answers with the wrong status, code or description, or a failure is lifted to the wrong error
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^bridge_mint::error::tests::/)'
+    - id: finish-tests
+      why: the sealed response has the wrong expires_in, loses the refresh envelope or fails the exchange for a refresh token that is too large
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^bridge_mint::finish::tests::/)'
+    - id: prepare-mint-tests
+      why: the authorization_code preconditions run in the wrong order or mint an identity for an unmapped JWT
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::bridge_prepare::mint::tests::/)'
+    - id: prepare-refresh-tests
+      why: a refresh for a revoked or foreign envelope is accepted, or an outage is reported as invalid_grant
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::bridge_prepare::refresh::tests::/)'
+    - id: jwt-auth-tests
+      why: a JWT that is disabled, deactivated or unvalidated resolves to an identity
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::credential_write::(resolve|jwt)::tests::/)'
+    - id: authorize-tests
+      why: a caller without the write route, the server grant or an active user id can store a credential
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::credential_write::authorize::tests::/)'
+    - id: helper-tests
+      why: the helper adapter does not reach the production functions
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mcp::b4666::/) - test(/replays_the_/)'
+    - id: helper-oracle
+      why: the helper cases are missing or differ from LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/mcp-upstream-grant-bridging)" &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/mcp-upstream-grant-bridging
+    - id: helper-python
+      why: the Python helper adapter is unchanged or fails the strict checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4666.py tools/oracle/helpers/b4666)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no newly added mcp-upstream-grant-bridging seed reaches the shared parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-upstream-grant-bridging-*')" &&
+        grep -lE 'b4666"?:' tools/oracle/fuzz/corpus/helper_case/mcp-upstream-grant-bridging-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-upstream-grant-bridging/lifetime-values.yaml
+  - tools/oracle/cases/helpers/mcp-upstream-grant-bridging/lifetime-python-float-text.yaml
+  - tools/oracle/cases/helpers/mcp-upstream-grant-bridging/lifetime-non-finite-and-types.yaml
+  - tools/oracle/cases/helpers/mcp-upstream-grant-bridging/grant-valid-defaults.yaml
+  - tools/oracle/cases/helpers/mcp-upstream-grant-bridging/grant-rejections.yaml
+  - tools/oracle/cases/helpers/mcp-upstream-grant-bridging/grant-drops-refresh-token.yaml
+  - tools/oracle/cases/helpers/mcp-upstream-grant-bridging/refresh-credential-variants.yaml
+  - tools/oracle/cases/helpers/mcp-upstream-grant-bridging/error-response-table.yaml
+  - tools/oracle/cases/helpers/mcp-upstream-grant-bridging/lift-failure-mint-and-refresh.yaml
+  - tools/oracle/cases/helpers/mcp-upstream-grant-bridging/finish-access-and-refresh.yaml
+  - tools/oracle/cases/helpers/mcp-upstream-grant-bridging/finish-access-only.yaml
+  - tools/oracle/cases/helpers/mcp-upstream-grant-bridging/finish-upstream-failures.yaml
+  - tools/oracle/cases/helpers/mcp-upstream-grant-bridging/finish-subsecond-lifetime.yaml
+deviations:
+  - what: The mint error and the success body come back as values (OauthError, BridgeTokenBody), and the route adds the no-store headers to the success body. LiteLLM builds a JSONResponse with those headers inside the function.
+    why: betterlite-mcp has no HTTP response type, and the client sees the same status, body and headers. B7321 owns the route.
+  - what: The JWT checks, the route checks and the centralized common checks sit behind the JwtAdmission and WriteChecks ports, and B8621 wires the production implementations over B760, B766, B877, B883 and B1221.
+    why: Those modules read proxy globals in LiteLLM and need the auth crate's state, and a port keeps this task testable with fakes. The order of the checks is part of this task's tests.
+  - what: Debug log lines that name an exception class in LiteLLM name the JwtFault kind or the check error kind instead.
+    why: Rust has no exception class names, and the text is only a log.
+  - what: A string expires_in that Python's float() reads with a non-ASCII digit or a Unicode space is read as Unspecified unless it is plain ASCII text.
+    why: Python accepts Unicode decimal digits and Unicode whitespace in float(); the port covers ASCII digits, underscores, exponent and the inf and nan words, which is all a token endpoint sends.
+out_of_scope:
+  - "bridge_token_flow.py L35-L405 (_litellm_key_from_request, oauth_authorization_uses_gateway_credential, _opaque_bearer_is_gateway_credential, _key_is_active, _active_key_user_id, _ResolvedKey, _KeyResolutionFailure, _database_failure, _resolve_active_litellm_key, master_key_admin_auth, _reload_active_key_by_hash, _reload_active_user_by_id, load_active_user_by_id, _active_user_record, _key_owner_scim_deactivated, _revalidate_active_subject): B4658 owns them and this task calls them."
+  - "discoverable_endpoints.py token, authorize and credential routes that call this code: B7321 owns the upstream OAuth flows there, and the gateway-side token grants are B4676."
+  - "load_mcp_client_allowlist and client_allowlist.py: B8191. The per request general_settings reader and jwt_client_field_set: B8724, which B8621 calls. This task takes only the jwt_field answer as the jwt_client_field_set setting."
+  - "The production JwtAdmission, WriteChecks and ContextServers implementations and the composition of BridgePrep and CredentialWrites: B8621."
+  - "build_bridge_token_response, build_bridge_refresh_token_response, open_bridge_refresh_envelope and envelope_keys_from_master_key: B4653. Envelope types and identity constructors: B4651."
+  - "oauth_identity_binding.py: B4659. It reads the caller through B4658's load_active_user, not through this task."
+pitfalls:
+  - A sub-second positive expires_in (0.4) is Seconds(1), not Expired, because LiteLLM tests the float before it truncates.
+  - A negative infinity expires_in is Unspecified and not Expired, since int(-inf) raises before the sign is looked at.
+  - The access envelope's grant has refresh_token None on purpose, so sealing the upstream refresh token there would put a long-lived credential in the bearer the client holds.
+  - A refresh_expires_in of 0 or below drops the refresh envelope silently and the exchange still succeeds with an access-only body.
+  - A refresh token too large to seal degrades to access-only with a warn log, while an access token too large is the 502 TooLarge.
+  - On the refresh path an inactive subject is invalid_grant (400), on the mint path the same failure is invalid_request (400, NoIdentity), so the two lift functions must stay separate.
+  - A bridge_identity makes prepare_bridge_mint skip every request credential, and only the missing master key is checked before it.
+  - A JWT with a client jwt_field is refused before resolve_jwt_auth runs, so the check cannot be moved after the resolution.
+  - An unmapped JWT gives NoIdentity even though resolve_identity could name a user, because a user subject would lose the JWT-only restrictions.
+  - authorize_oauth_credential_request treats an empty user_id as no user, like Python truthiness, so a key whose user_id is "" never writes.
+  - "resolve_jwt_auth checks the key owner and key activity only for a mapped key, and checks SCIM only on user_object for the identity and authorize branches, so each branch has its own deactivation test."
+  - The write route is built from the server id as /v1/mcp/server/{server_id}/oauth-user-credential, and both the resolve step and the check step must use that same text.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

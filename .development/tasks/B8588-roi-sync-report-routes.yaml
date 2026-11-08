@@ -1,0 +1,91 @@
+id: B8588
+title: Serve the ROI sync, report, identity map and setup reset routes
+description: >-
+  Build the rest of LiteLLM's management_endpoints/roi_calculator_endpoints.py in betterlite-server, module `roi_routes` (crates/betterlite-server/src/roi_routes.rs and roi_routes/**): six routes, `next_update` and the scheduled sync step. `pub fn routes()` returns the axum router like the sibling route modules; B8677 mounts it. B3158 already builds GET and PUT `/roi-calculator/settings` and the pieces this task reuses: the read admin check (proxy_admin or proxy_admin_viewer, else 403 "Only proxy admins can access the ROI Calculator."), the write admin check (proxy_admin only, else 403 "Only proxy admins can change ROI Calculator settings."), the repository lookup that answers 500 with the db_not_connected text when there is no database, and the ports of `_load_settings`, `_load_stored_settings`, `_save_settings`, `_load_report` and `_public_settings`. B3161 builds `/roi-calculator/repositories`, `/roi-calculator/connections/test`, the spend reader and the completion caller. Call theirs and do not write them again.
+
+  Collaborators. B3155's `SyncStore` (betterlite-db, `status`, `cancel`, `acquire`, `finish`, `clear_report`), B3157's `SyncManager` (betterlite-server::roi_sync, `start`, `cancel` and its current status), B3151's `summarize` and `normalize_email` and B8273's `sample_report` (betterlite-roi), and the records `ROISyncStatus`, `ROIReport`, `ROIReportResponse`, `ROIIdentityMapUpdate` and `ROIIdentityMapResponse` already in betterlite-roi. `RoiRouteState` takes, by constructor: one shared SyncManager for the whole process (LiteLLM keeps a single module-level `_SYNC_MANAGER`), the repository source, the SyncStore source, a clock, the router model list B3158 reads estimator models from, and B3161's spend reader and completion caller factories. Tests use fakes for all of them.
+
+  GET `/roi-calculator/sync` (read admin). The status is the store's status, or the manager's status when the store has none. Load settings and the report, then answer that status with `next_update` set to next_update as ISO text, or null.
+  POST `/roi-calculator/sync` (write admin, 202 on success). Load settings. When the public settings are not ready, answer 409 "Connect GitHub, select repositories, and choose a router model.". Otherwise start the manager with the settings, the repository, the spend reader, the completion caller, no GitHub transport, the router estimator models for settings.estimator_model and the store as coordinator. A false start answers 409 "A sync is already running."; a true one answers the manager's status.
+  DELETE `/roi-calculator/sync` (write admin). Cancel the store, then the manager, then answer the store's status or, when it has none, the manager's.
+  GET `/roi-calculator/report` (read admin) with query `mode`, `live` or `demo`, default `live`. Demo answers `{"report": summarize(sample_report(now), empty map)}` and reads no report. Live loads the report: none answers `{"report": null}`, otherwise `{"report": summarize(report, settings.identity_map)}`.
+  PUT `/roi-calculator/identity-map` (write admin) with an ROIIdentityMapUpdate body. login is github_login with surrounding whitespace stripped and then case folded the way Python's str.casefold does. Load the settings and the stored settings. When email is given, new_email is normalize_email(email). An empty login, or an email given whose normalized form is empty, answers 422 "Enter a GitHub login and a valid email address.". A null email removes login from the map; otherwise login maps to new_email, replacing any old value. Save the settings with the new map and the stored, already encrypted github_token and estimator_key as they are. Answer `{"report": <summary with the new map, or null without a report>, "identity_map": <the new map>}`.
+  POST `/roi-calculator/setup/reset` (write admin). owner is a new UUID v4 as text. Try store.acquire(owner, status) with status running true, phase "spend", stage "Restarting setup", done, total, estimated, reused and needs_attention 0 and error null. A failed acquire answers 409 "Cancel the running analysis before restarting setup.". Otherwise load settings and stored settings, save the settings with repos emptied and the stored encrypted secrets, clear the stored report, and answer the public settings. After a good acquire, finish the claim with that status changed to running false, phase "idle", stage "Idle", also when a step in between fails.
+
+  `next_update(settings, status, report)`: none when there is no report, settings.repos is empty, estimator_model is empty, update_interval_minutes is 0, or status.running is true. Otherwise the anchor is status.finished_at, else status.started_at, else report.synced_at, read as an ISO date-time where a trailing "Z" means +00:00 and a time without an offset is UTC; the answer is the anchor in UTC plus update_interval_minutes minutes (a float).
+  `run_scheduled_sync(state)` (L573-L596): with no database return. Load settings; return when update_interval_minutes is 0 or the public settings are not ready. Read the status (store, else manager) and the report; return when next_update is none or later than now. Otherwise start the manager like POST does, with scheduled_interval set to update_interval_minutes. Its errors propagate to the caller.
+scope:
+  paths:
+    - crates/betterlite-server/src/roi_routes.rs
+    - crates/betterlite-server/src/roi_routes/**
+    - tools/oracle/helpers/b8588.py
+    - tools/oracle/helpers/b8588/**
+    - tools/oracle/src/helpers/server/b8588.rs
+    - tools/oracle/src/helpers/server/b8588/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L419-L478
+    why: The three /roi-calculator/sync routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L481-L542
+    why: The report route with its demo mode and the identity map route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L545-L596
+    why: _next_update, register_scheduled_sync and run_scheduled_sync.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L620-L652
+    why: The setup reset route and its lease.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1567-L1569
+    why: The startup caller that registers the scheduled sync.
+dod:
+  - text: "The handlers are tested with tower's oneshot over the module's own Router and fake ports; B8677 runs the HTTP oracle cases through the booted proxy."
+    proof: [new-cases]
+  - text: The six routes exist on exactly their paths and methods; reads take the read admin check, writes the write admin check, and a caller without credentials gets the usual 401. B8677 proves it over HTTP.
+    proof: [route-tests]
+  - text: GET sync answers the store status or the manager status with next_update; POST answers 409 when not ready or already running and 202 with the status otherwise; DELETE cancels store and manager in that order. B8677 proves it over HTTP.
+    proof: [sync-tests]
+  - text: The report route answers the demo summary without reading the stored report, null without a report, and the summary with the stored identity map otherwise. B8677 proves it over HTTP.
+    proof: [report-tests]
+  - text: The identity map route folds the login, rejects an empty login or a bad email with 422, removes on a null email, keeps the stored encrypted secrets and answers the new map with the summary or null. B8677 proves it over HTTP.
+    proof: [identity-tests]
+  - text: Setup reset answers 409 when the lease is taken, otherwise empties repos, clears the report and answers the public settings, and always finishes the lease as idle after a good acquire. B8677 proves it over HTTP.
+    proof: [reset-tests]
+  - text: next_update and run_scheduled_sync follow every early return in the description and start the manager with the scheduled interval only when the next update is due.
+    proof: [schedule-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: route-tests
+      why: a route path, method or admin check is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_routes::tests::route_/)'
+    - id: sync-tests
+      why: the sync status, start or cancel route is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_routes::tests::sync_/)'
+    - id: report-tests
+      why: the report route or its demo mode is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_routes::tests::report_/)'
+    - id: identity-tests
+      why: the identity map route is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_routes::tests::identity_/)'
+    - id: reset-tests
+      why: the setup reset route or its lease is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_routes::tests::reset_/)'
+    - id: schedule-tests
+      why: next_update or the scheduled sync step is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_routes::tests::schedule_/)'
+    - id: new-cases
+      why: the handlers are not tested with tower's oneshot over the module's own Router and fake ports
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_routes::tests::oneshot_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "GET and PUT /roi-calculator/settings, the admin checks, the repository lookup and the settings and report loaders: B3158. /roi-calculator/repositories, /roi-calculator/connections/test, the spend reader and the completion caller: B3161."
+  - "The sync runner: B3157. The sync lease store: B3155. summarize and normalize_email: B3151. sample_report: B8273."
+  - "register_scheduled_sync, the 30 second interval job with id roi_calculator_refresh, max one instance and replace_existing, belongs to B8677, which runs it on the routes' state; it calls run_scheduled_sync from here."
+pitfalls:
+  - "The demo report still passes the read admin check and the repository lookup first, so a proxy with no database answers 500 even for mode=demo."
+  - "The identity map save reuses the stored encrypted github_token and estimator_key text; encrypting the decrypted values again would change them."
+  - "setup/reset must finish its lease even when a save fails, or the next sync stays blocked until the lease runs out."
+  - "DELETE /roi-calculator/sync cancels the store before the manager, so another pod sees the cancel even when this pod has no running task."
+  - "POST /roi-calculator/sync answers 202, not 200, and its 409 text differs from the connection test's 409 text."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

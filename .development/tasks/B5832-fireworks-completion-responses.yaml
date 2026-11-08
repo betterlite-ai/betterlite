@@ -117,7 +117,7 @@ deviations: []
 out_of_scope:
   - B6070 owns FireworksAIMixin, the key chain and session affinity; B6071 owns effort_from_chat_template_kwargs, translate_guided_params and the strip list; B6072 owns the chat wire side.
   - B2237 owns the prompt projection and the text config selector (get_provider_text_completion_config); B507 owns the base Responses request transform and input check; B1138 owns DeleteResponseResult.
-  - B2454 and B041 own the HTTP execution, the routes and the dispatch wiring for these configs, including the HTTP oracle cases.
+  - B2454 and B8310 own the HTTP execution, the routes and the dispatch wiring for these configs, including the HTTP oracle cases.
   - FireworksAIResponsesAPIConfig inherits every method not listed here from the OpenAI Responses config (B506 to B509).
 pitfalls:
   - Text completion copies a listed key even when its value is null, where the chat map skips null values.

@@ -1,0 +1,125 @@
+id: B4673
+title: MCP bridge and session request admission
+description: >-
+  Build the entry point that decides who an incoming MCP request is: LiteLLM's MCPRequestHandler.process_mcp_request and the admission arms it picks between, plus the user reload the gateway session and bridge paths use. It goes in betterlite-server, module mcp::request_admission, in crates/betterlite-server/src/mcp/request_admission.rs with the submodules entry, bridge_arms, gateway_session and user_reload, each with a tests.rs beside it. The MCP route handlers (B137) call admit_mcp_request, so every name below is public and spelled as written.
+
+
+  Dependencies and what they give. B4654: RawHeaders and its duplicate-Authorization error (status 400), get_litellm_api_key, mcp_auth_header, server_auth_headers, oauth2_headers, parse_mcp_servers_header, and the path-target functions. B7490: is_true_passthrough, single_bridge_target, admission_failure_fallback, gateway_dcr_challenge, bridge_invalid_token_challenge, ChallengeContext and ChallengeResponse. B4679: LiveAdmission (reload_admitted_key, enforce_live_policy, store and gates), EgressHeaders with scrub_gateway_admission_credentials, is_gateway_admission_credential, explicit_credential_matches_envelope, is_auth_admission_error, AdmissionRequest, AdmissionRejection and key_identity. B4653: is_bridge_envelope_shaped, is_session_bearer_shaped, envelope_keys_from_master_key, resolve_bridge_envelope with BridgeEnvelopeResult, resolve_session_bearer with SessionBearerResult, resolve_session_signing_keys. B4651: EnvelopeIdentity and its SubjectType (KeyHash or UserId). B4671: McpAccess::admitted_subject_team_rpm_limits and the DelegatedHuman port. B2314: UserAPIKeyAuth and its trusted setters.
+
+
+  Ports, native async fn in traits passed as generic parameters, no dyn. KeyAuthenticator has authenticate(&self, api_key: &str, request: &AdmissionRequest) -> Result<UserAPIKeyAuth, AuthFailure>. It is LiteLLM's user_api_key_auth(api_key=..., request=...). AuthFailure is Http { status: u16, detail: serde_json::Value, headers: Vec<(String, String)> }, Proxy { code: Option<String>, message: String } or Unclassified(String). Only Http and Proxy are caught by the fallback arms, as LiteLLM catches only HTTPException and ProxyException; Unclassified propagates untouched. UserReads has has_database() -> bool, user_by_id(user_id, fresh: bool) -> Result<Option<LiteLLMUserTable>, ReadFault> and object_permission(id, fresh: bool) -> Result<Option<LiteLLM_ObjectPermissionTable>, ReadFault>. ReadFault is Refused (a ProxyException or HTTPException), DatabaseUnavailable { message: String } or Other(String). B8621 implements both ports over B756 and B736 and the object permission read; the task builds test fakes only.
+
+
+  RequestAdmissionSettings { master_key: Option<SecretString>, signing: SigningConfig } is filled by B8621 (general_settings.mcp_session_token_signing, B4653). RequestAdmission<A: KeyAuthenticator, K, G, U: UserReads, T: TeamLimits> holds settings, authenticator, live: LiveAdmission<K, G>, users and team_limits, as a struct literal. TeamLimits has one async method, team_rpm_limits(&self, auth: &UserAPIKeyAuth) -> Option<BTreeMap<String, BTreeMap<String, i64>>>, which B8621 implements with McpAccess::admitted_subject_team_rpm_limits; the trait breaks the cycle between McpAccess (which holds the DelegatedHuman port this task implements) and this task. RequestAdmissionError<K, G> is a thiserror enum: Headers (B4654's error, status 400), Auth(AuthFailure), Live(AdmissionRejection<K, G>), Http { status, detail: serde_json::Value } for the 500 and 401 cases below, and Challenge(ChallengeResponse).
+
+
+  entry. admit_mcp_request(&self, req: McpRequest) -> Result<Admitted, RequestAdmissionError<..>> is process_mcp_request. McpRequest carries the ordered raw header pairs, the route (already root-stripped, with the "/.well-known/" test applied to it), the client IP text, a ChallengeContext, the AdmissionRequest the gates need and the registry reference (hold the read lock). Admitted is the six values LiteLLM returns: auth: UserAPIKeyAuth, mcp_auth_header: Option<String>, mcp_servers: Option<Vec<String>>, mcp_server_auth_headers: BTreeMap<String, BTreeMap<String, String>>, oauth2_headers: BTreeMap<String, String> and raw_headers: Vec<(String, String)>. Steps. Build RawHeaders (the duplicate Authorization error stops here). has_explicit_litellm_key is whether x-litellm-api-key is present at all, even empty. litellm_api_key is get_litellm_api_key or "". mcp_servers is parse_mcp_servers_header of x-mcp-servers. Then pick one arm, first match wins, in this order:
+
+  1. route starts with "/.well-known/": auth is UserAPIKeyAuth::default() and nothing is checked.
+
+  2. explicit key, oauth2_headers non-empty, its "Authorization" is_bridge_envelope_shaped, and single_bridge_target is Some: bridge_arms::admit_dual_credential.
+
+  3. explicit key: authenticate(format!("Bearer {token}")) where token is the key text with a leading "Bearer " (case-insensitive) removed, as B4654's get_litellm_api_key parser gives for LiteLLM's _get_bearer_token_or_received_api_key. A failure propagates as Auth.
+
+  4. is_true_passthrough, or (single_bridge_target is Some and oauth2_headers, mcp_server_auth_headers and mcp_auth_header are all empty): UserAPIKeyAuth::default().
+
+  5. single_bridge_target is Some and oauth2_headers non-empty: bridge_arms::admit_authorization.
+
+  6. oauth2_headers non-empty and its Authorization is_session_bearer_shaped: gateway_session::admit_gateway_session.
+
+  7. oauth2_headers non-empty: authenticate(litellm_api_key); an Http or Proxy failure goes to admission_failure_fallback with bearer_presented true.
+
+  8. otherwise: the same call, bearer_presented false.
+
+  Last, always: scrub with EgressHeaders { oauth2_headers, raw_headers (every header pair in request order), mcp_auth_header, mcp_server_auth_headers } and admitted = key_identity(&auth).mcp_admitted_user_subject. Return the scrubbed values. The raw headers are the lowercased pairs RawHeaders holds.
+
+
+  bridge_arms. open_envelope(server, requested_name, authorization_value) is _open_dcr_bridge_envelope. No master_key gives Http 500 "Server misconfigured: master_key is not set". Then live.gates.pre_db_read_checks (a gate failure is Live(Gate(..)) with its own status). Then envelope_keys_from_master_key and resolve_bridge_envelope(value, keys, now, server.server_id). BridgeEnvelopeAdmitted gives identity and upstream_authorization. BridgeEnvelopeInvalid and NotBridgeEnvelope give Challenge(bridge_invalid_token_challenge(requested_name)). inject(server, mcp_server_auth_headers, secret) returns a new map with {header_key: {"Authorization": secret}} laid over the old one, where header_key is the server's alias or else its server_name (alias first, since egress resolves alias first and the injection must overwrite a caller-supplied x-mcp-{alias}-authorization); neither set gives Http 500 "Server misconfigured: MCP server has no routable name". admit_delegate is _admit_dcr_bridge_delegate: open_envelope, the header_key check, reload_principal(identity), live.enforce_live_policy, then inject; it returns the reloaded auth and the new map. admit_dual_credential is _admit_dcr_bridge_dual_credential: presented_token is the key text with its Bearer prefix removed; authenticate(Bearer presented_token) first (a failure propagates unchanged); then open_envelope; then explicit_credential_matches_envelope, and a mismatch is Http 403 with detail {"error": "oauth_principal_mismatch"}; then the header_key check and inject. It returns the explicit auth. admit_authorization is _admit_dcr_bridge_authorization: an is_bridge_envelope_shaped value goes to admit_delegate; otherwise authenticate(litellm_api_key), where an Http or Proxy failure that is_auth_admission_error is a Challenge(bridge_invalid_token_challenge), any other failure propagates, and success returns the auth with the old header map. reload_principal(identity) is _reload_admitted_principal: KeyHash calls live.reload_admitted_key(subject, false), UserId calls user_reload::reload_admitted_user(subject, false).
+
+
+  gateway_session. admit_gateway_session(authorization_value, route, mcp_servers) is _admit_gateway_session. No master_key gives Http 500 "Server misconfigured: master_key is not set". Then live.gates.pre_db_read_checks. Then resolve_session_signing_keys(master_key, &settings.signing); an error logs at error level "mcp gateway session admission rejected: {error}" and gives Http 500 "Server misconfigured: mcp_session_token_signing is invalid". Then resolve_session_bearer. SessionBearerAdmitted: reload_admitted_user(principal.user_id, false), set mcp_session_resource_server_id to principal.resource_server_id (a trusted setter), then live.enforce_live_policy. When any of these fails with an Http of status 401, return Challenge(gateway_dcr_challenge(.., invalid_token = true)); every other failure, 503 included, propagates as it is. SessionBearerInvalid and NotSessionBearer both give Challenge(gateway_dcr_challenge(.., invalid_token = true)).
+
+
+  user_reload. reload_admitted_user(&self, user_id, requires_fresh_policy) -> Result<UserAPIKeyAuth, RequestAdmissionError<..>> is MCPRequestHandler.reload_admitted_user. No database (has_database false) gives Http 500 "Server misconfigured: no database connection". Read the user with users.user_by_id(user_id, requires_fresh_policy) (LiteLLM's get_user_object with user_id_upsert false and check_db_only = requires_fresh_policy). Take the user's own object permission when present; when it is absent but the row has an object_permission_id, read it with users.object_permission(id, requires_fresh_policy). A read fault: Refused gives Http 401 "Invalid or expired credential"; DatabaseUnavailable { message } gives Http 503 with that message; Other gives Http 401 with the same detail. A missing user row gives 401 with the same detail. A row whose metadata has scim_active equal to the JSON value false gives 401 (any other value, or no metadata, passes). Build the auth with user_id, user_role, org_id from organization_id, object_permission, object_permission_id, user_tpm_limit from tpm_limit and user_rpm_limit from rpm_limit, then set through B2314's trusted setters the admitted-user marker true and requires_fresh_policy, and then mcp_source_team_rpm_limits from team_limits.team_rpm_limits(&auth). The same module implements B4671's DelegatedHuman for the struct that wraps this call, so McpAccess can reload the delegated human; an error maps to B4671's access error as its task describes.
+
+
+  Tests use fakes of KeyAuthenticator, UserReads and TeamLimits that record their calls, B4679's fakes for the store and gates, a fixed clock and keys made with B4653's own functions from a synthetic master key. No oracle cases: LiteLLM's functions here need the live proxy, and the umbrella adds HTTP cases when it registers the /mcp routes. Test names start with the arm names (well_known_, explicit_key_, dual_credential_, passthrough_, bridge_, session_, oauth2_, fallback_, reload_), so the check filters can be written per submodule.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/request_admission.rs
+    - crates/betterlite-server/src/mcp/request_admission/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L416-L630
+    why: process_mcp_request, the arm order and the final scrub.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L795-L955
+    why: The delegate, envelope opening, dual-credential and authorization arms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L978-L1076
+    why: _admit_gateway_session, the pre-DB gate call and _reload_admitted_principal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1078-L1148
+    why: reload_admitted_user.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L223-L230
+    why: The admitted-user marker the final scrub reads.
+dod:
+  - text: >-
+      admit_mcp_request picks the arm in LiteLLM's order for the well-known route, an explicit key with a bridge envelope, an explicit key alone, passthrough, bridge authorization, session bearer, oauth2 and the plain key.
+    proof: [entry-tests]
+  - text: >-
+      The final scrub runs on every arm and drops the gateway credential from oauth2, raw, mcp-auth and per-server headers, treating a session-admitted subject as admitted.
+    proof: [entry-tests]
+  - text: >-
+      A failed oauth2 or plain admission goes through admission_failure_fallback with bearer_presented true or false, and an error that is not Http or Proxy is not caught.
+    proof: [entry-tests]
+  - text: >-
+      The bridge arms need master_key (500), run the pre-DB gates before the envelope is opened, answer an invalid envelope with the bridge challenge, answer a principal mismatch with 403 oauth_principal_mismatch, and inject the sealed token under the alias first.
+    proof: [bridge-tests]
+  - text: >-
+      The gateway session arm needs master_key (500), fails a bad signing config as 500, challenges an invalid or foreign bearer, converts a 401 from the reload or live policy into the challenge, and lets a 503 through.
+    proof: [session-tests]
+  - text: >-
+      reload_admitted_user maps each read fault, a missing row and scim_active false to LiteLLM's 401, 503 or 500, and stamps the marker, the fresh-policy flag, the user limits and the team rate limits.
+    proof: [reload-tests]
+checks:
+  optional: []
+  commands:
+    - id: entry-tests
+      why: The arm order, the final scrub or the fallback wiring tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::request_admission::entry::/)'
+    - id: bridge-tests
+      why: The bridge arm tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::request_admission::bridge_arms::/)'
+    - id: session-tests
+      why: The gateway session arm tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::request_admission::gateway_session::/)'
+    - id: reload-tests
+      why: The user reload tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::request_admission::user_reload::/)'
+deviations:
+  - what: Stores, the authenticator and the team limit lookup are generic ports, and the session signing keys come from RequestAdmissionSettings.
+    why: betterlite has no proxy_server globals (prisma_client, user_api_key_cache, master_key). B8621 fills the ports.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1078-L1148
+  - what: Rust returns RequestAdmissionError values and the route renders them. LiteLLM raises HTTPException and ProxyException.
+    why: Status, detail and headers are kept as LiteLLM sends them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L416-L630
+out_of_scope:
+  - "Cold-start checks, challenge builders, _admission_failure_fallback, _target_servers_are_true_passthrough, _single_dcr_bridge_delegate_target and _dcr_bridge_invalid_token_challenge: B7490."
+  - "The key reload, the live policy, the SCIM key check, the scrub, the envelope match and the auth error test: B4679. _is_mcp_admitted_user_subject is key_identity there."
+  - "Header and path parsing: B4654. Bearer shape tests and token opening: B4653. _admitted_subject_team_rpm_limits: B4671."
+  - "MCPRequestHandler methods from get_mcp_server_access down, UnloadableEntitlementError, _as_list and _agent_capped_servers: B4668 to B4672 and B4671."
+  - "Wiring the ports: B8621. Registering the /mcp routes: the B136 server.py work."
+pitfalls:
+  - The explicit-key test is whether x-litellm-api-key is present at all, so an empty value still takes the explicit arm and fails authentication.
+  - The dual-credential arm authenticates the explicit key before it opens the envelope, so a bad key keeps its own 401 or 403 and never reaches the envelope check.
+  - A principal mismatch is a 403 and never falls back to either credential alone.
+  - The delegate arm's token injection is keyed by alias before server_name, because egress looks up alias first and a caller-supplied x-mcp-{alias}-authorization would otherwise win.
+  - The pre-DB gates run before the envelope or session crypto, so a blocked IP is refused before any scrypt work.
+  - A 401 from the session reload or live policy becomes the invalid_token challenge, but a 503 database outage passes through as a retryable error.
+  - Arm 4 admits an anonymous caller only when no oauth2, per-server or mcp-auth header exists, so a bridge server with any client credential goes to arm 5.
+  - The final scrub runs for every arm including the well-known route and treats a session-admitted subject as admitted, which drops every Authorization pair from raw_headers.
+  - scim_active counts only as the JSON value false, so a missing key, null or the text "false" does not deactivate.
+  - Session signing keys come from resolve_session_signing_keys with the configured SigningConfig; a bad RS256 setting is a 500 and never silently HS256.
+review_level: security
+oracle_cases: []
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

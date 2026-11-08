@@ -1,0 +1,71 @@
+id: B7882
+title: Python video generation, content, remix, list and status
+description: >-
+  This is the first part of the videos entry. It adds `video_generation`, `avideo_generation`, `video_content`, `avideo_content`, `video_remix`, `avideo_remix`, `video_list`, `avideo_list`, `video_status` and `avideo_status` of litellm/videos/main.py. Rust runs the provider calls (B3338 generation, B3339 content and status, B3340 remix and list). Python collects the arguments into JSON, calls a native session and builds the B167 objects.
+
+
+  Native side, the family `video_calls`: `src/video_calls.rs` with `register` that adds `NativeVideoSession` and `NativeVideoError`, and `src/video_calls/convert.rs` with tests `request_*` and `error_*`. `video_content` returns bytes, so the session has a `content` method that gives bytes and the others give JSON text. The architect writes the `lib.rs` line.
+
+
+  Python side, `python/betterlite/videos/_calls.py`. `video_generation(prompt, model, input_reference, seconds, size, user, timeout, custom_llm_provider, extra_headers, extra_query, extra_body, **kwargs)` keeps LiteLLM's signature, and so do the others. `input_reference` may be bytes, a path or an open binary file, and goes as multipart. A sync call made from inside a running event loop is not special-cased: it blocks, like LiteLLM. Python objects that cannot cross to Rust (`client`, `shared_session`) raise `UnsupportedCallArgument` from B158.
+scope:
+  paths:
+  - crates/betterlite-python/src/video_calls.rs
+  - crates/betterlite-python/src/video_calls/**
+  - crates/betterlite-python/python/betterlite/_native_video_calls.pyi
+  - crates/betterlite-python/python/betterlite/videos/_calls.py
+  - crates/betterlite-python/tests/test_videos_calls.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1-L272
+  why: avideo_generation and video_generation
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L273-L870
+  why: content, remix and list, sync and async
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L870-L1085
+  why: video_status, sync and async
+dod:
+- text: Every function keeps LiteLLM's name and parameters, and a keyword LiteLLM refuses is refused here.
+  proof: [videos-calls-signature]
+- text: "Generation, content, remix, list and status return the same objects or bytes as LiteLLM against one local server."
+  proof: [videos-calls-calls]
+- text: A provider error keeps its class and cause, and an unsupported Python object raises `UnsupportedCallArgument`.
+  proof: [videos-calls-errors]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [videos-calls-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: videos-calls-signature
+    why: A caller's keyword is accepted or refused wrongly.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_videos_calls.py -k signature
+  - id: videos-calls-calls
+    why: A result differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_videos_calls.py -k calls
+  - id: videos-calls-errors
+    why: An error class or message changes.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_videos_calls.py -k 'error or unsupported'
+  - id: videos-calls-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^video_calls::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for these calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The request-option precedence is decided in Rust (B3338), not in Python.
+  why: Python only forwards the named arguments and the loose keywords.
+- what: This task has no helper oracle cases.
+  why: The functions call a native session, so pytest compares both packages against one local server.
+out_of_scope:
+- "Characters, edit, extension and the videos package are B7883."
+- "Provider execution belongs to B3338, B3339 and B3340."
+pitfalls:
+- "`video_content` is the one sync function that is not an overload pair, and its async twin sits after it in the file."
+- "`seconds` is a string in the OpenAI API, so an int must be sent as given and not formatted."
+- "A video id can carry a provider prefix. Python never strips it."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

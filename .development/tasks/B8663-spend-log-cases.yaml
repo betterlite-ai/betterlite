@@ -1,0 +1,80 @@
+id: B8663
+title: Prove the spend log and capture rate routes over HTTP
+description: >-
+  B8662 merges B069's spend routes into the app, so the spend log routes of B1729 to B1732 and GET /spend/capture_rate answer through the booted proxy for the first time. Their leaf tasks tested the handlers with tower's oneshot over their own routers, and their booted HTTP cases moved here, under the file names below. This task writes those cases and fixes nothing in product code; when a case shows a difference from LiteLLM, the fix goes into the leaf's module, which is in scope.
+
+  The families. Spend log detail reads authorize before they touch callbacks and refuse a foreign payload that shares a client call id (B1729). The legacy GET /spend/logs export keeps its scope, midnight bounds, summary padding and truncation header (B1730). Session expansion keeps own and team authorization, its own page size cap and the lean row fields (B1731). GET /spend/logs/ui and the v2 alias keep the user, team and id scope, search, grouping, caps and sort and date errors (B1732). GET /spend/capture_rate keeps its query validation 422, admin and viewer permission, missing database 500, reversed and 180 day range 400, missing billing key 503, billing failure 502 and the report (B069). Read each leaf's description, DoD and pitfalls for the exact values its cases check.
+
+  Capture rate cases use B069's capture_billing_fixture (success, zero_bill, provider_failure): the Rust test server injects B173's recording transport, and B069's LiteLLM startup hook swaps only organization_costs.py's httpx client. Pick the fixture value in each case as B069 describes; do not add another fixture. Every case runs with B860's Postgres fixtures and compares status, body and the error type, param and code.
+scope:
+  paths:
+    - tools/oracle/cases/http/spend-log-payload/**
+    - tools/oracle/cases/http/legacy-spend-logs/**
+    - tools/oracle/cases/http/spend-session/**
+    - tools/oracle/cases/http/spend-log-list/**
+    - tools/oracle/cases/spend/capture-rate/**
+    - crates/betterlite-server/src/spend/log_payload.rs
+    - crates/betterlite-server/src/spend/log_payload/**
+    - crates/betterlite-server/src/spend/log_results.rs
+    - crates/betterlite-server/src/spend/log_results/**
+    - crates/betterlite-server/src/spend/sessions.rs
+    - crates/betterlite-server/src/spend/sessions/**
+    - crates/betterlite-server/src/spend/log_list.rs
+    - crates/betterlite-server/src/spend/log_list/**
+    - crates/betterlite-server/src/spend/capture_route.rs
+    - crates/betterlite-server/src/spend/capture_route/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19979
+    why: spend_management_router carries every route these cases call.
+dod:
+  - text: Over HTTP, the spend log detail, legacy export, session and list routes answer the same status, body and error fields as LiteLLM.
+    proof: [new-cases, oracle]
+  - text: Over HTTP, GET /spend/capture_rate answers LiteLLM's 422, 403, 500, 400, 503, 502 and report bodies with B069's billing fixture.
+    proof: [new-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: new-cases
+      why: a spend log family or capture rate has no booted-proxy case on this branch
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/spend-log-payload)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/legacy-spend-logs)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/spend-session)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/spend-log-list)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/spend/capture-rate)"
+oracle_cases:
+  - tools/oracle/cases/spend/capture-rate/required-query-and-threshold-422.yaml
+  - tools/oracle/cases/spend/capture-rate/auth-admin-viewer-and-foreign-user.yaml
+  - tools/oracle/cases/spend/capture-rate/no-database-reversed-and-180-day-boundary.yaml
+  - tools/oracle/cases/spend/capture-rate/missing-admin-key-503.yaml
+  - tools/oracle/cases/spend/capture-rate/billing-failure-502-and-project-query.yaml
+  - tools/oracle/cases/spend/capture-rate/report-success-and-zero-provider-bill.yaml
+  - tools/oracle/cases/http/spend-log-payload/owner-and-colliding-call-id.yaml
+  - tools/oracle/cases/http/spend-log-payload/authorization-before-dates-and-null-row.yaml
+  - tools/oracle/cases/http/legacy-spend-logs/raw-key-user-and-call-id.yaml
+  - tools/oracle/cases/http/legacy-spend-logs/midnight-end-and-summary-exact-id.yaml
+  - tools/oracle/cases/http/legacy-spend-logs/trailing-padding-gaps-and-empty-range.yaml
+  - tools/oracle/cases/http/legacy-spend-logs/single-date-ignored-and-truncation-header.yaml
+  - tools/oracle/cases/http/spend-session/own-user-permitted-team-and-collision.yaml
+  - tools/oracle/cases/http/spend-session/page-size-100-and-lean-row-fields.yaml
+  - tools/oracle/cases/http/spend-log-list/aliases-old-id-and-public-window.yaml
+  - tools/oracle/cases/http/spend-log-list/team-permission-and-explicit-user-intersection.yaml
+  - tools/oracle/cases/http/spend-log-list/colliding-call-id-primary-priority.yaml
+  - tools/oracle/cases/http/spend-log-list/session-literal-versus-metadata-wildcards.yaml
+  - tools/oracle/cases/http/spend-log-list/cache-oauth-health-and-span-filters.yaml
+  - tools/oracle/cases/http/spend-log-list/representative-status-search-disables-grouping.yaml
+  - tools/oracle/cases/http/spend-log-list/keyset-offset-count-cap-and-ttft.yaml
+  - tools/oracle/cases/http/spend-log-list/ui-session-key-isolation-v2-no-enrichment.yaml
+  - tools/oracle/cases/http/spend-log-list/db-before-sort-and-date-errors.yaml
+deviations: []
+out_of_scope:
+  - "The handlers: B1729 to B1732 and B069. The composed router and its mount: B069 and B8662. The billing fixture: B069."
+  - "The spend report HTTP cases: B8662."
+pitfalls:
+  - "GET /spend/logs/ui and its v2 alias share one handler; a case per alias catches a missing alias, a shared case does not."
+  - "Capture rate checks permission before the database, so a viewer without a database gets 500 and a foreign user without one gets 403."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

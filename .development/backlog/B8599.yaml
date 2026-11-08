@@ -1,0 +1,13 @@
+id: B8599
+milestone: M8 platform
+title: Invitation link routes, queued chat route and fallback login page
+status: todo
+depends_on: [B797, B863, B799, B7324]
+file: tasks/B8599-invitation-queue-routes.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

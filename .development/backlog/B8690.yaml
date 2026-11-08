@@ -1,0 +1,14 @@
+id: B8690
+milestone: M5 api families
+title: Rust allm_passthrough_route SDK call
+status: todo
+depends_on: [B3570, B3571, B3572, B173, B174, B176, B247, B249, B2203, B2402, B5360, B658, B625, B8153, B548, B566, B8178, B5842, B5837]
+file: tasks/B8690-passthrough-sdk-call.yaml
+covers:
+  - "litellm/passthrough/main.py"
+parent: B101
+split_from: B101
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

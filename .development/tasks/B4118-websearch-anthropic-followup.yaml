@@ -1,0 +1,225 @@
+id: B4118
+title: Build Anthropic search follow-ups
+description: >-
+  Build the Anthropic Messages follow-up plan for an intercepted web search: run the searches,
+  build the follow-up request patch, and hand the core loop a plan. Also build the surface
+  dispatcher that picks the Anthropic, Chat Completions or Responses plan builder.
+
+  Implement crates/betterlite-websearch/src/anthropic_followup.rs (and its folder) with these
+  parts. The skeleton creates the empty module and declares it in lib.rs.
+
+  `resolve_max_tokens(optional_params, kwargs)` returns the follow-up max_tokens. It takes
+  optional_params["max_tokens"], else kwargs["max_tokens"], else 1024. When
+  optional_params["thinking"] is an object whose budget_tokens is a finite number above 0 and
+  max_tokens is at or below it, the result is ceil(budget_tokens) + 1024 and a debug line says
+  so. Anthropic rejects a request where max_tokens is not above thinking.budget_tokens, which is
+  why the bump exists.
+
+  `prepare_followup_kwargs(kwargs)` returns a copy of kwargs without every key that starts with
+  "_websearch_interception" and without "litellm_logging_obj". The logging object is dropped so
+  the follow-up call makes its own logging state. Reusing the first call's state trips its
+  already-logged flag and the first call's spend is never written.
+
+  `build_anthropic_request_patch(model, messages, tool_calls, thinking_blocks, optional_params,
+  logging_obj, kwargs)` returns the request patch and the tuple of search outcomes:
+  1. For each tool call, read input.query. A non-empty query starts `SearchExecutor::execute_search` (B4119's trait, see below) with
+     B4115's rich_search_input(tool_call.input). A missing or empty query uses B4115's
+     create_empty_search_result and logs the call id at debug.
+  2. Run all the searches at the same time and keep the order of the tool calls. An error from
+     one search does not cancel the others: each result goes through B4113's
+     WebSearchTransformation.search_outcome (an error becomes SearchFailed) and then
+     search_outcome_text for the text.
+  3. Call B4113's transform_response in the "anthropic" format with the tool calls and the texts. It
+     has no thinking argument and returns the assistant message and the user message. Then call
+     B4113's `Assistant::prepend_thinking` on the assistant message with the thinking blocks.
+  4. follow_up_messages is a copy of messages with the assistant message and then the user
+     message added.
+  5. max_tokens comes from resolve_max_tokens. optional_params in the patch is the incoming
+     optional_params without the "max_tokens" key. kwargs in the patch is
+     prepare_followup_kwargs(kwargs).
+  6. The patch model is logging_obj.model_call_details["agentic_loop_params"]["model"] when a
+     logging object was passed and that entry has a model, else the model argument. It is the
+     original un-prefixed model name.
+  7. Keep the debug line with call id (logging_obj.litellm_call_id, else kwargs
+     litellm_call_id, else "unknown"), model, message count and search count.
+
+  `build_agentic_loop_plan(tools, model, messages, response, optional_params, logging_obj,
+  stream, kwargs)` is the dispatcher. It reads kwargs["_agentic_loop_api_surface"]. The value
+  "chat_completions" calls B4119's `ChatResponsesFollowup::build_chat_plan`, "responses" calls
+  `ChatResponsesFollowup::build_responses_plan`, and any other value or no value takes the Anthropic path below.
+
+  Anthropic path: build the patch from tools["tool_calls"] and tools["thinking_blocks"]
+  (default empty). The plan metadata is {"tool_type": "websearch", "response_format":
+  "anthropic"}. When kwargs["_websearch_interception_emit_native_blocks"] is falsy, return
+  run_agentic_loop=true with the patch and that metadata. When it is truthy, also put the
+  result of B4113's build_native_result_blocks(tool_calls, outcomes) in metadata under
+  "websearch_native_blocks". If there is at least one outcome and every outcome is SearchFailed,
+  return run_agentic_loop=false, terminate=true, stop_reason="web_search_failed" and the
+  metadata, with no patch. Otherwise return run_agentic_loop=true with the patch and metadata.
+  The native blocks are injected later by B4113's post hook, not here.
+
+  The search call and the clock-free parts are injected through constructors: the search runner
+  is B4119's `SearchExecutor` trait (B4119 also implements it for B4115's WebSearchExecution), passed in as
+  an `Arc<dyn SearchExecutor>` so tests can supply fixed outcomes; B4118 does not define a second runner trait.
+  The dispatcher holds B4119's `ChatResponsesFollowup`. Do not read the environment. The plan and patch types
+  are B4119's `AgenticLoopPlan`, `AgenticLoopRequestPatch`, `JsonMap` and `FollowupMessage` in
+  `betterlite_context::agentic_loop_plan`. Check the owner's crate before adding the
+  dependency to crates/betterlite-websearch/Cargo.toml and keep the crate graph free of cycles.
+  If concurrency needs a crate, add futures-util with the version other crates in the workspace
+  already use.
+
+  The legacy Anthropic rerun (async_run_agentic_loop and _execute_agentic_loop) is not built.
+  Nothing calls it at the pin: both dispatchers (llm_http_handler.py L5796-L5812 and
+  chat_completion_agentic_loop.py L295-L306) call it only when the callback does not override
+  async_build_agentic_loop_plan, and this logger overrides it. The follow-up call itself
+  belongs to the core executor in B2415.
+
+  Compare with LiteLLM through helper cases. The Python adapter builds a
+  WebSearchInterceptionLogger, replaces its _execute_search with a function that returns or
+  raises what the case lists, then awaits the patch builder or the plan builder. Write the case
+  files under tools/oracle/cases/helpers/websearch-anthropic-plan/. Use these cases, each with
+  the full returned patch or plan as the expected value:
+  - max-tokens-default: no max_tokens anywhere returns 1024.
+  - max-tokens-order: optional_params 2048 and kwargs 512 returns 2048; only kwargs 512 returns 512.
+  - max-tokens-thinking-bump: max_tokens 2000 with budget_tokens 2000 returns 3024; max_tokens 1000
+    with budget_tokens 1500.5 returns 2525.
+  - max-tokens-thinking-ok: max_tokens 4000 with budget_tokens 2000 returns 4000; budget_tokens 0
+    changes nothing.
+  - followup-kwargs-filter: keys "_websearch_interception_emit_native_blocks",
+    "_websearch_interception_converted_stream", "litellm_logging_obj" are dropped while
+    "_compression_interception_x", "litellm_call_id" and "metadata" stay.
+  - patch-no-query: one tool call with an empty query gives the text "No search query provided"
+    in the user message and a patch with messages plus two.
+  - patch-two-searches: two calls with queries, one result and one raising a rate limit error,
+    in order, with "Search failed: ..." text for the second.
+  - patch-thinking-blocks: a thinking block and a redacted_thinking block come first in the
+    assistant message content.
+  - patch-model-from-logging: logging model_call_details agentic_loop_params model wins over model.
+  - patch-strips-max-tokens: optional_params with max_tokens 700 and temperature 0.2 gives
+    patch.max_tokens 700 and patch.optional_params {temperature: 0.2}.
+  - plan-plain: no native flag returns run_agentic_loop with metadata of two keys.
+  - plan-native-mixed: native flag, one success and one failure: loop runs and the metadata
+    holds two (server_tool_use, web_search_tool_result) pairs, the second with an error block.
+  - plan-native-all-failed: native flag and every search failing returns terminate with
+    stop_reason web_search_failed, no patch and the native blocks in metadata.
+  - plan-plain-all-failed: same failures without the native flag still run the loop.
+
+scope:
+  paths:
+    - crates/betterlite-websearch/src/anthropic_followup.rs
+    - crates/betterlite-websearch/src/anthropic_followup/**
+    - crates/betterlite-websearch/Cargo.toml
+    - tools/oracle/cases/helpers/websearch-anthropic-plan/**
+    - tools/oracle/helpers/b4118.py
+    - tools/oracle/helpers/b4118/**
+    - tools/oracle/src/helpers/websearch/b4118.rs
+    - tools/oracle/src/helpers/websearch/b4118/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L933-L1004
+    why: The plan builder, the surface dispatch, the native flag handling and the web_search_failed termination.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1283-L1331
+    why: _resolve_max_tokens and _prepare_followup_kwargs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1390-L1468
+    why: _build_anthropic_request_patch, the parallel searches and the model lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5796-L5830
+    why: The dispatcher that calls the legacy run only when the plan builder is not overridden.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/custom_logger.py#L1-L10
+    why: The "chat_completions" and "responses" surface constants.
+  - url: https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking
+    why: The rule that max_tokens must be above thinking.budget_tokens.
+
+dod:
+  - text: >-
+      resolve_max_tokens returns optional_params max_tokens, else kwargs max_tokens, else 1024,
+      and returns ceil(budget_tokens) + 1024 when thinking.budget_tokens is a finite number above 0
+      and max_tokens is not above it.
+    proof: [max-tokens-tests, oracle]
+  - text: >-
+      prepare_followup_kwargs drops every "_websearch_interception*" key and "litellm_logging_obj"
+      and keeps all other keys, including other "_..._interception" prefixes.
+    proof: [followup-kwargs-tests, oracle]
+  - text: >-
+      build_anthropic_request_patch searches every tool call at the same time in call order, turns
+      errors into outcomes, builds the assistant and user messages with thinking blocks first, appends
+      them to a copy of messages, removes max_tokens from the patch optional_params, and takes the model from
+      agentic_loop_params when a logging object has one.
+    proof: [request-patch-tests, oracle]
+  - text: >-
+      A tool call without a query uses "No search query provided" and does not call the search runner.
+    proof: [request-patch-tests, oracle]
+  - text: >-
+      The Anthropic plan carries metadata tool_type "websearch" and response_format "anthropic", adds
+      "websearch_native_blocks" only when the native flag is truthy, and terminates with stop_reason
+      "web_search_failed" only when the native flag is truthy and every outcome failed.
+    proof: [anthropic-plan-tests, oracle]
+  - text: >-
+      The dispatcher sends "chat_completions" and "responses" to B4119's builders and every other
+      surface value, or none, to the Anthropic path.
+    proof: [plan-dispatch-tests]
+  - text: >-
+      Each oracle case calls the production operation and compares the whole patch or plan; only
+      error message wording may be ignored.
+    proof: [oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: max-tokens-tests
+      why: the max_tokens rule is missing, wrong or untested
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^anthropic_followup::(.*::)?resolve_max_tokens/)'
+    - id: followup-kwargs-tests
+      why: the follow-up kwargs filter is missing, wrong or untested
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^anthropic_followup::(.*::)?followup_kwargs/)'
+    - id: request-patch-tests
+      why: the request patch builder is missing, wrong or untested
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^anthropic_followup::(.*::)?request_patch/)'
+    - id: anthropic-plan-tests
+      why: the Anthropic plan, its metadata or its termination rule is missing, wrong or untested
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^anthropic_followup::(.*::)?anthropic_plan/)'
+    - id: plan-dispatch-tests
+      why: the surface dispatch is missing, wrong or untested
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^anthropic_followup::(.*::)?plan_dispatch/)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/websearch-anthropic-plan/max-tokens-default.yaml
+  - tools/oracle/cases/helpers/websearch-anthropic-plan/max-tokens-order.yaml
+  - tools/oracle/cases/helpers/websearch-anthropic-plan/max-tokens-thinking-bump.yaml
+  - tools/oracle/cases/helpers/websearch-anthropic-plan/max-tokens-thinking-ok.yaml
+  - tools/oracle/cases/helpers/websearch-anthropic-plan/followup-kwargs-filter.yaml
+  - tools/oracle/cases/helpers/websearch-anthropic-plan/patch-no-query.yaml
+  - tools/oracle/cases/helpers/websearch-anthropic-plan/patch-two-searches.yaml
+  - tools/oracle/cases/helpers/websearch-anthropic-plan/patch-thinking-blocks.yaml
+  - tools/oracle/cases/helpers/websearch-anthropic-plan/patch-model-from-logging.yaml
+  - tools/oracle/cases/helpers/websearch-anthropic-plan/patch-strips-max-tokens.yaml
+  - tools/oracle/cases/helpers/websearch-anthropic-plan/plan-plain.yaml
+  - tools/oracle/cases/helpers/websearch-anthropic-plan/plan-native-mixed.yaml
+  - tools/oracle/cases/helpers/websearch-anthropic-plan/plan-native-all-failed.yaml
+  - tools/oracle/cases/helpers/websearch-anthropic-plan/plan-plain-all-failed.yaml
+
+deviations: []
+
+out_of_scope:
+  - async_run_agentic_loop and _execute_agentic_loop, no caller at the pin (see the description). Their cases go too.
+  - async_run_chat_completion_agentic_loop and _execute_chat_completion_agentic_loop, chat plan and request patch, Responses plan and request patch, _normalize_responses_input and _extract_search_text (B4119).
+  - async_post_agentic_loop_response_hook, _build_native_result_blocks, _tool_call_query, _native_result_pair and _inject_native_blocks (B4113).
+  - _execute_search, _short_circuit_search_outcome, _rich_search_input, _provider_supports_rich_search and _create_empty_search_result (B4115).
+  - Search tool selection, authorization and parent request correlation (B4114).
+  - Gates for the three surfaces (B4117) and tool rewriting, config and initialization (B4116).
+  - The follow-up provider call, loop depth and fingerprint safety, kwargs collision filtering and fake stream wrapping (B2415 and its dependencies).
+
+pitfalls:
+  - prepare_followup_kwargs removes only the "_websearch_interception" prefix and "litellm_logging_obj"; keys like "_compression_interception_*" must survive this step because the core executor filters them later.
+  - The patch optional_params drops only "max_tokens"; "thinking", "temperature" and "stream" pass through untouched.
+  - A search that raises must not cancel its siblings, and the outcome order must equal the tool call order, because B4113's native pairing zips tool calls with outcomes by position.
+  - Without the native flag a failed search is plain text starting with Search failed, then the message, in the user message and the loop still runs; termination needs the native flag and no success at all.
+  - With zero outcomes the "every search failed" test is false, so the loop runs; do not use a plain all() that is true on an empty list.
+  - The native flag key is "_websearch_interception_emit_native_blocks" and the metadata key is "websearch_native_blocks"; the key is absent from metadata when the flag is falsy.
+  - The model comes from logging model_call_details["agentic_loop_params"]["model"] only when a logging object was passed; the name there is the original one without a provider prefix.
+  - budget_tokens is compared as a number and rounded up before adding 1024, so 1500.5 gives 2525, not 2524.5.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

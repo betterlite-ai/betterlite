@@ -138,6 +138,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - Auto-router tier classification (B021).
+- "B8350 builds `declared_param_allowlist`, `deployment_accepts_param` and its `ParamSupport` trait in `betterlite_router::router_predicates`. Router._drop_unsupported_classifier_reasoning_effort and Router._tier_params_the_target_accepts call them and do not rebuild them."
 pitfalls:
 - Priority routing is a group policy, not a sixth global selector.
 - Unknown group members are future catalog references in the pin, not discarded deployments.

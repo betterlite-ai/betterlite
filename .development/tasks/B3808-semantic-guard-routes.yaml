@@ -6,8 +6,10 @@ description: >-
   Load templates from litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_templates/ in sorted order.
   Routes are built by concatenating from three sources in order: templates first, then custom_routes_file, then inline custom_routes.
   If the same route name appears in multiple sources, all instances are included in the final list (no deduplication).
-  Feed the loaded routes into betterlite-router's semantic_router.rs with a LiteLLMRouterEncoder instance
-  from B327, never building a second embedding service.
+  Feed the loaded routes into the `SemanticRouterBuilder` port, a trait in this module that takes
+  the routes and the threshold, because betterlite-guardrails may not depend on betterlite-router.
+  B8666 implements it in betterlite-server over B327's semantic_router.rs
+  and its LiteLLMRouterEncoder instance, never building a second embedding service.
   Template listing returns alphabetically sorted names.
   The semantic-router library version is locked by B327's oracle deps; reuse its LiteLLMRouterEncoder.__init__
   and the SemanticRouter composition without reimplementing embeddings or scoring.
@@ -44,7 +46,7 @@ dod:
     proof: [route-concatenation]
   - text: Template listing returns sorted names and includes only YAML files from the templates directory.
     proof: [template-listing]
-  - text: SemanticRouter is created with the built routes and B327's LiteLLMRouterEncoder instance.
+  - text: The built routes and the threshold reach the `SemanticRouterBuilder` port once, in load order; tests use a fake builder.
     proof: [semantic-router-composition]
   - text: File not found, invalid YAML and missing required route fields produce typed errors.
     proof: [error-cases]
@@ -64,7 +66,7 @@ checks:
       why: template listing is missing, unsorted or includes non-YAML files
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard::(.*::)?semantic_guard_route_loading::tests::template_listing(::|$)/)'
     - id: semantic-router-composition
-      why: SemanticRouter is not created or lacks the LiteLLMRouterEncoder
+      why: The routes never reach the SemanticRouterBuilder port or arrive out of order
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^semantic_guard::(.*::)?semantic_guard_route_loading::tests::semantic_router_composition(::|$)/)'
     - id: error-cases
       why: file-not-found, invalid YAML or missing fields are not typed errors
@@ -81,7 +83,7 @@ deviations:
 out_of_scope:
   - The encoder itself and semantic comparison; B327 owns LiteLLMRouterEncoder.__init__.
   - The semantic-router library initialization beyond creating the SemanticRouter instance.
-  - Configuration schema and validation for the SemanticGuardrail class; B108 owns semantic_guard.py and __init__.py, which define the configuration parameters and their validation.
+  - Configuration schema and validation for the SemanticGuardrail class; B8214 owns semantic_guard.py and __init__.py, which define the configuration parameters and their validation.
 pitfalls:
   - The semantic-router library version is pinned by B327's oracle deps; do not select it independently here.
   - Template files are embedded in the binary as static data; do not try to load them from the filesystem at runtime.

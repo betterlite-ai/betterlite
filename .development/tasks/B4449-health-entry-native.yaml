@@ -15,7 +15,7 @@ description: >-
   reason; audio_speech uses B1083 (aspeech); audio_transcription uses B1082 (atranscription); image_generation
   uses B998; image_edit uses B999; video_generation uses B3338; rerank uses B1014; realtime uses B1127's health
   probe; batch list_batches uses B1129; responses uses B932; ocr goes through `OcrProbeCall`, defined here
-  (its production implementation calls B6809's `aocr` in betterlite-ocr module ocr_route); evaluation uses B3515's asystemone. A defined trait has one
+  (B8540's OcrProbe is its production implementation and calls B6809's `aocr` in betterlite-ocr module ocr_route); evaluation uses B3515's asystemone. A defined trait has one
   async method that takes the typed arguments B4440 passes for that mode and returns the reply type of the
   matching method on `HealthProbeBackend`. The bodies only convert B4440's call arguments into the owner's
   request type and the owner's response into B4440's reply, with the response's `hidden_params.headers` map

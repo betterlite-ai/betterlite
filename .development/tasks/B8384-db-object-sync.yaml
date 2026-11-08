@@ -1,0 +1,106 @@
+id: B8384
+title: Database object loaders for guardrails, policies, prompts, MCP and agents
+description: >-
+  After each model reconcile LiteLLM reloads every other object kept in the database (_init_non_llm_objects_in_db), and
+  a few of those loaders also run on their own: the MCP and search tool reloads when store_model_in_db is off, and the
+  search tool refresh after a management write. The objects themselves belong to their own tasks; this task is the
+  loader for each and the order. Build crates/betterlite/src/db_object_sync.rs (declared by the skeleton) with
+  `DbObjectSync`. Each loader logs its own error with LiteLLM's message and returns, so one broken table never stops
+  the rest; nothing here returns an error.
+
+  `sync_non_llm_objects(db)` runs these in this order, each only when B8380's should_load_db_object allows its kind:
+  guardrails (B3683's poll_database), policies (B3243: sync policies, then attachments), vector_stores and
+  vector_store_indexes (B1062's database loading into B8614's VectorStores; no rows leaves the registry alone, otherwise each store is added and
+  each index upserted), mcp (`init_mcp_servers` into B8614's one McpRegistry), agents (B4776's reconcile lock around B4777's get_all_agents_from_db
+  and B4776's load_agents_from_db_and_config), pass_through_endpoints (B8520's initialize_pass_through_endpoints_in_db, into the route table of B8614's PassThroughState),
+  prompts (`load_prompts`, into the one prompt registry B8613 makes and Shared holds), search_tools (`load_search_tools`), tools (B1606's tool policy registry refresh),
+  anthropic_beta_headers (B8385's beta header reload, on the one PeriodicReloads B8613 makes), sso_settings (B8383), cache_settings (B8502's
+  init_cache_settings_in_db), semantic_filter_settings, websearch_interception_settings and config_overrides (Vault
+  then CyberArk), all three from B8383. Last, without a gate, the safe litellm_settings overrides
+  (_apply_safe_litellm_settings_overrides_from_db): read the litellm_settings row with B8397's get_config_param and, when
+  it has a value, prepare and apply it with B8379's row steps.
+
+  `load_prompts(db)` (_init_prompts_in_db): note the registry keys held before the read, read every prompt row, turn
+  each into a spec with B4059's create_versioned_prompt_spec (a failing row logs "failed to parse prompt row {id}:
+  {error}" and is skipped) and sync each with B4060's sync_prompt_from_db (a failure logs "failed to sync prompt {id}:
+  {error}" and the rest go on). Only when every row parsed, remove the keys held before the read whose prompt_type is
+  db and that no row produced, so a prompt deleted on another pod leaves this one too.
+
+  `init_mcp_servers(db)`: run B4662's two backfills (null oauth2 flows, then discovery stamped issuers), each with its
+  own logged error, then B6765's reload_servers_from_database. `init_mcp_servers_from_db` gates on mcp and calls it at
+  startup; `reload_mcp_servers_from_db` gates on mcp and runs only the reload (no backfills), for B8372's periodic job.
+
+  `parse_search_tools(config)` ports ProxyConfig.parse_search_tools: take search_tools, or general_settings.search_tools
+  when that is empty; nothing gives None. Log each tool's name and search_provider, resolve os.environ/ values in its
+  litellm_params, and skip a tool that fails to parse with "Error parsing search tool {name}: {error}"; an empty result
+  is None. `load_search_tools(db)` (_init_search_tools_in_db): read B3271's database tools and parse the config
+  snapshot's (B8380), merge them with config tools whose name the database lacks first and then every database tool
+  (_merge_config_and_db_search_tools), log "Loading {n} search tool(s) into router ({c} from config, {d} from
+  database)", and when the router exists set its search tools with B3273 and log "Successfully loaded {n} search
+  tool(s) into router"; without a router log at debug and stop. `reload_search_tools_from_db` gates on search_tools,
+  does nothing without a database, and runs load_search_tools under B836's MODEL_RECONCILE_LOCK; it implements B3275's
+  RouterSearchRefresh trait.
+
+  Tests use in-memory repositories and recording fakes for each registry. Helper cases (operation b8384 with an
+  `operation:` field) compare parse_search_tools and the config and database merge, written under
+  tools/oracle/cases/helpers/db-object-sync/.
+scope:
+  paths:
+    - crates/betterlite/src/db_object_sync.rs
+    - crates/betterlite/src/db_object_sync/**
+    - tools/oracle/cases/helpers/db-object-sync/**
+    - tools/oracle/helpers/b8384.py
+    - tools/oracle/helpers/b8384/**
+    - tools/oracle/src/helpers/server/b8384.rs
+    - tools/oracle/src/helpers/server/b8384/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8243-L8309
+    why: The loader order, the supported_db_objects gate for each kind and the safe litellm_settings overrides.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8733-L9079
+    why: Prompts with the deletion sweep, guardrails, policies, tool policy, vector stores, MCP init and reload, agents, search tools and pass-through.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6107-L6160
+    why: parse_search_tools.
+dod:
+  - text: sync_non_llm_objects runs each loader in LiteLLM's order behind its supported_db_objects gate and finishes with the safe overrides.
+    proof: [object-sync-tests]
+  - text: A failing loader, prompt row or MCP backfill is logged and the rest still run.
+    proof: [object-sync-tests]
+  - text: Database prompts removed elsewhere leave the registry only when every row parsed.
+    proof: [object-sync-tests]
+  - text: Search tools parse from config, merge with database tools by name, and refresh under the model reconcile lock.
+    proof: [object-sync-tests, oracle, helper-python]
+  - text: The periodic MCP reload skips the backfills and honours the mcp gate.
+    proof: [object-sync-tests]
+checks:
+  optional: []
+  commands:
+    - id: object-sync-tests
+      why: A database object loader is missing, runs out of order, ignores its gate or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^db_object_sync::/)'
+    - id: helper-python
+      why: The strict oracle adapter for the search tool cases fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8384)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8384 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8384/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/db-object-sync/parse-general-settings-tools.yaml
+  - tools/oracle/cases/helpers/db-object-sync/merge-name-overlap.yaml
+  - tools/oracle/cases/helpers/db-object-sync/merge-config-only.yaml
+deviations:
+  - what: The MCP loaders do not check is_mcp_available.
+    why: MCP is compiled in, as B6594 decided, so the gate is always open.
+out_of_scope:
+  - "Each object's registry, rows and reconcile logic: the tasks named above."
+  - "The settings reloads (SSO, semantic filter, web search, Vault, CyberArk): B8383. The beta header reload: B8385."
+  - "When the sync runs: B8381 calls it inside add_deployment, and B8372 schedules the MCP and search tool reloads."
+pitfalls:
+  - sync_non_llm_objects runs while B8381 already holds MODEL_RECONCILE_LOCK, so load_search_tools must not take it; only reload_search_tools_from_db does.
+  - A prompt row that fails to parse still exists in the database, so the deletion sweep is skipped for that pass.
+  - The vector store loaders do nothing on an empty table; they never clear entries.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

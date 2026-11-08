@@ -1,0 +1,14 @@
+id: B7872
+milestone: M12 python
+title: Python create_batch and retrieve_batch with their async twins
+status: todo
+depends_on: [B6040, B158, B167, B1036, B1037]
+file: tasks/B7872-python-batch-create-read.yaml
+covers:
+  - "litellm/batches/main.py"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,23 @@
+id: B8152
+milestone: M3 providers
+title: docker_model_runner, llamafile, lm_studio, oobabooga, xinference and lemonade cost
+status: todo
+depends_on: [B668, B2202, B997]
+file: tasks/B8152-local-server-configs.yaml
+covers:
+  - "litellm/llms/docker_model_runner/chat/transformation.py"
+  - "litellm/llms/lemonade/cost_calculator.py"
+  - "litellm/llms/llamafile/chat/transformation.py"
+  - "litellm/llms/lm_studio/chat/transformation.py"
+  - "litellm/llms/lm_studio/embed/transformation.py"
+  - "litellm/llms/oobabooga/chat/oobabooga.py"
+  - "litellm/llms/oobabooga/chat/transformation.py"
+  - "litellm/llms/oobabooga/common_utils.py"
+  - "litellm/llms/xinference/image_generation/__init__.py"
+  - "litellm/llms/xinference/image_generation/transformation.py"
+parent: B040
+split_from: B040
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

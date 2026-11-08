@@ -1,0 +1,134 @@
+id: B7792
+title: Management clients for models, chat completions and teams
+description: >-
+  Add `ModelsManagementClient`, `ChatClient` and `TeamsManagementClient` to `betterlite.proxy.client`, behaving like
+  LiteLLM's models.py, chat.py and teams.py. They use the transport, `HTTPError`, `UnauthorizedError` and `NotFoundError` from
+  B7790 and import nothing from `requests`. All take `(base_url, api_key=None, timeout=30)` except `ChatClient`, whose timeout
+  default is 600. Each strips trailing slashes from `base_url` and sends `Authorization: Bearer {key}` when a key is set.
+  `Content-Type: application/json` goes on every chat and teams request. The models client sends `Authorization` only and
+  lets the transport set the content type when it has a JSON body.
+
+
+  Models. Methods that take `return_request=False` return the B7790 `Request` without sending when it is true. A 401 becomes
+  `UnauthorizedError(error)`. `list()` is `GET /models` and returns the reply's `"data"`. `info()` is `GET /v1/model/info`
+  and returns `"data"`. `new(model_name, model_params, model_info=None)` is `POST /model/new` with `model_name`,
+  `litellm_params` (the params) and `model_info` only when it is non-empty. `update(model_id, model_params,
+  model_info=None)` is `POST /model/update` with `id`, `litellm_params` and the same optional `model_info`. `delete(model_id)`
+  is `POST /model/delete` with `{"id": ...}`. For `update` and `delete`, a 404 status, or the text "not found" anywhere
+  in the lower-cased response body, raises `NotFoundError(error)`. `new`, `list` and `info` only map 401. `get(model_id=None,
+  model_name=None)` raises `ValueError("Exactly one of model_id or model_name must be provided")` unless exactly one is
+  given. With `return_request=True` it returns the request `info` would send. Otherwise it calls `info()` and returns the
+  first entry whose `model_info.id` equals a given `model_id` or whose `model_name` equals a given name, and raises
+  `NotFoundError(HTTPError(msg, response=Response()))` when none matches, with `msg` equal to `"Model with id={model_id} not
+  found"` or `"Model with model_name={model_name} not found"`. That empty `Response` has `status_code` None.
+
+
+  Chat. `completions(model, messages, temperature, top_p, n, max_tokens, presence_penalty, frequency_penalty, user,
+  return_request=False)` is `POST /chat/completions`. The body has `model` and `messages`, then each of the others that is
+  not None under its own name, in that order. It returns the parsed reply, or the request in request-only mode.
+  `completions_stream` takes the same arguments without `return_request` and adds `"stream": true` right after `messages`.
+  It is a generator that opens the stream on the first `next()`, raises `UnauthorizedError(error)` for a 401 and `HTTPError`
+  for other statuses, and then reads lines. Each non-empty line is decoded as UTF-8. Only lines that start with `data: ` count.
+  The text after the prefix, when it is `[DONE]` after strip, ends the stream. Otherwise it is parsed as JSON and yielded, and
+  a line that is not valid JSON is skipped.
+
+
+  Teams. `list(user_id=None, organization_id=None)` is `GET /team/list` with each non-empty argument in the query and returns
+  the parsed reply. `list_v2(user_id, organization_id, team_id, team_alias, page=1, page_size=10, sort_by, sort_order="asc")`
+  is `GET /v2/team/list`; `page`, `page_size` and `sort_order` are always sent, the other five only when non-empty, and
+  the reply is returned whole. `get_available()` is `GET /team/available`. In all three a 401 raises
+  `UnauthorizedError("Authentication failed. Check your API key.")` with that fixed text and no response attached, and any
+  other bad status raises `HTTPError`. There is no `return_request` on teams.
+
+
+  Tests live in `crates/betterlite-python/tests/test_proxy_client_models.py` and use B7790's `proxy_client_support` recording
+  server. Chat streaming cases queue a raw `text/event-stream` body with `reply`. Each case runs
+  LiteLLM's client and betterlite's against the server and compares the recorded request and the result or error. Test
+  functions start with `models_`, `chat_` or `teams_`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/proxy/client/models.py
+  - crates/betterlite-python/python/betterlite/proxy/client/chat.py
+  - crates/betterlite-python/python/betterlite/proxy/client/teams.py
+  - crates/betterlite-python/tests/test_proxy_client_models.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/models.py#L10-L296
+  why: The models client. get is L156-L212, info L214-L244, update L246-L296.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/chat.py#L10-L189
+  why: Chat completion and the SSE reader in completions_stream (L110-L189).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/teams.py#L11-L149
+  why: Teams list, list_v2 and get_available with their fixed 401 text.
+dod:
+- text: Models list, info, new, update and delete send LiteLLM's requests, return "data" where it does, and map 401 and 404 the way each method does.
+  proof: [models]
+- text: >-
+    get validates that exactly one selector is given, finds the model by id or name, and raises the two NotFoundError
+    messages when nothing matches. In request-only mode it returns the info request.
+  proof: [models]
+- text: >-
+    Chat completions builds the body in LiteLLM's key order with only the given options, and the stream adds stream=true,
+    stops at [DONE], skips bad JSON lines and maps 401.
+  proof: [chat]
+- text: Teams list, list_v2 and get_available send the same query and raise the fixed 401 message.
+  proof: [teams]
+- text: Python files pass ruff and basedpyright in strict mode.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: models
+    why: A model call, selector check or error mapping differs from LiteLLM's.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_proxy_client_models.py -k models_
+  - id: chat
+    why: The chat body, the stream reader or the 401 handling differs.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_proxy_client_models.py -k chat_
+  - id: teams
+    why: A teams query or its 401 text differs.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_proxy_client_models.py -k teams_
+  - id: python-lint
+    why: Strict typing has to hold for every new module.
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Request-only mode returns betterlite's `Request` dataclass, and failures are `betterlite.proxy.client.HTTPError`, not the requests classes.
+  why: >-
+    The wheel has no `requests`. B7790 states the same deviation for the base.
+- what: >-
+    `get` has no `assert isinstance` checks.
+  why: They only narrow types for LiteLLM's checker, and the typed return of `info` covers it.
+- what: This task has no helper oracle cases.
+  why: The pytest file compares the two clients against one recording server.
+out_of_scope:
+- The transport, exceptions, bridge, HTTPClient and the health, model-group and user clients are B7790. Keys and credentials are B7791.
+- >-
+  `Client` and the package exports are B169.
+- >-
+  The README example `client.chat.completions.create(...)` and `client.models.add(...)` name methods that do not exist in
+  LiteLLM's code. B169 fixes the README, and this task builds only the methods in the source.
+pitfalls:
+- >-
+  `delete` and `update` test `"not found" in text.lower()` even for a 500 reply, so a 500 body that says "Model not found"
+  gives `NotFoundError`. The 401 check comes first.
+- >-
+  `get` compares `model.get("model_info", {}).get("id")` and `model.get("model_name")`, with `model_id` and `model_name`
+  tested for truthiness before comparing. An entry with no `model_info` is skipped, not an error.
+- >-
+  `ChatClient` has the only 600 second default. `Client` in B169 does not pass a timeout to it, so keep the default on the
+  constructor.
+- >-
+  The stream reader decodes each line as UTF-8 and ignores lines without the exact prefix `data: ` (with the space), such as
+  `event:` lines and `:` comments.
+- >-
+  Teams `list` and `list_v2` skip an empty-string filter but keep `page=1` and `page_size=10` always, so a bare `list_v2()`
+  query is `page=1&page_size=10&sort_order=asc` in that order.
+- >-
+  The teams 401 message is a fixed text, so unlike the other clients it does not contain the server's reply.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

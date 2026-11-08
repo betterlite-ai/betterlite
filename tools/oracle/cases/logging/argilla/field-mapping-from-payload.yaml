@@ -1,0 +1,24 @@
+# _prepare_log_data iterates the transformation object and fills each field from the payload messages or response
+kind: helper
+name: argilla-field-mapping-from-payload
+call:
+  b3960:
+    scenarios:
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {prompt: messages, completion: response}
+        random: [0.0]
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: sync_success
+            kwargs:
+              standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages, output: response}
+        random: [0.0]
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: sync_success
+            kwargs:
+              standard_logging_object: {messages: {role: user, content: hi}, response: "plain text"}
+env: {}
+compare: {ignore: []}

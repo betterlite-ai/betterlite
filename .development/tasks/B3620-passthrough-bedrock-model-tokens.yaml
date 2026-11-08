@@ -16,11 +16,11 @@ description: >-
   2. Start the params map with one entry, `user_api_key_dict`, holding the authenticated key. Start `resolved_model` as the requested model.
   3. With a router, call B844's get_model_list(model_name=model). For a non-empty list take only the first deployment and its `litellm_params` (missing means empty). If that map has `model`, it becomes resolved_model. Copy every entry of the map into the params, except an entry named `user_api_key_dict`, which is never overwritten. Without a router, or with an empty list, resolved_model stays the requested model and the params hold only the key.
   4. Call the backend with the body, the params and resolved_model.
-  The backend is the trait `CountTokensBackend`, declared here with one async method `handle_count_tokens_request(request_data, litellm_params, resolved_model)`. Its error is `CountTokensFailure`: `Bedrock { status, message, response_headers: Option<map> }` or `Other(String)`. The architect wires B641's handler to it; tests use a recording fake.
+  The backend is the trait `CountTokensBackend`, declared here with one async method `handle_count_tokens_request(request_data, litellm_params, resolved_model)`. Its error is `CountTokensFailure`: `Bedrock { status, message, response_headers: Option<map> }` or `Other(String)`. B8641 wires B641's handler to it; tests use a recording fake.
   Errors: a Bedrock failure becomes HTTP `status` with detail `{"error": message}`. Its headers are B184's provider header projection (the llm_provider- prefix and the four bare x-ratelimit headers) of the upstream response headers when that map is present and not empty, otherwise no extra headers. An HTTP error raised in steps 1 to 3 passes through unchanged. Any other failure is HTTP 500 with detail `{"error": "CountTokens processing error: <message>"}`. Log each of the last two at error level as "BedrockError in handle_bedrock_count_tokens: %s" and "Error in handle_bedrock_count_tokens: %s". Also emit debug lines "Count tokens litellm_params: %s" and "Resolved model: %s", with the params passed through betterlite-redact first (the params hold credentials).
 
   Router-model path. `handle_bedrock_router_model` replaces handle_bedrock_passthrough_router_model. It builds the processing record in this key order: model, method (the request method), endpoint, data (the body), custom_llm_provider "bedrock". It logs debug "Bedrock router passthrough: model='%s', endpoint='%s', streaming=%s", where streaming is true when the endpoint contains any STREAMING_ACTIONS entry as a substring. The flag changes nothing else. It then calls the passthrough processor with a fresh empty response object and returns its result.
-  The processor is the trait `PassthroughProcessor`, declared here with one async method `process_passthrough(call)`; the call holds the record, the request, the response object, the key, the router and the model. The implementation runs B004's common passthrough processing with route type `allm_passthrough_route` and maps any failure through B004's exception handler before it returns the error. This module only forwards the result or the error. The architect wires the real processor; tests use a fake.
+  The processor is the trait `PassthroughProcessor` and its call type `PassthroughCall`, declared by B7324 in `passthrough_processor`; import both and do not declare another. The method is `process_passthrough(call)`; the call holds the record, the request, the response object, the key, the router and the model. B7324's implementation runs the common passthrough processing with route type `allm_passthrough_route` and maps any failure through the exception handler before it returns the error. This module only forwards the result or the error. B8694 wires the real processor; tests use a fake.
 
   Entry point. `bedrock_llm_proxy_route(endpoint, request, response, auth, router, deps)` replaces bedrock_llm_proxy_route and runs, in order:
   1. Read the body with B1100's body read. An invalid body gives B1100's own 400.
@@ -95,8 +95,8 @@ oracle_cases:
 deviations:
   - what: agent_runtime_disabled takes the general_settings map as an argument, and handle_bedrock_count_tokens takes the router as an argument.
     why: LiteLLM imports proxy_server globals inside the functions; betterlite wires dependencies through constructors. What a client sees is the same.
-  - what: The count backend and the passthrough processor are traits (CountTokensBackend, PassthroughProcessor).
-    why: B641 lives in a provider leaf crate and the common processing has no owned Rust name yet. The architect wires both; see notes.
+  - what: The count backend is a trait (CountTokensBackend), and the passthrough processor is B7324's trait (PassthroughProcessor).
+    why: B641 lives in a provider leaf crate. B8641 wires B641's handler to CountTokensBackend, and B8640 fills the processor from B8694's LlmPipelinePorts.
   - what: The debug lines for litellm_params go through the redaction policy.
     why: LiteLLM logs the whole params map, which can hold AWS keys and the bearer token.
 out_of_scope:
@@ -104,7 +104,7 @@ out_of_scope:
   - "The /bedrock/{endpoint:path} route itself, the agent-runtime branch (signing, base URL, header filter, disabled 400) and the Comprehend Medical routes: B3621."
   - "B3621 (not planned yet) is the caller of the agent-runtime predicates, AGENT_RUNTIME_ROUTES, handle_bedrock_router_model and bedrock_llm_proxy_route; this task owns them and adds no route."
   - "BedrockCountTokensHandler.handle_count_tokens_request and BedrockError: B641 and B682. This task only calls the handler through CountTokensBackend."
-  - "ProxyBaseLLMRequestProcessing.base_passthrough_process_llm_request and _handle_llm_api_exception: B004's processing. This task calls them through PassthroughProcessor."
+  - "ProxyBaseLLMRequestProcessing.base_passthrough_process_llm_request: B7324 builds it, with the PassthroughProcessor trait and the exception mapping behind it. This task calls it through PassthroughProcessor."
   - "uses_router_model: B3618. get_model_list: B844. Body read: B1100."
 pitfalls:
   - "Only the first deployment of the model group feeds the count params; later deployments are ignored."

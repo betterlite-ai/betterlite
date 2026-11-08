@@ -1,0 +1,66 @@
+task: B5220
+deviations:
+  - what: >-
+      One multiplexed connection replaces redis-py's BlockingConnectionPool, and Cluster keeps
+      one connection per node. max_connections caps commands in flight rather than sockets,
+      CLIENT LIST shows one connection, and a command waiting for a slot ends in a response
+      timeout rather than "No connection available" after REDIS_CONNECTION_POOL_TIMEOUT. With
+      no limit configured, 1024 commands may be in flight.
+    why: redis-rs pipelines commands over a shared connection and has no blocking pool.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L809-L932
+  - what: A connection with no socket_timeout times out after 5 seconds. redis-py waits forever.
+    why: The bounded-inputs rule requires a timeout on every outbound call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L809-L932
+  - what: >-
+      health_check_interval has no effect, including the 25 seconds LiteLLM defaults for
+      Cluster.
+    why: redis-rs has no periodic check. Response timeouts and TCP keepalive find a dead connection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L855-L860
+  - what: >-
+      Passthrough keys other than ssl_ca_certs, ssl_certfile, ssl_keyfile, ssl_cert_reqs,
+      ssl_check_hostname and read_from_replicas log a warning with the key's name and have no
+      effect.
+    why: The others are redis-py constructor options with no redis-rs equivalent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L150-L189
+  - what: >-
+      Cluster node failures follow redis-rs's recovery, so the IsolationConfig values from
+      B4323 have no effect. A dead node still fails only the commands routed to it.
+    why: >-
+      The driver owns its node connections and slot refresh, and exposes no per-node state to
+      drive.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L833-L876
+  - what: >-
+      A record with credential_provider_settings fails at open with a typed error until a
+      RedisCredentialSource is injected.
+    why: >-
+      No production token fetcher exists yet, and connecting without AUTH would hide the
+      problem.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L775-L806
+  - what: >-
+      The GCP connect function's fallback to the static password after a
+      wrong-number-of-arguments reply is not built.
+    why: GCP sends one-argument AUTH, and Redis doesn't answer that form with this error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L423-L478
+  - what: >-
+      ssl_password has no effect. An encrypted client key fails to parse and the connection
+      fails with a Redis error instead of decrypting it.
+    why: >-
+      rustls reads only unencrypted PEM private keys; redis-rs exposes no passphrase hook, and
+      no working setup can rely on the key being decrypted here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L809-L932
+  - what: >-
+      Configuring ssl_ca_certs, ssl_certfile or ssl_keyfile turns TLS on even when ssl is not
+      true and the URL is not rediss. redis-py would raise a TypeError from the plain
+      connection class instead.
+    why: >-
+      A redirect-record connection that carries certificates is plainly meant for TLS, and the
+      task text asks for build_with_tls whenever certificates are present.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L809-L932
+  - what: >-
+      A blocking endpoint with a credential source fetches one credential when it is built and
+      keeps it for the lifetime of the returned client, where LiteLLM's sync IAM callbacks
+      refresh the token on every connection.
+    why: >-
+      The task routes sync call sites through a one-shot blocking_endpoint, and no production
+      credential source exists yet to subscribe a sync connection to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L423-L478

@@ -5,7 +5,7 @@ description: >-
   Two modules in betterlite-server, each a file plus a folder of submodules with adjacent tests.rs files: lens_access (the shared helpers)
   and lens_admin_routes (the handlers and the router). Add betterlite-lens and betterlite-db to the server's Cargo.toml if B4504 has not already (no cycle, the server is the top crate).
   The worker routes (everything under /lens/worker/...), worker_auth, assigned, claim_candidate, validate_finding and merge_results belong to B4505,
-  which imports lens_access from this task. This task registers its 16 routes in one function `lens_admin_routes::router(state)` and the umbrella B132 composes it, so nothing is registered twice.
+  which imports lens_access from this task. This task registers its 16 routes in one function `lens_admin_routes::router(state)` and B8682 mounts it, so nothing is registered twice.
   Every route sits behind the existing auth layer (B003 and B052), exactly like the routes of B3125. Every error body is {"detail": "<text>"} with the status below.
 
   Outside services come through a state struct `LensRoutesState` (`crate::lens_access::state::LensRoutesState`, with the `Clock` and `IdSource` traits beside it in the same file, all `pub(crate)`), built once by the caller and passed to the router: the Lens repository (B4501 LensRepository, absent when the server has no Postgres),
@@ -78,7 +78,6 @@ scope:
     - crates/betterlite-server/src/lens_access/**
     - crates/betterlite-server/src/lens_admin_routes.rs
     - crates/betterlite-server/src/lens_admin_routes/**
-    - tools/oracle/cases/http/lens-admin-routes/**
     - tools/oracle/helpers/b4503.py
     - tools/oracle/helpers/b4503/**
     - tools/oracle/src/helpers/server/b4503.rs
@@ -117,21 +116,23 @@ dod:
   - text: validate_selection and validate_model apply the 422, 400 and 403 rules in the stated order.
     proof: [access-selection-tests, access-model-tests]
   - text: The router mounts exactly the 16 listed method and path pairs and no worker route, and static segments win over {lens_id}.
-    proof: [router-tests, oracle]
+    proof: [router-tests]
   - text: List, create, read and update lens follow the stated role checks, validation order, created record fields and revision change.
-    proof: [lens-routes-tests, oracle]
+    proof: [lens-routes-tests]
   - text: Run, run history, one run and cancel follow the stated queueing, job stripping, 404 and cancel transform.
-    proof: [run-routes-tests, oracle]
+    proof: [run-routes-tests]
   - text: The finding update replaces status and reason on the matching finding only, and an unknown finding id changes nothing.
     proof: [finding-route-tests]
   - text: The preview route validates the selection first, answers 501 before it checks the role, clamps as_of to the clock and passes the stated start and end milliseconds.
-    proof: [preview-route-tests, oracle]
+    proof: [preview-route-tests]
   - text: Worker register stores only the SHA-256 of a "lens-" token, validates the billing key, and returns the token once; billing-key and revoke apply the stated 404, 409 and running-job rules.
-    proof: [worker-route-tests, oracle]
+    proof: [worker-route-tests]
   - text: The evidence route checks the lens scope before decoding, answers 404 for bad ids, wrong source and other-team executions, and builds the Execution with the stated fields.
-    proof: [evidence-route-tests, oracle]
+    proof: [evidence-route-tests]
   - text: Availability and agents answer 200 with empty values when tracing is off, and the list route reports tracing_enabled from the storage.
-    proof: [lens-routes-tests, oracle]
+    proof: [lens-routes-tests]
+  - text: The handlers are tested with tower's oneshot over lens_admin_routes::router and fake ports; B8682 mounts them and proves the HTTP answers with the oracle cases moved there.
+    proof: [router-tests, lens-routes-tests]
 checks:
   optional: []
   commands:
@@ -171,23 +172,7 @@ checks:
     - id: evidence-route-tests
       why: the evidence content handler is missing
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_admin_routes::evidence::/)'
-oracle_cases:
-  - tools/oracle/cases/http/lens-admin-routes/list-without-database-503.yaml
-  - tools/oracle/cases/http/lens-admin-routes/list-without-auth-401.yaml
-  - tools/oracle/cases/http/lens-admin-routes/create-empty-body-422.yaml
-  - tools/oracle/cases/http/lens-admin-routes/create-unknown-model-400.yaml
-  - tools/oracle/cases/http/lens-admin-routes/create-bad-execution-id-422.yaml
-  - tools/oracle/cases/http/lens-admin-routes/create-known-model-without-database-503.yaml
-  - tools/oracle/cases/http/lens-admin-routes/read-without-database-503.yaml
-  - tools/oracle/cases/http/lens-admin-routes/runs-negative-offset-422.yaml
-  - tools/oracle/cases/http/lens-admin-routes/availability-without-tracing-200.yaml
-  - tools/oracle/cases/http/lens-admin-routes/agents-without-tracing-200.yaml
-  - tools/oracle/cases/http/lens-admin-routes/preview-without-tracing-501.yaml
-  - tools/oracle/cases/http/lens-admin-routes/preview-naive-as-of-422.yaml
-  - tools/oracle/cases/http/lens-admin-routes/register-bad-key-id-422.yaml
-  - tools/oracle/cases/http/lens-admin-routes/billing-key-without-database-503.yaml
-  - tools/oracle/cases/http/lens-admin-routes/revoke-without-database-503.yaml
-  - tools/oracle/cases/http/lens-admin-routes/evidence-without-database-503.yaml
+oracle_cases: []
 deviations:
   - what: The preview window bounds are computed in whole milliseconds from the integer microsecond timestamp, not from a float seconds value multiplied by 1000.
     why: LiteLLM's int(timestamp() * 1000) can land one millisecond low when the float is just under a whole millisecond. Integer arithmetic is exact, and the difference cannot change which executions a preview shows in any way a user could rely on.
@@ -198,7 +183,7 @@ out_of_scope:
   - "B4501 owns LensRepository and its SQL, B4500 the records, can_access, queue_job, current_job and replace_job, B4502 the SourceReader, Storage port and parse_execution, B4504 validate_key."
   - "The ClickHouse implementation of the lens_* storage queries and provide_storage are owned by B3867 and the later storage task, not here. No task owns the Lens storage queries yet; the architect names the owner."
   - "B844 owns get_model_names. The route-group task that owns _types.py litellm_native_routes decides which lens paths a non-admin key can reach before user_scope runs."
-  - "B132 composes lens_admin_routes::router with B4505's router and mounts both; this task never mounts itself."
+  - "B8682 mounts lens_admin_routes::router through app::edge::mount and B4505's router through mount_public; this task never mounts itself."
 pitfalls:
   - user_scope(read) and user_scope(write) both return the all_teams scope, so for these routes get_lens never answers 404 from can_access; only B4505's worker scope can. Keep the check in get_lens anyway.
   - preview_sample builds the SourceReader before it calls user_scope, so a caller who is not an administrator gets 501 when tracing is off and 403 only when tracing is on.

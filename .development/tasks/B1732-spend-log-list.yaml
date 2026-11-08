@@ -42,7 +42,6 @@ scope:
   paths:
     - crates/betterlite-server/src/spend/log_list.rs
     - crates/betterlite-server/src/spend/log_list/**
-    - tools/oracle/cases/http/spend-log-list/**
     - tools/oracle/helpers/b1732.py
     - tools/oracle/helpers/b1732/**
     - tools/oracle/src/helpers/server/b1732.rs
@@ -54,26 +53,19 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2766-L3075
     why: Authorization, parameterized SQL, grouped selection, counting and post-fetch recheck.
 dod:
-  - text: Both aliases enforce the pinned user/team/ID scope before and after fetching, including client call-ID collisions.
-    proof: [log-list-tests, oracle]
-  - text: Search, grouping, representative status, caps and sorting preserve public/UI differences without loading heavy bodies.
-    proof: [log-list-tests, oracle]
+  - text: Both aliases enforce the pinned user/team/ID scope before and after fetching, including client call-ID collisions. B8663 proves it over HTTP.
+    proof: [log-list-tests]
+  - text: Search, grouping, representative status, caps and sorting preserve public/UI differences without loading heavy bodies. B8663 proves it over HTTP.
+    proof: [log-list-tests]
+  - text: The handlers answer through tower's oneshot over the module's own Router with fake ports; B8663 merges them through B069's spend routes and proves them over HTTP.
+    proof: [log-list-tests]
 checks:
   optional: []
   commands:
     - id: log-list-tests
       why: Authorized SQL execution or one of the public/UI branches is missing.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::log_list::/)'
-oracle_cases:
-  - tools/oracle/cases/http/spend-log-list/aliases-old-id-and-public-window.yaml
-  - tools/oracle/cases/http/spend-log-list/team-permission-and-explicit-user-intersection.yaml
-  - tools/oracle/cases/http/spend-log-list/colliding-call-id-primary-priority.yaml
-  - tools/oracle/cases/http/spend-log-list/session-literal-versus-metadata-wildcards.yaml
-  - tools/oracle/cases/http/spend-log-list/cache-oauth-health-and-span-filters.yaml
-  - tools/oracle/cases/http/spend-log-list/representative-status-search-disables-grouping.yaml
-  - tools/oracle/cases/http/spend-log-list/keyset-offset-count-cap-and-ttft.yaml
-  - tools/oracle/cases/http/spend-log-list/ui-session-key-isolation-v2-no-enrichment.yaml
-  - tools/oracle/cases/http/spend-log-list/db-before-sort-and-date-errors.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - B1728 owns L2475-L2765 inputs and filter primitives; B1731 grouped paging, B1730 row envelopes/legacy export, B1729 detail/daily projection and B1704 visibility checks.

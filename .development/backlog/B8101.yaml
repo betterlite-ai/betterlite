@@ -1,0 +1,15 @@
+id: B8101
+milestone: M3 providers
+title: LangFlow run API chat config
+status: todo
+depends_on: [B004, B010, B171, B196, B2202, B2214, B2230]
+file: tasks/B8101-langflow-chat-config.yaml
+covers:
+  - "litellm/llms/langflow/chat/**"
+  - "litellm/llms/langflow/__init__.py"
+parent: B050
+split_from: B050
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

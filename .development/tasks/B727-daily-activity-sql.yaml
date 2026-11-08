@@ -138,7 +138,7 @@ out_of_scope:
   - B2312 owns every type in types/repositories/daily_activity.py and SqlQuery/ExportCursor/PRISMA_TO_PG_TABLE in daily_activity_sql.py L18-L40.
   - B728 owns _bounded_limit, build_key_search_sql, build_model_top_keys_sql,
     build_cache_leakage_keys_sql, build_export_sql, _export_grouping and _export_cursor_clause, L304-L526.
-  - B729 executes plans and converts rows; B074 validates route dates, pagination and authorized scopes.
+  - B729 executes plans and converts rows; B3090 validates route dates, B3096 and B3097 pagination, and B3094 and B3095 authorized scopes.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as daily_activity_sql in the db group. Replace the stub Op in tools/oracle/src/helpers/db/daily_activity_sql.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/daily_activity_sql.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - PTU sentinel spend remains in totals even when api_key_limit hides most real keys.

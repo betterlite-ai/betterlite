@@ -1,0 +1,243 @@
+id: B4175
+title: CLI diagnostic commands and startup input helpers
+description: >-
+  The skeleton already declares this task's fuzz [[bin]] with an empty target file; fill that target and add the crate dependency it needs, without a second [[bin]] entry.
+
+
+  Build the small commands and the input helpers that LiteLLM's `litellm` entry point (proxy_cli.py run_server) runs before it
+  starts a server, as plain library code in the crates/betterlite crate. Four new modules, each declared in lib.rs by the
+  skeleton: banner, diagnostic_commands, startup_input and verbose_levels. Nothing here parses argv or starts a server. The
+  task B8375 owns the clap root and calls these functions in run_server's order. Every side effect goes through a
+  parameter (a writer, a trait object, a plain value), so tests run without a network, a child process or an environment.
+
+  banner.rs: `pub const LITELLM_BANNER: &str` holds the six-line block-letter banner from banner.py exactly, with the box
+  characters written as \u{...} escapes the way welcome.rs does. `pub fn show_banner(writer: &mut dyn Write) -> Result<(), BannerError>`
+  writes "\n", the banner, "\n" and one more "\n" (click.echo adds the last newline). The Python `except ImportError` branch
+  (click missing) is not built. This is a different banner from welcome.rs, so leave welcome.rs alone.
+
+  diagnostic_commands.rs holds the three early-exit commands. Each returns a typed result and writes through a `&mut dyn Write`.
+  1. `version_command(package_version: &str, writer)` writes "\nLiteLLM: Current Version = {package_version}\n" and then a newline
+  (click.echo). The caller passes the version string; the function never reads Cargo metadata itself.
+  2. `health_command(host: &str, port: u16, transport: &dyn HealthTransport, writer)` writes "\nLiteLLM: Health Testing models in config\n"
+  (print adds the newline), calls `transport.get("http://{host}:{port}/health")` and writes the response body re-serialized as
+  JSON with 4-space indentation. The URL uses host verbatim, so the default 0.0.0.0 stays 0.0.0.0. It sends no Authorization
+  header, so a proxy with a master key answers with its 401 body and that body is printed the same way; the HTTP status is
+  never checked. A body that is not JSON is `DiagnosticError::NotJson`. `HealthTransport` is a one-method trait
+  (`fn get(&self, url: &str) -> Result<String, TransportError>`); the real implementation `ReqwestHealth` uses reqwest's
+  blocking client (reqwest 0.13.5 with the blocking and rustls features, the same line betterlite-http uses) with a 5 second
+  timeout and `redirect::Policy::none()`, which are httpx's defaults (5 s timeout, no redirects). Add the dependency to
+  crates/betterlite/Cargo.toml and check `cargo deny --locked check`. Test the real transport against a std `TcpListener` serving
+  one canned HTTP response, not a mock of the trait.
+  3. `config_validation_command(config: Option<&Path>, loader, writer, err_writer)`: no config path is
+  `DiagnosticError::ConfigRequired`, whose message is exactly "--validate_config requires --config <path>" and which the
+  umbrella maps to exit code 2 (click.UsageError). Otherwise load the file the way main.rs's load_config does (betterlite-config
+  `load_file` with a `ConfigLoader`). A load error writes "LiteLLM: config validation failed: {error}" to the error writer and
+  returns `DiagnosticError::ConfigInvalid` (exit code 1). Success writes "LiteLLM: config OK ({n} models)\n" where n is
+  `config.model_list.len()`. Do not log through tracing here.
+  `test_command(host, port, model: Option<&str>, writer)`: LiteLLM's `--test` is declared `flag_value=True`, so its value is
+  always the boolean True and `_run_test_chat_completion` raises ValueError("Invalid test value") right after printing
+  "\nLiteLLM: Making a test ChatCompletions request to your proxy. Model={model or gpt-3.5-turbo}\n". Do the same: write that line
+  (an absent or empty model becomes gpt-3.5-turbo) and return `DiagnosticError::InvalidTestValue`, exit code 1. Do not build the
+  three OpenAI requests behind the raise, because nothing at the pin can reach them (see out_of_scope).
+  `ollama_serve(launcher: &dyn ProcessLauncher, writer)` and `needs_ollama(model: Option<&str>, api_base: Option<&str>) -> bool`:
+  true when the model is present, contains the substring "ollama" and api_base is absent. `ProcessLauncher` has one method,
+  `fn spawn_silent(&self, program: &str, args: &[&str]) -> Result<(), io::Error>`, and the real implementation starts the
+  process with stdin, stdout and stderr null and does not wait. `ollama_serve` calls `spawn_silent("ollama", &["serve"])`; on an
+  error it writes LiteLLM's warning and returns Ok. The warning text is the f-string at proxy_cli.py L640-L645 with the
+  exception text replaced by the io error text: a newline, 16 spaces, "LiteLLM Warning: proxy started with `ollama` model", a
+  newline, "`ollama serve` failed with Exception{error}. ", a newline, "Ensure you run `ollama serve`", a newline and 12 spaces.
+  A running ollama is not checked first.
+
+  startup_input.rs holds the input helpers from run_server's body. Its error enum is `StartupInputError`.
+  - `classify_positional(args: &[String]) -> Result<PositionalCommand, StartupInputError>`. No arguments is `PositionalCommand::None`.
+  Exactly `["xai-oauth", "login"]` is `PositionalCommand::XaiOauthLogin`. Anything else is `StartupInputError::UnknownCommand`
+  whose message is "Unknown command: {args joined by one space}" and which the umbrella maps to exit code 2.
+  `xai_login_lines(auth_file: &Path, expires_at: Option<i64>) -> Vec<String>` returns "xAI OAuth login successful. Credentials
+  saved to {auth_file}." and, when expires_at is present, "Access token expires at {expires_at}." The login itself is B1401's
+  service and is not called here.
+  - `decode_headers(raw: &str) -> Result<Option<BTreeMap<String, String>>, StartupInputError>` for the `--headers` flag. An
+  empty string is Ok(None) (LiteLLM skips json.loads on a falsy value). Otherwise the text must be a JSON object whose values are
+  all strings, with the last duplicate key winning. Input longer than 65536 bytes, invalid JSON, a non-object, or a non-string
+  value is `StartupInputError::Headers` naming the problem. The raw text is untrusted, so it is parsed once with
+  serde_json into the typed map and never echoed back into an error message.
+  - `choose_port(port: u16, prober: &dyn PortProber, rng: &mut impl Rng) -> u16`: when port is exactly 4000 and
+  `prober.in_use(4000)` is true, return `rng.random_range(1024..=49152)` (both bounds inclusive, like random.randint), else
+  return port unchanged. The new port is not probed again. The real `LocalPortProber` opens a TCP connection to 127.0.0.1:port
+  and answers true when it connects. LiteLLM's connect_ex(("localhost", port)) on an AF_INET socket only tries IPv4, so do not
+  try ::1. A refused or timed-out connect answers false.
+  - `check_metrics_port(metrics: Option<u16>, port: u16) -> Result<(), StartupInputError>`: equal values give
+  `StartupInputError::MetricsPortClash` with the message "--prometheus_metrics_port must differ from --port" (exit code 2). It
+  runs after choose_port, so the comparison uses the possibly randomized port.
+  - `decode_worker_config(raw: &str) -> Result<WorkerDebugFlags, StartupInputError>` reads the two keys `debug` and
+  `detailed_debug` from the JSON object LiteLLM's save_worker_config stores in WORKER_CONFIG, each `Option<bool>`, and ignores
+  every other key. Limit 65536 bytes. Invalid JSON, a non-object, or a non-boolean value for those two keys is an error.
+
+  verbose_levels.rs ports `init_verbose_loggers` from debug_utils.py as a pure plan. `pub enum LogLevel { Info, Debug }`,
+  `pub struct LevelPlan { package: Option<LogLevel>, router: Option<LogLevel>, proxy: Option<LogLevel> }` (None means leave the
+  logger alone) and `pub fn plan_verbose_levels(worker_config: Option<&str>, worker_config_is_file: bool, litellm_log: &str,
+  warn: &mut dyn FnMut(&str)) -> LevelPlan`. The caller (B8375, with B012's logging setup) applies the plan to the three
+  tracing targets; this task does not touch tracing or any global state. Rules, in LiteLLM's order: an absent WORKER_CONFIG, or
+  one that names an existing file (`worker_config_is_file`), gives the empty plan. Otherwise decode it with
+  decode_worker_config. A decode error calls warn once with "Failed to init verbose loggers: {error}" and returns the plan built
+  so far, which is empty. Then: debug == Some(true) sets all three to Info; after that, detailed_debug == Some(true) sets all three
+  to Debug (it overrides the Info); otherwise, only when both flags are exactly Some(false), look at `litellm_log` (the LITELLM_LOG
+  value, "" when unset): "INFO" in any letter case sets router and proxy to Info, "DEBUG" sets router and proxy to Debug, and
+  the package logger stays None in both cases. A flag that is absent counts as neither true nor false, so debug absent with
+  detailed_debug false never reads LITELLM_LOG.
+
+  Error enums: BannerError (io), DiagnosticError, StartupInputError, each with thiserror and no unwrap, expect or panic. LiteLLM
+  tracebacks are not reproduced. The module that can fail owns its enum in its own files.
+
+  Add a cargo-fuzz target `startup_input_json` in crates/betterlite/fuzz that feeds the same bytes to decode_headers and
+  decode_worker_config, plus a seed corpus (valid object, empty object, non-object, duplicate keys, non-string value, deeply
+  nested array, invalid UTF-8) and a test `replays_startup_input_json_corpus` in startup_input's tests that runs every corpus
+  file through both decoders without a panic.
+
+  Oracle cases are all helper cases with one helper operation b4175 that has an `operation:` field; the skeleton creates the
+  helper, and the worker writes the case files under tools/oracle/cases/helpers/startup-diagnostics/. The Python side drives
+  LiteLLM with click's CliRunner on run_server or with direct calls and patches the outside world (httpx.get, subprocess.Popen,
+  ProxyInitializationHelpers._is_port_in_use, random.randint). Cases: banner-text compares show_banner's stdout; health-prints-indented-json
+  patches httpx.get to return {"healthy_endpoints": [], "unhealthy_count": 0} and compares the stdout of _run_health_check;
+  test-flag-invalid-value runs run_server(["--test"]) and compares the stdout line and the ValueError message; validate-config-needs-path
+  runs ["--validate_config"] and compares exit code 2 and the usage message; unknown-command runs ["foo", "bar"] and compares exit
+  code 2 and "Unknown command: foo bar"; ollama-model-starts-serve calls the ollama check with model "ollama/llama3" and no api_base and
+  records the Popen argv; ollama-with-api-base-skips does the same with api_base set and records no call;
+  port-4000-in-use-randomized patches the probe to true and randint to return 31000 and records the randint bounds and the chosen
+  port; port-other-kept uses port 8080 with the probe true and records that nothing is drawn; verbose-debug-then-detailed sets
+  WORKER_CONFIG to {"debug": true, "detailed_debug": true} and records the three logger levels; verbose-log-env-only-when-both-false sets
+  {"debug": false, "detailed_debug": false} with LITELLM_LOG=debug and records the levels. Compare the observable values, not
+  the adapter's internals.
+scope:
+  paths:
+    - crates/betterlite/Cargo.toml
+    - crates/betterlite/src/banner.rs
+    - crates/betterlite/src/banner/**
+    - crates/betterlite/src/diagnostic_commands.rs
+    - crates/betterlite/src/diagnostic_commands/**
+    - crates/betterlite/src/startup_input.rs
+    - crates/betterlite/src/startup_input/**
+    - crates/betterlite/src/verbose_levels.rs
+    - crates/betterlite/src/verbose_levels/**
+    - crates/betterlite/fuzz/Cargo.toml
+    - crates/betterlite/fuzz/fuzz_targets/startup_input_json.rs
+    - crates/betterlite/fuzz/corpus/startup_input_json/**
+    - tools/oracle/cases/helpers/startup-diagnostics/**
+    - tools/oracle/helpers/b4175.py
+    - tools/oracle/helpers/b4175/**
+    - tools/oracle/src/helpers/server/b4175.rs
+    - tools/oracle/src/helpers/server/b4175/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/banner.py#L1-L19
+    why: The banner constant and show_banner, whose click.echo adds the final newline.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L201-L231
+    why: _echo_litellm_version, _run_health_check (no auth header, indent=4) and _run_config_validation with its two message formats.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L233-L250
+    why: _run_test_chat_completion's first echo and the unconditional ValueError("Invalid test value") for a non-string test value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L634-L651
+    why: _run_ollama_serve with its warning text and _is_port_in_use (AF_INET connect_ex to localhost).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L808-L835
+    why: The --setup, --version, --health and --test option declarations; --health and --test use flag_value=True.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1070-L1121
+    why: run_server's positional-command dispatch, the --version, --validate_config, --health, --test and ollama checks, and the --headers json.loads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1466-L1472
+    why: The port 4000 fallback to a random port and the prometheus_metrics_port clash check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L853-L922
+    why: init_verbose_loggers, including the file-path early return, the debug/detailed_debug order and the LITELLM_LOG branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9131-L9134
+    why: save_worker_config stores the flags as JSON in WORKER_CONFIG; init_verbose_loggers reads it back.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9176-L9181
+    why: The one caller of show_banner.
+dod:
+  - text: show_banner writes a newline, the six-line banner, a newline and a final newline, with LITELLM_BANNER equal to banner.py's text.
+    proof: [startup-tests, oracle, helper-python]
+  - text: version_command writes the Current Version line from the version string it is given, with click.echo's surrounding newlines.
+    proof: [startup-tests]
+  - text: health_command requests http://{host}:{port}/health with no Authorization header, a 5 second timeout and no redirect following, and prints the JSON body with 4-space indentation whatever the status; a non-JSON body is a typed error.
+    proof: [startup-tests, oracle, helper-python]
+  - text: config_validation_command refuses a missing config path with the --validate_config message, prints "config OK (n models)" for a loadable file and the "config validation failed" line plus a typed error for a bad one.
+    proof: [startup-tests, oracle, helper-python]
+  - text: test_command prints the Making a test ChatCompletions line with gpt-3.5-turbo as the default model and then fails with InvalidTestValue.
+    proof: [startup-tests, oracle, helper-python]
+  - text: needs_ollama is true only for a model containing "ollama" with no api_base, and ollama_serve spawns `ollama serve` silently and turns a spawn error into the warning text without failing.
+    proof: [startup-tests, oracle, helper-python]
+  - text: classify_positional maps xai-oauth login to its command, no arguments to None and anything else to the Unknown command error with the joined arguments; xai_login_lines omits the expiry line when there is none.
+    proof: [startup-tests, oracle, helper-python]
+  - text: decode_headers returns None for an empty string, the last duplicate for a repeated key, and a typed error for invalid JSON, a non-object, a non-string value or input over 65536 bytes.
+    proof: [startup-tests, startup-corpus]
+  - text: choose_port changes only port 4000 and only when the probe says it is in use, drawing from 1024 to 49152 inclusive; LocalPortProber tries IPv4 only; check_metrics_port rejects equal ports.
+    proof: [startup-tests, oracle, helper-python]
+  - text: plan_verbose_levels follows LiteLLM's order for debug, detailed_debug, LITELLM_LOG and the file-path and bad-JSON cases, and never sets the package level from LITELLM_LOG.
+    proof: [startup-tests, oracle, helper-python]
+  - text: The startup_input_json fuzz target exists and its seed corpus replays through both decoders without a panic.
+    proof: [startup-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: startup-tests
+      why: A banner, diagnostic command, startup input or verbose-level behavior is missing or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite --no-tests=fail
+        -E 'test(/^(banner|diagnostic_commands|startup_input|verbose_levels)::/) - test(replays_startup_input_json_corpus)'
+    - id: startup-corpus
+      why: The decoder fuzz target, its new seed corpus or the replay test is missing
+      run: >-
+        test -f crates/betterlite/fuzz/fuzz_targets/startup_input_json.rs &&
+        grep -q 'name = "startup_input_json"' crates/betterlite/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite/fuzz/corpus/startup_input_json)" &&
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(replays_startup_input_json_corpus)'
+    - id: helper-python
+      why: The strict oracle adapter for the startup diagnostics fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4175)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4175 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4175/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/startup-diagnostics/banner-text.yaml
+  - tools/oracle/cases/helpers/startup-diagnostics/health-prints-indented-json.yaml
+  - tools/oracle/cases/helpers/startup-diagnostics/test-flag-invalid-value.yaml
+  - tools/oracle/cases/helpers/startup-diagnostics/validate-config-needs-path.yaml
+  - tools/oracle/cases/helpers/startup-diagnostics/unknown-command.yaml
+  - tools/oracle/cases/helpers/startup-diagnostics/ollama-model-starts-serve.yaml
+  - tools/oracle/cases/helpers/startup-diagnostics/ollama-with-api-base-skips.yaml
+  - tools/oracle/cases/helpers/startup-diagnostics/port-4000-in-use-randomized.yaml
+  - tools/oracle/cases/helpers/startup-diagnostics/port-other-kept.yaml
+  - tools/oracle/cases/helpers/startup-diagnostics/verbose-debug-then-detailed.yaml
+  - tools/oracle/cases/helpers/startup-diagnostics/verbose-log-env-only-when-both-false.yaml
+deviations:
+  - what: "`--test` stays the always-failing command it is at the pin, and the three OpenAI requests behind the raise are not built."
+    why: The option is declared flag_value=True, so the string branch that makes the requests cannot be reached. This is an open question for the architect; the notes record it.
+  - what: The health command's JSON parse error, the config validation error text and the ollama spawn error text come from Rust (serde_json, the config loader, io::Error), not from Python exceptions.
+    why: >-
+      The wording of Python exceptions is not part of the contract. The fixed prefixes, "LiteLLM: config validation failed" and "Exception", stay as LiteLLM prints them.
+  - what: "`--headers` accepts only a JSON object of string values, up to 65536 bytes."
+    why: LiteLLM passes any JSON value on to its worker config; headers are string pairs by their purpose and the bounded-inputs rule caps untrusted text.
+  - what: The WORKER_CONFIG decoder accepts only boolean values for debug and detailed_debug, and logs the failure and changes nothing for anything else.
+    why: LiteLLM compares with `is True`, so other values do nothing there; a value of the wrong type is rejected where it enters (docs/compatibility.md).
+out_of_scope:
+  - "_run_test_chat_completion lines after the raise (the ChatCompletions, streaming and completions requests, L251-L280): no caller at the pin can reach them because test is never a string."
+  - "_get_default_unvicorn_init_args, _apply_uvicorn_max_requests_jitter, _get_reload_options, _patch_statreload_extra_paths, _configure_dev_reload, _get_loop_type: B4176 owns them."
+  - "_init_hypercorn_server, _init_granian_server, _run_gunicorn_server, _prometheus_callback_configured, _maybe_setup_prometheus_multiproc_dir: B4177 owns them."
+  - "The database URL, token auth, KMS decrypt, migration and pgbouncer blocks of run_server, and the module-level DB helper functions: B710, B717, B051 and their siblings own them."
+  - "The click option declarations and the run_server call order: the task B8375 owns the clap root and calls the functions from this task in run_server's order."
+  - "save_worker_config: B8375 writes WORKER_CONFIG and B8374 reads it; this task only decodes what it stores."
+  - "configure_gc_thresholds, the memory and task routes, /debug/report and /otel-spans in debug_utils.py: B4173, B4174 and B4171 own them."
+  - "run_setup_wizard: B8542 builds it and B8375 calls it behind --setup."
+  - "generate_feedback_box and the other callers of show_banner (proxy_server.py, the lite CLI shell, the cli_sso_success page): their own tasks call banner::LITELLM_BANNER or show_banner."
+  - "_drop_script_dir_from_sys_path, load_dotenv with LITELLM_MODE, sys.path edits and litellm.json_logs: Python import machinery with no native equivalent."
+pitfalls:
+  - The health command sends no key, so a proxy with a master_key answers 401 with a JSON error body and LiteLLM still prints that body as if it were a health report; do not add an Authorization header or a status check.
+  - httpx.get follows no redirects and times out after 5 seconds, but reqwest follows 10 redirects and has no timeout, so both must be set explicitly.
+  - reqwest::blocking panics when it is called inside a tokio runtime, so the real transport is only used from the synchronous CLI path; the tests call it from plain test functions that start no runtime.
+  - The port fallback applies only to the default 4000, and `random.randint(1024, 49152)` includes both ends, so use `random_range(1024..=49152)`.
+  - The fallback port is never probed, and the metrics-port clash check runs afterwards against the new value.
+  - connect_ex on a socket.AF_INET socket resolves localhost to IPv4 only, so a listener bound to ::1 alone does not count as in use.
+  - needs_ollama is a substring test on the whole model string, so "azure/my-ollama-proxy" matches too, and an explicit api_base of any value, even empty, turns it off.
+  - init_verbose_loggers reads LITELLM_LOG only when debug and detailed_debug are both exactly false; debug false with detailed_debug absent never reads it, and an explicit detailed_debug true replaces the Info levels debug set a step earlier.
+  - LITELLM_LOG INFO or DEBUG leaves the package logger alone and changes only the router and proxy loggers, while the debug flags change all three.
+  - An xai-oauth login with any other second word (or a third word) is the Unknown command error, not a partial match.
+  - Keep each module name, type and function name at 30 characters or fewer; an ast-grep rule rejects longer ones.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

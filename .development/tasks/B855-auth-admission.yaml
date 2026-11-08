@@ -22,10 +22,10 @@ description: >-
   and ordinary errors to 401 auth_error prefixed 'Authentication Error, '. Its DB-outage recovery and
   callback transformation remain B757; test delegation rather than copying that mapper.
 
-  Managed implementations belong to the later B141 agent service, and telemetry implementations to
+  Managed implementations belong to B8544's port over B4781 and B4773, and telemetry implementations to
   B124/B110 integration services. Define the required ManagedAdmission and TenantDestinations ports
   here, with methods matching these calls and typed outcomes; those higher services install concrete
-  implementations. No direct dependency on B141/B124 (which depend on B052 and this stage) and no
+  implementations. No direct dependency on B8544/B124 (which depend on B052 and this stage) and no
   allow-all/no-op stub for a configured capability. B732 server construction rejects a configured
   capability without its port. B855 owns only ordering and exception boundaries, not agent policy,
   registry lookups, pricing or exporter construction; use injected failure/results for native tests.
@@ -111,8 +111,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/auth_admission.rs
     - crates/betterlite-server/src/state/auth_admission/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-admission/**
     - crates/betterlite-server/src/auth/auth_admission.rs
     - crates/betterlite-server/src/auth/auth_admission/**
@@ -173,7 +171,7 @@ oracle_cases:
   - tools/oracle/cases/auth/auth-admission/telemetry-failure-still-reaches-route.yaml
 deviations: []
 out_of_scope:
-  - B141 owns the concrete managed-agent policy/store adapter; B124/B110 own tenant destination resolution and OTLP delivery adapters behind this task's ports.
+  - B8544 owns the concrete managed-agent policy/store adapter; B124/B110 own tenant destination resolution and OTLP delivery adapters behind this task's ports.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model

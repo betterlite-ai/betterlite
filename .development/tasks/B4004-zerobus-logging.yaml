@@ -34,6 +34,8 @@ scope:
     - crates/betterlite-logging/src/zerobus.rs
     - crates/betterlite-logging/src/zerobus/logger.rs
     - crates/betterlite-logging/src/zerobus/logger/**
+    - crates/betterlite-logging/src/registry/catalog/zerobus.rs
+    - crates/betterlite-logging/src/registry/catalog/zerobus/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/logger.py#L25-L32
@@ -73,6 +75,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/__init__.py#L1-L5
     why: Module exports and declarations.
 dod:
+  - text: "The Zerobus logger takes redacted rows from the async events of CallbackLogger, and registry/catalog/zerobus.rs builds it with its queue task on CatalogInputs.tracker (tests named callback_logger_* in zerobus and registry/catalog/zerobus/tests.rs)."
+    proof: [callback-logger]
   - text: >-
       _resolved_secret returns None for missing os.environ/ references, returns the resolved value when
       get_secret_str succeeds, and returns the plaintext value when it does not start with os.environ/
@@ -158,6 +162,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: callback-logger
+      why: zerobus is unresolved or its queue is never fed by a logger event
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::zerobus::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus::(.*::)?callback_logger_/)'
     - id: connection-resolution-tests
       why: Connection resolution, secret lookup, table validation or workspace ID extraction fails.
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus|zerobus::logger)::(.*::)?zerobus_connection::/)' -- --include-ignored

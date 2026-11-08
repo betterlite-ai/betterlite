@@ -1,0 +1,13 @@
+id: B8387
+milestone: M8 platform
+title: Onboarding invitation, logo, image and favicon routes
+status: todo
+depends_on: [B052, B056, B063, B714, B786, B789, B797, B2302, B4260, B7323]
+file: tasks/B8387-onboarding-and-logo.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

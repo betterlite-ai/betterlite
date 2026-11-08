@@ -1,0 +1,13 @@
+id: B8595
+milestone: M8 platform
+title: "/config/field update, info and delete and /config/list routes"
+status: todo
+depends_on: [B8594, B8380, B8230, B8379, B5082, B4140, B4020]
+file: tasks/B8595-config-field-routes.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

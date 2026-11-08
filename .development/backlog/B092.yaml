@@ -2,7 +2,7 @@ id: B092
 milestone: M5 api families
 title: OCR API
 status: todo
-depends_on: [B3300, B6800, B6809, B001, B003, B004, B124, B756, B1103, B529, B594, B595, B1301]
+depends_on: [B3300, B6800, B6809, B001, B003, B004, B756, B1103, B529, B594, B595, B1301, B8399]
 file: tasks/B092-ocr-api.yaml
 covers:
   - "litellm/proxy/ocr_endpoints/**"

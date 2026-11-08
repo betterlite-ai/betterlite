@@ -1,11 +1,12 @@
 id: B3465
 milestone: M5 api families
-title: RAG ingestion HTTP routes
+title: RAG ingest and query HTTP routes
 status: todo
-depends_on: [B3452, B3460, B3462, B3463, B3464, B884, B1103]
-file: null
+depends_on: [B003, B004, B005, B884, B1067, B1100, B1103, B3450, B3460, B3461, B3462, B3463, B3464, B7324, B8604, B8631, B8632]
+file: tasks/B3465-rag-ingestion-routes.yaml
 covers:
   - "litellm/proxy/rag_endpoints/endpoints.py"
+  - "litellm/proxy/rag_endpoints/__init__.py"
 parent: B097
 split_from: B097
 resolution: null

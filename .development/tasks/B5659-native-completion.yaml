@@ -11,8 +11,7 @@ description: >-
   `python/betterlite/_native_<family>.pyi`. `src/<family>.rs` has one entry point, `pub(crate) fn register(module:
   &Bound<'_, PyModule>) -> PyResult<()>`, that adds every function and class of the family. `lib.rs` holds one `mod
   <family>;` line and one `<family>::register(module)?;` line per family, and `_native.pyi` holds one
-  `from betterlite._native_<family> import *` line. Those lines are written once by the architect with a stub `register`
-  that returns `Ok(())`, the same way the helper registry gets its lines, and a family task fills the stub. There is no
+  `from betterlite._native_<family> import *` line. B5369 writes those lines, each with a stub `register` that returns `Ok(())`, for every family planned before it merges. The architect adds the lines for a family planned later. A family task fills the stub. There is no
   auto-discovery: the list in `lib.rs` stays explicit and is never touched by a family task. This task is the `completion`
   family, and B166 and the other Python entries follow the same shape with their own family name. If the `completion` lines
   are missing from `lib.rs` when you start, stop and report a blocker, since you can't add them.

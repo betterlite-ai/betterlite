@@ -2,7 +2,7 @@ id: B081
 milestone: M5 api families
 title: Anthropic messages routes
 status: todo
-depends_on: [B002, B003, B004, B011, B3661, B3669, B124, B958, B1132, B1100, B1134, B855, B756, B2401]
+depends_on: [B002, B003, B004, B011, B3661, B3669, B958, B1132, B1100, B1134, B855, B756, B2401, B8389, B5471, B3663, B8801]
 file: tasks/B081-anthropic-messages-routes.yaml
 covers:
   - "litellm/proxy/anthropic_endpoints/endpoints.py"

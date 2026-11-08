@@ -37,7 +37,6 @@ scope:
     - crates/betterlite-config/src/oauth_callback.rs
     - crates/betterlite-config/src/oauth_callback/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/oauth-callback-*
-    - tools/oracle/cases/sso/oauth-callback/**
     - tools/oracle/fixtures/multipart-oracle/oauth-callback/**
     - tools/oracle/helpers/b1615.py
     - tools/oracle/helpers/b1615/**
@@ -52,10 +51,12 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2299-L2463
     why: CLI user/grant resolution, assertion/enrollment effects and browser-verification form.
 dod:
+  - text: The handlers are tested with tower's oneshot over this task's own Router and fake ports; B8770 mounts them through B063 and proves them over HTTP.
+    proof: [callback-tests]
   - text: Real OAuth callback requests select the expected provider and preserve OAuth-error, database and master-key failure order.
-    proof: [callback-tests, oracle]
+    proof: [callback-tests]
   - text: A complete browser/CLI transcript cannot yield a token until both provider login and browser code verification succeed.
-    proof: [callback-tests, oracle]
+    proof: [callback-tests]
   - text: Restricted-group claim configuration and callback query bytes use their real loaders and replay corpora.
     proof: [callback-config, callback-corpora]
 checks:
@@ -70,15 +71,7 @@ checks:
     - id: callback-corpora
       why: Callback query parsing or its nested config setting has no added replay inputs.
       run: test -f crates/betterlite-server/fuzz/fuzz_targets/oauth_callback_query.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/oauth_callback_query)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/oauth-callback-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(replays_the_oauth_callback_query_corpus) | test(replays_the_config_yaml_corpus)'
-oracle_cases:
-  - tools/oracle/cases/sso/oauth-callback/oauth-error-before-db.yaml
-  - tools/oracle/cases/sso/oauth-callback/database-before-master-key.yaml
-  - tools/oracle/cases/sso/oauth-callback/empty-google-id-wins.yaml
-  - tools/oracle/cases/sso/oauth-callback/generic-login-to-dashboard.yaml
-  - tools/oracle/cases/sso/oauth-callback/pkce-cookie-mismatch.yaml
-  - tools/oracle/cases/sso/oauth-callback/cli-code-and-browser-token-required.yaml
-  - tools/oracle/cases/sso/oauth-callback/multiple-team-selection.yaml
-  - tools/oracle/cases/sso/oauth-callback/restricted-group-denial.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - B063 owns the login entry route and assembles this callback router exactly once; B1626 owns the separate SAML POST callback.

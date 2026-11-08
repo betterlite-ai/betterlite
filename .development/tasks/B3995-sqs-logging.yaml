@@ -34,6 +34,8 @@ scope:
   paths:
     - crates/betterlite-logging/src/sqs_logging.rs
     - crates/betterlite-logging/src/sqs_logging/**
+    - crates/betterlite-logging/src/registry/catalog/aws_sqs.rs
+    - crates/betterlite-logging/src/registry/catalog/aws_sqs/**
   lint_tables: false
 
 references:
@@ -57,6 +59,8 @@ references:
     why: CustomBatchLogger.flush_queue calls async_send_batch then clears the queue; queue clearing is B256's responsibility, not async_send_batch.
 
 dod:
+  - text: "SQSLogger receives calls through the async success and failure events of CallbackLogger, and registry/catalog/aws_sqs.rs builds the process logger for the aws_sqs name (tests named callback_logger_* in sqs_logging and registry/catalog/aws_sqs/tests.rs)."
+    proof: [callback-logger]
   - text: SQSLogger.__init__ initializes CustomBatchLogger and BaseAWSLLM base classes with httpx client, resolved parameters, and flush task.
     proof: [sqs-tests]
   - text: _init_sqs_params resolves litellm.aws_sqs_callback_params with environment-variable prefix handling and parameter precedence from supplied arguments.
@@ -85,6 +89,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: callback-logger
+      why: aws_sqs is still a stub or SQSLogger lacks the trait events
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::aws_sqs::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^sqs_logging::(.*::)?callback_logger_/)'
     - id: sqs-tests
       why: SQS logging tests fail or do not exist.
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^sqs_logging::/)'

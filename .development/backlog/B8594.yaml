@@ -1,0 +1,13 @@
+id: B8594
+milestone: M8 platform
+title: "/config/update route and config audit redaction"
+status: todo
+depends_on: [B8380, B8397, B8382, B8611, B2330, B323]
+file: tasks/B8594-config-update-route.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

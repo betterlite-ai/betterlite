@@ -3,7 +3,7 @@ title: Anthropic provider composition
 description: >-
   Fill B010's Provider::Anthropic stub and compose all native Anthropic operations and exported typed records. Consume the
   already selected anthropic_text or anthropic dispatch branch; expose file/batch/count methods for later public
-  API tasks. Keep native Messages public endpoint translation in B081 and cache prediction in B075. Exercise installed
+  API tasks. Keep native Messages public endpoint translation in B081 and cache prediction in B3120 to B3123. Exercise installed
   operations through the closed dispatcher and existing text/chat bridges.
 
 
@@ -321,7 +321,7 @@ out_of_scope:
   L71-L89; AnthropicCacheRouting.from_body L91-L97; AnthropicCacheRouting.supports L99-L101; AnthropicCacheRouting.is_warm
   L103-L109; AnthropicCacheRouting.fits L111-L129; AnthropicCacheRouting.predict L131-L139; AnthropicCacheRouting.cost
   L141-L147; AnthropicCacheRouting.count_tokens L149-L151; _buckets L154-L160; _scenario L163-L165; predict_arm
-  L168-L236 belong to B075.'
+  L168-L236 belong to B3123.'
 - 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: ModelResponseIterator.__init__ L546-L602;
   ModelResponseIterator.accumulated_json L604-L606; ModelResponseIterator.accumulated_json L608-L610; ModelResponseIterator.check_empty_tool_call_args
   L612-L633; ModelResponseIterator._handle_usage L635-L646; ModelResponseIterator._content_block_delta_helper L648-L732;
@@ -354,7 +354,7 @@ out_of_scope:
   L511-L518; count_prompt_tokens L521-L546; count_cache_plan L549-L584; supported_baseline_recipient L594-L597;
   resolve_prediction_target L610-L611; resolve_baseline_prediction_target L614-L615; _resolve_prediction_target
   L618-L643; _supported_provider_key L646-L647; supported_prediction_headers L650-L655; parse_observed_cache L666-L714
-  belong to B075.'
+  belong to B3121, except parse_observed_cache (B3122).'
 - 'Function ownership inventory litellm/main.py: _complete_text_completion_openai L1771-L1850; _complete_custom_openai
   L2590-L2728 belong to B024.'
 - 'Function ownership inventory litellm/main.py: _complete_azure L1338-L1469; _complete_azure_text L1472-L1563 belong
@@ -369,21 +369,24 @@ out_of_scope:
 - 'Function ownership inventory litellm/main.py: _complete_cohere_chat L3047-L3109 belong to B037.'
 - 'Function ownership inventory litellm/main.py: _complete_deepseek L1566-L1614; _complete_text_completion_inception
   L4045-L4106 belong to B038.'
-- 'Function ownership inventory litellm/main.py: _complete_minimax L2500-L2543 belong to B039.'
+- 'Function ownership inventory litellm/main.py: _complete_minimax L2500-L2543 belong to B8312.'
 - 'Function ownership inventory litellm/main.py: _complete_hosted_vllm L2546-L2587; _complete_oobabooga L3301-L3332;
   _complete_vllm L4421-L4455; _complete_ollama L4458-L4495; _complete_ollama_chat L4498-L4537; _complete_triton
-  L4540-L4573; _complete_petals L4615-L4652; _complete_lemonade L4822-L4859 belong to B040.'
+  L4540-L4573; _complete_petals L4615-L4652; _complete_lemonade L4822-L4859 belong to B8157.'
 - 'Function ownership inventory litellm/main.py: _complete_fireworks_ai L1853-L1907; _complete_together_ai L1910-L1957;
-  _complete_groq L2111-L2170; _complete_cometapi L2451-L2497; _complete_replicate L2773-L2824; _complete_huggingface
-  L3181-L3221; _complete_openrouter L3444-L3518; _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649;
-  _complete_predibase L3936-L3992; _complete_cloudflare L4576-L4612; _complete_bytez L4782-L4819 belong to B041.'
-- 'Function ownership inventory litellm/main.py: _complete_heroku L1960-L2007; _complete_sap L2344-L2387; _complete_oci
-  L3224-L3256; _complete_databricks L3335-L3404; _complete_datarobot L3407-L3441; _complete_sagemaker_chat L4109-L4143;
-  _complete_sagemaker L4146-L4171; _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418; _complete_snowflake
-  L4655-L4705; _complete_gdc L4743-L4779; _complete_ovhcloud L4862-L4906 belong to B042.'
-- 'Function ownership inventory litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995;
-  _complete_aleph_alpha L2998-L3044; _complete_maritalk L3112-L3142; _complete_compactifai L3259-L3298; _complete_nadir
-  L3521-L3545; _complete_gradient_ai L4708-L4740 belong to B043.'
+  _complete_groq L2111-L2170; _complete_cloudflare L4576-L4612 belong to B8310. _complete_openrouter L3444-L3518;
+  _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649 belong to B8311. _complete_replicate L2773-L2824;
+  _complete_huggingface L3181-L3221; _complete_predibase L3936-L3992 belong to B8332. _complete_cometapi L2451-L2497;
+  _complete_bytez L4782-L4819 belong to B038.'
+- 'Function ownership inventory litellm/main.py: _complete_oci L3224-L3256; _complete_databricks L3335-L3404; _complete_snowflake
+  L4655-L4705 belong to B8330. _complete_sap L2344-L2387; _complete_sagemaker_chat L4109-L4143; _complete_sagemaker
+  L4146-L4171; _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418 belong to B8331. _complete_heroku
+  L1960-L2007; _complete_datarobot L3407-L3441; _complete_gdc L4743-L4779 belong to B038. _complete_ovhcloud L4862-L4906
+  belongs to B039.'
+- 'Function ownership inventory litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995 belong
+  to B8312. _complete_compactifai L3259-L3298; _complete_gradient_ai L4708-L4740 belong to B038. _complete_maritalk
+  L3112-L3142; _complete_nadir L3521-L3545 belong to B039. _complete_aleph_alpha L2998-L3044 belongs to B044.'
+
 - 'Function ownership inventory litellm/main.py: _complete_aiohttp_openai L2390-L2448; _complete_custom L4913-L4979;
   _complete_custom_providers L4982-L5042 belong to B044.'
 - 'Function ownership inventory litellm/main.py: _complete_fal_ai L3652-L3680 belong to B046.'

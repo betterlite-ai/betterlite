@@ -1,0 +1,101 @@
+id: B8021
+title: Map Tavily and You.com search requests, endpoints and replies
+description: >-
+  Add api::search_providers::tavily and api::search_providers::you_com to betterlite-core, on the B3270 base
+  hooks. betterlite-config gets tavily_search_settings (TAVILY_API_KEY unset, TAVILY_API_BASE default
+  https://api.tavily.com) and you_com_search_settings (YOUCOM_API_KEY unset, YOUCOM_API_BASE unset; the keyed
+  default https://ydc-index.io and the keyless default https://api.you.com/v1/agents/search are code constants).
+  Display names are "Tavily" and "You.com", method POST for both.
+
+  Tavily: the key comes from the shared policy with the Tavily default as the trusted host. A missing key fails
+  with "TAVILY_API_KEY is not set. Set `TAVILY_API_KEY` environment variable." The headers get Authorization
+  Bearer and Content-Type application/json. URL: caller base, else TAVILY_API_BASE, else default, plus /search
+  unless it already ends in /search, with no slash trimming. Request: join a list with a space, then query,
+  max_results as given, include_domains from search_domain_filter (any value, not checked) and country
+  lowercased. Other options are copied unless their name is unified or already in the body, so a caller
+  include_domains survives only when search_domain_filter was not sent. Reply: results with title, url and
+  content as snippet; both dates are null.
+
+  You.com: the key is optional. validate_environment calls the shared resolver with YOUCOM_API_KEY and the keyed
+  default as the trusted host, always sets Content-Type, sets Accept-Encoding identity only when that exact key
+  is absent, and adds X-API-Key only when a key resolved. No error is raised without a key. The URL has three
+  branches: an api_base that is None falls back to YOUCOM_API_BASE; when that is also None, a key from the
+  api_key keyword argument or YOUCOM_API_KEY picks https://ydc-index.io and no key returns the free URL as is.
+  Any base is trimmed of trailing slashes and gets /v1/search unless it already ends in /v1/search or
+  /v1/agents/search. Request: join a list with a space, then query, count (max_results), include_domains
+  (search_domain_filter) and country lowercased; other options follow the same copy rule. Reply: read
+  results.web then results.news, in that order, treating null as empty. The snippet is the first entry of
+  snippets when the list is nonempty, otherwise description (default ""); page_age becomes date.
+
+  Add fuzz targets tavily_reply and you_com_reply with replays_the_tavily_corpus and
+  replays_the_you_com_corpus. The source holds 305 nonblank lines in total; plan 270 production and config
+  lines, 230 test lines and 170 oracle and fuzz lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/search_providers/tavily.rs
+    - crates/betterlite-core/src/api/search_providers/tavily/**
+    - crates/betterlite-core/src/api/search_providers/you_com.rs
+    - crates/betterlite-core/src/api/search_providers/you_com/**
+    - crates/betterlite-config/src/providers/tavily.rs
+    - crates/betterlite-config/src/providers/tavily/**
+    - crates/betterlite-config/src/providers/you_com.rs
+    - crates/betterlite-config/src/providers/you_com/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/tavily_reply.rs
+    - crates/betterlite-core/fuzz/fuzz_targets/you_com_reply.rs
+    - crates/betterlite-core/fuzz/corpus/tavily_reply/**
+    - crates/betterlite-core/fuzz/corpus/you_com_reply/**
+    - tools/oracle/cases/helpers/tavily-youcom-search/**
+    - tools/oracle/helpers/b8021.py
+    - tools/oracle/helpers/b8021/**
+    - tools/oracle/src/helpers/core_ops/b8021.rs
+    - tools/oracle/src/helpers/core_ops/b8021/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/tavily/search/transformation.py#L48-L194
+    why: Bearer header, /search suffix, include_domains and country mapping and the content-as-snippet reply.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/you_com/search/transformation.py#L42-L194
+    why: Optional key, three-way endpoint choice, identity encoding and the web plus news reply.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L137-L189
+    why: The server-key host check, which matters for You.com's keyless host.
+dod:
+  - text: Tavily settings, headers, URL and body mapping match the source.
+    proof: [tavily-youcom-tests, oracle]
+  - text: You.com key handling, endpoint choice and body mapping match the source, including keyless use.
+    proof: [tavily-youcom-tests, oracle]
+  - text: Both replies project the pinned fields, with You.com reading web before news.
+    proof: [tavily-youcom-tests, tavily-youcom-corpus, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: tavily-youcom-tests
+      why: Tavily or You.com mapping, endpoint choice, reply projection or settings loading is missing
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::search_providers::(tavily|you_com)::/) - test(replays_the_tavily_corpus) - test(replays_the_you_com_corpus) | test(tavily_search_settings) | test(you_com_search_settings)'
+    - id: tavily-youcom-corpus
+      why: The Tavily or You.com reply decoder has no new corpus inputs
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/tavily_reply)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/you_com_reply)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_tavily_corpus) | test(replays_the_you_com_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/tavily-youcom-search/tavily-domain-passthrough.yaml
+  - tools/oracle/cases/helpers/tavily-youcom-search/tavily-country-lowercase.yaml
+  - tools/oracle/cases/helpers/tavily-youcom-search/youcom-keyless-url.yaml
+  - tools/oracle/cases/helpers/tavily-youcom-search/youcom-keyed-url.yaml
+  - tools/oracle/cases/helpers/tavily-youcom-search/youcom-explicit-base-suffix.yaml
+  - tools/oracle/cases/helpers/tavily-youcom-search/youcom-identity-encoding.yaml
+  - tools/oracle/cases/helpers/tavily-youcom-search/youcom-web-then-news.yaml
+  - tools/oracle/cases/helpers/tavily-youcom-search/youcom-free-host-with-env-key.yaml
+deviations: []
+out_of_scope:
+  - B3270 owns the response records and the host check; the You.com and Tavily classes only call them.
+  - Package initializers only re-export the config classes.
+  - B048 registers both configs, and B3272 runs them.
+pitfalls:
+  - You.com never raises for a missing key, unlike every other keyed provider in this group.
+  - The keyless host api.you.com is not trusted for a server key, so a caller base pointing at it with YOUCOM_API_KEY set is refused.
+  - You.com picks keyed or free mode in get_complete_url from the api_key keyword, which can differ from the key validate_environment resolved.
+  - Tavily does not trim slashes, so a base ending in a slash gives a double slash before search.
+  - Tavily forwards search_domain_filter unchecked as include_domains, but exclude_domains only passes through as a plain option.
+  - A You.com result with an empty snippets list falls back to description, and a null description fails validation.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

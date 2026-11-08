@@ -1,0 +1,75 @@
+id: B8598
+title: /utils routes and model listing callback filters
+description: >-
+  Build LiteLLM's four /utils routes and the listing-callback filters that /v1/models and /model/info apply, in
+  crates/betterlite-server/src/utility_routes.rs (declared by the skeleton) with `pub fn routes()`, error enum
+  UtilityRouteError. Every route needs a valid key.
+
+
+  POST /utils/token_counter?call_endpoint=false. Without prompt, messages and contents it is 400 "prompt or messages or
+  contents must be provided". With a router it picks a deployment for request.model (a failure is logged and ignored);
+  the deployment's litellm_params.model, cut after the first "/", becomes the model to use, else request.model, and the
+  deployment's credential_name is loaded. With call_endpoint=true and a deployment, `provider_token_counter` (porting
+  _get_provider_token_counter) asks the provider's model info for its counter, falling back to Anthropic's counter for
+  an anthropic model when provider resolution fails. `try_provider_count` uses it when the provider says so: an HTTP
+  error becomes ProxyException type token_counting_error, param model, with its status; an error result raises the same
+  when litellm.disable_token_counter is true and otherwise falls back to local counting. With the local path and
+  disable_token_counter true the answer is 503 type token_counting_disabled. Local counting uses B195's tokenizer
+  selection with model_info.custom_tokenizer and B196's token_counter, with the system string or list prepended as a
+  system message and tools counted only with messages; the answer is total_tokens, request_model, model_used and
+  tokenizer_type.
+
+
+  GET /utils/supported_openai_params?model= resolves the router's model group to its first litellm model, splits a
+  declared authenticating provider prefix or else resolves the provider, and answers {"supported_openai_params": ...}
+  from B175's lookup; any failure is 400 {"error": "Could not map model=<model>"}. GET
+  /utils/model_info?model=&custom_llm_provider= answers model, custom_llm_provider and model_info (the raw cost map
+  entry plus the typed fields from B2219's get_model_info), 404 with LiteLLM's detail when the model is not in the map.
+  POST /utils/transform_request checks the body with B884's is_request_body_safe (400 {"error": <text>}) and answers
+  B5368's raw request for the call type.
+
+
+  Listing filters. `hidden_listing_names(auth, names)` asks proxy logging which names the listing callbacks hide, and
+  adds every model group alias whose resolved target, translated to its public name, is hidden.
+  `kept_listing_entries(entries, auth)` drops entries whose response id is hidden. `deployment_hidden(deployment,
+  auth)` checks the deployment's translated model_name.
+scope:
+  paths:
+    - crates/betterlite-server/src/utility_routes.rs
+    - crates/betterlite-server/src/utility_routes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11509-L11543
+    why: The three listing-callback filters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L13824-L14058
+    why: Provider token counter selection, the provider attempt and /utils/token_counter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14061-L14137
+    why: /utils/supported_openai_params and /utils/model_info.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14139-L14158
+    why: /utils/transform_request.
+dod:
+  - text: /utils/token_counter follows LiteLLM's deployment pick, provider attempt, disable switch and local count, with its errors.
+    proof: [utility-route-tests]
+  - text: /utils/supported_openai_params, /utils/model_info and /utils/transform_request answer LiteLLM's body and errors.
+    proof: [utility-route-tests]
+  - text: The listing filters hide aliases of hidden groups and keep everything when nothing is hidden.
+    proof: [utility-route-tests]
+checks:
+  optional: []
+  commands:
+    - id: utility-route-tests
+      why: a /utils route or a listing filter differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^utility_routes::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Mounting the routes, their HTTP oracle cases and the listing filter call from /v1/models (B007): B8635. /model/info (B851) calls the filters itself."
+  - "Tokenizer selection B195, token counting B196, supported params B175, model info B2219, body safety B884, raw request B5368, the hidden_by_listing_callbacks hook B8399."
+pitfalls:
+  - Only the part after the first "/" of the deployment model is counted, so "azure/gpt-4o" counts as gpt-4o.
+  - call_endpoint defaults to false, so the provider counter is used only when the caller asks for it.
+  - A provider error result falls back to local counting unless disable_token_counter is true.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

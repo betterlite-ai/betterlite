@@ -2,8 +2,8 @@ id: B970
 title: Check compaction budgets and rate limits without reserving counters
 description: >-
   Build summary_model_limits for compact.py L395-L627, owning all four complete budget/rate helper functions.
-  B732 provides parent principals and B969 the typed limiter interfaces. B071 owns model_max_budget_limiter and
-  B072 owns parallel_request_limiter_v3; both currently lack task files, so expose explicit injected read-only
+  B732 provides parent principals and B969 the typed limiter interfaces. B3006 owns model_max_budget_limiter (B8481 plugs it into these seams) and
+  the B3030 to B3055 limiter parts own parallel_request_limiter_v3 and B3055's main_limiter() is the production limiter behind these seams (no task passes it into compaction yet), so expose explicit injected read-only
   methods matching these calls rather than inventing their storage or charging implementations. A worker can
   complete this task with those seams; the architect must fill the owners before end-to-end policy execution.
   Budget checks return false on every checker error, whereas rate checks deny only OVER_LIMIT and the limiter's
@@ -13,7 +13,7 @@ description: >-
   Register HelperCall::SummaryModelLimits with budget, descriptors and rate actions. Python calls the pinned
   functions with scripted limiter objects; compare boolean outcomes, calls, arguments, unchanged input descriptors
   and logs. Missing methods are explicit capability flags, not arbitrary dynamic dispatch in Rust. No settings
-  or byte decoder is introduced: fail_closed_rate_limit_enforcement remains B072's limiter behavior. Own 216
+  or byte decoder is introduced: fail_closed_rate_limit_enforcement remains limiter behavior of B3031 and B3035. Own 216
   nonblank/non-comment physical lines. Allocate 220 implementation, 155 tests, 150 fixtures, 95 adapters and 30
   wiring, 650 total; tests use api::summary_model_limits.
 scope:
@@ -101,7 +101,7 @@ deviations: []
 out_of_scope:
 - B969 owns compact.py L97-L392 settings/access/interfaces; B971 owns history helpers L630-L1016 and L1114-L1157.
 - B2432 owns compact.py L1019-L1111 and L1160-L1380 execution; B972 owns dispatcher.py.
-- B071 owns actual model-budget lookups, B072 limiter counters and its post-call charging. This task only invokes their explicit seams.
+- B3005 and B3006 own actual model-budget lookups and B8481 injects them, the B3030 to B3055 limiter parts own counters and post-call charging. This task only invokes their explicit seams.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as summary_model_limits in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/summary_model_limits.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/summary_model_limits.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The team checker receives the key budget even when the key's token is null and its own budget check was skipped.
