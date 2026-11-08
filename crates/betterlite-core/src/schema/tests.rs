@@ -399,6 +399,21 @@ fn an_invalid_json_response_classifies_as_json_schema_validation() {
 }
 
 #[test]
+fn the_default_schema_limit_accepts_a_schema_over_two_kilobytes() {
+    let padding = "x".repeat(4096);
+    let schema = serde_json::json!({"type": "object", "description": padding});
+    check_schema(&schema, &SchemaLimits::default(), SchemaCheck::Size).unwrap();
+}
+
+#[test]
+fn the_default_response_limit_accepts_a_response_over_two_kilobytes() {
+    let padding = "x".repeat(4096);
+    let schema = serde_json::json!({"type": "string"});
+    let response = serde_json::json!(padding).to_string();
+    validate_schema(&schema, &response, &SchemaLimits::default()).unwrap();
+}
+
+#[test]
 fn a_schema_the_validator_cannot_compile_classifies_as_internal_server() {
     let schema = serde_json::json!({"type": 42});
     let error = validate_schema(&schema, "{}", &SchemaLimits::default()).unwrap_err();
