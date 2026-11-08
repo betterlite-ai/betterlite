@@ -1,0 +1,15 @@
+kind: helper
+name: redis-cache-values-pipeline-ttls-mixed
+call:
+  b4327:
+    function: write_commands
+    operation: async_set_cache_pipeline_with_ttls
+    namespace: ns
+    default_ttl: 60
+    flush_size: null
+    entries:
+      - {key: alpha, value: first, ttl: 5}
+      - {key: beta, value: second, ttl: null}
+    nx: false
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: redis-cache-values-buffer-flushes-at-size
+call:
+  b4327:
+    function: write_commands
+    operation: batch_cache_write
+    namespace: ns
+    default_ttl: 60
+    flush_size: 2
+    entries:
+      - {key: alpha, value: first, ttl: null}
+      - {key: beta, value: second, ttl: null}
+    nx: false
+env: {}
+compare: {ignore: []}

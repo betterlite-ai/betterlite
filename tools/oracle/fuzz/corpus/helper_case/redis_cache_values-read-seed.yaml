@@ -1,0 +1,11 @@
+kind: helper
+name: redis-cache-values-read-seed
+call:
+  b4327:
+    function: read_values
+    operation: batch_get_cache
+    namespace: seeded
+    keys: [seeded, null]
+    replies: [null, "1"]
+env: {}
+compare: {ignore: []}

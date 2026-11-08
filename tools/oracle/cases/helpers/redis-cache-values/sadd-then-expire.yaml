@@ -1,0 +1,14 @@
+kind: helper
+name: redis-cache-values-sadd-then-expire
+call:
+  b4327:
+    function: write_commands
+    operation: async_set_cache_sadd
+    namespace: ns
+    default_ttl: null
+    flush_size: null
+    entries:
+      - {key: members, value: [one, two], ttl: 45}
+    nx: false
+env: {}
+compare: {ignore: []}
