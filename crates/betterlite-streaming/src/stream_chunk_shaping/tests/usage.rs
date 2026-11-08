@@ -106,6 +106,32 @@ fn usage_backfill_mirrors_the_cache_write_count_into_cache_creation() {
     assert_eq!(counted.cache_creation_tokens, Some(4));
 }
 
+#[rstest]
+#[case::write_wins(
+    r#"{"cached_tokens": 3, "cache_write_tokens": 5, "cache_creation_tokens": 3}"#,
+    5
+)]
+#[case::zero_write_wins(
+    r#"{"cached_tokens": 3, "cache_write_tokens": 0, "cache_creation_tokens": 3}"#,
+    0
+)]
+#[case::creation_only(r#"{"cached_tokens": 3, "cache_creation_tokens": 3}"#, 3)]
+fn usage_backfill_resolves_cache_write_before_cache_creation(
+    #[case] source: &str,
+    #[case] expected: i64,
+) {
+    let mut usage = usage_with(1, 1);
+    usage.prompt_tokens_details = Some(details(source));
+    backfill_cache_usage(&mut usage);
+    let counted = usage.prompt_tokens_details.expect("details are kept");
+    assert_eq!(counted.cache_write_tokens, Some(expected));
+    assert_eq!(counted.cache_creation_tokens, Some(expected));
+    assert_eq!(
+        usage.extra.get("cache_creation_input_tokens"),
+        Some(&number(&expected.to_string()))
+    );
+}
+
 #[test]
 fn usage_backfill_defaults_to_zero_cached_details() {
     let mut usage = usage_with(1, 1);

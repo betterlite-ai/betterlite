@@ -90,7 +90,7 @@ pub fn cache_token_count(details: Option<&TokenDetails>, counters: &[CacheCounte
         .unwrap_or(0)
 }
 
-// PromptTokensDetailsWrapper mirrors the two cache counters and lifts a nested cache_creation_input_tokens.
+// PromptTokensDetailsWrapper resolves cache_write_tokens first and mirrors it into cache_creation_tokens.
 #[must_use]
 pub fn coerce_token_details(details: Option<&TokenDetails>) -> Option<TokenDetails> {
     let counted = details?;
@@ -105,7 +105,7 @@ pub fn coerce_token_details(details: Option<&TokenDetails>) -> Option<TokenDetai
     let coerced = TokenDetails {
         cached_tokens: counted.cached_tokens,
         cache_write_tokens: write,
-        cache_creation_tokens: counted.cache_creation_tokens.or(write),
+        cache_creation_tokens: write,
         cache_creation_token_details: counted.cache_creation_token_details.clone(),
         extra: counted.extra.clone(),
     };
