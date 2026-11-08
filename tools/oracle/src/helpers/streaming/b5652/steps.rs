@@ -2,7 +2,7 @@ use betterlite_streaming::stream_chunk_shaping::{
     ChunkShaper,
     creation::{
         model_response_creator, provider_hidden_params, provider_response_model, set_model_id,
-        stamp_served_service_tier,
+        stamp_served_service_tier, system_instant,
     },
     decision::{combine_thinking_in_choices, is_chunk_non_empty, return_processed_chunk_logic},
     extras::{convert_generic_chunk, generic_chunk_has_known_fields, strip_sse_data_from_chunk},
@@ -12,6 +12,7 @@ use betterlite_streaming::stream_chunk_shaping::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
+use uuid::Uuid;
 
 use crate::helpers::HelperError;
 use ops::{encoded, failure, shape_error};
@@ -68,13 +69,13 @@ fn apply(shaper: &mut ChunkShaper, step: &Value, limit: usize, providers: &[Stri
         Some("combine_thinking") => combine_thinking(shaper, step),
         Some("convert_generic") => encoded(&convert_generic_chunk(
             &field::<GenericChunk>(step, "chunk")?.unwrap_or_default(),
+            system_instant,
+            Uuid::new_v4,
         )),
         Some("is_chunk_non_empty") => chunk_non_empty(shaper, step),
         Some("returns") => returns(shaper, step, limit),
         Some("repetition") => repetition(shaper, limit),
-        Some("finish_reason") => {
-            encoded(&finish_reason_handler(shaper).map_err(|error| shape_error(&error))?)
-        }
+        Some("finish_reason") => encoded(&finish_reason_handler(shaper)),
         Some("special_tokens") => special_tokens(shaper, step),
         Some("strip_sse") => Ok(json!(strip_sse_data_from_chunk(
             field::<String>(step, "chunk")?.as_deref()

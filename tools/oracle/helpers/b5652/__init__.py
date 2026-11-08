@@ -28,19 +28,19 @@ DETAIL_FIELDS = [
 ]
 
 
-def _d(value: Json) -> dict[str, Json]:
+def _as_object(value: Json) -> dict[str, Json]:
     return cast("dict[str, Json]", value)
 
 
-def _s(value: Json) -> str:
+def _as_text(value: Json) -> str:
     return cast(str, value)
 
 
-def _i(value: Json) -> int:
+def _as_int(value: Json) -> int:
     return cast(int, value)
 
 
-def _l(value: Json) -> list[Json]:
+def _as_list(value: Json) -> list[Json]:
     return cast("list[Json]", value)
 
 
@@ -50,12 +50,12 @@ def _attr(value: object, key: str) -> object:
 
 def _optional(state: Step, key: str) -> str | None:
     value = state.get(key)
-    return None if value is None else _s(value)
+    return None if value is None else _as_text(value)
 
 
 def _optional_int(state: Step, key: str) -> int | None:
     value = state.get(key)
-    return None if value is None else _i(value)
+    return None if value is None else _as_int(value)
 
 
 def _flag(state: Step, key: str) -> bool:
@@ -115,15 +115,15 @@ def _chunk(value: ModelResponseStream) -> dict[str, Json]:
 
 
 def _model_response(value: Json) -> ModelResponseStream:
-    data = dict(_d(value))
+    data = dict(_as_object(value))
     hidden = data.pop("hidden_params", {})
     response = ModelResponseStream(**data)  # pyright: ignore[reportArgumentType, reportUnknownArgumentType]
-    response._hidden_params = _d(hidden)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
+    response._hidden_params = _as_object(hidden)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
     return response
 
 
 def _response_object(value: Json) -> dict[str, Json]:
-    data = _d(value)
+    data = _as_object(value)
     original = data.get("original_chunk")
     fields = data.get("provider_specific_fields")
     response: dict[str, Json] = {}
@@ -140,17 +140,17 @@ def _wrapper(state: Step) -> CustomStreamWrapper:
     logging.model_call_details = {"litellm_params": {}, "custom_llm_provider": provider}
     wrapper = CustomStreamWrapper(
         completion_stream=[],
-        model=_s(state.get("model", "")),
+        model=_as_text(state.get("model", "")),
         logging_obj=cast(LiteLLMLoggingObject, logging),
         custom_llm_provider=provider,
     )
-    wrapper._base_hidden_params = dict(_d(state.get("base_hidden_params", {})))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
+    wrapper._base_hidden_params = dict(_as_object(state.get("base_hidden_params", {})))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
     wrapper.merge_reasoning_content_in_choices = _flag(state, "merge_reasoning_in_choices")
     wrapper.response_id = _optional(state, "response_id")
     wrapper.created = _optional_int(state, "created")
     wrapper.system_fingerprint = _optional(state, "system_fingerprint")
     wrapper.tool_call = _flag(state, "tool_call")
-    wrapper.chunks = [_model_response(item) for item in _l(state.get("chunks", []))]
+    wrapper.chunks = [_model_response(item) for item in _as_list(state.get("chunks", []))]
     return wrapper
 
 
@@ -159,20 +159,20 @@ def _creator(wrapper: CustomStreamWrapper, step: Step) -> Json:
     hidden = step.get("hidden_params")
     return _chunk(
         wrapper.model_response_creator(  # pyright: ignore[reportUnknownMemberType]
-            chunk=None if chunk is None else _d(chunk),
-            hidden_params=None if hidden is None else _d(hidden),
+            chunk=None if chunk is None else _as_object(chunk),
+            hidden_params=None if hidden is None else _as_object(hidden),
         )
     )
 
 
 def _set_model_id(wrapper: CustomStreamWrapper, step: Step) -> Json:
     response = _model_response(step.get("chunk", {}))
-    return _chunk(wrapper.set_model_id(_s(step.get("id", "")), response))
+    return _chunk(wrapper.set_model_id(_as_text(step.get("id", "")), response))
 
 
 def _is_chunk_non_empty(wrapper: CustomStreamWrapper, step: Step) -> Json:
     return wrapper.is_chunk_non_empty(
-        dict(_d(step.get("completion", {}))),
+        dict(_as_object(step.get("completion", {}))),
         _model_response(step.get("chunk", {})),
         _response_object(step.get("response", {})),
     )
@@ -180,7 +180,7 @@ def _is_chunk_non_empty(wrapper: CustomStreamWrapper, step: Step) -> Json:
 
 def _returns(wrapper: CustomStreamWrapper, step: Step) -> Json:
     returned = wrapper.return_processed_chunk_logic(
-        dict(_d(step.get("completion", {}))),
+        dict(_as_object(step.get("completion", {}))),
         _model_response(step.get("chunk", {})),
         _response_object(step.get("response", {})),
     )
@@ -195,7 +195,7 @@ def _combine_thinking(wrapper: CustomStreamWrapper, step: Step) -> Json:
 
 def _special_tokens(wrapper: CustomStreamWrapper, step: Step) -> Json:
     hold, text = wrapper.check_special_tokens(
-        _s(step.get("chunk", "")), _optional(step, "finish_reason")
+        _as_text(step.get("chunk", "")), _optional(step, "finish_reason")
     )
     return {"hold": hold, "text": text}
 
@@ -217,14 +217,14 @@ def _strip_sse(_wrapper: CustomStreamWrapper, step: Step) -> Json:
 
 def _generic_known(_wrapper: CustomStreamWrapper, step: Step) -> Json:
     return shaping.generic_chunk_has_all_required_fields(  # pyright: ignore[reportUnknownMemberType]
-        dict(_d(step.get("chunk", {})))
+        dict(_as_object(step.get("chunk", {})))
     )
 
 
 def _convert_generic(_wrapper: CustomStreamWrapper, step: Step) -> Json:
     return _chunk(
         shaping.convert_generic_chunk_to_model_response_stream(
-            dict(_d(step.get("chunk", {})))  # pyright: ignore[reportArgumentType]
+            dict(_as_object(step.get("chunk", {})))  # pyright: ignore[reportArgumentType]
         )
     )
 
@@ -234,7 +234,7 @@ def _total_usage(wrapper: CustomStreamWrapper, _step: Step) -> Json:
 
 
 def _backfill_usage(_wrapper: CustomStreamWrapper, step: Step) -> Json:
-    usage = Usage(**cast("dict[str, object]", _d(step.get("usage", {}))))  # pyright: ignore[reportArgumentType, reportUnknownArgumentType]
+    usage = Usage(**cast("dict[str, object]", _as_object(step.get("usage", {}))))  # pyright: ignore[reportArgumentType, reportUnknownArgumentType]
     shaping.backfill_missing_cache_usage_fields(usage)
     return _usage(usage)
 
@@ -266,7 +266,7 @@ def _stamp_service_tier(_wrapper: CustomStreamWrapper, step: Step) -> Json:
 
 
 def _set_state(wrapper: CustomStreamWrapper, step: Step) -> Json:
-    for key, value in _d(step.get("patch", {})).items():
+    for key, value in _as_object(step.get("patch", {})).items():
         setattr(wrapper, key, value)
     return None
 
@@ -294,17 +294,18 @@ _HANDLERS: dict[str, Callable[[CustomStreamWrapper, Step], Json]] = {
 
 
 def run(input_value: dict[str, Json]) -> Json:
-    limit = _i(input_value.get("repeated_chunk_limit", 0))
+    limit = _as_int(input_value.get("repeated_chunk_limit", 0))
     litellm.REPEATED_STREAMING_CHUNK_LIMIT = limit  # pyright: ignore[reportPrivateImportUsage]
-    providers = frozenset(_s(item) for item in _l(input_value.get("usage_cost_providers", [])))
+    listed = _as_list(input_value.get("usage_cost_providers", []))
+    providers = frozenset(_as_text(item) for item in listed)
     shaping._USAGE_COST_HEADER_PROVIDERS = providers  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
-    wrapper = _wrapper(_d(input_value.get("state", {})))
-    steps = _l(input_value.get("steps", []))
-    return cast("Json", [{"result": _run_step(wrapper, _d(step))} for step in steps])
+    wrapper = _wrapper(_as_object(input_value.get("state", {})))
+    steps = _as_list(input_value.get("steps", []))
+    return cast("Json", [{"result": _run_step(wrapper, _as_object(step))} for step in steps])
 
 
 def _run_step(wrapper: CustomStreamWrapper, step: Step) -> Json:
-    op = _s(step.get("op", ""))
+    op = _as_text(step.get("op", ""))
     handler = _HANDLERS.get(op)
     if handler is None:
         raise ValueError(f"unsupported operation {op}")

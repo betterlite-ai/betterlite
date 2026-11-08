@@ -113,20 +113,20 @@ fn usage_backfill_defaults_to_zero_cached_details() {
 }
 
 #[rstest]
-#[case::cached(Some(r#"{"cached_tokens": 3}"#), &["cached_tokens"], 3)]
+#[case::cached(Some(r#"{"cached_tokens": 3}"#), &[CacheCounter::Cached], 3)]
 #[case::zero_is_skipped(
     Some(r#"{"cached_tokens": 0, "cache_write_tokens": 2}"#),
-    &["cached_tokens", "cache_write_tokens"],
+    &[CacheCounter::Cached, CacheCounter::Write],
     2
 )]
-#[case::absent(None, &["cached_tokens"], 0)]
+#[case::absent(None, &[CacheCounter::Cached], 0)]
 fn usage_cache_token_count_skips_zero_and_missing(
     #[case] source: Option<&str>,
-    #[case] keys: &[&str],
+    #[case] counters: &[CacheCounter],
     #[case] expected: i64,
 ) {
     let counted = source.map(details);
-    assert_eq!(cache_token_count(counted.as_ref(), keys), expected);
+    assert_eq!(cache_token_count(counted.as_ref(), counters), expected);
 }
 
 #[test]

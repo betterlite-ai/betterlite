@@ -148,18 +148,18 @@ fn special_tokens_pass_through_for_other_providers() {
 #[test]
 fn finish_reason_handler_prefers_received_then_intermittent_then_stop() {
     let mut shaper = shaper("gpt-4", Some("openai"));
-    let defaulted = finish_reason_handler(&mut shaper).expect("no chunk cannot fail");
+    let defaulted = finish_reason_handler(&mut shaper);
     assert_eq!(defaulted.choices[0].finish_reason.as_deref(), Some("stop"));
 
     shaper.intermittent_finish_reason = Some("content_filter".to_owned());
-    let intermittent = finish_reason_handler(&mut shaper).expect("no chunk cannot fail");
+    let intermittent = finish_reason_handler(&mut shaper);
     assert_eq!(
         intermittent.choices[0].finish_reason.as_deref(),
         Some("content_filter")
     );
 
     shaper.received_finish_reason = Some("length".to_owned());
-    let received = finish_reason_handler(&mut shaper).expect("no chunk cannot fail");
+    let received = finish_reason_handler(&mut shaper);
     assert_eq!(received.choices[0].finish_reason.as_deref(), Some("length"));
 }
 
@@ -167,7 +167,7 @@ fn finish_reason_handler_prefers_received_then_intermittent_then_stop() {
 fn finish_reason_handler_turns_stop_into_tool_calls_after_a_tool_call() {
     let mut shaper = shaper("gpt-4", Some("openai"));
     shaper.tool_call = true;
-    let response = finish_reason_handler(&mut shaper).expect("no chunk cannot fail");
+    let response = finish_reason_handler(&mut shaper);
     assert_eq!(
         response.choices[0].finish_reason.as_deref(),
         Some("tool_calls")
@@ -179,7 +179,7 @@ fn finish_reason_handler_keeps_other_reasons_with_a_tool_call() {
     let mut shaper = shaper("gpt-4", Some("openai"));
     shaper.tool_call = true;
     shaper.received_finish_reason = Some("content_filter".to_owned());
-    let response = finish_reason_handler(&mut shaper).expect("no chunk cannot fail");
+    let response = finish_reason_handler(&mut shaper);
     assert_eq!(
         response.choices[0].finish_reason.as_deref(),
         Some("content_filter")
@@ -230,6 +230,8 @@ fn finish_reason_unknown_value_warns_and_falls_back_to_stop() {
 #[case::cohere_complete("COMPLETE", "stop")]
 #[case::passthrough("function_call", "function_call")]
 #[case::generic_error("error", "stop")]
+#[case::joined_length_values("max_tokens MAX_TOKENS", "stop")]
+#[case::joined_stop_values("stop error", "stop")]
 fn finish_reason_maps_the_table(#[case] raw: &str, #[case] expected: &str) {
     assert_eq!(mapped_finish_reason(raw), expected);
 }

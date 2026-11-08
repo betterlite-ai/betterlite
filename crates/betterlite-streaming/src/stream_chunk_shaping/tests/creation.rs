@@ -28,8 +28,9 @@ fn creator_keeps_one_id_created_and_fingerprint_across_the_stream() {
 #[test]
 fn creator_generates_the_identity_when_the_chunk_has_none() {
     let mut shaper = shaper("gpt-4", Some("openai"));
+    shaper.next_id = || Uuid::from_u128(7);
     let response = model_response_creator(&mut shaper, None, None).expect("no chunk cannot fail");
-    assert!(response.id.starts_with("chatcmpl-"));
+    assert_eq!(response.id, format!("chatcmpl-{}", Uuid::from_u128(7)));
     assert_eq!(shaper.response_id.as_deref(), Some(response.id.as_str()));
     assert_eq!(response.created, 1_700_000_000);
     assert_eq!(response.choices.len(), 1);

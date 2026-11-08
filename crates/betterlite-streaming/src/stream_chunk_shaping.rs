@@ -1,6 +1,7 @@
 use creation::{StreamInstant, system_instant};
 use records::{JsonObject, StreamChunk};
 use thiserror::Error;
+use uuid::Uuid;
 
 pub mod creation;
 pub mod decision;
@@ -56,6 +57,7 @@ pub struct ChunkShaper {
     pub chunks: Vec<StreamChunk>,
     pub repeated_messages_count: usize,
     pub now: fn() -> StreamInstant,
+    pub next_id: fn() -> Uuid,
 }
 
 impl ChunkShaper {
@@ -90,6 +92,7 @@ impl ChunkShaper {
             chunks: Vec::new(),
             repeated_messages_count: 1,
             now: system_instant,
+            next_id: Uuid::new_v4,
         }
     }
 }

@@ -1,7 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Number, from_value, to_value};
-use uuid::Uuid;
 
 use crate::stream_chunk_shaping::records::{
     ChunkArguments, JsonObject, JsonValue, ParsedChunkHiddenParams, StreamChoice, StreamChunk,
@@ -29,7 +28,23 @@ pub fn model_response_creator(
     chunk: Option<&JsonObject>,
     hidden_params: Option<&JsonObject>,
 ) -> Result<StreamChunk, StreamShapeError> {
-    let arguments = chunk_arguments(chunk)?;
+    let arguments = match chunk {
+        None => ChunkArguments::default(),
+        Some(object) => {
+            let mut filtered = object.clone();
+            filtered.remove("model");
+            filtered.remove("stream");
+            from_value(to_value(JsonValue::Object(filtered))?)?
+        }
+    };
+    Ok(build_chunk(shaper, arguments, hidden_params))
+}
+
+pub fn build_chunk(
+    shaper: &mut ChunkShaper,
+    arguments: ChunkArguments,
+    hidden_params: Option<&JsonObject>,
+) -> StreamChunk {
     let instant = (shaper.now)();
     let response_id = adopted_id(shaper, arguments.id);
     let created = adopted_created(shaper, arguments.created, instant.seconds);
@@ -42,7 +57,7 @@ pub fn model_response_creator(
     if choices.is_empty() {
         choices.push(StreamChoice::default());
     }
-    Ok(StreamChunk {
+    StreamChunk {
         id: response_id,
         object: "chat.completion.chunk".to_owned(),
         created,
@@ -53,7 +68,7 @@ pub fn model_response_creator(
         provider_specific_fields: arguments.provider_specific_fields,
         hidden_params: hidden,
         extra: arguments.extra,
-    })
+    }
 }
 
 pub fn set_model_id(shaper: &mut ChunkShaper, id: &str, model_response: &mut StreamChunk) {
@@ -72,21 +87,11 @@ pub fn set_model_id(shaper: &mut ChunkShaper, id: &str, model_response: &mut Str
     }
 }
 
-fn chunk_arguments(chunk: Option<&JsonObject>) -> Result<ChunkArguments, StreamShapeError> {
-    let Some(object) = chunk else {
-        return Ok(ChunkArguments::default());
-    };
-    let mut filtered = object.clone();
-    filtered.remove("model");
-    filtered.remove("stream");
-    Ok(from_value(to_value(JsonValue::Object(filtered))?)?)
-}
-
 fn adopted_id(shaper: &mut ChunkShaper, chunk_id: Option<String>) -> String {
     let response_id = match (&shaper.response_id, chunk_id) {
         (Some(current), _) => current.clone(),
         (None, Some(provided)) => provided,
-        (None, None) => format!("chatcmpl-{}", Uuid::new_v4()),
+        (None, None) => format!("chatcmpl-{}", (shaper.next_id)()),
     };
     if shaper.response_id.is_none() && !response_id.is_empty() {
         shaper.response_id = Some(response_id.clone());

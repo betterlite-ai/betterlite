@@ -1,7 +1,9 @@
 use crate::stream_chunk_shaping::ChunkShaper;
 use crate::stream_chunk_shaping::StreamShapeError;
-use crate::stream_chunk_shaping::creation::model_response_creator;
-use crate::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamChunk, StreamOptions};
+use crate::stream_chunk_shaping::creation::build_chunk;
+use crate::stream_chunk_shaping::records::{
+    ChunkArguments, JsonObject, JsonValue, StreamChunk, StreamOptions,
+};
 
 // Template tokens that sagemaker and hf streams may split across chunks.
 const SPECIAL_TOKENS: [&str; 7] = [
@@ -97,45 +99,80 @@ pub fn raise_on_model_repetition(
     })
 }
 
-pub fn finish_reason_handler(shaper: &mut ChunkShaper) -> Result<StreamChunk, StreamShapeError> {
-    let mut model_response = model_response_creator(shaper, None, None)?;
+pub fn finish_reason_handler(shaper: &mut ChunkShaper) -> StreamChunk {
+    let mut model_response = build_chunk(shaper, ChunkArguments::default(), None);
     let reason = shaper
         .received_finish_reason
         .clone()
         .or_else(|| shaper.intermittent_finish_reason.clone())
         .unwrap_or_else(|| "stop".to_owned());
     let Some(choice) = model_response.choices.first_mut() else {
-        return Ok(model_response);
+        return model_response;
     };
     choice.finish_reason = Some(match (reason.as_str(), shaper.tool_call) {
         ("stop", true) => "tool_calls".to_owned(),
         _ => reason,
     });
-    Ok(model_response)
+    model_response
 }
 
-// One space-delimited table per mapped reason, matched as a whole token.
-const LENGTH_REASONS: &str = " max_tokens MAX_TOKENS compaction length ";
-const TOOL_CALL_REASONS: &str = " tool_use tool_calls ";
-const CONTENT_FILTER_REASONS: &str = " refusal ERROR_TOXIC SAFETY RECITATION LANGUAGE OTHER BLOCKLIST PROHIBITED_CONTENT SPII IMAGE_SAFETY IMAGE_PROHIBITED_CONTENT NO_IMAGE IMAGE_RECITATION IMAGE_OTHER ESCALATION sensitive guardrail_intervened content_filter content_filtered ";
-const STOP_REASONS: &str = " stop_sequence end_turn COMPLETE ERROR eos_token eos STOP FINISH_REASON_UNSPECIFIED MALFORMED_FUNCTION_CALL TOO_MANY_TOOL_CALLS MALFORMED_RESPONSE UNEXPECTED_TOOL_CALL MISSING_THOUGHT_SIGNATURE network_error stop error ";
+const LENGTH_REASONS: &[&str] = &["max_tokens", "MAX_TOKENS", "compaction", "length"];
+const TOOL_CALL_REASONS: &[&str] = &["tool_use", "tool_calls"];
+const CONTENT_FILTER_REASONS: &[&str] = &[
+    "refusal",
+    "ERROR_TOXIC",
+    "SAFETY",
+    "RECITATION",
+    "LANGUAGE",
+    "OTHER",
+    "BLOCKLIST",
+    "PROHIBITED_CONTENT",
+    "SPII",
+    "IMAGE_SAFETY",
+    "IMAGE_PROHIBITED_CONTENT",
+    "NO_IMAGE",
+    "IMAGE_RECITATION",
+    "IMAGE_OTHER",
+    "ESCALATION",
+    "sensitive",
+    "guardrail_intervened",
+    "content_filter",
+    "content_filtered",
+];
+const STOP_REASONS: &[&str] = &[
+    "stop_sequence",
+    "end_turn",
+    "COMPLETE",
+    "ERROR",
+    "eos_token",
+    "eos",
+    "STOP",
+    "FINISH_REASON_UNSPECIFIED",
+    "MALFORMED_FUNCTION_CALL",
+    "TOO_MANY_TOOL_CALLS",
+    "MALFORMED_RESPONSE",
+    "UNEXPECTED_TOOL_CALL",
+    "MISSING_THOUGHT_SIGNATURE",
+    "network_error",
+    "stop",
+    "error",
+];
 
 #[must_use]
 pub fn mapped_finish_reason(raw: &str) -> &'static str {
-    let token = format!(" {raw} ");
-    if LENGTH_REASONS.contains(token.as_str()) {
+    if LENGTH_REASONS.contains(&raw) {
         return "length";
     }
-    if TOOL_CALL_REASONS.contains(token.as_str()) {
+    if TOOL_CALL_REASONS.contains(&raw) {
         return "tool_calls";
     }
-    if CONTENT_FILTER_REASONS.contains(token.as_str()) {
+    if CONTENT_FILTER_REASONS.contains(&raw) {
         return "content_filter";
     }
     if raw == "function_call" {
         return "function_call";
     }
-    if !STOP_REASONS.contains(token.as_str()) {
+    if !STOP_REASONS.contains(&raw) {
         tracing::warn!("Unmapped finish_reason '{raw}', defaulting to 'stop'");
     }
     "stop"

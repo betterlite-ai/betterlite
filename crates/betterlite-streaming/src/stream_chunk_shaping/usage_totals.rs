@@ -67,17 +67,24 @@ pub fn propagate_usage_cost(
     );
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum CacheCounter {
+    Cached,
+    Write,
+    Creation,
+}
+
 #[must_use]
-pub fn cache_token_count(details: Option<&TokenDetails>, keys: &[&str]) -> i64 {
+pub fn cache_token_count(details: Option<&TokenDetails>, counters: &[CacheCounter]) -> i64 {
     let Some(counted) = details else {
         return 0;
     };
-    keys.iter()
-        .filter_map(|key| match *key {
-            "cached_tokens" => counted.cached_tokens,
-            "cache_write_tokens" => counted.cache_write_tokens,
-            "cache_creation_tokens" => counted.cache_creation_tokens,
-            _ => None,
+    counters
+        .iter()
+        .filter_map(|counter| match counter {
+            CacheCounter::Cached => counted.cached_tokens,
+            CacheCounter::Write => counted.cache_write_tokens,
+            CacheCounter::Creation => counted.cache_creation_tokens,
         })
         .find(|count| *count != 0)
         .unwrap_or(0)
@@ -107,10 +114,10 @@ pub fn coerce_token_details(details: Option<&TokenDetails>) -> Option<TokenDetai
 
 pub fn backfill_cache_usage(usage: &mut Usage) {
     let counted = coerce_token_details(usage.prompt_tokens_details.as_ref());
-    let cached = cache_token_count(counted.as_ref(), &["cached_tokens"]);
+    let cached = cache_token_count(counted.as_ref(), &[CacheCounter::Cached]);
     let creation = cache_token_count(
         counted.as_ref(),
-        &["cache_write_tokens", "cache_creation_tokens"],
+        &[CacheCounter::Write, CacheCounter::Creation],
     );
     let read_missing = usage
         .extra
