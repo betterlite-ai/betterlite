@@ -1,5 +1,5 @@
 use crate::provider_chunk_decode::chunk::{
-    DecodeState, DecodedChunk, ProviderChunk, as_object, json_text,
+    DecodeState, DecodedChunk, ProviderChunk, as_object, json_text, text_at,
 };
 use crate::provider_chunk_decode::error::ProviderChunkError;
 use crate::stream_chunk_shaping::records::{JsonObject, JsonValue, Usage};
@@ -39,18 +39,12 @@ pub fn handle_predibase_chunk(
             expected: "a JSON object",
         });
     };
-    if let Some(JsonValue::String(text)) = fields
-        .get("token")
-        .and_then(as_object)
-        .and_then(|token| token.get("text"))
-    {
+    if let Some(text) = fields.get("token").and_then(|token| text_at(token, "text")) {
         text.clone_into(&mut decoded.text);
     }
     let details_reason = fields
         .get("details")
-        .and_then(as_object)
-        .and_then(|details| details.get("finish_reason"))
-        .and_then(JsonValue::as_str)
+        .and_then(|details| text_at(details, "finish_reason"))
         .filter(|reason| !reason.is_empty());
     match details_reason {
         Some(reason) => {
@@ -106,10 +100,8 @@ pub fn handle_nlp_cloud_chunk(
         return Ok(());
     }
     let parsed = parse_line(line)?;
-    let generated = as_object(&parsed)
-        .and_then(|fields| fields.get("generated_text"))
-        .and_then(JsonValue::as_str)
-        .ok_or_else(|| ProviderChunkError::RejectedResponse {
+    let generated =
+        text_at(&parsed, "generated_text").ok_or_else(|| ProviderChunkError::RejectedResponse {
             chunk: line.to_owned(),
         })?;
     fill_nlp_cloud(decoded, generated);

@@ -52,21 +52,15 @@ impl ProviderChunk {
         if !self.is_openai_chunk() {
             return None;
         }
-        let Self::Json(value) = self else {
-            return None;
-        };
-        as_object(value)?.get("id").and_then(JsonValue::as_str)
+        text_at(self.json().ok()?, "id")
     }
 
     #[must_use]
     pub fn model_name(&self) -> Option<&str> {
-        let Self::Json(value) = self else {
-            return None;
-        };
-        as_object(value)?
-            .get("model")
-            .and_then(JsonValue::as_str)
-            .filter(|model| !model.is_empty())
+        match text_at(self.json().ok()?, "model") {
+            Some(model) if !model.is_empty() => Some(model),
+            Some(_) | None => None,
+        }
     }
 
     pub fn openai_chunk(&self) -> Result<StreamChunk, ProviderChunkError> {
@@ -75,42 +69,36 @@ impl ProviderChunk {
                 expected: "a JSON object",
             });
         };
-        let mut normalized = fields.clone();
-        if normalized
-            .get("choices")
-            .is_none_or(|value| matches!(value, JsonValue::Null))
-        {
-            normalized.insert("choices".to_owned(), JsonValue::Array(Vec::new()));
-        }
-        if let Some(JsonValue::Array(choices)) = normalized.get_mut("choices") {
+        let mut plain = fields.clone();
+        fill_missing(&mut plain, "choices", JsonValue::Array(Vec::new()));
+        if let Some(JsonValue::Array(choices)) = plain.get_mut("choices") {
             for choice in choices {
-                normalize_choice(choice);
+                fill_delta(choice);
             }
         }
-        if normalized
-            .get("hidden_params")
-            .is_none_or(|value| matches!(value, JsonValue::Null))
-        {
-            normalized.insert(
-                "hidden_params".to_owned(),
-                JsonValue::Object(JsonObject::new()),
-            );
-        }
-        let value = serde_json::to_value(JsonValue::Object(normalized))
-            .map_err(ProviderChunkError::from)?;
+        fill_missing(
+            &mut plain,
+            "hidden_params",
+            JsonValue::Object(JsonObject::new()),
+        );
+        let value =
+            serde_json::to_value(JsonValue::Object(plain)).map_err(ProviderChunkError::from)?;
         serde_json::from_value(value).map_err(ProviderChunkError::from)
     }
 }
 
-fn normalize_choice(choice: &mut JsonValue) {
-    let JsonValue::Object(fields) = choice else {
-        return;
-    };
+fn fill_missing(fields: &mut JsonObject, key: &str, replacement: JsonValue) {
     if fields
-        .get("delta")
+        .get(key)
         .is_none_or(|value| matches!(value, JsonValue::Null))
     {
-        fields.insert("delta".to_owned(), JsonValue::Object(JsonObject::new()));
+        fields.insert(key.to_owned(), replacement);
+    }
+}
+
+fn fill_delta(choice: &mut JsonValue) {
+    if let JsonValue::Object(fields) = choice {
+        fill_missing(fields, "delta", JsonValue::Object(JsonObject::new()));
     }
 }
 
@@ -177,9 +165,46 @@ pub fn as_array(value: &JsonValue) -> Option<&[JsonValue]> {
 }
 
 #[must_use]
+pub fn at<'node>(value: &'node JsonValue, key: &str) -> Option<&'node JsonValue> {
+    if let Some(fields) = as_object(value) {
+        return fields.get(key);
+    }
+    None
+}
+
+#[must_use]
+pub fn text_at<'node>(value: &'node JsonValue, key: &str) -> Option<&'node str> {
+    match at(value, key)? {
+        JsonValue::String(text) => Some(text.as_str()),
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_) => None,
+    }
+}
+
+#[must_use]
+pub fn first(value: &JsonValue) -> Option<&JsonValue> {
+    if let Some(items) = as_array(value) {
+        return items.first();
+    }
+    None
+}
+
+#[must_use]
 pub fn json_text(value: &JsonValue) -> String {
-    let Ok(plain) = serde_json::to_value(value) else {
-        return String::new();
-    };
-    serde_json::to_string(&plain).unwrap_or_default()
+    if let Ok(text) = serde_json::to_string(value) {
+        return text;
+    }
+    String::new()
+}
+
+#[must_use]
+pub fn object(entries: Vec<(&str, JsonValue)>) -> JsonValue {
+    let fields = entries
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value))
+        .collect();
+    JsonValue::Object(fields)
 }

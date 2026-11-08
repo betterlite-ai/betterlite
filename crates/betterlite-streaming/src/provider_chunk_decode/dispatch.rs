@@ -1,10 +1,10 @@
 use crate::provider_chunk_decode::chunk::{
     DecodeState, DecodedChunk, ProviderChunk, ProviderKind, as_object,
 };
-use crate::provider_chunk_decode::dispatch::branches::{
-    decoded_from, fill_cached, fill_openai, fill_petals, fill_vllm, nlp_cloud_failure,
-};
 use crate::provider_chunk_decode::dispatch::codestral::fill_codestral;
+use crate::provider_chunk_decode::dispatch::readers::{
+    fill_cached, fill_openai, fill_petals, fill_vllm,
+};
 use crate::provider_chunk_decode::error::ProviderChunkError;
 use crate::provider_chunk_decode::handlers::aleph::handle_aleph_alpha_chunk;
 use crate::provider_chunk_decode::handlers::openai::{
@@ -16,8 +16,21 @@ use crate::provider_chunk_decode::vertex::handle_vertex_chunk;
 use crate::stream_chunk_shaping::extras::generic_chunk_has_known_fields;
 use crate::stream_chunk_shaping::records::{GenericChunk, JsonValue, StreamChunk, item_count};
 
-mod branches;
 mod codestral;
+mod readers;
+
+type Fill = fn(&ProviderChunk, &mut DecodedChunk) -> Result<(), ProviderChunkError>;
+
+const READERS: [(&str, Fill); 8] = [
+    ("predibase", handle_predibase_chunk),
+    ("vllm", fill_vllm),
+    ("aleph_alpha", handle_aleph_alpha_chunk),
+    ("triton", handle_triton_stream),
+    ("text-completion-openai", handle_text_completion_chunk),
+    ("text-completion-codestral", fill_codestral),
+    ("azure_text", handle_azure_text_chunk),
+    ("cached_response", fill_cached),
+];
 
 pub fn decode_provider_chunk(
     provider: Option<&str>,
@@ -44,37 +57,26 @@ fn decode_named(
     chunk: &ProviderChunk,
     state: &mut DecodeState,
 ) -> Result<DecodedChunk, ProviderChunkError> {
-    match provider {
-        Some("predibase") => decoded_from(state, chunk, handle_predibase_chunk),
-        Some("vllm") => decoded_from(state, chunk, fill_vllm),
-        Some("aleph_alpha") => decoded_from(state, chunk, handle_aleph_alpha_chunk),
-        Some("nlp_cloud") => {
-            let mut decoded = DecodedChunk::default();
-            match handle_nlp_cloud_chunk(chunk, state, &mut decoded) {
-                Ok(()) => {
-                    finish_state(state, &decoded);
-                    Ok(decoded)
-                }
-                Err(error) => nlp_cloud_failure(state, error),
-            }
-        }
-        Some("vertex_ai") if !chunk.is_openai_chunk() => handle_vertex_chunk(chunk, state),
-        Some("petals") => {
-            let mut decoded = DecodedChunk::default();
-            fill_petals(state, &mut decoded)?;
-            Ok(decoded)
-        }
-        Some("triton") => decoded_from(state, chunk, handle_triton_stream),
-        Some("text-completion-openai") => decoded_from(state, chunk, handle_text_completion_chunk),
-        Some("text-completion-codestral") => decoded_from(state, chunk, fill_codestral),
-        Some("azure_text") => decoded_from(state, chunk, handle_azure_text_chunk),
-        Some("cached_response") => decoded_from(state, chunk, fill_cached),
-        Some(_) | None => {
-            let mut decoded = DecodedChunk::default();
-            fill_openai(provider, chunk, state, &mut decoded)?;
-            Ok(decoded)
-        }
+    if provider == Some("vertex_ai") && !chunk.is_openai_chunk() {
+        return handle_vertex_chunk(chunk, state);
     }
+    if provider == Some("nlp_cloud") {
+        return nlp_cloud_step(chunk, state);
+    }
+    if provider == Some("petals") {
+        return fill_petals(state);
+    }
+    match provider.and_then(reader_of) {
+        Some(fill) => decoded_from(state, chunk, fill),
+        None => fill_openai(provider, chunk, state),
+    }
+}
+
+fn reader_of(provider: &str) -> Option<Fill> {
+    READERS
+        .iter()
+        .find(|(name, _)| *name == provider)
+        .map(|(_, fill)| *fill)
 }
 
 #[must_use]
@@ -201,4 +203,43 @@ fn carries_provider_fields(chunk: &ProviderChunk, generic: &GenericChunk) -> boo
         ProviderChunk::Generic(_) => generic.provider_specific_fields.is_some(),
         ProviderChunk::Text(_) | ProviderChunk::Bytes(_) => false,
     }
+}
+
+fn decoded_from(
+    state: &mut DecodeState,
+    chunk: &ProviderChunk,
+    fill: Fill,
+) -> Result<DecodedChunk, ProviderChunkError> {
+    let mut decoded = DecodedChunk::default();
+    fill(chunk, &mut decoded)?;
+    finish_state(state, &decoded);
+    Ok(decoded)
+}
+
+fn nlp_cloud_step(
+    chunk: &ProviderChunk,
+    state: &mut DecodeState,
+) -> Result<DecodedChunk, ProviderChunkError> {
+    let mut decoded = DecodedChunk::default();
+    match handle_nlp_cloud_chunk(chunk, state, &mut decoded) {
+        Ok(()) => {
+            finish_state(state, &decoded);
+            Ok(decoded)
+        }
+        Err(error) => nlp_cloud_failure(state, error),
+    }
+}
+
+fn nlp_cloud_failure(
+    state: &mut DecodeState,
+    error: ProviderChunkError,
+) -> Result<DecodedChunk, ProviderChunkError> {
+    if state.received_finish_reason.is_some() {
+        return Err(error);
+    }
+    if state.sent_first_chunk {
+        state.received_finish_reason = Some("stop".to_owned());
+        return Ok(DecodedChunk::default());
+    }
+    Err(ProviderChunkError::UnknownStream)
 }

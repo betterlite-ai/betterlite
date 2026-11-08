@@ -1,4 +1,6 @@
-use crate::provider_chunk_decode::chunk::{DecodedChunk, ProviderChunk, as_array, as_object};
+use crate::provider_chunk_decode::chunk::{
+    DecodedChunk, ProviderChunk, as_object, at, first, text_at,
+};
 use crate::provider_chunk_decode::error::ProviderChunkError;
 use crate::provider_chunk_decode::handlers::rejected_text;
 use crate::stream_chunk_shaping::extras::strip_sse_data_from_chunk;
@@ -31,26 +33,15 @@ fn fill_codestral_choice(
     parsed: &JsonValue,
     decoded: &mut DecodedChunk,
 ) -> Result<(), ProviderChunkError> {
-    let Some(choice) = as_object(parsed)
-        .and_then(|fields| fields.get("choices"))
-        .and_then(as_array)
-        .and_then(|choices| choices.first())
-        .and_then(as_object)
-    else {
+    let Some(choice) = at(parsed, "choices").and_then(first).and_then(as_object) else {
         return Ok(());
     };
     let text = choice
         .get("delta")
-        .and_then(as_object)
-        .and_then(|delta| delta.get("content"))
-        .and_then(JsonValue::as_str)
+        .and_then(|delta| text_at(delta, "content"))
         .unwrap_or_default();
     text.clone_into(&mut decoded.text);
-    if let Some(reason) = choice
-        .get("finish_reason")
-        .filter(|reason| !matches!(reason, JsonValue::Null))
-        .and_then(JsonValue::as_str)
-    {
+    if let Some(reason) = choice.get("finish_reason").and_then(JsonValue::as_str) {
         decoded.is_finished = true;
         decoded.finish_reason = Some(reason.to_owned());
     }

@@ -1,5 +1,4 @@
 import json
-from collections.abc import Callable
 from types import SimpleNamespace
 from typing import TypeAlias, cast
 
@@ -13,37 +12,25 @@ from litellm.types.utils import BaseModel, ModelResponseStream, Usage
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Step: TypeAlias = dict[str, Json]
-Adapter: TypeAlias = Callable[[CustomStreamWrapper, Step, Step], Json]
 
-OPENAI_READERS: frozenset[str | None] = frozenset(
-    {"openai", "azure", "azure_ai", "cached_response"}
-)
+OPENAI_READERS: frozenset[str] = frozenset({"openai", "azure", "azure_ai", "cached_response"})
 
 
-def _object(value: Json) -> dict[str, Json]:
+def _obj(value: Json) -> dict[str, Json]:
     return cast("dict[str, Json]", value)
-
-
-def _text(value: Json) -> str:
-    return cast(str, value)
-
-
-def _int(value: Json) -> int:
-    return cast(int, value)
 
 
 def _list(value: Json) -> list[Json]:
     return cast("list[Json]", value)
 
 
-def _optional(state: Step, key: str) -> str | None:
-    value = state.get(key)
-    return None if value is None else _text(value)
+def _txt(value: Json) -> str:
+    return cast(str, value)
 
 
-def _optional_int(state: Step, key: str) -> int | None:
+def _opt(state: Step, key: str) -> str | None:
     value = state.get(key)
-    return None if value is None else _int(value)
+    return None if value is None else _txt(value)
 
 
 def _flag(state: Step, key: str) -> bool:
@@ -61,41 +48,38 @@ def _raw(value: object) -> Json:
 
 
 def _model_response(value: Json) -> ModelResponseStream:
-    data = dict(_object(value))
+    data = dict(_obj(value))
     hidden = data.pop("hidden_params", None)
     response = ModelResponseStream(**data)  # pyright: ignore[reportArgumentType, reportUnknownArgumentType]
-    response._hidden_params = {} if hidden is None else dict(_object(hidden))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
+    response._hidden_params = {} if hidden is None else dict(_obj(hidden))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
     return response
 
 
 def _wrapper(state: Step) -> CustomStreamWrapper:
-    provider = _optional(state, "provider")
+    provider = _opt(state, "provider")
     logging = SimpleNamespace(optional_params={}, messages=None)
     logging.model_call_details = {"litellm_params": {}, "custom_llm_provider": provider}
     wrapper = CustomStreamWrapper(
         completion_stream=[],
-        model=_text(state.get("model", "")),
+        model=_txt(state.get("model", "")),
         logging_obj=cast(LiteLLMLoggingObject, logging),
         custom_llm_provider=provider,
     )
-    wrapper._base_hidden_params = dict(_object(state.get("base_hidden_params", {})))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
-    wrapper.received_finish_reason = _optional(state, "received_finish_reason")
-    wrapper.intermittent_finish_reason = _optional(state, "intermittent_finish_reason")
+    wrapper._base_hidden_params = dict(_obj(state.get("base_hidden_params", {})))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
+    wrapper.received_finish_reason = _opt(state, "received_finish_reason")
+    wrapper.intermittent_finish_reason = _opt(state, "intermittent_finish_reason")
     wrapper.sent_first_chunk = _flag(state, "sent_first_chunk")
-    wrapper.complete_response = _text(state.get("complete_response", ""))
-    wrapper.completion_stream = _optional(state, "completion_stream")
+    wrapper.complete_response = _txt(state.get("complete_response", ""))
+    wrapper.completion_stream = _opt(state, "completion_stream")
     wrapper.send_stream_usage = _flag(state, "send_stream_usage")
     wrapper.is_function_call = _flag(state, "is_function_call")
     wrapper.tool_call = _flag(state, "tool_call")
-    wrapper.response_id = _optional(state, "response_id")
-    wrapper.created = _optional_int(state, "created")
-    wrapper.system_fingerprint = _optional(state, "system_fingerprint")
+    wrapper.response_id = _opt(state, "response_id")
+    created = state.get("created")
+    wrapper.created = None if created is None else cast(int, created)
+    wrapper.system_fingerprint = _opt(state, "system_fingerprint")
     wrapper.chunks = [_model_response(item) for item in _list(state.get("chunks", []))]
     return wrapper
-
-
-def _ascii(value: Json) -> bytes:
-    return bytes(_int(item) for item in _list(value))
 
 
 class _VertexChunk(SimpleNamespace):
@@ -114,26 +98,40 @@ class _VertexChunk(SimpleNamespace):
         return "".join(texts)
 
 
-def _vllm_chunk(value: Json) -> object:
-    items: list[SimpleNamespace] = []
-    for item in _list(value):
-        outputs = [
-            SimpleNamespace(**_object(output))
-            for output in _list(_object(item).get("outputs", []))
-        ]
-        items.append(SimpleNamespace(outputs=outputs))
-    return items
+def _vertex_chunk(value: Step) -> _VertexChunk:
+    candidates = [
+        SimpleNamespace(
+            content=SimpleNamespace(
+                parts=[
+                    SimpleNamespace(**_obj(part))
+                    for part in _list(_obj(_obj(candidate).get("content", {})).get("parts", []))
+                ]
+            ),
+            finish_reason=SimpleNamespace(name=_obj(candidate).get("finish_reason")),
+        )
+        for candidate in _list(value.get("candidates", []))
+    ]
+    return _VertexChunk(candidates=candidates)
+
+
+def _vllm_chunk(value: list[Json]) -> list[SimpleNamespace]:
+    return [
+        SimpleNamespace(
+            outputs=[
+                SimpleNamespace(**_obj(output))
+                for output in _list(_obj(item).get("outputs", []))
+            ]
+        )
+        for item in value
+    ]
 
 
 def _text_completion_chunk(value: Step) -> SimpleNamespace:
-    choices = [
-        SimpleNamespace(**_object(choice))
-        for choice in _list(value.get("choices", []))
-    ]
+    choices = [SimpleNamespace(**_obj(choice)) for choice in _list(value.get("choices", []))]
     usage = value.get("usage")
     if usage is None:
         return SimpleNamespace(choices=choices)
-    counters = _object(usage)
+    counters = _obj(usage)
     return SimpleNamespace(
         choices=choices,
         usage=SimpleNamespace(
@@ -144,101 +142,89 @@ def _text_completion_chunk(value: Step) -> SimpleNamespace:
     )
 
 
-def _vertex_parts(value: Json) -> list[SimpleNamespace]:
-    return [
-        SimpleNamespace(**_object(part)) for part in _list(_object(value).get("parts", []))
-    ]
-
-
-def _vertex_chunk(value: Step) -> _VertexChunk:
-    candidates: list[SimpleNamespace] = []
-    for candidate in _list(value.get("candidates", [])):
-        fields = _object(candidate)
-        content = _object(fields.get("content", {}))
-        candidates.append(
-            SimpleNamespace(
-                content=SimpleNamespace(parts=_vertex_parts(content)),
-                finish_reason=SimpleNamespace(name=fields.get("finish_reason")),
-            )
-        )
-    return _VertexChunk(candidates=candidates)
-
-
-def _effective(step: Step, state: Step, key: str) -> Json:
-    return step.get(key) if key in step else state.get(key)
-
-
-def _chunk(step: Step, state: Step) -> object:
-    spec = _object(step.get("chunk", {}))
-    kind = _text(spec.get("kind", ""))
-    value = spec.get("value")
-    if kind == "text":
-        return _text(value)
-    if kind == "bytes":
-        return _ascii(value)
-    if kind == "generic":
-        return dict(_object(value))
-    return _json_chunk(step, state, value)
-
-
 def _json_chunk(step: Step, state: Step, value: Json) -> object:
-    custom = _effective(step, state, "custom_provider") is True
-    provider = _effective(step, state, "provider")
-    if provider == "vertex_ai" and isinstance(value, dict) and "candidates" in value:
-        return _vertex_chunk(_object(value))
+    custom = step.get("custom_provider", state.get("custom_provider")) is True
+    provider = step.get("provider", state.get("provider"))
+    if not isinstance(value, dict):
+        return value
+    if provider == "vertex_ai" and "candidates" in value:
+        return _vertex_chunk(_obj(value))
     if provider == "vllm" and isinstance(value, list):
-        return _vllm_chunk(cast("Json", value))
-    if (
-        provider in ("text-completion-openai", "azure_text")
-        and isinstance(value, dict)
-        and "choices" in value
-    ):
-        return _text_completion_chunk(_object(value))
-    if isinstance(value, dict) and (
-        (custom and "choices" in value) or (not custom and provider in OPENAI_READERS)
-    ):
-        return _model_response(_object(value))
+        return _vllm_chunk(value)
+    if provider in ("text-completion-openai", "azure_text") and "choices" in value:
+        return _text_completion_chunk(value)
+    if (custom and "choices" in value) or (not custom and provider in OPENAI_READERS):
+        return _model_response(value)
     return value
 
 
-def _chunk_view(value: ModelResponseStream) -> Json:
-    choices: list[Json] = [
-        {
-            "index": choice.index,
-            "finish_reason": choice.finish_reason,
-            "content": cast("Json", _attr(choice.delta, "content")),
-        }
-        for choice in value.choices
-    ]
-    return {"id": value.id, "choices": choices}
+def _chunk(step: Step, state: Step) -> object:
+    spec = _obj(step.get("chunk", {}))
+    kind = _txt(spec.get("kind", ""))
+    value = spec.get("value")
+    if kind == "text":
+        return _txt(value)
+    if kind == "bytes":
+        return bytes(cast("list[int]", value))
+    if kind == "generic":
+        return dict(_obj(value))
+    return _json_chunk(step, state, value)
 
 
-def _state_view(wrapper: CustomStreamWrapper) -> Json:
-    return {
-        "model": cast(str, wrapper.model),
-        "received_finish_reason": wrapper.received_finish_reason,
-        "intermittent_finish_reason": wrapper.intermittent_finish_reason,
-        "completion_stream": cast("str | None", wrapper.completion_stream),
-    }
-
-
-def _usage_view(value: object) -> Json:
+def _usage(value: object) -> Json:
     if not isinstance(value, Usage):
         return None
-    return {
-        "prompt_tokens": value.prompt_tokens,
-        "completion_tokens": value.completion_tokens,
-        "total_tokens": value.total_tokens,
-    }
+    return [value.prompt_tokens, value.completion_tokens, value.total_tokens]
 
 
-def _reason(value: object) -> Json:
-    return None if value is None or value == "" else cast("Json", value)
+def _summary(chunk: ModelResponseStream) -> list[Json]:
+    choice = chunk.choices[0] if chunk.choices else None
+    delta = None if choice is None else choice.delta
+    function = None if delta is None else _attr(delta, "function_call")
+    calls = None if delta is None else _attr(delta, "tool_calls")
+    listed: Json = None
+    if calls is not None:
+        listed = cast("Json", [
+            [
+                cast("Json", _attr(call, "id")),
+                cast("Json", _attr(call, "type")),
+                [
+                    cast("Json", _attr(_attr(call, "function"), "name")),
+                    cast("Json", _attr(_attr(call, "function"), "arguments")),
+                ],
+            ]
+            for call in cast("list[object]", calls)
+        ])
+    return [
+        chunk.id,
+        chunk.model,
+        chunk.created,
+        chunk.system_fingerprint,
+        None if choice is None else choice.finish_reason,
+        None if delta is None else _raw(_attr(delta, "content")),
+        None if delta is None else _raw(_attr(delta, "role")),
+        None
+        if function is None
+        else [cast("Json", _attr(function, "name")), cast("Json", _attr(function, "arguments"))],
+        listed,
+        len(chunk.choices),
+        _usage(_attr(chunk, "usage")),
+        _raw(chunk.provider_specific_fields),
+    ]
+
+
+def _state_line(wrapper: CustomStreamWrapper) -> list[Json]:
+    return [
+        cast(str, wrapper.model),
+        wrapper.received_finish_reason,
+        wrapper.intermittent_finish_reason,
+        cast("str | None", wrapper.completion_stream),
+    ]
 
 
 def _decode(wrapper: CustomStreamWrapper, step: Step, state: Step) -> Json:
     chunk = _chunk(step, state)
-    model_response: ModelResponseStream = wrapper.model_response_creator()  # pyright: ignore[reportUnknownMemberType]
+    model_response = wrapper.model_response_creator()  # pyright: ignore[reportUnknownMemberType]
     completion_obj: dict[str, object] = {"content": ""}
     try:
         result = wrapper._dispatch_provider_chunk(chunk, model_response, completion_obj)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownArgumentType]
@@ -246,73 +232,23 @@ def _decode(wrapper: CustomStreamWrapper, step: Step, state: Step) -> Json:
         return {"raised": {"message": ""}}
     except Exception as error:  # noqa: BLE001 - the wire contract carries every reader exception
         return {"raised": {"message": str(error)}}
-    if isinstance(result, _ProviderChunkEarlyReturn):
-        early = result.value
-        return {
-            "early_return": True,
-            "early_chunk": None if early is None else _chunk_view(early),
-            "text": cast("Json", completion_obj.get("content")),
-            "is_finished": False,
-            "finish_reason": None,
-            "usage": None,
-            "tool_use": None,
-            "provider_specific_fields": None,
-            "tool_calls": None,
-            "state": _state_view(wrapper),
-        }
-    response_obj = result.response_obj
-    return {
-        "early_return": False,
-        "early_chunk": None,
-        "text": cast("Json", completion_obj.get("content")),
-        "is_finished": bool(response_obj.get("is_finished", False)),
-        "finish_reason": _reason(response_obj.get("finish_reason")),
-        "usage": _usage_view(_attr(model_response, "usage")),
-        "tool_use": _raw(response_obj.get("tool_use")),
-        "provider_specific_fields": _raw(response_obj.get("provider_specific_fields")),
-        "tool_calls": _raw(completion_obj.get("tool_calls")),
-        "state": _state_view(wrapper),
-    }
-
-
-def _function_values(function: object) -> list[Json]:
-    if function is None:
-        return [None, None]
-    return [cast("Json", _attr(function, "name")), cast("Json", _attr(function, "arguments"))]
-
-
-def _tool_call_values(delta: object) -> Json:
-    calls = _attr(delta, "tool_calls")
-    if calls is None:
-        return None
-    return [
-        [
-            cast("Json", _attr(call, "id")),
-            cast("Json", _attr(call, "type")),
-            _function_values(_attr(call, "function")),
-        ]
-        for call in cast("list[object]", calls)
-    ]
-
-
-def _summary(chunk: ModelResponseStream) -> Json:
-    choice = chunk.choices[0] if chunk.choices else None
-    delta = None if choice is None else choice.delta
-    function = None if delta is None else _attr(delta, "function_call")
-    return [
-        chunk.id,
-        chunk.model,
-        chunk.created,
-        chunk.system_fingerprint,
-        None if choice is None else choice.finish_reason,
-        cast("Json", _attr(delta, "content")),
-        cast("Json", _attr(delta, "role")),
-        None if function is None else _function_values(function),
-        None if delta is None else _tool_call_values(delta),
-        len(chunk.choices),
-        _usage_view(_attr(chunk, "usage")),
-        _raw(chunk.provider_specific_fields),
-    ]
+    early = result.value if isinstance(result, _ProviderChunkEarlyReturn) else None
+    response: dict[str, object] = (
+        {} if isinstance(result, _ProviderChunkEarlyReturn) else result.response_obj
+    )
+    reason = response.get("finish_reason")
+    return cast("Json", [
+        completion_obj.get("content"),
+        bool(response.get("is_finished", False)),
+        None if reason is None or reason == "" else reason,
+        _usage(_attr(model_response, "usage")),
+        _raw(response.get("tool_use")),
+        _raw(response.get("provider_specific_fields")),
+        _raw(completion_obj.get("tool_calls")),
+        isinstance(result, _ProviderChunkEarlyReturn),
+        None if early is None else early.id,
+        _state_line(wrapper),
+    ])
 
 
 def _create(wrapper: CustomStreamWrapper, step: Step, state: Step) -> Json:
@@ -323,59 +259,49 @@ def _create(wrapper: CustomStreamWrapper, step: Step, state: Step) -> Json:
         return {"raised": {"message": ""}}
     except Exception as error:  # noqa: BLE001 - the wire contract carries every reader exception
         return {"raised": {"message": str(error)}}
-    return {
-        "watch": [
-            wrapper.received_finish_reason,
-            wrapper.intermittent_finish_reason,
-            wrapper.sent_first_chunk,
-            wrapper.tool_call,
-            len(cast("list[object]", wrapper.chunks)),
-        ],
-        "chunk": None if created is None else _summary(created),
-    }
+    return cast("Json", [
+        None if created is None else _summary(created),
+        wrapper.received_finish_reason,
+        wrapper.intermittent_finish_reason,
+        wrapper.sent_first_chunk,
+        wrapper.tool_call,
+        len(cast("list[object]", wrapper.chunks)),
+    ])
 
 
 def _process(wrapper: CustomStreamWrapper, step: Step, _state: Step) -> Json:
-    text = wrapper.process_chunk(_text(step.get("chunk", "")))
-    return {"text": text, "complete_response": wrapper.complete_response}
+    text = wrapper.process_chunk(_txt(step.get("chunk", "")))
+    return [text, cast("Json", wrapper.complete_response)]
 
 
-_HANDLERS: dict[str, Adapter] = {
-    "decode": _decode,
-    "creator": _create,
-    "process_chunk": _process,
-}
+_HANDLERS = {"decode": _decode, "creator": _create, "process_chunk": _process}
 
 
-def run(input_value: dict[str, Json]) -> Json:
-    litellm.suppress_debug_info = True
-    state = _object(input_value.get("state", {}))
-    provider = _optional(state, "provider")
-    if _flag(state, "custom_provider") and provider is not None:
-        litellm._custom_providers.append(provider)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
-    wrapper = _wrapper(state)
-    steps = _list(input_value.get("steps", []))
-    return cast(
-        "Json",
-        [_run_step(wrapper, _object(step), state) for step in steps],
-    )
-
-
-def _run_step(wrapper: CustomStreamWrapper, step: Step, state: Step) -> Json:
-    _apply_step(wrapper, step)
-    op = _text(step.get("op", ""))
-    handler = _HANDLERS.get(op)
-    if handler is None:
-        raise ValueError(f"unsupported operation {op}")
-    return handler(wrapper, step, state)
-
-
-def _apply_step(wrapper: CustomStreamWrapper, step: Step) -> None:
+def _apply(wrapper: CustomStreamWrapper, step: Step) -> None:
     if "provider" in step:
-        wrapper.custom_llm_provider = _optional(step, "provider")
+        wrapper.custom_llm_provider = _opt(step, "provider")
     if "model" in step:
-        wrapper.model = _text(step["model"])
+        wrapper.model = _txt(step["model"])
     if "send_stream_usage" in step:
         wrapper.send_stream_usage = _flag(step, "send_stream_usage")
     if "is_function_call" in step:
         wrapper.is_function_call = _flag(step, "is_function_call")
+
+
+def run(input_value: dict[str, Json]) -> Json:
+    litellm.suppress_debug_info = True
+    state = _obj(input_value.get("state", {}))
+    provider = _opt(state, "provider")
+    if _flag(state, "custom_provider") and provider is not None:
+        litellm._custom_providers.append(provider)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
+    wrapper = _wrapper(state)
+    outputs: list[Json] = []
+    for raw in _list(input_value.get("steps", [])):
+        step = _obj(raw)
+        _apply(wrapper, step)
+        op = _txt(step.get("op", ""))
+        handler = _HANDLERS.get(op)
+        if handler is None:
+            raise ValueError(f"unsupported operation {op}")
+        outputs.append(handler(wrapper, step, state))
+    return outputs

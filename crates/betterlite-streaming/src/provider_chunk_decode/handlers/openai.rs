@@ -1,4 +1,4 @@
-use crate::provider_chunk_decode::chunk::{DecodedChunk, ProviderChunk, as_array, as_object};
+use crate::provider_chunk_decode::chunk::{DecodedChunk, ProviderChunk, as_object, first};
 use crate::provider_chunk_decode::error::ProviderChunkError;
 use crate::provider_chunk_decode::handlers::{object_of, string_field, usage_counts};
 use crate::stream_chunk_shaping::extras::strip_sse_data_from_chunk;
@@ -48,16 +48,15 @@ fn fill_text_choice(
     fields: Option<&JsonObject>,
     decoded: &mut DecodedChunk,
 ) -> Result<(), ProviderChunkError> {
-    let choice = fields
+    let Some(choice) = fields
         .and_then(|object| object.get("choices"))
-        .and_then(as_array)
-        .and_then(|choices| choices.first())
-        .and_then(as_object);
-    let Some(first) = choice else {
+        .and_then(first)
+        .and_then(as_object)
+    else {
         return Ok(());
     };
-    decoded.text = string_field(first, "text")?.unwrap_or_default();
-    if let Some(reason) = string_field(first, "finish_reason")? {
+    decoded.text = string_field(choice, "text")?.unwrap_or_default();
+    if let Some(reason) = string_field(choice, "finish_reason")? {
         decoded.is_finished = true;
         decoded.finish_reason = Some(reason);
     }
