@@ -1,6 +1,6 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use regex::Regex;
+use regex::{Regex, RegexBuilder};
 
 use crate::fields::payload::StandardLoggingPayload;
 
@@ -10,23 +10,34 @@ pub const MAX_DEPTH_REACHED: &str = "[MAX_DEPTH_REACHED]";
 const BASE64_PATTERN: &str =
     r"data:(?:application|image|audio|video)/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+";
 
-#[derive(Debug, thiserror::Error)]
-pub enum Base64StripError {
-    #[error("invalid base64 redaction pattern")]
-    Pattern(#[from] regex::Error),
+pub struct Base64Stripper {
+    pattern: Regex,
 }
 
-pub fn strip_base64_from_messages(
-    payload: &StandardLoggingPayload,
-    max_depth: i64,
-) -> Result<StandardLoggingPayload, Base64StripError> {
-    let Some(Json::List(messages)) = payload.messages.as_ref() else {
-        return Ok(payload.clone());
-    };
-    let pattern = Regex::new(BASE64_PATTERN)?;
-    let mut stripped = payload.clone();
-    stripped.messages = Some(Json::List(process_messages(messages, &pattern, max_depth)));
-    Ok(stripped)
+impl Base64Stripper {
+    pub fn new() -> Result<Self, regex::Error> {
+        Ok(Self {
+            pattern: RegexBuilder::new(BASE64_PATTERN).multi_line(true).build()?,
+        })
+    }
+
+    #[must_use]
+    pub fn strip_base64_from_messages(
+        &self,
+        payload: &StandardLoggingPayload,
+        max_depth: i64,
+    ) -> StandardLoggingPayload {
+        let Some(Json::List(messages)) = payload.messages.as_ref() else {
+            return payload.clone();
+        };
+        let mut stripped = payload.clone();
+        stripped.messages = Some(Json::List(process_messages(
+            messages,
+            &self.pattern,
+            max_depth,
+        )));
+        stripped
+    }
 }
 
 fn process_messages(messages: &[Json], pattern: &Regex, max_depth: i64) -> Vec<Json> {

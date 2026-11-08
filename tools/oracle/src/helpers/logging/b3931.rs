@@ -1,6 +1,6 @@
 use std::sync::{Mutex, PoisonError};
 
-use betterlite_logging::exporter_options::base64_strip::strip_base64_from_messages;
+use betterlite_logging::exporter_options::base64_strip::Base64Stripper;
 use betterlite_logging::exporter_options::failure_counter::{
     CallbackFailureCounter, handle_callback_failure,
 };
@@ -178,8 +178,8 @@ fn truncate(payload: &Value) -> crate::helpers::HelperResult {
 
 fn base64(payload: &Value, max_depth: i64) -> crate::helpers::HelperResult {
     let parsed: StandardLoggingPayload = decode(payload)?;
-    let stripped = strip_base64_from_messages(&parsed, max_depth).map_err(value_error)?;
-    encode(stripped)
+    let stripper = Base64Stripper::new().map_err(value_error)?;
+    encode(stripper.strip_base64_from_messages(&parsed, max_depth))
 }
 
 fn redact(

@@ -6,7 +6,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use super::base64_strip::{MAX_DEPTH_REACHED, strip_base64_from_messages};
+use super::base64_strip::{Base64Stripper, MAX_DEPTH_REACHED};
 use super::failure_counter::{CallbackFailureCounter, handle_callback_failure};
 use super::health::{HealthState, IntegrationHealthStatus};
 use super::metadata_field::{MetadataField, select_metadata_field};
@@ -511,12 +511,16 @@ fn json(source: &str) -> Json {
     serde_json::from_str(source).expect("a json value")
 }
 
+fn stripper() -> Base64Stripper {
+    Base64Stripper::new().expect("the base64 pattern compiles")
+}
+
 #[test]
 fn base64_redacts_data_uris_in_content_and_other_keys() {
     let payload = with_messages(
         r#"[{"role": "user", "content": "data:image/png;base64,AAAA", "name": "data:audio/mp3;base64,BBBB"}]"#,
     );
-    let stripped = strip_base64_from_messages(&payload, 10).expect("the pattern compiles");
+    let stripped = stripper().strip_base64_from_messages(&payload, 10);
     let expected =
         json(r#"[{"role": "user", "content": "[BASE64_REDACTED]", "name": "[BASE64_REDACTED]"}]"#);
     assert_eq!(stripped.messages, Some(expected));
@@ -526,7 +530,7 @@ fn base64_redacts_data_uris_in_content_and_other_keys() {
 fn base64_matches_a_data_uri_across_whitespace() {
     let payload =
         with_messages(r#"[{"role": "user", "content": "data:image/png;base64,AAAA\nBBBB"}]"#);
-    let stripped = strip_base64_from_messages(&payload, 10).expect("the pattern compiles");
+    let stripped = stripper().strip_base64_from_messages(&payload, 10);
     let expected = json(r#"[{"role": "user", "content": "[BASE64_REDACTED]"}]"#);
     assert_eq!(stripped.messages, Some(expected));
 }
@@ -536,7 +540,7 @@ fn base64_drops_file_and_non_text_content_items() {
     let payload = with_messages(
         r#"[{"role": "user", "content": [{"type": "text", "text": "ok"}, {"type": "image_url", "image_url": {}}, {"file": {}}, {"type": "file"}, {"no_type": true}, 5]}]"#,
     );
-    let stripped = strip_base64_from_messages(&payload, 10).expect("the pattern compiles");
+    let stripped = stripper().strip_base64_from_messages(&payload, 10);
     let expected = json(
         r#"[{"role": "user", "content": [{"type": "text", "text": "ok"}, {"no_type": true}, 5]}]"#,
     );
@@ -546,7 +550,7 @@ fn base64_drops_file_and_non_text_content_items() {
 #[test]
 fn base64_drops_messages_that_are_not_objects() {
     let payload = with_messages(r#"["text", {"role": "user", "content": "hi"}]"#);
-    let stripped = strip_base64_from_messages(&payload, 10).expect("the pattern compiles");
+    let stripped = stripper().strip_base64_from_messages(&payload, 10);
     assert_eq!(
         stripped.messages,
         Some(json(r#"[{"role": "user", "content": "hi"}]"#))
@@ -556,7 +560,7 @@ fn base64_drops_messages_that_are_not_objects() {
 #[test]
 fn base64_adds_a_null_content_to_a_message_without_one() {
     let payload = with_messages(r#"[{"role": "system", "name": "n"}]"#);
-    let stripped = strip_base64_from_messages(&payload, 10).expect("the pattern compiles");
+    let stripped = stripper().strip_base64_from_messages(&payload, 10);
     let expected = json(r#"[{"role": "system", "name": "n", "content": null}]"#);
     assert_eq!(stripped.messages, Some(expected));
 }
@@ -568,7 +572,7 @@ fn base64_leaves_the_response_untouched() {
         ("messages", json(r#"[{"role": "user", "content": "hi"}]"#)),
         ("response", response.clone()),
     ]);
-    let stripped = strip_base64_from_messages(&payload, 10).expect("the pattern compiles");
+    let stripped = stripper().strip_base64_from_messages(&payload, 10);
     assert_eq!(stripped.response, Some(response));
 }
 
@@ -576,10 +580,10 @@ fn base64_leaves_the_response_untouched() {
 fn base64_walks_a_value_at_the_max_depth_and_stops_past_it() {
     let payload =
         with_messages(r#"[{"role": "user", "content": [[["data:image/png;base64,AAAA"]]]}]"#);
-    let at_two = strip_base64_from_messages(&payload, 2).expect("the pattern compiles");
+    let at_two = stripper().strip_base64_from_messages(&payload, 2);
     let expected = json(r#"[{"role": "user", "content": [[["[BASE64_REDACTED]"]]]}]"#);
     assert_eq!(at_two.messages, Some(expected));
-    let at_zero = strip_base64_from_messages(&payload, 0).expect("the pattern compiles");
+    let at_zero = stripper().strip_base64_from_messages(&payload, 0);
     let expected_zero = json(r#"[{"role": "user", "content": [["[MAX_DEPTH_REACHED]"]]}]"#);
     assert_eq!(at_zero.messages, Some(expected_zero));
     assert_eq!(MAX_DEPTH_REACHED, "[MAX_DEPTH_REACHED]");
@@ -588,7 +592,7 @@ fn base64_walks_a_value_at_the_max_depth_and_stops_past_it() {
 #[test]
 fn base64_rejects_every_value_at_a_negative_depth() {
     let payload = with_messages(r#"[{"role": "user", "content": "hi"}]"#);
-    let stripped = strip_base64_from_messages(&payload, -1).expect("the pattern compiles");
+    let stripped = stripper().strip_base64_from_messages(&payload, -1);
     let expected = json(r#"[{"role": "[MAX_DEPTH_REACHED]", "content": ["[MAX_DEPTH_REACHED]"]}]"#);
     assert_eq!(stripped.messages, Some(expected));
 }
@@ -600,7 +604,7 @@ fn base64_rejects_every_value_at_a_negative_depth() {
 #[case::empty(Some(Json::List(Vec::new())))]
 fn base64_leaves_messages_that_are_not_a_non_empty_list_alone(#[case] messages: Option<Json>) {
     let payload = messages.map_or_else(payload, |value| payload_with("messages", value));
-    let stripped = strip_base64_from_messages(&payload, 10).expect("the pattern compiles");
+    let stripped = stripper().strip_base64_from_messages(&payload, 10);
     assert_eq!(stripped.messages.as_ref(), payload.messages.as_ref());
 }
 
@@ -608,7 +612,7 @@ fn base64_leaves_messages_that_are_not_a_non_empty_list_alone(#[case] messages: 
 fn base64_returns_a_new_payload() {
     let payload = with_messages(r#"[{"role": "user", "content": "data:image/png;base64,AAAA"}]"#);
     let before = encoded(&payload);
-    let stripped = strip_base64_from_messages(&payload, 10).expect("the pattern compiles");
+    let stripped = stripper().strip_base64_from_messages(&payload, 10);
     assert_eq!(encoded(&payload), before);
     assert_ne!(encoded(&stripped), before);
 }
