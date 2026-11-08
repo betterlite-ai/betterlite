@@ -28,7 +28,6 @@ WATSONX_PROJECT_ID WX_PROJECT_ID PROJECT_ID WATSONX_REGION WX_REGION REGION
 WATSONX_DEPLOYMENT_SPACE_ID WATSONX_SPACE_ID WX_SPACE_ID SPACE_ID
 """.split()  # noqa: SIM905
 
-
 HELPER_ERRORS = (
     WatsonXAIError,
     httpx.HTTPStatusError,
@@ -63,14 +62,12 @@ class Transport:
         data: dict[str, str] | None = None,
         **_options: object,
     ) -> httpx.Response:
-        sent_headers = dict(headers or {})
-        sent_data = dict(data or {})
         route = f"POST {url}"
         sent: Object = {
             "method": "POST",
             "url": url,
-            "headers": {name.lower(): value for name, value in sent_headers.items()},
-            "body": urlencode(sent_data),
+            "headers": {name.lower(): value for name, value in (headers or {}).items()},
+            "body": urlencode(data or {}),
         }
         self.requests.append(sent)
         replies = self.replies.get(route, [])
@@ -85,6 +82,7 @@ class Transport:
             text=expect_text(reply["body"]),
             request=httpx.Request("POST", url),
         )
+
 
 def expect_object(value: Json) -> Object:
     if not isinstance(value, dict):
@@ -149,13 +147,12 @@ def credentials_result(params: Object, api_key: Json, api_base: Json) -> Json:
         )
     except WatsonXAIError as error:
         return error_tag(error)
-    result: Object = {
+    return {
         "api_key": found["api_key"],
         "api_base": found["api_base"],
         "token": found["token"],
         "params": params,
     }
-    return result
 
 
 def authorization_result(headers: Object, params: Object, api_key: Json) -> Json:
@@ -241,8 +238,6 @@ def patched_world(
         name: value for name, value in os.environ.items() if name in VARIABLES
     }
     saved_client = litellm.module_level_client
-    saved_secret_client = litellm.secret_manager_client
-    saved_system = litellm._key_management_system  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     for name in VARIABLES:
         os.environ.pop(name, None)
     for name, value in env.items():
@@ -258,8 +253,6 @@ def patched_world(
             os.environ.pop(name, None)
         os.environ.update(saved_environment)
         litellm.module_level_client = saved_client
-        litellm.secret_manager_client = saved_secret_client
-        litellm._key_management_system = saved_system  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
 
 
 def run(input_value: Object) -> Json:
