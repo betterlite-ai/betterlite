@@ -9,7 +9,7 @@ description: >-
   before the handler's try block. Neither route reads query parameters or an environment variable directly.
 
   Implement betterlite-server::api::anthropic_messages_routes with a typed MessagesRouteServices constructor.
-  Delegate base_process_llm_request, response headers, exception logging and SSE serialization to B004;
+  Run B8801's PreCall step with route type anthropic_messages (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step), then delegate base_process_llm_request, response headers, exception logging and SSE serialization to B004;
   pass route_type=anthropic_messages, select_data_generator=null, model=null and the resolved user_model,
   user_temperature, user_request_timeout, user_max_tokens, user_api_base and version unchanged. B1134 owns
   the public dispatch operation registered with that processor. Do not dispatch separately to every adapter.

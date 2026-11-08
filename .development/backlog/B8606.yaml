@@ -1,0 +1,14 @@
+id: B8606
+milestone: M5 api families
+title: Mount the common provider and OpenAI pass-through routes
+status: todo
+depends_on: [B8640, B8641, B3619, B3628]
+file: tasks/B8606-passthrough-openai-common-mount.yaml
+covers:
+  - "litellm/proxy/pass_through_endpoints/openai_passthrough_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

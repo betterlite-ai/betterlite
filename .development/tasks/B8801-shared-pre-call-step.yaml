@@ -1,0 +1,91 @@
+id: B8801
+title: Shared pre-call step for every LLM route
+description: >-
+  Every LLM route in LiteLLM calls common_processing_pre_call_logic (litellm/proxy/common_request_processing.py L1913-L2241), wrapped by _pre_call_with_fallbacks (L2243-L2347), before it routes the call. This task writes that step once, generic over the route type and the key type, on top of B8800's ports and rewrites, so the chat route (B8803), the B1100 route modules (B8804) and the pass-through pipeline (B8694) all run the same code. Code goes in crates/betterlite-server/src/pre_call_step.rs and pre_call_step/ (step.rs, fallbacks.rs, standalone.rs, tests.rs). Every name stays at 30 characters or fewer.
+
+  Types. `PreCallInput<'a, K>` holds `data: Map<String, Value>` (the request data the route built), `request: &'a Parts`, `key: &'a K`, `route_type: RouteType`, `version: Option<&'a str>`, `model: Option<&'a str>` (the route's separate model argument, like a path model) and `skip_guardrails: bool`. `PreCallOutput` holds the final `data` and B247's per-call logging state. The trait `PreCall<K>` has one async method `pre_call(&self, input: PreCallInput<'_, K>) -> Result<PreCallOutput, PreCallError>`; routes keep an `Arc<dyn PreCall<K>>` in their state, and tests fake it. `PreCallStep<K>` implements it and is built with `PreCallStep::new(ports: PreCallPorts<K>, settings: PreCallSettings, loggers: Arc<dyn LoggerResolver>)`, where LoggerResolver is B8740's trait. `PreCallSettings` holds the B8605 `FallbackErrors` section, B8800's `PreCallSection`, B8800's `CliOverrides` (the user_model value included) and the general settings value B1102's resolve_inference_model takes (read its merged signature).
+
+  step.rs, `run(&self, data, input, rate_limited_model: Option<&str>)`, in LiteLLM's order:
+  1. Take the start time. When `data.model` is present and not a string, fail with `Proxy` "'model' must be a string.", type bad_request_error, param model, code 400.
+  2. Replace the data with the RequestPreparer's answer.
+  3. Call B8605's `drop_fallback_errors_flag` with the section and the data.
+  4. For route types aresponses and _aresponses_websocket, take B8800's file_search_store_ids and call VectorStoreAccess.assert_access for each id in order.
+  5. Write the queue time with B8800's write_queue_time into the bucket B1102's metadata variable name picks for the request.
+  6. When the input model is set, run B1102's reject_url_valued_destination("model", model). Set `data.model` from B1102's resolve_inference_model with the data's model, the general settings, the user_model value and the input model, with kind image_edit for aimage_edit and completion otherwise.
+  7. apply_overrides, then apply_aliases with the section's model_alias_map and the key.
+  8. With a router: ask RouterSettingsSource for the key's router settings. When it gives some, set `router_settings_override` to them and `_router_weights` to B7950's validate_router_weights of their `weights` (on a validation error set null and log at warning "Ignoring invalid saved router weights; update team/key router_settings"). Then, when the data's model is a string, resolve it through B302's resolve_model_group_alias with the settings' `model_group_alias`; a target that differs from the model is authorized with RouterView.authorize_alias and then written to `data.model` (L662-L695).
+  9. Set `litellm_call_id` from B8800's resolve_call_id of the `x-litellm-call-id` header, and call B3930's tag_call_id and tag_request with the ports' tracer.
+  10. Merge B8800's stream_usage_updates into the data, with `supports` running streamable_models over the router, the key's team_id and the StreamOptionsCheck.
+  11. Make B247's logging state for this call (call type is the route type's text, the call id, the start time, metadata from the request data), the way LiteLLM's function_setup does when the data carries no logging object, and give it the logger resolver where B248's dynamic callback resolution takes it; read B247's and B248's constructors.
+  12. When rate_limited_model is set, merge model-level guardrails once with it as the alias; then merge again with no alias.
+  13. CompressionArming.arm.
+  14. Record the tags from B1102's get_tags_from_request_body as the tags before guardrails, only the first time this step runs for the request (LiteLLM keeps them on the processor, so a fallback retry keeps the first set).
+  15. With a router and a string model, RouterView.arm_prefetch.
+  16. Replace the data with PreCallHooks.pre_call_hook(key, data, route type, skip_guardrails).
+  17. Tag budgets (L705-L735): the tags now in the data that were not in the first set; when there are any and TagBudgets.skips_budget for the request route path and B8800's request_model is false, call TagBudgets.check_tags.
+  18. For aget_responses, RetrievalPipelines.attach.
+  19. Call B1105's refresh_proxy_server_request_body_snapshot with guardrails_applied true, log the data at debug "receiving data: %s", and when `messages` is a non-empty array give it to the logging state's update_messages.
+  Any failure returns `PreCallError` with the data as it stood at that point.
+
+  fallbacks.rs. `pre_call` replaces _pre_call_with_fallbacks. The configured fallbacks are the key router settings' `fallbacks` when that key exists, else RouterView.fallbacks; only a non-empty list counts, and with no router there are none. Keep a copy of the input data only when fallbacks exist. Run step.rs. On `RateLimited`, when there is no copy, the failed data has `disable_fallbacks` truthy, its model is not a string, or RouterView.fallback_models gives none, return the error. Otherwise log at info "Local rate limit hit for model=%s, attempting fallbacks: %s" and, for each fallback model other than the original, run step.rs again on a fresh copy with `model` set to it, the input model set to it and rate_limited_model set to the original. Another RateLimited moves to the next one; any other failure is returned with the rate-limited data; success returns. After the last one, return the original RateLimited failure with the rate-limited data.
+
+  standalone.rs. `PreCallStep::standalone(settings)` builds the step with stand-in ports that pass the data through unchanged, allow every check, have no router, answer false to StreamOptionsCheck, use the null tracer and a logger resolver that knows no names. A B1100 route module builds it in its routes function until B8804 swaps in B8802's production step; nothing else uses it.
+
+  Tests in pre_call_step/tests.rs (`pre_call_step::tests::`) use recording fakes for every port and a plain test key: the order of the steps, the non-string model failure, the file_search check only on the two Responses route types, the router settings branch with valid and invalid weights and an alias target, the call id, the stream usage merge, the guardrail merge with and without a rate-limited model, the tag budget check, the retrieval attach only for aget_responses, the failure data, and the fallback loop (no fallbacks, disable_fallbacks, a second RateLimited moving on, a success, the original error at the end, the first tag set kept).
+scope:
+  paths:
+    - crates/betterlite-server/src/pre_call_step.rs
+    - crates/betterlite-server/src/pre_call_step/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1913-L2241
+    why: common_processing_pre_call_logic, the order of every step.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2243-L2359
+    why: _pre_call_with_fallbacks, _configured_fallbacks and _resolve_fallback_models.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L662-L735
+    why: The per-request model group alias and the guardrail-added tag budget check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2526-L2564
+    why: _process_llm_request, the caller that runs the fallback wrapper before the during-call hook and the route.
+dod:
+  - text: PreCallStep runs the nineteen steps in LiteLLM's order with each port called with the right arguments, and fails with the 400 model error before calling any port.
+    proof: [step-tests]
+  - text: The router settings branch writes router_settings_override, _router_weights (null for invalid weights) and an authorized alias target, and is skipped without a router.
+    proof: [step-tests]
+  - text: Every failure returns the data as it stood when the step failed.
+    proof: [step-tests]
+  - text: The fallback wrapper retries each fallback model on a fresh copy only after RateLimited, keeps the first tag set, and returns the original failure when every fallback is rate limited.
+    proof: [fallback-tests]
+  - text: The standalone step passes the data through its stand-in ports and still runs the in-file rewrites.
+    proof: [standalone-tests]
+checks:
+  optional: []
+  commands:
+    - id: step-tests
+      why: a pre-call step is missing, out of order or called with the wrong arguments
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pre_call_step::tests::step_/)'
+    - id: fallback-tests
+      why: the rate-limit fallback loop retries the wrong models, loses the data or swallows a failure
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pre_call_step::tests::fallback_/)'
+    - id: standalone-tests
+      why: the stand-in step drops the data or skips the in-file rewrites
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pre_call_step::tests::standalone_/)'
+oracle_cases: []
+deviations:
+  - what: The logging object is returned next to the data instead of being stored under `litellm_logging_obj` in it.
+    why: A typed logging state cannot live in a JSON map; every caller gets it from PreCallOutput.
+  - what: B1100 route modules run the standalone step, with no hooks, router or checks, until B8804 swaps in the production step.
+    why: Route tasks cannot depend on the parts that build shared server state; the production step reaches them in B8804, as B8636 does for the stream generator.
+out_of_scope:
+  - "The route types, ports, rewrites and the pre_call config section: B8800. The production ports: B8802."
+  - "The steps of _process_llm_request after the pre-call (the during-call hook, route_request, the post-call hooks, the custom headers, the exception handler): each route keeps its own; the pass-through ones are B8694 and B8693."
+  - "DDSpanTagger itself: B3930 (merged). function_setup's callback set-up beyond the logging state: the logging state owner B247."
+pitfalls:
+  - "LiteLLM sets `litellm_call_id` after the aliases and the router settings, so the RequestPreparer must not depend on it."
+  - "The guardrail merge runs twice on a fallback retry, first with the rate-limited model as alias and then without, so guardrails of both groups apply."
+  - "_tags_before_guardrails is set only when it is None, so a retry after a rate limit compares against the tags of the first attempt."
+  - "The fallback loop restores the rate-limited data before raising, so the failure handler sees the original model, not the last fallback."
+  - "The file_search authorization runs right after add_litellm_data_to_request and before the model is resolved."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

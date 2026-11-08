@@ -1,0 +1,96 @@
+id: B8693
+title: Passthrough reply shaping and exception mapping
+description: >-
+  Build the parts of LiteLLM's ProxyBaseLLMRequestProcessing that only the passthrough route type runs after the upstream answers, plus the exception mapping its callers wrap around it. B8694's pipeline calls these; B7324's `LlmPassthroughProcessor` takes the mapper as its `ExceptionMapper`. Code goes in crates/betterlite-server, module `passthrough_reply` (crates/betterlite-server/src/passthrough_reply.rs and passthrough_reply/**). Every name stays at 30 characters or fewer.
+
+  Header merge. `merge_stream_headers(upstream: Option<&[(String, String)]>, custom: &[(String, String)]) -> Vec<(String, String)>` replaces _merge_passthrough_streaming_headers (L1698-L1725). Drop upstream headers whose lowercased name is transfer-encoding, content-encoding, set-cookie, connection, keep-alive, proxy-authenticate, proxy-authorization, te, trailer or upgrade, then lay the custom headers over the rest; a custom header wins on a case-sensitive name match, as a Python dict update does. No upstream headers gives the custom headers.
+
+  Event-stream dispatch. LiteLLM looks these up on LlmPassthroughRouteHandler (handler.py L262-L311). Only the "bedrock" provider has a handler that defines them, so each is a match on the provider text that calls B3678's Bedrock statics (read their merged names in guardrails::bedrock_passthrough) and answers the default for every other provider or none: `is_event_stream(provider, content_type) -> bool` (default false), `event_stream_media(provider) -> Option<&'static str>` (default None), `stream_rewritable(provider, endpoint) -> bool` (default false; a missing endpoint is ""), and `rewrite_event_stream(body, hook, key, data) -> Result<Bytes, ...>`, which calls B3678's `de_anonymize_event_stream` with the hook for bedrock and returns the body unchanged otherwise, after the debug log "LlmPassthroughRouteHandler: no event-stream handler for provider=%s, leaving stream unmodified". The hook is any B3678 `PostCallSuccessHook`; B8694 passes B8656's `ProxyPostCallHook`, which runs ProxyLogging.post_call_success_hook. Convert the JSON key and data maps to B3678's value maps with the conversion the merged guardrail code offers.
+
+  Guardrail gate. `post_call_guardrail_runs(data, guardrails) -> bool` replaces _has_post_call_guardrails_for_passthrough (L3212-L3235): merge model-level guardrails into the data with B6370's _check_and_merge_model_level_guardrails, then true when any registered guardrail's should_run_guardrail (B3801) answers true for the post_call event. The registered guardrails come in as a slice of B3801's guardrail handle; B8694 passes shared.guardrails.
+
+  Reply hooks. `ReplyHooks` is a trait declared here with the two ProxyLogging calls this module makes besides the de-anonymize hook: `response_headers(data, key, upstream: Option<&UpstreamView>, request_headers) -> Result<Option<Vec<(String, String)>>, HookFailure>` (post_call_response_headers_hook) and `success_json(data, key, body: Value) -> Result<Value, HookFailure>` (post_call_success_hook on a parsed JSON body). B8694 implements it over shared.proxy_logging; tests use a recording fake.
+
+  Buffered reply. `buffered_reply(...)` replaces _handle_non_streaming_allm_passthrough_route (L3275-L3366) and returns `Option<Response>`; None means "go on with the normal path". Steps: no post-call guardrail runs (the gate above), give None. A status of 300 or more, None. Read content-type (missing is ""). Not an event stream for the provider and no "application/json" substring in the content type, None. Headers = betterlite-http's get_response_headers(upstream headers, custom headers) plus the response_headers hook's answer laid over them. An event stream: read the body, rewrite it, answer with the upstream status, the upstream content type and those headers. Otherwise read the body and parse it as JSON; a parse failure (or invalid UTF-8) answers the raw bytes as application/json; else call success_json, and a JSON object back is sent as compact JSON text (docs/compatibility.md), anything else sends the original bytes after the debug log "allm_passthrough_route: post_call_success_hook returned %s, leaving JSON response unmodified".
+  Stream reply. `stream_reply(...)` replaces the passthrough streaming branch (L2713-L2773). Streaming headers = merge_stream_headers(upstream headers, custom headers) when the upstream has headers, else the custom headers. For a streaming body: when the gate is true and stream_rewritable(provider, endpoint), collect every chunk, rewrite the bytes, and answer 200 with event_stream_media(provider) as media type and the custom headers minus content-length (case-insensitive). Otherwise relay the stream unchanged with the upstream status (200 when unknown), event_stream_media(provider) as media type when there is one, and the streaming headers. For a full body that reached the streaming path (stream requested but the upstream answered whole): try buffered_reply with the custom headers first, else stream the body with the upstream status and the streaming headers.
+  `full_reply(...)` replaces the non-streaming passthrough branch (L2833-L2857): with the custom headers B8694 builds from get_custom_headers, return buffered_reply's answer when it has one; otherwise None, so B8694 runs post_call_success_hook and hands the upstream reply back to B7324's processor as `ProcessedReply::Upstream`.
+
+  Exception mapping. `PassthroughFailure` is the error B8694's pipeline returns: its `kind` is `Upstream { status, headers, body }` (httpx.HTTPStatusError), `Proxy { status, message, error_type, param, code, headers }` (a ProxyException), `Http { status, detail: Value, headers }` (an HTTPException), `Provider { status: Option<u16>, message, error_type, param, openai_code, provider_specific_fields, headers, cooldown_seconds: Option<f64>, has_attribute_error: bool }` or `Other(String)`, and its `context` carries what LiteLLM reads from `self.data`: the request data map, the call id, the model id, the version, the request headers and the failure custom headers B8694 builds with B004's failure headers (get_custom_headers with response_cost 0 and no timing).
+  `PassthroughErrors` implements B7324's `ExceptionMapper` for `PassthroughFailure` and replaces _handle_llm_api_exception (L3625-L3774) with _apply_router_cooldown_retry_after (L3621-L3623). Steps: log the failure (log_llm_api_exception's line; read B004's merged name), ask the failure hook (a third `ReplyHooks` method, `failure(data, key, failure) -> Result<Option<PassthroughFailure>, HookFailure>`, post_call_failure_hook) and use its replacement when it gives one; headers start from the failure's own headers, or, when it has none, from betterlite-http's provider header projection of an upstream response's headers; lay the custom headers over them and then the response_headers hook's answer (a hook error is ignored); drop the unsafe proxy response headers (UNSAFE_PROXY_RESPONSE_HEADERS; read its owner's merged constant); add `retry-after` as the ceiling of the cooldown seconds when they are above 0. Then: Proxy keeps its own headers minus the unsafe ones with the safe headers laid over them; Http becomes a ProxyException the way proxy_exception_from_http_exception (B5103) does; Upstream becomes HTTP status with detail `{"error": <body as UTF-8 text>}` and the safe headers; a Provider failure with has_attribute_error becomes 400 invalid_request_error "Invalid request format: <message>"; any other failure uses its status when it is 400 to 599, else 500, with type and param from openai_error_type and openai_error_param (B1103), the redacted client message and provider_specific_fields. The body is LiteLLM's error envelope; build it with the merged ProxyException response code, not by hand.
+
+  Tests in passthrough_reply/tests.rs with recording fakes for ReplyHooks and the de-anonymize hook and small real guardrail handles. Groups: `merge_`, `dispatch_`, `buffered_`, `stream_`, `errors_`. Helper oracle cases cover merge_stream_headers, the one pure static here, with the operation b8693.
+scope:
+  paths:
+    - crates/betterlite-server/src/passthrough_reply.rs
+    - crates/betterlite-server/src/passthrough_reply/**
+    - tools/oracle/cases/helpers/passthrough-reply/**
+    - tools/oracle/helpers/b8693.py
+    - tools/oracle/helpers/b8693/**
+    - tools/oracle/src/helpers/server/b8693.rs
+    - tools/oracle/src/helpers/server/b8693/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1698-L1725
+    why: _merge_passthrough_streaming_headers and its ten dropped names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2713-L2773
+    why: The passthrough streaming branch, the buffered guardrail path and the unbuffered relay.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2833-L2857
+    why: The non-streaming passthrough branch with its custom headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3212-L3383
+    why: The guardrail gate, the stream handler checks, the media type, the buffered reply and the event-stream rewrite.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L262-L311
+    why: The four event-stream dispatchers and their defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3621-L3774
+    why: _apply_router_cooldown_retry_after and _handle_llm_api_exception.
+dod:
+  - text: merge_stream_headers drops the ten hop and cookie headers in any case and lets custom headers win.
+    proof: [merge-tests, oracle, helper-python]
+  - text: The event-stream dispatchers answer B3678's Bedrock statics for bedrock and the defaults for every other provider, and rewrite_event_stream calls de_anonymize_event_stream through the B3678 PostCallSuccessHook it is given (B8656's ProxyPostCallHook in production).
+    proof: [dispatch-tests]
+  - text: buffered_reply gives None without a running post-call guardrail, for a status of 300 or more and for a content type that is neither JSON nor an event stream, rewrites an event stream, runs success_json on JSON, and keeps the raw bytes for bad JSON or a non-object answer.
+    proof: [buffered-tests]
+  - text: stream_reply relays the stream with the merged headers and the provider media type, buffers and rewrites only a rewritable endpoint with a running guardrail, and full_reply answers only when buffered_reply does.
+    proof: [stream-tests]
+  - text: PassthroughErrors applies the failure hook's replacement, builds the safe headers with the cooldown retry-after, turns an upstream status error into a detail whose error field holds the body text, an attribute error into 400 Invalid request format, and any other failure into a ProxyException with the status, type and param rules.
+    proof: [errors-tests]
+checks:
+  optional: []
+  commands:
+    - id: merge-tests
+      why: the streaming header merge keeps a hop header or loses a custom one
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_reply::tests::merge_/)'
+    - id: dispatch-tests
+      why: an event-stream dispatcher answers for the wrong provider or skips the de-anonymize hook
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_reply::tests::dispatch_/)'
+    - id: buffered-tests
+      why: the buffered reply runs when it should not, or rewrites the body wrongly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_reply::tests::buffered_/)'
+    - id: stream-tests
+      why: the stream reply buffers a stream it should relay, or picks the wrong headers or media type
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_reply::tests::stream_/)'
+    - id: errors-tests
+      why: a failure maps to the wrong status, body or headers
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_reply::tests::errors_/)'
+    - id: helper-python
+      why: merge_stream_headers has no pinned LiteLLM comparison through the b8693 helper
+      run: test -f tools/oracle/helpers/b8693.py && grep -qE '^[[:space:]]+b8693:' tools/oracle/fuzz/corpus/helper_case/b8693-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/passthrough-reply/merge-drops-hop-headers.yaml
+  - tools/oracle/cases/helpers/passthrough-reply/merge-custom-wins.yaml
+deviations:
+  - what: The request data, call id and failure headers travel inside PassthroughFailure instead of being read from the processor object.
+    why: B7324's ExceptionMapper takes only the error and the key; what a client sees is the same.
+out_of_scope:
+  - "base_process_llm_request, _process_llm_request, common_processing_pre_call_logic and get_custom_headers for this route type: B8694 runs them with B004's header code. base_passthrough_process_llm_request: B7324."
+  - "The rest of ProxyBaseLLMRequestProcessing (the chat, Responses, Anthropic and container branches, the deferred logging closures, create_response and the SSE generators): their route tasks; no task builds the whole class."
+  - "The Bedrock event-stream statics and de_anonymize_event_stream: B3678. The ProxyPostCallHook value: B8656."
+pitfalls:
+  - "The buffered rewrite answers 200 even when the upstream stream had another 2xx status; only the unbuffered relay keeps the upstream status."
+  - "The guardrail gate merges model-level guardrails first, so a guardrail set only on the deployment still buffers the reply."
+  - "A post_call_success_hook answer that is not a JSON object leaves the original bytes, not a re-serialized body."
+  - "An upstream status error's body is decoded as UTF-8 text into detail.error; it is not parsed as JSON."
+  - "The failure's own headers win the start; provider headers are projected only when the failure has none."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

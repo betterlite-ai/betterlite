@@ -1,0 +1,13 @@
+id: B8680
+milestone: M8 platform
+title: Edge layers, the outer error handlers, CORS, the metrics endpoint and the admin UI static mounts
+status: todo
+depends_on: [B8610, B8591, B8410, B8250, B3842, B3847, B3889, B3102, B4200, B8270, B8481, B3886]
+file: tasks/B8680-edge-layers.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

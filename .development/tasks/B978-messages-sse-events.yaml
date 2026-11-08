@@ -33,7 +33,7 @@ scope:
   - tools/oracle/cases/helpers/messages-sse-events/**
   - tools/oracle/fuzz/corpus/helper_case/messages_sse_events-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/messages_header_stream.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/messages_header_stream.py
   - tools/oracle/cases/sdk-http/messages-header-stream/**

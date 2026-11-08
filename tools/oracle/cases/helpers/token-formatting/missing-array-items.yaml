@@ -1,0 +1,16 @@
+kind: helper
+name: token-formatting-missing-array-items
+call:
+  token_formatting:
+    function: format_tools
+    tools:
+      - type: function
+        function:
+          name: broken
+          parameters:
+            type: object
+            properties:
+              values:
+                type: array
+env: {}
+compare: {ignore: []}

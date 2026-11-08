@@ -1,0 +1,16 @@
+kind: helper
+name: rubrik-delivery-warning-interval-enforcement
+call:
+  b3976:
+    environment: {RUBRIK_BATCH_SIZE: "20000", RUBRIK_API_KEY: test-key}
+    init: {api_base: "https://rubrik.test"}
+    replies: []
+    clock: [50.0, 100.0, 120.0, 200.0, 210.0]
+    actions:
+      - {do: append_sequence, count: 10000}
+      - {do: append, payload: {index: 10000}}
+      - {do: append, payload: {index: 10001}}
+      - {do: append, payload: {index: 10002}}
+      - {do: append, payload: {index: 10003}}
+env: {}
+compare: {ignore: []}

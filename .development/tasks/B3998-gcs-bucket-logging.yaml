@@ -25,6 +25,8 @@ scope:
   - tools/oracle/helpers/b3998/**
   - tools/oracle/src/helpers/logging/b3998.rs
   - tools/oracle/src/helpers/logging/b3998/**
+  - crates/betterlite-logging/src/registry/catalog/gcs_bucket.rs
+  - crates/betterlite-logging/src/registry/catalog/gcs_bucket/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L28-L51
@@ -52,6 +54,8 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/Readme.md
   why: GCS integration documentation reference material.
 dod:
+- text: "The GCS bucket logger implements CallbackLogger, and registry/catalog/gcs_bucket.rs builds it for gcs_bucket and starts its batch flush on CatalogInputs.tracker (tests named callback_logger_* in gcs_logger and registry/catalog/gcs_bucket/tests.rs)."
+  proof: [callback-logger]
 - text: >-
     GCSBucketLogger.__init__ reads GCS_BATCH_SIZE, GCS_FLUSH_INTERVAL and GCS_USE_BATCHED_LOGGING
     from environment with documented defaults, creates an asyncio queue with max size from
@@ -118,6 +122,9 @@ dod:
 checks:
   optional: []
   commands:
+  - id: callback-logger
+    why: gcs_bucket has no builder or the GCS logger misses the trait
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::gcs_bucket::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?callback_logger_/)'
   - id: initialization-tests
     why: __init__ must read environment, create queue and launch periodic flush
     run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^gcs_logger::(.*::)?gcs_bucket_logging::initialization_behaviors::tests::/) - test(/::replays_corpus$/)'

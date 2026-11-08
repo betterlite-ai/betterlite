@@ -41,7 +41,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/legacy_spend_query.rs
     - crates/betterlite-server/fuzz/corpus/legacy_spend_query/**
-    - tools/oracle/cases/http/legacy-spend-logs/**
     - tools/oracle/helpers/b1730.py
     - tools/oracle/helpers/b1730/**
     - tools/oracle/src/helpers/server/b1730.rs
@@ -57,9 +56,11 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4628-L4807
     why: Full-session aggregation, conditional row fields and v2 serialization.
 dod:
-  - text: Legacy exports preserve scope, midnight bounds, summary padding and the exact truncation header threshold.
-    proof: [log-result-tests, legacy-query-corpus, oracle]
+  - text: Legacy exports preserve scope, midnight bounds, summary padding and the exact truncation header threshold. B8663 proves it over HTTP.
+    proof: [log-result-tests, legacy-query-corpus]
   - text: UI enrichment separates identical session IDs by key, preserves conditional fields and skips queries for public v2.
+    proof: [log-result-tests]
+  - text: The handlers answer through tower's oneshot over the module's own Router with fake ports; B8663 merges them through B069's spend routes and proves them over HTTP.
     proof: [log-result-tests]
 checks:
   optional: []
@@ -70,11 +71,7 @@ checks:
     - id: legacy-query-corpus
       why: Legacy query parsing has no new replay corpus.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/legacy_spend_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_legacy_spend_query_corpus)'
-oracle_cases:
-  - tools/oracle/cases/http/legacy-spend-logs/raw-key-user-and-call-id.yaml
-  - tools/oracle/cases/http/legacy-spend-logs/midnight-end-and-summary-exact-id.yaml
-  - tools/oracle/cases/http/legacy-spend-logs/trailing-padding-gaps-and-empty-range.yaml
-  - tools/oracle/cases/http/legacy-spend-logs/single-date-ignored-and-truncation-header.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - B1729 owns daily-summary projections and metadata hydration; B1731 owns session paging, B1732 UI/v2 listing and B1728 their shared filter constants.

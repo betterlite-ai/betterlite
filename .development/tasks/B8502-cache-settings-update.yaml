@@ -53,7 +53,7 @@ description: >-
   Any error in steps 3 to 7 answers 500 with {"detail": "Error updating cache settings: <error text>"} (a string
   detail, unlike steps 1 and 2) and logs "Error updating cache settings: <error>" at error level.
 
-  Expose `pub fn router(state) -> axum::Router` from route.rs for the architect to merge. Do not touch lib.rs or another
+  Expose `pub fn router(state) -> axum::Router` from route.rs for B8650 to merge. Do not touch lib.rs or another
   route list.
 
 
@@ -62,14 +62,13 @@ description: >-
   updated, the reinit order, the redacted reply) and `cache_settings_update::audit::` (row fields, redaction, disabled
   logging, a failing sink only warns). Helper operation b8502 has the pure functions `cache_params_equal` (inputs
   `params1`, `params2`) and `redact_settings` (input `settings`); its Python side calls
-  CacheSettingsManager._cache_params_equal and _redact_settings. HTTP cases run against the booted proxy, which has no
+  CacheSettingsManager._cache_params_equal and _redact_settings. B8650 owns the HTTP cases through the booted proxy, which has no
   database.
 
 scope:
   paths:
     - crates/betterlite-server/src/cache_settings_update.rs
     - crates/betterlite-server/src/cache_settings_update/**
-    - tools/oracle/cases/cache_settings_update/**
     - tools/oracle/cases/helpers/cache-settings-update/**
     - "tools/oracle/fuzz/corpus/helper_case/cache_settings_update-*"
     - tools/oracle/helpers/b8502.py
@@ -91,10 +90,12 @@ references:
     why: is_audit_logging_enabled, which B2330 ports.
 
 dod:
+  - text: The handler tests call tower's oneshot on cache_settings_update's own Router with fake ports; B8650 runs the HTTP cases through the booted proxy.
+    proof: [route-tests]
   - text: params_equal ignores redis_type and nulls and compares Python str() texts, and the startup reload skips equal params and swallows errors.
     proof: [manager-tests, oracle, helper-python]
-  - text: POST /cache/settings answers the two configuration 500s, merges over saved secrets, stores the encrypted map and reinitialises the cache in LiteLLM's order.
-    proof: [route-tests, oracle]
+  - text: POST /cache/settings answers the two configuration 500s, merges over saved secrets, stores the encrypted map and reinitialises the cache in LiteLLM's order. B8650 proves it over HTTP.
+    proof: [route-tests]
   - text: The reply redacts credentials and a failure in the body answers the string-detail 500.
     proof: [route-tests]
   - text: The audit row carries the redacted before and after keys and a failing sink only warns.
@@ -128,8 +129,6 @@ checks:
         cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 
 oracle_cases:
-  - tools/oracle/cases/cache_settings_update/post-without-database.yaml
-  - tools/oracle/cases/cache_settings_update/post-without-key.yaml
   - tools/oracle/cases/helpers/cache-settings-update/params-equal-str-forms.yaml
   - tools/oracle/cases/helpers/cache-settings-update/params-equal-skips-redis-type.yaml
   - tools/oracle/cases/helpers/cache-settings-update/params-differ-lists.yaml
@@ -145,7 +144,7 @@ deviations:
 out_of_scope:
   - "GET /cache/settings (B4307) and POST /cache/settings/test (B4308)."
   - "_parse_stored_settings, _resolve_cache_url_precedence, _redact_credentials, _merge_over_saved and the other pure helpers; B4306 built them."
-  - "ProxyConfig._init_cache, switch_on_llm_response_caching and the startup and reload calls of init_from_db; the wave 17 cache and secrets wiring part mounts it, with the production CacheReinit impl."
+  - "ProxyConfig._init_cache and switch_on_llm_response_caching: B8612 builds the production CacheReinit. The startup and reload calls of init_from_db: B8384. Merging the router: B8650."
   - "Cache.__init__ behind init_cache; B4299 owns it."
   - "litellm/caching/_internal_lru_cache.py (lru_cache_wrapper): no caller at the pin."
   - "litellm/caching/__init__.py: Python re-exports only."

@@ -18,7 +18,7 @@ scope:
   - crates/betterlite-core/src/api/assistant_records.rs
   - crates/betterlite-core/src/api/assistant_records/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/assistant_create.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/assistant_create.py
   - tools/oracle/cases/sdk-http/assistant-create/**
