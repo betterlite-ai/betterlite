@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Error as JsonError;
 use thiserror::Error;
 
-use crate::cohere_streams::CohereUsage;
+use crate::cohere_streams::{CohereUsage, cohere_error};
+use crate::error::ProviderError;
 
 use self::citations::Annotation;
 use self::tool_calls::ReplyToolCall;
@@ -34,6 +35,13 @@ impl ReplyError {
             Self::NotAMapping => Some(422),
             Self::Field(..) | Self::Encode(_) | Self::UsageOverflow => None,
         }
+    }
+}
+
+impl From<ReplyError> for ProviderError {
+    // get_error_class builds the shared Cohere error, which takes no headers at all
+    fn from(error: ReplyError) -> Self {
+        cohere_error(error.status_code().unwrap_or(500), error.to_string())
     }
 }
 

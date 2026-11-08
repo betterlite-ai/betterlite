@@ -13,7 +13,8 @@ use super::reply::{AssistantReply, CohereV2Reply, ReplyError, ReplyInput, decode
 use super::{CohereV2ChatConfig, SUPPORTED_OPENAI_PARAMS, complete_url, map_openai_params};
 use crate::chat::ChatMessage;
 use crate::chat_content::RefuseDownloads;
-use crate::cohere_streams::{CohereUsage, cohere_error};
+use crate::cohere_streams::CohereUsage;
+use crate::error::ProviderError;
 
 fn object(text: &str) -> Object {
     serde_json::from_str(text).unwrap()
@@ -433,7 +434,13 @@ fn replays_the_cohere_chat_v2_corpus(#[files("fuzz/corpus/cohere_chat_v2/*")] pa
 
 #[test]
 fn v2_error_class_keeps_status_and_message_without_headers() {
-    let error = cohere_error(418, String::from("teapot"));
-    assert_eq!(error.status_code, 418);
-    assert_eq!(error.headers, None);
+    let reply_error = decode_cohere_chat_v2(reply_input(b"{not json", 418, 0, None)).unwrap_err();
+    let provider_error = ProviderError::from(reply_error);
+    assert_eq!(provider_error.status_code, 418);
+    assert_eq!(provider_error.headers, None);
+    assert!(
+        provider_error
+            .message
+            .starts_with("the Cohere response is not valid JSON")
+    );
 }
