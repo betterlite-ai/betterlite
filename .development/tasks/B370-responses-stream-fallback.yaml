@@ -1,6 +1,6 @@
 id: B370
 title: Responses stream fallback and continuation
-description: 'Adapt B311 commitment and B310 fallback ownership to B080 typed Responses events. Buffer
+description: 'Adapt B311 commitment and B310 fallback ownership to the typed Responses events in betterlite-openai response_events.rs. Buffer
   only source-defined pre-output events, compose continuation input and partial usage, and preserve event
   IDs and headers. Use the endpoint service adapter in betterlite-server; no new SSE parser or provider
   transport belongs here. MAX_HELD_PRE_OUTPUT_RESPONSES_EVENTS=200; the limit is a pinned constant, not

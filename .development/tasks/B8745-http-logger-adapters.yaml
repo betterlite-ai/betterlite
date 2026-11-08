@@ -1,5 +1,5 @@
 id: B8745
-title: Catalog adapters for athina, greenscale, promptlayer, lago and openmeter
+title: Catalog adapters for athina, greenscale, promptlayer, lago, openmeter and clickhouse
 description: >-
   Five small HTTP loggers are merged but unreachable: Athina, Greenscale and PromptLayer
   (crates/betterlite-logging/src/http_analytics_loggers.rs, B3961) and Lago and OpenMeter (finops/metering.rs and
@@ -24,6 +24,9 @@ description: >-
 
   Tests in each <name>/tests.rs: resolve by name, a missing key gives Init, and the implemented events reach a fake
   sender with the mapped fields.
+
+
+  ClickHouse. B4001 merged the spend row projection and batching (crates/betterlite-logging/src/clickhouse.rs and clickhouse/) without a catalog entry. registry/catalog/clickhouse.rs builds that logger once per process and implements async_log_success_event, queueing the spend row the way LiteLLM's ClickhouseLogger does. Read its settings through inputs.env with the names B4001 uses; a missing required one gives CatalogError::Init with LiteLLM's message. Tests in clickhouse/tests.rs as above.
 scope:
   paths:
     - crates/betterlite-logging/src/registry/catalog/athina.rs
@@ -36,6 +39,8 @@ scope:
     - crates/betterlite-logging/src/registry/catalog/lago/**
     - crates/betterlite-logging/src/registry/catalog/openmeter.rs
     - crates/betterlite-logging/src/registry/catalog/openmeter/**
+    - crates/betterlite-logging/src/registry/catalog/clickhouse.rs
+    - crates/betterlite-logging/src/registry/catalog/clickhouse/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4463-L4495
@@ -49,12 +54,14 @@ dod:
     proof: [adapter-tests]
   - text: lago and openmeter resolve to wrappers with sync and async success, and openmeter also sends stream events.
     proof: [adapter-tests]
+  - text: clickhouse resolves to an async success wrapper that queues B4001's spend rows.
+    proof: [adapter-tests]
 checks:
   optional: []
   commands:
     - id: adapter-tests
       why: a wrapper is missing, sends an event LiteLLM never sends or the module still returns Unavailable
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::(athina|greenscale|promptlayer|lago|openmeter)::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::(athina|greenscale|promptlayer|lago|openmeter|clickhouse)::/)'
 oracle_cases: []
 deviations: []
 out_of_scope:

@@ -1,7 +1,7 @@
 id: B3850
 milestone: M7 observability
 title: OTel Arize Phoenix Weave and Levo presets
-status: todo
+status: done
 depends_on: [B002, B3842]
 file: tasks/B3850-otel-arize-phoenix-weave-levo-presets.yaml
 covers:
@@ -12,7 +12,7 @@ covers:
   - "litellm/types/integrations/{arize,arize_phoenix,weave_otel}.py"
 parent: B110
 split_from: B110
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 873
