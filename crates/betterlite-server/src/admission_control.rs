@@ -118,8 +118,7 @@ impl AdmissionControl {
         }
         self.queued.fetch_add(1, Ordering::AcqRel);
         let mut slot = QueueSlot {
-            control: self,
-            active: true,
+            control: Some(self),
         };
         let acquired = timeout(
             limits.queue_timeout,
@@ -143,22 +142,20 @@ fn decrement(counter: &AtomicU64) {
 }
 
 struct QueueSlot<'control> {
-    control: &'control AdmissionControl,
-    active: bool,
+    control: Option<&'control AdmissionControl>,
 }
 
 impl QueueSlot<'_> {
     fn finish(&mut self) {
-        self.active = false;
-        decrement(&self.control.queued);
+        if let Some(control) = self.control.take() {
+            decrement(&control.queued);
+        }
     }
 }
 
 impl Drop for QueueSlot<'_> {
     fn drop(&mut self) {
-        if self.active {
-            self.finish();
-        }
+        self.finish();
     }
 }
 

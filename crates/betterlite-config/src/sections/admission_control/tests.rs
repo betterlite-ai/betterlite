@@ -60,6 +60,10 @@ fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
     "general_settings:\n  max_in_flight_requests_per_worker: 2\n  max_queued_requests_per_worker: null",
     Some((2, 2, 1.0_f64))
 )]
+#[case::nan_timeout(
+    "general_settings:\n  max_in_flight_requests_per_worker: 2\n  admission_queue_timeout_seconds: nan",
+    None
+)]
 fn converts_admission_settings(
     #[case] source: &str,
     #[case] expected: Option<(usize, usize, f64)>,
@@ -132,6 +136,15 @@ fn one_invalid_setting_disables_every_limit() {
         &[],
     );
     assert_eq!(settings, Settings::default());
+}
+
+#[test]
+fn infinite_timeout_never_expires() {
+    let settings = settings(
+        "general_settings:\n  max_in_flight_requests_per_worker: 1\n  admission_queue_timeout_seconds: inf",
+        &[],
+    );
+    assert_eq!(settings.limits.unwrap().queue_timeout, Duration::MAX);
 }
 
 #[test]

@@ -1,11 +1,19 @@
+use std::fs::read_to_string;
 use std::str::from_utf8;
+use std::sync::Arc;
+use std::time::Duration;
 
 use axum::http::StatusCode;
+use betterlite_config::sections::admission_control::{Limits, Settings};
 use rstest::rstest;
+use tempfile::NamedTempFile;
+use tokio::sync::Semaphore;
+use tracing::subscriber::set_default;
 
 use super::harness::{
     Behavior, Harness, Requests, await_queued, await_started, gates, harness, in_flight, release,
 };
+use crate::admission_control::AdmissionControl;
 
 const ENABLED: &str = "general_settings:\n  max_in_flight_requests_per_worker: 1\n  max_queued_requests_per_worker: 0";
 const ONE_QUEUED: &str = "general_settings:\n  max_in_flight_requests_per_worker: 1\n  max_queued_requests_per_worker: 1";
@@ -60,6 +68,35 @@ async fn admission_control_behaviors(#[case] scenario: Scenario) {
 async fn start_and_wait(harness: &Harness, requests: &mut Requests, path: &str) -> StatusCode {
     requests.start(&harness.router, path);
     requests.status(path).await
+}
+
+#[test]
+fn semaphore_maximum_is_the_last_usable_limit() {
+    assert!(!exceeds_semaphore_maximum(Semaphore::MAX_PERMITS));
+    assert!(exceeds_semaphore_maximum(
+        Semaphore::MAX_PERMITS.saturating_add(1)
+    ));
+}
+
+fn exceeds_semaphore_maximum(max_in_flight_requests: usize) -> bool {
+    let log = NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let guard = set_default(subscriber);
+    let _control = AdmissionControl::from_settings(&Settings {
+        limits: Some(Limits {
+            max_in_flight_requests,
+            max_queued_requests: 0,
+            queue_timeout: Duration::from_secs(1),
+        }),
+    });
+    drop(guard);
+    read_to_string(log.path())
+        .unwrap()
+        .contains("exceeds the semaphore maximum")
 }
 
 async fn disabled_admission() {
@@ -286,10 +323,23 @@ async fn disconnect_releases() {
 
 async fn invalid_settings() {
     let gates = gates(&[("/a", Behavior::Hold), ("/b", Behavior::Hold)]);
+    let log = NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let guard = set_default(subscriber);
     let harness = harness(
         "general_settings:\n  max_in_flight_requests_per_worker: 0",
         "",
         gates,
+    );
+    drop(guard);
+    let written = read_to_string(log.path()).unwrap();
+    assert!(
+        written.contains("invalid admission control setting"),
+        "{written}"
     );
     let mut requests = Requests::default();
     requests.start(&harness.router, "/a");
