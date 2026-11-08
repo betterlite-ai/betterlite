@@ -1965,6 +1965,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-provider",
  "betterlite-proxy",
+ "betterlite-rag",
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
@@ -2215,6 +2216,21 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-rag"
 version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-provider",
+ "betterlite-redis",
+ "percent-encoding",
+ "redis",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
 
 [[package]]
 name = "betterlite-rate-limit"
@@ -2252,6 +2268,7 @@ dependencies = [
  "betterlite-redact",
  "crc16",
  "futures-util",
+ "hex",
  "prometheus-client",
  "py_literal",
  "rcgen",
@@ -2262,6 +2279,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "sha2 0.11.1",
  "socket2",
  "tempfile",
  "thiserror",
@@ -2332,6 +2350,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "unicode-general-category",
 ]
 

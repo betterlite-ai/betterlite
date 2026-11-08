@@ -1,0 +1,8 @@
+kind: helper
+name: redis-client-reuse-cluster-pubsub-no-nodes
+call:
+  b4325:
+    function: cluster_pubsub_node
+    startup_nodes: []
+env: {}
+compare: {ignore: []}

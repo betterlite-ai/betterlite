@@ -1,0 +1,12 @@
+kind: helper
+name: url_ssl_scheme
+call:
+  b7813:
+    calls:
+      - {call: url, input: {host: valkey.example.com, port: 6379, ssl: false}}
+      - {call: url, input: {host: valkey.example.com, port: 6379, ssl: true}}
+      - {call: url, input: {host: valkey.example.com, port: 6380, password: "secret", ssl: true}}
+      - {call: url, input: {host: valkey.example.com, port: 6380, password: "secret", ssl: false}}
+      - {call: url, input: {host: valkey.example.com, port: 6379, password: "", ssl: true}}
+env: {}
+compare: {ignore: []}
