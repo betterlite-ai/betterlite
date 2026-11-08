@@ -64,7 +64,15 @@ fn converts_admission_settings(
     #[case] source: &str,
     #[case] expected: Option<(usize, usize, f64)>,
 ) {
-    let settings = settings(source, &[]);
+    assert_admission(source, &[], expected);
+}
+
+fn assert_admission(
+    source: &str,
+    variables: &[(&str, &str)],
+    expected: Option<(usize, usize, f64)>,
+) {
+    let settings = settings(source, variables);
     match expected {
         None => assert_eq!(settings, Settings::default()),
         Some((max_in_flight, max_queued, timeout)) => {
@@ -105,19 +113,7 @@ fn resolves_environment_references(
     #[case] variables: &[(&str, &str)],
     #[case] expected: Option<(usize, usize, f64)>,
 ) {
-    let settings = settings(source, variables);
-    match expected {
-        None => assert_eq!(settings, Settings::default()),
-        Some((max_in_flight, max_queued, timeout)) => {
-            let limits = settings.limits.unwrap();
-            assert_eq!(limits.max_in_flight_requests, max_in_flight);
-            assert_eq!(limits.max_queued_requests, max_queued);
-            assert_eq!(
-                limits.queue_timeout.as_secs_f64().to_bits(),
-                timeout.to_bits()
-            );
-        }
-    }
+    assert_admission(source, variables, expected);
 }
 
 #[test]

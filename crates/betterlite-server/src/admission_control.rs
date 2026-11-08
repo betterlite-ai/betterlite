@@ -136,6 +136,12 @@ impl AdmissionControl {
     }
 }
 
+fn decrement(counter: &AtomicU64) {
+    let _previous = counter.fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+        Some(value.saturating_sub(1))
+    });
+}
+
 struct QueueSlot<'control> {
     control: &'control AdmissionControl,
     active: bool,
@@ -144,12 +150,7 @@ struct QueueSlot<'control> {
 impl QueueSlot<'_> {
     fn finish(&mut self) {
         self.active = false;
-        let _previous =
-            self.control
-                .queued
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
-                    Some(value.saturating_sub(1))
-                });
+        decrement(&self.control.queued);
     }
 }
 
@@ -169,12 +170,7 @@ struct AdmissionSlot {
 impl Drop for AdmissionSlot {
     fn drop(&mut self) {
         drop(self.permit.take());
-        let _previous =
-            self.control
-                .admitted
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
-                    Some(value.saturating_sub(1))
-                });
+        decrement(&self.control.admitted);
     }
 }
 

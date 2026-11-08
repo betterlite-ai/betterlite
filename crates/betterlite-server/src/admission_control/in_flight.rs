@@ -20,12 +20,7 @@ struct InFlightGuard {
 
 impl Drop for InFlightGuard {
     fn drop(&mut self) {
-        let _previous =
-            self.requests
-                .current
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
-                    Some(value.saturating_sub(1))
-                });
+        super::decrement(&self.requests.current);
     }
 }
 
