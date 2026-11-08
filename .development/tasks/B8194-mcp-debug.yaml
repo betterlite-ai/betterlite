@@ -14,6 +14,8 @@ description: >-
   describe_upstream_response and describe_upstream_http_failure. Only content-type,
   content-length and accept headers are shown unmasked.
 
+  The plan registers helper operation b8194 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8194.rs, write tools/oracle/helpers/b8194.py, and leave both registries as they are.
+
 scope:
   paths:
     - crates/betterlite-server/src/mcp/debug.rs
@@ -22,6 +24,10 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/mcp-debug/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-debug-*
+    - tools/oracle/helpers/b8194.py
+    - tools/oracle/helpers/b8194/**
+    - tools/oracle/src/helpers/mcp/b8194.rs
+    - tools/oracle/src/helpers/mcp/b8194/**
   lint_tables: false
 
 references:

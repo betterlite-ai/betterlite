@@ -11,6 +11,8 @@ description: >-
   overloads; Rust uses one enum of operations and one enum of results, and execute matches on the
   operation. An operation kind that proxy mode does not allow is rejected with the Python's text.
 
+  The plan registers helper operation b8199 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8199.rs, write tools/oracle/helpers/b8199.py, and leave both registries as they are.
+
 scope:
   paths:
     - crates/betterlite-server/src/mcp/ops_gateway.rs
@@ -19,6 +21,10 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/mcp-ops-gateway/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-ops-gateway-*
+    - tools/oracle/helpers/b8199.py
+    - tools/oracle/helpers/b8199/**
+    - tools/oracle/src/helpers/mcp/b8199.rs
+    - tools/oracle/src/helpers/mcp/b8199/**
   lint_tables: false
 
 references:
