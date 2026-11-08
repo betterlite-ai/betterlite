@@ -1,0 +1,7 @@
+kind: helper
+name: stream-keepalive-not-a-disable
+call:
+  b8603:
+    values: [5, 5.5, "5", "abc", "nan", "NaN", "inf", "Infinity", null, "1__0", "_10", "10_", "1_.5"]
+env: {}
+compare: {ignore: []}

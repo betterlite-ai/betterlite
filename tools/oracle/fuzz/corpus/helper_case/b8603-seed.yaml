@@ -1,0 +1,7 @@
+kind: helper
+name: stream-keepalive-helper-seed
+call:
+  b8603:
+    values: [0, "-inf", "nan", null, "1__0", 5]
+env: {}
+compare: {ignore: []}
