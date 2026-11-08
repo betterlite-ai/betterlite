@@ -232,23 +232,22 @@ async fn zero_latency_returns_immediately() {
     assert_eq!(response.elapsed, Duration::ZERO);
 }
 
+#[rstest::rstest]
+#[case::get(GcsMethod::Get, "GET")]
+#[case::post(GcsMethod::Post, "POST")]
+#[case::delete(GcsMethod::Delete, "DELETE")]
 #[tokio::test]
-async fn missing_original_errors_for_non_gcs_urls() {
+async fn missing_original_errors_for_non_gcs_urls(#[case] method: GcsMethod, #[case] name: &str) {
     let client: GcsMockClient<RecordingClient> =
         create_mock_gcs_client(&environment(&[(ENABLE_ENV, "true")]), None).unwrap();
     let error = client
-        .send(request("https://example.com/object", GcsMethod::Get))
+        .send(request("https://example.com/object", method))
         .await
         .unwrap_err();
-    assert!(matches!(
-        error,
-        GcsMockError::MissingOriginal {
-            method: GcsMethod::Get
-        }
-    ));
+    assert!(matches!(error, GcsMockError::MissingOriginal { .. }));
     assert_eq!(
         error.to_string(),
-        "no original HTTP handler is installed for GET"
+        format!("no original HTTP handler is installed for {name}")
     );
 }
 
