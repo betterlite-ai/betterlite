@@ -176,7 +176,9 @@ pub async fn send_email(
             Ok(())
         }
         None => {
-            tracing::error!("An error occurred while sending the email:the delivery task did not run");
+            tracing::error!(
+                "An error occurred while sending the email:the delivery task did not run"
+            );
             Ok(())
         }
     }
