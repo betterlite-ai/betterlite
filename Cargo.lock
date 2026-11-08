@@ -2137,6 +2137,7 @@ dependencies = [
  "indexmap 2.14.2",
  "libfuzzer-sys",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
