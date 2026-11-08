@@ -8,6 +8,8 @@ description: >-
   one argument struct for each callback and one function for each initializer that fills it. B3682 builds the classes
   from these structs and registers them.
 
+  B3682's `GuardrailFactories::build` consumes these structs. The guardrail folders' own initializers are other tasks and are not built here: B8290 (hook_initializers), B8217 (third_party_init_a, whose lasso struct is `LassoFolderArgs`), B8218 (third_party_init_b, whose panw struct is `PanwFolderArgs`), B8219 (content_filter_init) and B8254 (mcp_jwt_signer_init). B8521 consumes those.
+
   Code goes in crates/betterlite-guardrails/src/guardrail_initializers.rs and guardrail_initializers/. Files: bedrock.rs,
   lakera.rs, lakera_v2.rs, presidio.rs, presidio_mode.rs, hide_secrets.rs, tool_permission.rs, lasso.rs, panw.rs and
   error.rs. `error.rs` holds `InitializerError`, built with thiserror: `InvalidStreamingParam { name }`,

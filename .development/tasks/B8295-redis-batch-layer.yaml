@@ -1,0 +1,87 @@
+id: B8295
+title: Redis request batch middleware
+description: >-
+  Port litellm/proxy/middleware/redis_request_batch_middleware.py (25 lines, class RedisRequestBatchMiddleware). It wraps every
+  HTTP and WebSocket request in the request Redis batch scope, so Redis reads that auth, admission and routing issue anywhere in the
+  request share one pipeline per Redis backend. B4331 builds the scope, the batches and `flush_all`. This task is only the
+  tower layer around them.
+
+  Code goes in crates/betterlite-server/src/middleware/redis_request_batch.rs (module `middleware::redis_request_batch`;
+  add the `mod` line to the middleware module file). Public items: `RedisBatchLayer` (a `tower::Layer`, no fields, `new()`)
+  and the service it builds, `RedisBatchService<S>`.
+
+  Behavior of `call`:
+  1. A request whose kind is not HTTP or WebSocket passes straight to the inner service. In axum every request reaching a layer is
+     HTTP or an upgrade (WebSocket) request, so there is nothing to skip. Do not add a filter for it, and say so in the
+     module comment only if a reviewer asks.
+  2. Otherwise open B4331's request scope for the lifetime of the call. Read the scope entry point and the `flush_all` method in
+     crates/betterlite-redis/src/request_batch.rs once B4331 is merged and use them as they are. Do not build a second
+     scope type here. The scope is the Rust form of LiteLLM's `with request_redis_batch_scope() as batches`, so every task that
+     runs inside the inner service (handlers, extractors, tasks spawned with the scope handed over by B4331) sees the same batches.
+  3. Run the inner service and keep its result.
+  4. Always call `flush_all` after the inner service returns, whether it returned a response or an error, and whether the response
+     body is still streaming or not. LiteLLM does this in a `finally`. Send whatever reads or write-backs are still declared and
+     unawaited. The flush happens when the inner service returns the response head, not when a streamed body ends. The scope
+     is then closed. A flush error is not swallowed: it is logged at error level with the text "Redis request batch flush failed: <error>"
+     and the response (or the inner error) is still returned unchanged, so the client never sees a batch failure.
+  5. If the inner service fails, return its error after the flush, as is.
+
+  Nested scopes are B4331's job (an inner scope joins the outer one). A second layer in the stack must therefore be harmless,
+  and a test shows it.
+
+  B122 installs the layer in `middleware::request_stack` and owns its place in the stack order.
+  This task only exports the layer and does not touch request_stack.rs or server.rs.
+
+  Write native tests in `redis_request_batch::tests` with a fake inner service and the real B4331 scope: `scope_` (the inner service sees an
+  active scope, and none is active after the call), `flush_` (flush runs after a response, after an inner error, and a flush
+  failure is logged and does not change the result) and `nested_` (two layers share one set of batches).
+scope:
+  paths:
+    - crates/betterlite-server/src/middleware/redis_request_batch.rs
+    - crates/betterlite-server/src/middleware/redis_request_batch/**
+    - crates/betterlite-server/src/middleware.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/redis_request_batch_middleware.py#L1-L25
+    why: The whole middleware.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L423-L560
+    why: RequestRedisBatches.flush_all and the scope this layer opens (B4331 owns them).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L699
+    why: The only import. The middleware is added to the app where the other middleware are.
+dod:
+  - text: Every request runs inside the B4331 request scope and the scope is closed afterwards.
+    proof: [scope-tests]
+  - text: flush_all runs after the inner service on success and on error, and a flush failure is logged and does not change the result.
+    proof: [flush-tests]
+  - text: Two layers in one stack share the outer scope's batches.
+    proof: [nested-tests]
+checks:
+  optional: []
+  commands:
+    - id: scope-tests
+      why: the scope is not opened around the inner service, or not closed
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::redis_request_batch::tests::scope_/)'
+    - id: flush-tests
+      why: the final flush is missing, is skipped on error or changes the result
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::redis_request_batch::tests::flush_/)'
+    - id: nested-tests
+      why: a second layer opens its own batches
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::redis_request_batch::tests::nested_/)'
+oracle_cases: []
+deviations:
+  - what: There is no skip for non-request scopes (lifespan in ASGI).
+    why: axum has no lifespan scope, so every request that reaches a layer is a request.
+  - what: A flush failure is logged and not raised.
+    why: LiteLLM lets it propagate out of the ASGI call after the response is sent, where the server only logs it. A tower layer would turn it into a failed response.
+out_of_scope:
+  - "The scope, batches, flush_all and deadline timers: B4331 and B4330."
+  - "Where the layer sits in the stack: B122 (request_stack.rs)."
+pitfalls:
+  - "Flush after the inner service returns the response head. Do not wait for a streaming body to end, or a long stream holds the batch."
+  - "Do not open a new scope type or a second task-local here. Use B4331's."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

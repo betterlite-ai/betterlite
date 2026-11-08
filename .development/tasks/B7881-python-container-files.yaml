@@ -1,0 +1,77 @@
+id: B7881
+title: Python container files, endpoint factory and the containers package
+description: >-
+  This is the last part of the containers entry. It adds `list_container_files`, `alist_container_files`, `upload_container_file`, `aupload_container_file`, the endpoint factory (litellm/containers/endpoint_factory.py), `containers/utils.py` and the `containers` package files (`main.py`, `__init__.py`). Rust runs the provider calls (B3366 file list, B3367 file upload, B3368 the generated retrieve, content and delete, B3360 endpoint catalog, B3361 request parameters).
+
+
+  Native side, the family `container_files`: `src/container_files.rs` with `register` that adds `NativeContainerFileSession` and `NativeContainerFileError`, and `src/container_files/convert.rs` with tests `request_*` and `error_*`. The architect writes the `lib.rs` line.
+
+
+  Python side, `python/betterlite/containers/_files.py`, `_factory.py` and `_utils.py`, plus `main.py` and `__init__.py` that re-export the names of B7880 and this task. `upload_container_file` takes a file as bytes, a path or an open binary file, and sends it as multipart through the native session. The endpoint factory (L1-L240) builds the file content, retrieve and delete functions (`retrieve_container_file`, `retrieve_container_file_content`, `delete_container_file` and their `a` twins) from one table of path and method, and this task keeps that shape with an explicit list and no auto-discovery. `utils.py` helpers (L1-L158) are plain functions that give the same output. Python objects that cannot cross to Rust (`client`, `shared_session`) raise `UnsupportedCallArgument` from B158.
+scope:
+  paths:
+  - crates/betterlite-python/src/container_files.rs
+  - crates/betterlite-python/src/container_files/**
+  - crates/betterlite-python/python/betterlite/_native_container_files.pyi
+  - crates/betterlite-python/python/betterlite/containers/_files.py
+  - crates/betterlite-python/python/betterlite/containers/_factory.py
+  - crates/betterlite-python/python/betterlite/containers/_utils.py
+  - crates/betterlite-python/python/betterlite/containers/main.py
+  - crates/betterlite-python/python/betterlite/containers/__init__.py
+  - crates/betterlite-python/tests/test_containers_files.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L921-L1374
+  why: list_container_files and upload_container_file, sync and async
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L1-L240
+  why: the factory for file content, retrieve and delete
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L1-L158
+  why: request parameter helpers
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/__init__.py#L1-L42
+  why: the exported names
+dod:
+- text: Every function keeps LiteLLM's name and parameters, and a keyword LiteLLM refuses is refused here.
+  proof: [containers-files-signature]
+- text: "Files are listed, uploaded, read and deleted with the same results as LiteLLM, and the package exports every name of both container parts."
+  proof: [containers-files-calls]
+- text: A provider error keeps its class and cause, and an unsupported Python object raises `UnsupportedCallArgument`.
+  proof: [containers-files-errors]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [containers-files-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: containers-files-signature
+    why: A caller's keyword is accepted or refused wrongly.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_containers_files.py -k signature
+  - id: containers-files-calls
+    why: A result differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_containers_files.py -k calls
+  - id: containers-files-errors
+    why: An error class or message changes.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_containers_files.py -k 'error or unsupported'
+  - id: containers-files-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^container_files::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for these calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The factory is an explicit list of three entries.
+  why: The rules ask for explicit lists and no reflection. The public functions are the same.
+- what: This task has no helper oracle cases.
+  why: The functions call a native session, so pytest compares both packages against one local server.
+out_of_scope:
+- "Container CRUD is B7880."
+- "Provider execution belongs to B3366, B3367, B3368, B3360 and B3361."
+pitfalls:
+- "Upload sends multipart, so the `Content-Type` header with a boundary is built by the HTTP layer, never set in Python."
+- "File content returns raw bytes, not JSON."
+- "`containers/__init__.py` exports names from `main` and from the factory, so both modules have to be importable."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,96 @@
+id: B7875
+title: Python vector_stores create and search with their async twins and mock helpers
+description: >-
+  `litellm.vector_stores.create(name=..., file_ids=[...])` makes a store and `litellm.vector_stores.search(vector_store_id=...,
+  query=...)` queries it. This part builds those two calls, `acreate` and `asearch`, and the two public mock helpers
+  `mock_vector_store_create_response` and `mock_vector_store_search_response`. The provider work (B1064, and it also owns the
+  three local helpers) is Rust.
+
+
+  Native side, the family `vector_search`: `src/vector_search.rs` with `register` that adds `NativeVectorSearchSession` and
+  `NativeVectorSearchError`. Methods `create`, `search`, `acreate`, `asearch` take `(payload_text, blobs)`. Conversion is in
+  `src/vector_search/convert.rs`, tests `request_*` and `error_*`. The architect writes the `lib.rs` lines.
+
+
+  Python side, `python/betterlite/vector_stores/_create_search.py`. `create` takes `name`, `file_ids`, `expires_after`,
+  `chunking_strategy`, `metadata`, `extra_headers`, `extra_query`, `extra_body`, `timeout`, `custom_llm_provider` and
+  `**kwargs`. `search` takes `vector_store_id`, `query` (a string or a list of strings), `filters`, `max_num_results`,
+  `ranking_options`, `rewrite_query`, the three extra arguments, `timeout`, `custom_llm_provider`, `router` and `**kwargs`.
+  The sync functions accept `acreate=True` and `asearch=True` and return a coroutine then. Results are
+  `VectorStoreCreateResponse` and `VectorStoreSearchResponse` (B167). `mock_response` in kwargs works as at L205-L216 and
+  L408-L440: a dict for create, a string or a list for search, answered in Python with the two mock helpers and no native call.
+  The helpers (L56-L105) build a default object when given None. Take the shape from the source.
+
+
+  `router` and `_direct_vector_store_embedding_executor` (L46-L53) hold Python objects that choose how a query is embedded for
+  providers that embed on the client side. Rust embeds through its own router (B1059), so a call that passes either one
+  raises `UnsupportedCallArgument` naming it until B162 gives the Python Router a native handle.
+scope:
+  paths:
+  - crates/betterlite-python/src/vector_search.rs
+  - crates/betterlite-python/src/vector_search/**
+  - crates/betterlite-python/python/betterlite/_native_vector_search.pyi
+  - crates/betterlite-python/python/betterlite/vector_stores/_create_search.py
+  - crates/betterlite-python/tests/vector_server.py
+  - crates/betterlite-python/tests/test_vector_create_search.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L46-L106
+  why: embedding executor guard and the two mock helpers
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L108-L285
+  why: acreate and create
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L286-L493
+  why: asearch and search
+dod:
+- text: The four functions keep LiteLLM's signatures, and `acreate` and `asearch` are coroutine functions.
+  proof: [vcs-signature]
+- text: Create and search reach the local server with every field and give the same objects as LiteLLM, and the sync functions return a coroutine under their flag.
+  proof: [vcs-calls]
+- text: "`mock_response` and both mock helpers give LiteLLM's objects with no network call."
+  proof: [vcs-mock]
+- text: "`router`, `_direct_vector_store_embedding_executor` and `client` raise `UnsupportedCallArgument`, and a provider error keeps its class and cause."
+  proof: [vcs-refuse]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [vcs-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: vcs-signature
+    why: A caller's keyword is refused.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_vector_create_search.py -k signature
+  - id: vcs-calls
+    why: A request field is lost.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_vector_create_search.py -k calls
+  - id: vcs-mock
+    why: A mock answers differently.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_vector_create_search.py -k mock
+  - id: vcs-refuse
+    why: A Python object is dropped silently.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_vector_create_search.py -k 'refuse or error'
+  - id: vcs-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^vector_search::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for the vector calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`router` and a direct embedding executor are refused with `UnsupportedCallArgument`, where LiteLLM uses them to embed the query."
+  why: They are Python callables Rust can't call. The question of how B162's Router hands over a native handle is in the architect notes.
+- what: This task has no helper oracle cases.
+  why: pytest compares both packages against one local server.
+out_of_scope:
+- "`retrieve`, `list`, `update`, `delete` and the package files are B7876."
+- "The three local helpers inside `create` and `search` belong to B1064, query embedding to B1059, and litellm/vector_stores/vector_store_registry.py to B1062."
+- "litellm/vector_stores/utils.py (`VectorStoreRequestUtils`) belongs to B1058 and B1062."
+pitfalls:
+- "The module defines `list`, so the file imports `builtins` and writes `builtins.list` in annotations. Do the same, or `list[...]` after the `list` function is defined breaks."
+- "`query` can be a list of strings and is sent as is, never joined."
+- "`mock_response` for search may be a plain string, and the helper then builds one result with that text."
+- "`create` has no `router` argument, only `search` does."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

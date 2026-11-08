@@ -1,0 +1,16 @@
+id: B7770
+milestone: M11 distribution
+title: VS Code extension sources, rebranded, with a local build and package check
+status: blocked
+depends_on: []
+file: tasks/B7770-vscode-extension-sources.yaml
+covers:
+  - "vscode-extension/src/**"
+  - "vscode-extension/test/**"
+  - "vscode-extension/{package.json,package-lock.json,tsconfig.json,vitest.config.mts,.gitignore,.vscodeignore,LICENSE}"
+parent: B156
+split_from: B156
+resolution: null
+superseded_by: null
+blocked_reason: "waits for Max: the gate has no pinned node and npm, the lockfile needs a budget exclude and the publisher name needs his pick"
+pr: null

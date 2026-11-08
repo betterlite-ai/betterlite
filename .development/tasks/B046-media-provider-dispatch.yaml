@@ -5,7 +5,7 @@ description: >-
   api::media_providers in betterlite-core, composing B1517-B1539. Extend B010's closed provider
   identities/contracts and B174 selection at the upper layer; lower provider crates must not import
   core services. Feed prepared image calls into B998/B999, Topaz native variations into B1000,
-  Runway speech into B1084 and queued video operations into B093's existing executor. Register the
+  Runway speech into B1084 and queued video operations into the existing video calls B3338 to B3342 through B3332's video selection. Register the
   provider pricing functions once. B1534's settings are shared by Runway operations; this composer
   adds no settings or parsers.
 
@@ -22,8 +22,8 @@ description: >-
   Existing route factories alone mount POST /v1/images/generations, /images/generations,
   /openai/deployments/{model:path}/images/generations and their edits counterparts; POST /v1/audio/speech
   and /audio/speech; and the four chat paths /v1/chat/completions, /chat/completions,
-  /engines/{model}/chat/completions, /openai/deployments/{model}/chat/completions. Compose B093's paired
-  /v1/videos and /videos prefixes for POST create and GET list, GET /{video_id}, GET /{video_id}/content,
+  /engines/{model}/chat/completions, /openai/deployments/{model}/chat/completions. Compose the paired
+  /v1/videos and /videos routes of B3343, B3344, B3345 and B6360 for POST create and GET list, GET /{video_id}, GET /{video_id}/content,
   POST /{video_id}/remix, POST /characters, GET /characters/{character_id}, POST /edits and POST
   /extensions. Unsupported provider operations reach their existing error paths. No variations or
   video-delete HTTP route exists at this pin; exercise those native operations through Rust tests.

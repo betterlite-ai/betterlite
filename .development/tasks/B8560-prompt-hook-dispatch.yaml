@@ -1,0 +1,118 @@
+id: B8560
+title: Per-call prompt manager selection and hook dispatch
+description: >-
+  Port the prompt management methods of LiteLLM's per-call Logging object, litellm/litellm_core_utils/litellm_logging.py
+  L1012-L1312 (about 200 source lines). Completion, Responses and Messages calls use them to decide whether any prompt hook
+  runs, to pick the one prompt manager that runs, and to call it. The prompt managers themselves already have owners
+  (B4058 for Dotprompt, GitLab, BitBucket and the generic API, B4126 for the Anthropic cache-control hook, B8253 for
+  litellm_agent); nothing calls them per request yet. Put the code in betterlite-core as the module
+  `api::prompt_hook_dispatch` (crates/betterlite-core/src/api/prompt_hook_dispatch.rs and prompt_hook_dispatch/), and add
+  betterlite-prompts to betterlite-core's Cargo.toml (betterlite-prompts does not depend on betterlite-core, so there is no cycle).
+
+  Inputs. `PromptHookDispatch` is built once per call from: the call's logging state (B247: `model_call_details` and
+  `standard_callback_dynamic_params`), the registered prompt managers in callback order (B189's
+  `get_custom_loggers_for_type(CustomPromptManagement)`, passed in as a slice of B4058's `PromptManagementBackend` trait
+  objects), the optional vector store registry (B1062), and a `CompatibleLoggerFactory` trait defined here with one
+  method, `init(name) -> Option<Arc<dyn PromptManagementBackend>>`, standing in for `_init_custom_logger_compatible_class`
+  with no usage cache and no router. The factory also returns the list of known compatible callback names
+  (`litellm._known_custom_logger_compatible_callbacks`, in its declared order). The server builds the factory; this task
+  ships only the trait and a test double.
+
+  `should_run_prompt_management_hooks(non_default_params, prompt_id, tools) -> bool`, in this order: a non-empty prompt_id
+  gives true. A `model` value in non_default_params that is a string starting with `litellm_agent/` gives true (use
+  B8253's `is_litellm_agent_model`). Then any of the three dynamic names `cache_control_injection_points`,
+  `knowledge_bases`, `vector_store_ids` with a non-empty value gives true. B158 owns the enum
+  DynamicPromptManagementParamLiteral and has no part yet, so keep these three names in one private const array here.
+  Last, when a vector store registry is configured and B1063's `get_vector_store_to_run(non_default_params, tools)`
+  returns a store, true. Otherwise false.
+
+  `get_custom_logger_for_prompt_management(model, non_default_params, tools, prompt_id, prompt_spec,
+  dynamic_callback_params) -> Option<Arc<dyn PromptManagementBackend>>`, first match wins:
+  1. Each known compatible callback name that `model` starts with (plain prefix test, list order): init it through the
+     factory; when that gives a manager, set `model_call_details["prompt_integration"]` to the text before the first `/`
+     of model and return it. A name whose init gives None falls through to the next name.
+  2. When prompt_id is set and dynamic_callback_params is present: auto-detect. Walk the prompt managers in order, ask each
+     `should_run_prompt_management(prompt_id, prompt_spec, dynamic_callback_params)`, and return the first that says yes,
+     setting prompt_integration to its class name (LiteLLM's `logger.__class__.__name__`; each backend exposes it). A
+     manager whose check returns an error is skipped, as the bare except does.
+  3. Fallback over the same list: with no prompt_id, skip a manager unless its own check with prompt_id None (and default
+     dynamic params when none were given) says yes, an error counting as no. The first manager not skipped wins and
+     sets prompt_integration. With a prompt_id, the first manager in the list wins without a check.
+  4. B4126's `get_custom_logger_for_anthropic_cache_control_hook(non_default_params)`: when it gives a logger, set
+     prompt_integration to its class name and return it.
+  5. When a vector store registry is configured: init `vector_store_pre_call_hook` through the factory, set
+     prompt_integration to its class name, register it once in the global callback list (B189 `add_litellm_callback`,
+     skipped when that same identity is already there) and return it, even when the init gave None (then return None).
+  6. None.
+
+  `get_chat_completion_prompt` and `async_get_chat_completion_prompt` take model, messages, non_default_params,
+  prompt_variables, prompt_id, prompt_spec, an optional explicit manager, prompt_label, prompt_version, optional
+  request kwargs and `injected_for_every_deployment` (default false). The async one also takes tools and passes them to
+  the selection; the sync one does not. The explicit manager wins over selection. When there is a manager: count cache
+  breakpoints in the messages before (B4123 `count_request_cache_breakpoints`), call the manager's sync or async hook with
+  `non_default_params` (an empty map when none), prompt_id, prompt_spec, prompt_variables, the call's dynamic callback
+  params, prompt_label and prompt_version (the async call also passes tools and the logging state), take back model,
+  messages and params, and when request kwargs were given call B4125's `record_gateway_injection(request_kwargs,
+  after - before, injected_for_every_deployment)`. With or without a manager, store the final messages on the logging
+  state and return (model, messages, non_default_params). Errors from the manager propagate unchanged.
+
+  `get_custom_logger_for_anthropic_cache_control_hook` on the Logging object (L1304-L1312) is a copy of B4126's static
+  function with no caller at the pin; do not build it.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/prompt_hook_dispatch.rs
+    - crates/betterlite-core/src/api/prompt_hook_dispatch/**
+    - crates/betterlite-core/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1012-L1059
+    why: should_run_prompt_management_hooks and the no-prompt-id gate with the dynamic names and the vector store check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1061-L1163
+    why: The sync and async hook calls, the breakpoint count around them and the stored messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1165-L1302
+    why: Auto-detection, the no-prompt-id skip and the selection order with prompt_integration stamps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4468-L4479
+    why: The three DynamicPromptManagementParamLiteral names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L640-L680
+    why: An async caller; it passes request kwargs and tools.
+dod:
+  - text: should_run_prompt_management_hooks is true for a prompt id, a litellm_agent/ model, a non-empty dynamic name or a vector store to run, checked in that order, and false otherwise.
+    proof: [gate-tests]
+  - text: Selection follows the six steps in order, stamps prompt_integration with the model prefix or the class name, skips managers whose check errors, and registers the vector store hook once.
+    proof: [selection-tests]
+  - text: Without a prompt id a manager that does not run without one is skipped in the fallback, and with a prompt id the first manager wins.
+    proof: [selection-tests]
+  - text: The hook calls pass the listed values, use an empty map for absent params, record the breakpoint difference only when request kwargs are given, store the messages and return the manager's result; the explicit manager wins.
+    proof: [hook-call-tests]
+checks:
+  optional: []
+  commands:
+    - id: gate-tests
+      why: a hook runs, or is skipped, for the wrong request
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::prompt_hook_dispatch::gate::/)'
+    - id: selection-tests
+      why: the wrong prompt manager runs or prompt_integration is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::prompt_hook_dispatch::selection::/)'
+    - id: hook-call-tests
+      why: the hook gets the wrong arguments or the cache marks are miscounted
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::prompt_hook_dispatch::hook_call::/)'
+oracle_cases: []
+deviations:
+  - what: The compatible-callback factory and the prompt manager list are passed in instead of read from litellm globals.
+    why: Constructor wiring; the server supplies the same registered order LiteLLM's callback manager keeps.
+out_of_scope:
+  - "The prompt managers and their compile hooks: B4058. The Anthropic cache-control hook and its selector: B4126. Breakpoint counting: B4123. record_gateway_injection: B4125. litellm_agent: B8253."
+  - "get_vector_store_to_run and the vector store registry: B1063 and B1062. The callback list and get_custom_loggers_for_type: B189."
+  - "Logging.get_custom_logger_for_anthropic_cache_control_hook L1304-L1312: no caller at the pin."
+  - "The call sites in completion, Responses and Messages: B931, B932 and their siblings call this module."
+  - "HTTP oracle cases: the route tasks that call these hooks add them; no route reaches this module yet, and the code is not a pure function a helper case can call."
+pitfalls:
+  - "The litellm_agent test in the gate is a start-of-string test on non_default_params[\"model\"], not on the model argument."
+  - "Step 1 stamps prompt_integration with model.split(\"/\")[0], while every other step stamps the class name."
+  - "In the fallback, a prompt id skips the should_run check entirely, so the first registered manager wins even if it does not own that prompt."
+  - "The vector store step returns the factory result even when it is None, so a configured registry ends the search at step 5."
+  - "Only the async hook passes tools and the logging state to the manager; the sync hook passes neither."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -11,6 +11,7 @@ covers:
   - "litellm/a2a_protocol/providers/config_manager.py"
   - "litellm/a2a_protocol/providers/__init__.py"
   - "litellm/a2a_protocol/providers/langflow/**"
+  - "litellm/llms/langflow/a2a.py"
 parent: B142
 split_from: B142
 resolution: null

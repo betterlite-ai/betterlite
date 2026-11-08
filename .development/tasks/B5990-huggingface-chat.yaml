@@ -4,7 +4,7 @@ description: >-
   Build huggingface_chat in betterlite-openai (crates/betterlite-openai/src/huggingface_chat.rs and its folder) over B668 and B503: the Hugging Face router chat
   config from litellm/llms/huggingface/chat/transformation.py and the shared pieces of litellm/llms/huggingface/common_utils.py that the embedding (B5991) and rerank
   (B5848) parts import. Everything here is a pure function or a struct with injected input. It reads no env var, makes no HTTP call itself and keeps no module state.
-  The caller (B042 wires it into dispatch) passes the already resolved api_key, api_base, the two env values and the Hub token as plain arguments.
+  The caller (B8332 wires it into dispatch) passes the already resolved api_key, api_base, the two env values and the Hub token as plain arguments.
 
 
   HuggingfaceError is a struct with status_code, message and headers (the BaseLLMException B2202 builds, with the headers kept). get_error_class returns it with the status,
@@ -37,7 +37,7 @@ description: >-
 
   ProviderMappingCache is the fetch that LiteLLM's lru_cache wraps. fetch_inference_provider_mapping(model) sends GET "https://huggingface.co/api/models/{model}?expand=inferenceProviderMapping"
   with Accept "application/json" and Authorization "Bearer {token}" when a Hub token was passed (LiteLLM reads only HUGGINGFACE_API_KEY here, not HF_TOKEN and not the request key; the
-  caller passes that one value). The HTTP call goes through an injected HubGet trait (url, headers, query) -> status, headers, body, built by B042 on B173's pooled client. A 4xx or 5xx
+  caller passes that one value). The HTTP call goes through an injected HubGet trait (url, headers, query) -> status, headers, body, built by B8332 on B173's pooled client. A 4xx or 5xx
   becomes HuggingfaceError with the response status and headers and message "Failed to fetch provider mapping: {error}"; a transport failure becomes status 500 with empty headers and the same
   message prefix. A body without "inferenceProviderMapping" (or with null) is a typed no-mapping error that is not a HuggingfaceError (LiteLLM raises ValueError). Successes are cached per model
   with 128 entries, least recently used out; failures are never cached. The cache belongs to the ProviderMappingCache value, not to a static. decode_provider_mapping(bytes) parses the body
@@ -133,7 +133,7 @@ deviations:
   - what: The provider mapping cache is held by a ProviderMappingCache value passed in by the caller, not by a function-level lru_cache.
     why: The code rules forbid module state; the size (128) and the failures-not-cached rule stay the same.
 out_of_scope:
-  - B042 owns _complete_huggingface in litellm/main.py (key order api_key, litellm.huggingface_key, HF_TOKEN, HUGGINGFACE_API_KEY, litellm.api_key; header fallback), the dispatch wiring and the HTTP cases through the proxy.
+  - B8332 owns _complete_huggingface in litellm/main.py (key order api_key, litellm.huggingface_key, HF_TOKEN, HUGGINGFACE_API_KEY, litellm.api_key; header fallback), the dispatch wiring and the HTTP cases through the proxy.
   - B668, B503 and B504 own everything HuggingFaceChatConfig inherits from OpenAIGPTConfig (supported params, map_openai_params, transform_response, the stream iterator).
   - get_base_url in chat/transformation.py has no caller at the pin and is not built.
   - output_parser, hf_tasks and hf_task_list in common_utils.py are used only by the legacy text-generation code in embedding/transformation.py, which B5991 lists as unreachable.

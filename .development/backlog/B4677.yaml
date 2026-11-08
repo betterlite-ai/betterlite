@@ -2,7 +2,7 @@ id: B4677
 milestone: M9 agents and mcp
 title: MCP BYOK consent page
 status: todo
-depends_on: [B4654, B4655, B136, B4687, B738]
+depends_on: [B4654, B4655, B4687, B738, B4731]
 file: tasks/B4677-mcp-byok-consent-page.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py"

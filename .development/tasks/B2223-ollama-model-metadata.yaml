@@ -258,8 +258,9 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/ollama-model-metadata/runtime-model-fields.yaml
 deviations: []
 out_of_scope:
-- Ollama model listing get_models L94-L135 and image conversion helpers belong to B040; validate_environment/get_base_model
-  remain B040. They reuse this task for API input and runtime metadata primitives.
+- OllamaModelInfo get_models L93-L134, validate_environment L229-L242 and get_base_model L244-L249 belong to B8157; the
+  image conversion helpers _reencode_as_jpeg L19-L31 and _convert_image L34-L42 belong to B8156, their only caller. Both
+  reuse this task for API input and runtime metadata primitives.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as ollama_model_metadata in the models group. Replace the stub Op in tools/oracle/src/helpers/models/ollama_model_metadata.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/ollama_model_metadata.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Invalid JSON is outside the local try and reaches the resolver fallback, unlike an HTTP failure returning default

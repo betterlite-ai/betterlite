@@ -66,7 +66,7 @@ deviations:
     why: The README decision keeps and rebrands the MIT dashboard; form behavior remains compatible.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/cli_sso_success.py#L155-L185
 out_of_scope:
-  - B1613 verifies browser_complete_token and B1615 supplies the verification page; B137 owns native-client approval handling.
+  - B1613 verifies browser_complete_token and B1615 supplies the verification page; B4675 owns native-client approval handling (native_client_authorize).
   - Functions elsewhere in ui_sso.py retain the assignments in B063's ownership inventory.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as cli_login_page in the server group. Replace the stub Op in tools/oracle/src/helpers/server/cli_login_page.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cli_login_page.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

@@ -33,7 +33,7 @@ description: >-
   models; a nonempty dict key budget plus database, models and nonnull token invokes B753 fallback
   checks in order. Re-resolve the models after possible rewrites; then user model checks and nonempty
   dict end-user model budgets with a nonnull end-user ID. The limiter port defined here exposes
-  is_end_user_within_model_budget; B071 supplies it, and its boolean return is ignored unless it raises.
+  is_end_user_within_model_budget; B8481 supplies it from B3006's limiter, and its boolean return is ignored unless it raises.
 
 
   Fetch a team for nonnull team_id, treating UI_TEAM_ID as TeamNotFoundError. Catch HTTPException only
@@ -124,8 +124,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/auth_key_validation.rs
     - crates/betterlite-server/src/state/auth_key_validation/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-key-validation/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-key-validation-*
@@ -227,7 +225,7 @@ oracle_cases:
   - tools/oracle/cases/auth/auth-key-validation/scim-inactive-owner.yaml
 deviations: []
 out_of_scope:
-  - B855/B1221 own common admission after this function. B071 implements the end-user model-budget
+  - B855/B1221 own common admission after this function. B8481 implements the end-user model-budget
     limiter port; B753 owns the other limiter protocols and the fallback rewrite.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate

@@ -1,0 +1,13 @@
+id: B8311
+milestone: M3 providers
+title: OpenRouter, Vercel AI Gateway and Eden AI dispatch
+status: todo
+depends_on: [B2230, B5360, B1084, B5830, B5835, B5838, B6080, B6100]
+file: tasks/B8311-gateway-provider-dispatch.yaml
+covers: []
+parent: B041
+split_from: B041
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

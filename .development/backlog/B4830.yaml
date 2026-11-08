@@ -9,6 +9,8 @@ covers:
   - "litellm/harness/handlers/base.py"
   - "litellm/harness/sandbox/base.py"
   - "litellm/llms/base_llm/harness/{__init__,transformation}.py"
+  - "litellm/harness/__init__.py"
+  - "litellm/harness/sandbox/__init__.py"
 parent: B143
 split_from: B143
 resolution: merged

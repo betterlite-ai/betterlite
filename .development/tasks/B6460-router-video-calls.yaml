@@ -14,7 +14,7 @@ description: >-
   (4) `VideoRouterCalls`, an async trait with nine methods named exactly like the LiteLLM calls, each `async fn avideo_status(&self, model: &str, args: VideoCallArgs) -> Result<VideoReply, VideoRouterError>`.
   The route dispatch entries call these. `VideoRouterError` wraps the router error and the SDK error as two cases, each by `#[from]`, and reports `NotFound` for an unmatched model.
 
-  Route choice, the same module. `VideoRouteView` is a trait the server implements over B016 and B302; its methods are `is_recognized_model(&self, model: &str) -> bool`,
+  Route choice, the same module. `VideoRouteView` is a trait the server implements over B8351's `CatalogQueries` and B302's catalog (`is_recognized_model` and `map_team_model` forward to `CatalogQueries::is_recognized_model` and `CatalogQueries::map_team_model`); its methods are `is_recognized_model(&self, model: &str) -> bool`,
   `map_team_model(&self, model: &str, team_id: &str) -> Option<String>`, `team_public_model_names_has(&self, model: &str) -> bool`, `model_names_has(&self, model: &str) -> bool`,
   `pass_through_all_models(&self) -> bool`, `has_default_or_pattern(&self) -> bool` and `deployment_names_has(&self, model: &str) -> bool`.
   `plan_video_route(input: &VideoRouteInput, view: Option<&dyn VideoRouteView>) -> VideoRoute` copies the video part of `_route_request_single_attempt` (route_llm_request.py L493-L723). `VideoRouteInput` holds

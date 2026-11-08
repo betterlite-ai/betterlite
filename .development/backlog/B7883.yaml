@@ -1,0 +1,14 @@
+id: B7883
+milestone: M12 python
+title: Python video characters, edit, extension and the videos package
+status: todo
+depends_on: [B7882, B6040, B158, B167, B3341, B3342]
+file: tasks/B7883-python-video-edits.yaml
+covers:
+  - "litellm/videos/**"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

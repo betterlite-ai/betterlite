@@ -12,7 +12,7 @@ helper_group! {
     "b3963" => b3963, "b3964" => b3964, "b3965" => b3965, "b3971" => b3971, "b3973" => b3973,
     "b3976" => b3976, "b3978" => b3978, "b3992" => b3992, "b3993" => b3993, "b3994" => b3994,
     "b3996" => b3996, "b3997" => b3997, "b3998" => b3998, "b4000" => b4000, "b4002" => b4002,
-    "b4023" => b4023, "b5240" => b5240, "batch_delivery" => batch_delivery,
+    "b4023" => b4023, "b5240" => b5240, "b8400" => b8400, "batch_delivery" => batch_delivery,
     "billing_context" => billing_context, "callback_registry" => callback_registry,
     "callback_validation" => callback_validation, "collector_policy" => collector_policy,
     "datadog_tags" => datadog_tags, "dynamic_callbacks" => dynamic_callbacks,

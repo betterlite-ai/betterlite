@@ -1,0 +1,14 @@
+id: B7882
+milestone: M12 python
+title: Python video generation, content, remix, list and status
+status: todo
+depends_on: [B6040, B158, B167, B3338, B3339, B3340]
+file: tasks/B7882-python-video-generation.yaml
+covers:
+  - "litellm/videos/main.py"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

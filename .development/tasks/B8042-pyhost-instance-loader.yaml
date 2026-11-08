@@ -1,0 +1,160 @@
+id: B8042
+title: Load a Python object from a config string (get_instance_fn)
+description: >-
+  Every Python hook in config.yaml is a string like `custom_callbacks.proxy_handler_instance`, and LiteLLM turns it into an
+  object in `get_instance_fn`. This task ports that function and its two helpers into `crates/betterlite-pyhost`, on top of
+  B8040's `PythonHost` and B8041's handles. It owns litellm/proxy/types_utils/utils.py. The caller in B165 supplies the
+  config path and the downloader.
+
+
+  `instance_ref`: `InstanceRef::parse(value: &str) -> Result<InstanceRef, LoadError>` splits the string. A value starting with
+  `s3://` or `gcs://` is `Remote { storage, bucket, object_key, module_path, instance_name }`, otherwise it is `Local {
+  module_name, instance_name }`, split at the last dot (`a.b.c` is module `a.b`, name `c`). A local string with no dot gives
+  module "" and name equal to the whole string, exactly as `value.split(".")` does in the source, and loading it fails later
+  at import with the same ImportError text. Remote parsing, in this order: bucket and path split on the first `/`, and a
+  value with no `/` after the bucket is `Invalid URL format: {url}. Expected: {storage}://bucket-name/path/to/module.instance`.
+  A path ending in `.py` is the error that tells the user to drop the extension and shows
+  `{storage}://{bucket}/{path without .py}.instance_name (e.g., {storage}://{bucket}/{path without .py}.proxy_handler_instance)`.
+  A path with no dot is `Invalid module specification in {url}. Expected: path/to/module.instance_name`. The object key is
+  `{module_path}.py`, where `module_path` is everything before the last dot. Copy the texts from the source (L98-L121) byte
+  for byte. `parse` is the decoder for untrusted config text, so a cargo-fuzz target `instance_ref` in the crate's fuzz
+  folder feeds it arbitrary UTF-8 and must never panic, with a replay test over its corpus.
+
+
+  `instance_loader`: `InstanceLoader::new(host, fetcher: Arc<dyn ModuleFetcher>)` and `load(&self, value, config_file_path:
+  Option<&Path>) -> Result<LoadedObject, LoadError>`. For a local reference with a config path, the module file is
+  `{dirname(config_file_path)}/{module_name split on dots, joined}.py`. If that file exists it is executed as a module named
+  `module_name` with `importlib.util.spec_from_file_location` and `exec_module`, without being added to `sys.modules`
+  (the source does not add it either). Otherwise the module is imported with `importlib.import_module` from `sys.path`.
+  Then `getattr(module, instance_name)` gives the object. An ImportError while doing this is rewritten to `Could not
+  import {instance_name} from {module_name}` with the original as `#[source]`, only when both names are non-empty, and
+  passes through otherwise. A missing attribute is `LoadError::Python(PythonError)` holding the AttributeError, as in the
+  source. `LoadedObject` holds a `Py<PyAny>` and the original string, and gives a `CallableHandle` through `handle()`.
+
+
+  Remote modules are the documented operator feature and only allowed from config load. A remote value with
+  `config_file_path` of None is the ValueError text `Remote module loading (s3://, gcs://) is only permitted from the
+  config-file load path. Register the module under ``litellm_settings`` in your config.yaml instead.` (the double backticks
+  are in the source). With a config path: parse, create an `OwnedTempDir`, call `fetcher.fetch(storage, bucket, object_key,
+  local_path)`, execute the file under the name `module_path`, get the instance, and always delete the file. Any failure in
+  this flow, including parsing, becomes `ImportError`-class `LoadError::Remote { url, source }` with the text `Failed to load
+  custom logger from {url}: {cause}`. A failed fetch reads `Failed to download {object_key} from {storage} bucket {bucket}`.
+  `ModuleFetcher` is a trait in this crate with `fetch(&self, request: &ModuleRequest) -> Result<(), FetchError>`. The
+  implementation over B4143's `download_python_module` is B165's, so this crate stays free of the server crate.
+
+
+  `return_check`: `check_literal_true_return(handle_or_none)` ports `validate_custom_validate_return_type`. None gives None.
+  Otherwise `typing.get_type_hints(fn)` is read, the `return` entry must equal `typing.Literal[True]`, and anything else is
+  `TypeError` text `Custom validator must be annotated to return Literal[True], got {return_type}`. Use Python's repr of the
+  hint in the message, obtained by calling `repr` in the interpreter.
+scope:
+  paths:
+  - tools/oracle/Cargo.toml
+  - crates/betterlite-pyhost/src/instance_ref.rs
+  - crates/betterlite-pyhost/src/instance_ref/**
+  - crates/betterlite-pyhost/src/instance_loader.rs
+  - crates/betterlite-pyhost/src/instance_loader/**
+  - crates/betterlite-pyhost/src/remote_module.rs
+  - crates/betterlite-pyhost/src/remote_module/**
+  - crates/betterlite-pyhost/src/return_check.rs
+  - crates/betterlite-pyhost/src/return_check/**
+  - crates/betterlite-pyhost/Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-pyhost/fuzz/Cargo.toml
+  - crates/betterlite-pyhost/fuzz/fuzz_targets/instance_ref.rs
+  - crates/betterlite-pyhost/fuzz/corpus/instance_ref/**
+  - tools/oracle/cases/helpers/python-loader/**
+  - tools/oracle/helpers/b8042.py
+  - tools/oracle/helpers/b8042/**
+  - tools/oracle/src/helpers/pyhost/b8042.rs
+  - tools/oracle/src/helpers/pyhost/b8042/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L9-L66
+  why: get_instance_fn, local and file-relative loading and the ImportError rewrite.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L68-L183
+  why: The remote loader, its URL checks, temp file and error wrapping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L185-L212
+  why: The GCS download wrapper (a bool, B4143's job here) and validate_custom_validate_return_type.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5521-L5533
+  why: The one caller of the return check, for litellm_jwtauth.custom_validate.
+dod:
+- text: InstanceRef::parse splits local and remote references like the source and returns each URL error text unchanged.
+  proof: [ref-tests, oracle]
+- text: A local reference loads from a file next to config.yaml when that file exists, and otherwise from sys.path, and a missing module gives the "Could not import X from Y" text.
+  proof: [loader-tests, oracle]
+- text: A remote reference without a config path is refused with the source's text, and with one it fetches into an owned temp file, executes it, returns the instance and removes the file, also on failure.
+  proof: [remote-tests, oracle]
+- text: A failed fetch reads "Failed to download ... from ... bucket ..." inside the "Failed to load custom logger from" wrapper.
+  proof: [remote-tests]
+- text: The return check accepts a function annotated Literal[True], and refuses other annotations and none, with the source's text.
+  proof: [return-tests, oracle]
+- text: The instance_ref fuzz target exists and its corpus replays.
+  proof: [instance-ref-corpus]
+- text: The oracle adapter passes strict lint and type checks.
+  proof: [helper-python]
+- text: This task adds the crates it uses to crates/betterlite-pyhost/Cargo.toml, and no unused one.
+  proof: [ref-tests]
+checks:
+  optional: []
+  commands:
+  - id: ref-tests
+    why: Reference parsing tests are missing or a text differs.
+    run: >-
+      cargo nextest run --locked -p betterlite-pyhost --no-tests=fail
+      -E 'test(/^instance_ref::/) - test(replays_the_instance_ref_corpus)'
+  - id: loader-tests
+    why: Local loading tests (file next to config, sys.path, import rewrite) are missing.
+    run: cargo nextest run --locked -p betterlite-pyhost --no-tests=fail -E 'test(/^instance_loader::/)'
+  - id: remote-tests
+    why: Remote loading tests with a stub fetcher are missing.
+    run: cargo nextest run --locked -p betterlite-pyhost --no-tests=fail -E 'test(/^remote_module::/)'
+  - id: return-tests
+    why: Return annotation tests are missing.
+    run: cargo nextest run --locked -p betterlite-pyhost --no-tests=fail -E 'test(/^return_check::/)'
+  - id: instance-ref-corpus
+    why: The fuzz target or its corpus is missing or fails.
+    run: >-
+      test -f crates/betterlite-pyhost/fuzz/fuzz_targets/instance_ref.rs &&
+      grep -q 'name = "instance_ref"' crates/betterlite-pyhost/fuzz/Cargo.toml &&
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-pyhost/fuzz/corpus/instance_ref)" &&
+      cargo nextest run --locked -p betterlite-pyhost --no-tests=fail -E 'test(replays_the_instance_ref_corpus)'
+  - id: helper-python
+    why: The oracle adapter fails strict lint or type checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8042)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8042 &&
+      uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8042/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/python-loader/import-missing-module.yaml
+- tools/oracle/cases/helpers/python-loader/import-stdlib-function.yaml
+- tools/oracle/cases/helpers/python-loader/remote-without-config-path.yaml
+- tools/oracle/cases/helpers/python-loader/remote-no-slash.yaml
+- tools/oracle/cases/helpers/python-loader/remote-py-extension.yaml
+- tools/oracle/cases/helpers/python-loader/remote-no-instance-dot.yaml
+- tools/oracle/cases/helpers/python-loader/return-literal-true.yaml
+- tools/oracle/cases/helpers/python-loader/return-bool-annotation.yaml
+- tools/oracle/cases/helpers/python-loader/return-no-annotation.yaml
+- tools/oracle/cases/helpers/python-loader/return-none-function.yaml
+deviations:
+- what: A remote module is fetched through B4143's downloader, which returns a typed error where LiteLLM's download returns False.
+  why: The cause stays attached. The text a user reads is unchanged.
+- what: Modules are imported with the interpreter that pyo3 linked, so hook dependencies are installed into that interpreter.
+  why: The proxy embeds its interpreter instead of running inside the one that started LiteLLM.
+- what: The AttributeError for a missing instance name carries Python's own text, which the oracle does not compare.
+  why: The text comes from the runtime (docs/compatibility.md).
+out_of_scope:
+- B4143 owns download_python_file_from_s3, download_python_file_from_gcs and the credential flow. This task only calls them through the ModuleFetcher trait.
+- B165 owns the fetcher implementation and every call site of get_instance_fn in proxy_server.py, callback_utils.py, guardrail_registry.py, tool_registry.py and pass_through_endpoints.py.
+- _download_gcs_file_wrapper (L185-L197) only turns an exception into False and logs it. B4143's typed error replaces it.
+pitfalls:
+- The source builds the file path from `module_name.split(".")` joined with the OS separator. A module name with `..` segments or a leading dot must not escape the config folder, so refuse any empty segment with the ImportError text before touching the disk.
+- The file-next-to-config branch is taken only when the config path is given and the file exists, and a user module that does `import sibling` still resolves through sys.path, so B8040's module_dirs must hold the config folder.
+- '`exec_module` runs user code with the GIL held. Run the whole load through the WorkTracker, with a long deadline, so a module that blocks at import does not stall a Tokio thread.'
+- The remote temp file is named by the temp folder, but the module is executed under `module_path` (for example `loggers/custom_callbacks`), as the source does. Do not use the temp file's name.
+- The `.py` check in the remote path happens before the dot check, so `bucket/mod.py` gets the extension message and not the "Invalid module specification" one.
+- Do not log the module text. The source logs the file contents of S3 downloads at debug level, and hooks can hold secrets.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -3,7 +3,7 @@ title: Expired UI session cleanup worker
 description: >-
   Extract the entire expired_ui_session_key_cleanup_manager.py L30-L158 from B789. Own its
   row protocol, manager constructor, cleanup, count normalization and expired-row query in
-  betterlite-server::ui_session_cleanup. B124 startup owns job registration and the enabled/interval
+  betterlite-server::ui_session_cleanup. B8372 startup owns job registration and the enabled/interval
   controls; this task supplies a callable worker, not a second scheduler.
 
   Constructor retains DB, auth cache and optional pod-lock manager default null. Acquire a
@@ -41,7 +41,7 @@ description: >-
   startup, it does not warn and fall back. Whitespace integer text is accepted; zero and negative
   integers are not rejected by this parser and are passed to repository take semantics. B002
   production config tests cleanup_batch_default, cleanup_batch_integer_values and
-  cleanup_batch_invalid_startup load and consume the value. B124 owns
+  cleanup_batch_invalid_startup load and consume the value. B8372 owns
   LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_ENABLED default 'false' and interval default 86400
   at their startup read sites; do not duplicate their parser or registration here.
 
@@ -110,7 +110,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/ui-session-cleanup/count-shapes.yaml
 deviations: []
 out_of_scope:
-  - B124 owns startup job registration and enabled/interval settings; B070 owns PodLockManager,
+  - B8372 owns startup job registration and enabled/interval settings; B070 owns PodLockManager,
     B722 token queries, B777 deletion/archive, B784 events, B2314 internal-jobs identity and
     B002 configuration decoding. All functions in the covered cleanup module belong here.
 pitfalls:

@@ -2,7 +2,7 @@ id: B3680
 milestone: M6 guardrails
 title: Unified guardrail lifecycle and incremental transforms
 status: todo
-depends_on: [B3663, B3665, B3679, B2227, B207, B5471, B3661, B3693, B1419, B1391, B3818, B6160, B6161, B6162, B6163, B6164]
+depends_on: [B3663, B3665, B3679, B2227, B207, B5471, B3661, B3693, B1419, B1391, B3818, B6160, B6161, B6162, B6163, B6164, B3664]
 file: tasks/B3680-unified-guardrail-lifecycle.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py"

@@ -106,7 +106,7 @@ deviations:
 out_of_scope:
   - E2B metadata or other sandbox options beyond template, timeout, secure and allow_internet_access.
   - Retries, timeouts, and connection pooling; those come from AsyncHTTPHandler in betterlite-http (B173).
-  - Environment variable expansion or secret-manager full dispatch (get_secret_str beyond os.environ/); needs the unresolved B129 leaf.
+  - Environment variable expansion or secret-manager full dispatch (get_secret_str beyond os.environ/); needs the unresolved B8500 leaf.
   - The four unused BaseSandboxConfig raise-only methods; no provider calls them and they do not enter production.
 pitfalls:
   - The 10 MiB limit is on UTF-8 byte count of each line, not the total response. Accumulate per line and reject when exceeding the limit mid-read.

@@ -254,7 +254,7 @@ out_of_scope:
   The _safe_get_request_headers function is owned by B1100; this task calls it
   to read incoming headers with safe fallback.
 - >-
-  The SpecialHeaders.litellm_credential_header_names method is owned by a D-gap
+  The SpecialHeaders.litellm_credential_header_names method is owned by the B8410
   task; this task uses its return value for header filtering sets.
 pitfalls:
 - >-

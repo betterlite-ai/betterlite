@@ -28,7 +28,7 @@ description: >-
   is still billed. Only a scheduled call with target_date=None runs catch-up afterward.
   Backfill exceptions are logged and contained so the daily result survives. Alert-channel
   exceptions are also logged and swallowed, including when no alert callback was supplied.
-  Register one owned UTC job at 00:15 in B124 startup when attribution is enabled, with
+  Register one owned UTC job at 00:15 in B8372 startup registration when attribution is enabled, with
   replace_existing semantics and the existing scheduler misfire grace setting. Supply an
   immutable B844 deployment snapshot, current DB handle and the writer's B1690 lock object;
   send High/failed_tracking_spend through the injected alerting interface. Startup must not
@@ -84,7 +84,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - B1691 owns every other function and record in ptu_flat_cost_rollup.py, including all arithmetic, row statements, retry delays, name escaping and pruning predicates.
-  - B124 owns other proxy_server.py startup behavior; B070 owns spend-writer assembly and B1690 owns the shared PodLockManager implementation.
+  - B8372 registers this job at startup and B8374 owns the rest of proxy_server.py startup; B070 owns spend-writer assembly and B1690 owns the shared PodLockManager implementation.
 pitfalls:
   - False from acquire_lock alone cannot distinguish contention from a Redis outage; the second read determines whether to skip the day.
   - Catch-up must not run when an operator explicitly requests a target date.

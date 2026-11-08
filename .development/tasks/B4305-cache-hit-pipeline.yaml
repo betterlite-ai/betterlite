@@ -10,7 +10,7 @@ description: >-
   handles partial embedding hits; the sync path preserves error detail and dispatches success
   callbacks through the logging object. Both methods avoid expensive operations until caching
   eligibility is confirmed and return CachingHandlerResponse with null when caching is disabled.
-  The OTel parent span is extracted once at the start using B110's helper and stored in kwargs
+  The OTel parent span is extracted once at the start using B3847's helper and stored in kwargs
   for all descendant calls.
 scope:
   paths:
@@ -31,7 +31,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L368-L452
     why: _sync_get_cache; preserve error detail and sync callback dispatch path.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L275
-    why: Calls B110's _get_parent_otel_span_from_kwargs to extract OTel parent span once at entry.
+    why: Calls B3847's _get_parent_otel_span_from_kwargs to extract OTel parent span once at entry.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L258-L263
     why: Cache eligibility checks no-cache controls and caching parameter.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L287-L335
@@ -105,7 +105,7 @@ out_of_scope:
   - B4297 implements cache get/async_get semantics; this task only calls them.
   - B174 implements get_llm_provider; this task only calls it with cache-hit metadata.
   - B250 implements async_success_handler and sync success callback dispatch; this task only calls them.
-  - B110 implements _get_parent_otel_span_from_kwargs; this task calls it once at the entry to _async_get_cache to extract the OTel parent span.
+  - B3847 implements _get_parent_otel_span_from_kwargs; this task calls it once at the entry to _async_get_cache to extract the OTel parent span.
 pitfalls:
   - >-
     Async no-cache control is checked via kwargs.get("cache", {}).get("no-cache", False) is not True;

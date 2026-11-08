@@ -5,6 +5,7 @@ status: todo
 depends_on: [B003, B732, B855, B756, B865, B002, B005, B3254, B3256, B3257, B3258, B3261, B3262, B3263, B3264, B3265, B3266, B3267, B3268]
 file: tasks/B3252-policy-template-enrichment.yaml
 covers:
+  - "litellm/proxy/management_endpoints/policy_endpoints/__init__.py"
   - "litellm/proxy/management_endpoints/policy_endpoints/endpoints.py"
 parent: B079
 split_from: B079

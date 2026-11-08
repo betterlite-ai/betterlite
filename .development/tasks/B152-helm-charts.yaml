@@ -1,0 +1,48 @@
+id: B152
+title: Helm chart README and suite-count check
+description: >-
+  Last part of the Helm charts. B8130 to B8135 wrote the two charts and their unit test suites. This task adds the README of the standalone chart packaging/helm/betterlite-helm/README.md and a shell script packaging/helm/tests/check_suites.sh that guards both charts against a suite that is never run.
+  README.md has these sections in order: a short intro naming what the chart installs (the betterlite gateway, an optional migrations Job, optional bundled PostgreSQL and Redis); Prerequisites (Kubernetes 1.21 or newer, Helm 3); Quick start with helm install commands that set masterkeySecretName or masterkey and either db.deployStandalone or db.useExisting; Values, one table row per key of values.yaml with columns key, default and meaning (read packaging/helm/betterlite-helm/values.yaml and cover every top-level block: replicaCount, image, masterkey and masterkeySecretName, db, redis, migrationJob, autoscaling, keda, ingress, serviceMonitor, pdb, connectionPool, collector, metricsServer, test, extraResources, and the rest you find); Database and migrations, saying the Job runs betterlite-db-admin migrate as a Helm hook and that DISABLE_SCHEMA_UPDATE is false for it only; Admin UI, saying the UI is served by the gateway on the same port; Autoscaling; Tests, saying how to run helm_checks.sh. Do not describe any enterprise metering or billing metrics, because the chart has none.
+  check_suites.sh takes no arguments. For each chart folder it counts the files matching tests/*_tests.yaml, runs helm unittest on the whole tests folder through packaging/helm/tests/helm_checks.sh, and compares the number of suites that ran with the number of files. It exits 1 with "suite count mismatch in <chart>: <ran> ran, <files> files" when they differ, and prints "ok <chart> <n> suites" otherwise. The chart folders are packaging/helm/betterlite-helm and packaging/helm/betterlite.
+scope:
+  paths:
+    - packaging/helm/betterlite-helm/README.md
+    - packaging/helm/tests/check_suites.sh
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/README.md
+    why: Section order and the values table to adapt.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/values.yaml
+    why: The key list the table must cover (the betterlite values.yaml is the real source).
+dod:
+  - text: README.md names every top-level key of the chart values.yaml in its table and has no billing section.
+    proof: [readme-keys]
+  - text: check_suites.sh passes for both charts and fails when a suite file is not run.
+    proof: [suite-count]
+checks:
+  optional: []
+  commands:
+    - id: readme-keys
+      why: a values key is missing from the README or a billing word is present
+      run: >-
+        for k in $(/usr/bin/grep -a -E '^[a-zA-Z]+:' packaging/helm/betterlite-helm/values.yaml | cut -d: -f1); do /usr/bin/grep -a -q "$k" packaging/helm/betterlite-helm/README.md || { echo "missing $k"; exit 1; }; done; ! /usr/bin/grep -a -i -q 'billing' packaging/helm/betterlite-helm/README.md
+    - id: suite-count
+      why: a test suite file exists that no run covers
+      run: sh packaging/helm/tests/check_suites.sh
+oracle_cases: []
+deviations:
+  - what: No enterprise billing metrics section in the README.
+    why: The chart has no billingMetrics block; betterlite has no enterprise tier.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/README.md
+out_of_scope:
+  - Chart templates, values and suites belong to B8130 to B8135.
+  - Publishing the charts to a registry is not done here.
+pitfalls:
+  - >-
+    helm_checks.sh copies the chart to a temp folder before dependency build, so run check_suites.sh from the repository root and never write into the chart folder.
+  - >-
+    A key such as db appears inside other words, so the README check is only a floor; write each key as its own table row.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

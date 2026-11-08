@@ -1,0 +1,18 @@
+id: B8175
+milestone: M3 providers
+title: Volcengine chat, embedding and shared helpers
+status: todo
+depends_on: [B668, B1425, B2202]
+file: tasks/B8175-volcengine-chat-embedding.yaml
+covers:
+  - "litellm/llms/volcengine/__init__.py"
+  - "litellm/llms/volcengine/chat/transformation.py"
+  - "litellm/llms/volcengine/common_utils.py"
+  - "litellm/llms/volcengine/embedding/__init__.py"
+  - "litellm/llms/volcengine/embedding/transformation.py"
+parent: B043
+split_from: B043
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

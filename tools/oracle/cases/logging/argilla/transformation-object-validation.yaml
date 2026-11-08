@@ -1,0 +1,23 @@
+# validate_argilla_transformation_object rejects a missing object, a non-dict object and values outside SUPPORTED_PAYLOAD_FIELDS before any request
+kind: helper
+name: argilla-transformation-object-validation
+call:
+  b3960:
+    scenarios:
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages, output: response}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions: []
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: "messages"
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions: []
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: prompt}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions: []
+      - environment: {ARGILLA_API_KEY: key}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions: []
+env: {}
+compare: {ignore: []}

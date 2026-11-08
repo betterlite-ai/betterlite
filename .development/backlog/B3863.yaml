@@ -5,6 +5,9 @@ status: todo
 depends_on: [B002, B173, B188, B198, B3847, B3850, B3854, B3856, B3857, B3859, B3868, B3861]
 file: tasks/B3863-otel-vendor-callbacks.yaml
 covers:
+  - "litellm/integrations/weave/__init__.py"
+  - "litellm/integrations/levo/__init__.py"
+  - "litellm/integrations/agentops/__init__.py"
   - "litellm/integrations/agentops/agentops.py"
   - "litellm/integrations/levo/levo.py"
   - "litellm/integrations/{logfire_logger,traceloop}.py"

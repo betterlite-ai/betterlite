@@ -1,0 +1,13 @@
+id: B8195
+milestone: M9 agents and mcp
+title: "MCP operations: server scoping and tool filters"
+status: todo
+depends_on: [B8190, B8191, B4731, B6591, B4726]
+file: tasks/B8195-mcp-ops-scoping.yaml
+covers: []
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

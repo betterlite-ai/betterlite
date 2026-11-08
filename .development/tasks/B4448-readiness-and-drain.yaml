@@ -59,7 +59,7 @@ description: >-
   noted): `success_callback_names()` (names from B189's registry, via `callback_name`), `cache_report()` (async),
   `redis_configured()`, `log_level()` (name such as "INFO" or "DEBUG") and `version()`. `cache_report` is None when no
   cache exists, the cache type string, or, for a Redis semantic cache, an object `{"type": <type>, "index_info": <value>}`
-  where a failing index lookup becomes the string `index does not exist - error: <error text>`. Build the body: status
+  where a failing index lookup becomes the string `index does not exist - error: <error text>`. The value comes from B4382's `RedisSemanticCache::index_info(&self) -> Result<Json, RedisSemanticError>`, whose Display text is the bare Redis error, so build the string from that text and add no other prefix. Build the body: status
   "healthy", db, cache, litellm_version, success_callbacks, use_aiohttp_transport (false when B173's
   aiohttp_transport_toggle section says disabled, else true), log_level, is_detailed_debug (true when the effective level
   is debug or lower), show_no_redis_warning, show_env_credential_login_warning. With a database configured, db is the
@@ -67,7 +67,7 @@ description: >-
   should_allow_request_on_db_unavailable is true; without a database db is "Not connected" and the status stays 200.
   Any failure building the body is HTTP 503 with detail `Service Unhealthy (<error>)`.
 
-  Routes (`readiness_routes`, one function that returns the router with its state; the umbrella B130 mounts it). Each
+  Routes (`readiness_routes`, one function that returns the router with its state; B8540 mounts it). Each
   path is listed with its aliases:
   GET /health/readiness: unauthenticated. If shutting down: 503 and `{"status": "shutting_down"}`, checked first. Else
   if allow_public_health_readiness_details: the detailed body above (same 503 rule). Else `{"status": "healthy", "db":
@@ -253,10 +253,10 @@ deviations:
     why: Probes and preStop hooks key off the status code, and the oracle ignores only /error/message where LiteLLM's text differs.
 
 out_of_scope:
-  - "The proxy lifespan and the liveliness, liveness and SIGTERM wiring: B130 owns them."
-  - "GET /health/liveliness and /health/liveness (the GET handlers): B003 owns them. They must read this module's ShutdownState instead of B003's bare flag; the umbrella B130 does that wiring."
+  - "The proxy lifespan and its shutdown calls: B8374. The liveliness and liveness handlers over ShutdownState and the SIGTERM flag: B8540."
+  - "GET /health/liveliness and /health/liveness (the GET handlers): B003 owns them. They must read this module's ShutdownState instead of B003's bare flag; B8540 does that wiring."
   - "Calling start_shutdown and wait_for_drain from the SIGTERM path and the lifespan teardown (proxy_server.py lines 1584-1591): the startup and shutdown owner does it with the ShutdownState built here."
-  - "The production DatabaseProbe and ReadinessSources implementations over the database, cache and Redis crates: the umbrella B130 builds them. This task defines the traits and fakes only."
+  - "The production DatabaseProbe and ReadinessSources implementations over the database, cache and Redis crates: B8540 builds them. This task defines the traits and fakes only."
   - "test_endpoint, health_services_endpoint, get_callback_identifier and every other route above line 1412 of the file: B4447 and B4444 to B4446 own them. B4447 calls `callback_name` from here."
   - "_read_license_data and _read_allowed_features: no license source exists in betterlite, and the deviation answers the route with the constant body."
   - "SIGTERM handling and axum graceful serve: B003 owns crates/betterlite-server/src/shutdown.rs."

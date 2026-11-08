@@ -160,11 +160,11 @@ deviations:
       Agent registry is accepted as a read-only injected view,
       not as a mutable registry with DB access or cache population.
     why: >-
-      Registry mutation, database reads and startup population are responsibilities of B141 (agent feature owner).
+      Registry mutation, database reads and startup population are not built here; the wave 17 agents wiring part populates the registry at startup.
       B3017 consumes an already-populated registry snapshot to support rate-limit context in session hooks.
 
 out_of_scope:
-  - Agent registry mutation, database loading or cache population (B141).
+  - Agent registry mutation, database loading or cache population (the wave 17 agents wiring part).
   - Agent route definitions, dispatch or pre-call hook assembly (B141).
   - Rate limiter policy, admission decisions or v3 limiter internals (B072).
   - The full rate limiter implementations that call ProxyRateLimitError (B3007, B072).

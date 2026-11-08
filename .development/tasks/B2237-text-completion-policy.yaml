@@ -220,7 +220,9 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - Public completion aliases and prompt-shape dispatch are B202/B203; outbound text transport is B2238. Concrete
-  non-OpenAI text config constructors are B041/B043; this task emits selection tags only.
+  non-OpenAI text config constructors belong to B8310 (the Fireworks and Together text completion configs, from B5832
+  and B5831) and B038 (text-completion-inception). B8311, B8312, B8330, B8331, B8332 and B8157 build none. This task
+  emits selection tags only.
 - 'Function ownership inventory litellm/utils.py: get_requester_metadata L10327-L10341 belong to B024.'
 - 'Function ownership inventory litellm/utils.py: _get_cached_custom_logger L103-L114; _accepts_fallback_depth_kwarg_for_class
   L117-L126; _snapshot_exception_for_hook L129-L151; _get_cached_custom_guardrail L154-L165; _get_cached_caching_handler_response

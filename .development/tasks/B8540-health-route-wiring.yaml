@@ -1,0 +1,120 @@
+id: B8540
+title: Mount the health routes and build their production adapters
+description: >-
+  The B130 parts each stop at a boundary. B4444 returns the GET /health/shared-status router, B4445 `health_status_routes(state)`
+  for GET /health, /health/history and /health/latest, B4446 the POST /health/test_connection router, B4447
+  `health_services_routes(state)` for GET /test and /health/services, and B4448 `readiness_routes(state)` for readiness, details,
+  backlog, drain, license, OPTIONS, /settings and /active/callbacks. B4447 and B4448 define traits with fakes and leave the real
+  implementations to the umbrella. Nothing merges these routers yet, and crates/betterlite-server/src/routes.rs still carries B003's
+  own /health/liveliness, /health/liveness and /health/readiness handlers over a bare AtomicBool, so merging B4448's router as it is
+  would make axum panic on a duplicate path. This task joins them. Code goes in a new betterlite-server module `health_wiring`
+  (crates/betterlite-server/src/health_wiring.rs and health_wiring/: compose.rs, services.rs, readiness.rs, tests.rs), declared
+  by the skeleton, following the composition style of .development/tasks/B8157-self-hosted-dispatch.yaml and
+  .development/tasks/B8399-proxy-logging-wiring.yaml.
+
+  compose.rs. `HealthWiring` is a plain struct built once at server start with constructor injection (no globals, no lazy statics):
+  the state values each part's route function takes, the B4448 `ShutdownState` as an `Arc`, and the results source for B4445.
+  `health_routes(wiring: HealthWiring) -> Router` calls each of the five route functions exactly once and merges them, then adds
+  GET /health/liveliness and GET /health/liveness. Those two keep B003's bodies (200 with the JSON string "I'm alive!", or 503 with
+  `{"status": "shutting_down"}` once shutdown started) but read the B4448 ShutdownState instead of the AtomicBool. In routes.rs,
+  delete the three B003 handlers, their ShutdownBody and ReadinessBody types and the AtomicBool state, and make `router()` take the
+  health Router as a parameter and merge it where the old routes were, inside the same timeout layer. In server.rs, build one
+  ShutdownState instead of `Arc<AtomicBool>`; the accept loop and `shutdown_signal.wait` use it, so B8374's lifespan teardown, which
+  calls start_shutdown and wait_for_drain on the same value, flips what the routes read. The auth exemption list in
+  crates/betterlite-server/src/auth.rs (the three health paths) stays as it is.
+
+  B4445's `HealthResultsSource` returns the cache that the background health loop fills. That loop is B4444's `health_shared::background_loop` (proxy_server.py L4265-L4678,
+  _run_background_health_check and the db-save helpers around it): it calls B4443's perform_health_check, B4444's perform_shared_health_check and B7640's
+  changed-result save, and the results cache it fills is B4444's `HealthResultsCache`, its implementation of `HealthResultsSource`. This task takes the source as a field of HealthWiring,
+  and server.rs passes B4444's `HealthResultsCache` there. When `use_background_health_checks` is false the loop does not run and B4445 never reads the source, so its
+  empty cache changes nothing a user sees in that mode.
+
+  services.rs implements B4447's traits over the real crates. `MockRequests` calls B5656's completion entry with exactly the
+  arguments B4447's text gives (model `openai/litellm-mock-response-model`, the one user message, user `litellm:/health/services`,
+  mock_response `This is a mock response`), so no network call happens. `IntegrationChecks`: datadog() over B3933's health check,
+  datadog_metrics() over B3939's, arize() over B3862's, galileo() over B3964's, newrelic() over B3942's, sqs() over B3995's,
+  pointfive() over B3074's (its missing-key error maps to `PointFiveSetupError` with the same text) and langfuse_auth_check() over
+  B3904's project lookup. Each method builds its logger from the settings that logger already reads; none reads a new env var.
+  `AlertActions`: send_user_budget_test builds B4025's CallInfo (spend 1, max_budget 0) and calls its budget alert entry with type
+  user_budget; the Slack methods (webhook_alert_types, active_alert_types, the send) go to B4020's settings and B4021's sender
+  through B4024's destination selection; the two spend report spawns go to B4029; ms_teams_webhook_url reads B4020's settings and
+  post_teams uses B4021's Adaptive Card builder with B173's pooled client; send_test_email calls B4023's
+  send_key_created_or_user_invited_email; has_database answers whether the server holds a database pool. `CallbackSource` lists
+  B189's registered success callbacks in registration order.
+
+  readiness.rs implements B4448's traits. `DatabaseProbe`: configured() is whether DATABASE_URL produced a pool, health_check runs
+  `SELECT 1` on B700's pool, attempt_reconnect forwards to B872's reconnect client with the reason and both timeouts it receives,
+  and live_worker_count is B731's count_live_proxy_workers (its None stays None). `ReadinessSources`: success_callback_names from
+  B189 through B4448's callback_name, cache_report from the server's response cache (None without one, its type string, or for a
+  Redis semantic cache B4382's `RedisSemanticCache::index_info`), redis_configured true when the coordination cache or the router's
+  own Redis exists, log_level from the active tracing level name, and version from the crate version.
+
+  Tests in `health_wiring::tests`: building `health_routes` succeeds (a duplicate path would panic), every path and alias from the
+  five parts answers something other than 404, liveliness and liveness flip to 503 after ShutdownState::start_shutdown, and each
+  adapter forwards to the owning crate. Use the real B189 registry and fakes only where a crate needs a network or a database.
+
+  HTTP oracle cases through the booted proxy, in tools/oracle/cases/health/wiring/: readiness-local-cache (config
+  `litellm_settings: {cache: true, cache_params: {type: local}}`, GET /health/readiness, ignore /litellm_version and /db as
+  tools/oracle/cases/auth/readiness.yaml does), liveness-alias (GET /health/liveness), services-openmeter-mock (GET
+  /health/services?service=openmeter with the master key, which runs the mock completion), and services-ms-teams-no-webhook
+  (general_settings.alerting ["ms_teams"], no MS_TEAMS_WEBHOOK_URL, the 422).
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/health_wiring.rs
+    - crates/betterlite-server/src/health_wiring/**
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/server.rs
+    - tools/oracle/cases/health/wiring/**
+    - tools/oracle/helpers/b8540.py
+    - tools/oracle/helpers/b8540/**
+    - tools/oracle/src/helpers/server/b8540.rs
+    - tools/oracle/src/helpers/server/b8540/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L240-L262
+    why: GET /test, one of the routes this task mounts through B4447.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L264-L612
+    why: health_services_endpoint, which shows what each IntegrationChecks and AlertActions method stands for (openmeter at L335 runs the mock request).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1649-L1690
+    why: _show_no_redis_warning, _show_env_credential_login_warning and the start of _get_health_readiness_details, which read what DatabaseProbe and ReadinessSources answer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4265-L4678
+    why: The background health loop that fills the results cache; B4444 builds it and this task passes its cache to HealthWiring.
+dod:
+  - text: health_routes mounts the five parts' routers once each plus liveliness and liveness, and routes.rs no longer registers its own health handlers.
+    proof: [wiring-tests, oracle]
+  - text: Liveliness, liveness and readiness read one ShutdownState that the server's shutdown path flips.
+    proof: [wiring-tests, oracle]
+  - text: The B4447 and B4448 traits have production implementations that forward to the crates that own each behavior.
+    proof: [wiring-tests, oracle]
+  - text: The four wiring cases match LiteLLM through the booted proxy.
+    proof: [wiring-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: wiring-tests
+      why: The composed router, the ShutdownState handlers or an adapter is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^health_wiring::/)'
+    - id: wiring-cases
+      why: Without new case files the oracle proof compares nothing for this task
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/health/wiring)"
+oracle_cases:
+  - tools/oracle/cases/health/wiring/readiness-local-cache.yaml
+  - tools/oracle/cases/health/wiring/liveness-alias.yaml
+  - tools/oracle/cases/health/wiring/services-openmeter-mock.yaml
+  - tools/oracle/cases/health/wiring/services-ms-teams-no-webhook.yaml
+deviations: []
+out_of_scope:
+  - "Route behavior: B4444 (/health/shared-status), B4445 (/health, /health/history, /health/latest), B4446 (/health/test_connection), B4447 (/test, /health/services) and B4448 (readiness, drain, backlog and the rest)."
+  - "The health cycle, probe modes and persistence: B4443, B4440 to B4442 and B7640."
+  - "The background health loop and its db-save gating (proxy_server.py L4265-L4678): B4444. Starting it at startup when use_background_health_checks is true: the wave 17 health wiring part."
+  - "The lifespan order that calls start_shutdown and wait_for_drain: B8374."
+pitfalls:
+  - B4448 registers /health/readiness itself, so the old routes.rs handler must go in the same change or the router panics on start.
+  - The auth exemption for /health/liveliness, /health/liveness and /health/readiness lives in auth.rs and must not move into the health router, since B052's auth layer runs before it.
+  - openmeter, braintrust and generic_api run the mock completion even when they are not in success_callback, so the MockRequests adapter must not check the callback list itself.
+  - The response cache and the coordination Redis are different objects; redis_configured is true when either one or the router's own Redis exists.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

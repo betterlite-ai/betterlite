@@ -1,4 +1,5 @@
 pub mod anthropic_pricing;
+pub mod api_base_lookup;
 pub mod available_models;
 pub mod baseline_history;
 pub mod baseten_endpoint;

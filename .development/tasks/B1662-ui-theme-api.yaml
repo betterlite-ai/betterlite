@@ -20,7 +20,7 @@ description: >-
   Require store_model_in_db=true, load config and capture the prior theme, then replace the
   block using the full model dump with nulls excluded. Publish set/remove operations for all
   three owned environment names through B1646's RuntimeEnvironment; missing/blank values clear
-  them. Save litellm_settings first, then call B124's save_environment_variables with only
+  them. Save litellm_settings first, then call B8380's save_environment_variables with only
   those three keys, then enqueue config audit via B065. Preserve partial runtime/config writes
   if either save fails. PATCH adds no role guard beyond B052, unlike the upload handler.
   Upload requires exact proxy_admin. Use B900's existing multipart decoding, then
@@ -99,7 +99,7 @@ deviations:
 out_of_scope:
   - "Unowned functions in proxy_setting_endpoints.py map to B1656 (L88-L127, L723-L783, L800-L849, L1001-L1072), B1657 (L858-L998, L1080-L1127), B1658 (L591-L720), B1659 (L379-L399, L453-L470, L786-L797, L1671-L1742), B1660 (L1750-L1961), B1661 (L1136-L1322) and B1663 (L548-L582, L1472-L1664)."
   - register_extra_ui_setting L439-L450 has no caller at the pin and its enterprise-only behavior is absent.
-  - B124 owns /get_image and favicon serving; this task only stores theme strings and local upload bytes.
+  - B8387 owns /get_image and favicon serving; this task only stores theme strings and local upload bytes.
 pitfalls:
   - Null and omitted theme fields clear the corresponding runtime environment names even though null fields are omitted from the saved theme object.
   - Upload validation checks the filename extension, so an empty .svg upload succeeds without an SVG parser.

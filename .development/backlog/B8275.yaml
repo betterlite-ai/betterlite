@@ -1,0 +1,14 @@
+id: B8275
+milestone: M5 api families
+title: Serve the search call and search tool list routes
+status: todo
+depends_on: [B001, B003, B004, B014, B732, B737, B749, B756, B1103, B3272, B3273, B8393, B8395]
+file: tasks/B8275-search-call-routes.yaml
+covers:
+  - "litellm/proxy/search_endpoints/endpoints.py"
+parent: B091
+split_from: B091
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

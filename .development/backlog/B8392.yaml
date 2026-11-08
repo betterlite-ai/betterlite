@@ -1,0 +1,14 @@
+id: B8392
+milestone: M8 platform
+title: Guardrail hook execution, metrics and the during-call hook
+status: todo
+depends_on: [B8390, B3665, B3666, B3680, B3878, B6370, B3664]
+file: tasks/B8392-guardrail-hook-execution.yaml
+covers:
+  - "litellm/proxy/utils.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
