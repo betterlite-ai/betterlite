@@ -24,6 +24,10 @@ fn json_list(text: &str) -> Vec<Json> {
     serde_json::from_str(text).unwrap()
 }
 
+fn generated_id() -> String {
+    String::from("generated-uuid")
+}
+
 fn reply_input<'body>(
     body: &'body [u8],
     status: u16,
@@ -42,6 +46,7 @@ fn reply_input<'body>(
             tool_calls: None,
             annotations: None,
         },
+        next_id: generated_id,
     }
 }
 
@@ -386,11 +391,11 @@ fn json_failures_keep_the_upstream_status_and_mapping_failures_are_422() {
     r#"{"message":{"citations":[{"start":"1","sources":[]}]},"usage":{"tokens":{}}}"#
 )]
 #[case::tool_calls_not_list(r#"{"message":{"tool_calls":{}},"usage":{"tokens":{}}}"#)]
-#[case::tool_call_without_id(
-    r#"{"message":{"tool_calls":[{"type":"function","function":{}}]},"usage":{"tokens":{}}}"#
-)]
 #[case::tool_call_without_function(
     r#"{"message":{"tool_calls":[{"id":"a"}]},"usage":{"tokens":{}}}"#
+)]
+#[case::tool_call_id_not_a_string(
+    r#"{"message":{"tool_calls":[{"id":5,"function":{}}]},"usage":{"tokens":{}}}"#
 )]
 #[case::missing_usage(r#"{"message":{"content":[]}}"#)]
 #[case::usage_not_object(r#"{"message":{"content":[]},"usage":null}"#)]
@@ -412,6 +417,16 @@ fn tool_arguments_without_parameters_are_empty_and_missing_type_is_function() {
     assert_eq!(call.function.arguments, "");
     assert_eq!(call.function.name.as_deref(), Some("noop"));
     assert_eq!(call.index, 0);
+}
+
+#[rstest]
+#[case::absent_id(r#"{"type":"function","function":{"name":"noop"}}"#)]
+#[case::null_id(r#"{"id":null,"type":"function","function":{"name":"noop"}}"#)]
+fn a_tool_call_without_an_id_gets_the_generated_one(#[case] tool: &str) {
+    let body = format!(r#"{{"message":{{"tool_calls":[{tool}]}},"usage":{{"tokens":{{}}}}}}"#);
+    let reply = decode(&body).unwrap();
+    let call = &reply.message.tool_calls.unwrap()[0];
+    assert_eq!(call.id, generated_id());
 }
 
 #[test]

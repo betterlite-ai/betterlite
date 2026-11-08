@@ -18,29 +18,37 @@ pub struct ReplyFunction {
     pub arguments: String,
 }
 
-pub(super) fn field_tool_calls(fields: &Object) -> Result<Option<Vec<ReplyToolCall>>, ReplyError> {
+pub(super) fn field_tool_calls(
+    fields: &Object,
+    next_id: fn() -> String,
+) -> Result<Option<Vec<ReplyToolCall>>, ReplyError> {
     match fields.get("tool_calls") {
-        Some(Json::List(entries)) if !entries.is_empty() => Ok(Some(tool_calls(entries)?)),
+        Some(Json::List(entries)) if !entries.is_empty() => Ok(Some(tool_calls(entries, next_id)?)),
         Some(Json::Null | Json::List(_)) | None => Ok(None),
         Some(_) => Err(ReplyError::Field("message.tool_calls", "is not a list")),
     }
 }
 
-fn tool_calls(entries: &[Json]) -> Result<Vec<ReplyToolCall>, ReplyError> {
+fn tool_calls(entries: &[Json], next_id: fn() -> String) -> Result<Vec<ReplyToolCall>, ReplyError> {
     entries
         .iter()
         .enumerate()
-        .map(|(index, entry)| tool_call(index, entry))
+        .map(|(index, entry)| tool_call(index, entry, next_id))
         .collect()
 }
 
-fn tool_call(index: usize, entry: &Json) -> Result<ReplyToolCall, ReplyError> {
+fn tool_call(
+    index: usize,
+    entry: &Json,
+    next_id: fn() -> String,
+) -> Result<ReplyToolCall, ReplyError> {
     let Json::Object(tool) = entry else {
         return Err(ReplyError::Field("message.tool_calls", "is not an object"));
     };
     let id = match tool.get("id") {
         Some(Json::Text(id)) => id.clone(),
-        Some(_) | None => return Err(ReplyError::Field("tool_calls.id", "is not a string")),
+        Some(Json::Null) | None => next_id(),
+        Some(_) => return Err(ReplyError::Field("tool_calls.id", "is not a string")),
     };
     let kind = match tool.get("type") {
         None | Some(Json::Null) => String::from("function"),

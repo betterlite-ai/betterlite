@@ -78,6 +78,8 @@ fn outcome(request: &Request) -> Value {
         id: request.id.clone(),
         finish_reason: request.finish_reason.clone(),
         message: request.message.clone(),
+        // the compared cases always carry a tool id, so the generated value is never observed
+        next_id: String::new,
     };
     match decode_cohere_chat_v2(input) {
         Ok(reply) => json!({"ok": true, "value": {

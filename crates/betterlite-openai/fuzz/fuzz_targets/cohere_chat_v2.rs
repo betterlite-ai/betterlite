@@ -10,5 +10,6 @@ fuzz_target!(|bytes: &[u8]| {
         id: String::from("chatcmpl-fuzz"),
         finish_reason: None,
         message: AssistantReply::default(),
+        next_id: String::new,
     });
 });

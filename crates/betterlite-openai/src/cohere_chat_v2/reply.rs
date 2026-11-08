@@ -71,6 +71,8 @@ pub struct ReplyInput<'request> {
     pub id: String,
     pub finish_reason: Option<String>,
     pub message: AssistantReply,
+    // LiteLLM mints a uuid for a tool call whose declared id is absent or null
+    pub next_id: fn() -> String,
 }
 
 pub fn decode_cohere_chat_v2(input: ReplyInput<'_>) -> Result<CohereV2Reply, ReplyError> {
@@ -90,19 +92,23 @@ pub fn decode_cohere_chat_v2(input: ReplyInput<'_>) -> Result<CohereV2Reply, Rep
         created: input.created,
         model: input.model.to_owned(),
         finish_reason: input.finish_reason,
-        message: reply_message(input.message, fields)?,
+        message: reply_message(input.message, fields, input.next_id)?,
         usage: usage(&response)?,
     })
 }
 
-fn reply_message(mut reply: AssistantReply, fields: &Object) -> Result<AssistantReply, ReplyError> {
+fn reply_message(
+    mut reply: AssistantReply,
+    fields: &Object,
+    next_id: fn() -> String,
+) -> Result<AssistantReply, ReplyError> {
     match fields.get("content") {
         None | Some(Json::Null) => {}
         Some(Json::List(parts)) => reply.content = Some(concatenate(parts)?),
         Some(_) => return Err(ReplyError::Field("message.content", "is not a list")),
     }
     let annotations = field_annotations(fields)?;
-    if let Some(tools) = tool_calls::field_tool_calls(fields)? {
+    if let Some(tools) = tool_calls::field_tool_calls(fields, next_id)? {
         return Ok(AssistantReply {
             content: None,
             tool_calls: Some(tools),
