@@ -1,0 +1,248 @@
+id: B3244
+title: Policy version lifecycle and routes
+description: >-
+  Build the version lifecycle of a policy and the five routes that expose it. A policy name can have many rows in the policy table, one per
+  version. A version is `draft`, `published` or `production`, and only the production row of a name is active in the in-memory registry.
+  This task lists the versions of a name, clones a new draft, moves a version between statuses, compares two versions and deletes every
+  version of a name. B3242 gives the row type, the response record `PolicyDBResponse`, the version records (`PolicyVersionCreateRequest`,
+  `PolicyVersionStatusUpdateRequest`, `PolicyVersionListResponse`, `PolicyVersionCompareResponse`), the row-to-response adapter and the
+  policy table handle. B3241 gives the in-memory registry with `parse_policy`, `add_policy`, `remove_policy` and `get_source`. B726 gives the
+  policy repository. B3243 owns create, update, delete, list and sync for single policies and does not call this task. Use the exact names
+  and types as they exist when you start, and re-implement none of them.
+
+  Lifecycle code goes in crates/betterlite-db/src/policy_versions.rs and policy_versions/. Files: list.rs, create.rs, status.rs,
+  compare.rs, delete.rs and error.rs. The service struct `PolicyVersions` takes the repository handle and the shared registry handle in
+  its constructor, and holds no module-level state (LiteLLM's `get_policy_registry()` singleton becomes that handle). Every method that can
+  fail returns `PolicyVersionError`, a `thiserror` enum owned by error.rs. Its variants are typed (database error, `PolicyNotFound`,
+  `SourceNotFound`, `SourceNameMismatch`, `NoProduction`, `InvalidStatus`, `OnlyDraftCanBePublished`, `OnlyDraftOrPublished`,
+  `DraftCannotBePromoted`, `RegistryParse`), and each variant's `Display` text is exactly LiteLLM's text including the wrapper prefix
+  listed below, since the route returns it as `detail`. Log each failure at error level with the same prefix, as LiteLLM does with
+  `verbose_proxy_logger.exception`.
+
+  `get_versions_by_policy_name(policy_name)` (policy_registry.py L761-L789). Read every row with that `policy_name`, ordered by
+  `version_number` descending, map each with the B3242 adapter and return `PolicyVersionListResponse` with `policy_name`, `versions` and
+  `total_count` set to the count. An unknown name is an empty list with `total_count` 0, not an error. A database failure has the text
+  `Error getting versions: <cause>`.
+
+  `create_new_version(policy_name, source_policy_id, created_by)` (L791-L875). Pick the source row. With `source_policy_id` set, read that
+  row by `policy_id`: a missing row is `Source policy <id> not found`, and a row whose `policy_name` differs is `Source policy name '<row
+  name>' does not match '<policy_name>'`. With it unset, take the first row with that name and `version_status` `production`; none is
+  `No production version found for policy '<policy_name>'`. Then read the first row of the name ordered by `version_number` descending
+  and use its number plus one, or 1 when the name has no rows. Then set `is_latest` to false on every row of the name with one update-many.
+  Then insert the draft row with: the name, the new number, `version_status` `draft`, `parent_version_id` the source row's `policy_id`,
+  `is_latest` true, `published_at` and `production_at` unset, `inherit` and `description` from the source, `guardrails_add` and
+  `guardrails_remove` from the source or an empty list, `created_at` and `updated_at` the current UTC time, and `created_by` and
+  `updated_by` both set to `created_by`. `condition` and `pipeline` are copied only when the source has them, as JSON values (LiteLLM
+  dumps a dict to a JSON string for Prisma; the Rust repository takes the JSON value, so the stored result is the same). Return the new row
+  through the adapter. Every failure above has the prefix `Error creating new version: `. The three steps (read latest, clear
+  `is_latest`, insert) are separate statements and are not wrapped in a transaction, as in LiteLLM; keep that order.
+
+  `update_version_status(policy_id, new_status, updated_by)` (L877-L980). Check in this order. `new_status` other than `published` or
+  `production` is `Invalid status '<new_status>'. Use 'published' or 'production'.` (checked before any read). Read the row by
+  `policy_id`; none is `Policy with ID <policy_id> not found`. Then by target:
+  - `published`: the row must be `draft`, else `Only draft versions can be published. Current status: '<current>'.` Update that row to
+    `published` with `published_at` and `updated_at` the current time and `updated_by`. Nothing in the in-memory registry changes.
+  - `production`: a row that is not `draft` or `published` is `Only draft or published versions can be promoted to production. Current:
+    '<current>'.` and a `draft` row is `Cannot promote draft directly to production. Publish the version first.` For a `published` row, first
+    update every row of the same name that is `production` to `published`, setting only `version_status`, `updated_at` and `updated_by`.
+    Then update this row to `production` with `production_at`, `updated_at` and `updated_by`. Then call the registry's `remove_policy` for
+    the name (which restores a config-defined policy of that name when there is one), build the policy with `parse_policy` from the updated
+    row's `inherit`, `description`, `guardrails_add`, `guardrails_remove`, `condition` and `pipeline`, and call `add_policy` with the
+    default source `db`.
+  Return the updated row through the adapter. Every failure has the prefix `Error updating version status: `.
+
+  `compare_versions(policy_id_a, policy_id_b)` (L982-L1033). Read row A, then row B, both by `policy_id`. A missing A is `Policy <id> not
+  found` and so is a missing B (A is checked first, after both reads). Map both through the adapter. For each of `inherit`, `description`,
+  `guardrails_add`, `guardrails_remove`, `condition` and `pipeline`, in that order, when the two response values are not equal add
+  `field_diffs[field] = {version_a: <A value>, version_b: <B value>}`. Equality is JSON value equality, so key order inside `condition`
+  does not matter and list order inside `guardrails_add` does. Metadata fields (status, number, dates, users) are never compared.
+  Return `PolicyVersionCompareResponse`. Prefix `Error comparing versions: `.
+
+  `delete_all_versions(policy_name)` (L1035-L1068). Delete every row of the name with one delete-many and then call the registry's
+  `remove_policy`. The result is `{"message": "All versions of policy '<policy_name>' deleted successfully"}`, plus `"warning": "All DB
+  versions were deleted. The config-defined policy with the same name is active again."` when the registry's `get_source(policy_name)` is
+  `config` after the removal. An unknown name succeeds with the plain message. Prefix `Error deleting all versions: `. The by-id map
+  of draft and published versions in the registry is not touched, as in LiteLLM; B3243's sync refreshes it.
+
+  Routes go in crates/betterlite-server/src/policy_version_routes.rs and policy_version_routes/ (routes.rs, request.rs, error.rs). The state
+  struct takes `Option<PolicyVersions>` through its constructor: `None` stands for LiteLLM's `prisma_client is None`. All five routes
+  have tag `Policies` and sit in the standard authenticated group (B855 and B756 own the auth); `/policies/...` version paths are not in
+  LiteLLM's read-only admin-viewer list, so route access follows the shared route checks for a path they do not list, and this task adds
+  no special case. With no database every route answers HTTP 500 with `detail` `Database not connected`, after the body and query
+  validation. The routes:
+  - GET `/policies/name/{policy_name}/versions` (policy_endpoints.py L222-L244). Returns the list response. Any failure is 500 with the
+    error text as `detail`.
+  - POST `/policies/name/{policy_name}/versions` (L247-L279). Body `PolicyVersionCreateRequest`; `{}` and `{"source_policy_id": null}`
+    are fine, a missing body is the shared 422. `created_by` is the authenticated key's `user_id` (B732's principal). A `SourceNotFound` or
+    `NoProduction` failure is 404, any other is 500, both with the error text as `detail`.
+  - PUT `/policies/{policy_id}/status` (L282-L320). Body `PolicyVersionStatusUpdateRequest` with a required string `version_status`.
+    `updated_by` is the key's `user_id`. `InvalidStatus`, `OnlyDraftCanBePublished`, `OnlyDraftOrPublished` and `DraftCannotBePromoted`
+    are 400, `PolicyNotFound` is 404, anything else is 500.
+  - GET `/policies/compare` (L323-L351). Required query parameters `version_a` and `version_b` (missing is the shared 422). `PolicyNotFound`
+    is 404, anything else 500.
+  - DELETE `/policies/name/{policy_name}/all-versions` (L354-L380). Returns the message map. Any failure is 500.
+  Axum routing: `/policies/compare` and `/policies/name/...` are static paths and win over `/policies/{policy_id}` that B3248 registers, so
+  nothing here conflicts; the umbrella (B079) composes the routers and never registers these again.
+
+  Add two pure decoders in request.rs with the shared 422 response for a failure: `decode_version_create(bytes: &[u8]) ->
+  Result<PolicyVersionCreateRequest, PolicyVersionRequestError>` (a JSON object whose optional `source_policy_id` is a string or null) and
+  `decode_version_status(bytes: &[u8]) -> Result<PolicyVersionStatusUpdateRequest, PolicyVersionRequestError>` (a JSON object with a
+  string `version_status`). Add one cargo-fuzz target that feeds both.
+
+  Tests. Name native tests under `policy_versions::tests` with these prefixes, since the checks filter on them: `list_`, `create_`,
+  `status_`, `compare_` and `delete_`. They run against a real Postgres through POSTGRES_TEST_URL or testcontainers, with the registry
+  built by B3241. Route tests live in `policy_version_routes::tests`; they check the status mapping for each error variant with a service
+  over the test database and the no-database state for the 500. The helper cases of this task are none: the lifecycle reads and writes
+  rows, which a helper adapter cannot do.
+
+  Oracle. HTTP cases go in tools/oracle/cases/policies/versions/ and send the real request to the booted proxy with the master key and
+  no database, so they cover the no-database 500 for every route, the 422 for a bad body or a missing query parameter (compare the
+  status and ignore the validation `detail` text, see deviations) and the 401 without a key. The database paths are covered by the
+  native tests.
+
+scope:
+  paths:
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/policy_versions.rs
+    - crates/betterlite-db/src/policy_versions/**
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-server/src/policy_version_routes.rs
+    - crates/betterlite-server/src/policy_version_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/policy_version_request.rs
+    - crates/betterlite-server/fuzz/corpus/policy_version_request/**
+    - tools/oracle/cases/policies/versions/**
+    - tools/oracle/helpers/b3244.py
+    - tools/oracle/helpers/b3244/**
+    - tools/oracle/src/helpers/db/b3244.rs
+    - tools/oracle/src/helpers/db/b3244/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L761-L789
+    why: get_versions_by_policy_name, descending order and the empty-list result for an unknown name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L791-L875
+    why: create_new_version, source selection, next number, the is_latest clear and the copied draft fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L877-L980
+    why: update_version_status, the check order, the demotion of the old production row and the registry swap. The docstring also lists production to published, which the code rejects.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L982-L1033
+    why: compare_versions and the six compared fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L1035-L1068
+    why: delete_all_versions and the config-fallback warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L222-L244
+    why: GET versions route from its decorator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L247-L320
+    why: POST versions and PUT status routes, including the substring-to-status error mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L323-L380
+    why: GET compare and DELETE all-versions routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/resolver_types.py#L241-L276
+    why: Request and response shapes of the version routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L82-L85
+    why: The /policies prefix that loads these routes.
+
+dod:
+  - text: >-
+      get_versions_by_policy_name returns the rows of a name by version_number descending with total_count, and an empty list for an unknown name.
+    proof: [list-tests]
+  - text: >-
+      create_new_version clones the chosen source (an explicit id, else the production row) into a draft with the next number, parent set to the
+      source, dates unset, is_latest moved to the new row, and condition and pipeline copied only when present.
+    proof: [create-tests]
+  - text: >-
+      create_new_version fails with LiteLLM's text for a missing source, a source of another name and a name with no production version.
+    proof: [create-tests]
+  - text: >-
+      update_version_status publishes only drafts, sets published_at, and leaves the registry alone.
+    proof: [status-tests]
+  - text: >-
+      update_version_status promotes only a published row, demotes the old production row to published without touching its dates, sets
+      production_at, and replaces the registry entry with source db, keeping the config policy when the row is later removed.
+    proof: [status-tests]
+  - text: >-
+      update_version_status rejects an invalid status first, a missing row, a draft promotion, a production or draft-only mismatch and a
+      production row asked to become published, each with LiteLLM's text.
+    proof: [status-tests]
+  - text: >-
+      compare_versions reports only differing content fields with version_a and version_b values, ignores metadata, and fails with
+      `Policy <id> not found` for a missing side.
+    proof: [compare-tests]
+  - text: >-
+      delete_all_versions removes every row and the registry entry, and adds the config-fallback warning only when a config policy of that
+      name exists.
+    proof: [delete-tests]
+  - text: >-
+      The five routes return the documented bodies and map errors to 400, 404 or 500 as the variant table says; every route answers 500
+      `Database not connected` without a database and 422 for a bad body or query.
+    proof: [route-tests, oracle]
+  - text: >-
+      The two body decoders reject malformed bytes and wrong shapes without panicking and have committed corpus inputs.
+    proof: [request-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: list-tests
+      why: version listing, ordering or the empty result is missing or wrong
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_versions::.*tests::list_/)'
+    - id: create-tests
+      why: draft cloning, numbering, the is_latest move or the source errors are missing or wrong
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_versions::.*tests::create_/)'
+    - id: status-tests
+      why: a status transition, its error order or the registry swap is missing or wrong
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_versions::.*tests::status_/)'
+    - id: compare-tests
+      why: the field diff or its not-found errors are missing or wrong
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_versions::.*tests::compare_/)'
+    - id: delete-tests
+      why: all-versions deletion, the registry removal or the config warning is missing or wrong
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^policy_versions::.*tests::delete_/)'
+    - id: route-tests
+      why: a version route, its status mapping or the no-database answer is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^policy_version_routes::/) - test(replays_the_policy_version_request_corpus)'
+    - id: request-corpus
+      why: the body decoders have no committed malformed-input regressions or no replay test
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/policy_version_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_policy_version_request_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/policies/versions/list-versions-no-database-500.yaml
+  - tools/oracle/cases/policies/versions/create-version-no-database-500.yaml
+  - tools/oracle/cases/policies/versions/create-version-missing-body-422.yaml
+  - tools/oracle/cases/policies/versions/status-no-database-500.yaml
+  - tools/oracle/cases/policies/versions/status-missing-field-422.yaml
+  - tools/oracle/cases/policies/versions/compare-no-database-500.yaml
+  - tools/oracle/cases/policies/versions/compare-missing-query-422.yaml
+  - tools/oracle/cases/policies/versions/delete-all-no-database-500.yaml
+  - tools/oracle/cases/policies/versions/list-versions-no-auth-401.yaml
+
+deviations:
+  - what: Route errors are mapped from typed `PolicyVersionError` variants, not by searching the message for "not found", "no production", "invalid status", "only draft" or "cannot promote". A database error whose text happens to contain one of those words is 500 here and 404 or 400 in LiteLLM.
+    why: Substring matching on error text turns a driver message or a policy name into a wrong status; the listed cases give the same status and text as LiteLLM.
+  - what: The 422 body for a bad request body or a missing query parameter uses the server's shared validation response and wording, not FastAPI's `loc` and `msg` strings.
+    why: Every route in the server shares one validation response; status 422 matches.
+  - what: A `source_policy_id`, `version_status`, `version_a` or `version_b` of the wrong JSON type is 422 from the decoder, like FastAPI, but extra unknown fields in the bodies are ignored as in LiteLLM.
+    why: Pydantic's default config ignores extra fields, and so do the decoders.
+
+out_of_scope:
+  - "B3242 owns the row type, the version and policy response records, the row-to-response adapter and get_policy_by_id_from_db (resolver_types.py L66-L433, policy_registry.py L57-L162, L564-L589)."
+  - "B3241 owns the in-memory registry, parse_policy, add_policy, remove_policy, get_source, list_config_policies and the by-id map (policy_registry.py L163-L380, L590-L605)."
+  - "B3243 owns add_policy_to_db, update_policy_in_db, delete_policy_from_db, get_all_policies_from_db, sync_policies_from_db and resolve_guardrails_from_db (policy_registry.py L381-L760)."
+  - "B3248 owns the other policy_endpoints.py routes (list, create, get, update, delete by id, resolved-guardrails and the attachment routes); B3247 owns POST /policies/test-pipeline."
+  - "B726 owns the policy repository and its table operations; B732 owns the authenticated principal; B855 and B756 own auth admission and header selection."
+  - "get_policy_registry() singleton accessor (policy_registry.py L1071-L1081): no module-level state in betterlite; the registry handle is passed in."
+
+pitfalls:
+  - "update_version_status rejects `production` to `published`: a `published` target needs a `draft` row, so the docstring's demote-to-published transition does not exist. A production row asked for `published` is `Only draft versions can be published. Current status: 'production'.`"
+  - "Promotion demotes the old production row with update-many on `version_status`, `updated_at` and `updated_by` only, so its `published_at` and `production_at` keep their old values, and `is_latest` is never touched by any status change."
+  - "The promotion writes the database first and the registry last; when `parse_policy` fails on the stored JSON the rows are already changed and the call fails with the prefix text. Keep that order and do not roll back."
+  - "`remove_policy` before `add_policy` matters: it restores the config policy of that name, and `add_policy` then overwrites it with the db version, so the registry source after a promotion is `db`."
+  - "In create_new_version the `is_latest` clear runs before the insert and covers every row of the name, so a failed insert leaves a name with no latest row."
+  - "The first checks of update_version_status are the invalid status and then the row lookup; `draft` as a target is `Invalid status 'draft'. Use 'published' or 'production'.` even when the row exists."
+  - "The compare diff has no key for equal fields, so two identical versions give `field_diffs` as an empty object, not null."
+  - "delete_all_versions leaves draft and published versions in the registry's by-id map, so a request body `policy_<uuid>` for a deleted version still resolves until the next sync."
+  - "`/policies/compare` takes `version_a` and `version_b` as query parameters, not a path or body, and both are policy_id values."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

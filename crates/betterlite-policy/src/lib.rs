@@ -1,4 +1,5 @@
 pub mod attachment;
+pub mod competitor_enrich;
 pub mod condition;
 pub mod context;
 pub mod inheritance;
@@ -11,5 +12,6 @@ pub mod resolver;
 pub mod response_retrieval;
 pub mod row_adapter;
 pub mod scope;
+pub mod template_catalog;
 pub mod validation;
 pub mod values;

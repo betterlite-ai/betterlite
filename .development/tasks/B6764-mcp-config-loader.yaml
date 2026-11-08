@@ -1,0 +1,124 @@
+id: B6764
+title: MCP servers from the config file
+description: >-
+  Build the loader that turns the `mcp_servers` block of the proxy config into runtime MCPServer records in the registry, with the config checks, stable id derivation and OpenAPI tool registration. In LiteLLM this is `load_servers_from_config` and the module helpers above it in mcp_server_manager.py. It reuses the OAuth rules (B6760), the fetch (B6761), the slots (B6762) and the shared builders of B6763, and its writes go into `ServerRegistry::config_servers` (B4731).
+
+
+  Code goes in the new betterlite-mcp module config_loader: crates/betterlite-mcp/src/config_loader.rs, config_loader/** and tests beside each file. Collaborators come in through a ConfigLoader constructor: the ServerBuilder pieces from B6763 that it needs (warn helpers, assign_unique_short_prefix, normalize_cost_info), DiscoverySlots (B6762), a MetadataFetcher (B6761), a DcrHydrator trait (an async method, declared the way merged betterlite-mcp traits declare them (ResponseBody in client/cleanup/recording.rs): `fn hydrate(&self, server: &mut MCPServer) -> impl Future<Output = bool> + Send`, so the persisted DCR client can be overlaid; B6595's DcrHydration implements it by delegating to its async hydrate_config_server_dcr_client, with an `async fn hydrate` in the impl), an OpenApiToolSink trait (register_tool(...)) implemented by the tool registry of B4680, a StdioPolicy trait (from B6763) and an InstructionsCache trait defined here (clear(), implemented later by the health service of B6592).
+
+
+  Items to build.
+
+  1. `McpServerConfig` (`MCPServerConfig` TypedDict, L352-416): a serde struct with deny_unknown_fields off and every key of the TypedDict as an Option field. Read the TypedDict and copy the key list exactly. alias, server_id, url, transport, auth_type, spec_path, command, args, env, scopes, issuer, authorization_url, token_url, registration_url, oauth2_flow and the token exchange, ID-JAG, AWS and limit fields are among them. dcr_bridge and per_server_oauth_discovery are kept as serde_json::Value so the loader can reject non-bool values with the exact Python messages.
+
+  2. `ConfigLoader::load` (`load_servers_from_config`), inputs: the ordered config map (IndexMap<String, McpServerConfig>) and Option<IndexMap<String, String>> mcp_aliases. Clear the instructions caches of the registry first. Then per server in order: build mcp_info (server_name and description defaults, normalize_cost_info); pick the alias (own alias, else the first mcp_aliases mapping not used yet, tracked in a used_aliases set); name_for_prefix via `crate::server_utils::prefixes::get_server_prefix` (B6594); server_id is the pinned id (item 3) or generate_stable_server_id; reject collisions (item 4); run the warn helpers and the stdio warning; run the OAuth endpoint steps in the same order as the Python (issuer anchor, endpoints_yield_to_issuer, should_discover, needs flags, discovery_deferred, fetch or skip, gate with restrict_to_corroborated, resolved scopes and urls, discovered issuer); fail for oauth2 without an explicit oauth2_flow (the exact message at L2553-2564), dcr_bridge not a bool, dcr_bridge on an auth type other than true_passthrough and oauth_delegate, and per_server_oauth_discovery errors (item 5); warn_unresolved; build the MCPServer with the same field list and defaults as the Python call at L2600-2678; assign_unique_short_prefix; the two warn helpers for source "config"; invalidate the server definition caches for the id; insert into config_servers; record set_deferred on the slots; register OpenAPI tools when spec_path is set. After the loop log the redacted dump at debug, hydrate DCR clients, prime discovery (B6762) for all config servers and rebuild the tool name mapping (calls the B4682 owner of initialize_tool_name_to_mcp_server_name_mapping, see notes).
+
+  3. `generate_stable_server_id` (`_generate_stable_server_id`): sha256 over the UTF-8 text "name|url|transport|auth_type|alias" with None parts as the empty string (read L7105-7139 for the exact rule), first 32 hex characters. `pinned_config_server_id` (`_pinned_config_server_id`): None when absent, error when not a non-empty string, else the trimmed string.
+
+  4. Config checks, free functions: `validate_config_server_names` (calls validate_mcp_server_name from B4716), `first_mapped_alias`, `assigned_alias` (own alias wins, even an empty one; mapping consulted only when the key is absent), `config_identifier_owners`, `config_ids_capturing_db_identifiers` (skip an identifier equal to the db server's own id), `reject_config_server_id_collision` (three errors: id claimed by an earlier entry, pinned id held by a database server, pinned id equal to another entry's name or alias). Use the exact messages from the Python.
+
+  5. `config_per_server_oauth_discovery` (`_config_per_server_oauth_discovery`): non-bool value is an error; true requires is_per_server_oauth_discovery_eligible (B4716) else an error with the exact text.
+
+  6. `redacted_registry_dump` (`_redacted_registry_dump`, L1404-1419): JSON of the servers with secrets masked, for the debug log. Port the key list that is masked exactly.
+
+  7. `hydrate_dcr_clients` (`_hydrate_config_servers_dcr_clients`): for each config server await the DcrHydrator, log at debug when it returned true, and log (do not raise) when it fails, since this step is best effort by design.
+
+  8. `register_openapi_tools` (`_register_openapi_tools`) and `maybe_register_openapi_tools` (`_maybe_register_openapi_tools`): load the spec through B4683's loader, compute the base url (config url, else the spec's), build the auth headers by auth type (bearer_token gives "Bearer <v>", api_key "ApiKey <v>", basic "Basic <to_basic_credentials(v)>", token "token <v>", with `crate::credentials::strip_auth_scheme(value, scheme)` (B4741, merged, `crates/betterlite-mcp/src/credentials.rs`) on the value, then B6594's `crate::server_utils::headers::merge_mcp_headers(extra_headers, static_headers)` with static_headers), and for each path and each method in get, post, put, delete, patch build the tool name (operationId or "<method>_<path with / as _>", through B6594's `crate::server_utils::names::openapi_tool_name` and `crate::server_utils::names::add_server_prefix_to_name`), the description (summary, else description, else "<METHOD> <path>"), the input schema and the tool function (all B4683), register the tool into the OpenApiToolSink and write both the base and prefixed names into the tool name mapping. Errors are logged and re-raised.
+
+  Tests use synthetic configs (names with the test- prefix, https://mcp.test urls) and fakes for every trait. Cover the id hash with a fixed vector computed from the Python formula, each collision error, each ValueError text, alias mapping, and the OpenAPI header and naming rules.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/src/config_loader.rs
+    - crates/betterlite-mcp/src/config_loader/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L352-L416
+    why: MCPServerConfig keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L453-L634
+    why: config helpers and collision rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1404-L1419
+    why: redacted registry dump.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2391-L2729
+    why: load_servers_from_config and DCR hydration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2731-L2871
+    why: OpenAPI tool registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3265-L3275
+    why: maybe_register_openapi_tools.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L7105-L7139
+    why: stable server id.
+
+dod:
+  - text: McpServerConfig deserializes every TypedDict key and keeps dcr_bridge and per_server_oauth_discovery as raw values for the checks.
+    proof: [loader-config-tests]
+  - text: generate_stable_server_id matches the Python formula on a fixed vector, and pinned_config_server_id accepts, trims and rejects as stated.
+    proof: [loader-id-tests]
+  - text: The three collision errors, the name validation and the identifier owner maps match the Python, including alias mapping order.
+    proof: [loader-collision-tests]
+  - text: load rejects oauth2 without an explicit flow, a non-bool dcr_bridge, dcr_bridge on a wrong auth type and a bad per_server_oauth_discovery with the exact messages.
+    proof: [loader-validation-tests]
+  - text: load builds records with the OAuth endpoint steps, defers discovery as the flag says, assigns short prefixes and writes them into config_servers.
+    proof: [loader-build-tests]
+  - text: DCR hydration never fails the load, and the redacted dump masks secrets.
+    proof: [loader-side-tests]
+  - text: OpenAPI registration builds the auth header per auth type, the tool names and descriptions, and writes both names into the mapping.
+    proof: [loader-openapi-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: loader-config-tests
+      why: a config key is missing or the raw values are lost
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^config_loader::tests::config_/)'
+    - id: loader-id-tests
+      why: the id hash or pinned id rule is wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^config_loader::tests::id_/)'
+    - id: loader-collision-tests
+      why: a collision rule or the alias map is wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^config_loader::tests::collision_/)'
+    - id: loader-validation-tests
+      why: a config check or its message is wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^config_loader::tests::validation_/)'
+    - id: loader-build-tests
+      why: the record build, the discovery deferral or the registry write is wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^config_loader::tests::build_/)'
+    - id: loader-side-tests
+      why: DCR hydration failures stop the load or the dump leaks a secret
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^config_loader::tests::side_/)'
+    - id: loader-openapi-tests
+      why: OpenAPI auth headers, tool names or the mapping are wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^config_loader::tests::openapi_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The config is a typed McpServerConfig struct and the loader returns a ConfigError enum, not a TypedDict and ValueError.
+    why: real types end to end; messages keep the Python text.
+  - what: The DCR hydrator, the tool sink and the stdio policy are injected traits.
+    why: the discoverable_endpoints module and the tool registry live elsewhere and the repo wires dependencies through constructors.
+
+out_of_scope:
+  - "The table row path: B6763. Reload from the database, add, update and remove: B6765."
+  - "OpenAPI spec loading, schema and tool function building: B4683. The tool registry: B4680."
+  - "validate_mcp_server_name and is_per_server_oauth_discovery_eligible: B4716."
+  - "get_server_prefix is B6594's (server_utils::prefixes); the tool name mapping rebuild is B4682's."
+  - "ServerRegistry reads and collections: B4731."
+  - "hydrate_config_server_dcr_client is B6595's (DcrHydration implements the DcrHydrator trait); the stdio gate has no owner found, see the architect notes. merge_mcp_headers and add_server_prefix_to_name are B6594's and strip_auth_scheme is B4741's; this task calls them."
+
+pitfalls:
+  - "alias: \"\" in an entry is an explicit alias and blocks the mcp_aliases mapping; only a missing key consults the mapping."
+  - "A pinned server_id is used verbatim after trim, and a blank or non-string value is an error, never a silent fallback to the hash."
+  - "A derived id cannot collide with a name, so collision checks only matter for pinned ids, but the earlier-entry check applies to both."
+  - "configured_scopes is the extracted scopes as a tuple, and an all-blank list becomes None so the entra_obo scope precondition still fires."
+  - "The config path uses the config oauth2_flow text directly for needs_authorization_url, not the effective flow."
+  - "Clearing the instructions caches happens before any entry is read, and the cache invalidation per id happens just before the insert."
+  - "OpenAPI registration errors propagate and fail the load; DCR hydration errors do not."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

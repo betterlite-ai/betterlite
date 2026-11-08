@@ -1,0 +1,14 @@
+id: B6764
+milestone: M9 agents and mcp
+title: MCP servers from the config file
+status: todo
+depends_on: [B6760, B6761, B6762, B6763, B4683, B4680, B4716, B4731, B4682, B6594, B6595]
+file: tasks/B6764-mcp-config-loader.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"
+parent: B139
+split_from: B6592
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

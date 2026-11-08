@@ -2,8 +2,8 @@ id: B3496
 milestone: M5 api families
 title: Settle background interaction usage before deletion
 status: todo
-depends_on: [B3481, B3495, B002, B198, B206, B250]
-file: null
+depends_on: [B3481, B250, B206]
+file: tasks/B3496-interaction-settlement.yaml
 covers:
   - "litellm/interactions/background_cost_polling.py"
   - "litellm/litellm_core_utils/litellm_logging.py"
