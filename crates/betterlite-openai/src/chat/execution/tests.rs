@@ -601,7 +601,7 @@ fn authorization(sent: &str) -> String {
 }
 
 const CALL: &str = r#"{"model":"g","messages":[]}"#;
-const HIJACK: &str = r#"{"model":"http://127.0.0.1:1/v1","messages":[],"api_base":"http://127.0.0.1:1/v1","base_url":"http://127.0.0.1:1/v1","endpoint":"http://127.0.0.1:1/v1","url":"http://127.0.0.1:1/v1"}"#;
+const HIJACK: &str = r#"{"model":"http://127.0.0.1:1/v1","messages":[],"endpoint":"http://127.0.0.1:1/v1","url":"http://127.0.0.1:1/v1","destination":"http://127.0.0.1:1/v1"}"#;
 
 async fn boundary_observation(base: Base, api_key: Option<&str>, body: &str) -> String {
     let (listener, plain) = listen().await;
@@ -633,10 +633,10 @@ async fn boundary_observation(base: Base, api_key: Option<&str>, body: &str) -> 
     let sent = provider_task.join_next().await.unwrap().unwrap();
     let upstream = sent.split_once("\r\n\r\n").map_or("", |(_, text)| text);
     format!(
-        "{}|auth={}|leak={}",
+        "{}|auth={}|forwarded={}",
         sent.lines().next().unwrap_or_default(),
         authorization(&sent),
-        upstream.contains("\"api_base\"")
+        upstream.contains("\"destination\"")
     )
 }
 
@@ -701,23 +701,23 @@ async fn observation(scenario: Scenario) -> String {
 #[rstest]
 #[case::userinfo_becomes_basic_auth_over_the_api_key(
     Scenario::Wire(Base::Userinfo("user:pass@"), Some("k"), CALL),
-    "POST /v1/chat/completions HTTP/1.1|auth=Basic dXNlcjpwYXNz|leak=false"
+    "POST /v1/chat/completions HTTP/1.1|auth=Basic dXNlcjpwYXNz|forwarded=false"
 )]
 #[case::percent_encoded_userinfo_is_decoded(
     Scenario::Wire(Base::PercentEncoded, Some("k"), CALL),
-    "POST /v1/chat/completions HTTP/1.1|auth=Basic dXNAZXI6cEBzcw==|leak=false"
+    "POST /v1/chat/completions HTTP/1.1|auth=Basic dXNAZXI6cEBzcw==|forwarded=false"
 )]
 #[case::userinfo_alone_authenticates_a_loopback_provider(
     Scenario::Wire(Base::Userinfo("user:pass@"), None, CALL),
-    "POST /v1/chat/completions HTTP/1.1|auth=Basic dXNlcjpwYXNz|leak=false"
+    "POST /v1/chat/completions HTTP/1.1|auth=Basic dXNlcjpwYXNz|forwarded=false"
 )]
 #[case::the_api_key_bearer_is_used_without_userinfo(
     Scenario::Wire(Base::Plain, Some("k"), CALL),
-    "POST /v1/chat/completions HTTP/1.1|auth=Bearer k|leak=false"
+    "POST /v1/chat/completions HTTP/1.1|auth=Bearer k|forwarded=false"
 )]
 #[case::request_fields_cannot_change_the_destination(
     Scenario::Wire(Base::Plain, Some("k"), HIJACK),
-    "POST /v1/chat/completions HTTP/1.1|auth=Bearer k|leak=true"
+    "POST /v1/chat/completions HTTP/1.1|auth=Bearer k|forwarded=true"
 )]
 #[case::no_credentials_is_an_error(
     Scenario::Wire(Base::Plain, None, CALL),
