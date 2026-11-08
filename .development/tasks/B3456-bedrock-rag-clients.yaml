@@ -1,0 +1,216 @@
+id: B3456
+title: Bedrock RAG clients and knowledge base resource primitives
+description: >-
+  Build the first half of LiteLLM's BedrockRAGIngestion in a new module of the betterlite-rag crate:
+  its typed settings, its signed AWS request client, and the knowledge base resource steps that need no
+  OpenSearch. B3457 builds the rest (OpenSearch collection and index, IAM role, the provisioning flow,
+  store and the wait loop) on top of this module, so keep every public name stable and documented.
+  The module must not import betterlite-core. The caller (B3457, later B3460) builds the settings from
+  the vector_store_config map, so this task takes plain typed inputs. The Python class also inherits
+  BaseRAGIngestion; that wiring is B3457's. Boto3 does not exist in Rust: every boto3 call becomes a
+  SigV4-signed HTTPS request sent through an injected transport trait, using B595's AwsSignedRequest
+  and B594's AwsCredentialResolver. Never hand-roll SigV4 and never add an AWS SDK service crate.
+
+  Settings (`BedrockRagSettings`, built from a serde_json map by a `from_vector_store_config` function).
+  knowledge_base_id is vector_store_id, else knowledge_base_id (an empty string counts as absent, since
+  Python uses `or`). data_source_id and s3_bucket are optional strings. configured s3_prefix is kept only
+  when truthy; the working s3_prefix defaults to "data/". embedding_model defaults to
+  "amazon.titan-embed-text-v2:0". wait_for_ingestion defaults to false (the class docstring says True,
+  the code says False; the code wins). ingestion_timeout defaults to 300: an absent or null value gives
+  300, a number is truncated toward zero, a numeric string is parsed, anything else is a typed error
+  (Python int() would raise ValueError). aws_region_name is resolved through B591's non-LLM region
+  function (explicit value, then AWS_REGION_NAME, then AWS_REGION, then us-west-2, validated); an
+  empty explicit string counts as absent here. The ten credential keys aws_access_key_id,
+  aws_secret_access_key, aws_session_token, aws_session_name, aws_profile_name, aws_role_name,
+  aws_web_identity_token, aws_sts_endpoint, aws_external_id are each kept as `str(value)` when present and
+  not null (an empty string is kept), held as secrecy values where secret. Resource state
+  (`BedrockRagState`) starts with data_source_id and s3_bucket empty, s3_prefix set, and a
+  `CreatedResources` record with Option<String> fields s3_bucket, opensearch_collection, iam_role,
+  knowledge_base and data_source (B3457 fills the collection and role fields).
+
+  Client (`BedrockRagClients`). `signed_request(service, method, url, body)` resolves credentials with
+  the full set of keys above and the resolved region on every call (B594 owns the cache), signs with
+  AwsSignedRequest for the given service name and region, sends through the injected `AwsRagTransport`
+  trait and returns status and body bytes. A non-2xx status becomes `BedrockIngestionError::Aws` with
+  operation, status and the first 1024 bytes of the body (never the headers or credentials). Endpoints
+  come from the region partition (B198 `get_aws_partition` dns_suffix): bedrock-agent is
+  https://bedrock-agent.{region}.{dns_suffix}. S3 CreateBucket goes to https://{bucket}.s3.{region}.{dns_suffix}/
+  (https://{bucket}.s3.{dns_suffix}/ for us-east-1, as boto3 does) and falls back to path style
+  https://s3.{region}.{dns_suffix}/{bucket} when the bucket name contains a dot or uppercase letter.
+  Request and response bodies are typed serde structs whose JSON field names are the AWS API names
+  (knowledgeBaseId, dataSourceSummaries, inclusionPrefixes and so on). Each operation is a plain method
+  on `BedrockRagClients`. STS, IAM, OpenSearch Serverless and S3 PutObject calls belong to B3457,
+  which reuses `signed_request_with(service, signing_region, method, url, headers, body)`: the same
+  call with extra request headers (Content-Type, X-Amz-Target) and an explicit signing region, since IAM
+  signs in the partition global region (us-east-1, cn-north-1 or us-gov-west-1). `signed_request` calls it
+  with no headers and the resolved region.
+
+  Operations and wire shapes (check each against the AWS API reference before writing the struct):
+  ListDataSources is POST /knowledgebases/{knowledgeBaseId}/datasources/ with an empty JSON object;
+  GetDataSource is GET /knowledgebases/{knowledgeBaseId}/datasources/{dataSourceId};
+  CreateKnowledgeBase is PUT /knowledgebases/; GetKnowledgeBase is GET /knowledgebases/{knowledgeBaseId};
+  CreateDataSource is PUT /knowledgebases/{knowledgeBaseId}/datasources/. The two Create calls also carry
+  a random clientToken (uuid v4), which boto3 adds by itself. S3 CreateBucket is PUT with an XML body
+  <CreateBucketConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><LocationConstraint>REGION</LocationConstraint></CreateBucketConfiguration>
+  only when the region is not us-east-1, plus the x-amz-content-sha256 header.
+
+  Resource steps (methods on `BedrockRagState` plus clients, in `resources.rs`).
+  `auto_detect_config` (L141-L188): list data sources for the knowledge base; an empty
+  dataSourceSummaries list is the error "No data sources found for Knowledge Base {id}. Please create a data source first or provide data_source_id and s3_bucket.".
+  The configured data_source_id wins, otherwise the first summary's dataSourceId. Then GetDataSource and read
+  dataSource.dataSourceConfiguration.s3Configuration (missing parts count as empty). With a non-empty
+  bucketArn the bucket is the configured s3_bucket, else the text after the last ":" of the ARN; the
+  working prefix becomes the first inclusionPrefixes entry only when the list is non-empty and no s3_prefix
+  was configured. With no bucketArn the configured s3_bucket is used, and without one the error is
+  "Could not auto-detect S3 bucket for data source {data_source_id}. Please provide s3_bucket in config.".
+  Only the first page of data sources is read, as in Python.
+  `create_s3_bucket(unique_id)` (L229-L244): name "litellm-kb-{unique_id}", LocationConstraint only when
+  the region is not us-east-1, records created_resources.s3_bucket and returns the name.
+  `create_knowledge_base(kb_name, role_arn, collection_arn)` (L516-L562): body exactly as the source
+  (type VECTOR, embeddingModelArn "{arn_prefix}bedrock:{region}::foundation-model/{embedding_model}",
+  storage type OPENSEARCH_SERVERLESS with the collectionArn, fieldMapping metadataField
+  AMAZON_BEDROCK_METADATA, textField AMAZON_BEDROCK_TEXT_CHUNK, vectorField
+  bedrock-knowledge-base-default-vector, vectorIndexName bedrock-kb-index). Record
+  created_resources.knowledge_base right after the create call, then call GetKnowledgeBase up to 30 times,
+  stopping at status ACTIVE and sleeping 2 seconds (tokio::time::sleep) after each non-ACTIVE check, so a
+  never-ready knowledge base does 30 checks, 30 sleeps, then fails with `KnowledgeBaseTimeout`.
+  `create_data_source(kb_name)` (L564-L585): name "{kb_name}-s3-source", S3 configuration with bucketArn
+  "{arn_prefix}s3:::{bucket}" and inclusionPrefixes [s3_prefix]; records created_resources.data_source and
+  returns dataSourceId. `normalize_principal_arn(caller_arn, account_id)` (L41-L62): an ARN containing
+  ":assumed-role/" becomes "arn:{partition}:iam::{account_id}:role/{role_name}" where partition is the second
+  colon part and role_name the second "/" part; every other ARN is returned unchanged.
+  Tests that wait use `#[tokio::test(start_paused = true)]`, so no real sleeping.
+
+scope:
+  paths:
+    - crates/betterlite-rag/Cargo.toml
+    - crates/betterlite-rag/src/bedrock_ingestion.rs
+    - crates/betterlite-rag/src/bedrock_ingestion/**
+    - tools/oracle/cases/helpers/bedrock-rag-clients/**
+    - tools/oracle/helpers/b3456.py
+    - tools/oracle/helpers/b3456/**
+    - tools/oracle/src/helpers/bedrock/b3456.rs
+    - tools/oracle/src/helpers/bedrock/b3456/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L29-L62
+    why: Config casting helpers and _normalize_principal_arn (assumed-role ARN to IAM role ARN).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L88-L125
+    why: Constructor settings, defaults (embedding model, ingestion_timeout 300, wait_for_ingestion False, prefix data/) and non-LLM region lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L141-L188
+    why: _auto_detect_config data source choice, bucket from bucketArn, prefix rule and both ValueError messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L229-L244
+    why: _create_s3_bucket naming and the us-east-1 LocationConstraint rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L516-L585
+    why: _create_knowledge_base request, 30-poll ACTIVE wait, and _create_data_source request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/bedrock_ingestion.py#L587-L616
+    why: _get_boto3_client credential keys passed to get_credentials and the session region.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L845-L872
+    why: get_aws_region_name_for_non_llm_api_calls precedence used for the region.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/aws_partition.py#L42-L43
+    why: get_aws_arn_prefix builds "arn:{partition}:" from the region.
+  - url: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_Operations_Agents_for_Amazon_Bedrock.html
+    why: Paths, methods and field names for ListDataSources, GetDataSource, CreateKnowledgeBase, GetKnowledgeBase and CreateDataSource.
+  - url: https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateBucket.html
+    why: CreateBucket request and the LocationConstraint body.
+
+dod:
+  - text: Settings read vector_store_id before knowledge_base_id, treat an empty id as absent, and apply the defaults for embedding model, prefix "data/", wait_for_ingestion false and ingestion_timeout 300.
+    proof: [settings-tests]
+  - text: ingestion_timeout accepts null, numbers and numeric strings and returns a typed error for other values; the region follows the B591 non-LLM precedence.
+    proof: [settings-tests]
+  - text: normalize_principal_arn rewrites assumed-role ARNs to IAM role ARNs in every partition and returns other ARNs unchanged.
+    proof: [principal-tests, oracle]
+  - text: signed_request resolves credentials with all ten keys, signs for the named service and region, sends through the injected transport and turns a non-2xx status into a typed error that carries no credentials.
+    proof: [client-tests]
+  - text: signed_request_with signs the extra headers and uses the given signing region instead of the resolved one; signed_request is signed_request_with with no headers and the resolved region.
+    proof: [client-tests]
+  - text: Bedrock Agent and S3 endpoints, methods and paths match the AWS API for the commercial, China and GovCloud partitions, including us-east-1 and path-style S3 bucket names.
+    proof: [client-tests]
+  - text: auto_detect_config picks the configured or first data source, derives bucket and prefix from the data source, and fails with the two exact messages.
+    proof: [detect-tests, oracle]
+  - text: create_s3_bucket sends a LocationConstraint only outside us-east-1 and records the bucket.
+    proof: [bucket-tests, oracle]
+  - text: create_knowledge_base sends the exact VECTOR and OPENSEARCH_SERVERLESS body, records the knowledge base, waits through 30 checks with 2 second sleeps and then fails with KnowledgeBaseTimeout.
+    proof: [kb-tests, oracle]
+  - text: create_data_source sends the S3 configuration with the partition ARN prefix and records the data source.
+    proof: [source-tests, oracle]
+  - text: The helper adapter passes strict lint and type checks.
+    proof: [helper-python]
+
+checks:
+  optional: []
+  commands:
+    - id: settings-tests
+      why: settings parsing, defaults, id precedence or region resolution is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_ingestion::(.*::)?tests::settings_/)'
+    - id: principal-tests
+      why: assumed-role ARN normalization is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_ingestion::(.*::)?tests::principal_/)'
+    - id: client-tests
+      why: signed requests, endpoints, request paths or error mapping are missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_ingestion::(.*::)?tests::client_/)'
+    - id: detect-tests
+      why: data source auto-detection is missing or its errors differ
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_ingestion::(.*::)?tests::detect_/)'
+    - id: bucket-tests
+      why: S3 bucket creation or its region rule is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_ingestion::(.*::)?tests::bucket_/)'
+    - id: kb-tests
+      why: knowledge base creation, its body or its wait loop is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_ingestion::(.*::)?tests::kb_/)'
+    - id: source-tests
+      why: data source creation is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^bedrock_ingestion::(.*::)?tests::source_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3456)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3456 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3456/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/helpers/bedrock-rag-clients/principal-assumed-role.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-clients/principal-passthrough.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-clients/detect-first-source.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-clients/detect-configured-source.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-clients/detect-no-sources.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-clients/detect-no-bucket-arn.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-clients/bucket-regions.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-clients/kb-create-body.yaml
+  - tools/oracle/cases/helpers/bedrock-rag-clients/source-create-body.yaml
+
+deviations:
+  - what: AWS calls are SigV4-signed HTTPS requests built by betterlite, not boto3 clients. Oracle cases compare the operation name and its AWS-named parameters, and native tests check the wire method, path and signing.
+    why: Rust has no boto3, and the rules forbid pulling an AWS SDK service crate for four calls.
+  - what: Endpoints come only from region and partition. AWS_ENDPOINT_URL, AWS_ENDPOINT_URL_S3 and shared-config endpoint overrides that boto3 reads are ignored.
+    why: Overrides are hidden global destinations; betterlite sends requests only to the URLs this task derives. Open question in notes.
+  - what: A non-numeric ingestion_timeout is a typed error returned from settings parsing.
+    why: Python int() raises ValueError at construction too, so the only change is the error type.
+  - what: The missing-boto3 ImportError branch of _get_boto3_client does not exist.
+    why: There is no optional dependency to import.
+
+out_of_scope:
+  - "_ensure_config_initialized, _create_knowledge_base_infrastructure, _create_opensearch_collection, _create_opensearch_index and _create_bedrock_role: B3457 owns provisioning and calls the primitives here; they need STS, IAM, OpenSearch Serverless and opensearch-py equivalents."
+  - "embed (returns None) and store (S3 PutObject, StartIngestionJob and the wait loop): B3457 implements them on the ingestion trait from B3451."
+  - "BaseRAGIngestion state, credential overlay from litellm_credential_name and upload, OCR and chunking: B3451 owns them."
+  - "Credential resolution, region validation, SigV4 signing and partition lookup: B594, B591, B595 and B198 own them; this task only calls them."
+  - "The async_safe_get and pooled HTTP client: B173 owns them; this task defines only the small transport trait the adapter implements."
+
+pitfalls:
+  - ListDataSources is a POST in the AWS API even though it only reads; a GET returns 403 or 404.
+  - The two Create calls need clientToken in the body, and the same uuid must not be reused across calls.
+  - The S3 us-east-1 case sends no body at all; an empty LocationConstraint element is rejected by S3 with InvalidLocationConstraint.
+  - bucketArn "arn:aws:s3:::my-bucket" gives "my-bucket" by taking the text after the last colon, and an empty bucketArn means "not detected", not an error by itself.
+  - A configured s3_bucket beats the ARN bucket, but a configured s3_prefix is the only thing that blocks the inclusionPrefixes override.
+  - The knowledge base wait sleeps after the 30th failed check before it raises, so the total virtual time is 60 seconds.
+  - created_resources.knowledge_base is recorded before the wait, so a timeout still reports the id for cleanup.
+  - "Region cn-north-1 and us-gov-west-1 change both the ARN prefix and the DNS suffix, so never hard-code arn:aws: or amazonaws.com."
+  - Credential keys are str()-cast, and an empty string stays an empty string instead of becoming absent.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

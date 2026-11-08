@@ -1,0 +1,130 @@
+id: B8130
+title: Single-deployment Helm chart foundation
+description: >-
+  Create the foundation of the single-deployment chart betterlite-helm in packaging/helm/betterlite-helm: Chart.yaml, Chart.lock, .helmignore, values.yaml, templates/_helpers.tpl, the master key and database credential Secrets, the proxy config ConfigMap, the ServiceAccount and ci/test-values.yaml.
+  It is the port of LiteLLM's helm/litellm-helm chart, with every template helper renamed from litellm.* to betterlite.* (betterlite.name, betterlite.fullname, betterlite.chart, betterlite.labels, betterlite.selectorLabels, betterlite.serviceAccountName, betterlite.migrationServiceAccountName, betterlite.redis.serviceName, betterlite.redis.port, betterlite.validateBundledPostgresImageTag, betterlite.proxyEnv, betterlite.proxyMetricsEnv, betterlite.collector.socketDir, betterlite.collectorEnv).
+  The other two tasks that fill this chart (B8131 workloads, B8132 scaling and ingress) only add templates and read the values and helpers written here, so values.yaml must hold every key the whole chart reads, with LiteLLM's defaults: replicaCount 1, image.repository ghcr.io/betterlite-ai/betterlite, image.pullPolicy Always, nameOverride betterlite, service.type ClusterIP, service.port 4000, the three probes (livenessProbe path /health/liveliness, readinessProbe and startupProbe path /health/readiness, with LiteLLM's periods, timeouts and thresholds), ingress, proxyConfigMap.create true, proxy_config with model_list and general_settings.master_key os.environ/PROXY_MASTER_KEY, metricsServer (enabled false, port 4001), collector, autoscaling, keda, db (useExisting false, deployStandalone true, endpoint localhost, database litellm, url, secret.*, readReplicaUrl, connectionPool), postgresql and redis (the bitnamilegacy image pins), migrationJob, logLevel INFO, envVars, extraEnvVars, command, args, extraResources, pdb, serviceMonitor and test.kubectlImage (default docker.io/bitnamilegacy/kubectl:1.29.2-debian-12-r3, read by the Helm test pod in B8132).
+  Chart.yaml declares chart name betterlite-helm, version 1.1.3, appVersion v1.85.1 and the same two OCI dependencies as LiteLLM: postgresql 14.3.1 (condition db.deployStandalone) and redis 18.19.1 (condition redis.enabled), both from oci://registry-1.docker.io/bitnamicharts. Chart.lock is the LiteLLM file copied unchanged (the digest hashes only the dependency list, which is identical).
+  Secrets: templates/secret-masterkey.yaml renders only when masterkeySecretName is empty; it looks up an existing <fullname>-masterkey Secret and reuses its value, else uses .Values.masterkey, else makes "sk-" plus 18 random letters and digits. templates/secret-dbcredentials.yaml renders only when db.deployStandalone is true, calls betterlite.validateBundledPostgresImageTag first (it fails when postgresql.image.tag is empty or "latest" and no postgresql.image.digest is set, with LiteLLM's exact message) and stores postgres-password, username and password.
+  templates/configmap-betterlite.yaml renders <fullname>-config with a config.yaml key holding proxy_config as YAML. When redis.enabled is true and redis.coordination.enabled is not false, and general_settings has no coordination_redis key, it adds one: host, port and password as os.environ/REDIS_HOST, os.environ/REDIS_PORT, os.environ/REDIS_PASSWORD, or sentinel_nodes, service_name (default mymaster) and password when redis.sentinel.enabled.
+  betterlite.proxyEnv builds the container environment: HOST, PORT, the database variables for the bundled and the existing database, the optional read replica variables, the pgbouncer variables, PROXY_MASTER_KEY from the master key Secret, REDIS_* for the bundled Redis, LITELLM_LOG, envVars, extraEnvVars, and DISABLE_SCHEMA_UPDATE=true last when migrationJob.enabled. Keep LiteLLM's environment variable names: betterlite reads the same ones.
+  Also write packaging/helm/tests/helm_checks.sh, the one script every chart task's checks call (a shell script, no framework). "sh packaging/helm/tests/helm_checks.sh lint <chart-dir> [values-file]" copies the chart to a new mktemp folder, runs helm dependency build there when Chart.yaml has dependencies, then helm lint --strict (with -f <values-file> when given) and helm template release <copy> (same -f), and fails on any non-zero exit. "sh packaging/helm/tests/helm_checks.sh unittest <chart-dir> <suite-file>..." copies the chart the same way, fails when a suite file path (relative to the chart, for example tests/secrets_tests.yaml) does not exist, runs helm unittest with one -f per suite and reads the "Test Suites:" total line, and fails when the number of suites run differs from the number of lines starting with "suite:" in the named files. It removes the temp folder on exit and never writes into the repository, so the committed check stays clean.
+  Billable-request metering (the billingMetrics values, its helpers, LITELLM_BILLING_METRICS_* variables and billing_metrics_tests.yaml) is LiteLLM Enterprise only and is not built.
+scope:
+  paths:
+    - packaging/helm/betterlite-helm/Chart.yaml
+    - packaging/helm/betterlite-helm/Chart.lock
+    - packaging/helm/betterlite-helm/.helmignore
+    - packaging/helm/betterlite-helm/values.yaml
+    - packaging/helm/betterlite-helm/ci/test-values.yaml
+    - packaging/helm/betterlite-helm/templates/_helpers.tpl
+    - packaging/helm/betterlite-helm/templates/secret-masterkey.yaml
+    - packaging/helm/betterlite-helm/templates/secret-dbcredentials.yaml
+    - packaging/helm/betterlite-helm/templates/configmap-betterlite.yaml
+    - packaging/helm/betterlite-helm/templates/serviceaccount.yaml
+    - packaging/helm/betterlite-helm/tests/masterkey_secret_tests.yaml
+    - packaging/helm/betterlite-helm/tests/db_credentials_tests.yaml
+    - packaging/helm/betterlite-helm/tests/coordination_redis_tests.yaml
+    - packaging/helm/betterlite-helm/tests/connection_pool_tests.yaml
+    - packaging/helm/betterlite-helm/tests/bundled_db_images_tests.yaml
+    - packaging/helm/tests/helm_checks.sh
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/values.yaml#L1-L637
+    why: Every default and the comments that explain the keys; the new values.yaml keeps the keys and drops billingMetrics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/_helpers.tpl#L1-L323
+    why: All named templates, including the bundled Postgres tag guard and the proxy environment block.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/Chart.yaml#L1-L40
+    why: Chart name, versions and the two OCI dependencies with their conditions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/Chart.lock
+    why: The lock file to copy unchanged.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/secret-masterkey.yaml
+    why: Lookup, reuse and random fallback of the master key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/secret-dbcredentials.yaml
+    why: Credentials Secret for the bundled database.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/configmap-litellm.yaml
+    why: Config rendering and the coordination_redis injection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/serviceaccount.yaml
+    why: ServiceAccount with annotations and automount.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/ci/test-values.yaml
+    why: Values the chart CI installs with.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/tests/masterkey-secret_tests.yaml
+    why: Behaviors to cover in the master key suite.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/tests/bundled_db_images_tests.yaml
+    why: Image pin and tag guard behaviors (needs the postgresql and redis subcharts).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/.github/workflows/helm_unit_test.yml#L40-L56
+    why: The declared-versus-executed suite count that helm_checks.sh repeats.
+dod:
+  - text: The chart lints and renders with ci/test-values.yaml, and Chart.yaml names betterlite-helm with the two OCI dependencies and conditions.
+    proof: [chart-lint, chart-metadata]
+  - text: The master key Secret reuses an existing value, honors .Values.masterkey, is skipped when masterkeySecretName is set, and otherwise makes an sk- key; the database credential Secret exists only for the bundled database.
+    proof: [secret-suites]
+  - text: The bundled Postgres and Redis images pin the bitnamilegacy builds and an empty or latest Postgres tag fails the render.
+    proof: [image-suite]
+  - text: The coordination_redis block is injected for the bundled Redis (plain and sentinel) and never replaces a user block.
+    proof: [redis-suite]
+  - text: The pgbouncer variables appear only when db.connectionPool.enabled is true.
+    proof: [pool-suite]
+  - text: No billingMetrics key or LITELLM_BILLING_METRICS variable is in the chart.
+    proof: [no-billing]
+checks:
+  optional: []
+  commands:
+    - id: chart-lint
+      why: the chart is missing, does not lint with --strict or does not render
+      run: sh packaging/helm/tests/helm_checks.sh lint packaging/helm/betterlite-helm packaging/helm/betterlite-helm/ci/test-values.yaml
+    - id: chart-metadata
+      why: Chart.yaml lacks the chart name, a dependency or its condition
+      run: |-
+        grep -q '^name: betterlite-helm' packaging/helm/betterlite-helm/Chart.yaml &&
+        grep -q 'condition: db.deployStandalone' packaging/helm/betterlite-helm/Chart.yaml &&
+        grep -q 'condition: redis.enabled' packaging/helm/betterlite-helm/Chart.yaml &&
+        grep -q 'sha256:38962e231f6596b93f82a8412bbe4cf5de696caecf5775dfbbd163383eb1c009' packaging/helm/betterlite-helm/Chart.lock
+    - id: secret-suites
+      why: a master key or database credential behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/masterkey_secret_tests.yaml tests/db_credentials_tests.yaml
+    - id: image-suite
+      why: an image pin or the Postgres tag guard is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/bundled_db_images_tests.yaml
+    - id: redis-suite
+      why: the coordination_redis injection is missing or replaces a user block
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/coordination_redis_tests.yaml
+    - id: pool-suite
+      why: the pgbouncer variables are missing or always present
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/connection_pool_tests.yaml
+    - id: no-billing
+      why: enterprise billing metering was ported, or the chart does not exist
+      run: test -f packaging/helm/betterlite-helm/values.yaml && ! grep -rqi 'billing' packaging/helm/betterlite-helm
+oracle_cases: []
+deviations:
+  - what: The chart, its helpers and its default image are named betterlite, betterlite-helm and ghcr.io/betterlite-ai/betterlite, and the config file is mounted at /etc/betterlite/config.yaml.
+    why: The product name changes and the betterlite image (B5071) has no /etc/litellm folder; the environment variable names stay LiteLLM's so existing configuration keeps working.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/values.yaml#L1-L20
+  - what: The billingMetrics values and their helpers are not ported.
+    why: Billable-request metering is for LiteLLM Enterprise licenses and betterlite has no enterprise package.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/_helpers.tpl#L47-L90
+  - what: ci/test-values.yaml does not set USE_DDTRACE, DD_ENV or DD_SERVICE.
+    why: The native server ignores USE_DDTRACE (B5070), so the chart test sets a neutral EXAMPLE_ENV variable instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/ci/test-values.yaml
+out_of_scope:
+  - The Deployment, migrations Job, Service and NOTES.txt belong to B8131, and hpa, keda, pdb, ingress and servicemonitor belong to B8132.
+  - The README of the chart and the cross-chart suite count belong to B152.
+  - The componentized chart (gateway, backend, ui) belongs to B8133, B8134 and B8135.
+  - The collector and metrics server commands the values expose have no owner task, so the chart only passes the command from values and does not build either binary.
+pitfalls:
+  - >-
+    helm needs charts/postgresql and charts/redis even when their conditions are false, so every check builds dependencies in a temp copy and never in the repository folder.
+  - >-
+    secret-masterkey.yaml uses lookup and lookup returns an empty map under helm template, so the unit test sets the existing Secret with helm-unittest kubernetesProvider instead of expecting reuse from a plain render.
+  - >-
+    The tag guard fails only when postgresql.image.digest is also empty; a digest alone is accepted.
+  - >-
+    The proxy environment ends with DISABLE_SCHEMA_UPDATE=true so a user envVars entry of the same name cannot override it; keep it last.
+  - >-
+    postgresql.auth keys include "postgres-password", so templates need index because of the dash.
+  - >-
+    Redis sentinel mode names the Service <release>-redis, plain mode <release>-redis-master; the port comes from different values keys.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

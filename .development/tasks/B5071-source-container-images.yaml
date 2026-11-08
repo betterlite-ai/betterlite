@@ -2,11 +2,11 @@ id: B5071
 title: Native source and database container images
 description: >-
   Build runtime and database Docker images from the Rust workspace. Both images run betterlite as the main process with TCP 4000 exposed.
-  The root Dockerfile builds the source, installs the native betterlite server and betterlite-db-admin CLI through the .venv,
-  bundles the admin UI static assets, and includes Prisma binaries in read-only form at runtime without prisma generation at build time.
+  The root Dockerfile builds the source in a rust:1.98.0-bookworm builder stage with cargo build --release --locked -p betterlite -p betterlite-db-admin,
+  copies both binaries to /usr/local/bin in the runtime stage, and bundles the admin UI static assets. There is no Prisma CLI or query engine in the image and no prisma generation at build time.
   Dockerfile.database uses the same build stages but does not add the public Wolfi repository. Both runtime stages are minimal: they copy
-  only the .venv, docker scripts, schema.prisma, litellm/proxy/prisma_migration.py, enterprise/, litellm-proxy-extras/ and prisma binaries from builder.
-  The native binaries (betterlite and betterlite-db-admin) are inside .venv/bin, the UI is resolved from .venv's litellm site-packages,
+  only the two binaries, the docker scripts and the UI assets from builder.
+  The native binaries (betterlite and betterlite-db-admin) sit in /usr/local/bin, there is no Python environment, schema.prisma, prisma_migration.py or enterprise/ directory,
   and runtime invokes the prod_entrypoint.sh script (provided by B5070) with the command ["--port", "4000"]. Both images include bash and pgbouncer.
   The native server does not support Datadog instrumentation through ddtrace at this stage; USE_DDTRACE has no effect (a future capability M12).
 scope:
@@ -18,27 +18,25 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/Dockerfile#L1-L169
     why: Root image recipe with uvbin, pgbouncer-builder, ui-builder, builder and runtime stages; base images and pinned versions.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/Dockerfile#L118-L169
-    why: Runtime stage layers, package installs, .venv and prisma copies, ENTRYPOINT and CMD.
+    why: Runtime stage layers, package installs, binary copies, ENTRYPOINT and CMD.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/Dockerfile.database#L1-L162
     why: Database image recipe; identical to root except runtime stage omits public Wolfi repository at line 126 of root.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/Dockerfile#L110-L112
     why: Prisma binary cache directory and generation at build time; native images exclude the generate step.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/Dockerfile#L91-L95
-    why: UI bundle clear and COPY from ui-builder; betterlite resolves the UI from the site-packages venv at runtime.
+    why: UI bundle clear and COPY from ui-builder; betterlite serves the UI from a static folder at runtime.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2129-L2131
-    why: The UI path is resolved from the venv's site-packages litellm.proxy._experimental.out, not a bare path.
+    why: LiteLLM resolves the UI path from site-packages; betterlite reads a static folder instead.
 dod:
   - text: Both root and database images build successfully from the native source tree and expose port 4000.
     proof: [build-root-image, build-database-image]
-  - text: Both images include Prisma CLI and query engine binaries, readable by any UID.
-    proof: [prisma-binaries-root, prisma-binaries-database]
   - text: Both images include betterlite and betterlite-db-admin command binaries in /usr/local/bin or on PATH.
     proof: [admin-binary-root, admin-binary-database]
   - text: The images do not run prisma generate at build time; the command fails if attempted (production safety).
     proof: [no-prisma-generation-root, no-prisma-generation-database]
   - text: The root image adds the public Wolfi repository; the database image does not.
     proof: [public-repo-root, no-public-repo-database]
-  - text: Both runtime stages copy .venv, docker/, schema.prisma, litellm/proxy/prisma_migration.py, enterprise/ and litellm-proxy-extras/ from builder, and set ENTRYPOINT to the prod_entrypoint.sh script with no arguments.
+  - text: Both runtime stages copy /usr/local/bin/betterlite, /usr/local/bin/betterlite-db-admin and the docker scripts from builder, and set ENTRYPOINT to the prod_entrypoint.sh script with no arguments.
     proof: [entrypoint-root, entrypoint-database]
 checks:
   optional: []
@@ -49,12 +47,6 @@ checks:
     - id: build-database-image
       why: packaging/docker/Dockerfile.database does not exist, has syntax errors, or the database image build fails
       run: test -f packaging/docker/Dockerfile.database && docker build -t betterlite-test:database -f packaging/docker/Dockerfile.database . > /dev/null 2>&1
-    - id: prisma-binaries-root
-      why: Prisma CLI binaries missing or not executable in the root image
-      run: docker run --rm betterlite-test:root which prisma
-    - id: prisma-binaries-database
-      why: Prisma CLI binaries missing or not executable in the database image
-      run: docker run --rm betterlite-test:database which prisma
     - id: admin-binary-root
       why: betterlite-db-admin binary is missing from the root image
       run: docker run --rm betterlite-test:root which betterlite-db-admin
@@ -102,11 +94,8 @@ pitfalls:
     The prod_entrypoint.sh script is provided by B5070 at packaging/docker/prod_entrypoint.sh and referenced at container runtime.
     The Dockerfile COPY --from=builder ensures the script is at the correct runtime path.
   - >-
-    Prisma binaries must be readable by any UID at runtime. The Dockerfile uses chmod to ensure accessibility across
-    container users and processes.
-  - >-
-    The UI is resolved from the venv's litellm site-packages directory at runtime. The builder clears and rebuilds the UI bundle
-    before syncing, ensuring fresh output.
+    The native server reads the UI from a static folder, not from a Python package. The builder clears and rebuilds the UI bundle
+    before copying it, ensuring fresh output.
   - >-
     Both images use identical build stages except the runtime stage. Root adds the public Wolfi repository and the
     database image omits it.

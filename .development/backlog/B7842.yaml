@@ -1,0 +1,14 @@
+id: B7842
+milestone: M12 python
+title: Python get, delete, cancel, list-input-items and compact response functions
+status: todo
+depends_on: [B7840, B7841, B933, B1116, B934, B6040, B158]
+file: tasks/B7842-python-response-lifecycle.yaml
+covers:
+  - "litellm/responses/main.py"
+parent: B160
+split_from: B160
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

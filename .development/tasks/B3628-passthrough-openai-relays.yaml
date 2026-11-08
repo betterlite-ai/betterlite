@@ -1,0 +1,208 @@
+id: B3628
+title: Pass-through OpenAI Deepgram and Nvidia relays
+description: >-
+  Build the OpenAI, Deepgram and NVIDIA NIM pass-through routes of llm_passthrough_endpoints.py in betterlite-server, as three modules: passthrough_openai_routes, passthrough_deepgram_ws and passthrough_nvidia_relay.
+  This task registers its own routes (the registration task B3616 only handles configured endpoints) and adds one small config section for the OpenAI WebSocket switch.
+  The shared helpers come from B3618 (is_streaming_body, relay_router_model, RelayRejection), the HTTP factory from B3615 (create_pass_through_route), the socket relay from B3612 (WebSocketRelay, WebSocketArgs, ClientSocket) and the key lookup from B3602 (get_credentials). Call them; do not copy them.
+  Every name below is at most 30 characters; LiteLLM's longer names are renamed on purpose.
+
+  OpenAI target URL. `join_url_paths(base_url, path, provider)` replaces _join_url_paths. Join the base and the path with B3600's join_base_and_endpoint_path, put that path on the base (scheme, host, port and query of the base stay) and render the URL as a string.
+  Then, only for the OpenAI provider and only when the string has no `/v1/` anywhere in it, replace every `api.openai.com/` in the string with `api.openai.com/v1/`. Other providers (Azure, Azure AI) get the joined string unchanged. `provider` is the provider type that B174 declares (read its merged name; the variants Openai, Azure and AzureAi are the ones used).
+  Examples: base `https://api.openai.com/` with path `/models` gives `https://api.openai.com/v1/models`; with path `/v1/models` it stays as is; base `http://localhost:9000/proxy` with path `/models` gives `http://localhost:9000/proxy/models`.
+
+  OpenAI headers. `append_openai_beta_header(headers, request)` adds `OpenAI-Beta: assistants=v2` when B882's assistants test (the request route contains `thread` or `assistant`) is true and the map has no key spelled exactly `OpenAI-Beta`. `assemble_openai_headers(api_key, request, extra_headers)` starts from an empty map.
+  With a key it holds `authorization: Bearer <key>` and `api-key: <key>` (both keys lowercase). Then `extra_headers` are merged over it (an extra header with the same key wins), then append_openai_beta_header runs on the result. With no key and no extras the map is empty (apart from the beta header).
+
+  OpenAI handler. `openai_pass_through(args)` replaces BaseOpenAIPassThroughHandler._base_openai_pass_through_handler and is also called by the Azure route task, so it is `pub` in the crate. `OpenAiPassThroughArgs` holds endpoint, the request, the response, the authenticated key, handler (the shared `Arc<PassThroughHandler>` of B3613 that B3615's create_pass_through_route takes), base_target_url, api_key (Option), the provider and extra_headers (Option).
+  Steps: take the path of the endpoint the way httpx.URL(endpoint).path does (query and fragment dropped) and add a leading `/` when missing; parse base_target_url; build the URL with join_url_paths; the call is streaming only when the URL string contains the text `stream` (the body is not looked at);
+  build the headers with assemble_openai_headers; call B3615's create_pass_through_route with the handler Arc from args, endpoint, the URL as target, those custom headers, the streaming flag and custom_llm_provider set to the provider's string value (`openai`, `azure`, `azure_ai`); call the handler it returns with the request, response and key, and return the result.
+
+  OpenAI HTTP route. `openai_proxy_route` serves `/openai/{endpoint:path}` for GET, POST, PUT, DELETE and PATCH. The base URL is the process env var OPENAI_API_BASE, or `https://api.openai.com/` when it is unset or empty. The key is B3602's get_credentials("openai", None). A missing key is a plain error that becomes HTTP 500 with the message `Required 'OPENAI_API_KEY' in environment to make pass-through calls to OpenAI.`
+  Otherwise call openai_pass_through with provider Openai and no extra headers. B3619's `/openai_passthrough/{endpoint:path}` HTTP route calls this same function, so it takes endpoint, request, response, key and the shared handler Arc and nothing else.
+
+  OpenAI WebSocket route. `openai_websocket_route` serves the WebSocket form of `/openai/{endpoint:path}` and `/openai_passthrough/{endpoint:path}`. The same two paths also serve HTTP, so the route dispatch must pick the handler by the Upgrade header. The caller is already authenticated by B052's WebSocket auth adapter (user_api_key_auth_websocket); the route function takes the authenticated key.
+  The route needs a few things B3612's ClientSocket lacks, so this module declares `RouteSocket`, a trait with ClientSocket as a supertrait and three more methods: `accept_with_protocol(subprotocol: Option<&str>)`, `path()` (the request path) and `query()` (the raw query string, empty when none). Production adapters are not built here (see out_of_scope).
+  The route also takes two ports declared here so tests use fakes: `WebSocketRelayPort` (one async method relay(args: &WebSocketArgs, client: &dyn ClientSocket, auth) that B3612's WebSocketRelay implements) and `ModelAllowlistPort` (one async method returning the list of allowlists, backed by B885's enforced_model_allowlists).
+  Steps in order:
+  1. `negotiated_subprotocol(socket)`: split the `sec-websocket-protocol` header on commas, trim each piece, drop empty pieces and take the first one, or None. Call it once at the start.
+  2. Refusal. `openai_ws_refusal(settings, key, allowlists)` returns None or a refusal. If `enable_openai_websocket_passthrough` is not on, the refusal is the disabled one. Only then look up the allowlists; if any model string in any of them is not one of `all-proxy-models`, `all-team-models` or `*`, the refusal is the model-restricted one.
+  A refusal is handled by: accept with the negotiated subprotocol, send one text frame of JSON `{"type":"error","error":{"type":"invalid_request_error","message":<message>}}`, close with code 1008 and the refusal's close reason, and return. Disabled: close reason `OpenAI websocket passthrough is disabled`, message `OpenAI websocket passthrough is disabled on this gateway. A proxy admin can turn it on by setting general_settings.enable_openai_websocket_passthrough to true.`
+  Model-restricted: close reason `Keys with model restrictions cannot use OpenAI websocket passthrough`, message `Keys with model restrictions cannot use OpenAI websocket passthrough, because this route relays frames to the provider without reading which model they ask for.`
+  3. Base URL and key as in the HTTP route. With no key, close the socket with code 1011 and reason `Required 'OPENAI_API_KEY' in environment to make pass-through calls to OpenAI.` without accepting it, and return.
+  4. Target. Take the endpoint path as httpx does, add a leading `/`, build the URL with join_url_paths (provider Openai), turn a leading `https://` into `wss://` and a leading `http://` into `ws://` (any other prefix stays), and when the request has a query string append it with `&` if the target already holds a `?`, else with `?`.
+  5. Accept with the negotiated subprotocol, then call the relay with: target, custom headers `{Authorization: Bearer <key>}`, forward_headers false, endpoint = the full request path (socket.path(), with the `/openai` prefix), cost_per_request None, accept_websocket false.
+
+  OpenAI WebSocket switch. `general_settings.enable_openai_websocket_passthrough` is read by a new config section `passthrough_websocket` (crates/betterlite-config/src/sections/passthrough_websocket.rs). Default off. A YAML boolean true is on. A string is on only when B129's str_to_bool gives true (trimmed, case-insensitive `true`); `false`, any other text, numbers (even 1), null and a missing key are off. The section reaches other crates as config.sections.passthrough_websocket. Its tests live in the section's tests.rs.
+
+  Deepgram route. `deepgram_listen_route` in passthrough_deepgram_ws serves the WebSocket paths `/deepgram/v1/listen` and `/deepgram/listen`. Auth comes first and uses the requested model: call B052's model-aware WebSocket auth adapter (user_api_key_auth_websocket_for_model) with B1542's deepgram_listen_requested_model(query), which is the first `model` query value or `nova-3`. An auth failure is that adapter's close; this route adds nothing. It reuses RouteSocket, WebSocketRelayPort and negotiated_subprotocol from the OpenAI module. Steps:
+  1. Key = get_credentials("deepgram", None). Missing: close with 1011 and reason `Required 'DEEPGRAM_API_KEY' in environment to make pass-through calls to Deepgram.` without accepting, and return.
+  2. Accept with the negotiated subprotocol.
+  3. B1542's deepgram_listen_callback_params(query). If it is not empty, close with 1008 and reason `Deepgram callback delivery is not supported through the proxy: remove <names joined with ", ">`, and return.
+  4. target = B1542's deepgram_listen_websocket_target(api_base, query), where api_base is B129's get_secret_str("DEEPGRAM_API_BASE"). If B1542's deepgram_listen_is_priced(target) is false, close with 1008 and reason `No streaming price for '<registry key>': add it to the model cost map to enable it`, where the registry key is B1542's deepgram_listen_registry_key(target). Return.
+  5. Call the relay with target, custom headers `{Authorization: Token <key>}`, forward_headers false, endpoint = the request path, accept_websocket false.
+
+  NVIDIA NIM. `nvidia_nim_proxy_route` in passthrough_nvidia_relay serves `/nvidia_nim/{endpoint:path}` for GET, POST, PUT, DELETE and PATCH. It reads the request body with B1101's get_request_body (POST with a JSON or form content type is parsed; any other method gives an empty object; a POST with another content type is an error that becomes HTTP 500) and calls `relay_nvidia_nim_request(router, endpoint, request, body, key)`.
+  The router is optional. The model group is B2324's nvidia_nim_model_group_in_path(endpoint, deployments) where deployments are B844's router.get_model_list() with no arguments; with no router there is no group.
+  No router or no group: HTTP 400 whose detail is the JSON object `{"error": "no NVIDIA NIM model group in the path; call /nvidia_nim/{model_group}/v1/infer with a model group from your `model_list` whose deployments all use `nvidia_nim/` models"}` (use B3618's RelayRejection; the braces in the message are literal). The response body is `{"detail": {"error": ...}}`.
+  Otherwise streaming = B3618's is_streaming_body(body) and the result is open_sse_before_first_byte(relay_router_model(router, model_group, endpoint, request, body, streaming, key), ping_interval_seconds) where ping_interval_seconds is the `sse_keepalive_ping_interval_seconds` setting (B002, default none) for a streaming call and none otherwise.
+  The endpoint goes to relay_router_model unchanged, with the model group still in it; the provider config removes it later.
+scope:
+  paths:
+    - crates/betterlite-server/src/passthrough_openai_routes.rs
+    - crates/betterlite-server/src/passthrough_openai_routes/**
+    - crates/betterlite-server/src/passthrough_deepgram_ws.rs
+    - crates/betterlite-server/src/passthrough_deepgram_ws/**
+    - crates/betterlite-server/src/passthrough_nvidia_relay.rs
+    - crates/betterlite-server/src/passthrough_nvidia_relay/**
+    - crates/betterlite-config/src/sections/passthrough_websocket.rs
+    - crates/betterlite-config/src/sections/passthrough_websocket/**
+    - tools/oracle/cases/server/passthrough-relays/**
+    - tools/oracle/helpers/b3628.py
+    - tools/oracle/helpers/b3628/**
+    - tools/oracle/src/helpers/server/b3628.rs
+    - tools/oracle/src/helpers/server/b3628/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2075-L2131
+    why: nvidia_nim_proxy_route decorator and relay_nvidia_nim_request, with the 400 rejection text and the keepalive interval choice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2923-L2992
+    why: openai_proxy_route (decorator, OPENAI_API_BASE default, missing key error) and _join_url_paths with the api.openai.com v1 insertion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2995-L3102
+    why: The OpenAI WebSocket refusals, the all-access model names, the switch test, the relay and allowlist seams and negotiated_websocket_subprotocol.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3105-L3170
+    why: openai_websocket_proxy_route, with both decorators, the refusal frame, the target build and the relay call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3173-L3231
+    why: The Deepgram listen route, its three close reasons, its auth dependency and the relay call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3234-L3310
+    why: BaseOpenAIPassThroughHandler, the shared handler that the OpenAI and Azure routes call, with the header assembly and the OpenAI-Beta rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/openai_passthrough_endpoints.py#L1-L42
+    why: The /openai_passthrough HTTP route that calls openai_proxy_route (B3619 owns it; read it to keep the call shape).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L708-L732
+    why: join_base_and_endpoint_path, which B3600 owns and join_url_paths calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L115-L137
+    why: str_to_bool, which decides a string value of the OpenAI WebSocket switch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L648-L707
+    why: user_api_key_auth_websocket_for_model, the auth the Deepgram route runs with the requested model (B052 owns it).
+dod:
+  - text: join_url_paths keeps the base path prefix, inserts `/v1` after api.openai.com only for the OpenAI provider and only when the URL has no `/v1/`, and leaves Azure and Azure AI URLs unchanged.
+    proof: [join-url-tests, oracle]
+  - text: assemble_openai_headers sets lowercase `authorization` and `api-key` from the key, merges extra headers over them, and adds `OpenAI-Beta` only for an assistants route when no `OpenAI-Beta` key exists.
+    proof: [openai-header-tests, oracle]
+  - text: openai_pass_through marks a call streaming only when the URL text contains `stream`, passes the provider string as custom_llm_provider, and hands the headers and URL to B3615's factory.
+    proof: [openai-handler-tests]
+  - text: openai_proxy_route reads OPENAI_API_BASE (default `https://api.openai.com/`), fails with HTTP 500 and the exact message when no key exists, and forwards the request with the key to the upstream.
+    proof: [openai-route-tests, oracle]
+  - text: openai_ws_refusal returns the disabled refusal unless the switch is on, returns the model-restricted refusal for any model outside `all-proxy-models`, `all-team-models` and `*`, and does not read the allowlists while the switch is off.
+    proof: [ws-refusal-tests, oracle]
+  - text: negotiated_subprotocol takes the first non-empty trimmed entry of `sec-websocket-protocol` and gives none for a missing or empty header.
+    proof: [subprotocol-tests, oracle]
+  - text: openai_websocket_route sends the refusal frame and the 1008 close after accepting, closes with 1011 and no accept when the key is missing, and otherwise accepts once and calls the relay with the wss target, the Bearer header, forward_headers false, the full request path and accept_websocket false.
+    proof: [ws-route-tests]
+  - text: The OpenAI WebSocket target turns https into wss and http into ws, keeps a base path prefix and joins the request query with `?` or `&`.
+    proof: [ws-target-tests, oracle]
+  - text: deepgram_listen_route authenticates with the requested model, closes with 1011 before accept when the key is missing, then accepts, closes with 1008 for callback parameters or an unpriced target, and otherwise relays to the listen target with a `Token` header.
+    proof: [deepgram-route-tests]
+  - text: relay_nvidia_nim_request answers 400 with the exact `detail.error` text when the router or the model group is missing, and otherwise calls relay_router_model with the unchanged endpoint and the keepalive interval only for streaming bodies.
+    proof: [nvidia-relay-tests, oracle]
+  - text: The passthrough_websocket config section is off by default, is on for YAML true and the string `true` in any case, and is off for `false`, `1`, other text and null.
+    proof: [ws-switch-config-tests]
+checks:
+  optional: []
+  commands:
+    - id: join-url-tests
+      why: the OpenAI URL join keeps the wrong path, misses the v1 insertion or inserts it for Azure
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_openai_routes::tests::join_url(::|$)/)'
+    - id: openai-header-tests
+      why: the OpenAI header assembly or the assistants beta header is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_openai_routes::tests::openai_header(::|$)/)'
+    - id: openai-handler-tests
+      why: the shared OpenAI handler sets the wrong streaming flag, provider string, headers or target
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_openai_routes::tests::openai_handler(::|$)/)'
+    - id: openai-route-tests
+      why: the OpenAI HTTP route reads the wrong base URL, hides the missing-key error or drops the key
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_openai_routes::tests::openai_route(::|$)/)'
+    - id: ws-refusal-tests
+      why: the OpenAI WebSocket refusal decision or its order is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_openai_routes::tests::ws_refusal(::|$)/)'
+    - id: subprotocol-tests
+      why: the negotiated subprotocol picks the wrong entry
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_openai_routes::tests::subprotocol(::|$)/)'
+    - id: ws-route-tests
+      why: the OpenAI WebSocket route accepts at the wrong time, sends a wrong frame or calls the relay with wrong arguments
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_openai_routes::tests::ws_route(::|$)/)'
+    - id: ws-target-tests
+      why: the OpenAI WebSocket target scheme, path or query is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_openai_routes::tests::ws_target(::|$)/)'
+    - id: deepgram-route-tests
+      why: the Deepgram route skips auth with the model, mis-orders accept and close, or sends a wrong header
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_deepgram_ws::tests::/)'
+    - id: nvidia-relay-tests
+      why: the NVIDIA relay rejection, group lookup, endpoint or keepalive interval is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_nvidia_relay::tests::/)'
+    - id: ws-switch-config-tests
+      why: the WebSocket switch section is missing or reads a value wrongly
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::passthrough_websocket::/)'
+oracle_cases:
+  - tools/oracle/cases/server/passthrough-relays/join-url-openai-inserts-v1.yaml
+  - tools/oracle/cases/server/passthrough-relays/join-url-v1-present-unchanged.yaml
+  - tools/oracle/cases/server/passthrough-relays/join-url-bare-v1-quirk.yaml
+  - tools/oracle/cases/server/passthrough-relays/join-url-azure-no-insert.yaml
+  - tools/oracle/cases/server/passthrough-relays/join-url-base-path-kept.yaml
+  - tools/oracle/cases/server/passthrough-relays/headers-key-sets-both.yaml
+  - tools/oracle/cases/server/passthrough-relays/headers-extra-overrides.yaml
+  - tools/oracle/cases/server/passthrough-relays/headers-beta-for-threads.yaml
+  - tools/oracle/cases/server/passthrough-relays/headers-beta-case-sensitive.yaml
+  - tools/oracle/cases/server/passthrough-relays/ws-refusal-disabled-default.yaml
+  - tools/oracle/cases/server/passthrough-relays/ws-refusal-string-true-enabled.yaml
+  - tools/oracle/cases/server/passthrough-relays/ws-refusal-restricted-model.yaml
+  - tools/oracle/cases/server/passthrough-relays/ws-refusal-all-access-names.yaml
+  - tools/oracle/cases/server/passthrough-relays/subprotocol-first-entry.yaml
+  - tools/oracle/cases/server/passthrough-relays/subprotocol-empty-pieces.yaml
+  - tools/oracle/cases/server/passthrough-relays/ws-target-https-to-wss.yaml
+  - tools/oracle/cases/server/passthrough-relays/ws-target-query-joined.yaml
+  - tools/oracle/cases/server/passthrough-relays/openai-route-forwards-chat.yaml
+  - tools/oracle/cases/server/passthrough-relays/openai-route-missing-key.yaml
+  - tools/oracle/cases/server/passthrough-relays/openai-route-threads-beta.yaml
+  - tools/oracle/cases/server/passthrough-relays/nvidia-infer-forwards.yaml
+  - tools/oracle/cases/server/passthrough-relays/nvidia-no-group-400.yaml
+  - tools/oracle/cases/server/passthrough-relays/nvidia-mixed-group-400.yaml
+  - tools/oracle/cases/server/passthrough-relays/nvidia-stream-sse.yaml
+deviations:
+  - what: A missing OPENAI_API_KEY on the HTTP route gives HTTP 500 with the message in the proxy's error envelope, where LiteLLM's bare Exception gives whatever its unhandled-error path renders.
+    why: betterlite has one error mapper. The status and the message match; the oracle case ignores the body shape, as the auth missing-key case does. Open question in the notes.
+  - what: The OpenAI and Deepgram WebSocket routes read the socket through the RouteSocket trait and the relay through WebSocketRelayPort, and take the already authenticated key as an argument.
+    why: Python gets these from FastAPI dependencies. Rust needs seams for tests and the real adapters come later. What a client sees is the same.
+  - what: LiteLLM's _OpenAIWebsocketRefusal, the two error TypedDicts, the model-allowlist Protocol and the relay Protocol become plain Rust records and the two ports.
+    why: Same shapes; Rust needs closed types. The error frame JSON is built from a typed record and has the same bytes as json.dumps of the dict would carry for these ASCII keys, apart from spacing, which the native test compares as parsed JSON.
+out_of_scope:
+  - "create_request_copy, uses_router_model, is_streaming_body, request_is_streaming, deployment_model_name, models_served_by_group, RelayRejection, router_request_metadata, provider_factory_route, relay_upstream_response, relay_upstream_bytes and relay_router_model: B3618 owns them and this task calls them."
+  - "create_pass_through_route and the HTTP handler it returns: B3615. join_base_and_endpoint_path and get_response_headers: B3600. get_credentials: B3602. The WebSocket relay itself: B3612."
+  - "nvidia_nim_model_group_in_path and the other NVIDIA path hints: B2324. NvidiaNimPassthroughConfig (the provider side that strips the model group and builds the upstream URL): B5837."
+  - "Every deepgram_listen_* helper (target, requested model, callback params, pricing key, usage figures): B1542. Deepgram usage billing after the relay: B3653."
+  - "user_api_key_auth, user_api_key_auth_websocket and user_api_key_auth_websocket_for_model: B052. enforced_model_allowlists: B885. get_request_body: B1101. get_model_list: B844. _is_assistants_api_request: B882."
+  - "The /openai_passthrough HTTP route (openai_passthrough_endpoints.py, L1-L42): B3619 owns it and calls openai_proxy_route."
+  - "The Azure routes (azure_proxy_route, _relay_azure_router_model, _relay_azure_body_model_group): B3624 owns them and calls openai_pass_through and join_url_paths from this task."
+  - "create_generic_websocket_passthrough_endpoint (L3758-L3797): no caller at the pin, and the function it wraps is not built (see B3612). No cases."
+  - "open_sse_before_first_byte: B7324 builds the real function; this task calls it. The production axum adapters for RouteSocket and the tokio-tungstenite connector are not built here."
+  - "_proxy_general_settings, _proxy_model_allowlists and _websocket_relay: they only bind proxy_server globals for FastAPI dependencies. The config section, the ModelAllowlistPort and the WebSocketRelayPort replace them."
+pitfalls:
+  - "The same path `/openai/{endpoint:path}` is both an HTTP route and a WebSocket route; pick by the Upgrade header, or a plain GET /openai/v1/models stops working."
+  - "The OpenAI handler sends both `authorization: Bearer <key>` and `api-key: <key>`, both lowercase, even to api.openai.com."
+  - "Streaming on the OpenAI handler comes only from the word `stream` in the final URL; a `stream: true` body does not set it, and a path like `/v1/stream-test` does."
+  - "join_url_paths inserts `/v1` only when `/v1/` is missing from the whole URL, so the bare path `/v1` becomes `https://api.openai.com/v1/v1`. Keep that."
+  - "str.replace in the v1 rule changes every `api.openai.com/` in the URL string, not just the host."
+  - "The OpenAI-Beta check looks for the exact key `OpenAI-Beta`; an extra header spelled `openai-beta` does not stop the default being added, and both then go out."
+  - "The assistants test is a substring test on the route, so any path containing `thread` or `assistant` gets the beta header."
+  - "The refusal is checked in order: switch first, allowlists second. With the switch off no allowlist is read, so no database call is made for a refused client."
+  - "Allowlist entries are compared as text; `no-default-models` and any real model name count as a restriction, while an empty list does not."
+  - "A refusal accepts the socket first, then sends the error frame, then closes with 1008. A missing key does the opposite: close with 1011 and no accept, which a client sees as a failed handshake."
+  - "Both WebSocket routes pass `websocket.url.path` (with the /openai or /deepgram prefix) to the relay as the endpoint, not the endpoint path parameter, and pass accept_websocket false because they accepted already."
+  - "Deepgram authenticates with `Token <key>` and OpenAI with `Bearer <key>`; neither forwards client headers."
+  - "The Deepgram checks run in a fixed order: key (no accept), accept, callback params, price. A callback request is accepted and then closed with 1008."
+  - "The NVIDIA 400 detail is an object with an `error` field, so the body is `{detail: {error: ...}}` and not a plain string detail."
+  - "The NVIDIA body read raises for a POST with a content type that is neither JSON nor form; a GET gives an empty body and is never streaming."
+  - "A WebSocket close reason longer than 123 bytes is invalid on the wire; keep the exact texts above and note that the Deepgram unpriced reason grows with the model name."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

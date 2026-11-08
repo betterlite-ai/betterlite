@@ -1,0 +1,16 @@
+kind: helper
+name: content-inspection-tool-output-items
+call:
+  b5470:
+    function: build_inspection_messages
+    data:
+      input:
+        - {type: function_call_output, output: "tool result"}
+        - type: custom_tool_call_output
+          role: user
+          output:
+            - {type: output_text, text: "custom result"}
+        - {type: function_call_output}
+env: {}
+compare:
+  ignore: []

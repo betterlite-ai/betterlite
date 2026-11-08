@@ -4,7 +4,6 @@ call:
   batch_delivery:
     flush:
       settings: {batch_size: 4, flush_interval_seconds: 5, max_queue_size: 100}
-      preserve_events_added_during_flush: false
       steps:
         - {op: enqueue, events: [a, b]}
         - {op: flush, script: [{outcome: failed}]}

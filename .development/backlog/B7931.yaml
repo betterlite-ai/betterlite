@@ -1,0 +1,14 @@
+id: B7931
+milestone: M12 python
+title: Python types for guardrails.py part two, content filter, LitellmParams and endpoint classes (L836-L1378)
+status: todo
+depends_on: [B5657, B7930, B7932, B7933, B7934, B7935, B7936]
+file: tasks/B7931-types-guardrails-params.yaml
+covers:
+  - "litellm/types/guardrails.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

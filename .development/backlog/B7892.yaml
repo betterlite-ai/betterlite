@@ -1,0 +1,14 @@
+id: B7892
+milestone: M3 providers
+title: Milvus vector store provider config for the pass-through route
+status: todo
+depends_on: [B3624, B129, B7810]
+file: tasks/B7892-milvus-vector-config.yaml
+covers:
+  - "litellm/llms/milvus/vector_stores/transformation.py"
+parent: B049
+split_from: B049
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

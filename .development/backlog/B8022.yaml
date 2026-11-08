@@ -1,0 +1,14 @@
+id: B8022
+milestone: M3 providers
+title: Map fastCRW and Firecrawl search requests and replies
+status: todo
+depends_on: [B002, B3270, B171]
+file: tasks/B8022-crawl-search-providers.yaml
+covers:
+  - "litellm/llms/{fastcrw,firecrawl}/**"
+parent: B048
+split_from: B048
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

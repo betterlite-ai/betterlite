@@ -1,3 +1,4 @@
+use betterlite_openai::embedding::EmbeddingResponse;
 use serde::{Deserialize, Serialize};
 use serde_with::rust::double_option;
 
@@ -5,7 +6,16 @@ use serde_with::rust::double_option;
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum SdkResult {
     Success { value: ChatCompletion },
+    Embedding { value: EmbeddingOutcomes },
     Failure(Failure),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmbeddingOutcomes {
+    pub sync: EmbeddingResponse,
+    #[serde(rename = "async")]
+    pub asynchronous: EmbeddingResponse,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

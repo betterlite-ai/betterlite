@@ -7,5 +7,8 @@ pub mod completion_options;
 pub mod completion_request;
 pub mod mcp_loop;
 pub mod proxy_auth;
+pub mod rag_query_call;
 pub mod router_completion;
+pub mod router_container;
 pub mod router_generic;
+pub mod router_video;

@@ -1,0 +1,192 @@
+id: B4849
+title: Bridge synchronous harness streams and sessions to owned async work
+description: >-
+  Port LiteLLM's sync API for the harness (litellm/harness/sync.py, 440 lines) into a new module `sync_bridge` of the crate betterlite-harness. LiteLLM runs
+  every sync call on one daemon thread that owns an asyncio loop, and blocks the caller until the coroutine finishes. This task gives Rust callers the same
+  thing: a blocking `run_agent`, a blocking `Iterator` of events, and a blocking multi-turn session, all driven by async code that betterlite owns and can stop.
+  The async runtime itself is B4846 (session), B4847 (turn) and B4848 (public async entry points). Read these on main first and use their exact Rust names:
+  crates/betterlite-harness/src/session_runtime.rs (B4846: `AsyncSession<S, H, E>`, `SessionRuntimeError` with its `TurnRunning` variant, `start`, `close`,
+  `detach`, `stop`, `history`, `cost`, `usage`, `session_id`, `results`), turn_runtime.rs and turn_runtime/control.rs (B4847: `TurnControl`, `turn_events`), the
+  B4848 module that exposes `arun_agent`, `aagent_session`, `aagent_resume`, `AsyncSession::arun` and `astream_agent`, events.rs (`Event`, `RunResult`) and
+  state.rs (`State`). If B4848 names something differently, use B4848's name and say so in your report. The sync functions take B4848's `SessionArgs`, `RunArgs`, `ResumeArgs` and `StateInput` (each generic over `S`, `H`, `E`) and the
+  same handler and endpoint injection that B4848's async functions take, because the handler traits have associated types and cannot be picked at run time.
+
+
+  Owned runtime (`_LoopThread`, `_LOOP`, L45-L69). `SyncRuntime` in `sync_bridge/runtime.rs` owns a `tokio::runtime::Runtime` built with
+  `Builder::new_multi_thread().worker_threads(1).thread_name("litellm-harness-loop").enable_all()` and a `std::sync::Mutex<tokio::task::JoinSet<()>>` of the tasks it
+  has started. `SyncRuntime::new() -> Result<Self, SyncBridgeError>` builds it; callers share it as `Arc<SyncRuntime>` and pass it to every sync function and
+  session. There is no process-wide static: Python's `_LOOP` singleton becomes an object the caller creates once and holds (see deviations). `SyncRuntime::spawn`
+  locks the set only to reap finished tasks (`try_join_next` in a loop, logging a `tracing::warn!` for each `JoinError`, which is a task panic) and to call
+  `JoinSet::spawn_on(future, self.runtime.handle())`; the lock is never held across an `.await`. Dropping the set aborts anything still running.
+
+
+  Blocking call (`_ensure_sync_context` L72-L77, `run_sync` L80-L92). `SyncRuntime::run<T: Send + 'static>(&self, name: &'static str, future: impl Future<Output = T> + Send + 'static)
+  -> Result<T, SyncBridgeError>` first calls `ensure_sync_context(name)`: when `tokio::runtime::Handle::try_current().is_ok()` the caller is inside an async runtime, and the
+  result is `SyncBridgeError::InRunningLoop { name }`, displayed exactly as "litellm.{name}() cannot be called from a running event loop; use `await litellm.a{name}(...)` instead".
+  The check runs before anything else, so no future is started (Python closes the coroutine). Then `run` starts the future with `spawn`, with a
+  `tokio::sync::oneshot` sender carrying the output back, and blocks on the receiver with `Runtime::block_on`. A closed oneshot (the task panicked or was
+  aborted) is `SyncBridgeError::LoopLost` ("the harness loop stopped before the call finished"). All async work therefore runs on the one runtime thread, and the
+  caller thread only waits. There is no Ctrl-C hook: Python's `except KeyboardInterrupt: future.cancel()` has no Rust counterpart (see deviations).
+
+
+  Event stream (`EventStream` L106-L148, `_anext` L95-L99, `_aclose_stream` L102-L103, `sync_bridge/stream.rs`). `SyncEventStream` implements
+  `Iterator<Item = Result<Event, SyncBridgeError>>`. Behind it sits a driver future (below) that runs on the runtime and sends each item through a
+  `tokio::sync::mpsc::channel(1)`, so a slow reader pauses the handler (that is the backpressure of Python's one-event-at-a-time hand off). Fields: the
+  `Arc<SyncRuntime>`, the `mpsc::Receiver`, a `oneshot::Receiver<()>` named `finished` that the driver fires when it is completely done, the `TurnControl` clone,
+  `result: Option<RunResult>` and `done: bool`. `next()`: when `done` is true, return `None`. Otherwise the receiver must move into the future the runtime runs, so take it out of the struct with `Option::take`, run an async block that calls `recv` and returns the receiver together with the item through `runtime.run("stream", ..)`, and put the receiver back. `None` (channel closed) sets `done` and returns `None`.
+  `Some(Ok(Event::Done { result }))` stores a clone of the result in `self.result` before returning the event. `Some(Err(e))` returns `Err(SyncBridgeError::Session(e))`; the
+  stream is not marked done, because B4847 yields the trailing `OutputInvalid` error after `Done` and the channel then closes by itself. `result(&self) -> Option<&RunResult>`
+  is set once `Done` has been seen. `cancel(&self)` calls `TurnControl::cancel` (it is `Arc` based, so no hop to the runtime thread is needed); iteration still ends with
+  `Done` whose stop reason is `Cancelled`. `close(&mut self) -> Result<(), SyncBridgeError>`: does nothing when `done` is true; otherwise sets `done`, drops the receiver
+  so the driver sees a closed channel, and waits for `finished` through `runtime.run("stream", ..)`. Dropping a stream without `close` also drops the receiver, and the
+  driver winds down on its own on the runtime thread.
+
+
+  Driver (`sync_bridge/driver.rs`). `drive_turn(session, prompt, control, close_after, sender, slot, finished)` is one async function used by both streams. It
+  builds `session.turn_events(prompt, control, true)` (B4847), pins it, and forwards each item with `sender.send(item).await`; a failed send (reader gone) ends the loop. Then it
+  drops the turn stream, which frees the turn permit. With `close_after == false` (a stream from a `SyncSession`) it puts the session back into the shared slot (below). With
+  `close_after == true` (the one-shot `stream_agent`, Python's `_one_shot` L573-L581 in runtime.py) it must close the session before `Done` reaches the reader, as
+  LiteLLM does. Rust cannot close a session while its turn stream still borrows it, so in that mode the driver holds back every item from the first `Done` on, lets the turn stream
+  run to its end (only the trailing error can follow `Done`), drops it, awaits `session.close()`, and only then sends the held items in order. It also closes the session when the
+  reader went away early. Last, it sends on `finished`.
+
+
+  Sync session (`Session` L151-L206, `sync_bridge/session.rs`). `SyncSession` holds the `Arc<SyncRuntime>`, the session id copied at construction, and a shared
+  `Arc<std::sync::Mutex<Option<Box<AsyncSession<S, H, E>>>>>` named `slot`. A call that needs the session takes it out of the slot (the lock is held only for the take), moves it
+  into the future it runs, and the future puts it back before it returns, also when the call failed. When the slot is empty a turn stream owns the session, and the call returns
+  `SyncBridgeError::TurnRunning` ("a turn is already running on this session", the text B4846 uses). That keeps LiteLLM's rule that one turn runs at a time. Methods:
+
+  - `start(&self)` runs `AsyncSession::start` (L162-L164).
+
+  - `run(&self, prompt) -> Result<RunResult, SyncBridgeError>` runs B4848's `AsyncSession::arun` (L172-L173); its `AgentRunError` becomes `SyncBridgeError::Run`.
+
+  - `stream(&self, prompt) -> Result<SyncEventStream, _>` takes the session, makes a `TurnControl::default()`, starts `drive_turn` with `close_after == false` through `spawn`, and returns the stream (L175-L176).
+
+  - `close(&self)`, `detach(&self) -> Result<State, _>`, `stop(&self) -> Result<State, _>` and `history(&self)` run the matching `AsyncSession` method (L178-L190). `close` is safe to call twice because B4846's close is.
+
+  - `cost(&self)`, `usage(&self)` and `results(&self) -> Vec<RunResult>` read the session under the lock without moving it out (L192-L203); `results` returns a copy. They fail with `TurnRunning` while a stream owns the session.
+
+  - `session_id(&self)` returns the stored copy and never fails (L204-L206).
+
+
+  Entry points (`_run` L209-L253, `_stream` L256-L299, `agent_session` L302-L344, `agent_resume` L347-L389, `agent` L392-L440, `sync_bridge/entry.rs`). Each is a plain
+  function taking `runtime: &Arc<SyncRuntime>` and the B4848 argument type named in its bullet, with B4848's generic handler and endpoint parameters.
+
+  - `run_agent(runtime, args: RunArgs<S, H, E>) -> Result<RunResult, SyncBridgeError>` calls `ensure_sync_context("agent")`, then `runtime.run("agent", arun_agent(args))`. B4848's `AgentRunError` comes back as `SyncBridgeError::Run`.
+
+  - `stream_agent(runtime, args: RunArgs<S, H, E>) -> Result<SyncEventStream, SyncBridgeError>` calls `ensure_sync_context("agent")`, then builds the session synchronously with B4848's `aagent_session(args.session)` (an `AgentBuildError` becomes `SyncBridgeError::Build`), so a validation or option error is returned before any thread work, as the test `test_sync_validation_errors_raise_eagerly` expects. It then starts `drive_turn` with `close_after == true` and returns the stream.
+
+  - `agent_session(runtime, args: SessionArgs<S, H, E>) -> Result<SyncSession<S, H, E>, SyncBridgeError>` calls `ensure_sync_context("agent_session")` and wraps B4848's `aagent_session` result in a `SyncSession`. It does not start it.
+
+  - `agent_resume(runtime, args: ResumeArgs<S, H, E>) -> Result<SyncSession<S, H, E>, SyncBridgeError>` calls `ensure_sync_context("agent_resume")` and wraps B4848's `aagent_resume`. `ResumeArgs.state` is B4848's `StateInput`, so it accepts a `State` or bytes, since LiteLLM passes it straight through.
+
+  - `agent(runtime, args: RunArgs<S, H, E>, stream: bool) -> Result<AgentOutput, SyncBridgeError>` returns `AgentOutput::Result(RunResult)` or `AgentOutput::Stream(SyncEventStream)` by the flag (L392-L440), by calling the two functions above.
+
+
+  Errors (`sync_bridge/error.rs`). `SyncBridgeError` derives `thiserror::Error` and has `InRunningLoop { name: &'static str }`, `LoopLost`, `TurnRunning`, `RuntimeStart(std::io::Error)`
+  (from `Builder::build`), `Session(#[from] SessionRuntimeError)`, `Build(#[from] AgentBuildError)` and `Run(#[from] AgentRunError)`, both B4848 errors (transparent). `Build` is what `stream_agent`, `agent_session` and `agent_resume` return for a bad argument, and `Run` is what `run_agent` and `SyncSession::run` return, since `AsyncSession::arun` gives `AgentRunError`.
+  Display text for the first three is given above. No `unwrap` or `expect` outside tests.
+scope:
+  paths:
+  - crates/betterlite-harness/src/sync_bridge.rs
+  - crates/betterlite-harness/src/sync_bridge/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sync.py#L36-L92
+    why: The in-loop message, the single loop thread, _ensure_sync_context and run_sync, which the owned runtime and the blocking call replace.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sync.py#L95-L148
+    why: EventStream, how next() ends at Done, the stored result, cancel and close.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sync.py#L151-L206
+    why: The sync Session wrapper and each method it forwards.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sync.py#L209-L440
+    why: The sync entry points and the stream flag of agent().
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L544-L581
+    why: AsyncEventStream (cancel, aclose, result) and _one_shot, which closes the session before Done is handed out.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L732-L748
+    why: turn_events and its busy guard, the rule the session slot keeps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/harness/test_sync.py#L1-L130
+    why: The behaviors LiteLLM tests for the sync layer, namely run, stream, approvals, early close, eager validation errors, multi-turn, detach, resume, one loop thread and the in-loop error.
+  - url: https://docs.rs/tokio/1.53.3/tokio/runtime/struct.Runtime.html#method.block_on
+    why: block_on panics inside an async context, so the in-loop check must run first.
+dod:
+  - text: SyncRuntime::new starts one runtime thread named "litellm-harness-loop"; two sync calls on the same runtime run their futures on that same thread, and no second thread with that name exists.
+    proof: [runtime-tests]
+  - text: Any blocking call made from inside a running tokio runtime returns InRunningLoop with the exact LiteLLM message for its name (agent, agent_session, agent_resume, stream, run) and starts no future.
+    proof: [runtime-tests]
+  - text: A future that panics on the runtime makes the blocking call return LoopLost, and the runtime still serves the next call.
+    proof: [runtime-tests]
+  - text: Iterating a SyncEventStream gives the handler's events in order and ends with Done; result() is None before Done and holds the run result after it; iterating again gives nothing.
+    proof: [stream-tests]
+  - text: A reader that is slower than the handler pauses it, since the channel holds one item; the handler is never read ahead by more than one event.
+    proof: [stream-tests]
+  - text: cancel ends iteration with Done whose stop reason is Cancelled, also when it is called before the first next(); close before the end stops the turn, lets the driver finish, and a second close does nothing.
+    proof: [stream-tests]
+  - text: An approval event can be answered by the reader between two next() calls and the handler sees that answer; dropping a stream without close frees the turn so the session can run again.
+    proof: [stream-tests]
+  - text: A SyncSession runs several turns, returns the same session id each time, reports cost and usage as the sum of its results, returns history, and detach or stop gives a State that agent_resume turns back into a working session.
+    proof: [session-tests]
+  - text: A session call made while a SyncEventStream still owns the session returns TurnRunning, and works again after the stream ended or was closed.
+    proof: [session-tests]
+  - text: stream_agent closes the session before the reader gets Done and also closes it when the reader stops early; a validation error from the argument value is returned by stream_agent itself, before any event.
+    proof: [entry-tests]
+  - text: agent returns a RunResult with stream false and a SyncEventStream with stream true, and run_agent returns the same result text and stop reason as the async path.
+    proof: [entry-tests]
+checks:
+  optional: []
+  commands:
+    - id: runtime-tests
+      why: runtime thread, in-loop guard and lost-loop tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^sync_bridge::(.*::)?runtime::/)'
+    - id: stream-tests
+      why: blocking iterator, backpressure, cancel and close tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^sync_bridge::(.*::)?stream::/)'
+    - id: session-tests
+      why: sync session turn, usage, detach, resume and busy-slot tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^sync_bridge::(.*::)?session::/)'
+    - id: entry-tests
+      why: sync entry point and one-shot close tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^sync_bridge::(.*::)?entry::/)'
+oracle_cases: []
+deviations:
+  - what: The runtime that replaces the shared loop thread is an object, `SyncRuntime`, that the caller creates and passes in. Python's one process-wide thread, started on first use, has no Rust equivalent.
+    why: The rules ban module-level state and detached tasks. The caller owns the runtime, so it can drop it and everything it started stops. The Python package that wraps the Rust core can hold one per process and keep LiteLLM's one-thread behavior.
+  - what: There is no Ctrl-C handling in the blocking call.
+    why: Python cancels the future on KeyboardInterrupt. A Rust caller cancels through `SyncEventStream::cancel`, or drops the runtime.
+  - what: There are no `with` blocks and no `__enter__` or `__exit__`; callers call `start`, `close` and `SyncEventStream::close`.
+    why: Rust has no context manager. Dropping a stream closes its channel, but the session is only closed by its `close`, `detach` or `stop`, since Drop cannot wait for async work.
+  - what: The `aio` property (the underlying async session) is not exposed.
+    why: The session moves into the runtime while a stream runs, so a second handle to it cannot exist. B4848's async API is the way to get an async session.
+  - what: The `cost`, `usage` and `results` methods of a `SyncSession` fail with TurnRunning while a stream owns the session. Python lets them be read mid-stream.
+    why: Rust cannot share the session with the task that runs the turn without a lock held across await.
+  - what: The `agent(stream=...)` function returns an `AgentOutput` enum, and `run_agent` and `stream_agent` are public as well.
+    why: Rust has no function that returns either of two types by a flag.
+  - what: A one-shot stream holds back `Done` until the turn stream has ended, then closes the session, then yields `Done` and any trailing error.
+    why: The turn stream borrows the session, so it cannot be closed while the stream is alive. The reader sees the same order and the session is closed before it gets `Done`, as in LiteLLM.
+out_of_scope:
+  - "AsyncEventStream, _one_shot, astream, arun, aagent_session, arun_agent, astream_agent and aagent_resume (runtime.py L544-L1028) are B4848's. This task calls them and builds its own driver only because the turn stream in Rust cannot outlive the borrow of its session."
+  - "TurnControl and turn_events (runtime.py L259-L541, L732-L741) are B4847's; B4846 owns AsyncSession and its busy flag and permit."
+  - "The Python wrapper that exposes litellm.agent and friends over the Rust core is the M12 package work, not this crate."
+  - "Re-exports in litellm/harness/__init__.py (L30-L60) have no Rust code."
+pitfalls:
+  - >-
+    Handle::try_current() must be checked before Runtime::block_on, because block_on panics when called from a tokio task; the same call from a plain thread, a std thread or a blocking pool thread is fine.
+  - >-
+    The in-loop message says "litellm." and "await litellm.a<name>", with the name passed by each caller ("agent", "agent_session", "agent_resume"), so the text stays LiteLLM's for every caller.
+  - >-
+    Python's validation error for stream=True is raised when agent() is called, not at the first next(); stream_agent builds the session before it starts the driver for that reason.
+  - >-
+    EventStream.result is set only when Done passes through next(), so a stream that was closed early or ended on an error has result None.
+  - >-
+    B4847 yields Done first and the OutputInvalid error right after it; a reader must see Done before that error, so the stream must stay open after an Err item and only end when the channel closes.
+  - >-
+    Dropping a SyncEventStream drops its Receiver, and the driver must treat a failed send as the signal to stop, close the turn stream and hand the session back; aborting the task would lose the session and leave the slot empty forever.
+  - >-
+    The slot lock is a std Mutex taken only to move the session in or out; holding it while awaiting would block the runtime thread, and the rules ban a lock held across an await.
+  - >-
+    Calling close on the stream waits for `finished`, which only fires after the session is back in the slot or closed, so the next session call does not see a false TurnRunning.
+  - >-
+    The bounds `S`, `H` and `E` must be `Send + 'static` for the futures to be spawned; the sync functions state them, and tests use fakes that meet them.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

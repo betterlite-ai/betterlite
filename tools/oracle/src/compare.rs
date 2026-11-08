@@ -1,6 +1,8 @@
 use crate::case::{Compare, Ignore};
 use crate::http::Response;
 use crate::mock::ProviderRequest;
+use crate::oracle_comparison_contracts::Contracts;
+use crate::router_probes::comparison;
 
 pub(crate) mod helper;
 pub(crate) mod multipart;
@@ -157,7 +159,7 @@ fn compare_responses(
     if left.status != right.status {
         return Err(difference("/status", "response statuses differ"));
     }
-    compare_response_body(left, right, &compare.ignore, &difference)?;
+    compare_response_body(left, right, compare, &difference)?;
     for header in &compare.headers {
         let name = header.to_ascii_lowercase();
         if left.headers.get(&name) != right.headers.get(&name) {
@@ -182,16 +184,20 @@ fn compare_responses(
 fn compare_response_body(
     left: &Response,
     right: &Response,
-    ignores: &[Ignore],
+    compare: &Compare,
     difference: &dyn Fn(&str, &str) -> Difference,
 ) -> Result<(), Difference> {
-    let mut left_body = left.body.clone();
-    let mut right_body = right.body.clone();
-    for ignored in ignores {
-        remove_pointer(&mut left_body, &ignored.pointer);
-        remove_pointer(&mut right_body, &ignored.pointer);
-    }
-    let Some(body_pointer) = first_difference(&left_body, &right_body, "") else {
+    let no_contracts = Contracts::default();
+    let contracts = compare.contracts.as_deref().unwrap_or(&no_contracts);
+    let Some(body_difference) = comparison::compare(&comparison::Documents {
+        reference: &left.body,
+        rust: &right.body,
+        numeric: &contracts.numeric,
+        expected_difference: &contracts.expected_difference,
+        ignore: &compare.ignore,
+        self_check: contracts.self_check,
+        message: "response bodies differ",
+    }) else {
         return Ok(());
     };
     let binary_response = left
@@ -202,12 +208,10 @@ fn compare_response_body(
             .headers
             .get("content-type")
             .is_some_and(|value| value.starts_with("application/octet-stream"));
-    let response_pointer = if binary_response {
-        "/response/bytes"
-    } else {
-        &body_pointer
-    };
-    Err(difference(response_pointer, "response bodies differ"))
+    if binary_response {
+        return Err(difference("/response/bytes", "response bodies differ"));
+    }
+    Err(body_difference)
 }
 
 fn compare_provider_requests(

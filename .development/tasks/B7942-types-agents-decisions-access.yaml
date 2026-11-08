@@ -1,0 +1,54 @@
+id: B7942
+title: Python types for agents, decisions and access groups (types/agents.py, decisions.py, access_group.py)
+description: >-
+  This task ports `agents.py` (356 lines), `decisions.py` (342 lines) and `access_group.py` (39 lines) into `crates/betterlite-python/python/betterlite/types/agents.py`,
+  `crates/betterlite-python/python/betterlite/types/decisions.py` and `crates/betterlite-python/python/betterlite/types/access_group.py`. It is Python only.
+
+
+  `agents.py` is TypedDicts for the agent card: provider, extension, capabilities and the security schemes. `APIKeySecurityScheme`,
+  `HTTPAuthSecurityScheme`, `MutualTLSSecurityScheme` and `OAuth2SecurityScheme` extend `SecuritySchemeBase` with `total=False`, so keep
+  which keys are required on each level. `decisions.py` has the question models (`NoulQuestion`, `ChoiceQuestion`, `ScoreQuestion`) and
+  answer models on `LiteLLMPydanticObjectBase` (B7929), `DecisionsRequestBody`, `DecisionsRequest` (extends the body) and the
+  `DecisionsCallParams` TypedDict. It also defines `MAX_DECISION_QUESTIONS`, which `decision_model.py` in B7933 imports.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/agents.py
+  - crates/betterlite-python/python/betterlite/types/decisions.py
+  - crates/betterlite-python/python/betterlite/types/access_group.py
+  - crates/betterlite-python/tests/test_types_agents_decisions_access.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L1-L356
+  why: Agent card TypedDicts and security schemes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L1-L342
+  why: Decision question, answer and request models.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/access_group.py#L1-L39
+  why: Access group request and response models.
+out_of_scope:
+- >-
+  The Rust agent and decision endpoints are other tasks; this adds Python types only.
+pitfalls:
+- >-
+  `APIKeySecurityScheme` and its siblings use `total=False` on top of a base with required keys. A test checks `__required_keys__` on each.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_agents_decisions_access.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

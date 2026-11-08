@@ -1,0 +1,73 @@
+id: B6803
+title: Cohere Parse OCR provider
+description: >-
+  Add module `cohere_ocr` to betterlite-ocr with `CohereParseConfig`, an `OcrProviderConfig`
+  implementation that ports litellm-rust cohere/ocr/transformation.rs. The URL is the api_base
+  (default https://api.cohere.com) completed with v2/parse. An api_base that is not an http or
+  https URL fails with RequestField path api_base. The key comes from the request, then COHERE_API_KEY,
+  sent as Authorization Bearer. A supplied authorization header wins. No key gives the provider
+  authentication error "Missing COHERE_API_KEY - set it in the environment or pass api_key".
+  The body is `CohereRequest` with model, document {type image_url, image_url} and output_format,
+  which is markdown unless the option output_format is blocks. Only images are accepted, so any
+  other document kind, an empty URL, or a data URI whose MIME top-level type is not image fails with
+  CohereImageOnly. A data URI is also decoded once to check its size cap. Supported options are
+  output_format and req_format. `validate_document` is public because B6804 reuses it.
+  The response keeps each page's index (position when absent), markdown content, markdown images
+  (a bounding_box object is copied to bbox) and blocks (stored in the page extra fields). The usage
+  pages_processed is meta.billed_units.pages, or the page count when that is absent. The health
+  check document is the 1x1 PNG data URI constant from the Rust file.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-ocr/Cargo.toml
+    - crates/betterlite-ocr/src/cohere_ocr.rs
+    - crates/betterlite-ocr/src/cohere_ocr/**
+    - tools/oracle/cases/ocr/cohere/**
+    - tools/oracle/helpers/b6803.py
+    - tools/oracle/helpers/b6803/**
+    - tools/oracle/src/helpers/ocr/b6803.rs
+    - tools/oracle/src/helpers/ocr/b6803/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/cohere/ocr/transformation.rs#L1-L757
+    why: URL, headers, image-only check, body and response normalization.
+
+dod:
+  - text: The POST goes to the base plus v2/parse with Authorization Bearer and the body model, document.image_url and output_format, and the OCRResponse equals LiteLLM's for the same mock answer.
+    proof: [cohere-tests, oracle]
+  - text: A PDF document, a non-image data URI, an empty URL and a non-document kind each fail with CohereImageOnly before any request.
+    proof: [cohere-tests]
+  - text: Key lookup order is request key, COHERE_API_KEY, then the authorization header wins over both, and a missing key returns the exact message above.
+    proof: [cohere-tests]
+  - text: Page index falls back to list position, images copy bounding_box to bbox, blocks land in extra fields, and pages_processed prefers billed pages over the page count.
+    proof: [cohere-tests, oracle]
+  - text: A non-http api_base fails with RequestField path api_base.
+    proof: [cohere-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: cohere-tests
+      why: Cohere request, validation, header or response behavior is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^cohere_ocr::tests::/)'
+
+oracle_cases:
+  - tools/oracle/cases/ocr/cohere/image-markdown.yaml
+  - tools/oracle/cases/ocr/cohere/blocks-and-billing.yaml
+
+deviations: []
+
+out_of_scope:
+  - Cohere chat, embed and rerank are B037 and its parts. Cohere Parse hosted on Azure is B6804.
+
+pitfalls:
+  - Use the page position, counted from 0, for a missing index. Do not start at 1.
+  - Numeric fields can arrive as strings or floats, so decode index and billed pages with the lenient integer rule the Rust file uses.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,158 @@
+id: B4676
+title: "MCP gateway token grants, revocation and introspection"
+description: >-
+  Build the token half of the MCP gateway's own OAuth front door (LiteLLM's gateway_dcr_flow.py from _pkce_verifier_matches to the end of the file) in crates/betterlite-mcp, new module gateway_token. It covers the aggregate token verb with its three grants (authorization_code, refresh_token, RFC 8693 token exchange), POST /revoke (RFC 7009) and POST /introspect (RFC 7662) as pure functions. B4674 owns the constants, sealed models, OauthError, the port traits, open_sealed and the single-use guard in module gateway_dcr. B4675 (module gateway_authorize) seals the auth code this task opens and owns is_proxy_api_resource and resolve_scoped_resource_server in its scope submodule. Import all of those, never copy them. Session tokens come from B4652 (mint_session_token, open_session_token, SessionPrincipal, OpenedSessionToken, SessionTokenKind, SessionSigningKeys, SESSION_ISSUER, SESSION_REFRESH_TTL_SECONDS and the SessionPrefix checks) and B4653 (open_session_refresh_bearer, resolve_session_signing_keys, SessionSigningConfigError).
+
+
+  Nothing here touches axum, a clock, a random source or a global. A route parses the form and passes plain values in. Every function returns a TokenReply and the route turns it into an HTTP response. The routes (POST /token and POST /{mcp_server_name}/token for gateway client ids, POST /revoke, POST /introspect behind the virtual-key dependency) belong to the umbrella and to B7321, so this task has helper cases only. The real implementations of the ports (live user reload, proxy credential minting, IdP subject token proof) are B4658 and B4663 and are wired at the composition root; this task only calls the B4674 traits.
+
+
+  Submodules, each with a tests.rs beside it. The test modules are named in the checks.
+
+
+  support. TokenReply is an enum: Json { status: u16, body: a typed serde struct, headers } for success and Error(OauthError) from B4674. Every Json reply carries B4654's TOKEN_NO_CACHE_HEADERS. The bodies are typed structs: SessionPairBody { access_token, token_type "Bearer", expires_in, refresh_token }, ProxyCredentialBody { access_token, token_type "Bearer", expires_in, refresh_token, user_id, team_id: Option (serialized as null when absent, not omitted), issued_token_type: Option (omitted when absent) }, RevokedBody (an empty object, serialized as {}) and IntrospectionBody (see introspection). SigningSetup is an enum the route builds: NoMasterKey, Invalid(SessionSigningConfigError) and Ready(SessionSigningKeys); the route gets it from B4653's resolve_session_signing_keys. signing_refusal(setup) turns the first two into 500 server_error "the gateway has no master key configured" and 500 server_error "the gateway session signing configuration is invalid". SessionEntropy is a trait with one method returning Result<[u8; 16], Unspecified> (the jti source mint_session_token wants); the composition root supplies a random-backed one and tests supply fixed bytes. pkce_verifier_matches(code_verifier, code_challenge) hashes the verifier with SHA-256 after replacing every non-ASCII character with "?" (Python's encode("ascii", "replace")), encodes the digest as base64url without padding, and compares it to the challenge bytes in constant time (a different length is false, never an error); use ring's digest and constant_time or the subtle crate, no hand-written compare. reload_failure_error(failure) maps B4674's ReloadUserFailure: unavailable 503 temporarily_unavailable with DB_UNAVAILABLE_DESCRIPTION, faulted 503 temporarily_unavailable with DB_FAULTED_DESCRIPTION, unresolvable 500 server_error "the gateway is not configured to resolve users", no_active_key 400 invalid_grant "the user for this grant is no longer active". subject_refusal_error(refusal) maps SubjectTokenRefusal: temporarily_unavailable is 503, unsupported_grant_type and invalid_request are 400, each with the refusal's own description. mint_failure_error(failure) maps ProxyCredentialMintFailure: not_a_member 400 invalid_grant "the user is no longer a member of the team this grant was issued for", team_required 400 invalid_grant "this user belongs to a team; sign in again and pick the team for this credential", and the four reload failures through reload_failure_error. The match on each enum is exhaustive with no wildcard arm.
+
+
+  issuer. GrantIssuer is built per request from: the SigningSetup keys, the resource (Option), base_url, now, and the ports as generic parameters (ReloadUser, MintProxyCredential, a SingleUseGuard from B4674). Its entry issue(principal, claim_key, claim_ttl_seconds, replayed_message) branches on principal.audience. No audience is the session pair: reload_user first (a failure goes through reload_failure_error), then the single-use claim through B4674's claim_refusal with the replayed error 400 invalid_grant and replayed_message, then both tokens are minted (access with SessionTokenKind::Session, refresh with SessionTokenKind::Refresh, both for the same principal) and the reply is 200 SessionPairBody with expires_in equal to the access token's expires_at minus now in whole seconds (3600 at the pin). A mint failure after the claim is 500 server_error "failed to mint the session credential"; the claim is not rolled back. Audience proxy_api is the proxy credential: proxy_api_target_refusal first, then mint_proxy_credential(user_id, team_id) (a MintProxyCredential failure goes through mint_failure_error), then the claim, then ProxyCredentialBody. The refresh token in that body is minted for the principal with its team_id replaced by the minted credential's team_id, so a renewal keeps the team the user consented to; access_token is the minted key, expires_in and user_id and team_id come from the minted credential. The reload for a proxy credential happens inside the mint port, so the issuer does not call reload_user on that path. proxy_api_target_refusal is None when resource is None or is_proxy_api_resource(base_url, resource) holds, else 400 invalid_target "resource does not match the proxy API this grant was issued for". exchange(subject_token, client_id, context) is the RFC 8693 tail: proxy_api_target_refusal, then exchange_subject_token(subject_token, context) (a refusal goes through subject_refusal_error), then a principal of the identity's user_id and team_id with the client id and audience proxy_api, then mint_proxy_credential, then the same ProxyCredentialBody with issued_token_type B4674's ACCESS_TOKEN_TOKEN_TYPE. There is no single-use claim on the exchange path, on purpose.
+
+
+  grants. aggregate_token(setup, form, ports, registry, cipher, now) is async and returns TokenReply. Order: signing_refusal (NoMasterKey or Invalid, before anything else, so even an unknown grant_type gets the 500 on a misconfigured gateway); then build the issuer; then dispatch on grant_type: "authorization_code", "refresh_token", B4674's TOKEN_EXCHANGE_GRANT_TYPE; anything else is 400 unsupported_grant_type "grant_type must be authorization_code, refresh_token, or urn:ietf:params:oauth:grant-type:token-exchange" (the token-exchange name is always in the text, even when the gateway cannot exchange). form is a struct of borrowed Option<&str> fields: grant_type, code, redirect_uri, client_id, code_verifier, refresh_token, resource, subject_token, subject_token_type, requested_token_type. Authorization code grant, checks in this order: code, redirect_uri or code_verifier missing or empty gives 400 invalid_request "code, redirect_uri, and code_verifier are required"; verifier length outside MIN_CODE_VERIFIER_LENGTH to MAX_CODE_VERIFIER_LENGTH (count code points) gives 400 invalid_request "code_verifier must be 43 to 128 characters (RFC 7636)"; open_sealed(code, GATEWAY_AUTH_CODE_PREFIX, GatewayAuthCode) failing gives 400 invalid_grant "the authorization code is invalid"; now (whole seconds) >= exp gives 400 invalid_grant "the authorization code has expired"; client_id or redirect_uri differing from the sealed ones gives 400 invalid_grant "the authorization code was issued to a different client"; resource_conflicts_with_scope gives 400 invalid_target "resource does not match the scope this code was issued for"; a failed pkce_verifier_matches gives 400 invalid_grant "PKCE verification failed". Then issue with a principal of the code's user_id, the request client_id, and the code's resource_server_id, audience and team_id, claim key B4674's code-used prefix plus the code jti, claim ttl = exp minus now seconds plus CLAIM_TTL_BUFFER_SECONDS, replayed message "the authorization code was already used". Refresh grant: an absent or empty refresh_token is 400 invalid_request "refresh_token is required"; B4653's open_session_refresh_bearer with the request client_id not returning SessionRefreshOpened is 400 invalid_grant "the refresh token is invalid for this client"; resource_conflicts_with_scope against the opened principal's resource_server_id gives 400 invalid_target "resource does not match the scope this token was issued for"; then issue with the opened principal, claim key B4674's refresh-used prefix plus the token jti, ttl SESSION_REFRESH_TTL_SECONDS plus CLAIM_TTL_BUFFER_SECONDS, replayed message "the refresh token was already used". The rotated refresh token keeps the old principal, so scope, audience and team survive a refresh. Token exchange grant: a client_id that fails is_gateway_dcr_client_id or does not open with open_gateway_dcr_client is 401 invalid_client "unknown or malformed client_id" (401 here, 400 in the authorize half); a missing or empty subject_token or subject_token_type is 400 invalid_request "subject_token and subject_token_type are required"; a subject_token_type outside SUBJECT_TOKEN_TYPES is 400 invalid_request "subject_token_type must be one of " plus the sorted types joined by ", "; a requested_token_type that is present and not ACCESS_TOKEN_TOKEN_TYPE is 400 invalid_request "requested_token_type must be urn:ietf:params:oauth:token-type:access_token"; then issuer.exchange. resource_conflicts_with_scope(base_url, registry, resource, sealed_resource_server_id) is false when either is None; else it resolves resource with B4675's resolve_scoped_resource_server and is true when that gives None or a server whose server_id differs from the sealed one. An unscoped grant ignores resource entirely.
+
+
+  revocation. revoke_refresh_token(token, client_id, setup, guard, cipher, now) is async. Order: unknown or malformed client_id is 401 invalid_client "unknown or malformed client_id"; then signing_refusal; then, only when open_session_refresh_bearer opens the token for this client, burn it with guard.claim on B4674's refresh-used prefix plus the jti and ttl SESSION_REFRESH_TTL_SECONDS plus CLAIM_TTL_BUFFER_SECONDS; an unavailable outcome is 503 temporarily_unavailable with CLAIM_UNAVAILABLE_DESCRIPTION. Every other case, including a garbage token, an expired token, a token of another client, an access token and an already burned token, is 200 with RevokedBody and TOKEN_NO_CACHE_HEADERS, so revocation reveals nothing about the token.
+
+
+  introspection. introspect_gateway_token(token, setup, reload_user, guard, now) is async. Order: signing_refusal, but a bad signing config here answers 500 server_error with the error's own text (see deviations); a token that is neither is_session_token nor is_session_refresh_token is the inactive reply (200, body {"active": false}); the matching open_session_token (kind Session or Refresh) failing for any reason is inactive; a refresh token is then looked up with guard.peek on B4674's refresh-used prefix plus the jti, where unavailable is 503 temporarily_unavailable with CLAIM_UNAVAILABLE_DESCRIPTION and claimed is inactive; then reload_user for the principal's user: unavailable and faulted answer 503 through reload_failure_error, unresolvable and no_active_key are both inactive (not 500 and not 400); a live user gives the active body. IntrospectionBody keys come out in this order: active true, iss SESSION_ISSUER, sub (user id), client_id, jti, iat, exp, kind ("session" or "session_refresh"), then token_type "Bearer" only for kind session, team_id, resource_server_id and audience, each only when set. The route's virtual-key dependency is not part of this task.
+
+
+  Helper adapter. The Python side builds a Starlette Request from a scope the case supplies, sets a fixed master key and salt key, registers synthetic MCPServer objects in a fresh manager for the scoped cases, patches the module's datetime so now is the case's clock, uses a real in-memory DualCache as the guard store, and passes fake reload_user, mint_proxy_credential and exchange_subject_token functions whose answers the case lists. A case may first mint a client id, an auth code or a refresh token with LiteLLM's own functions (a setup step in the case), so the token call receives a value that opens. The helper reports status, headers and the response body, but replaces every token string by what it opens to (principal, kind, iat, exp), because signatures and jti values differ run to run. The Rust side maps the same case to the functions above with a fixed SessionEntropy.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/gateway_token.rs
+    - crates/betterlite-mcp/src/gateway_token/**
+    - tools/oracle/cases/helpers/mcp-gateway-token/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-gateway-token-*
+    - tools/oracle/helpers/b4676.py
+    - tools/oracle/helpers/b4676/**
+    - tools/oracle/src/helpers/mcp/b4676.rs
+    - tools/oracle/src/helpers/mcp/b4676/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L963-L1062
+    why: The PKCE check, the claim refusal mapping and the single-use guard that B4674 ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L1066-L1177
+    why: The session pair and proxy credential bodies, the three failure mappings and the resource scope conflict test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L1179-L1253
+    why: aggregate_token, its signing checks and the grant dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L1256-L1346
+    why: The shared issuer, where reload, mint and claim happen on each path, and the token exchange tail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L1349-L1440
+    why: The authorization code, refresh token and token exchange grants with every error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L1443-L1469
+    why: Revocation and its always-200 rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L1472-L1549
+    why: The inactive and active introspection bodies and the check order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2020-L2086
+    why: How POST /token feeds the form fields and the ports to aggregate_token.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2154-L2192
+    why: How /revoke and /introspect call the functions, and that /introspect needs a virtual key.
+  - url: https://www.rfc-editor.org/rfc/rfc7009#section-2.2
+    why: Why revocation answers 200 for any token and 503 when the burn cannot be recorded.
+  - url: https://www.rfc-editor.org/rfc/rfc7662#section-2.2
+    why: Why every token the gateway cannot vouch for is just active false.
+  - url: https://www.rfc-editor.org/rfc/rfc8693#section-2.2.1
+    why: The issued_token_type field in the exchange answer.
+dod:
+  - text: The PKCE check accepts the S256 digest of the verifier, rejects a wrong or non-ASCII challenge without failing, and compares in constant time.
+    proof: [support-tests, oracle]
+  - text: A missing master key or an invalid signing configuration answers 500 before any grant is looked at, and every ReloadUserFailure, ProxyCredentialMintFailure and SubjectTokenRefusal maps to its own status, error and text.
+    proof: [support-tests, oracle]
+  - text: An authorization code grant checks the form, the verifier length, the sealed code, expiry, client and redirect binding, the resource scope and PKCE in LiteLLM's order with each message.
+    proof: [grants-tests, oracle]
+  - text: A valid code with no audience returns the session pair with a 3600 second access token, and a code with the proxy_api audience returns the proxy credential body with the minted key, user, team and a refresh token bound to the minted team.
+    proof: [issuer-tests, grants-tests, oracle]
+  - text: The single-use claim comes after the live user reload and the credential mint, so a transient 503 or a mint refusal does not burn the code, and a replayed code or refresh token is 400 invalid_grant while an unavailable record is 503.
+    proof: [issuer-tests, grants-tests, oracle]
+  - text: The refresh grant rejects a missing, invalid or other-client token and a resource conflict, rotates the pair for the same principal, and burns the old token.
+    proof: [grants-tests, oracle]
+  - text: A resource sent with a scoped code or refresh token must resolve to the sealed server or the grant is invalid_target, an unscoped grant ignores it, and a proxy_api grant requires the proxy API resource.
+    proof: [grants-tests, issuer-tests, oracle]
+  - text: The token exchange grant checks the client (401), the subject token fields, the subject token type list and the requested type, then returns the proxy credential with issued_token_type and no single-use claim.
+    proof: [grants-tests, issuer-tests, oracle]
+  - text: Revocation burns a live refresh token of the right client, answers 200 for everything else, refuses an unknown client with 401 and answers 503 when the burn cannot be recorded.
+    proof: [revoke-tests, oracle]
+  - text: Introspection answers active false for foreign, tampered, expired, burned-refresh and deactivated-user tokens, 503 for an unavailable record or database, and the full active body with optional claims for a live token.
+    proof: [introspect-tests, oracle]
+  - text: Unknown grant types answer 400 unsupported_grant_type with the three-grant text.
+    proof: [grants-tests, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: support-tests
+      why: The shared reply, PKCE and failure mapping tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_token::support::tests::/)'
+    - id: issuer-tests
+      why: The grant issuer tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_token::issuer::tests::/)'
+    - id: grants-tests
+      why: The token verb and grant tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_token::grants::tests::/)'
+    - id: revoke-tests
+      why: The revocation tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_token::revocation::tests::/)'
+    - id: introspect-tests
+      why: The introspection tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_token::introspection::tests::/)'
+    - id: helper-python
+      why: The helper adapter is missing or fails strict Python checks.
+      run: test -f tools/oracle/helpers/b4676.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b4676 operation reaches the shared helper case parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-gateway-token-*')" && grep -rlq b4676 tools/oracle/fuzz/corpus/helper_case/mcp-gateway-token-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-gateway-token/pkce-verifier.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-token/signing-setup-errors.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-token/failure-mappings.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-token/code-grant-validation.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-token/code-grant-session-pair.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-token/code-grant-proxy-credential.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-token/code-grant-claim-order.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-token/code-grant-scoped-resource.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-token/refresh-grant.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-token/refresh-grant-rotation.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-token/token-exchange-grant.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-token/unknown-grant-type.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-token/revoke.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-token/introspect-inactive.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-token/introspect-active.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-token/introspect-unavailable.yaml
+deviations:
+  - what: The signing keys, the clock, the jti source, the single-use authority, the cipher, the server registry and the request base URL are passed in. LiteLLM reads master_key, the settings, datetime.now, secrets and the proxy cache inside each function.
+    why: betterlite keeps no module state, so cases fix the clock and entropy and compare what the tokens open to, never the signed strings.
+  - what: When the signing configuration is invalid, introspection answers 500 server_error with the text of SessionSigningConfigError ("mcp_session_token_signing is misconfigured" and the like). LiteLLM answers with the Python error's detail string, which can embed a library exception message.
+    why: Typed errors have no free-form detail, and the library message is not part of the contract. Status and error code are unchanged.
+  - what: A failure to mint a token (a signing fault, a token over the size limit, a failed random source) answers 500 server_error "failed to mint the session credential" in every case. LiteLLM checks only that the result is a MintedSessionToken.
+    why: B4652 returns a typed MintError, and the same single answer keeps the wire text identical.
+out_of_scope:
+  - "gateway_dcr_flow.py constants, models, OauthError, sealing, register_aggregate_client, the port traits (ReloadUser, MintProxyCredential, ExchangeSubjectToken), the refusing defaults, supported_grant_types, ClaimOutcome, claim_refusal and the single-use guard with peek: B4674."
+  - "register, authorize, the connect flow, consent, is_proxy_api_resource, resolve_scoped_resource_server and the discovery document: B4675."
+  - "Session token minting, opening and claims: B4652. open_session_refresh_bearer and signing key resolution: B4653."
+  - "The routes /token, /{mcp_server_name}/token, /revoke and /introspect in discoverable_endpoints.py, and the server-level token exchange branch of token_endpoint: the umbrella B137 and B7321."
+  - "_reload_active_user_by_id and mint_proxy_credential: B4658. exchange_idp_subject_token: B4663."
+pitfalls:
+  - "aggregate_token checks the master key and the signing config before it looks at grant_type, so a bad config answers 500 even for an unknown grant, and a missing code answers 400 only on a healthy gateway."
+  - "The single-use claim is the last gate. The live user reload (session pair) or the proxy credential mint (proxy_api audience) runs first, so a database 503 or a team_required refusal never burns a still-valid code or refresh token."
+  - "The session pair path reloads the user itself, but the proxy_api path does not: the mint port does the reload, and calling both would double the database lookups."
+  - "The claim for an auth code lasts exp minus now plus 60 seconds, not a fixed time, so a 300 second manual-delivery code is covered for its whole life."
+  - "A refresh rotation keeps the old principal unchanged, but for a proxy credential the new refresh token carries the team_id the credential was minted for, which can differ from the one in the old token."
+  - "code_verifier length counts characters, yet the hash is taken after replacing each non-ASCII character with a single '?', so a verifier of 43 emoji is length-valid and then fails PKCE, never a panic."
+  - "The invalid_client for a token exchange is 401, while the same text from the authorize half is 400."
+  - "The exchange grant is dispatched even when the gateway has no IdP exchange configured; then B4674's RefuseSubjectToken answers 400 unsupported_grant_type 'this gateway is not configured to exchange IdP tokens', and the grant name stays in the unsupported_grant_type text of other grants."
+  - "Revocation ignores a token of the wrong family or another client and still answers 200 with {}; only the client check (401) and an unrecordable burn (503) are errors."
+  - "Introspection treats unresolvable and no_active_key as inactive, while unavailable and faulted are 503; a refresh token is peeked before the user reload, and an access token is never peeked."
+  - "Introspection does not strip a Bearer prefix and tests the llm_session_ and llm_srefresh_ prefixes literally, so 'Bearer llm_session_...' is inactive."
+  - "team_id in the proxy credential body is JSON null when the credential has no team, while resource_server_id and audience are left out of the introspection body when unset."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

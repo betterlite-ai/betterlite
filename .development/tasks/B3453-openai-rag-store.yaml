@@ -1,0 +1,198 @@
+id: B3453
+title: OpenAI RAG file upload and attachment
+description: >-
+  Build LiteLLM's OpenAIRAGIngestion in betterlite-core as module `rag::openai_ingestion`
+  (crates/betterlite-core/src/rag/openai_ingestion.rs). B3451 owns the shared ingestion state and the
+  abstract `store` contract in `rag::ingestion`; read that file first and reuse its state type,
+  its store trait and its result tuple, and do not redefine them. This task is the OpenAI
+  provider: a struct `OpenAiIngestion` that holds B3451's ingestion state plus three injected ports,
+  and implements B3451's store trait. The module must not call HTTP itself. B3460 later builds the
+  three ports on top of the SDK operations (vector store create, vector file create, file upload).
+
+  The ports are three small async traits declared here, with plain typed requests and an error type
+  `PortError` that holds the lower failure as its source and its message. `VectorStorePort::create_store`
+  takes name, `expires_after` (None, or anchor "last_active_at" plus whole days), api_key and api_base,
+  and returns the new store's id as `Option<String>` (the Python reads `response.get("id")`, so a response
+  with no id is None, not an error). `VectorFilePort::attach` takes vector_store_id, file_id, the
+  chunking strategy as the JSON value the state holds, api_key and api_base. `FileUploadPort::upload`
+  takes filename, bytes, content type, purpose, api_key and api_base and returns the new file id. The provider
+  is always "openai" and is not a port argument. api_key is a secrecy value and never shows in Debug
+  output or in an error message.
+
+  Class constants and the embed step. `supports_existing_file_id` is true (B3451's default is false;
+  B3460's pipeline reads it before OCR). The embed step is overridden to do nothing and
+  return no embeddings, because OpenAI embeds when a file joins a vector store. Expose that as a method
+  on `OpenAiIngestion` that always returns None; the unused chunks, embeddings and the two ignored store
+  arguments (chunks, embeddings) are still accepted by the store trait.
+
+  Store (openai_ingestion.py L54-L142), in this exact order. Read from the state's vector_store config:
+  vector_store_id, ttl_days, api_key, api_base. These are already merged with any stored credential by B3451,
+  so do not reload credentials. An empty vector_store_id counts as absent (Python truthiness), and ttl_days of 0
+  or null counts as absent.
+  1. existing_file_id present (non-empty) and no vector_store_id: return `OpenAiIngestionError::MissingVectorStoreId`
+     with the message "vector_store_id is required when ingesting an existing file_id". No port is called.
+  2. No vector_store_id: call `create_store` with name = the ingest name, else "litellm-rag-ingest"
+     (an empty name also falls back), expires_after = anchor "last_active_at" and days = ttl_days when
+     ttl_days is truthy, else None. The new vector_store_id is the returned id, which may be None.
+  3. existing_file_id and vector_store_id: call `attach` with that file id and the state's chunking strategy
+     and return (vector_store_id, Some(existing_file_id)). No upload happens.
+  4. Otherwise, when file_content is Some (empty bytes count as present), filename is non-empty and
+     vector_store_id is Some: call `upload` with purpose "assistants" and content type = the given one, else
+     "application/octet-stream" (an empty content type also falls back); then call `attach` with the new
+     file id and the chunking strategy. The result file id is the uploaded one.
+  5. Return (vector_store_id, result_file_id). With no file content, no filename, or a store id that create_store
+     did not return, nothing is uploaded and the result is (vector_store_id, None); a missing id gives (None, None).
+  Any port error returns at once as `OpenAiIngestionError::Port`. Nothing is rolled back: a store created
+  in step 2 stays when the upload fails, as in Python. The error then reaches B3460's pipeline,
+  which turns it into the failed-result envelope.
+
+  The chunking strategy passed to `attach` is whatever the state holds. B3451's state defaults it to the JSON
+  object {"type": "auto"} when the options give none or an empty one. Pass it unchanged, including keys such as
+  chunk_size that are meant for the local splitter.
+
+  Oracle helper. Add helper cases that replay `OpenAIRAGIngestion.store` against scripted ports. Python side:
+  construct the class with options built from the case, and patch the three names the module imports
+  (`vector_store_acreate`, `vector_store_file_acreate` and `litellm.acreate_file`) with fakes that record
+  their keyword arguments and return the scripted id or raise the scripted error. Rust side: the same script goes
+  to scripted implementations of the three ports. Both sides project the ordered port calls (which port, name,
+  expires_after, vector_store_id, file_id, filename, byte length, content type, purpose, chunking strategy,
+  api_base, and api_key as present or absent only) plus the returned tuple, or the error kind and message.
+  The skeleton creates the helper operation named after this task id; the worker writes the adapter
+  files and the case files listed in scope.
+
+  Native tests live in `rag::openai_ingestion::tests`, and the test names are fixed by the checks below.
+  The Python file has 142 lines and the class holds about 70 nonblank, non-comment lines. Allow 180
+  implementation, 200 tests, 110 adapters and 80 case and corpus lines.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/rag/openai_ingestion.rs
+    - crates/betterlite-core/src/rag/openai_ingestion/**
+    - tools/oracle/cases/helpers/openai-rag-store/**
+    - "tools/oracle/fuzz/corpus/helper_case/openai_rag_store-*"
+    - tools/oracle/helpers/b3453.py
+    - tools/oracle/helpers/b3453/**
+    - tools/oracle/src/helpers/core_ops/b3453.rs
+    - tools/oracle/src/helpers/core_ops/b3453/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/openai_ingestion.py#L22-L52
+    why: Class declaration, supports_existing_file_id=True and the no-op embed override.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/openai_ingestion.py#L54-L142
+    why: The whole store method, including the ordering of create, upload and attach.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L47-L67
+    why: Where vector_store_config, ingest_name and the auto chunking default come from.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L322-L350
+    why: The pipeline checks supports_existing_file_id, calls embed, then store, and turns exceptions into a failed result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L108-L170
+    why: acreate, the vector store create call that store() makes (owned by B1064).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L54-L104
+    why: acreate, the vector file attach call (owned by B1072).
+  - url: https://docs.litellm.ai/docs/rag_ingest
+    why: User-facing description of the OpenAI ingest options (vector_store_id, ttl_days, credentials).
+
+dod:
+  - text: OpenAiIngestion reports supports_existing_file_id true and its embed step returns no embeddings.
+    proof: [provider-flags]
+  - text: An existing file id with no vector_store_id fails with the typed missing-store-id error and calls no port.
+    proof: [existing-file-tests, oracle]
+  - text: An existing file id with a vector_store_id is attached with the state's chunking strategy and returned unchanged, with no create and no upload.
+    proof: [existing-file-tests, oracle]
+  - text: A missing vector_store_id creates a store named after the ingest name (default litellm-rag-ingest), and ttl_days that is nonzero becomes last_active_at expires_after.
+    proof: [store-create-tests, oracle]
+  - text: File bytes are uploaded with purpose assistants and the octet-stream content type default, then attached to the store, and the new file id is returned.
+    proof: [upload-attach-tests, oracle]
+  - text: No upload happens when file content, filename or the store id is missing, and a create response with no id gives (None, None).
+    proof: [upload-attach-tests, oracle]
+  - text: api_key and api_base from the vector store config reach all three ports, and api_key never appears in Debug output or error text.
+    proof: [credential-tests, oracle]
+  - text: A port error returns at once as the typed port error, and an earlier created store is not rolled back.
+    proof: [port-error-tests, oracle]
+  - text: The helper adapter passes strict lint and type checks.
+    proof: [helper-python]
+  - text: Newly added helper corpus cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: provider-flags
+      why: the existing-file flag or the no-op embed override is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::openai_ingestion::tests::flags_/)'
+    - id: existing-file-tests
+      why: the existing file id branch (error without a store id, attach without upload) is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::openai_ingestion::tests::existing_file_/)'
+    - id: store-create-tests
+      why: store creation, the default name or the ttl_days expires_after mapping is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::openai_ingestion::tests::store_create_/)'
+    - id: upload-attach-tests
+      why: upload then attach, the content type default or the skip conditions are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::openai_ingestion::tests::upload_/)'
+    - id: credential-tests
+      why: api_key and api_base are not passed to the ports or api_key leaks in Debug output
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::openai_ingestion::tests::credentials_/)'
+    - id: port-error-tests
+      why: port errors do not stop the store at once, or a created store is rolled back
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::openai_ingestion::tests::port_error_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3453)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3453 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3453/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added OpenAI store cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_rag_store-*")" &&
+        grep -lE '^[[:space:]]+b3453:' tools/oracle/fuzz/corpus/helper_case/openai_rag_store-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/openai-rag-store/existing-file-attach.yaml
+  - tools/oracle/cases/helpers/openai-rag-store/existing-file-no-store.yaml
+  - tools/oracle/cases/helpers/openai-rag-store/create-store-ttl.yaml
+  - tools/oracle/cases/helpers/openai-rag-store/create-store-default-name.yaml
+  - tools/oracle/cases/helpers/openai-rag-store/upload-and-attach.yaml
+  - tools/oracle/cases/helpers/openai-rag-store/upload-skipped.yaml
+  - tools/oracle/cases/helpers/openai-rag-store/create-without-id.yaml
+  - tools/oracle/cases/helpers/openai-rag-store/credentials-forwarded.yaml
+  - tools/oracle/cases/helpers/openai-rag-store/upload-fails-after-create.yaml
+
+deviations:
+  - what: The vector store, vector file and file upload calls run through injected ports, not through the Python SDK functions, and a failing port surfaces as a typed error whose message is the lower error's message.
+    why: The module stays testable without HTTP and keeps the dependency graph acyclic. LiteLLM's exception_type wrapping is applied by the SDK operations behind the ports, so the failed-result message B3460 returns is the same text a user sees from LiteLLM.
+
+out_of_scope:
+  - BaseRAGIngestion state, credential overlay, upload, OCR, chunk and the abstract store contract; B3451 owns them.
+  - The embed fallback in base_ingestion.py (L244-L267) and the ingest pipeline that calls embed and store; B3460 owns them.
+  - The SDK operations behind the ports (vector_stores.acreate, vector_store_files.acreate, acreate_file); B1064, B1072 and B1028 own them, and B3460 builds the three ports on them.
+  - INGESTION_REGISTRY and provider selection for "openai"; B3450 owns them and B3460 constructs the class.
+  - The HTTP route and request validation for ingest; B3462 and B3460 own them. No HTTP oracle case belongs here because no route reaches this module yet.
+
+pitfalls:
+  - The create call passes `expires_after` only when ttl_days is truthy, so ttl_days 0 sends nothing, and the anchor is always "last_active_at".
+  - The existing_file_id argument is checked before any create, so the missing-store-id error comes before a store would be made, and an existing file never reaches upload.
+  - Upload needs file_content not None, a non-empty filename and a vector_store_id; empty bytes still upload.
+  - When create_store returns no id the Python skips both upload and attach and returns (None, None) with no error.
+  - The file upload purpose is the literal "assistants", not "user_data" or "batch".
+  - The chunking strategy forwarded to attach is the state's raw value (by default the object with type set to auto), not a converted OpenAI static strategy.
+  - A store made before a failed upload is left in place; do not add cleanup.
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
