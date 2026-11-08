@@ -1,0 +1,18 @@
+kind: helper
+name: gcs-mock-delete-non-storage-url-passes-through
+call:
+  b3996:
+    environment: {GCS_MOCK: "true"}
+    original: {status: 418, body: "original-response"}
+    requests:
+      - method: delete
+        url: https://example.com/storage/v1/b/mock-bucket/o/mock-object
+        data: payload
+        json: {answer: 42}
+        params: {generation: "7"}
+        headers: {authorization: "Bearer mock-gcs-token"}
+        timeout_ms: 250
+        stream: true
+        content: chunk
+env: {}
+compare: {ignore: []}

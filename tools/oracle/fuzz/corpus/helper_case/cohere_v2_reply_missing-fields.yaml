@@ -1,0 +1,23 @@
+kind: helper
+name: cohere-v2-reply-seed-missing-fields
+call:
+  cohere_v2_reply:
+    function: reply
+    requests:
+      - body: '{"message":{"content":[]},"usage":{"tokens":{}}}'
+        status: 200
+        model: command-r
+        created: 1
+        id: seed-template
+      - body: '[]'
+        status: 500
+        model: command-r
+        created: 1
+        id: seed-template
+      - body: 'not json'
+        status: 429
+        model: command-r
+        created: 1
+        id: seed-template
+compare: {ignore: []}
+env: {}
