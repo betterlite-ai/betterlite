@@ -33,7 +33,7 @@ pub fn get_status_fields(
 ) -> StatusFields {
     let mut guardrail_status = GuardrailStatus::NotRun;
     for entry in guardrail_information.unwrap_or_default() {
-        let Some(raw) = entry.guardrail_status.as_deref() else {
+        let Some(raw) = entry.guardrail_status.as_ref().and_then(Option::as_deref) else {
             continue;
         };
         let mapped = map_status(raw);

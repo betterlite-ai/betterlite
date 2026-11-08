@@ -2,6 +2,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use serde_with::rust::double_option as nullable;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -64,87 +65,87 @@ pub type AdditionalHeaders = IndexMap<String, Json>;
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ErrorInformation {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error_code: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error_class: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub llm_provider: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub traceback: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error_message: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error_provider_request_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error_rate_limit_category: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error_rate_limit_type: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error_budget_entity_type: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error_budget_entity_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub normalized_error: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error_budget_limit: Option<DecimalValue>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error_budget_spend: Option<DecimalValue>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub error_class: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub llm_provider: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub traceback: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub error_message: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub error_provider_request_id: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub error_rate_limit_category: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub error_rate_limit_type: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub error_budget_entity_type: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub error_budget_entity_id: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub normalized_error: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub error_budget_limit: Option<Option<DecimalValue>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub error_budget_spend: Option<Option<DecimalValue>>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GuardrailInformation {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub guardrail_name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub guardrail_provider: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub guardrail_mode: Option<Json>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub guardrail_request: Option<Json>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub guardrail_response: Option<Json>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub guardrail_status: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub start_time: Option<DecimalValue>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub end_time: Option<DecimalValue>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub duration: Option<DecimalValue>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub masked_entity_count: Option<IndexMap<String, i64>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub guardrail_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub policy_template: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub detection_method: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub confidence_score: Option<DecimalValue>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub classification: Option<Json>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub match_details: Option<Json>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub patterns_checked: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub alert_recipients: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub risk_score: Option<DecimalValue>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub violation_categories: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub guardrail_action: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub guardrail_usage: Option<IndexMap<String, i64>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub guardrail_cost: Option<DecimalValue>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub guardrail_cost_by_unit: Option<IndexMap<String, Option<DecimalValue>>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub guardrail_cost_in_spend: Option<bool>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub guardrail_name: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub guardrail_provider: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub guardrail_mode: Option<Option<Json>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub guardrail_request: Option<Option<Json>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub guardrail_response: Option<Option<Json>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub guardrail_status: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<Option<DecimalValue>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<Option<DecimalValue>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub duration: Option<Option<DecimalValue>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub masked_entity_count: Option<Option<IndexMap<String, i64>>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub guardrail_id: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub policy_template: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub detection_method: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub confidence_score: Option<Option<DecimalValue>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub classification: Option<Option<Json>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub match_details: Option<Option<Json>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub patterns_checked: Option<Option<i64>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub alert_recipients: Option<Option<Vec<String>>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub risk_score: Option<Option<DecimalValue>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub violation_categories: Option<Option<Vec<String>>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub guardrail_action: Option<Option<String>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub guardrail_usage: Option<Option<IndexMap<String, i64>>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub guardrail_cost: Option<Option<DecimalValue>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub guardrail_cost_by_unit: Option<Option<IndexMap<String, Option<DecimalValue>>>>,
+    #[serde(default, with = "nullable", skip_serializing_if = "Option::is_none")]
+    pub guardrail_cost_in_spend: Option<Option<bool>>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]

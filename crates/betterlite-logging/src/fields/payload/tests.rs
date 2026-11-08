@@ -154,6 +154,33 @@ fn an_error_information_record_keeps_only_the_keys_that_were_written() {
 }
 
 #[test]
+fn a_full_error_information_record_keeps_its_null_keys() {
+    let encoded = MINIMAL.replace(
+        r#""model_parameters": {}"#,
+        r#""error_information": {"error_code": "500", "error_class": "APIError", "llm_provider": "openai", "traceback": "tb", "error_message": "boom", "error_provider_request_id": null, "error_rate_limit_category": null, "error_rate_limit_type": null, "error_budget_entity_type": null, "error_budget_entity_id": null, "error_budget_limit": null, "error_budget_spend": null, "normalized_error": null}, "model_parameters": {}"#,
+    );
+    let payload = round_trip(&encoded);
+    let information = field(&payload, "error_information");
+    assert_eq!(object_len(information), 13);
+    assert_eq!(field(information, "error_budget_entity_id"), &Json::Null);
+    assert_eq!(field(information, "normalized_error"), &Json::Null);
+}
+
+#[test]
+fn a_guardrail_record_keeps_the_keys_the_hook_set_to_null() {
+    let encoded = MINIMAL.replace(
+        r#""model_parameters": {}"#,
+        r#""guardrail_information": [{"guardrail_name": "pii", "guardrail_mode": null, "masked_entity_count": null}], "model_parameters": {}"#,
+    );
+    let payload = round_trip(&encoded);
+    let Json::List(entries) = field(&payload, "guardrail_information") else {
+        panic!("guardrail_information is not a list")
+    };
+    assert_eq!(object_len(&entries[0]), 3);
+    assert_eq!(field(&entries[0], "guardrail_mode"), &Json::Null);
+}
+
+#[test]
 fn a_guardrail_record_keeps_only_the_keys_the_hook_wrote() {
     let encoded = MINIMAL.replace(
         r#""model_parameters": {}"#,
