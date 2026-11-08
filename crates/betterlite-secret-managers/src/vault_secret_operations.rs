@@ -10,9 +10,7 @@ use crate::secret_contracts::options::{
 use crate::secret_contracts::{BaseSecretManager, RotationError, SecretFuture};
 use crate::vault::HashicorpSecretManager;
 use crate::vault::target::VaultSecretParams;
-use crate::vault::transport::{
-    MAX_RESPONSE_BYTES, VaultMethod, VaultRequest, VaultResponse, VaultTransport,
-};
+use crate::vault::transport::{MAX_RESPONSE_BYTES, VaultRequest, VaultResponse, VaultTransport};
 use error::VaultOperationError;
 use result::VaultOperationResult;
 
@@ -101,32 +99,6 @@ where
         .await
         .map_err(|_elapsed| VaultOperationError::Timeout)?;
     checked_reply::<T>(reply)
-}
-
-async fn get<T>(
-    manager: &HashicorpSecretManager<T>,
-    url: &str,
-    timeout: Duration,
-) -> Result<VaultResponse, VaultOperationError<T::Error>>
-where
-    T: VaultTransport,
-{
-    let token = manager
-        .request_token()
-        .await
-        .map_err(|source| VaultOperationError::Authentication { source })?;
-    let request = VaultRequest {
-        method: VaultMethod::Get,
-        url: url.to_owned(),
-        token: Some(token),
-        namespace: None,
-        body: None,
-        client_certificate: None,
-        timeout,
-        follow_redirects: true,
-        max_response_bytes: MAX_RESPONSE_BYTES,
-    };
-    send(manager, request).await
 }
 
 fn checked_reply<T>(

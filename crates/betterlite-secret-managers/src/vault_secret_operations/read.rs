@@ -32,7 +32,7 @@ where
     if let CachedLookup::Hit(value) = cached_lookup(manager, &target) {
         return value;
     }
-    let reply = super::get(manager, &target.url, READ_TIMEOUT).await;
+    let reply = get(manager, &target.url, READ_TIMEOUT).await;
     finish(manager, &target, reply)
 }
 
@@ -106,6 +106,32 @@ where
             ))
         },
     )
+}
+
+pub(super) async fn get<T>(
+    manager: &HashicorpSecretManager<T>,
+    url: &str,
+    timeout: Duration,
+) -> Result<VaultResponse, VaultOperationError<T::Error>>
+where
+    T: VaultTransport,
+{
+    let token = manager
+        .request_token()
+        .await
+        .map_err(|source| VaultOperationError::Authentication { source })?;
+    let request = VaultRequest {
+        method: VaultMethod::Get,
+        url: url.to_owned(),
+        token: Some(token),
+        namespace: None,
+        body: None,
+        client_certificate: None,
+        timeout,
+        follow_redirects: true,
+        max_response_bytes: MAX_RESPONSE_BYTES,
+    };
+    super::send(manager, request).await
 }
 
 fn finish<T>(

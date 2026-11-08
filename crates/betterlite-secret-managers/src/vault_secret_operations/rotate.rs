@@ -196,7 +196,7 @@ async fn fetch_staged<T>(
 where
     T: VaultTransport,
 {
-    match super::get(manager, &target.url, timeout).await {
+    match super::read::get(manager, &target.url, timeout).await {
         Ok(response) => Ok(response),
         Err(VaultOperationError::Timeout) => Err(FetchProblem::Timeout),
         Err(VaultOperationError::Status { status: 404 }) => {
