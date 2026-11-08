@@ -1,0 +1,83 @@
+id: B8633
+title: Chat streaming through the SSE data generator
+description: >-
+  LiteLLM streams /chat/completions through async_data_generator (proxy_server.py chat_completion passes select_data_generator to base_process_llm_request), so a streamed chat answer gets the client model restamp, keepalive pings, the fallback metadata event, the error frame and the disconnect cleanup (499 marks, partial-spend billing and the max_parallel_requests slot release). betterlite's chat route keeps its own relay in crates/betterlite-server/src/routes/chat/streaming.rs, which only relays the upstream SSE. This task sends the chat stream through B8604's generator, built by B8632's `stream_generator`, and implements B8605's cleanup ports for it. The chat call itself keeps going through the ChatExecutor path that B014 and B016 put the route on. Code goes in crates/betterlite-server, module `app::inference::chat_stream` (crates/betterlite-server/src/app/inference/chat_stream.rs and chat_stream/: logging.rs, snapshot.rs, tests.rs), plus edits in routes/chat.rs and routes/chat/streaming.rs. Every name stays at 30 characters or fewer.
+
+
+  Snapshot. `ChunkLog` implements B8604's `StreamSnapshot`. It is an `Arc` around a `std::sync::Mutex<CollectedStream>`; a poisoned lock is recovered from the PoisonError, never unwrapped. The relay records each chunk JSON object it hands to the generator, the request's `messages` when they are a list, and the model the call sent upstream, which is what LiteLLM's CustomStreamWrapper keeps in chunks, messages and model. collected() returns a copy.
+
+
+  Cleanup ports. `ChatRequestLogging` implements B8605's `RequestLogging` for one request: it holds the request's logging object that B012 creates in the chat route (B247's type in crates/betterlite-logging/src/logging_state.rs), so the request_data argument only supplies litellm_call_id for log lines. call_details and edit_call_details read and edit its model_call_details; deferred_logging_armed asks B6370's parked stream logging whether both deferred fields are set; fire_deferred_logging is B6370's serve_log::fire; baseline_cache_active is whether the object holds B342's baseline cache context, and invalidate_baseline calls B342's invalidate_baseline_cache (crates/betterlite-server/src/routing/routing_baselines.rs) with the reason and the completed flag; assemble_partial is B2227's stream_chunk_builder (betterlite-streaming streamed_response_assembly.rs) given the chunks, the messages and the logging object; dispatch_success is B250's dispatch_success_handlers (betterlite-logging logging_success.rs) with cache_hit false, no start or end time and async handlers preferred. A request without a logging object answers None, false or Ok(()) as B8605's port docs say. `ProxySlotRelease` implements `SlotRelease<Key>` by calling B2400's _arelease_max_parallel_requests_on_disconnect through the port B8399 exposes on `state.shared.proxy_logging`. For each streamed chat request the route builds B8605's `DisconnectCleanup` with these two, a clone of `state.shared.http.tracker` (the ProxiedClient's TaskTracker, which the server drains on shutdown) and `config.sections.streaming_logging.disable`, then calls B8632's `stream_generator(state, cleanup)`.
+
+
+  Config. `config.sections.streaming_logging.disable` is litellm_settings.disable_streaming_logging (default false), loaded by B5654's streaming_logging section; this task only reads it.
+
+
+  Route edits. In routes/chat.rs, right after the request data is built (B1103's preparation, the step that matches add_litellm_data_to_request), call B8605's `drop_fallback_errors_flag(&config.sections.fallback_errors, &mut data)` for every chat request, streamed or not, before routing. In routes/chat/streaming.rs, replace the byte relay for real and mock streams: parse the upstream SSE with the existing SseParser, turn each event into `StreamItem::Chunk` (kind ModelStream, body the chunk JSON, hidden the deployment's `model_id` plus the response's additional headers), keep a `[DONE]` event out of the items (the generator writes its own), record each chunk in the ChunkLog, and give the generator a `StreamSource { items, hidden, snapshot: Some(chunk_log) }` with the request data, the caller key and the request parts; the body is the generator's stream. Upstream errors before the first byte keep their current non-streaming error response. Headers stay as stream_headers builds them. Update the existing tests under routes/chat/ whose expected bodies change.
+
+
+  Proof. HTTP oracle cases through the booted proxy in tools/oracle/cases/chat/stream-generator/: restamp-client-model (model_name `oracle-alias` routed to `openai/gpt-4o-mini`, upstream chunks carry `"model": "gpt-4o-mini-2024-07-18"`, every streamed chunk comes back with `"model": "oracle-alias"`), null-fields-dropped (upstream chunks carry `"logprobs": null` and `"system_fingerprint": null` in the delta and choice, and the body matches LiteLLM's) and include-fallback-errors-dropped (the request carries `"include_fallback_errors": true` with no expose setting and the stream matches LiteLLM's). The existing chat stream cases must keep passing, so they are listed in oracle_cases too. The oracle mock upstream has no per-event delay, so the keepalive ping is proven by the Rust test `app::inference::chat_stream::tests::quiet_upstream_gets_ping`: boot the application against a local upstream that sends one chunk, waits 1.5 seconds and finishes, with the deployment's `keepalive_seconds: 1`, and assert one `: ping` frame sits between the two chunks. Other tests: a dropped body runs the cleanup once with client_disconnected true, releases the slot once when billing is off, and ChunkLog returns the chunks in order.
+scope:
+  paths:
+  - crates/betterlite-server/src/app/inference/chat_stream.rs
+  - crates/betterlite-server/src/app/inference/chat_stream/**
+  - crates/betterlite-server/src/routes/chat.rs
+  - crates/betterlite-server/src/routes/chat/**
+  - tools/oracle/cases/chat/stream-generator/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L12016
+  why: The chat_completion route, its four paths and the select_data_generator it passes to base_process_llm_request.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9830-L10079
+  why: async_data_generator, the body a streamed chat answer gets.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3808-L3864
+  why: _finalize_streaming_generator_cleanup, what the cleanup ports serve.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2025-L2045
+  why: The include_fallback_errors drop right after add_litellm_data_to_request.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L337
+  why: disable_streaming_logging and its default.
+dod:
+- text: A streamed chat answer goes through the SSE data generator, with the chunk model restamped to the client model and null fields dropped as LiteLLM does.
+  proof: [chat-stream-tests, stream-cases, oracle]
+- text: The existing chat streaming behavior (tool calls, usage chunk, upstream 500 before the first byte) still matches LiteLLM.
+  proof: [chat-stream-tests, oracle]
+- text: include_fallback_errors is removed from every chat request unless general_settings.expose_fallback_errors_to_caller is true.
+  proof: [chat-stream-tests, stream-cases, oracle]
+- text: 'A quiet upstream gets a ": ping" frame when the deployment sets keepalive_seconds.'
+  proof: [chat-stream-tests]
+- text: A body dropped mid-stream runs B8605's cleanup once on the server's tracker with ChunkLog's chunks, and the slot is released once.
+  proof: [chat-stream-tests]
+checks:
+  optional: []
+  commands:
+  - id: chat-stream-tests
+    why: the chat stream bypasses the generator, a cleanup port is wrong, the ping never comes or an existing chat test breaks
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::chat_stream::/) | test(/^routes::chat::/)'
+  - id: stream-cases
+    why: without new case files the oracle compares nothing new for the chat stream
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/chat/stream-generator)"
+oracle_cases:
+- tools/oracle/cases/chat/stream-generator/restamp-client-model.yaml
+- tools/oracle/cases/chat/stream-generator/null-fields-dropped.yaml
+- tools/oracle/cases/chat/stream-generator/include-fallback-errors-dropped.yaml
+- tools/oracle/cases/chat/openai-stream.yaml
+- tools/oracle/cases/chat/openai-stream-usage.yaml
+- tools/oracle/cases/chat/openai-stream-tools.yaml
+- tools/oracle/cases/chat/stream-upstream-500.yaml
+deviations:
+- what: The keepalive heartbeat on /chat/completions has no oracle case, only a Rust test against a local upstream.
+  why: The oracle's mock upstream sends all events at once and has no per-event delay.
+out_of_scope:
+- "The generator, chunk helpers, keepalive and cleanup logic: B8604, B8602, B8603 and B8605. The hook, error state and keepalive router adapters and the builder: B8632."
+- "The chat call itself (ChatExecutor, B014's dispatch and B016's route pipeline): this task does not move the call to RouterCompletion."
+- "The streaming_logging section and its readers inside CustomStreamWrapper (streaming_handler.py L1692, L1798): B5654."
+pitfalls:
+- 'The upstream [DONE] event must not reach the generator as a text item, or the client gets two DONE frames.'
+- 'The include_fallback_errors drop runs for non-streamed chat too, since LiteLLM does it in the shared pre-call step.'
+- 'The mock stream path (mock_response) goes through the generator as well; LiteLLM streams mock responses through the same generator.'
+- 'ChunkLog must not borrow the item stream; the cleanup reads it after the stream is dropped.'
+- 'stream_headers stay as they are; the generator only changes the body.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

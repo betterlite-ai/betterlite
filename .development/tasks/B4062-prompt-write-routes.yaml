@@ -15,7 +15,6 @@ scope:
   paths:
     - crates/betterlite-server/src/routes/prompts/write.rs
     - crates/betterlite-server/src/routes/prompts/write/tests.rs
-    - tools/oracle/cases/prompts/write/**
     - tools/oracle/helpers/b4062.py
     - tools/oracle/helpers/b4062/**
     - tools/oracle/src/helpers/server/b4062.rs
@@ -50,7 +49,7 @@ dod:
     proof: [delete-permission-checks, delete-db-missing, delete-not-found, delete-config-protection]
   - text: "DELETE /prompts/{prompt_id} removes all database rows for base_prompt_id (optionally scoped by environment), then calls delete_prompts_by_base_id on the registry, and returns a success message."
     proof: [delete-db-remove, delete-registry-remove, delete-success-message]
-  - text: "Every route verifies through the booted proxy, including status/code/type on error and 500 for failed registry initialization after successful database write, with no helper adapter invoking these handlers."
+  - text: "The handlers are tested with tower's oneshot over the module's own Router and fake ports; B8672 runs the HTTP oracle cases through the booted proxy."
     proof: [oracle-cases-prompts-write]
 checks:
   optional: []
@@ -152,8 +151,8 @@ checks:
       why: "the delete route does not return a success message"
       run: grep -q "message.*deleted\|successfully" crates/betterlite-server/src/routes/prompts/write.rs
     - id: oracle-cases-prompts-write
-      why: "the oracle cases for these routes fail, are missing, or booted-proxy tests fail"
-      run: test -d tools/oracle/cases/prompts/write && test "$(find tools/oracle/cases/prompts/write -name '*.yaml' | wc -l)" -ge 8 && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::server::b4062::(.*::)?oracle::prompts::write::/)'
+      why: the handlers are not tested with tower's oneshot over the module's own Router and fake ports
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::prompts::write::tests::oneshot_/)'
 pitfalls:
   - "POST and PUT both allocate next version but only PUT strips the version suffix from the incoming prompt_id; POST accepts it without stripping."
   - "PATCH defaults environment to development via prompt_environment_or_default, but PUT uses the request's environment or defaults the same way; the same function should be used."
@@ -163,30 +162,7 @@ pitfalls:
   - "Ambiguous prompt data is checked against litellm_params when is_ambiguous_keyed_prompt_data(request.litellm_params) is true, not on prompt_info; the check prevents field names containing `: ` (literal colon-space)."
   - "PATCH merges supplied litellm_params and prompt_info with the latest row; both are Optional in the request, and None means keep the current value."
   - "Environment is optional in DELETE (query parameter) and defaults to None (meaning all environments); when supplied, only rows matching that environment are deleted."
-oracle_cases:
-  - tools/oracle/cases/prompts/write/create_prompt_success.yaml
-  - tools/oracle/cases/prompts/write/create_prompt_not_admin.yaml
-  - tools/oracle/cases/prompts/write/create_prompt_no_database.yaml
-  - tools/oracle/cases/prompts/write/create_prompt_ambiguous_data.yaml
-  - tools/oracle/cases/prompts/write/update_prompt_success.yaml
-  - tools/oracle/cases/prompts/write/update_prompt_not_admin.yaml
-  - tools/oracle/cases/prompts/write/update_prompt_not_found.yaml
-  - tools/oracle/cases/prompts/write/update_prompt_config_protection.yaml
-  - tools/oracle/cases/prompts/write/update_prompt_ambiguous_data.yaml
-  - tools/oracle/cases/prompts/write/update_prompt_version_suffix_stripping.yaml
-  - tools/oracle/cases/prompts/write/patch_prompt_success.yaml
-  - tools/oracle/cases/prompts/write/patch_prompt_not_admin.yaml
-  - tools/oracle/cases/prompts/write/patch_prompt_not_found.yaml
-  - tools/oracle/cases/prompts/write/patch_prompt_config_protection.yaml
-  - tools/oracle/cases/prompts/write/patch_prompt_environment_default.yaml
-  - tools/oracle/cases/prompts/write/patch_prompt_version_suffix_resolution.yaml
-  - tools/oracle/cases/prompts/write/patch_prompt_partial_update.yaml
-  - tools/oracle/cases/prompts/write/delete_prompt_success.yaml
-  - tools/oracle/cases/prompts/write/delete_prompt_not_admin.yaml
-  - tools/oracle/cases/prompts/write/delete_prompt_not_found.yaml
-  - tools/oracle/cases/prompts/write/delete_prompt_config_protection.yaml
-  - tools/oracle/cases/prompts/write/delete_prompt_environment_scoped.yaml
-  - tools/oracle/cases/prompts/write/registry_init_failure_after_db_write.yaml
+oracle_cases: []
 deviations:
   - what: "Failed registry initialization (initialize_prompt or reload_prompt returning None) after a successful database write is reported as 500 without rolling back the database transaction."
     why: "LiteLLM keeps the database write even when registry initialization fails; betterlite preserves this behavior to surface the failure rather than hiding it with rollback semantics."

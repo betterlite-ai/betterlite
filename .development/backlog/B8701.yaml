@@ -1,0 +1,13 @@
+id: B8701
+milestone: M9 agents and mcp
+title: Mount the /v1/mcp toolset and gateway session routes
+status: todo
+depends_on: [B8620, B8621, B8610, B4681, B4717, B4725, B6591, B8723, B8728]
+file: tasks/B8701-mcp-toolset-mount.yaml
+covers: []
+parent: B139
+split_from: B139
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

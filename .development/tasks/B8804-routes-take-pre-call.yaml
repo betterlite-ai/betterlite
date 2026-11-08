@@ -1,0 +1,58 @@
+id: B8804
+title: B1100 route modules take the production pre-call step
+description: >-
+  Fifteen B1100 route modules run B8801's shared pre-call step, but they cannot depend on B8802, which sits on the shared server state that already reaches the routes. So each one keeps `Arc<dyn PreCall<UserAPIKeyAuth>>` in its route state and builds `PreCallStep::standalone` in its routes(state) function. This task swaps in the production step after the routes are done, the way B8636 swaps the stream generator. Every name stays at 30 characters or fewer.
+
+  Edits. In each routes(state) function below, replace only the `PreCallStep::standalone(..)` construction with `app::inference::pre_call_step(state)` (B8802), built once per routes call; handlers and their tests stay as their owners wrote them. The files: routes/responses.rs (B080; B8636 also edits this function, keep its edit), routes/anthropic_messages.rs (B081), routes/image.rs (B082), routes/video_create.rs (B3343), routes/video_content_remix.rs (B3344), routes/video_character.rs (B3345), routes/video_edit.rs (B6360), routes/responses_ws_auth.rs (B941), routes/realtime_websocket.rs (B1125) routes/batch_read.rs (B1051), routes/containers.rs (B7326), routes/container_files.rs (B3372), routes/responses_read.rs (B938), routes/responses_input_tokens.rs (B939) and routes/cursor_responses_compat.rs (B940; B8635 and B8636 also edit this function, keep their edits), all under crates/betterlite-server/src. After the edit no file under crates/betterlite-server/src/routes names PreCallStep::standalone.
+
+  Tests go in crates/betterlite-server, module `app::inference::route_pre_call` (app/inference/route_pre_call.rs and route_pre_call/tests.rs), and drive the real routers through tower's oneshot with a ServerState built from a config.yaml that has a blocking pre_call `generic_guardrail_api` guardrail and a model_alias_map entry: POST /v1/responses, /v1/messages and /v1/images/generations are blocked by the guardrail (only the production step runs hooks), and an aliased model reaches the mock upstream under its target name.
+scope:
+  paths:
+    - crates/betterlite-server/src/routes/responses.rs
+    - crates/betterlite-server/src/routes/anthropic_messages.rs
+    - crates/betterlite-server/src/routes/image.rs
+    - crates/betterlite-server/src/routes/video_create.rs
+    - crates/betterlite-server/src/routes/video_content_remix.rs
+    - crates/betterlite-server/src/routes/video_character.rs
+    - crates/betterlite-server/src/routes/video_edit.rs
+    - crates/betterlite-server/src/routes/responses_ws_auth.rs
+    - crates/betterlite-server/src/routes/realtime_websocket.rs
+    - crates/betterlite-server/src/routes/batch_read.rs
+    - crates/betterlite-server/src/routes/containers.rs
+    - crates/betterlite-server/src/routes/container_files.rs
+    - crates/betterlite-server/src/routes/responses_read.rs
+    - crates/betterlite-server/src/routes/responses_input_tokens.rs
+    - crates/betterlite-server/src/routes/cursor_responses_compat.rs
+    - crates/betterlite-server/src/app/inference/route_pre_call.rs
+    - crates/betterlite-server/src/app/inference/route_pre_call/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1913-L2241
+    why: The pre-call every one of these routes runs before routing.
+dod:
+  - text: All fifteen route modules build the production pre-call step, and no route module builds the standalone one.
+    proof: [no-standalone, route-tests]
+  - text: Responses, Anthropic messages and image generation requests are blocked by a pre_call guardrail and see the model alias map through the production step.
+    proof: [route-tests]
+checks:
+  optional: []
+  commands:
+    - id: no-standalone
+      why: a route module still runs the stand-in step with no hooks or router
+      run: "! grep -rq 'PreCallStep::standalone' crates/betterlite-server/src/routes"
+    - id: route-tests
+      why: a route still runs the stand-in step or the production step is not reached
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::route_pre_call::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The handlers and their own HTTP cases: the route tasks listed above. The production step: B8802."
+  - "Routes whose state a wiring part builds pass pre_call_step(state) themselves: B8648 (A2A), B8694 (pass-through) and the mounting parts of the api-only route tasks B3371, B3426, B3427, B3428, B3507, B3508 and B4728."
+pitfalls:
+  - "routes/responses.rs is also edited by B8636 in the same function; change only the pre-call construction line."
+  - "Build the step once per routes(state) call, not per request; the ports hold the router and ProxyLogging handles."
+  - "Until this task merges, these routes run the standalone step with no pre_call_hook, so rate limits, budgets and pre_call guardrails do not apply to them."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,6 +1,9 @@
 id: B789
 title: Password change and UI session revocation
 description: >-
+  Breach checks. routes(state) builds one BreachChecker the way B899 does (config.sections.password_policy, HIBP_RANGE_API_BASE, HIBP_TIMEOUT, ProxiedClient::outbound) and passes it to B786's breach check. A route task cannot read Shared.
+
+
   Own every function in password_endpoints.py L52-L170 and session_endpoints.py L48-L175,
   registering POST /user/password/change and POST /session/logout exactly once. Neither uses
   management_endpoint_wrapper: password values must never reach generic management span kwargs.
@@ -55,7 +58,7 @@ description: >-
   Logout has no catch: archive failure leaves the live row; delete failure leaves an archive;
   cache failure leaves deletion committed and does not reach cookie clearing. Cases
   logout_archive_failure, logout_delete_failure and logout_cache_failure compare those effects.
-  Unexpected errors use the server's outer 500 internal_server_error message/type envelope (openai_exception_handler; the wave 17 server wiring part mounts it) without
+  Unexpected errors use the server's outer 500 internal_server_error message/type envelope (otel_unhandled_exception_handler; B8680 installs it in app::edge::wrap) without
   param/code, except B731 database-unavailability classification. There is no overall transaction.
 
   B001 route cases run against booted proxies and independent Postgres schemas, using

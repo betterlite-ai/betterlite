@@ -5,7 +5,7 @@ description: >-
   Every route needs a valid virtual key (B052's authentication, LiteLLM's user_api_key_auth). Each route ends by building B3615's create_pass_through_route handler, calling it with the request, the response and the authenticated key, and returning its result unchanged.
   Values come from injected parts, never from globals or the process environment: the secret reader of B002 (LiteLLM's get_secret_str), B3602's get_credentials, the general_settings map, B594's credential resolver, B595's signer, B198's get_aws_dns_suffix, B3645's TranscribeJobLookup and B3615's handler factory. The module declares one small trait, `SpeechRates`, with `cost_per_second() -> Option<Decimal>`; B102's wiring implements it with B3644's transcribe_cost_per_second over the model cost catalog (the same split B3646 uses). Every name below is at most 30 characters; LiteLLM's longer names are renamed on purpose.
 
-  Routes. `/azure_speech/{*endpoint}` takes GET, POST, PUT, DELETE and PATCH, and `/azure_speech/` (empty endpoint) is registered for the same five methods. `/transcribe/{operation}` and `/transcribe` take POST only; any other method is axum's 405. There is no /v1 or other alias. The architect adds the routes to the server route table once. The architect also adds betterlite-transcribe to betterlite-server's dependencies.
+  Routes. `/azure_speech/{*endpoint}` takes GET, POST, PUT, DELETE and PATCH, and `/azure_speech/` (empty endpoint) is registered for the same five methods. `/transcribe/{operation}` and `/transcribe` take POST only; any other method is axum's 405. There is no /v1 or other alias. Expose them as one axum router; B8607 merges it into the app once. The architect also adds betterlite-transcribe to betterlite-server's dependencies.
 
   Azure constants (LiteLLM keeps them in constants.py, which no task owns, so define them here as Rust consts): provider "azure_speech", route prefix "/azure_speech", short audio path prefix "/speech/", batch path prefix "/speechtotext/", fast transcription path "/speechtotext/transcriptions:transcribe", STT domain "stt.speech.microsoft.com", cognitive services domain "api.cognitive.microsoft.com", subscription key header "Ocp-Apim-Subscription-Key". `AZURE_SPEECH_FAMILIES` is the ordered pair (short audio prefix, STT domain), (batch prefix, cognitive services domain). The forwarded caller headers are `content-type` and `accept`.
 
@@ -43,7 +43,7 @@ description: >-
 
   Fuzz. azure_speech_clean_path takes route text from outside, so add the cargo-fuzz target crates/betterlite-server/fuzz/fuzz_targets/azure_speech_clean_path.rs (register its [[bin]] in the fuzz Cargo.toml like the existing targets). It feeds arbitrary UTF-8 text to the function and asserts the result starts with one `/` and has no `.` segment, no `..` segment and no `//`. Add seed files under crates/betterlite-server/fuzz/corpus/azure_speech_clean_path/ (dot segments, repeated slashes, `%2e%2e`, `%3F`, a trailing slash, the empty string) and the test passthrough_speech_routes::tests::replays_corpus that feeds every seed to the same function and asserts the same property.
 
-  Tests. Rust tests live in tests.rs under passthrough_speech_routes::tests and use fakes: a recording fake for the secret reader, one for get_credentials, one for the handler factory (so a test sees the exact endpoint, target, custom headers, custom_llm_provider, streaming flag and state values it was called with), one for the signer and one for JobLookup. Test groups are route_table, azure_path, azure_base_url, azure_guard, azure_forward, transcribe_checks, transcribe_policy, transcribe_signing and transcribe_sdk. HTTP oracle cases are named below; the cases that reach the Azure forward use the mock upstream through `{{upstream}}`, set as AZURE_SPEECH_API_BASE under `environment_variables` in the case's config text. The oracle master key is a proxy admin, so the admin guard branches are proven by the Rust tests, not by HTTP cases. The Transcribe upstream is the fixed AWS host, so no Transcribe case reaches it; its cases stop at a 400.
+  Tests. Rust tests live in tests.rs under passthrough_speech_routes::tests and use fakes: a recording fake for the secret reader, one for get_credentials, one for the handler factory (so a test sees the exact endpoint, target, custom headers, custom_llm_provider, streaming flag and state values it was called with), one for the signer and one for JobLookup. Test groups are route_table, azure_path, azure_base_url, azure_guard, azure_forward, transcribe_checks, transcribe_policy, transcribe_signing and transcribe_sdk. The HTTP oracle cases moved to B8607, which mounts these routes; the cases that reach the Azure forward use the mock upstream through `{{upstream}}`, set as AZURE_SPEECH_API_BASE under `environment_variables` in the case's config text. The oracle master key is a proxy admin, so the admin guard branches are proven by the Rust tests, not by HTTP cases. The Transcribe upstream is the fixed AWS host, so no Transcribe case reaches it; its cases stop at a 400.
 scope:
   paths:
     - crates/betterlite-server/src/passthrough_speech_routes.rs
@@ -51,7 +51,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/azure_speech_clean_path.rs
     - crates/betterlite-server/fuzz/corpus/azure_speech_clean_path/**
-    - tools/oracle/cases/server/passthrough-speech-routes/**
     - tools/oracle/helpers/b3625.py
     - tools/oracle/helpers/b3625/**
     - tools/oracle/src/helpers/server/b3625.rs
@@ -83,6 +82,8 @@ references:
   - url: https://docs.litellm.ai/docs/pass_through/transcribe
     why: "User-facing description of the Transcribe route."
 dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports. B8607 mounts the routes and proves them over HTTP with the oracle cases that were listed here.
+    proof: [route-table-tests]
   - text: /azure_speech/{endpoint} and /azure_speech/ take GET, POST, PUT, DELETE and PATCH, and /transcribe/{operation} and /transcribe take only POST.
     proof: [route-table-tests]
   - text: "azure_speech_clean_path cuts at ? and #, percent-decodes, resolves dot segments and repeated slashes, keeps a trailing slash and always returns one leading slash."
@@ -90,19 +91,19 @@ dod:
   - text: resolve_azure_speech_base_url picks the family by prefix, lets api_base win over the region, builds https://{region}.{domain} otherwise, and returns None for an unknown prefix or when neither api_base nor region is set.
     proof: [azure-base-tests]
   - text: The Azure route answers 400 for an unsupported path, then 403 for a non-admin key on a batch path (every /speechtotext/ path except the fast transcription path), then 400 for a missing key, in that order, with the exact detail texts.
-    proof: [azure-guard-tests, oracle]
+    proof: [azure-guard-tests]
   - text: The Azure route builds the target from the base and the cleaned path, sends only content-type, accept and Ocp-Apim-Subscription-Key upstream, never the caller's Authorization, passes the original endpoint, provider azure_speech and no streaming flag to the factory, and sets the raw body state value.
-    proof: [azure-forward-tests, oracle]
+    proof: [azure-forward-tests]
   - text: The cleaned path never holds a dot segment, a double slash or a missing leading slash, and the decoder has a fuzz target and a corpus added on this branch.
     proof: [path-corpus]
   - text: The Transcribe route checks in order the operation, the region (three env vars in order), the body read, the object shape, the stream key and the unpriceable reason, each with its exact 400 text.
-    proof: [transcribe-checks-tests, oracle]
+    proof: [transcribe-checks-tests]
   - text: The Transcribe route runs the admin-only, bucket, owner-tag and job-access policies of B3644 in LiteLLM's order and only for the operations LiteLLM names, and turns each refusal into its own status and detail.
     proof: [transcribe-policy-tests]
   - text: The Transcribe route signs the serialized body for service transcribe with the Transcribe.{operation} target header, passes only the signed headers and provider transcribe to the factory, uses the operation as the endpoint, and sets both request-state values (owner-tagged body and exact signed bytes).
     proof: [transcribe-signing-tests]
   - text: transcribe_sdk_route reads x-amz-target case-insensitively, rejects a wrong prefix or empty operation with the exact 400 text, and forwards the part after the first dot.
-    proof: [transcribe-sdk-tests, oracle]
+    proof: [transcribe-sdk-tests]
 checks:
   optional: []
   commands:
@@ -136,20 +137,7 @@ checks:
     - id: transcribe-sdk-tests
       why: the SDK route reads the wrong header, splits at the wrong dot or has the wrong 400 text
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_speech_routes::tests::transcribe_sdk(::|$)/)'
-oracle_cases:
-  - tools/oracle/cases/server/passthrough-speech-routes/azure-unsupported-path.yaml
-  - tools/oracle/cases/server/passthrough-speech-routes/azure-no-region.yaml
-  - tools/oracle/cases/server/passthrough-speech-routes/azure-no-credentials.yaml
-  - tools/oracle/cases/server/passthrough-speech-routes/azure-short-audio-forward.yaml
-  - tools/oracle/cases/server/passthrough-speech-routes/azure-batch-admin-forward.yaml
-  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-unsupported-operation.yaml
-  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-no-region.yaml
-  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-body-not-object.yaml
-  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-stream-member.yaml
-  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-unpriced-operation.yaml
-  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-sdk-missing-target.yaml
-  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-sdk-wrong-prefix.yaml
-  - tools/oracle/cases/server/passthrough-speech-routes/transcribe-sdk-empty-operation.yaml
+oracle_cases: []
 deviations:
   - what: "Settings and environment variables arrive through injected parts (the secret reader, the general_settings map, the credential and signer traits), not from proxy globals or os.environ."
     why: "betterlite wires dependencies through constructors; a client sees the same values."

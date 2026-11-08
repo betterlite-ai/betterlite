@@ -95,7 +95,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/policy_crud_request.rs
     - crates/betterlite-server/fuzz/corpus/policy_crud_request/**
-    - tools/oracle/cases/policies/crud/**
     - tools/oracle/helpers/b3248.py
     - tools/oracle/helpers/b3248/**
     - tools/oracle/src/helpers/server/b3248.rs
@@ -126,10 +125,10 @@ dod:
   - text: >-
       GET /policies/list returns database rows first and then config policies not hidden by a production database row, adds config rows only when
       version_status is absent or production, and builds each config row with LiteLLM's field values.
-    proof: [config-tests, policy-route-tests, oracle]
+    proof: [config-tests, policy-route-tests]
   - text: >-
       GET /policies/attachments/list returns database rows first and then config attachments with ids config-<index> and definition_location config.
-    proof: [config-tests, attachment-route-tests, oracle]
+    proof: [config-tests, attachment-route-tests]
   - text: >-
       POST /policies returns the created row, answers 400 `Policy with name '<name>' already exists` for a unique-constraint failure and 500 for
       other failures.
@@ -152,12 +151,14 @@ dod:
     proof: [attachment-route-tests]
   - text: >-
       Every database route answers 500 `Database not connected` with no database, after the body validation, and a bad or missing body is 422.
-    proof: [policy-route-tests, attachment-route-tests, oracle]
+    proof: [policy-route-tests, attachment-route-tests]
   - text: >-
       The three body decoders reject malformed bytes and wrong shapes (including a priority outside the int32 range) without panicking and have
       committed corpus inputs.
     proof: [body-tests, request-corpus]
 
+  - text: The handlers are tested with tower's oneshot over the module's own Router and fake ports. B8669 mounts the routes and owns their HTTP oracle cases, so write no HTTP case here.
+    proof: [policy-route-tests]
 checks:
   optional: []
   commands:
@@ -177,21 +178,7 @@ checks:
       why: the body decoders have no committed malformed-input regressions or no replay test
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/policy_crud_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_policy_crud_request_corpus)'
 
-oracle_cases:
-  - tools/oracle/cases/policies/crud/list-policies-empty-200.yaml
-  - tools/oracle/cases/policies/crud/list-attachments-empty-200.yaml
-  - tools/oracle/cases/policies/crud/create-policy-no-database-500.yaml
-  - tools/oracle/cases/policies/crud/create-policy-missing-name-422.yaml
-  - tools/oracle/cases/policies/crud/get-policy-no-database-500.yaml
-  - tools/oracle/cases/policies/crud/update-policy-no-database-500.yaml
-  - tools/oracle/cases/policies/crud/update-policy-bad-type-422.yaml
-  - tools/oracle/cases/policies/crud/delete-policy-no-database-500.yaml
-  - tools/oracle/cases/policies/crud/resolved-guardrails-no-database-500.yaml
-  - tools/oracle/cases/policies/crud/create-attachment-no-database-500.yaml
-  - tools/oracle/cases/policies/crud/create-attachment-bad-priority-422.yaml
-  - tools/oracle/cases/policies/crud/get-attachment-no-database-500.yaml
-  - tools/oracle/cases/policies/crud/delete-attachment-no-database-500.yaml
-  - tools/oracle/cases/policies/crud/list-policies-no-auth-401.yaml
+oracle_cases: []
 
 deviations:
   - what: GET `/policies/attachments/resolved-guardrails` reaches the attachment route (attachment id `resolved-guardrails`) and answers as a missing attachment. In LiteLLM it reaches the resolved-guardrails route for a policy whose id is `attachments`.

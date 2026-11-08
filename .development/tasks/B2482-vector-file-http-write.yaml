@@ -19,7 +19,7 @@ scope:
   - crates/betterlite-core/src/api/vector_file_http_write.rs
   - crates/betterlite-core/src/api/vector_file_http_write/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/vector_file_write_transport.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/vector_file_write_transport.py
   - tools/oracle/cases/sdk-http/vector-file-write-transport/**

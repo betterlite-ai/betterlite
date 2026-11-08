@@ -1,6 +1,9 @@
 id: B3695
 title: Content filtering actions and ordered text evaluation
 description: >-
+  B3693's pattern_matching module now lives in betterlite-guardrails (the wave 17 skeleton moved it out of the top crate), so this task lives there too and calls it as crate::pattern_matching.
+
+
   Build the action handlers for content filter detection and the single-text evaluator
   that applies all content filtering checks in sequence: conditional categories, phrase
   patterns, category keywords, regex patterns and blocked words. Each handler appends
@@ -24,8 +27,8 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite/src/guardrails/content_filter_actions.rs
-    - crates/betterlite/src/guardrails/content_filter_actions/**
+    - crates/betterlite-guardrails/src/content_filter_actions.rs
+    - crates/betterlite-guardrails/src/content_filter_actions/**
   lint_tables: false
 
 references:
@@ -80,7 +83,7 @@ checks:
     - id: action-handler-tests
       why: Action handler logic or filter orchestration fails or does not exist
       run: |-
-        cargo nextest run --locked -p betterlite --no-tests=fail \
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail \
           -E 'test(/::content_filter_actions_behavior($|::)/)'
 
 oracle_cases: []
@@ -96,7 +99,7 @@ out_of_scope:
   - B3694 owns _check_conditional_categories, _check_phrase_patterns, _check_category_keywords; this task calls them.
   - B3692 owns category loading and _load_categories; this task only reads loaded_categories.
   - B3698 handles detection logging and risk calculation; this task only appends to detections list.
-  - Final guardrail constructor and initialization (B105).
+  - Final guardrail constructor and apply_guardrail (B8773); initializer arguments (B8219).
 
 pitfalls:
   - Conditional matches and phrase patterns both call handle_conditional_match with identical error detail structure (error, category, matched_phrase, severity), making the two call sites indistinguishable at the handler level. Do not implement a field-name branch between the two.

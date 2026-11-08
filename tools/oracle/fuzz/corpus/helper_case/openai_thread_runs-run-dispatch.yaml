@@ -1,0 +1,5 @@
+kind: helper
+name: openai-thread-runs-seed-run-dispatch
+call: {openai_thread_runs: {run_dispatch: {options: {api_key: sk-seed}, rounds: []}}}
+env: {}
+compare: {ignore: []}

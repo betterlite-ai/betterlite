@@ -14,18 +14,10 @@ scope:
     - deny.toml
     - crates/betterlite-server/src/roi_connections.rs
     - crates/betterlite-server/src/roi_connections/**
-    - tools/oracle/cases/roi-connections/**
     - tools/oracle/helpers/b3161.py
     - tools/oracle/helpers/b3161/**
     - tools/oracle/src/helpers/server/b3161.rs
     - tools/oracle/src/helpers/server/b3161/**
-    - tools/oracle/cases/roi_connections/connections-test-estimator-409.yaml
-    - tools/oracle/cases/roi_connections/connections-test-github-502.yaml
-    - tools/oracle/cases/roi_connections/connections-test-write-admin-200.yaml
-    - tools/oracle/cases/roi_connections/repositories-non-admin-403.yaml
-    - tools/oracle/cases/roi_connections/repositories-query-parameter-200.yaml
-    - tools/oracle/cases/roi_connections/repositories-read-admin-200.yaml
-    - tools/oracle/cases/roi_connections/repositories-source-error-502.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L123-L124
@@ -47,6 +39,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L599-L617
     why: POST /roi-calculator/connections/test route testing estimator and GitHub connectivity.
 dod:
+  - text: "The handlers are tested with tower's oneshot over the module's own Router and fake ports; B8677 runs the HTTP oracle cases through the booted proxy."
+    proof: [route-oneshot]
   - text: get_github_transport returns None when called without transport injection.
     proof: [repositories-read-admin]
   - text: _gateway_key returns estimator_key when set, falls back to master_key, and raises 409 when both are absent.
@@ -78,6 +72,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: route-oneshot
+      why: the handlers are not tested with tower's oneshot over the module's own Router and fake ports
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_connections::tests::oneshot_/)'
     - id: connections-unit
       why: unit tests for helper functions fail or do not exist
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_connections::(gateway_key|gateway_http_client|completion_caller|test_estimator_access|spend_reader)::/)'
@@ -105,14 +102,7 @@ checks:
     - id: connections-github-502
       why: GitHub SourceError to 502 mapping tests for POST /roi-calculator/connections/test fail or do not exist
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_connections::routes::connections::errors::github/)'
-oracle_cases:
-  - tools/oracle/cases/roi_connections/repositories-read-admin-200.yaml
-  - tools/oracle/cases/roi_connections/repositories-non-admin-403.yaml
-  - tools/oracle/cases/roi_connections/repositories-query-parameter-200.yaml
-  - tools/oracle/cases/roi_connections/repositories-source-error-502.yaml
-  - tools/oracle/cases/roi_connections/connections-test-write-admin-200.yaml
-  - tools/oracle/cases/roi_connections/connections-test-estimator-409.yaml
-  - tools/oracle/cases/roi_connections/connections-test-github-502.yaml
+oracle_cases: []
 deviations:
   - what: _gateway_http_client caches the transport for the FastAPI app instance via functools.lru_cache; Rust uses a static OnceCell with the Axum Router reference to achieve the same effect.
     why: Rust does not have Python's function-level decorator caching and must use a static initializer to avoid recreating the transport on every client call.

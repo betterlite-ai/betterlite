@@ -1,0 +1,445 @@
+kind: helper
+name: openai-thread-runs-stream-incremental-events
+call:
+  openai_thread_runs:
+    stream_incremental_events:
+      options: {api_key: sk-test, api_base: 'https://example.test/v1', organization: org-test}
+      rounds:
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.created
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+
+                event: thread.run.in_progress
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"started_at":1700000001,"assistant_id":"asst_1","thread_id":"thread_a","status":"in_progress","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+
+                event: thread.run.completed
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"metadata":{"tag":"x"},"response_format":"auto","tool_choice":"auto","tools":[{"type":"code_interpreter"}],"truncation_strategy":{"type":"auto"},"usage":{"completion_tokens":10,"prompt_tokens":5,"total_tokens":15},"temperature":0.5,"top_p":0.25}
+
+                data: [DONE]
+
+
+        - arun_thread: true
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.created
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+
+                event: thread.run.in_progress
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"started_at":1700000001,"assistant_id":"asst_1","thread_id":"thread_a","status":"in_progress","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+
+                event: thread.run.completed
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"metadata":{"tag":"x"},"response_format":"auto","tool_choice":"auto","tools":[{"type":"code_interpreter"}],"truncation_strategy":{"type":"auto"},"usage":{"completion_tokens":10,"prompt_tokens":5,"total_tokens":15},"temperature":0.5,"top_p":0.25}
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - {status: 200, headers: {content-type: text/event-stream}, body: "event: thread.run.created\r\ndata: {\"id\":\"run_1\",\"object\":\"thread.run\",\"created_at\":1700000000,\"assistant_id\":\"asst_1\",\"thread_id\":\"thread_a\",\"status\":\"queued\",\"instructions\":\"base\",\"model\":\"gpt-4o-mini\",\"parallel_tool_calls\":true,\"tools\":[{\"type\":\"code_interpreter\"}]}\r\n\r\nevent: thread.run.in_progress\r\ndata: {\"id\":\"run_1\",\"object\":\"thread.run\",\"created_at\":1700000000,\"started_at\":1700000001,\"assistant_id\":\"asst_1\",\"thread_id\":\"thread_a\",\"status\":\"in_progress\",\"instructions\":\"base\",\"model\":\"gpt-4o-mini\",\"parallel_tool_calls\":true,\"tools\":[{\"type\":\"code_interpreter\"}]}\r\n\r\nevent: thread.run.completed\r\ndata: {\"id\":\"run_1\",\"object\":\"thread.run\",\"created_at\":1700000000,\"completed_at\":1700000005,\"assistant_id\":\"asst_1\",\"thread_id\":\"thread_a\",\"status\":\"completed\",\"instructions\":\"base\",\"model\":\"gpt-4o-mini\",\"parallel_tool_calls\":true,\"metadata\":{\"tag\":\"x\"},\"response_format\":\"auto\",\"tool_choice\":\"auto\",\"tools\":[{\"type\":\"code_interpreter\"}],\"truncation_strategy\":{\"type\":\"auto\"},\"usage\":{\"completion_tokens\":10,\"prompt_tokens\":5,\"total_tokens\":15},\"temperature\":0.5,\"top_p\":0.25}\r\n\r\ndata: [DONE]\r\n\r\n"}
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - {status: 200, headers: {content-type: text/event-stream}, body: "event: thread.run.created\rdata: {\"id\":\"run_1\",\"object\":\"thread.run\",\"created_at\":1700000000,\"assistant_id\":\"asst_1\",\"thread_id\":\"thread_a\",\"status\":\"queued\",\"instructions\":\"base\",\"model\":\"gpt-4o-mini\",\"parallel_tool_calls\":true,\"tools\":[{\"type\":\"code_interpreter\"}]}\r\revent: thread.run.in_progress\rdata: {\"id\":\"run_1\",\"object\":\"thread.run\",\"created_at\":1700000000,\"started_at\":1700000001,\"assistant_id\":\"asst_1\",\"thread_id\":\"thread_a\",\"status\":\"in_progress\",\"instructions\":\"base\",\"model\":\"gpt-4o-mini\",\"parallel_tool_calls\":true,\"tools\":[{\"type\":\"code_interpreter\"}]}\r\revent: thread.run.completed\rdata: {\"id\":\"run_1\",\"object\":\"thread.run\",\"created_at\":1700000000,\"completed_at\":1700000005,\"assistant_id\":\"asst_1\",\"thread_id\":\"thread_a\",\"status\":\"completed\",\"instructions\":\"base\",\"model\":\"gpt-4o-mini\",\"parallel_tool_calls\":true,\"metadata\":{\"tag\":\"x\"},\"response_format\":\"auto\",\"tool_choice\":\"auto\",\"tools\":[{\"type\":\"code_interpreter\"}],\"truncation_strategy\":{\"type\":\"auto\"},\"usage\":{\"completion_tokens\":10,\"prompt_tokens\":5,\"total_tokens\":15},\"temperature\":0.5,\"top_p\":0.25}\r\rdata: [DONE]\r\r"}
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.created
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+
+                event: thread.created
+                data: {"id":"thread_a","object":"thread","created_at":1,"metadata":{}}
+
+                event: thread.run.step.created
+                data: {"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"message_creation","status":"in_progress","step_details":{"type":"message_creation","message_creation":{"message_id":"msg_1"}},"cancelled_at":null,"metadata":null,"usage":null}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{}}
+
+                event: thread.message.created
+                data: {"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","content":[],"status":"completed","assistant_id":null,"run_id":null}
+
+                event: thread.message.completed
+                data: {"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","content":[],"status":"completed","assistant_id":null,"run_id":null}
+
+                event: thread.message.delta
+                data: {"id":"msg_1","object":"thread.message.delta","delta":{}}
+
+                event: thread.run.step.completed
+                data: {"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"message_creation","status":"in_progress","step_details":{"type":"message_creation","message_creation":{"message_id":"msg_1"}},"cancelled_at":null,"metadata":null,"usage":null}
+
+                event: thread.future.thing
+                data: {"thing":true}
+
+                event: thread.run.completed
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"metadata":{"tag":"x"},"response_format":"auto","tool_choice":"auto","tools":[{"type":"code_interpreter"}],"truncation_strategy":{"type":"auto"},"usage":{"completion_tokens":10,"prompt_tokens":5,"total_tokens":15},"temperature":0.5,"top_p":0.25}
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                : keepalive
+
+                event: thread.run.created
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+
+                : ping
+
+                event: thread.run.completed
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"metadata":{"tag":"x"},"response_format":"auto","tool_choice":"auto","tools":[{"type":"code_interpreter"}],"truncation_strategy":{"type":"auto"},"usage":{"completion_tokens":10,"prompt_tokens":5,"total_tokens":15},"temperature":0.5,"top_p":0.25}
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.created
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+
+                event: thread.run.completed
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"metadata":{"tag":"x"},"response_format":"auto","tool_choice":"auto","tools":[{"type":"code_interpreter"}],"truncation_strategy":{"type":"auto"},"usage":{"completion_tokens":10,"prompt_tokens":5,"total_tokens":15},"temperature":0.5,"top_p":0.25}
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.created
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+
+                event: thread.run.completed
+                data: {"id":
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.created
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+
+                data: [DONE]
+
+                event: thread.run.completed
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"metadata":{"tag":"x"},"response_format":"auto","tool_choice":"auto","tools":[{"type":"code_interpreter"}],"truncation_strategy":{"type":"auto"},"usage":{"completion_tokens":10,"prompt_tokens":5,"total_tokens":15},"temperature":0.5,"top_p":0.25}
+
+
+        - arun_thread: false
+          stream: true
+          handler: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.created
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+
+                data: {"error":{"message":"boom","type":"t","code":"c"}}
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: ping
+                data: {"ok":true}
+
+                event: thread.run.created
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          handler: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                data: {"event":"thread.run.created","data":{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}}
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.queued
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                retry: 5
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - {status: 404, headers: {content-type: application/json}, body: '{"error":{"message":"no run","type":"invalid_request_error"}}'}
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.created
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+
+                event: thread.message.completed
+                data: {"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","content":[],"status":"completed","attachments":[{"file_id":"file_1"}]}
+
+                event: thread.message.delta
+                data: {"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"text","text":{"value":"hi"}}]}}
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.created
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+
+                event: thread.run.step.created
+                data: {"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"id":"call_1","type":"file_search","file_search":{}}]}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"code_interpreter","code_interpreter":{"input":"2+"}}]}}}
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                retry: soon
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                data: {"a":1}
+                retry: soon
+
+                retry: soon
+                data: {"a":2}
+
+                data: {"a":3}
+                id:
+
+                data: {"a":4}
+                event:
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.step.created
+                data: {"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"in_progress","step_details":{"type":"tool_calls","tool_calls":[]}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"function","function":{"arguments":"{"}}]}}}
+
+                event: thread.run.step.completed
+                data: {"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"function","id":"call_1","function":{"name":"f","arguments":"{}"}}]}}
+
+                event: thread.message.created
+                data: {"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"in_progress","content":[]}
+
+                event: thread.message.delta
+                data: {"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"text","text":{"annotations":[]}}]}}
+
+                event: thread.message.delta
+                data: {"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"image_file","image_file":{"file_id":"file_1"}}]}}
+
+                event: thread.message.delta
+                data: {"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"image_url","image_url":{"url":"https://example.test/x.png"}}]}}
+
+                event: thread.message.completed
+                data: {"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"completed","content":[{"index":0,"type":"image_file","image_file":{"file_id":"file_1"}}]}
+
+                event: thread.created
+                data: {"id":"thread_a","object":"thread","created_at":1700000000,"metadata":{},"tool_resources":{"code_interpreter":{"file_ids":[]}}}
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: x
+                event:
+
+                data: {"a":1}
+
+                id: 1
+                id:
+
+                data: {"a":2}
+
+                event: thread.foo
+                event:
+
+                data: {"a":3}
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.step.created
+                data: {"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"in_progress","step_details":{"type":"tool_calls","tool_calls":[]}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"function","id":"c"}]}}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"code_interpreter","id":"c"}]}}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"message_creation","message_creation":{}}}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"message_creation"}}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls"}}}
+
+                event: thread.run.step.completed
+                data: {"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"message_creation","status":"completed","step_details":{"type":"message_creation","message_creation":{}}}
+
+                event: thread.message.created
+                data: {"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"in_progress","content":[]}
+
+                event: thread.message.delta
+                data: {"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"text"},{"index":1,"type":"refusal"},{"index":2,"type":"text","text":{"value":"hi","annotations":[{"index":0,"type":"file_citation","file_citation":{"file_id":"f"}},{"index":1,"type":"file_path","file_path":{}}]}}]}}
+
+                event: thread.created
+                data: {"id":"thread_a","object":"thread","created_at":1700000000,"metadata":{},"tool_resources":{"code_interpreter":{},"file_search":{}}}
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.message.completed
+                data: {"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"completed","content":[{"type":"audio"}]}
+
+                event: thread.message.created
+                data: {"id":"msg_2","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"in_progress","content":[]}
+
+                event: thread.message.delta
+                data: {"id":"msg_2","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"text","text":{"value":"hi","annotations":[{"index":0,"type":"weird"}]}}]}}
+
+                event: thread.run.step.created
+                data: {"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"in_progress","step_details":{"type":"tool_calls","tool_calls":[]}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"weird"}}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"weird"}]}}}
+
+                event: thread.run.step.completed
+                data: {"id":"step_2","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"weird","status":"completed","step_details":{"type":"weird"}}
+
+                event: thread.run.step.completed
+                data: {"id":"step_3","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"type":"weird"}]}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"weird","code_interpreter":{}}]}}}
+
+                event: thread.run.step.completed
+                data: {"id":"step_4","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"type":"weird","code_interpreter":{}}]}}
+
+                data: [DONE]
+
+
+env: {}
+compare: {ignore: []}

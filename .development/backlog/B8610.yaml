@@ -1,0 +1,13 @@
+id: B8610
+milestone: M8 platform
+title: Shared state, server inputs, the area mount aggregator and the WebSocket auth pass
+status: todo
+depends_on: [B1100, B8613, B8614, B8611, B8612, B051, B052, B700, B173, B733, B4293, B5630, B5220, B8501, B3682, B8521, B8230, B4776, B8231, B8254, B8399, B8500, B8502, B4304, B8380, B3602, B1302, B3616, B3683, B8481, B3102, B4059, B8385, B379, B8666, B3875]
+file: tasks/B8610-shared-server-inputs.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

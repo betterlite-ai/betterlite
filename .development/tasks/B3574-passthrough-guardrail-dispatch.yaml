@@ -15,7 +15,7 @@ description: >-
 
   `PassThroughEndpointHandler` needs a `BaseTranslation` impl for the registry to hold it. B3573 builds the handler logic in betterlite-core as plain functions on a type of that name. Add the trait impl for it in this module, a thin forwarder that calls B3573's two entry points and nothing else, if B3573's code does not already provide one. Read crates/betterlite-core/src/passthrough_guardrail.rs; if the trait cannot be implemented from outside because of a signature mismatch, record that in notes of the report and do not change B3573's files, they are not in this task's scope.
 
-  Out of the build on purpose: LlmPassthroughRouteHandler.is_event_stream_response, event_stream_media_type, _resolve_event_stream_de_anonymizer, supports_event_stream_de_anonymization and de_anonymize_event_stream (handler.py lines 262 to 311). Nothing at the pinned commit calls any of them outside the class itself; the bedrock handler defines the methods they look up, and B3678 decides what to do with those.
+  Out of the build on purpose: LlmPassthroughRouteHandler.is_event_stream_response, event_stream_media_type, _resolve_event_stream_de_anonymizer, supports_event_stream_de_anonymization and de_anonymize_event_stream (handler.py lines 262 to 311). B8693 builds them, because common_request_processing.py calls them at L3251, L3273, L3305 and L3378; the bedrock handler defines the methods they look up (B3678).
 
   Tests live in `llm_passthrough_dispatch::tests` and use a small fake provider handler defined there: a struct that implements `BaseTranslation`, records the arguments it was called with and returns a scripted value. Test names start with `input_`, `output_` and `mapping_`, which the checks filter on. The handler is not reachable from a route yet and the helper adapters cannot build a guardrail, so there are no oracle cases; the HTTP cases for passthrough guardrails come with the dispatcher umbrella (B3680).
 scope:
@@ -85,7 +85,7 @@ deviations:
 out_of_scope:
   - "PassThroughEndpointHandler logic (_get_guardrail_settings, _extract_text_for_guardrail, process_input_messages, process_output_response) is B3573, which also owns handler.py lines 24 to 193."
   - "BedrockPassthroughGuardrailHandler, its event-stream functions and is_event_stream_content_type, event_stream_media_type, event_stream_endpoint_is_de_anonymizable and de_anonymize_event_stream are B3678."
-  - "The static LlmPassthroughRouteHandler helpers is_event_stream_response, event_stream_media_type, _resolve_event_stream_de_anonymizer, supports_event_stream_de_anonymization and de_anonymize_event_stream have no caller at the pin."
+  - "The static LlmPassthroughRouteHandler helpers is_event_stream_response, event_stream_media_type, _resolve_event_stream_de_anonymizer, supports_event_stream_de_anonymization and de_anonymize_event_stream are called from common_request_processing.py (L3251, L3273, L3305, L3378); B8693 builds them in passthrough_reply."
   - "discover_guardrail_translation_mappings, load_guardrail_translation_mappings and get_guardrail_translation_mapping are replaced by B3679's TranslationRegistry; B3680 builds the entries from PASSTHROUGH_TRANSLATION_KINDS."
   - "The README.md under guardrail_translation is documentation only and has no behavior to build."
 pitfalls:

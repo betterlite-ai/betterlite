@@ -2,7 +2,7 @@ id: B8544
 milestone: M9 agents and mcp
 title: Install the managed agent admission port
 status: todo
-depends_on: [B700, B726, B855, B4773, B4776, B4778, B4780, B4781]
+depends_on: [B700, B726, B855, B4773, B4776, B4778, B4780, B4781, B8645]
 file: tasks/B8544-managed-admission-port.yaml
 covers: []
 parent: B141
