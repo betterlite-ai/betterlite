@@ -1,0 +1,9 @@
+kind: helper
+name: ipv6
+call:
+  url_origin:
+    candidate_url: "https://[::1]:8443/v1/jobs/42"
+    expected_url: "https://[::1]:8443/v1/jobs/43"
+env: {}
+compare:
+  ignore: []
