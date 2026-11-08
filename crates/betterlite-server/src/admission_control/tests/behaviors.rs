@@ -26,6 +26,7 @@ enum Scenario {
     QueueTimeout,
     HealthExempt,
     RootPathBoundary,
+    ScalarRootExempt,
     StreamHoldsSlot,
     DisconnectReleases,
     InvalidSettings,
@@ -41,6 +42,7 @@ enum Scenario {
 #[case::queue_timeout(Scenario::QueueTimeout)]
 #[case::health_exempt(Scenario::HealthExempt)]
 #[case::root_path_boundary(Scenario::RootPathBoundary)]
+#[case::scalar_root_exempt(Scenario::ScalarRootExempt)]
 #[case::stream_holds_slot(Scenario::StreamHoldsSlot)]
 #[case::disconnect_releases(Scenario::DisconnectReleases)]
 #[case::invalid_settings(Scenario::InvalidSettings)]
@@ -56,6 +58,7 @@ async fn admission_control_behaviors(#[case] scenario: Scenario) {
         Scenario::QueueTimeout => queue_timeout().await,
         Scenario::HealthExempt => health_exempt().await,
         Scenario::RootPathBoundary => root_path_boundary().await,
+        Scenario::ScalarRootExempt => scalar_root_exempt().await,
         Scenario::StreamHoldsSlot => stream_holds_slot().await,
         Scenario::DisconnectReleases => disconnect_releases().await,
         Scenario::InvalidSettings => invalid_settings().await,
@@ -328,7 +331,7 @@ async fn stream_holds_slot() {
 }
 
 async fn disconnect_releases() {
-    let gates = gates(&[("/a", Behavior::Hold), ("/b", Behavior::Immediate)]);
+    let gates = gates(&[("/a", Behavior::Stream), ("/b", Behavior::Immediate)]);
     let harness = harness(ONE_QUEUED, "", gates);
     let mut requests = Requests::default();
     requests.start(&harness.router, "/a");
@@ -341,6 +344,37 @@ async fn disconnect_releases() {
     await_started(&harness.gates, "/b").await;
     assert_eq!(requests.complete("/b").await.0, StatusCode::OK);
     assert_eq!(harness.stack.admission.stats().rejected_total, 0);
+}
+
+async fn scalar_root_exempt() {
+    let gates = gates(&[("/proxy/chat", Behavior::Hold)]);
+    let harness = harness(
+        "general_settings:\n  SERVER_ROOT_PATH: /proxy\n  max_in_flight_requests_per_worker: 1\n  max_queued_requests_per_worker: 0",
+        "",
+        gates,
+    );
+    let mut requests = Requests::default();
+    requests.start(&harness.router, "/proxy/chat");
+    await_started(&harness.gates, "/proxy/chat").await;
+    assert_eq!(
+        start_and_wait(&harness, &mut requests, "/proxy/health/liveliness").await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        start_and_wait(&harness, &mut requests, "/proxy/metrics").await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        start_and_wait(&harness, &mut requests, "/proxyhealth/liveliness").await,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    harness
+        .gates
+        .get("/proxy/chat")
+        .unwrap()
+        .release
+        .notify_one();
+    assert_eq!(requests.complete("/proxy/chat").await.0, StatusCode::OK);
 }
 
 async fn invalid_settings() {

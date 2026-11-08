@@ -27,6 +27,7 @@ enum Boundary {
     HugeLimitDisables,
     HotRoutesFirst,
     InstallWiresTheStack,
+    UpgradeBypassesSaturation,
 }
 
 #[rstest]
@@ -37,6 +38,7 @@ enum Boundary {
 #[case::huge_limit_disables(Boundary::HugeLimitDisables)]
 #[case::hot_routes_first(Boundary::HotRoutesFirst)]
 #[case::install_wires_the_stack(Boundary::InstallWiresTheStack)]
+#[case::upgrade_bypasses_saturation(Boundary::UpgradeBypassesSaturation)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn admission_control_boundaries(#[case] boundary: Boundary) {
     match boundary {
@@ -49,6 +51,7 @@ async fn admission_control_boundaries(#[case] boundary: Boundary) {
         Boundary::HugeLimitDisables => huge_limit_disables().await,
         Boundary::HotRoutesFirst => hot_routes_first_audit(),
         Boundary::InstallWiresTheStack => install_wires_the_stack().await,
+        Boundary::UpgradeBypassesSaturation => upgrade_bypasses_saturation().await,
     }
 }
 
@@ -180,22 +183,32 @@ async fn huge_limit_disables() {
 
 fn hot_routes_first_audit() {
     let ordered = hot_routes_first([
-        "/cold-b",
-        "/v1/chat/completions",
-        "/cold-a",
-        "/metrics",
+        "/cold-one",
         "/health/liveliness",
+        "/cold-two",
+        "/health/liveness",
+        "/cold-three",
+        "/v1/chat/completions",
+        "/cold-four",
+        "/chat/completions",
+        "/cold-five",
         "/v1/messages",
+        "/cold-six",
     ]);
     assert_eq!(
         ordered,
         vec![
-            "/v1/chat/completions",
             "/health/liveliness",
+            "/health/liveness",
+            "/v1/chat/completions",
+            "/chat/completions",
             "/v1/messages",
-            "/cold-b",
-            "/cold-a",
-            "/metrics",
+            "/cold-one",
+            "/cold-two",
+            "/cold-three",
+            "/cold-four",
+            "/cold-five",
+            "/cold-six",
         ]
     );
 }
@@ -211,6 +224,7 @@ async fn install_wires_the_stack() {
     let stack = AdmissionStack {
         admission: Arc::new(AdmissionControl::from_settings(&settings)),
         in_flight: Arc::new(InFlightRequests::default()),
+        scalar_root: String::new(),
     };
     let (router, gates) = application(
         &config.sections.request_root_paths,
@@ -226,4 +240,36 @@ async fn install_wires_the_stack() {
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     gates.get("/a").unwrap().release.notify_one();
     assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
+}
+
+async fn upgrade_bypasses_saturation() {
+    let gates = gates(&[
+        ("/a", Behavior::Hold),
+        ("/ws", Behavior::Immediate),
+        ("/b", Behavior::Immediate),
+    ]);
+    let harness = harness(
+        "general_settings:\n  max_in_flight_requests_per_worker: 1\n  max_queued_requests_per_worker: 0",
+        "",
+        gates,
+    );
+    let mut requests = Requests::default();
+    requests.start(&harness.router, "/a");
+    await_started(&harness.gates, "/a").await;
+    requests.start_upgrade(&harness.router, "/ws");
+    let (status, _headers, _body) = requests.complete("/ws").await;
+    assert_eq!(status, StatusCode::OK);
+    let snapshot = harness.stack.admission.stats();
+    assert_eq!(
+        (snapshot.admitted, snapshot.queued, snapshot.rejected_total),
+        (1, 0, 0)
+    );
+    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 1);
+    harness.gates.get("/a").unwrap().release.notify_one();
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
+    requests.start(&harness.router, "/b");
+    await_started(&harness.gates, "/b").await;
+    assert_eq!(requests.complete("/b").await.0, StatusCode::OK);
+    assert_eq!(harness.stack.admission.stats().admitted, 0);
+    assert_eq!(harness.stack.in_flight.current.load(Ordering::Acquire), 0);
 }

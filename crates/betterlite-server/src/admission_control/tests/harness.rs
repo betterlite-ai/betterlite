@@ -6,7 +6,7 @@ use std::time::Duration;
 use axum::Router;
 use axum::body::{Body, Bytes, to_bytes};
 use axum::extract::{OriginalUri, State};
-use axum::http::{HeaderMap, Request, StatusCode};
+use axum::http::{HeaderMap, Request, StatusCode, header};
 use axum::response::Response;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::request_root_paths;
@@ -69,20 +69,25 @@ pub(super) async fn dispatch(
             Response::new(Body::from("ok"))
         }
         Behavior::Stream => {
-            gate.started.notify_one();
             let notifier = Arc::clone(&gate.release);
+            let started = Arc::clone(&gate.started);
             let body = Body::from_stream(stream::unfold(0_u8, move |step| {
-                stream_chunk(step, Arc::clone(&notifier))
+                stream_chunk(step, Arc::clone(&notifier), Arc::clone(&started))
             }));
             Response::new(body)
         }
     }
 }
 
-async fn stream_chunk(step: u8, release: Arc<Notify>) -> Option<(Result<Bytes, IoError>, u8)> {
+async fn stream_chunk(
+    step: u8,
+    release: Arc<Notify>,
+    started: Arc<Notify>,
+) -> Option<(Result<Bytes, IoError>, u8)> {
     match step {
         0 => Some((Ok(Bytes::from_static(b"first")), 1)),
         1 => {
+            started.notify_one();
             release.notified().await;
             Some((Ok(Bytes::from_static(b"last")), 2))
         }
@@ -117,6 +122,7 @@ pub(super) fn harness(source: &str, root_path: &str, configured: Gates) -> Harne
             &config.sections.admission_control,
         )),
         in_flight: Arc::new(InFlightRequests::default()),
+        scalar_root: config.sections.request_root_paths.server_root_path.clone(),
     };
     let (router, gates) = application(
         &config.sections.request_root_paths,
@@ -163,8 +169,27 @@ async fn call(router: Router, path: String) -> Answer {
     (status, headers, body)
 }
 
+async fn call_upgrade(router: Router, path: String) -> Answer {
+    let request = Request::builder()
+        .uri(path)
+        .header(header::UPGRADE, "websocket")
+        .header(header::CONNECTION, "upgrade")
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let body = to_bytes(response.into_body(), 1 << 20).await.unwrap();
+    (status, headers, body)
+}
+
 async fn call_later(router: Router, path: String) -> (String, Answer) {
     let answer = call(router, path.clone()).await;
+    (path, answer)
+}
+
+async fn call_upgrade_later(router: Router, path: String) -> (String, Answer) {
+    let answer = call_upgrade(router, path.clone()).await;
     (path, answer)
 }
 
@@ -173,6 +198,13 @@ impl Requests {
         let abort = self
             .tasks
             .spawn(call_later(router.clone(), path.to_owned()));
+        self.aborts.insert(path.to_owned(), abort);
+    }
+
+    pub(super) fn start_upgrade(&mut self, router: &Router, path: &str) {
+        let abort = self
+            .tasks
+            .spawn(call_upgrade_later(router.clone(), path.to_owned()));
         self.aborts.insert(path.to_owned(), abort);
     }
 

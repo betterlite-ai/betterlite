@@ -33,3 +33,23 @@ async fn guarded_body_releases_at_the_final_frame() {
     assert!(released.load(Ordering::SeqCst));
     drop(body);
 }
+
+#[tokio::test]
+async fn guarded_body_dropped_mid_stream_releases_the_guard() {
+    let released = Arc::new(AtomicBool::new(false));
+    let source = stream::iter([
+        Ok::<Bytes, IoError>(Bytes::from_static(b"first")),
+        Ok::<Bytes, IoError>(Bytes::from_static(b"last")),
+    ]);
+    let mut body = GuardedBody {
+        inner: source,
+        guard: Some(Guard(Arc::clone(&released))),
+    };
+    assert_eq!(
+        body.next().await.unwrap().unwrap(),
+        Bytes::from_static(b"first")
+    );
+    assert!(!released.load(Ordering::SeqCst));
+    drop(body);
+    assert!(released.load(Ordering::SeqCst));
+}
