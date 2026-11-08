@@ -113,8 +113,19 @@ impl Driver {
             Step::AwaitQueued { queued } => self.await_queued(*queued).await,
             Step::Release { request } => self.release(*request, app)?,
             Step::Cancel { request } => self.cancel(*request).await?,
-            Step::Complete { request } => self.complete_step(*request).await?,
-            Step::Stats => self.push_stats(),
+            Step::Complete { request } => {
+                let answer = self.complete(*request).await?;
+                self.observations.push(completed(*request, answer));
+            }
+            Step::Stats => {
+                let snapshot = self.admission.stats();
+                self.observations.push(Observation::Stats {
+                    admitted: snapshot.admitted,
+                    queued: snapshot.queued,
+                    rejected_total: snapshot.rejected_total,
+                    in_flight: self.in_flight.current.load(Ordering::Acquire),
+                });
+            }
         }
         Ok(())
     }
@@ -158,22 +169,6 @@ impl Driver {
             .ok_or_else(|| invalid("a step names an unknown request"))?;
         gate.release.notify_one();
         Ok(())
-    }
-
-    async fn complete_step(&mut self, request: u16) -> Result<(), OperationError> {
-        let answer = self.complete(request).await?;
-        self.observations.push(completed(request, answer));
-        Ok(())
-    }
-
-    fn push_stats(&mut self) {
-        let snapshot = self.admission.stats();
-        self.observations.push(Observation::Stats {
-            admitted: snapshot.admitted,
-            queued: snapshot.queued,
-            rejected_total: snapshot.rejected_total,
-            in_flight: self.in_flight.current.load(Ordering::Acquire),
-        });
     }
 
     fn path(&self, request: u16) -> Result<String, OperationError> {
