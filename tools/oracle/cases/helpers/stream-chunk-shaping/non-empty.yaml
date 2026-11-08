@@ -1,0 +1,49 @@
+kind: helper
+name: stream-chunk-shaping-non-empty
+call:
+  b5652:
+    state:
+      model: gpt-4
+      provider: openai
+    repeated_chunk_limit: 100
+    steps:
+      - op: is_chunk_non_empty
+        completion: {content: hello}
+        chunk: {id: c, created: 1, choices: [{index: 0, delta: {}}]}
+      - op: is_chunk_non_empty
+        completion: {content: ""}
+        chunk: {id: c, created: 1, choices: [{index: 0, delta: {}}]}
+      - op: is_chunk_non_empty
+        completion: {tool_calls: [{id: t, type: function, function: {name: f, arguments: "{}"}}]}
+        chunk: {id: c, created: 1, choices: [{index: 0, delta: {}}]}
+      - op: is_chunk_non_empty
+        completion: {tool_calls: []}
+        chunk: {id: c, created: 1, choices: [{index: 0, delta: {}}]}
+      - op: is_chunk_non_empty
+        completion: {function_call: {name: f, arguments: "{}"}}
+        chunk: {id: c, created: 1, choices: [{index: 0, delta: {}}]}
+      - op: is_chunk_non_empty
+        completion: {}
+        chunk: {id: c, created: 1, choices: [{index: 0, delta: {reasoning_content: r}}]}
+      - op: is_chunk_non_empty
+        completion: {}
+        chunk: {id: c, created: 1, choices: [{index: 0, delta: {round_trip_extra: 1}}]}
+      - op: is_chunk_non_empty
+        completion: {}
+        chunk: {id: c, created: 1, choices: [{index: 0, delta: {audio: {data: x}}}]}
+      - op: is_chunk_non_empty
+        completion: {}
+        chunk: {id: c, created: 1, choices: [{index: 0, delta: {role: assistant}}]}
+      - op: is_chunk_non_empty
+        completion: {}
+        chunk: {id: c, created: 1, choices: [{index: 0, delta: {}}]}
+        response: {provider_specific_fields: {a: 1}}
+      - op: is_chunk_non_empty
+        completion: {}
+        chunk: {id: c, created: 1, choices: [{index: 0, delta: {annotations: [{type: url_citation}]}}]}
+      - op: is_chunk_non_empty
+        completion: {}
+        chunk: {id: c, created: 1, choices: [{index: 0, delta: {reasoning_items: [{id: r}]}}]}
+env: {}
+compare:
+  ignore: []

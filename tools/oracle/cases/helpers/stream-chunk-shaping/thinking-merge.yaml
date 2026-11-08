@@ -1,0 +1,21 @@
+kind: helper
+name: stream-chunk-shaping-thinking-merge
+call:
+  b5652:
+    state:
+      model: gpt-4
+      provider: openai
+      merge_reasoning_in_choices: true
+    repeated_chunk_limit: 100
+    steps:
+      - op: combine_thinking
+        chunk: {id: c, created: 1, model: gpt-4, choices: [{index: 0, delta: {reasoning_content: thinking1}}]}
+      - op: combine_thinking
+        chunk: {id: c, created: 1, model: gpt-4, choices: [{index: 0, delta: {reasoning_content: thinking2, content: visible}}]}
+      - op: combine_thinking
+        chunk: {id: c, created: 1, model: gpt-4, choices: [{index: 0, delta: {content: answer}}]}
+      - op: combine_thinking
+        chunk: {id: c, created: 1, model: gpt-4, choices: [{index: 0, delta: {content: more}}]}
+env: {}
+compare:
+  ignore: []

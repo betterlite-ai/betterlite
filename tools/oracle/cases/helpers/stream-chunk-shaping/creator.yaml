@@ -1,0 +1,42 @@
+kind: helper
+name: stream-chunk-shaping-creator
+call:
+  b5652:
+    state:
+      model: gpt-4
+      provider: openai
+      base_hidden_params: {model_id: m1, api_base: "https://example.test", additional_headers: {}, response_cost: null}
+      response_id: chatcmpl-fixed
+      created: 1700000000
+      system_fingerprint: fp-1
+    repeated_chunk_limit: 100
+    usage_cost_providers: [openrouter]
+    steps:
+      - op: creator
+        chunk: {id: chatcmpl-first, created: 100, content: hi, index: 3}
+        hidden_params: {provider_response_model: m2, model_id: caller-id, custom_llm_provider: caller}
+      - op: creator
+        chunk: {id: chatcmpl-second, created: 999, choices: [{index: 2, delta: {content: z}}], usage: {prompt_tokens: 3, completion_tokens: 4}}
+      - op: set_model_id
+        id: chatcmpl-provider
+        chunk:
+          id: chatcmpl-other
+          created: 1
+          model: gpt-4
+          choices: [{index: 0, delta: {content: a}}]
+      - op: provider_response_model
+        chunk: {id: c, created: 1, model: provider-model}
+      - op: provider_hidden_params
+        chunk: {id: c, created: 1, model: provider-model, hidden_params: {provider_specific_fields: {a: 1}}}
+        provider_response_model: provider-model
+      - op: stamp_service_tier
+        chunk: {id: c, created: 1, model: gpt-4}
+        complete: {id: d, created: 1, model: gpt-4, service_tier: scale}
+      - op: copy_provider_fields
+        original: {id: o, created: 1, model: gpt-4, provider_specific_fields: {a: 1}}
+        chunk: {id: c, created: 1, model: gpt-4}
+env: {}
+compare:
+  ignore:
+    - {pointer: /0/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}
+    - {pointer: /1/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}

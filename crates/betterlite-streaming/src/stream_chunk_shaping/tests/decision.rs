@@ -222,14 +222,13 @@ fn processed_original_chunk_without_choices_sends_nothing() {
 }
 
 #[test]
-fn processed_special_delta_content_is_sent_with_the_role() {
+fn processed_completion_tool_calls_reach_the_delta_with_the_role() {
     let mut shaper = shaper("gpt-4", Some("openai"));
-    let mut response =
-        model_response_creator(&mut shaper, None, None).expect("no chunk cannot fail");
-    response.choices = vec![choice(parse(r#"{"tool_calls": [{"id": "t"}]}"#))];
+    let mut completion: StreamDelta = parse(r#"{"tool_calls": [{"id": "t"}]}"#);
+    let response = model_response_creator(&mut shaper, None, None).expect("no chunk cannot fail");
     let sent = return_processed_chunk_logic(
         &mut shaper,
-        &mut empty_delta(),
+        &mut completion,
         response,
         &ChunkResponseObject::default(),
         5,
