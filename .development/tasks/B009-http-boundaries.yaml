@@ -37,6 +37,12 @@ scope:
   - crates/betterlite-config/src/sections/provider_url_destination.rs
   - crates/betterlite-config/src/sections/provider_url_destination/**
   - "crates/betterlite-config/fuzz/corpus/config_yaml/provider-url-destination-*"
+  - crates/betterlite-openai/src/chat/deployment.rs
+  - crates/betterlite-openai/src/chat/deployment/**
+  - crates/betterlite-openai/src/embedding.rs
+  - crates/betterlite-openai/src/embedding/**
+  - crates/betterlite-logging/src/helicone/http_delivery.rs
+  - crates/betterlite-core/src/api/vector_store_contracts/executor.rs
   - crates/betterlite-openai/src/chat/execution.rs
   - crates/betterlite-openai/src/chat/execution/**
   - tools/oracle/Cargo.toml

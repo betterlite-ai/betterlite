@@ -581,3 +581,148 @@ async fn a_stripped_client_mock_warns_with_the_field_name() {
     assert!(warnings.contains("mock_response"), "{warnings}");
     assert!(warnings.contains("mock_tool_calls"), "{warnings}");
 }
+
+#[derive(Clone, Copy)]
+enum Base {
+    Plain,
+    Userinfo(&'static str),
+    PercentEncoded,
+}
+
+fn authorization(sent: &str) -> String {
+    sent.lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(": ")?;
+            name.eq_ignore_ascii_case("authorization")
+                .then(|| value.to_owned())
+        })
+        .unwrap_or_else(|| "-".to_owned())
+}
+
+const CALL: &str = r#"{"model":"g","messages":[]}"#;
+const HIJACK: &str = r#"{"model":"http://127.0.0.1:1/v1","messages":[],"endpoint":"http://127.0.0.1:1/v1","url":"http://127.0.0.1:1/v1","destination":"http://127.0.0.1:1/v1"}"#;
+
+async fn boundary_observation(base: Base, api_key: Option<&str>, body: &str) -> String {
+    let (listener, plain) = listen().await;
+    let api_base = match base {
+        Base::Plain => plain,
+        Base::Userinfo(userinfo) => plain.replace("http://", &format!("http://{userinfo}")),
+        Base::PercentEncoded => plain.replace("http://", "http://us%40er:p%40ss@"),
+    };
+    let key = api_key.map_or_else(String::new, |key| format!(", api_key: {key}"));
+    let entries = format!(
+        "[{{model_name: g, litellm_params: {{model: openai/up, api_base: '{api_base}'{key}}}}}]"
+    );
+    let chat = executor(&entries, 1, None, MockPermission::default());
+    let request = ChatRequest::parse(body.as_bytes()).unwrap();
+    let deployment = chat.deployments.first().unwrap();
+    let mut provider_task = JoinSet::new();
+    provider_task.spawn(provider(listener, 200, ANSWER, Duration::ZERO));
+    if let Err(error) = chat.send(deployment, &request).await {
+        drop(provider_task);
+        return error.to_string();
+    }
+    let sent = provider_task.join_next().await.unwrap().unwrap();
+    let upstream = sent.split_once("\r\n\r\n").map_or("", |(_, text)| text);
+    format!(
+        "{}|auth={}|forwarded={}",
+        sent.lines().next().unwrap_or_default(),
+        authorization(&sent),
+        upstream.contains("\"destination\"")
+    )
+}
+
+async fn redirecting(listener: TcpListener, location: String) {
+    let (mut stream, _) = timeout(Duration::from_secs(5), listener.accept())
+        .await
+        .expect("no request reached the redirecting provider")
+        .unwrap();
+    let mut received = Vec::new();
+    while !received.ends_with(b"\r\n\r\n") {
+        received.push(stream.read_u8().await.unwrap());
+    }
+    let head = String::from_utf8(received).unwrap();
+    let length: usize = head
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length: "))
+        .map_or(0, |value| value.parse().unwrap());
+    let mut sent = vec![0_u8; length];
+    stream.read_exact(&mut sent).await.unwrap();
+    let reply = format!(
+        "HTTP/1.1 302 Found\r\nlocation: {location}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+    );
+    let _written = stream.write_all(reply.as_bytes()).await;
+}
+
+async fn redirect_observation() -> String {
+    let (source_listener, source_base) = listen().await;
+    let target_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target_base = format!("http://{}/v1", target_listener.local_addr().unwrap());
+    let entries = format!(
+        "[{{model_name: g, litellm_params: {{model: openai/up, api_base: '{source_base}', api_key: k}}}}]"
+    );
+    let chat = executor(&entries, 1, None, MockPermission::default());
+    let request = ChatRequest::parse(CALL.as_bytes()).unwrap();
+    let deployment = chat.deployments.first().unwrap();
+    let mut target_task = JoinSet::new();
+    target_task.spawn(provider(target_listener, 200, ANSWER, Duration::ZERO));
+    let redirect = redirecting(source_listener, format!("{target_base}/chat/completions"));
+    let (answered, _redirected) = tokio::join!(chat.send(deployment, &request), redirect);
+    let sent = target_task.join_next().await.unwrap().unwrap();
+    format!(
+        "ok={}|auth={}|{}",
+        answered.is_ok(),
+        authorization(&sent),
+        sent.lines().next().unwrap_or_default()
+    )
+}
+
+#[derive(Clone, Copy)]
+enum Scenario {
+    Wire(Base, Option<&'static str>, &'static str),
+    Redirect,
+}
+
+async fn observation(scenario: Scenario) -> String {
+    match scenario {
+        Scenario::Wire(base, api_key, body) => boundary_observation(base, api_key, body).await,
+        Scenario::Redirect => redirect_observation().await,
+    }
+}
+
+#[rstest]
+#[case::userinfo_becomes_basic_auth_over_the_api_key(
+    Scenario::Wire(Base::Userinfo("user:pass@"), Some("k"), CALL),
+    "POST /v1/chat/completions HTTP/1.1|auth=Basic dXNlcjpwYXNz|forwarded=false"
+)]
+#[case::percent_encoded_userinfo_is_decoded(
+    Scenario::Wire(Base::PercentEncoded, Some("k"), CALL),
+    "POST /v1/chat/completions HTTP/1.1|auth=Basic dXNAZXI6cEBzcw==|forwarded=false"
+)]
+#[case::userinfo_alone_authenticates_a_loopback_provider(
+    Scenario::Wire(Base::Userinfo("user:pass@"), None, CALL),
+    "POST /v1/chat/completions HTTP/1.1|auth=Basic dXNlcjpwYXNz|forwarded=false"
+)]
+#[case::the_api_key_bearer_is_used_without_userinfo(
+    Scenario::Wire(Base::Plain, Some("k"), CALL),
+    "POST /v1/chat/completions HTTP/1.1|auth=Bearer k|forwarded=false"
+)]
+#[case::request_fields_cannot_change_the_destination(
+    Scenario::Wire(Base::Plain, Some("k"), HIJACK),
+    "POST /v1/chat/completions HTTP/1.1|auth=Bearer k|forwarded=true"
+)]
+#[case::no_credentials_is_an_error(
+    Scenario::Wire(Base::Plain, None, CALL),
+    "no API key is set for this deployment, in litellm_settings or in OPENAI_API_KEY"
+)]
+#[case::a_provider_redirect_does_not_forward_credentials(
+    Scenario::Redirect,
+    "ok=true|auth=-|GET /v1/chat/completions HTTP/1.1"
+)]
+#[tokio::test]
+async fn http_boundaries_url_boundary_tests_behavior(
+    #[case] scenario: Scenario,
+    #[case] expected: &str,
+) {
+    assert_eq!(observation(scenario).await, expected);
+}
