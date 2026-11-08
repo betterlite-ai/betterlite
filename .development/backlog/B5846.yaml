@@ -1,0 +1,14 @@
+id: B5846
+milestone: M3 providers
+title: Predibase provider
+status: todo
+depends_on: [B177, B2202, B2204]
+file: tasks/B5846-predibase-chat.yaml
+covers:
+  - "litellm/llms/predibase/**"
+parent: B042
+split_from: B042
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

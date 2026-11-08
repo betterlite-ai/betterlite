@@ -5,7 +5,6 @@ status: todo
 depends_on: [B3000, B3001, B3002, B3003, B3004, B3005, B3006, B3007, B3008, B3009, B3010, B3011, B3012, B3013, B3014, B3015, B3016, B3017, B002, B003, B360, B732, B746, B882, B1690, B1718]
 file: null
 covers:
-  - "litellm/budget_manager.py"
   - "litellm/proxy/common_utils/reset_budget_job.py"
   - "litellm/proxy/spend_tracking/budget_reservation.py"
   - "litellm/proxy/middleware/budget_reservation_release_middleware.py"

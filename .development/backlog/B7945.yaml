@@ -1,0 +1,16 @@
+id: B7945
+milestone: M12 python
+title: Python types for cache, coordination Redis and router settings endpoints (types/management_endpoints)
+status: todo
+depends_on: [B5657]
+file: tasks/B7945-types-mgmt-settings-endpoints.yaml
+covers:
+  - "litellm/types/management_endpoints/cache_settings_endpoints.py"
+  - "litellm/types/management_endpoints/coordination_redis_endpoints.py"
+  - "litellm/types/management_endpoints/router_settings_endpoints.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

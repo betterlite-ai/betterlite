@@ -3,7 +3,7 @@ milestone: M7 observability
 title: OTel Arize Phoenix Weave and Levo presets
 status: todo
 depends_on: [B002, B3842]
-file: null
+file: tasks/B3850-otel-arize-phoenix-weave-levo-presets.yaml
 covers:
   - "litellm/integrations/otel/presets/{base,utils,arize,phoenix,levo,weave,langtrace}.py"
   - "litellm/integrations/arize/{arize,arize_phoenix}.py"

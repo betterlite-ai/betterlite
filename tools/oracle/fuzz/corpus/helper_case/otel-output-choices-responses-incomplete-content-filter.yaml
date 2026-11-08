@@ -1,0 +1,9 @@
+kind: helper
+name: responses-incomplete-content-filter
+call:
+  b5240:
+    function: "output_choices"
+    response: {"output": [{"type": "message", "role": "assistant", "content": []}], "status": "incomplete", "incomplete_details": {"reason": "content_filter"}}
+env: {}
+compare:
+  ignore: []

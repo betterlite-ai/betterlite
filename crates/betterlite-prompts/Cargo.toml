@@ -23,6 +23,7 @@ secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde-saphyr.workspace = true
 serde_json = { version = "1.0.145", features = ["arbitrary_precision"] }
+serde_path_to_error = "0.1.20"
 serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }

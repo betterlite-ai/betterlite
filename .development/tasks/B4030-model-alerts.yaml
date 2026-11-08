@@ -1,0 +1,223 @@
+id: B4030
+title: Model deprecation, management and fallback alerts
+description: >-
+  Build the four alert producers that LiteLLM's SlackAlerting class has for model events, in
+  `crates/betterlite-server/src/alerting/model_alerts.rs` with one submodule per producer:
+  `model_added`, `model_deprecation`, `fallback_stats` and `key_event`, each with an adjacent
+  `tests.rs`. Every producer builds a message and calls B4024's `send_alert` entry point. This
+  task never formats the final Slack payload, never filters by alert type and never delivers
+  anything: B4024 and B4021 do that. Every outside thing is passed in through a constructor
+  as a small trait: the alert sender, the usage cache, the clock, the sleeper, the pod lock,
+  the router source, the model catalog source and the Prometheus fallback source. No module-level state.
+
+
+  `model_added`: `model_added_alert(model_name, litellm_model_name, base_model: Option<&str>)`.
+  If `base_model` is present (even an empty string), look the model up in the raw catalog by
+  `base_model` and prefix the message with the line "Base Model: `<base_model>`\n"; otherwise look
+  up `litellm_model_name`. An unknown name gives an empty model info. B193's typed `CatalogEntry`
+  loses the raw key order, so the lookup goes through a `RawModelInfoSource` trait that returns the
+  entry as an ordered `serde_json::Map` in the JSON file's key order (see notes: the architect
+  decides who adds this to B193). Render one line `key: value` per key, in order. The keys
+  `input_cost_per_token` and `output_cost_per_token` render as fixed point with eight decimals
+  (Python `f"{v:.8f}"`, so `1.63e-06` becomes `0.00000163`); a non-number value there is a typed
+  error, as in Python where the format raises. Other values: strings as they are, integers and
+  floats in their shortest decimal form, `true` and `false` as `True` and `False`, null as `None`,
+  nested lists and objects as compact JSON (deviation below). The message is the literal template
+  at L1068-L1094 with the exact blank lines and the trailing space after `Model Info:`; the base
+  URL line is `PROXY_BASE_URL` when that variable is set, even to an empty string, and
+  `http://0.0.0.0:4000` only when it is unset. The alert goes out at level Low with alert type
+  `new_model_added` and empty `alerting_metadata`. Read the variable through B002's environment
+  access, not `std::env` directly. Errors from the sender are returned to the caller; the route
+  that calls this (model_management_endpoints.py:2493) owns the try/except.
+
+
+  `model_deprecation`: `ModelDeprecationAlerts` holds the alert settings view (alerting enabled
+  and the alert type list), the usage cache and the injected pieces.
+  `deprecation_alerts_enabled()` is true when alerting is set and `model_deprecation_warnings` is
+  in the alert types. `send_model_deprecation_alert(router, pod_lock)` returns false when disabled;
+  otherwise it calls B843's `collect_model_deprecations` and `format_deprecation_alert_message`; a
+  `None` message returns false before any lock is taken. Only then it claims the daily window:
+  with no pod lock the claim succeeds; with one, it calls B1690's `acquire_lock` with cronjob id
+  `slack_model_deprecation_warning`, ttl 86400 (B843's `DEFAULT_DEPRECATION_CHECK_INTERVAL_SECONDS`)
+  and `allow_reentrant` false, and only an explicit `false` result refuses (no Redis, which B1690
+  reports as `None`, still proceeds). Then it sends: level High when the deprecated list is not
+  empty, otherwise Medium, alert type `model_deprecation_warnings`, and `alerting_metadata`
+  holding `deprecated_count`, `imminent_count` and `upcoming_count`. After the send it writes the
+  usage cache key `model_deprecation_alert_sent` (the `deprecation_alert_sent_key` value, with no
+  deployment prefix) with the current Unix time as a float and ttl 86400, and returns true. If the
+  send fails nothing is stamped and the error goes up.
+  `run_deprecation_alert_pass(router, pod_lock)` returns false when the router is `None`, the alert
+  is disabled or the stamp key is present in the cache; otherwise it returns what
+  `send_model_deprecation_alert` returns. `run_scheduled_deprecation_check(get_router, pod_lock)`
+  loops until cancelled: run one pass; on `Ok` sleep 30 seconds (`DEPRECATION_IDLE_POLL_SECONDS`);
+  on `Err` log with the error text and sleep 86400 seconds, then loop again. The loop stops through
+  a cancellation token, checked at each sleep, so tests end it without waiting. The scheduling call
+  sites (proxy/utils.py:1265-1303) belong to the proxy startup task.
+
+
+  `fallback_stats`: `send_fallback_stats_from_prometheus()` calls B3888's
+  `get_fallback_metric_from_prometheus`, builds `*Fallback Statistics:*\n<text>`, and sends it at
+  level Low with type `fallback_reports` and empty metadata. Any error from the Prometheus query
+  or the send is logged at error level as "Error sending weekly spend report <error>" and
+  swallowed, so the function always returns `()`. The cron job and lock around it
+  (proxy_server.py:11315-11345, `PROMETHEUS_FALLBACK_STATS_SEND_TIME_HOURS` default 9) are not here.
+
+
+  `key_event`: define `VirtualKeyEvent { created_by_user_id, created_by_user_role, created_by_key_alias: Option<String>, request_kwargs }`
+  (the pydantic model at _types.py:4586-4590); `request_kwargs` is an insertion-ordered map of JSON values.
+  `send_virtual_key_event_slack(key_event, alert_type, event_name)` builds: "`<event_name>`\n", then
+  "*Action Done by:*\n", then one line "<field>: `<value>`\n" for each of the three `created_by_*`
+  fields in declaration order (a missing alias prints `None`), then "\n*Arguments passed:*\n", then
+  one such line per `request_kwargs` entry in insertion order, skipping the key `user_api_key_dict`.
+  Send at level High with the given alert type and empty metadata. Any error (the render or the
+  send) is logged at error level as "Error sending send_virtual_key_event_slack <error>" and
+  swallowed. B1228 calls this function. Do not redact values here; LiteLLM does not.
+
+
+  Helper cases cover the two pure formatters, `render_model_added_message` (given model name,
+  optional base model and a raw model info map) and the deprecation level and metadata choice.
+  Rust tests cover the loop, the claim, the cache stamp and both swallowed-error producers with
+  fake traits and a fake clock.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/alerting/model_alerts.rs
+    - crates/betterlite-server/src/alerting/model_alerts/**
+    - tools/oracle/cases/helpers/model-alerts/**
+    - "tools/oracle/fuzz/corpus/helper_case/model_alerts-*"
+    - tools/oracle/helpers/b4030.py
+    - tools/oracle/helpers/b4030/**
+    - tools/oracle/src/helpers/server/b4030.rs
+    - tools/oracle/src/helpers/server/b4030/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1040-L1098
+    why: model_added_alert message template, base model branch, fixed-point cost formatting; model_removed_alert is an empty body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1100-L1145
+    why: Enabled check, snapshot, None message, claim order, level choice, metadata counts and the sent-key stamp.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1147-L1191
+    why: Daily lock claim, sent-within-a-day check, single pass and the polling loop with its two sleeps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L2025-L2049
+    why: Fallback statistics alert and its swallow-all error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L2051-L2092
+    why: Virtual key event message layout and its swallow-all error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4586-L4590
+    why: VirtualKeyEvent fields and their order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/slack_alerting.py#L151-L159
+    why: SlackAlertingCacheKeys; deprecation_alert_sent_key is "model_deprecation_alert_sent".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1779
+    why: SLACK_MODEL_DEPRECATION_LOCK_ID is "slack_model_deprecation_warning".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2486-L2499
+    why: The only caller of model_added_alert; it wraps the call in its own try/except.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L595-L606
+    why: The only caller of send_virtual_key_event_slack (B1228 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1265-L1287
+    why: The caller of run_scheduled_deprecation_check, to see which arguments it passes.
+
+dod:
+  - text: The model-added message matches LiteLLM byte for byte, including the trailing space after `Model Info:`, with the Base Model line only when a base model is given.
+    proof: [model-added-tests, oracle, helper-python]
+  - text: A base model that is present but empty still takes the base model branch, and an unknown catalog name renders an empty model info.
+    proof: [model-added-tests]
+  - text: input_cost_per_token and output_cost_per_token render with eight decimals and other values render in Python text form (True, None, plain numbers).
+    proof: [model-added-tests, oracle, helper-python]
+  - text: The base URL line uses PROXY_BASE_URL when it is set, including an empty value, and http://0.0.0.0:4000 only when it is unset.
+    proof: [model-added-tests]
+  - text: The model-added alert goes out at level Low with type new_model_added and empty metadata, and a sender error is returned.
+    proof: [model-added-tests]
+  - text: send_model_deprecation_alert returns false without collecting when alerting is off or the type is not enabled.
+    proof: [deprecation-tests]
+  - text: A None formatted message returns false before the pod lock is touched.
+    proof: [deprecation-tests]
+  - text: The lock is claimed with id slack_model_deprecation_warning, ttl 86400 and no reentry; only an explicit false refuses, and no pod lock or a None result proceeds.
+    proof: [deprecation-tests]
+  - text: The deprecation alert level is High with deprecated models and Medium without, and the metadata holds the three counts.
+    proof: [deprecation-tests, oracle, helper-python]
+  - text: After a send the key model_deprecation_alert_sent is stamped with the Unix time and ttl 86400; a failed send stamps nothing.
+    proof: [deprecation-tests]
+  - text: A pass returns false for a missing router, a disabled alert or an existing stamp, and otherwise sends.
+    proof: [deprecation-tests]
+  - text: The scheduled loop sleeps 30 seconds after an Ok pass and 86400 seconds after an error, logs the error, and stops on cancellation.
+    proof: [deprecation-tests]
+  - text: The fallback statistics alert sends "*Fallback Statistics:*\n<text>" at level Low with type fallback_reports, and a Prometheus or send error is logged and swallowed.
+    proof: [fallback-and-key-event-tests]
+  - text: The virtual key event message lists the three created_by fields then request_kwargs in order, skips user_api_key_dict, sends at level High, and swallows errors.
+    proof: [fallback-and-key-event-tests]
+  - text: Newly added helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: model-added-tests
+      why: model-added message template, cost formatting, base model branch or sender behavior is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^alerting::model_alerts::model_added::tests::/)'
+    - id: deprecation-tests
+      why: deprecation claim, level, stamp, pass or scheduled loop behavior is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^alerting::model_alerts::model_deprecation::tests::/)'
+    - id: fallback-and-key-event-tests
+      why: fallback statistics or virtual key event message and error swallowing is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^alerting::model_alerts::(fallback_stats|key_event)::tests::/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4030)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4030 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4030/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added model alert cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/model_alerts-*")" &&
+        grep -lE '^[[:space:]]+b4030:' tools/oracle/fuzz/corpus/helper_case/model_alerts-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/model-alerts/model-added-with-base-model.yaml
+  - tools/oracle/cases/helpers/model-alerts/model-added-without-base-model.yaml
+  - tools/oracle/cases/helpers/model-alerts/model-added-cost-formatting.yaml
+  - tools/oracle/cases/helpers/model-alerts/deprecation-level-and-metadata.yaml
+
+deviations:
+  - what: In the model-added message, a model info value that is a list or an object is written as compact JSON, not as Python repr text.
+    why: docs/compatibility.md leaves Python repr text out; scalar values keep their Python text (True, False, None).
+  - what: A non-number input_cost_per_token or output_cost_per_token returns a typed error instead of raising a Python TypeError.
+    why: The route that calls this catches every error and only logs it, so the caller sees the same result.
+  - what: Values in the virtual key event lines are written as JSON for non-string values, not Python str() text.
+    why: docs/compatibility.md leaves Python str and repr text out; strings and None keep the same text.
+
+out_of_scope:
+  - "model_removed_alert (L1097-L1098), deployment_in_cooldown and deployment_removed_from_cooldown (L194-L198): empty bodies with no caller at the pin."
+  - "_request_is_completed (L2094-L2109): no caller at the pin."
+  - "collect_model_deprecations and format_deprecation_alert_message: B843 owns them; this task calls them."
+  - "get_fallback_metric_from_prometheus and the Prometheus query: B3888 owns them."
+  - "send_alert, destination choice and digest admission: B4024. Batching and delivery: B4021. AlertType, DEFAULT_ALERT_TYPES and the cache key enum: B4020."
+  - "PodLockManager: B1690. Catalog loading and typed fields: B193."
+  - "failed_tracking_alert: B4025. response_taking_too_long: B4027. send_daily_reports and its scheduler: B4028."
+  - "The management route that calls model_added_alert and the key/team/user event mapping that calls send_virtual_key_event_slack: B1228 and the model management route owner."
+  - "The APScheduler cron job for fallback stats and the task that starts run_scheduled_deprecation_check: the proxy startup owner."
+
+pitfalls:
+  - 'The Model Info line is "Model Info: " with a trailing space, and the first line of the message is empty, so the string starts with a newline.'
+  - "`PROXY_BASE_URL` set to an empty string stays empty in the base_url line; only an unset variable gives `http://0.0.0.0:4000`."
+  - "`base_model` branch is chosen by `is not None`, so an empty string still prints \"Base Model: ``\" and looks up the empty name."
+  - The model-added message lists catalog keys in the JSON file's order, not alphabetical, so a BTreeMap gives the wrong text.
+  - A failed deprecation send leaves the pod lock claimed for its 86400 second ttl and the stamp unset, so the retry after the error backoff finds the lock still held and returns false.
+  - The lock check is `is not False`, so a `None` from a missing Redis cache proceeds and a plain falsy value is not a refusal.
+  - The Ok-pass sleep is 30 seconds even after a successful alert; what stops a second alert is the stamp key, not the sleep.
+  - The fallback alert and the key event alert swallow every error including the send, while the model-added and deprecation alerts let the sender error out.
+  - The Prometheus text for failed fallbacks still says "successful fallback requests"; pass B3888's text through unchanged.
+  - "`request_kwargs` entry `user_api_key_dict` is skipped by exact key; every other key, including secrets-looking ones, is printed."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

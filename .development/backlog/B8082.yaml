@@ -1,0 +1,15 @@
+id: B8082
+milestone: M12 python
+title: Python MCPClient, tool helpers and MCP result objects
+status: todo
+depends_on: [B8080, B5657, B7943]
+file: tasks/B8082-python-mcp-client.yaml
+covers:
+  - "litellm/experimental_mcp_client/client.py"
+  - "litellm/experimental_mcp_client/tools.py"
+parent: B168
+split_from: B168
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

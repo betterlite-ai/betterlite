@@ -1,0 +1,14 @@
+id: B7920
+milestone: M12 python
+title: Python types for OpenAI files, batches, threads and the shared aliases (types/llms/openai L1-L1007)
+status: todo
+depends_on: [B5657]
+file: tasks/B7920-types-openai-files-batches.yaml
+covers:
+  - "litellm/types/llms/openai.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

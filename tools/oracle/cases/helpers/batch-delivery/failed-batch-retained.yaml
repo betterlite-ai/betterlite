@@ -1,0 +1,13 @@
+kind: helper
+name: batch-delivery-failed-batch-retained
+call:
+  batch_delivery:
+    flush:
+      settings: {batch_size: 4, flush_interval_seconds: 5, max_queue_size: 100}
+      steps:
+        - {op: enqueue, events: [a, b]}
+        - {op: flush, script: [{outcome: failed}]}
+        - {op: flush, script: [{outcome: delivered}]}
+env: {}
+compare:
+  ignore: []

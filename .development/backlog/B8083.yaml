@@ -1,0 +1,15 @@
+id: B8083
+milestone: M12 python
+title: Python A2A functions, errors and response objects
+status: todo
+depends_on: [B8081, B5657, B163]
+file: tasks/B8083-python-a2a-functions.yaml
+covers:
+  - "litellm/a2a_protocol/main.py"
+  - "litellm/a2a_protocol/card_resolver.py"
+parent: B168
+split_from: B168
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

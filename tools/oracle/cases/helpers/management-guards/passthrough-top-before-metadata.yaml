@@ -1,0 +1,15 @@
+kind: helper
+name: passthrough-top-before-metadata
+call:
+  management_guards:
+    calls:
+      - {function: check_passthrough_routes, user_role: internal_user, allowed_passthrough_routes: ["/x"], metadata: {allowed_passthrough_routes: ["/y"]}, entity: team}
+      - {function: check_passthrough_routes, user_role: proxy_admin, allowed_passthrough_routes: ["/x"], metadata: {allowed_passthrough_routes: ["/y"]}, entity: team}
+      - {function: check_passthrough_routes, user_role: proxy_admin_viewer, allowed_passthrough_routes: ["/x"], entity: team}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/0/detail
+      why: betterlite writes its own message
+    - pointer: /value/2/detail
+      why: betterlite writes its own message

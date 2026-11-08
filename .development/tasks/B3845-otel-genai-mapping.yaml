@@ -126,7 +126,7 @@ out_of_scope:
   - Mapper registry and resolve_mappers dispatch; that lives in B3846.
   - Message attribute population from request payloads; that is B3844's inference span projection.
   - Service datastore attribute names beyond db_span_attributes; db_system and db.statement belong to B3848.
-  - Tool name/description extraction from parsed definitions; payload construction is B3843's ToolDefinition.
+  - Tool name/description extraction from parsed definitions; payload construction is B3844's ToolDefinition.
 pitfalls:
   - The span-wide tool definition budget (32 attributes) is split across N active mappers; a mapper's share is budget/N rounded down, with at least 1 tool always kept legible even when N is large.
   - LiteLLM's GenAI mapper accesses error.error_type and error.message; the error record is optional and both fields may be None independently.

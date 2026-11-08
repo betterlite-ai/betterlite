@@ -1,0 +1,153 @@
+id: B3619
+title: Pass-through common provider HTTP routes
+description: >-
+  Build the seven small provider pass-through routes and the /openai_passthrough alias as the module passthrough_common_routes in crates/betterlite-server.
+  They are Gemini, Cohere, Mistral, TypeSafe, OpenRouter, Anthropic and Cursor.
+  Each route works out a target URL and the upstream credential headers, then hands the request to B3615's create_pass_through_route handler.
+  This task registers the routes, so it adds HTTP oracle cases.
+  Every name below is at most 30 characters.
+
+  Registration. `common_routes_router(deps)` returns the axum router with these paths, each for GET, POST, PUT, DELETE and PATCH, where `endpoint` is the rest of the path after the prefix, without a leading slash: `/gemini/{endpoint}`, `/cohere/{endpoint}`, `/mistral/{endpoint}`, `/typesafe/{endpoint}`, `/openrouter/{endpoint}`, `/anthropic/{endpoint}`, `/cursor/{endpoint}` and `/openai_passthrough/{endpoint}`.
+  `deps` is the same HandlerDeps value B3613 declares; the architect adds the router to the app once. No other path or alias exists for these routes at the pin.
+  The composition of all provider pass-through routes is the architect's, so this module only exposes the one function.
+
+  Shared steps. Every route except Gemini authenticates the caller through B052's key authentication, the same way the other proxy routes do. The target URL is B3618's `provider_target_url(base, endpoint)`: do not copy its path join. A base URL read from an environment variable counts as unset when the variable is empty, so the default applies (Python's `or`).
+  The credential is B3602's `get_credentials(provider, None)`: a matching `use_in_pass_through` deployment first, then the `{PROVIDER}_API_KEY` environment variable. It returns an `Option`.
+  The handler is B3615's create_pass_through_route with the endpoint, the target as a string, the custom headers or query params below and the streaming flag, called with the request, the response and the authenticated key. Its result is the route's result.
+  The simple streaming flag (Gemini, Cohere) is `is_url_streaming(url)`: true when the text "stream" appears anywhere in the target URL string. The query is not part of that string, but the base URL's host, path and query are. Mistral and Anthropic use B3618's `request_is_streaming(request)` instead. TypeSafe, OpenRouter and Cursor never stream (false, or the factory default of false).
+
+  Gemini (`gemini_route`). Base: env `GEMINI_API_BASE`, default `https://generativelanguage.googleapis.com`. This route has no auth dependency. It reads the caller's key from the query param `key`, else the header `x-goog-api-key` (a non-empty query value wins), and authenticates with the string `Bearer {key}` as the explicit api key through B052. When neither is present the string is literally `Bearer None` and authentication fails the way it does for a wrong key. The upstream key is `get_credentials("gemini", None)`. When it is None the route fails with an internal error (HTTP 500) whose message is "Required 'GEMINI_API_KEY'/'GOOGLE_API_KEY' in environment to make pass-through calls to Google AI Studio." The query params sent upstream are `gemini_query_params(request_params, key)`: the request's query params as a map (the last value wins for a repeated name) with `key` set to the upstream key, replacing the caller's. The handler gets custom_llm_provider "gemini", those query params, no custom headers, and is_url_streaming.
+
+  Cohere (`cohere_route`). Base: env `COHERE_API_BASE`, default `https://api.cohere.com`. Credential `get_credentials("cohere", None)`. Header `Authorization: Bearer {key}`. When the key is None the header value is the text `Bearer None` (LiteLLM formats the None). No custom_llm_provider. is_url_streaming.
+
+  Mistral (`mistral_route`). Base: env `MISTRAL_API_BASE`, default `https://api.mistral.ai`. Credential `get_credentials("mistral", None)`, header `Authorization: Bearer {key}` with the same `Bearer None` text. No custom_llm_provider. Streaming from request_is_streaming, which reads the body of a POST (JSON, or a form for multipart) and is true only for `stream: true`.
+
+  TypeSafe (`typesafe_route`). Base: the setting `TYPESAFE_API_BASE`, default `https://api.typesafe.ai`. Credential `get_credentials("typesafe", None)`. Headers `Authorization: Bearer {key}` and `Content-Type: application/json`. custom_llm_provider "typesafe". Not streaming.
+
+  OpenRouter (`openrouter_route`). Base: the setting `OPENROUTER_API_BASE`, default `https://openrouter.ai/api/v1`. `openrouter_api_root(base)` removes one trailing "/" and then one trailing "/v1" from it, in that order, and the result is the base given to provider_target_url. So the default gives `https://openrouter.ai/api` and a request to `/openrouter/v1/chat/completions` reaches `https://openrouter.ai/api/v1/chat/completions`. Credential `get_credentials("openrouter", None)`. Headers `Authorization: Bearer {key}` and `Content-Type: application/json`. custom_llm_provider "openrouter". Not streaming.
+
+  Anthropic (`anthropic_route`). Base: env `ANTHROPIC_API_BASE`, else env `ANTHROPIC_BASE_URL`, else `https://api.anthropic.com`. Credential `get_credentials("anthropic", None)`; an empty string counts as None. The proxy's auth header is B567's get_auth_header with that key and no api_base: an OAuth-style key gives `authorization: Bearer {key}`, a normal key gives `x-api-key: {key}`, and with no key it falls back to `ANTHROPIC_API_KEY` and then `ANTHROPIC_AUTH_TOKEN`, or gives None. The custom headers are B3603's anthropic upstream-headers function (it replaces _upstream_headers_for_anthropic_route): the caller's headers minus LiteLLM secrets, then the proxy auth header on top, and HTTP 401 when there is no proxy header and the caller sent neither `authorization` nor `x-api-key`. No custom_llm_provider. Streaming from request_is_streaming.
+
+  Cursor (`cursor_route`). Base: env `CURSOR_API_BASE`, default `https://api.cursor.com`. The key is `get_credentials("cursor", None)`. When it is None, walk the credential list (B1601's loaded `credential_list`, the registry B1601 builds) in order and stop at the FIRST entry whose credential_info `custom_llm_provider` is "cursor": its credential_values `api_key` becomes the key (possibly still None) and a non-empty credential_values `api_base` replaces the base. When the key is still None, answer HTTP 401 with detail "Cursor API key not found. Add Cursor credentials via the UI (Models + Endpoints → LLM Credentials) or set CURSOR_API_KEY environment variable." (the arrow is LiteLLM's own character in this one message; keep it byte for byte). `cursor_basic_auth(key)` is `Basic ` plus standard base64 of `{key}:` (key, then a colon, nothing after it). Header `Authorization`. custom_llm_provider "cursor". Not streaming.
+
+  OpenAI alias (`openai_alias_route`). `/openai_passthrough/{endpoint}` accepts GET, POST, PUT, DELETE and PATCH, authenticates through B052, and calls the OpenAI pass-through handler that B3628 builds for `/openai/{endpoint}` with the same endpoint, request, response and key, returning its result unchanged. It adds no logic. It exists so that /openai_passthrough/v1/responses reaches OpenAI and not the native Responses API. Name of that handler: read it from B3628's task file; if B3628 names none, report a blocker.
+scope:
+  paths:
+    - crates/betterlite-server/src/passthrough_common_routes.rs
+    - crates/betterlite-server/src/passthrough_common_routes/**
+    - tools/oracle/cases/server/passthrough-common-routes/**
+    - tools/oracle/helpers/b3619.py
+    - tools/oracle/helpers/b3619/**
+    - tools/oracle/src/helpers/server/b3619.rs
+    - tools/oracle/src/helpers/server/b3619/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L313-L377
+    why: gemini_proxy_route from its decorator, the key lookup in query or x-goog-api-key, the missing-credential exception and the query merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L380-L432
+    why: cohere_proxy_route, the Bearer header and the substring streaming test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L550-L600
+    why: mistral_proxy_route, which reads the body for streaming.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L603-L672
+    why: typesafe_proxy_route and openrouter_proxy_route, the two get_secret_str bases, the extra Content-Type header and the /v1 stripping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L807-L880
+    why: is_streaming_request_fn (B3618 owns it) and anthropic_proxy_route with its two base env vars and the merged upstream headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2581-L2589
+    why: _upstream_headers_for_anthropic_route, which B3603 owns and this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L942-L949
+    why: _make_api_key_auth_header, the x-api-key header for a normal key (B567 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L1150-L1170
+    why: get_auth_header, the OAuth Bearer case and the env fallbacks (B567 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3313-L3399
+    why: cursor_proxy_route from its decorator, the credential_list walk, the 401 text and the Basic header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2923-L2974
+    why: openai_proxy_route, the handler the alias calls; B3628 owns it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/openai_passthrough_endpoints.py#L1-L44
+    why: The /openai_passthrough alias route and why it is registered ahead of the native files and batches routes.
+dod:
+  - text: common_routes_router serves the eight paths for GET, POST, PUT, DELETE and PATCH, builds without an axum path conflict, and /openai_passthrough/v1/files reaches the pass-through, not a native route.
+    proof: [router-tests, oracle]
+  - text: is_url_streaming is true when "stream" is in the target URL text and false when it is only in the query or the body, and the Gemini and Cohere routes use it.
+    proof: [target-tests, oracle]
+  - text: Gemini takes the caller key from the query param key or x-goog-api-key, authenticates with "Bearer {key}", replaces the key param with the upstream key and keeps the other params, and answers 500 with the GEMINI_API_KEY message when no upstream key exists.
+    proof: [gemini-tests, oracle]
+  - text: Cohere, Mistral, TypeSafe and OpenRouter send the Bearer header (TypeSafe and OpenRouter add Content-Type application/json), use their env bases and defaults, and OpenRouter strips one trailing slash and one /v1 from its base.
+    proof: [bearer-tests, oracle]
+  - text: Anthropic merges the caller's headers without LiteLLM secrets with the proxy auth header (proxy wins), reads the base from ANTHROPIC_API_BASE then ANTHROPIC_BASE_URL, and answers 401 when neither side has a credential.
+    proof: [anthropic-tests, oracle]
+  - text: Cursor reads the key from get_credentials, then from the first cursor entry of the credential list (key and api_base), sends Basic base64 of "key:", and answers 401 with the Cursor message when no key exists.
+    proof: [cursor-tests, oracle]
+  - text: The /openai_passthrough alias calls the OpenAI handler with the same endpoint and returns its result unchanged.
+    proof: [alias-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: router-tests
+      why: a path or method is missing from the router, two paths collide, or the alias loses to a native route
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_common_routes::tests::router(::|$)/)'
+    - id: target-tests
+      why: the streaming text test or the shared target build is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_common_routes::tests::target(::|$)/)'
+    - id: gemini-tests
+      why: the Gemini key lookup, auth string, query merge or missing-credential error is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_common_routes::tests::gemini(::|$)/)'
+    - id: bearer-tests
+      why: a Bearer header, a base default or the OpenRouter root is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_common_routes::tests::bearer(::|$)/)'
+    - id: anthropic-tests
+      why: the Anthropic base order, header merge or 401 is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_common_routes::tests::anthropic(::|$)/)'
+    - id: cursor-tests
+      why: the Cursor credential walk, Basic header or 401 is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_common_routes::tests::cursor(::|$)/)'
+    - id: alias-tests
+      why: the /openai_passthrough alias does not call the OpenAI handler or changes its result
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_common_routes::tests::alias(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/server/passthrough-common-routes/gemini-key-in-query.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/gemini-key-in-header.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/gemini-no-upstream-key.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/gemini-stream-in-path.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/cohere-bearer-key.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/mistral-body-stream.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/typesafe-headers.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/openrouter-strips-v1-base.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/anthropic-proxy-key.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/anthropic-caller-key.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/anthropic-no-credential.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/anthropic-base-url-fallback.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/cursor-basic-auth.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/cursor-no-key.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/openai-passthrough-alias.yaml
+deviations:
+  - what: The TypeSafe and OpenRouter bases are read from the environment variable through betterlite-config, not through a key-management secret manager.
+    why: LiteLLM's get_secret_str would ask a configured secret manager first. No secret-manager lookup has an owner for these two names yet (see notes); the environment value is what a default deployment sees.
+  - what: The Cursor credential list is read from the loaded config through that registry, not from a Python module global.
+    why: betterlite wires dependencies through constructors. The order of entries and the first-match rule are the same.
+  - what: The Gemini missing-credential failure and the other internal errors use betterlite's common internal error response.
+    why: LiteLLM raises a bare Exception and FastAPI's handler renders it. Status 500 and the message text are kept; the oracle case compares what a client sees.
+out_of_scope:
+  - "create_pass_through_route and the request lifecycle behind it: B3615 and B3613."
+  - "provider_target_url, request_is_streaming, router relay helpers and the generic provider route: B3618."
+  - "get_credentials and the credential record lookup: B3602."
+  - "The caller-header filter, the Anthropic upstream-headers function and its 401 text: B3603."
+  - "AnthropicModelInfo.get_auth_header and its helpers: B567."
+  - "openai_proxy_route, BaseOpenAIPassThroughHandler and the OpenAI websocket routes: B3628."
+  - "The Vertex, Bedrock, Fal, AssemblyAI, TinyFish, Azure, Milvus, VLLM, GigaChat and Watsonx routes: B3621, B3623, B3624, B3625, B3626 and B3627."
+  - "base_passthrough_process_llm_request lives in common_request_processing.py, not in a file this task covers; B004 owns the file (see notes)."
+pitfalls:
+  - "Gemini runs its own auth call with the explicit string Bearer {key}, so a request with no key sends the text Bearer None to auth and must fail like a wrong key, not crash."
+  - "Gemini's upstream query is the caller's params with only key replaced: a caller key in the query never reaches Google, and the other params (alt=sse and the like) do."
+  - "The simple streaming test looks at the target URL string, which has no query, so ?alt=sse does not make a Gemini call streaming but a path like :streamGenerateContent does."
+  - "Cohere and Mistral format a missing key into the header as the text Bearer None instead of failing; keep that, since the oracle compares upstream_headers."
+  - "OpenRouter removes at most one trailing slash and then at most one /v1, so https://x/v1/ becomes https://x but https://x/v1// stays unchanged after the first step."
+  - "Anthropic and Mistral pass no custom_llm_provider to the handler, while Gemini, TypeSafe, OpenRouter and Cursor do; logging relies on that difference."
+  - "get_auth_header gets the key as None for an empty string and then reads ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN itself, so the env fallback happens even when get_credentials found nothing."
+  - "The Cursor docstring lists the credential list before the env var, but get_credentials already reads CURSOR_API_KEY, so the env key wins over the credential list."
+  - "The Cursor walk stops at the first cursor entry even when that entry has no api_key, and its api_base still replaces the base."
+  - "Cursor's Basic value is base64 of the key followed by a colon, with no password part."
+  - "axum may refuse /openai_passthrough/{*endpoint} next to a /{provider}/v1/files route; build both in one router test and fix the registration, never drop a path."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

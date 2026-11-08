@@ -1,0 +1,1 @@
+{"model":"claude-sonnet","messages":[{"role":"user","content":[{"type":"document","title":"Report","source":{"type":"url","url":"https://files.example.com/report.pdf","media_type":"application/pdf"}},{"type":"image","source":{"type":"url","url":"https://files.example.com/photo.png"}}]}]}

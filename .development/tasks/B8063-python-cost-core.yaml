@@ -1,0 +1,136 @@
+id: B8063
+title: Python cost_per_token, completion_cost and response_cost_calculator
+description: >-
+  Give `betterlite` the three cost functions users call most: `cost_per_token`, `completion_cost` and
+  `response_cost_calculator`, with `get_response_cost_from_hidden_params`, `get_usage_object`, `has_hidden_params` and
+  `get_replicate_completion_pricing`. The price rules are Rust: B068 holds `CostCalculator`, `completion_cost` and
+  `response_cost_calculator`, and its parts hold the stages. This task adds the native family `cost` and the Python layer.
+  Python converts response objects to JSON, calls Rust, and returns a float.
+
+
+  Native family `cost`, as B5659 describes it: `src/cost.rs` with one `register` function, code in `src/cost/**`, types in
+  `python/betterlite/_native_cost.pyi`, B5369 declares the `cost` family in `lib.rs` and `_native.pyi` with a stub `register` that this task fills. A `#[pyclass] NativeCost` is built
+  once from a JSON settings text and owns B068's `CostCalculator` with B205's resolver and B193's price map (the
+  `NativeCatalog` of B8061 is not shared across families, so each builds its own from the same bundled map and the
+  runtime entries Python sends). Methods: `cost_per_token(request_json)` returning `[prompt_cost, completion_cost]`,
+  `completion_cost(request_json)` returning `{cost, breakdown}` JSON, and `response_cost(request_json)`. Pure JSON
+  conversions sit in `src/cost/convert.rs` with tests named `cost_request_` and `cost_result_`.
+
+
+  Python lives in `python/betterlite/_cost/` with an explicit `__all__`. Signatures are
+  copied from LiteLLM: `cost_per_token(model="", prompt_tokens=0, completion_tokens=0, response_time_ms=0.0,
+  custom_llm_provider=None, region_name=None, prompt_characters=None, completion_characters=None,
+  cache_creation_input_tokens=0, cache_read_input_tokens=0, custom_cost_per_token=None, custom_cost_per_second=None,
+  number_of_queries=None, usage_object=None, rerank_billed_units=None, ...)` through the end of the parameter list at
+  L379-L400, `completion_cost(completion_response=None, model=None, prompt="", messages=[], completion="", total_time=0.0,
+  call_type=None, custom_llm_provider=None, region_name=None, size=None, quality=None, n=None, custom_cost_per_token=None,
+  custom_cost_per_second=None, optional_params=None, custom_pricing=None, base_model=None,
+  standard_built_in_tools_params=None, litellm_model_name=None, router_model_id=None, litellm_logging_obj=None,
+  service_tier=None, data_residency=None, vertex_location=None)` and `response_cost_calculator(...)` at L1979-L2073. A test
+  compares `inspect.signature` for each.
+
+
+  Response objects (`ModelResponse`, `EmbeddingResponse`, `ImageResponse`, `TextCompletionResponse`, `RerankResponse`,
+  `ResponsesAPIResponse` and the rest, from B5657 and B5658) go through `model_dump()` and carry `_hidden_params` along as a
+  separate JSON field. `response_cost_calculator` first returns `0.0` when `cache_hit is True`, then returns the provider
+  cost from `get_response_cost_from_hidden_params` (`additional_headers["llm_provider-x-litellm-response-cost"]`) when the
+  response has `_hidden_params`, and only then calls Rust. `litellm_logging_obj` is a Python object: Python reads
+  `model` and the cost breakdown hooks from it before the call and writes the returned breakdown back with the method
+  `_store_cost_breakdown_in_logging_obj` uses (L1221-L1291). It is never put in the JSON. A pricing failure from Rust
+  raises the exception class named in the native error through B158's `betterlite._completion.errors`, and a model that is
+  not priced raises LiteLLM's "This model isn't mapped yet" text.
+
+
+  `get_usage_object(completion_response)` (L1015-L1056) returns a `Usage` built from a dict, a pydantic response or a
+  `ResponseAPIUsage`, and `None` when absent. `get_replicate_completion_pricing(completion_response, total_time=0.0)`
+  (L759-L770) is plain arithmetic over the response's `usage` and the Replicate rate, and Python keeps it since no Rust task owns it.
+
+
+  Tests compare floats exactly (`==`) with LiteLLM on the local map: plain chat usage, cached and cache-creation tokens,
+  `custom_cost_per_token`, a per-second model, a tiered model above its threshold, an OpenAI `service_tier` of `flex`, a
+  Bedrock `region_name`, an embedding response, a response that carries a provider cost header, and a cache hit.
+scope:
+  paths:
+  - crates/betterlite-python/src/cost.rs
+  - crates/betterlite-python/src/cost/**
+  - crates/betterlite-python/python/betterlite/_native_cost.pyi
+  - crates/betterlite-python/Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-python/python/betterlite/_cost/**
+  - crates/betterlite-python/tests/test_cost.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L379-L400
+  why: cost_per_token parameter list.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L759-L775
+  why: get_replicate_completion_pricing and has_hidden_params.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1015-L1058
+  why: get_usage_object.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1221-L1291
+  why: Where the cost breakdown goes on the logging object.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1332-L1362
+  why: completion_cost parameter list.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1962-L2073
+  why: Provider cost header and response_cost_calculator.
+dod:
+- text: "`cost_per_token` gives LiteLLM's pair of floats for the fixed usage list, and its signature equals LiteLLM's."
+  proof: [cost-per-token]
+- text: "`completion_cost` gives LiteLLM's float for chat, embedding, cached, custom-priced, per-second, tiered, service-tier and region cases, and its signature equals LiteLLM's."
+  proof: [cost-completion]
+- text: "`response_cost_calculator` returns 0.0 on a cache hit, the header cost when present, and otherwise the computed cost."
+  proof: [cost-response]
+- text: "The cost breakdown reaches `litellm_logging_obj` as in LiteLLM, and the logging object is not part of the JSON."
+  proof: [cost-response]
+- text: "`get_usage_object`, `get_response_cost_from_hidden_params` and `get_replicate_completion_pricing` match LiteLLM."
+  proof: [cost-helpers]
+- text: An unpriced model and a native pricing error raise LiteLLM's exception class and text.
+  proof: [cost-completion]
+- text: JSON conversions for every native method parse without an interpreter, and malformed text gives an error, not a panic.
+  proof: [cost-native]
+- text: The `_cost` package passes ruff and strict basedpyright.
+  proof: [python-lint]
+- text: >-
+    This task adds every Cargo.toml dependency it uses and no unused ones.
+  proof: [cost-per-token]
+checks:
+  optional: []
+  commands:
+  - id: cost-per-token
+    why: A per-token price differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_cost.py -k "per_token or signature"
+  - id: cost-completion
+    why: A completion cost or its error differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_cost.py -k "completion_cost"
+  - id: cost-response
+    why: The cache hit, header or breakdown path differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_cost.py -k "response_cost"
+  - id: cost-helpers
+    why: A small cost helper differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_cost.py -k "usage_object or hidden_params or replicate"
+  - id: cost-native
+    why: A conversion breaks or panics.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^cost::/)'
+  - id: python-lint
+    why: A strict type error in the cost package.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`completion_cost` and `cost_per_token` return a Python `float` made from Rust's exact decimal result."
+  why: B068 computes with exact money types, and LiteLLM's float arithmetic can differ in the last digit. The tests allow a relative difference of 1e-12 and list the cases where it shows.
+- what: This task has no helper oracle cases.
+  why: The pytest file compares both packages, and the pricing cases belong to B068 and its parts.
+out_of_scope:
+- "Price rules, tier selection, discounts, margins and tool fees are Rust (B068 and its parts)."
+- "OCR, rerank, transcription, image, video, batch, vector store and realtime pricing are B8064."
+- "`_select_model_name_for_cost_calc`, `_get_provider_for_cost_calc` and the other private helpers in cost_calculator.py L777-L1014, L1059-L1331 are private to the Rust calculator."
+- "`cost_per_token`'s body (L401-L757) and `completion_cost`'s body (L1363-L1961) are Rust."
+pitfalls:
+- "`messages` has a mutable default `[]` in LiteLLM's signature, so keep the signature equal and never mutate it."
+- "A response with `_hidden_params` that is a dict and one that is a pydantic object both count, and `additional_headers` may be missing."
+- "`float(...)` of the provider cost header raises for non-numeric text, and LiteLLM lets that error out."
+- "`model` may come from `completion_response.model`, so pass both to Rust and let it choose."
+- "`total_time` is only used for per-second and Replicate pricing and is zero by default."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

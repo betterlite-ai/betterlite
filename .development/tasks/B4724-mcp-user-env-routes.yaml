@@ -1,0 +1,158 @@
+id: B4724
+title: MCP per-user environment status and mutation routes
+description: >-
+  Build the four per-user environment variable routes of the MCP management router in
+  betterlite-server::mcp_user_env_routes, the status builder they share and the three wire types.
+  All four sit under the router prefix /v1/mcp (LiteLLM mounts this router with that prefix only, so there is no /mcp/... or /openai/v1/... alias) and every one needs a valid key.
+  Errors are FastAPI HTTPException values whose detail is an object, so the body is {"detail": {"error": "..."}} and not the OpenAI error shape.
+  Every handler runs inside B865's management_endpoint_wrapper and unhandled errors pass through it unchanged.
+
+  Wire types, JSON objects with these exact field names. MCPUserEnvVarsRequest has values, a map of string to string (required; a non-string value is a 422 from request validation).
+  MCPUserEnvVarSpec has name, description (nullable, default null) and is_set (default false).
+  MCPUserEnvVarsStatus has server_id, server_name (nullable), alias (nullable), required (list of MCPUserEnvVarSpec, default empty), missing_count (default 0) and setup_url (nullable).
+  A response never carries a stored value: it reports only is_set.
+
+  Status builder `compute_user_env_status(server, stored_values) -> MCPUserEnvVarsStatus` (LiteLLM `_compute_user_env_var_status`). Inputs are the authorized server table (B858's LiteLLM_MCPServerTable) and the user's stored map (B4714's UserEnvVars; compare only whether a value is non-empty).
+  1. Call B6594's parse_admin_env_vars on the server's env_vars rows, converted with serde_json::to_value, to get the global values and the user specs. Then drop every global whose value is empty. An empty global is not a usable fallback, so it must not cover a user variable.
+  2. referenced = B6594's collect_env_var_references over the values of the server's static_headers (a missing map is empty; LiteLLM also accepts a JSON string there, but the record types it as a map, so that form is not built).
+  3. blocking = names that are in referenced, are a user spec name, and are not a key of the remaining globals.
+  4. Walk user_specs in order. Skip a spec whose name is not in blocking. For the others, is_set = the stored value for that name is present and non-empty; when not set, add one to missing_count. Push MCPUserEnvVarSpec { name, description, is_set }.
+  5. Answer server_id, server_name, alias, required, missing_count, and setup_url = B6594's build_env_var_setup_url(proxy_base_url, server_id) when required is non-empty, else null. proxy_base_url is a constructor field of the route state, filled at the composition root from PROXY_BASE_URL.
+  A user variable that no static header references is never listed, even though the admin declared it.
+
+  Routes, in the order LiteLLM declares them. Take the database handle, the stores and the caches as fields of the route state, never from globals.
+  1. GET /v1/mcp/server/{server_id}/user-env-vars answers the caller's status.
+  Order of checks: database present, caller has a user id, server authorized, read.
+  No database gives 500 with detail.error "Database not connected. Connect a database to your proxy" (B4711's get_prisma_client_or_throw).
+  An empty or missing user_id on the key gives 400 "User ID not found in token".
+  The server comes from B4717's authorize_mcp_server (LiteLLM authorize_and_fetch_mcp_server) (admin: any server, 404 "MCP Server {server_id} not found" for unknown; non-admin: 403 outside the allowed set, never 404, with the message B4717 owns).
+  Then B4714's get_user_env_vars(user_id, server_id) and compute_user_env_status.
+  2. POST /v1/mcp/server/{server_id}/user-env-vars stores values. Same first three checks as route 1, same order.
+  allowed_names = the names of the server's user specs (parse_admin_env_vars, all of them, referenced or not).
+  updates = the entries of values whose name is in allowed_names and whose value is not the empty string. A name outside allowed_names is dropped without an error, and an empty value keeps the stored one.
+  Call B4714's merge_user_env_vars(user_id, server_id, updates, allowed_names), then drop the gateway cache entry for (user_id, server_id) through the UserEnvVarsCache port below, and answer compute_user_env_status with the merged map. Because merge prunes stored names outside allowed_names, a retired variable disappears on the next POST, even one with an empty body values.
+  3. DELETE /v1/mcp/server/{server_id}/user-env-vars clears the caller's values. Same first three checks.
+  Call B4714's delete_user_env_vars, then the same cache drop, and answer compute_user_env_status with an empty map, so every blocking variable reports is_set false and missing_count equals the number listed. A missing row is not an error.
+  4. GET /v1/mcp/user-env-vars/status lists the caller's status across the servers they can use.
+  Database check first (500 as above), then an empty user id answers [] (200, not 400; this route differs from the other three).
+  accessible = B4717's resolve_accessible_servers for the caller (LiteLLM resolve_accessible_mcp_servers; credential-free list of server table rows, deduplicated by server_id). An empty list answers [].
+  Otherwise one B4714 get_user_env_vars_bulk(user_id, ids) call for all ids, and a status per server (missing entry means an empty map). Keep only statuses whose required list is non-empty, in the order of accessible.
+
+  Cache port. LiteLLM drops the entry with the manager's invalidate_user_env_vars_cache(user_id, server_id) after a POST and after a DELETE (not after a failed write: an error from merge or delete leaves the cache alone). Declare a trait `UserEnvVarsCache` in this module with `fn invalidate(&self, user_id: &str, server_id: &str)`, hold it as a `Arc<dyn UserEnvVarsCache>` field of the state, and use an in-memory fake that records calls in the tests. The cache itself (60 second TTL, 4096 entries, written by the gateway read path) is not built here; see notes.
+
+  Routes 1 to 3 do not read the server's env_vars from a stale copy: they use the table that authorize_mcp_server returns for this request.
+  Native tests use fakes for the store, the authorizer and the cache, with a recorded event list. Do not need a live Postgres.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp_user_env_routes.rs
+    - crates/betterlite-server/src/mcp_user_env_routes/**
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - tools/oracle/cases/http/mcp-user-env-vars/**
+    - tools/oracle/helpers/b4724.py
+    - tools/oracle/helpers/b4724/**
+    - tools/oracle/src/helpers/server/b4724.rs
+    - tools/oracle/src/helpers/server/b4724/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L87
+    why: The router prefix /v1/mcp, the only mount point of these routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2763-L2822
+    why: _compute_user_env_var_status, with the empty-global filter, the blocking rule and the setup_url rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2824-L2842
+    why: The status route from its decorator, with the check order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2845-L2911
+    why: The store route (allowed names, empty-value filter, merge, cache drop) and the clear route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2914-L2940
+    why: The all-servers status route, its empty-user answer and its required filter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2728-L2761
+    why: _authorize_and_fetch_mcp_server, owned by B4717; read for the 404 and 403 texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1849-L1877
+    why: The three wire types with their field defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1071-L1074
+    why: invalidate_user_env_vars_cache, the single pop that routes 2 and 3 call.
+
+dod:
+  - text: >-
+      compute_user_env_status lists only user variables that a static header references and no non-empty global covers,
+      reports is_set from a non-empty stored value, counts the unset ones in missing_count, and sets setup_url only when the list is non-empty.
+    proof: [status-tests, oracle]
+  - text: >-
+      An empty-valued global does not cover a user variable, and a non-empty global does.
+    proof: [status-tests, oracle]
+  - text: >-
+      Route 1 answers the caller's status with the checks in order (no database 500, empty user id 400, authorization 404 or 403) and reads only the caller's row.
+    proof: [route-tests, oracle]
+  - text: >-
+      Route 2 keeps only declared names with non-empty values, merges them over the stored values, drops the cache entry after the write and answers the merged status.
+      A name the server does not declare is never stored, and an empty value keeps the stored one.
+    proof: [route-tests, oracle]
+  - text: >-
+      Route 3 deletes the caller's row, drops the cache entry, answers every blocking variable as unset, and treats a missing row as success.
+    proof: [route-tests, oracle]
+  - text: >-
+      Route 4 answers [] for a caller without a user id or without accessible servers, uses one bulk read, and lists only servers with at least one required variable.
+    proof: [route-tests, oracle]
+  - text: >-
+      No response body and no log line contains a stored value, and the cache is left alone when the store call fails.
+    proof: [route-tests, status-tests]
+  - text: >-
+      The four routes are registered under /v1/mcp with the methods and paths in the description, and the three wire types serialize with LiteLLM's field names and defaults.
+    proof: [route-tests, oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: status-tests
+      why: the status builder is missing or its blocking, empty-global or setup_url rules are untested
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp_user_env_routes::status::/)'
+    - id: route-tests
+      why: the route module's tests are missing or fail, so a check order, an error text, a cache drop or a response shape is untested
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp_user_env_routes::/) - test(/^mcp_user_env_routes::status::/)'
+
+oracle_cases:
+  - tools/oracle/cases/http/mcp-user-env-vars/status-no-database-500.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/status-unknown-server-admin-404.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/status-forbidden-server-403.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/status-lists-referenced-user-var.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/status-unreferenced-user-var-hidden.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/status-empty-global-does-not-cover.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/status-global-covers-user-var.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/store-then-status-is-set.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/store-undeclared-name-dropped.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/store-empty-value-keeps-stored.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/store-non-string-value-422.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/clear-resets-status.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/clear-missing-row-ok.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/list-skips-servers-without-required.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/list-no-accessible-servers-empty.yaml
+
+deviations: []
+
+out_of_scope:
+  - "get_prisma_client_or_throw: owned by B4711. get_user_env_vars, get_user_env_vars_bulk, merge_user_env_vars, delete_user_env_vars and UserEnvVars: owned by B4714."
+  - "_authorize_and_fetch_mcp_server and _resolve_accessible_mcp_servers: owned by B4717 as authorize_mcp_server and resolve_accessible_servers. _user_has_admin_view (user_api_key_has_admin_view): owned by B2314."
+  - "parse_admin_env_vars, collect_env_var_references and build_env_var_setup_url: owned by B6594. LiteLLM_MCPServerTable and MCPEnvVar: owned by B858."
+  - "management_endpoint_wrapper: owned by B865."
+  - "The gateway's per-user env var cache (_user_env_vars_cache, _write_user_env_vars_cache and its read in the tool-call path) and the body of invalidate_user_env_vars_cache: no task owns them at this commit; this task owns only the UserEnvVarsCache port that calls it."
+  - "The other routes in mcp_management_endpoints.py: B4719 to B4723, B4725 to B4729 and the temporary OAuth session routes own them."
+
+pitfalls:
+  - Route 4 answers [] with status 200 for a key without a user id, while routes 1 to 3 answer 400 "User ID not found in token"; do not unify them.
+  - Routes 1 to 3 check the database before the user id, and the user id before the server, so a missing database wins over a missing user id, and a missing user id wins over an unknown server.
+  - The status lists a user variable only when a static_headers value references it as ${NAME} and no non-empty global of the same name exists; an unreferenced declared variable is silently absent, and so is its stored value in is_set.
+  - An empty-string global (value "") is filtered out before the blocking test, so it does not satisfy a reference; B6594's parse_admin_env_vars returns "" for a null or missing global value.
+  - POST drops an undeclared name and an empty-string value without any error, and merge_user_env_vars still removes previously stored names that are no longer declared, so a POST with values {} can shrink the stored set.
+  - DELETE answers the status computed with an empty stored map, not a re-read, so is_set is false for all of them even if another worker still has a cached value.
+  - The cache drop comes after the write, and a write error must leave the cache entry in place and the error unchanged through the wrapper.
+  - A non-admin missing from the allowed set gets 403 on routes 1 to 3, never 404, so server ids cannot be enumerated; only an admin gets 404 for an unknown id.
+  - The values in the request body are secrets. Do not log the body, do not derive Debug on the request type with the map visible, and keep stored values out of every error text.
+  - The 422 for a non-string value in values comes from request validation in FastAPI's own shape (a list under "detail"), not from the handler.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

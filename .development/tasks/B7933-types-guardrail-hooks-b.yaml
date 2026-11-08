@@ -1,0 +1,62 @@
+id: B7933
+title: Python types for guardrail hooks compresr to headroom (types/proxy/guardrails/guardrail_hooks)
+description: >-
+  This task ports 11 vendor type files into `crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/`: `compresr`, `conduct`, `crowdstrike_aidr`,
+  `decision_model`, `deepkeep`, `dynamoai`, `enkryptai`, `generic_guardrail_api`, `grayswan`, `guardrails_ai` and `headroom`. It is
+  Python only.
+
+
+  `generic_guardrail_api.py` (216 lines) is the largest: `GuardrailToolParam`, the metadata TypedDict, the optional params model, a config
+  model, `GenericGuardrailAPIRequest` and the function `coerce_stream_holdback_value`, which has to behave like LiteLLM for every
+  input in that source. `dynamoai.py` has three string Enums (`DynamoTextType`, `PolicyMethod`, `PolicyApplicableTo`) and TypedDicts.
+  `enkryptai.py` has six detail TypedDicts. The rest are one to three small classes each.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/compresr.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/conduct.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/crowdstrike_aidr.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/decision_model.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/deepkeep.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/dynamoai.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/enkryptai.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/grayswan.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/guardrails_ai.py
+  - crates/betterlite-python/python/betterlite/types/proxy/guardrails/guardrail_hooks/headroom.py
+  - crates/betterlite-python/tests/test_types_guardrail_hooks_b.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py#L1-L216
+  why: The largest file, with the stream holdback function.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/dynamoai.py#L1-L125
+  why: Enums and request TypedDicts.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/compresr.py#L1-L127
+  why: Compresr types.
+out_of_scope:
+- >-
+  The generic base class is in B7932.
+pitfalls:
+- >-
+  `coerce_stream_holdback_value` is a function in a types file. A test feeds it the same set of inputs as LiteLLM and compares outputs and raised errors.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_guardrail_hooks_b.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

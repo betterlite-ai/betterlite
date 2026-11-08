@@ -1,0 +1,122 @@
+id: B6021
+title: Router generic calls and anthropic_messages
+description: >-
+  Build the Rust side of `Router.aanthropic_messages` and the generic call path it runs on. LiteLLM sends every non-chat call type (messages, realtime, fine tuning, files, video and more) through `_ageneric_api_call_with_fallbacks`, so this task builds that one engine and plugs `anthropic_messages` into it. Other call types plug in later through the same trait, with no change here.
+
+
+  The code is the new module `crates/betterlite-sdk/src/router_generic.rs` and its folder. It uses the `RouterCompletionParts` services from B6020 (catalog, selection, retries, fallbacks, slots, counters, compaction) and does not read the chat request types. Use public items of betterlite-router and betterlite-core only; a service that exists only as a betterlite-server adapter is a blocker to report.
+
+
+  `GenericCallExecutor` is a trait with one async method that takes a `GenericRequest` (the call type name and a `serde_json::Map` of arguments, with `model` set to the deployment's model) and returns a `GenericOutcome`, either a finished JSON body or a byte stream. `RouterGeneric` holds the executors in a `Vec` of (call type name, executor) built by its constructor, so there is no registry and no discovery. This task registers one executor, `anthropic_messages`, that calls B982's `anthropic_messages_handler`. A call type with no executor answers `GenericError::UnknownCallType` with the name.
+
+
+  `generic_call_with_fallbacks` is `_ageneric_api_call_with_fallbacks` (L5272-L5303). It sets `model`, puts the executor under `original_generic_function`, and puts the attempt under `original_function`: the plain attempt below, or B312's anthropic messages attempt when the caller asked for stream fallback (`attempt_function`). With an attempt function it also stores `per_request_fallback_controls` (B398) under the mid-stream controls key, so every hop sees them. It then calls B310's update-before-fallbacks step with the metadata key `litellm_metadata`, and runs B017/B310's fallback-with-retries executor. On error it sends the alert through the optional sink and returns the error unchanged.
+
+
+  `dispatch_generic_call_type` is `_dispatch_generic_call_type` (L5780-L5797). The call type `anthropic_messages` goes to B312's `_aanthropic_messages_with_streaming_fallbacks` entry with the executor. Every other call type goes to `generic_call_with_fallbacks` with no attempt function. `anthropic_messages` and `aanthropic_messages` are the same async function: LiteLLM's `factory_function` builds both from `call_type="anthropic_messages"` (L1912-L1914, L6835-L7009), and neither has a blocking form. Expose one method, `anthropic_messages`, and let the Python layer give it both names.
+
+
+  `generic_attempt` is `_ageneric_api_call_with_fallbacks_helper` (L5334-L5414). Take `passthrough_on_no_deployment` out of the request (default false). Select a deployment with B016, passing `messages` and `input` from the request (either may be absent) and `specific_deployment` taken out. If selection fails and the flag is set, call the executor once with the request unchanged and return its answer. Otherwise return the selection error. Update the request with the deployment (B303), naming the function `_ageneric_api_call_with_fallbacks`. Copy the deployment's params as `data`, read `data["model"]` as the model name, and add one to `total_calls`. Rewrite a passthrough `endpoint` for the chosen model with B401's endpoint step. Get the provider with B014's `provider_for_generic_call(data)`. Build the call arguments in this order: `data`, `caching` set to `cache_responses`, the request, `model` set to the model name, then the `session` map from `with_router_resolved_session_model`. Set `custom_llm_provider` only when the provider is not none. Run B336's compaction with the surface that `surface_for_call` gives for the executor's name, hold the deployment slot (B303), and call the executor. Then B016's refusal check: if it says the Anthropic response was refused, raise `safeguard_refusal_error` for the model and the response's `stop_details`. Add one to `success_calls` for the model name. On any error add one to `fail_calls` for the group name `model`, stamp the failed deployment id (B017) when a deployment was picked, and return the error unchanged.
+
+
+  `with_router_resolved_session_model` is `_with_router_resolved_session_model` (L504-L517). Given the request's `session` value and the model name, return a one-key map with `session` set to the session map plus `model` set to the model name, but only when `session` is a JSON object that has a `model` key. Return an empty map for any other value (missing, not an object, an object without `model`). It never fails.
+
+
+  `generic_call_blocking` is `_generic_api_call_with_fallbacks` (L5799-L5861) for the call types that have no async form. It is the blocking twin with a single pass: update-before-fallbacks with the metadata key that `_get_router_metadata_variable_name` (router_utils/batch_utils.py L153) gives for `generic_api_call`, blocking selection, update with the deployment (function name `generic_api_call`), counter, `endpoint` rewritten with a plain text replace of the group name by the model name, `model` set to the model name, the blocking pre-call checks, and the call with `data`, `custom_llm_provider`, `caching` and the request in that order. It has no retries and no compaction. Counters follow the async rules, with `fail_calls` keyed by the group name.
+
+
+  `FallbackAwareAnthropicMessagesStream` data (L622-L659) is a Rust struct `MessagesStream` that holds the byte stream, the hidden params copied from the source (empty when none), the flag `fallback_headers_adopted` (false at the start), and read-only `has_buffered_provider_output` (true only when the source reports true), `chunks`, `messages` and `model` read from the source, none when absent. B312 owns `adopt_fallback_source`, the iteration and the header merge, so this task only builds the struct and its readers.
+
+
+  Tests are in `router_generic/tests.rs` with name prefixes `generic_`, `dispatch_`, `session_`, `blocking_` and `messages_stream_`. Use fake services, so no network is used.
+scope:
+  paths:
+  - crates/betterlite-sdk/src/router_generic.rs
+  - crates/betterlite-sdk/src/router_generic/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L504-L517
+    why: The session model rewrite.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L622-L659
+    why: The messages stream wrapper's data and readers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1910-L1914
+    why: aanthropic_messages and anthropic_messages are built from the same factory call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5272-L5303
+    why: The generic call with fallbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5334-L5414
+    why: One generic attempt, with the passthrough rule, the argument order and the refusal check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5780-L5861
+    why: The call type dispatch and the blocking generic call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6835-L7009
+    why: async_wrapper, whose anthropic_messages branch is the one this task builds.
+dod:
+  - text: "`dispatch_generic_call_type` sends `anthropic_messages` to B312's entry and every other known call type to the plain generic call, and an unknown name gives `UnknownCallType`."
+    proof: [dispatch-types]
+  - text: "`generic_call_with_fallbacks` sets the model, both function keys and the mid-stream controls only when an attempt function is given, and uses the `litellm_metadata` key."
+    proof: [generic-fallbacks]
+  - text: "`generic_attempt` builds the call arguments in LiteLLM's order and sets the provider only when it is not none."
+    proof: [generic-attempt]
+  - text: "With `passthrough_on_no_deployment` set, a failed selection calls the executor with the request as it came, and without it the selection error is returned."
+    proof: [generic-passthrough]
+  - text: "An Anthropic refusal raises the safeguard refusal error, and counters and failure stamps follow the success and error paths."
+    proof: [generic-refusal]
+  - text: "`with_router_resolved_session_model` rewrites only an object `session` with a `model` key."
+    proof: [session-model]
+  - text: "`generic_call_blocking` follows the single-pass order with the plain text endpoint replace and no retries."
+    proof: [generic-blocking]
+  - text: "`MessagesStream` copies hidden params, starts with `fallback_headers_adopted` false and reads the four source fields."
+    proof: [messages-stream]
+checks:
+  optional: []
+  commands:
+  - id: dispatch-types
+    why: A call type goes to the wrong path or an unknown one passes silently.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_generic::tests::dispatch_/)'
+  - id: generic-fallbacks
+    why: The attempt controls leak into plain calls or the metadata key is wrong.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_generic::tests::generic_fallbacks_/)'
+  - id: generic-attempt
+    why: The argument order lets the request override the model name.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_generic::tests::generic_attempt_/)'
+  - id: generic-passthrough
+    why: A missing deployment fails a passthrough call that should go through.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_generic::tests::generic_passthrough_/)'
+  - id: generic-refusal
+    why: A refused answer is returned as a success or a counter is skipped.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_generic::tests::generic_refusal_/)'
+  - id: session-model
+    why: A session that is not an object breaks the call or keeps the group name.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_generic::tests::session_/)'
+  - id: generic-blocking
+    why: The blocking path adds retries or compaction.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_generic::tests::blocking_/)'
+  - id: messages-stream
+    why: The stream wrapper loses hidden params or reports buffered output wrongly.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_generic::tests::messages_stream_/)'
+oracle_cases: []
+deviations:
+  - what: Call types are plugged in as executors held in a list given to the constructor, and no `factory_function` table of 130 names is built here.
+    why: Each call type belongs to its own family task, and a shared table would be edited by many tasks at once.
+  - what: "`anthropic_messages` and `aanthropic_messages` are one method."
+    why: LiteLLM builds both from the same async wrapper, so they behave alike.
+  - what: The exception alert is sent through an optional injected sink and is skipped when none is set.
+    why: LiteLLM's `send_llm_exception_alert` is owned by the alerting tasks, so only the call point is here.
+out_of_scope:
+  - "B312 owns the messages stream fallback loop, `_aanthropic_messages_with_streaming_fallbacks`, the attempt function and the stream class methods; B311 owns the chat stream twin."
+  - "B016 owns the refusal check and selection, B017 the attempt loop and stamps, B310 the fallback executor, B303 the slot and request update, B336 compaction and B401 the passthrough endpoint rewrite."
+  - "B014 owns `provider_for_generic_call`, and B398 owns `per_request_fallback_controls`."
+  - "B982 owns the native Messages handler this task calls."
+  - "The other branches of `factory_function` (assistants, moderation, search, responses, realtime, vector stores, containers, interactions, agents) stay with B162's last part, and each plugs a `GenericCallExecutor` into `RouterGeneric`."
+  - "B6020 owns the chat completion calls, B6022 the Python bridge and B5078 the Python methods."
+pitfalls:
+  - "`passthrough_on_no_deployment` is removed from the request before selection, so it never reaches a provider."
+  - "`model` is set again after the request is merged, so a request that carries its own `model` cannot override the deployment's."
+  - "`custom_llm_provider` is left out of the arguments when the provider is none, and not sent as null."
+  - "`fail_calls` is keyed by the group name in the generic paths, but `success_calls` and `total_calls` by the deployment's model name."
+  - "The refusal check runs after the call but before `success_calls` is incremented."
+  - "The blocking generic call replaces the group name inside `endpoint` with a plain text replace, while the async path uses B401's segment-aware rewrite."
+  - "The messages stream reads `has_buffered_provider_output` as true only for an exact true, so a truthy non-boolean means false."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

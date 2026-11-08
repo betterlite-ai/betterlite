@@ -1,0 +1,173 @@
+id: B3682
+title: Guardrail factory registry and persistent records
+description: >-
+  Port the live parts of litellm/proxy/guardrails/guardrail_registry.py (894 lines) except the DB polling pair, which is B3683's. The task has three jobs: a table of guardrail types that builds live callbacks from B3681's argument structs, the persistent records (the `GuardrailRegistry` class that reads and writes the `litellm_guardrailstable` rows), and the in-memory handler (`InMemoryGuardrailHandler`) that starts, replaces, lists and removes guardrails. Everything goes in crates/betterlite-guardrails/src/guardrail_registry.rs and guardrail_registry/. LiteLLM keeps the live callbacks in `litellm.logging_callback_manager`, a global. Rust has no global, so the handler owns them and a caller reads them through its methods (see the deviations).
+
+  Types come from earlier tasks. `Guardrail`, `LitellmParams`, `LitellmParamsMode`, `GuardrailEventHooks`, `GuardrailDefinitionLocation` (`db`, `config`) and the byte decoder `decode_litellm_params(body: &[u8])` are B3662's (betterlite-config, sections::guardrail_params). `GuardrailValue` is B3660's. `GuardrailBase`, `GuardrailSettings`, `GuardrailSwitches` and `GuardrailBaseError` are B5471's (guardrail_base). The six `initialize_*` functions and their `*Args` structs are B3681's (guardrail_initializers). Read each of those files for the exact field names before you write code. Add `betterlite-db` to crates/betterlite-guardrails/Cargo.toml (it depends only on env, roi and secrets, so there is no cycle) and add the `v5` feature to the crate's `uuid` line.
+
+  Files, each below 300 lines: `error.rs` (`RegistryError`, a thiserror enum), `integrations.rs`, `callback.rs`, `build.rs`, `scoping.rs`, `rows.rs`, `postgres_rows.rs`, `registry.rs`, `stable_id.rs`, `handler.rs`, `changed.rs`, `tests.rs`.
+
+  `integrations.rs` holds the wire names of `SupportedGuardrailIntegrations` that this task builds: `bedrock`, `lakera`, `lakera_v2`, `presidio`, `hide-secrets` (with the hyphen), `tool_permission`, `tool_policy`, plus `grayswan` and `llm_as_a_judge` as constants with no builder here. `callback.rs` holds the live object. `GuardrailCallback { base: GuardrailBase, spec: CallbackSpec, scoping: CallbackScoping }`. `CallbackSpec` is an enum with one variant per builder output: `Bedrock(BedrockArgs)`, `Lakera(LakeraArgs)`, `LakeraV2(LakeraV2Args)`, `Presidio(PresidioArgs)` `ToolPermission(ToolPermissionArgs)` and `ToolPolicy(ToolPolicyGuardrail)` (B3814's guardrail; the callback's `base` is its base). One more variant, `Compression(CompressionKind)`, marks the compression guardrails that B3546 must tell apart. LiteLLM's `COMPRESSION_GUARDRAIL_PROVIDERS` (auto_router_compression.py L24) is the set of provider names `headroom`, `compresr` and `typesafe`, and `_compression_guardrail_classes` picks the registry classes by those names. `CompressionKind` is an enum with `Headroom`, `Compresr` and `Typesafe`. `integrations.rs` also holds `compression_kind(provider: &str) -> Option<CompressionKind>`, which is Some for exactly those three wire names. `GuardrailFactories` still has seven kinds and builds no `Compression` callback here. The registry sets the kind itself, so no compression task has to: see `initialize_guardrail`. `GuardrailCallback::is_compression(&self) -> bool` is true for that variant only. The class tasks (Bedrock, Lakera, Presidio, tool permission) attach their behavior by matching on `spec`, so this task builds no hook code. `CallbackScoping { skip_system_message: Option<bool>, skip_tool_message: Option<bool>, scan_only_tool_results: Option<bool> }` stands in for the attributes LiteLLM sets on the instance, read from the params base fields `skip_system_message_in_guardrail`, `skip_tool_message_in_guardrail` and `scan_only_tool_results` (B3662 keeps the wire names, and shortens only the Rust field names, so read its base.rs).
+
+  `build.rs` holds `GuardrailFactories`, a struct made once and passed to the handler's constructor: `build(&self, kind: &str, params: &LitellmParams, guardrail_name: &str, strict_modes: bool) -> Result<Vec<GuardrailCallback>, RegistryError>`. It matches the seven wire names above and calls the matching initializer (B3681's, or B3814's `initialize_tool_policy` for `tool_policy`) with `Some(guardrail_name)`; `tool_policy` needs B3814's `ToolPolicyLookup` and `RequestToolNames`, so `GuardrailFactories::new(policies, names)` takes both as `Arc<dyn ... + Send + Sync>` from the caller and the composition root supplies them; a name it does not know is `RegistryError::Unsupported { kind }` with the text "Unsupported guardrail: {kind}" (for a name with a dot, see the custom guardrail deviation). For each args struct it fills a `GuardrailSettings` and calls `GuardrailBase::new(settings, strict_modes)`. The fields that fill it: `guardrail_name` from `name`, `event_hook` from `event_hook`, `default_on`, `mask_request_content` and `mask_response_content` where the args struct has them, `violation_message_template` where it has it (tool permission), `timeout`, `only_scan_new_messages` (Bedrock) and the rest at their default. `supported_event_hooks` is set per kind, because LiteLLM's constructors do it with `kwargs.setdefault`: Bedrock `pre_call`, `post_call`, `during_call`, `pre_mcp_call`, `during_mcp_call`; Lakera `pre_call`, `during_call`; Lakera v2 `pre_call`, `during_call`, `post_call`; Presidio `pre_call`, `during_call`, `post_call`, `logging_only`, `pre_mcp_call`, `post_mcp_call`; tool permission `pre_call`, `post_call`. A rejected event hook comes out as `RegistryError::Base` (from B5471's error). Two builders have more to do. `hide-secrets` calls `initialize_hide_secrets` and returns its error, which is always the missing enterprise package error. `presidio` returns up to three callbacks in the order B3681 gives them (input scan, restore, output mask), and the first is the primary one; the Presidio class sets `logging_only` mode only when the `logging_only` kwarg is true, which the initializer never passes, so skip that branch.
+
+  `scoping.rs` holds `configure_scoping(callback: &mut GuardrailCallback, guardrail_name: &str, params: &LitellmParams, global_skip_tool_message: bool) -> Result<(), RegistryError>`, LiteLLM's `_configure_callback_scoping` and `_apply_configured_bool_overrides`. It copies the three scoping values from the params into `callback.scoping`. Then `scan_only_tool_results` counts as enabled only when it is `Some(true)`. When it is enabled and `supports_scan_only_tool_results` is false for the callback, return `RegistryError::ScanOnlyUnsupported { guardrail_name }`. That method is true for every spec except `Bedrock` with `experimental_use_latest_role_message_only` true. Then, when it is enabled and the effective skip-tool value is true (the callback's own `skip_tool_message` when set, otherwise `global_skip_tool_message`), return `RegistryError::ScanOnlyWithSkipTool { guardrail_name }`. The messages are LiteLLM's ("Guardrail {name}: scan_only_tool_results is enabled, but this guardrail's role filtering never scans tool results, so no request content would ever be scanned. Remove scan_only_tool_results or the guardrail's role-filtering option." and "Guardrail {name}: scan_only_tool_results and skip_tool_message_in_guardrail are enabled together, which excludes every message from scanning, so no request content would ever be scanned. Remove one of the two."). Last, `base.settings.run_in_parallel` and `scan_raw_request` are overwritten only when the params set them (`Some`), so the constructor's own default stays when they are absent.
+
+  `rows.rs` holds the persistence seam and the row mapping. `GuardrailRow { guardrail_id, guardrail_name, litellm_params: Option<String>, guardrail_info: Option<String>, team_id: Option<String>, status, created_at, updated_at }` is the shape this task needs from the table (`submitted_at` and `reviewed_at` are left alone). `GuardrailRows` is a trait of async methods in the `impl Future + Send` style B5471 uses: `create(&self, row: NewGuardrailRow) -> Result<GuardrailRow, RowsError>`, `delete(&self, guardrail_id) -> Result<(), RowsError>`, `update(&self, guardrail_id, row: GuardrailUpdate) -> Result<Option<GuardrailRow>, RowsError>`, `find_active(&self) -> Result<Vec<GuardrailRow>, RowsError>` (status `active`, newest `created_at` first), `find_by_id` and `find_by_name`. `row_to_guardrail(row) -> Result<Guardrail, RegistryError>` reads `litellm_params` through B3662's `decode_litellm_params` and copies `team_id` into B3662's `Guardrail.team_id`, since LiteLLM builds `Guardrail(**dict(row))` and the v2 list filter reads it (guardrail_registry.py L381 and L397). LiteLLM stores `litellm_params` and `guardrail_info` as JSON text (`safe_dumps`) inside the Json column, so the stored value is a JSON string; the reader accepts that text, and also a JSON object, because rows written by other tools are objects. `guardrail_to_new_row` dumps the params with serde_json (api_key and credentials as text, which is how B3662 serializes them and how LiteLLM stores them) and `guardrail_info` defaults to `{}`.
+
+  `postgres_rows.rs` holds `PostgresGuardrailRows`, the implementation of `GuardrailRows` over B726's binding of `litellm_guardrailstable` (`crates/betterlite-db/src/auxiliary_repository`, its `table_binding_guardrailstable` case shows the handle). Use its `find_many`, `find_unique`, `create`, `update` and `delete` the way B700 defines them, and do not write SQL. The write handle is the one B726 gives for writes, so config sync (B4144) publishes after a write.
+
+  `registry.rs` holds `GuardrailRegistry<R: GuardrailRows>`, built with `GuardrailRegistry::new(rows: R)`. The methods and their error text:
+  - `add_guardrail_to_db(&self, guardrail: &Guardrail, now: DateTime<Utc>) -> Result<Guardrail, RegistryError>` creates the row with `created_at` and `updated_at` set to `now` and returns the guardrail with the new `guardrail_id`. A failure is `RegistryError::Database` with the text "Error adding guardrail to DB: {error}".
+  - `delete_guardrail_from_db(&self, guardrail_id) -> Result<DeleteMessage, RegistryError>` returns the message "Guardrail {guardrail_id} deleted successfully". Failure text: "Error deleting guardrail from DB: {error}".
+  - `update_guardrail_in_db(&self, guardrail_id, guardrail, now) -> Result<Guardrail, RegistryError>` writes `guardrail_name`, `litellm_params`, `guardrail_info` and `updated_at`; an update that finds no row is the failure "Error updating guardrail in DB: Guardrail not found, passed guardrail_id={guardrail_id}", as LiteLLM wraps its ValueError.
+  - `get_all_guardrails_from_db`, `get_guardrail_by_id_from_db` and `get_guardrail_by_name_from_db`, with "Error getting guardrails from DB: {error}" and "Error getting guardrail from DB: {error}". The last two give `None` for no row.
+  - `get_initialized_guardrail_callback(&self, handler: &InMemoryGuardrailHandler, guardrail_name: &str) -> Option<&GuardrailCallback>` returns the first live callback whose `base.settings.guardrail_name` equals the name.
+  Error text never holds a parameter value, since the params carry keys: a decode failure shows only the field path from B3662.
+
+  `stable_id.rs` holds `stable_guardrail_id(guardrail_name: &str, taken: &dyn Fn(&str) -> bool) -> String`, LiteLLM's `_stable_guardrail_id`. It takes a v5 UUID in the namespace `625f63f4-935a-50e5-98b5-fbe77babc74a` (`CONFIG_GUARDRAIL_ID_NAMESPACE`) of the UTF-8 bytes of the seeds in order `name`, `name:1`, `name:2`, and so on, and returns the first one the handler does not hold. The text is the lowercase hyphenated form. This is the only function in the task that needs an oracle helper case.
+
+  `handler.rs` holds `InMemoryGuardrailHandler`, built with `new(factories: GuardrailFactories, env: Box<dyn EnvironmentLookup>, strict_modes: bool, global_skip_tool_message: bool)` (`EnvironmentLookup` is betterlite-config's `loader::EnvironmentLookup`; callers pass `config.sections.guardrail_modes.strict`; the global skip flag is `litellm.skip_tool_message_in_guardrail`, see the notes). It holds an `IndexMap<String, Guardrail>` of guardrails by id (insertion order matters for listing), the callbacks by id (`primary: Option<GuardrailCallback>` and `siblings: Vec<GuardrailCallback>`, which is LiteLLM's `guardrail_id_to_custom_guardrail` and `guardrail_id_to_sibling_callbacks` merged) and a source map by id (`GuardrailDefinitionLocation`). Methods:
+  - `initialize_guardrail(&mut self, guardrail: Guardrail, source) -> Result<Guardrail, RegistryError>`. The id is the guardrail's own, or `stable_guardrail_id(name, ..)` when empty. When the id is already held, set its source to the caller's and return the held guardrail without building anything. Otherwise: replace an `os.environ/` api_key and api_base by the variable's value through `env.lookup`; a variable that is not set gives the text "None", because LiteLLM calls `str(get_secret(..))` on a missing value (see pitfalls); a `guardrail` field that is empty is `RegistryError::MissingGuardrailType` with the text "guardrail_type is required". Build the callbacks with `GuardrailFactories::build`; when `compression_kind(guardrail.litellm_params.guardrail)` is Some, set each built callback's `spec` to `Compression(kind)`; run `configure_scoping` on each, store the guardrail, the callbacks (the first is primary, the rest are siblings) and the source, and return it. No callback at all (an empty list) leaves the primary `None`.
+  - `update_in_memory_guardrail(&mut self, guardrail_id, guardrail, source)`. A changed name or changed params (see `changed.rs`) calls `reinitialize_guardrail`; otherwise it replaces the stored guardrail and the source and keeps the callbacks.
+  - `reinitialize_guardrail(&mut self, guardrail, source) -> Result<Option<Guardrail>, RegistryError>`. No `guardrail_id` returns `Ok(None)` after an error log. It remembers the previous guardrail and source, deletes the held one, then initializes. On failure it initializes the previous guardrail again (a failure of that is logged and dropped) and returns `RegistryError::InitFailed` with the text "Guardrail initialization failed: {error}". A guardrail that was enforcing must not fail open because an update was bad.
+  - `delete_in_memory_guardrail(&mut self, guardrail_id)` drops the guardrail, source and all callbacks of that id.
+  - `list_in_memory_guardrails`, `get_guardrail_by_id`, `get_source`, `list_config_guardrails` (source `config` only) and `get_config_guardrail_by_id` (`None` unless the source is `config`).
+  `changed.rs` holds `params_changed(existing: Option<&Guardrail>, new: &Guardrail) -> Result<bool, RegistryError>`: true when there is no existing one, when the names differ, or when any params key differs. Dump each `LitellmParams` with `serde_json::to_vec`, read it back as `BTreeMap<String, GuardrailValue>`, and compare key by key over the union of keys (a key missing on one side reads as null). Log the changed key names at debug.
+
+  The `custom guardrail` path (a type name with a dot, loaded with `get_instance_fn` from a Python file) is not built, see the deviations. The two reconciliation functions, `reconcile_db_guardrails` and `sync_guardrail_from_db`, the `GUARDRAIL_RECONCILE_LOCK` and the module-level `IN_MEMORY_GUARDRAIL_HANDLER` instance belong to B3683, which owns startup. Class-registry discovery from the `guardrail_hooks` folders (`get_guardrail_initializer_from_hooks`, `get_guardrail_class_from_hooks`) becomes the explicit list in `GuardrailFactories`, since Rust has no import-time scan.
+
+  Oracle: the helper operation for this task takes `function` (only `stable_guardrail_id`), `guardrail_name` and `existing_ids` (a list of ids the handler already holds). The Python side builds an `InMemoryGuardrailHandler`, sets `IN_MEMORY_GUARDRAILS` to a dict with those keys and calls `_stable_guardrail_id(name)`. Both sides answer `{"id": "..."}`. Cases: a fresh name; a name whose first id is taken (answer is the `name:1` one); a name whose first two ids are taken; a name with non-ASCII letters.
+
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-registry/stable-id-fresh-name.yaml
+  - tools/oracle/cases/helpers/guardrail-registry/stable-id-first-taken.yaml
+  - tools/oracle/cases/helpers/guardrail-registry/stable-id-two-taken.yaml
+  - tools/oracle/cases/helpers/guardrail-registry/stable-id-non-ascii.yaml
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/guardrail_registry.rs
+    - crates/betterlite-guardrails/src/guardrail_registry/**
+    - crates/betterlite-guardrails/Cargo.toml
+    - Cargo.lock
+    - tools/oracle/cases/helpers/guardrail-registry/**
+    - tools/oracle/fuzz/corpus/helper_case/guardrail-registry-*
+    - tools/oracle/helpers/b3682.py
+    - tools/oracle/helpers/b3682/**
+    - tools/oracle/src/helpers/guardrails/b3682.rs
+    - tools/oracle/src/helpers/guardrails/b3682/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L69-L102
+    why: The initializer and class registries, the namespace UUID and the callback tuple type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L259-L415
+    why: GuardrailRegistry, the DB writes (JSON text in the Json column), the status filter and the error wrapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L418-L461
+    why: The run_in_parallel and scan_raw_request overrides and the two scan_only_tool_results errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L464-L594
+    why: Handler state, stable ids, initialize_guardrail with the os.environ/ replacement and the callback creation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L596-L724
+    why: Custom guardrail path (not built), update, delete, list and the config-only readers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L747-L858
+    why: Params comparison and reinitialize_guardrail with its restore on failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1214-L1229
+    why: The LiteLLM_GuardrailsTable columns and the status default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L92-L140
+    why: The wire names of SupportedGuardrailIntegrations.
+
+dod:
+  - text: stable_guardrail_id returns the v5 UUID of the name in LiteLLM's namespace, then the `name:1`, `name:2` ids while the earlier ones are taken, and matches LiteLLM on every oracle case.
+    proof: [stable-id-tests, oracle]
+  - text: GuardrailFactories builds callbacks for the seven wire names (the seventh is `tool_policy`, built with the two ports the caller passes to GuardrailFactories::new) with the supported event hooks of each kind, gives up to three Presidio callbacks in order, always fails hide-secrets, and rejects any other name with "Unsupported guardrail".
+    proof: [build-tests]
+  - text: configure_scoping copies the three scoping values, rejects scan_only_tool_results for a Bedrock callback in latest-role mode and together with a skip-tool value, and overwrites run_in_parallel and scan_raw_request only when set.
+    proof: [scoping-tests]
+  - text: Rows map to guardrails and back with the params as JSON text, accept an object as well as a text value, carry team_id from the row into the guardrail, and never put a parameter value in an error.
+    proof: [rows-tests]
+  - text: GuardrailRegistry creates, updates, deletes and reads rows through the GuardrailRows trait with LiteLLM's messages, returns only active rows newest first, and turns a missing row on update into the not found failure.
+    proof: [registry-tests]
+  - text: GuardrailCallback::is_compression is true for a callback whose spec is Compression and false for the five built specs.
+    proof: [build-tests]
+  - text: compression_kind is Some for headroom, compresr and typesafe and None for any other name, and initialize_guardrail marks the callbacks of a compression provider with the Compression spec.
+    proof: [build-tests, handler-init-tests]
+  - text: initialize_guardrail replaces os.environ/ values, keeps an already held id untouched and records source and callbacks, with the first callback as primary.
+    proof: [handler-init-tests]
+  - text: update, reinitialize and delete keep callbacks and sources in step, restore the previous guardrail when the new one fails to start, and the config-only readers hide db entries.
+    proof: [handler-update-tests]
+  - text: params_changed is true for a new guardrail, a new name or any differing params key, and false for equal params.
+    proof: [changed-tests]
+  - text: PostgresGuardrailRows compiles against B726's guardrails binding and the crate builds with the new dependencies.
+    proof: [crate-build]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: stable-id-tests
+      why: the stable id seeds, namespace or text form are wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_registry::tests::stable_id_/)'
+    - id: build-tests
+      why: a guardrail kind builds with the wrong callbacks, supported hooks or error
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_registry::tests::build_/)'
+    - id: scoping-tests
+      why: the scan-only rules or the two overrides differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_registry::tests::scoping_/)'
+    - id: rows-tests
+      why: the row mapping loses a field or accepts only one JSON shape
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_registry::tests::rows_/)'
+    - id: registry-tests
+      why: a DB operation of GuardrailRegistry differs from LiteLLM in result or message
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_registry::tests::registry_/)'
+    - id: handler-init-tests
+      why: initialize_guardrail does not keep the held id, the env values or the callback order
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_registry::tests::handler_init_/)'
+    - id: handler-update-tests
+      why: update, reinitialize, delete or the readers leave callbacks or sources out of step
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_registry::tests::handler_update_/)'
+    - id: changed-tests
+      why: the params comparison reports a change that is not one, or misses one
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_registry::tests::changed_/)'
+    - id: crate-build
+      why: the Postgres rows adapter does not compile against B726's binding
+      run: cargo check --locked -p betterlite-guardrails --all-targets && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-guardrails/src/guardrail_registry)"
+
+deviations:
+  - what: Live callbacks are held by InMemoryGuardrailHandler and read through its methods. LiteLLM adds each one to `litellm.logging_callback_manager`, and `delete_in_memory_guardrail` removes it from every callback list.
+    why: Rust has no global callback list, and B189's registry is a closed enum of logging sinks. The hook dispatcher (B124) asks the handler. Removing a guardrail drops its callbacks with it, so none is left behind.
+  - what: A guardrail type with a dot in its name (a custom guardrail class loaded with `get_instance_fn` from a Python file or module) gives the error "Unsupported guardrail" with the type name.
+    why: Rust cannot import a Python class. Custom guardrails run as custom code guardrails (B3801 and its siblings), which are separate types.
+  - what: >-
+      `_normalize_litellm_params_for_comparison` does not fall back to the raw dict when LitellmParams validation fails.
+    why: Params are already typed when they reach the handler, so the invalid case cannot happen here.
+  - what: Only the seven builtin kinds are in GuardrailFactories. `grayswan` and `llm_as_a_judge`, which LiteLLM registers in the same dict, return Unsupported until their own tasks add them.
+    why: Neither has an argument-struct builder in B3681, and their class constructors belong to B3772 and B3809. Third-party guardrails found by `get_guardrail_initializer_from_hooks` are registered the same way, by an explicit list.
+  - what: Environment references in api_key and api_base read only environment variables, not secret managers.
+    why: The function get_secret lives in the secret manager tasks (B129). The config path already resolves references through B3662, so this covers guardrails created through the routes.
+
+out_of_scope:
+  - "reconcile_db_guardrails, sync_guardrail_from_db, GUARDRAIL_RECONCILE_LOCK, the module-level IN_MEMORY_GUARDRAIL_HANDLER and GUARDRAIL_REGISTRY instances: B3683."
+  - "Hook code of the Bedrock, Lakera, Presidio and tool permission classes (what each callback does on a request): their own tasks, which match on CallbackSpec."
+  - "Starting guardrails from the config file and the startup log lines: B3683 (init_guardrails.py)."
+  - "The routes that call the registry and handler: B3684 to B3687."
+  - "get_guardrail_class_from_hooks and get_guardrail_initializer_from_hooks (directory scans at import time): replaced by the explicit list in GuardrailFactories."
+  - "initialize_custom_guardrail: no Python class loading, see the deviations."
+  - "The `litellm_guardrailstable` schema and the config-sync publication: B703 and B4144."
+
+pitfalls:
+  - "`add_guardrail_to_db` and `update_guardrail_in_db` store `litellm_params` and `guardrail_info` as JSON text (`safe_dumps`) in a Json column, so the stored value is a string holding JSON, not an object."
+  - "`get_all_guardrails_from_db` returns only `status = 'active'` rows, so `pending_review` and `rejected` guardrails never reach the handler; the by-id and by-name reads have no status filter."
+  - "`initialize_guardrail` returns early for a held id without building anything, but it still rewrites `_sources`, so a config reload can correct the source of a db entry."
+  - "A missing variable behind `os.environ/` makes api_key the text \"None\", since LiteLLM wraps `get_secret` in `str()`. The guardrail starts and then fails at its first provider call."
+  - "The `guardrail_id` of a config guardrail is a v5 UUID of its name, so the same name keeps its id across restarts, and a second guardrail with the same name gets the `name:1` seed."
+  - "`reinitialize_guardrail` deletes the old callbacks before it builds the new ones, so the restore on failure builds the previous guardrail again and does not reuse the old objects."
+  - "The Presidio restore callback is a sibling, not the primary, so `get_initialized_guardrail_callback` finds all three by name but `guardrail_id_to_custom_guardrail` holds only the input scan."
+  - "`run_in_parallel` and `scan_raw_request` must not be copied when the params leave them out: a constructor default of true would be turned to false."
+  - "The `hide-secrets` wire name has a hyphen, while `tool_permission` and `lakera_v2` use underscores."
+  - "`update_in_memory_guardrail` with unchanged params keeps the old callbacks, so a change to a field outside litellm_params (such as guardrail_info) never rebuilds them."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
