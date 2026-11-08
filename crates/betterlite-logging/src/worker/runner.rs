@@ -1,16 +1,16 @@
-use std::collections::BTreeMap;
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use futures_util::future::select_all;
+use futures_util::future::{FutureExt as _, select_all};
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc};
-use tokio::task::{Id, JoinError, JoinHandle, JoinSet};
+use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument as _, Span};
+use tracing::Instrument as _;
 
 use super::Queued;
 use super::counters::Counters;
@@ -36,7 +36,6 @@ pub(super) async fn run<C>(
         receiver,
         semaphore: Arc::new(Semaphore::new(settings.concurrency)),
         tasks: JoinSet::new(),
-        spans: BTreeMap::new(),
         counters: context.counters,
         settled: context.settled,
         burst: context.burst,
@@ -49,7 +48,7 @@ pub(super) async fn run<C>(
 
 enum Event<C> {
     Received(Option<Queued<C>>),
-    Joined(Option<Result<(Id, ()), JoinError>>),
+    Joined,
     Shutdown,
 }
 
@@ -63,7 +62,6 @@ where
     receiver: mpsc::Receiver<Queued<C>>,
     semaphore: Arc<Semaphore>,
     tasks: JoinSet<()>,
-    spans: BTreeMap<Id, Span>,
     counters: Arc<Counters>,
     settled: Arc<Notify>,
     burst: Arc<TimeoutBurst>,
@@ -83,17 +81,14 @@ where
             match event {
                 Event::Received(Some(queued)) => self.spawn(queued).await,
                 Event::Received(None) => closed = true,
-                Event::Joined(Some(joined)) => self.record_join(joined),
-                Event::Joined(None) => {}
+                Event::Joined => {}
                 Event::Shutdown => {
                     self.tasks.shutdown().await;
                     self.finish().await;
                     return;
                 }
             }
-            while let Some(joined) = self.tasks.try_join_next_with_id() {
-                self.record_join(joined);
-            }
+            while self.tasks.try_join_next().is_some() {}
             if closed && self.tasks.is_empty() {
                 break;
             }
@@ -114,7 +109,8 @@ where
         }
         if has_tasks {
             pending.push(Box::pin(async {
-                Event::Joined(self.tasks.join_next_with_id().await)
+                drop(self.tasks.join_next().await);
+                Event::Joined
             }));
         }
         let shutdown = self.shutdown.clone();
@@ -156,33 +152,14 @@ where
         let settled = Arc::clone(&self.settled);
         let burst = Arc::clone(&self.burst);
         let event_timeout = self.event_timeout;
-        let handle = self.tasks.spawn(
+        self.tasks.spawn(
             async move {
                 let _permit = permit;
                 counters.started.fetch_add(1, Ordering::SeqCst);
                 run_callback(&counters, &settled, &burst, event_timeout, callback).await;
             }
-            .instrument(span.clone()),
+            .instrument(span),
         );
-        self.spans.insert(handle.id(), span);
-    }
-
-    fn record_join(&mut self, joined: Result<(Id, ()), JoinError>) {
-        let span = match &joined {
-            Ok((id, ())) => self.spans.remove(id),
-            Err(error) => self.spans.remove(&error.id()),
-        };
-        let Err(error) = joined else {
-            return;
-        };
-        span.unwrap_or_else(Span::none).in_scope(|| {
-            tracing::error!(
-                %error,
-                "a logging callback task failed; the model response is unaffected"
-            );
-        });
-        self.counters.failed.fetch_add(1, Ordering::SeqCst);
-        self.settled.notify_waiters();
     }
 
     async fn finish(&mut self) {
@@ -206,15 +183,27 @@ async fn run_callback<C>(
     C: Callback,
 {
     let name = callback.name().to_owned();
-    match timeout(event_timeout, callback.call()).await {
-        Ok(Ok(())) => {
+    let outcome = timeout(
+        event_timeout,
+        AssertUnwindSafe(callback.call()).catch_unwind(),
+    )
+    .await;
+    match outcome {
+        Ok(Ok(Ok(()))) => {
             counters.completed.fetch_add(1, Ordering::SeqCst);
         }
-        Ok(Err(error)) => {
+        Ok(Ok(Err(error))) => {
             tracing::warn!(
                 callback = %name,
                 %error,
                 "the logging callback failed; the model response is unaffected"
+            );
+            counters.failed.fetch_add(1, Ordering::SeqCst);
+        }
+        Ok(Err(_panic)) => {
+            tracing::error!(
+                callback = %name,
+                "a logging callback task failed; the model response is unaffected"
             );
             counters.failed.fetch_add(1, Ordering::SeqCst);
         }
