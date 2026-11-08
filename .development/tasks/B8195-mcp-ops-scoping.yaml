@@ -11,6 +11,8 @@ description: >-
   the response type ListMCPToolsRestAPIResponseObject. Scoping fails closed: a request that names
   a server the caller may not use is denied, never widened to all servers.
 
+  The plan registers helper operation b8195 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8195.rs, write tools/oracle/helpers/b8195.py, and leave both registries as they are.
+
 scope:
   paths:
     - crates/betterlite-server/src/mcp/ops_scoping.rs
@@ -19,6 +21,10 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/mcp-ops-scoping/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-ops-scoping-*
+    - tools/oracle/helpers/b8195.py
+    - tools/oracle/helpers/b8195/**
+    - tools/oracle/src/helpers/mcp/b8195.rs
+    - tools/oracle/src/helpers/mcp/b8195/**
   lint_tables: false
 
 references:

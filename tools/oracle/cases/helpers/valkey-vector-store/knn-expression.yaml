@@ -1,0 +1,14 @@
+kind: helper
+name: knn_expression
+call:
+  b7813:
+    calls:
+      - {call: knn, input: {}}
+      - {call: knn, input: {litellm_params: {valkey_text_field: content, valkey_embedding_field: vector}}}
+      - {call: knn, input: {optional_params: {max_num_results: 1}}}
+      - {call: knn, input: {optional_params: {max_num_results: 50}}}
+      - {call: knn, input: {optional_params: {max_num_results: null}}}
+      - {call: knn, input: {optional_params: {filters: null}}}
+      - {call: knn, input: {litellm_params: {valkey_text_field: content}, optional_params: {max_num_results: 4}}}
+env: {}
+compare: {ignore: []}

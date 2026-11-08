@@ -1,0 +1,8 @@
+kind: helper
+name: common-request-processing-coerce-rejected-values
+call:
+  b7324:
+    function: coerce
+    settings: [null, "later", "", "inf", "1e400", 0, -1, "0", "-0.5", "1__0"]
+env: {}
+compare: {ignore: []}

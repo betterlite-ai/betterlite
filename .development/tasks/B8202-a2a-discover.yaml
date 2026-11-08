@@ -14,6 +14,8 @@ description: >-
   {url, agent_card}. Only a proxy admin may call it (403 with the role in the detail). A
   discovery error is 400 and any other error is 500 with "Discovery failed: ...".
 
+  The plan registers helper operation b8202 as a not_built stub in tools/oracle/src/helpers/a2a.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/a2a/b8202.rs, write tools/oracle/helpers/b8202.py, and leave both registries as they are.
+
 scope:
   paths:
     - crates/betterlite-server/src/api/a2a_discover.rs
@@ -22,6 +24,10 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/a2a-discover/**
     - tools/oracle/fuzz/corpus/helper_case/a2a-discover-*
+    - tools/oracle/helpers/b8202.py
+    - tools/oracle/helpers/b8202/**
+    - tools/oracle/src/helpers/a2a/b8202.rs
+    - tools/oracle/src/helpers/a2a/b8202/**
   lint_tables: false
 
 references:

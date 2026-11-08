@@ -1,0 +1,8 @@
+kind: helper
+name: pipeline-empty-steps
+call:
+  b3240:
+    function: validate_pipeline
+    pipeline: {mode: post_call, steps: []}
+env: {}
+compare: {ignore: []}
