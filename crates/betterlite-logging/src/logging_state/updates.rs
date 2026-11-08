@@ -121,7 +121,7 @@ fn insert_call_environment(state: &mut LoggingState) {
             .map_or(Json::Null, |time| Json::Text(time.to_rfc3339())),
     );
     state.model_call_details.insert(
-        "callback_dynamic_params".to_owned(),
+        "standard_callback_dynamic_params".to_owned(),
         Json::Object(state.callback_dynamic_params.clone()),
     );
 }

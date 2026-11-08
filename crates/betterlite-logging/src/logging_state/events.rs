@@ -46,14 +46,6 @@ pub fn is_sync_litellm_request(litellm_params: &IndexMap<String, Json>) -> bool 
         .any(|key| matches!(litellm_params.get(*key), Some(Json::Bool(true))))
 }
 
-#[must_use]
-pub fn should_run_logging(state: &LoggingState, event: LoggingEvent) -> bool {
-    if state.model_call_details.get(event.key()) == Some(&Json::Bool(true)) {
-        return false;
-    }
-    true
-}
-
 pub fn has_run_logging(state: &mut LoggingState, event: LoggingEvent) {
     if state.stream == Some(true) {
         return;

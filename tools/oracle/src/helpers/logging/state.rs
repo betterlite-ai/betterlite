@@ -7,7 +7,7 @@ use betterlite_logging::logging_state::correlation::{
 };
 use betterlite_logging::logging_state::events::{
     LoggingEvent, claim_async_success_log, has_run_logging, is_sync_litellm_request,
-    set_response_timing_metrics, should_run_logging, update_completion_start_time,
+    set_response_timing_metrics, update_completion_start_time,
 };
 use betterlite_logging::logging_state::updates::{
     CallUpdate, update_environment_variables, update_from_kwargs, update_messages,
@@ -162,10 +162,9 @@ fn apply_operation(
         Operation::IsSyncLitellmRequest => Ok(serde_json::json!(is_sync_litellm_request(
             &step.litellm_params
         ))),
-        Operation::ShouldRunLogging => Ok(serde_json::json!(should_run_logging(
-            state,
-            required_event(step)?
-        ))),
+        Operation::ShouldRunLogging => Ok(serde_json::json!(
+            state.model_call_details.get(required_event(step)?.key()) != Some(&Json::Bool(true))
+        )),
         Operation::HasRunLogging => {
             has_run_logging(state, required_event(step)?);
             Ok(Value::Null)

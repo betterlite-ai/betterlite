@@ -11,7 +11,9 @@ use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use secrecy::SecretString;
+use serde::Deserialize;
+use std::fmt;
 use thiserror::Error;
 
 use self::correlation::{CorrelationOwnership, CorrelationSetup, apply_correlation};
@@ -21,7 +23,7 @@ use self::types::{
 
 mod tests;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LoggingInit {
     pub model: String,
@@ -42,7 +44,7 @@ pub struct LoggingInit {
     #[serde(default, rename = "standard_callback_dynamic_params")]
     pub callback_dynamic_params: IndexMap<String, Json>,
     #[serde(default)]
-    pub trusted_callback_vars: Vec<(String, String)>,
+    pub trusted_callback_vars: Vec<(String, SecretString)>,
     #[serde(default)]
     pub standard_built_in_tools_params: IndexMap<String, Json>,
     #[serde(default)]
@@ -55,7 +57,6 @@ pub struct LoggingInit {
     pub callback_policy: CallbackPolicy,
 }
 
-#[derive(Debug)]
 pub struct LoggingState {
     pub model: String,
     pub messages: Option<Vec<Json>>,
@@ -78,7 +79,7 @@ pub struct LoggingState {
     pub completion_start_time: Option<DateTime<FixedOffset>>,
     pub dynamic_callbacks: DynamicCallbacks,
     pub callback_dynamic_params: IndexMap<String, Json>,
-    pub trusted_callback_vars: Vec<(String, String)>,
+    pub trusted_callback_vars: Vec<(String, SecretString)>,
     pub standard_built_in_tools_params: IndexMap<String, Json>,
     pub applied_guardrails: Option<Vec<String>>,
     pub request_logging: RequestLoggingFlags,
@@ -88,6 +89,28 @@ pub struct LoggingState {
     pub correlation: CorrelationOwnership,
     pub deferred: DeferredLogging,
     pub callback_policy: CallbackPolicy,
+}
+
+// Params, litellm_params and trusted variables carry credentials, so only identifiers are printed
+impl fmt::Debug for LoggingInit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LoggingInit")
+            .field("model", &self.model)
+            .field("call_type", &self.call_type)
+            .field("litellm_call_id", &self.litellm_call_id)
+            .finish_non_exhaustive()
+    }
+}
+
+impl fmt::Debug for LoggingState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LoggingState")
+            .field("model", &self.model)
+            .field("call_type", &self.call_type)
+            .field("litellm_call_id", &self.litellm_call_id)
+            .field("litellm_trace_id", &self.litellm_trace_id)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]

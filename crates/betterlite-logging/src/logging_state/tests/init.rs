@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::support::{build, build_in, encoded, init, object, params, text, try_build};
 use crate::logging_state::correlation::{CorrelationContext, CorrelationSettings};
@@ -19,6 +20,7 @@ enum Scenario {
     BrokenSession,
     Details,
     Dependencies,
+    DebugOutput,
     Correlation(CorrelationSettings),
 }
 
@@ -76,8 +78,12 @@ fn trusted_json(state: &LoggingState) -> Json {
         state
             .trusted_callback_vars
             .iter()
-            .cloned()
-            .map(|(name, value)| Json::List(vec![Json::Text(name), Json::Text(value)]))
+            .map(|(name, value)| {
+                Json::List(vec![
+                    Json::Text(name.clone()),
+                    Json::Text(value.expose_secret().to_owned()),
+                ])
+            })
             .collect(),
     )
 }
@@ -86,7 +92,7 @@ fn dependencies_outcome() -> String {
     let state = build(LoggingInit {
         litellm_params: params(&[("api_base", text("http://proxy"))]),
         callback_dynamic_params: params(&[("langfuse_host", text("h"))]),
-        trusted_callback_vars: vec![("dd_api_key".to_owned(), "k".to_owned())],
+        trusted_callback_vars: vec![("dd_api_key".to_owned(), SecretString::from("k"))],
         standard_built_in_tools_params: params(&[("web_search_options", Json::Null)]),
         request_logging: RequestLoggingFlags {
             log_raw_request_response: true,
@@ -97,7 +103,7 @@ fn dependencies_outcome() -> String {
     let summary = object(&[
         ("litellm_params", Json::Object(state.litellm_params.clone())),
         (
-            "callback_dynamic_params",
+            "standard_callback_dynamic_params",
             Json::Object(state.callback_dynamic_params.clone()),
         ),
         ("trusted_callback_vars", trusted_json(&state)),
@@ -123,6 +129,21 @@ fn dependencies_outcome() -> String {
         ("timing", Json::Object(IndexMap::new())),
     ]);
     encoded(&summary)
+}
+
+fn debug_outcome() -> String {
+    let fixture = LoggingInit {
+        litellm_params: params(&[("api_key", text("sk-param"))]),
+        callback_dynamic_params: params(&[("langfuse_secret_key", text("lf-param"))]),
+        trusted_callback_vars: vec![("dd_api_key".to_owned(), SecretString::from("dd-trusted"))],
+        ..init()
+    };
+    let printed_init = format!("{fixture:?}");
+    let printed_state = format!("{:?}", build(fixture));
+    let leaked = ["sk-param", "lf-param", "dd-trusted"]
+        .iter()
+        .any(|secret| printed_init.contains(secret) || printed_state.contains(secret));
+    leaked.to_string()
 }
 
 fn correlation_outcome(settings: CorrelationSettings) -> String {
@@ -168,6 +189,7 @@ fn outcome(scenario: &Scenario) -> String {
         Scenario::BrokenSession => broken_session_outcome(),
         Scenario::Details => details_outcome(),
         Scenario::Dependencies => dependencies_outcome(),
+        Scenario::DebugOutput => debug_outcome(),
         Scenario::Correlation(settings) => correlation_outcome(*settings),
     }
 }
@@ -196,7 +218,8 @@ fn outcome(scenario: &Scenario) -> String {
     "the litellm_session_id value must be a string"
 )]
 #[case::initial_details_keep_the_original_input(Scenario::Details, r#"{"litellm_trace_id":"trace-1","litellm_call_id":"call-1","input":null,"litellm_params":{"api_base":"http://proxy"},"applied_guardrails":["guard"],"model":"gpt-4o"}"#)]
-#[case::injected_dependencies_are_stored(Scenario::Dependencies, r#"{"litellm_params":{"api_base":"http://proxy"},"callback_dynamic_params":{"langfuse_host":"h"},"trusted_callback_vars":[["dd_api_key","k"]],"standard_built_in_tools_params":{"web_search_options":null},"request_logging":{"log_raw_request_response":true,"raw_request_only":true},"custom_pricing":false,"completion_start_time":null,"timing":{}}"#)]
+#[case::injected_dependencies_are_stored(Scenario::Dependencies, r#"{"litellm_params":{"api_base":"http://proxy"},"standard_callback_dynamic_params":{"langfuse_host":"h"},"trusted_callback_vars":[["dd_api_key","k"]],"standard_built_in_tools_params":{"web_search_options":null},"request_logging":{"log_raw_request_response":true,"raw_request_only":true},"custom_pricing":false,"completion_start_time":null,"timing":{}}"#)]
+#[case::debug_output_hides_credentials(Scenario::DebugOutput, "false")]
 #[case::disabled_correlation_leaves_the_context_alone(
     Scenario::Correlation(CorrelationSettings {
         supports_correlation_logging: true,
