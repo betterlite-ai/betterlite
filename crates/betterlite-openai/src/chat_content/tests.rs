@@ -137,18 +137,18 @@ fn contents(body: &Value) -> Vec<String> {
 }
 
 #[rstest]
-#[case::case_0_string_image_url(0)]
-#[case::case_1_file_data_default_filename(1)]
-#[case::case_2_file_block_without_file(2)]
-#[case::case_3_inline_pdf(3)]
-#[case::case_4_custom_base_cache_control(4)]
-#[case::case_5_hosted_cache_control_removal(5)]
-#[case::case_6_schema_combinators_and_regex(6)]
-#[case::case_7_tool_choice_without_tools(7)]
-#[case::case_8_sync_async_max_retries(8)]
-#[case::case_9_system_messages_first(9)]
-#[case::case_10_remote_url_current_rejection(10)]
-#[case::case_11_user_only_media_transform(11)]
+#[case::string_image_url(0)]
+#[case::file_data_default_filename(1)]
+#[case::file_block_without_file(2)]
+#[case::inline_pdf(3)]
+#[case::custom_base_cache_control(4)]
+#[case::hosted_cache_control_removal(5)]
+#[case::schema_combinators_and_regex(6)]
+#[case::tool_choice_without_tools(7)]
+#[case::sync_async_max_retries(8)]
+#[case::system_messages_first(9)]
+#[case::remote_url_current_rejection(10)]
+#[case::user_only_media_transform(11)]
 fn chat_content_cases(#[case] case: u8) {
     match case {
         0 => string_image_url(),

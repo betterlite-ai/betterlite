@@ -16,8 +16,8 @@ fn load(source: &str) -> Result<super::Settings, ConfigError> {
 }
 
 #[rstest]
-#[case::case_0_loads_openai_system_messages_first(0)]
-#[case::case_1_rejects_unrelated_key(1)]
+#[case::loads_openai_system_messages_first(0)]
+#[case::rejects_unrelated_key(1)]
 fn openai_chat_content_config_cases(#[case] case: u8) {
     match case {
         0 => {
