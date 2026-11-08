@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
@@ -21,54 +20,16 @@ use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use serde::Serialize;
 use serde_json::Value;
-use tokio::runtime::Builder;
-use tokio::time::timeout;
 use uuid::Uuid;
 
-use super::capture::{Execution, Stop};
 use super::error::SdkHttpError;
 use super::result::{ChatCompletion, Choice, Failure, Nullable, SdkResult};
 use super::{ChatMessage, OpenaiChat};
-
-const POLL: Duration = Duration::from_millis(10);
 
 #[derive(Serialize)]
 struct WireChat<'wire> {
     model: &'wire str,
     messages: &'wire [ChatMessage],
-}
-
-pub(crate) fn execute(
-    chat: &OpenaiChat,
-    api_base: &str,
-    env: &BTreeMap<String, String>,
-    stop: &Stop<'_>,
-) -> Execution {
-    let result = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(SdkHttpError::Io)
-        .and_then(|runtime| runtime.block_on(send_until_stopped(chat, api_base, env, stop)));
-    Execution {
-        result,
-        log: Vec::new(),
-    }
-}
-
-// the request future is dropped, and its connection with it, as soon as the stop fires
-async fn send_until_stopped(
-    chat: &OpenaiChat,
-    api_base: &str,
-    env: &BTreeMap<String, String>,
-    stop: &Stop<'_>,
-) -> Result<SdkResult, SdkHttpError> {
-    let mut sending = Box::pin(send(chat, api_base, env));
-    loop {
-        stop.check()?;
-        if let Ok(sent) = timeout(POLL, &mut sending).await {
-            return sent;
-        }
-    }
 }
 
 #[derive(Serialize)]
@@ -155,7 +116,7 @@ pub(crate) fn openai_defaults(config: &LoadedConfig) -> OpenAiDefaults {
     }
 }
 
-async fn send(
+pub(crate) async fn send(
     chat: &OpenaiChat,
     api_base: &str,
     env: &BTreeMap<String, String>,

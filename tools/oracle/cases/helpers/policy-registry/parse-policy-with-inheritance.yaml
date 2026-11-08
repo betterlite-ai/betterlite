@@ -1,0 +1,26 @@
+kind: helper
+name: parse-policy-with-inheritance
+call:
+  b3241:
+    policy_memory_matching_registry:
+      action: parse_policy
+      policy_name: healthcare
+      policy:
+        inherit: baseline
+        description: HIPAA compliance
+        guardrails:
+          add: [hipaa-audit]
+          remove: [pii-blocker]
+        condition:
+          model: [gpt-4, gpt-4-turbo]
+        pipeline:
+          mode: post_call
+          steps:
+            - guardrail: hipaa-audit
+              on_fail: next
+              on_pass: allow
+              on_error: block
+              pass_data: true
+              modify_response_message: masked
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,19 @@
+kind: helper
+name: redis-semantic-cache-lookup
+call:
+  b4382:
+    operation: lookup
+    key: scope-1
+    messages:
+      - role: user
+        content: "what is cached"
+    metadata: {request-id: abc}
+    vector: [0.25, 0.5, 0.75]
+    hits:
+      - prompt: "what is cached"
+        response: '{"choices":[]}'
+        litellm_cache_key: scope-1
+        vector_distance: 0.25
+env: {}
+compare:
+  ignore: []

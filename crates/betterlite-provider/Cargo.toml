@@ -7,12 +7,17 @@ publish.workspace = true
 
 [dependencies]
 async-trait = "0.1.92"
+aws-lc-rs = "1.18.2"
+base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
+betterlite-prompts = { path = "../betterlite-prompts" }
+chrono.workspace = true
 futures-util = { version = "0.3.34", default-features = false, features = ["async-await", "std"] }
 http = "1.5.0"
+pem = "4.0.0"
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true

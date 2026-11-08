@@ -1,14 +1,14 @@
 id: B6800
 milestone: M5 api families
 title: OCR provider contract, HTTP call handler and document intake
-status: todo
+status: done
 depends_on: [B173, B5082, B3300]
 file: tasks/B6800-ocr-provider-contract.yaml
 covers:
   - "litellm/ocr/**"
 parent: B092
 split_from: B092
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 929
