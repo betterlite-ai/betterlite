@@ -1,0 +1,14 @@
+id: B8722
+milestone: M9 agents and mcp
+title: MCP single exchange transport for modern revisions
+status: todo
+depends_on: [B8721, B8190]
+file: tasks/B8722-mcp-modern-transport.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/server.py"
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -2,7 +2,7 @@ id: B105
 milestone: M6 guardrails
 title: Built-in content filter, secret detection and prompt injection checks
 status: todo
-depends_on: [B3690, B3691, B3692, B3693, B3694, B3695, B3696, B3697, B3698, B3699, B3700, B3701, B3702, B3703, B3704, B3705, B189, B002]
+depends_on: [B3690, B3691, B3692, B3693, B3694, B3695, B3696, B3697, B3698, B3699, B3700, B3701, B3702, B3703, B3704, B3705, B189, B002, B8773]
 file: null
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/{__init__.py,content_filter.py}"

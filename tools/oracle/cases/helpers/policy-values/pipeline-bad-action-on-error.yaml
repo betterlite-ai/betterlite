@@ -1,0 +1,11 @@
+kind: helper
+name: pipeline-bad-action-on-error
+call:
+  b3240:
+    function: validate_pipeline
+    pipeline:
+      mode: pre_call
+      steps:
+        - {guardrail: pii, on_error: deny}
+env: {}
+compare: {ignore: []}

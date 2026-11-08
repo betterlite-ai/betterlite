@@ -117,7 +117,7 @@ deviations:
     why: LiteLLM does not log it here either, but the rule is kept explicit.
 out_of_scope:
   - "Prompt extraction, response decoding, the ttl rule and the embedder port: B4380 and B4382. Embedding calls: B4381."
-  - "Choosing the cache type from settings. B4299 raises 'cache type valkey-semantic is not yet implemented' until the architect wires this task in (B4299 owns that change)."
+  - "Choosing the cache type from settings: B8651 builds this cache for type valkey-semantic with the router embedder and passes it to B4299's Cache as its injected backend."
   - "build_valkey_url and pack_vector: B7813."
   - "The live Redis client: B5220."
 pitfalls:

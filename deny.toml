@@ -37,6 +37,8 @@ allow = [
 ]
 exceptions = [
   { allow = ["NCSA"], crate = "libfuzzer-sys" },
+  # borrow-or-share is MIT-0, the OSI-approved no-attribution form MIT; only fluent-uri uses it
+  { allow = ["MIT-0"], crate = "borrow-or-share" },
   # MPL-2.0 section 3.2(a) is answered in THIRD_PARTY_NOTICES.md; both crates are used unmodified
   { allow = ["MPL-2.0"], crate = "colored" },
   { allow = ["MPL-2.0"], crate = "option-ext" },

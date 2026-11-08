@@ -1,14 +1,14 @@
 id: B259
 milestone: M1 openai data plane
 title: Token schema formatting and model normalization
-status: todo
+status: done
 depends_on: [B193, B195, B171]
 file: tasks/B259-token-formatting.yaml
 covers:
   - "litellm/litellm_core_utils/token_counter.py"
 parent: B013
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 890

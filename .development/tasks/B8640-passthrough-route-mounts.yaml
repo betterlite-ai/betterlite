@@ -1,0 +1,100 @@
+id: B8640
+title: Pass-through mount base, shared state and config routes
+description: >-
+  The pass-through route tasks build their routers and handlers and leave the merge into the app to wave 17. No B1100 stub covers them, so today none of these paths answers. This task builds what every pass-through family shares, the area's mount functions and the config routes. Four family parts then fill one family file each and own that family's HTTP oracle cases: B8606 (common providers and OpenAI), B8607 (Bedrock, Comprehend Medical, Azure Speech and Transcribe), B8608 (Vertex and Azure) and B8609 (Fal, AssemblyAI, TinyFish, VLLM, GigaChat and Watsonx).
+  LiteLLM includes the whole llm_passthrough router at one slot in proxy_server.py (L19966, `reserve_lazy_slot(app, "llm_passthrough")`), the openai_passthrough router just before it and the config routes of pass_through_endpoints.py just after. Lazy loading changes nothing a client sees, so here every route is mounted at startup.
+
+  Shared state (app/pass_through/routes/deps.rs). `PassThroughState::new(shared: &Shared)` builds, from Shared and nothing global:
+  - the one `Arc<PassThroughHandler>` of B3613, from B3613's merged `HandlerDeps` filled from Shared (`http`, `general_settings`, `router_views`, and `proxy_logging` through B8641's HooksAdapter) and B6510's `PassThroughDeps`;
+  - B8641's `PassThroughPorts::new(shared)`;
+  - B3612's `WebSocketRelay` with `WebSocketDeps` filled from Shared, B8641's HooksAdapter as hooks and B8642's `TungsteniteConnector` as connector;
+  - `AxumSocketServe` (app/pass_through/routes/sockets.rs), the production `SocketServePort` of B3628. Its serve extracts axum's WebSocketUpgrade from the request (a request that is not an upgrade gets 400, which only a bug can reach since the callers check first) and calls B8642's `serve_client_socket` with a closure that, for `SocketAuth::Key`, runs B052's user_api_key_auth_websocket on the socket (read the merged name) and closes before accept on a failure, then runs the route with the key; for `SocketAuth::Route` it runs the route with no key;
+  - B8643's `ConfiguredDispatch` over the same handler Arc and the route table handle.
+  The B3602 credential router, the B1302 Vertex token state and the B3614 route table must each be one value per process, because LiteLLM keeps them at module level and set_default_vertex_config, B3616's startup install and B8520's writes change them. Take all three from the Shared field the architect names for them (see the planner notes) and never build a second one. When that field is not on the branch, stop and report.
+  Every family file reads only `PassThroughState`, so the family parts never touch Shared.
+
+  The router hop and the passthrough processor. B3618's `RouterPassthrough` and B7324's `LlmRequestProcessor` and `ExceptionMapper` have no production value yet. `PassThroughState` holds them for the families whose deps take them (B3620 through B3621, B3624, B3627 and B3628's NVIDIA route). They are filled from B8694's `LlmPipelinePorts::new(state)`: its `LlmPassthroughProcessor` for the processor fields and its `RouterHop` (None without a router) for the router fields.
+
+  Mount functions (app/pass_through.rs). `mount(router, state)` builds one PassThroughState from `state.shared` and calls, in this order, `openai_common::mount`, `aws_speech::mount`, `vertex_azure::mount` and `saas_vgw::mount` (each `fn mount(router: Router, ps: &PassThroughState) -> Router` in app/pass_through/routes/<family>.rs). Then it merges B3617's two GET routes (`/config/pass_through_endpoint` and `/config/pass_through_endpoint/team/{team_id}`) and B8520's routes (POST `/config/pass_through_endpoint/{endpoint_id}`, POST `/config/pass_through_endpoint`, DELETE `/config/pass_through_endpoint`) with B8641's settings store, and sets B8643's `configured_fallback` as the app fallback. Only this area sets the fallback, and it still answers the 404 Not Found body when no configured route matches. `mount_public(router, state)` calls `openai_common::mount_public` the same way (B8606 puts the Gemini route there). `start(state)` stays the skeleton's stub.
+  Write the four family files with stub bodies that return the router unchanged, so the app builds before the family parts run. Each family part replaces its stub.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/pass_through.rs
+    - crates/betterlite-server/src/app/pass_through/routes.rs
+    - crates/betterlite-server/src/app/pass_through/routes/deps.rs
+    - crates/betterlite-server/src/app/pass_through/routes/deps/**
+    - crates/betterlite-server/src/app/pass_through/routes/sockets.rs
+    - crates/betterlite-server/src/app/pass_through/routes/sockets/**
+    - crates/betterlite-server/src/app/pass_through/routes/tests.rs
+    - crates/betterlite-server/src/app/pass_through/routes/openai_common.rs
+    - crates/betterlite-server/src/app/pass_through/routes/aws_speech.rs
+    - crates/betterlite-server/src/app/pass_through/routes/vertex_azure.rs
+    - crates/betterlite-server/src/app/pass_through/routes/saas_vgw.rs
+    - tools/oracle/cases/server/pass-through-mounts/**
+    - tools/oracle/cases/passthrough_config/**
+    - tools/oracle/cases/passthrough_config_writes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19949-L19970
+    why: The include order of the openai_passthrough router, the llm_passthrough slot and the pass-through config router.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L207-L238
+    why: The path prefixes of the llm_passthrough router, the families the four family parts mount.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3551-L3560
+    why: The two GET config routes of B3617.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3607-L3912
+    why: The three config write routes of B8520.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12813-L12842
+    why: user_api_key_auth_websocket as the dependency of a WebSocket route, which AxumSocketServe runs for SocketAuth::Key.
+dod:
+  - text: mount and mount_public build the app with all four family stubs, the config routes answer, and an unknown path still answers 404 Not Found.
+    proof: [registration-tests, oracle]
+  - text: B3617's and B8520's config routes answer through the booted proxy as LiteLLM does, with and without a database and a key.
+    proof: [oracle]
+  - text: A configured pass-through endpoint from config.yaml answers on its path, refuses other methods with 405 and serves its subpaths when include_subpath is true.
+    proof: [oracle]
+  - text: AxumSocketServe runs WebSocket auth before a Key route, refuses a bad key before accept, and runs a Route route with no key.
+    proof: [socket-tests]
+  - text: The handler, credential router, token state and route table are the same values in every family and in mount and mount_public.
+    proof: [deps-tests]
+checks:
+  optional: []
+  commands:
+    - id: registration-tests
+      why: the config routes or the fallback are not mounted, or a family stub breaks the app build
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::routes::tests::registration(::|$)/)'
+    - id: socket-tests
+      why: a socket route runs without WebSocket auth or a bad key is accepted
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::routes::tests::sockets(::|$)/)'
+    - id: deps-tests
+      why: a shared value is built twice, so tokens, credentials or installed routes drift between families
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::routes::tests::deps(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/server/pass-through-mounts/unknown-path.yaml
+  - tools/oracle/cases/server/pass-through-mounts/configured-exact-relay.yaml
+  - tools/oracle/cases/server/pass-through-mounts/configured-wrong-method.yaml
+  - tools/oracle/cases/server/pass-through-mounts/configured-subpath.yaml
+  - tools/oracle/cases/passthrough_config/get-all-endpoints.yaml
+  - tools/oracle/cases/passthrough_config/get-endpoint-by-id.yaml
+  - tools/oracle/cases/passthrough_config/get-endpoints-by-team-path-param.yaml
+  - tools/oracle/cases/passthrough_config/get-endpoints-no-database.yaml
+  - tools/oracle/cases/passthrough_config/get-endpoints-team-not-found.yaml
+  - tools/oracle/cases/passthrough_config_writes/update-without-database.yaml
+  - tools/oracle/cases/passthrough_config_writes/create-without-database.yaml
+  - tools/oracle/cases/passthrough_config_writes/delete-without-database.yaml
+  - tools/oracle/cases/passthrough_config_writes/delete-without-key.yaml
+deviations:
+  - what: Every pass-through family is mounted at startup instead of on the first request to its prefix.
+    why: LiteLLM's lazy slot only delays the Python import; the routes and their order are the same once loaded.
+out_of_scope:
+  - "The family mounts and their HTTP cases: B8606, B8607, B8608 and B8609. The port adapters: B8641. The socket adapters: B8642. Configured route matching: B8643."
+  - "B3618's RouterPassthrough and B7324's LlmRequestProcessor and ExceptionMapper production values: B8694 builds them over B8690 to B8693."
+  - "The startup install of configured endpoints: B8374 (config) and B8384 (database). They must use the same route table this task reads."
+pitfalls:
+  - "The config cases B3617 and B8520 wrote expect the routes inside the auth layers: `delete-without-key` must answer LiteLLM's 401, not the Not Found fallback."
+  - "Setting the fallback twice replaces the first one, so the 404 Not Found body must come from B8643's fallback for a miss."
+  - "mount and mount_public run separately, so anything built in PassThroughState::new is built twice; only values that hold no state of their own may live there, and the three module-level values come from Shared."
+  - "A configured endpoint case needs the oracle's mock provider as the target; take its URL from the case placeholder, never a fixed host."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

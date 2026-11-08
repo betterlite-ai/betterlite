@@ -1,0 +1,21 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-tools-functions-fallback",
+  "call": {
+    "b3844": {
+      "function": "tools",
+      "value": {
+        "tools": "none",
+        "functions": [
+          {
+            "name": "legacy"
+          }
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

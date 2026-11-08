@@ -1,7 +1,7 @@
 id: B6670
 title: Bounded custom-code guardrail test route
 description: >-
-  Build `POST /guardrails/test_custom_code` in betterlite-server: an admin sends guardrail source and a test input, the proxy compiles the source in the custom-code sandbox, runs `apply_guardrail` once with a 5 second budget and reports what happened. Nothing is stored and no guardrail is created. Everything goes in crates/betterlite-server/src/guardrails/custom_code_test.rs and custom_code_test/. Expose `pub fn routes()` the way the sibling modules in crates/betterlite-server/src/guardrails/ do; the architect's skeleton mounts it, so do not touch app.rs. Team submissions are B3686 and the apply route is B3687; neither lives here.
+  Build `POST /guardrails/test_custom_code` in betterlite-server: an admin sends guardrail source and a test input, the proxy compiles the source in the custom-code sandbox, runs `apply_guardrail` once with a 5 second budget and reports what happened. Nothing is stored and no guardrail is created. Everything goes in crates/betterlite-server/src/guardrails/custom_code_test.rs and custom_code_test/. Expose `pub fn routes()` the way the sibling modules in crates/betterlite-server/src/guardrails/ do; B8668 mounts it, so do not touch app.rs. Team submissions are B3686 and the apply route is B3687; neither lives here.
 
   The sandbox is B3802's: `compile_sandboxed`, `build_sandbox_globals`, `call_off_loop_with_timeout`, `await_with_timeout` and `ExecutionTimeoutError` (betterlite-guardrails, custom_code_execution). Read B3802's stubs for the exact signatures and call them as they are; this task adds no sandbox code. The primitives that custom code calls (`allow`, `block`, `modify`, `regex_match` and the rest) come through `build_sandbox_globals`.
 
@@ -30,7 +30,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/custom_code_test_body.rs
     - crates/betterlite-server/fuzz/corpus/custom_code_test_body/**
-    - tools/oracle/cases/guardrails/custom-code-test/**
     - tools/oracle/helpers/b6670.py
     - tools/oracle/helpers/b6670/**
     - tools/oracle/src/helpers/server/b6670.rs
@@ -51,19 +50,21 @@ references:
     why: The custom code guardrail contract the test route exercises.
 dod:
   - text: Only a caller whose role is exactly proxy_admin reaches the sandbox; proxy_admin_viewer and other roles get 403 with the exact text, and a request without a valid key gets the usual 401 body.
-    proof: [test-route-access-tests, oracle]
+    proof: [test-route-access-tests]
   - text: The request body decodes with its defaults (`input_type` request, no request_data), ignores unknown keys, and a body missing `custom_code` or `test_input` answers 422 before the role check.
-    proof: [test-route-body-tests, oracle]
+    proof: [test-route-body-tests]
   - text: A source with a syntax error or a refused construct, a source that fails while loading, a missing `apply_guardrail` and a non-callable one each give success false with error_type compilation and LiteLLM's text prefix.
-    proof: [test-route-compile-tests, oracle]
+    proof: [test-route-compile-tests]
   - text: A passing run returns the function's object result as it is, for allow, block and modify results, with success true and null error fields, for both a plain and an `async def` function.
-    proof: [test-route-run-tests, oracle]
+    proof: [test-route-run-tests]
   - text: The request data given to the function has exactly the five keys with their defaults, `texts` is added to a test input that lacks it, and a runtime error gives success false with error_type execution and the prefix "Execution error".
-    proof: [test-route-run-tests, oracle]
+    proof: [test-route-run-tests]
   - text: A non-object result becomes allow with the warning text and the Python type name, and a run past 5 seconds, including a source that loops while loading, gives the exact timeout text with error_type execution.
-    proof: [test-route-result-tests, oracle]
+    proof: [test-route-result-tests]
   - text: The body decoder survives arbitrary bytes and its seed corpus replays.
     proof: [test-route-corpus]
+  - text: The handlers are tested with tower's oneshot over the module's own Router and fake ports. B8668 mounts the routes and owns their HTTP oracle cases, so write no HTTP case here.
+    proof: [test-route-access-tests]
 checks:
   optional: []
   commands:
@@ -88,22 +89,7 @@ checks:
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/custom_code_test_body)"
         && test -f crates/betterlite-server/fuzz/fuzz_targets/custom_code_test_body.rs
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_custom_code_test_body_corpus)'
-oracle_cases:
-  - tools/oracle/cases/guardrails/custom-code-test/allow-result.yaml
-  - tools/oracle/cases/guardrails/custom-code-test/block-result.yaml
-  - tools/oracle/cases/guardrails/custom-code-test/modify-result.yaml
-  - tools/oracle/cases/guardrails/custom-code-test/async-function.yaml
-  - tools/oracle/cases/guardrails/custom-code-test/syntax-error.yaml
-  - tools/oracle/cases/guardrails/custom-code-test/import-refused.yaml
-  - tools/oracle/cases/guardrails/custom-code-test/missing-function.yaml
-  - tools/oracle/cases/guardrails/custom-code-test/not-callable.yaml
-  - tools/oracle/cases/guardrails/custom-code-test/runtime-error.yaml
-  - tools/oracle/cases/guardrails/custom-code-test/non-dict-result.yaml
-  - tools/oracle/cases/guardrails/custom-code-test/request-data-keys.yaml
-  - tools/oracle/cases/guardrails/custom-code-test/texts-default.yaml
-  - tools/oracle/cases/guardrails/custom-code-test/timeout-in-loop.yaml
-  - tools/oracle/cases/guardrails/custom-code-test/body-missing-code.yaml
-  - tools/oracle/cases/guardrails/custom-code-test/auth-required.yaml
+oracle_cases: []
 deviations:
   - what: The text after "Syntax error in custom code:", "Failed to compile custom code:", "Execution error:" and "Unexpected error:" is the sandbox's own message, not Python's.
     why: The sandbox has no CPython traceback or exception repr to quote; the prefixes, success and error_type are the contract (docs/compatibility.md says messages are betterlite's own).

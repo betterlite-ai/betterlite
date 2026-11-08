@@ -20,7 +20,7 @@ scope:
   - crates/betterlite-core/src/api/file_http_metadata.rs
   - crates/betterlite-core/src/api/file_http_metadata/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/file_http_metadata.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/file_http_metadata.py
   - tools/oracle/cases/sdk-http/file-http-metadata/**

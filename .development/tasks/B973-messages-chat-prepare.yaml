@@ -26,7 +26,7 @@ scope:
   - tools/oracle/cases/helpers/messages-context-inspection/**
   - tools/oracle/fuzz/corpus/helper_case/messages_context_inspection-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/messages_context_preparation.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/messages_context_preparation.py
   - tools/oracle/cases/sdk-http/messages-context-preparation/**

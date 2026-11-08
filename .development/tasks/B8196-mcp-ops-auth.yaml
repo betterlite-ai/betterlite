@@ -12,6 +12,8 @@ description: >-
   _challenge_missing_token_exchange_subject. A missing BYOK credential and a missing token
   exchange subject each produce a challenge the client can act on, with the Python's text.
 
+  The plan registers helper operation b8196 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8196.rs, write tools/oracle/helpers/b8196.py, and leave both registries as they are.
+
 scope:
   paths:
     - crates/betterlite-server/src/mcp/ops_auth.rs
@@ -20,6 +22,10 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/mcp-ops-auth/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-ops-auth-*
+    - tools/oracle/helpers/b8196.py
+    - tools/oracle/helpers/b8196/**
+    - tools/oracle/src/helpers/mcp/b8196.rs
+    - tools/oracle/src/helpers/mcp/b8196/**
   lint_tables: false
 
 references:

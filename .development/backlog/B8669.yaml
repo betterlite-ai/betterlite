@@ -1,0 +1,13 @@
+id: B8669
+milestone: M8 platform
+title: Mount the policy CRUD, attachment and version routes
+status: todo
+depends_on: [B8667, B3243, B3244, B3248]
+file: tasks/B8669-policy-crud-mount.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

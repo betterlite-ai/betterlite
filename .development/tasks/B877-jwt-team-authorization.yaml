@@ -6,7 +6,7 @@ description: >-
   Distinguish claimless DB fallback, alias-only and RBAC team claims, re-run pass-through authorization
   after DB fallback, and validate_object_id when enforce_rbac has no user or team. Own the
   ManagedAgentTeam::resolve port with user/agent IDs, selected team, explicit-selection flag and optional
-  allowed-team set; the wave 17 agents wiring part installs it without a dependency from this lower stage to its installer.
+  allowed-team set; B8646 installs it without a dependency from this lower stage to its installer.
 
   B760 extracts claim teams, specific team and alias; B764 supplies aggregate teams, header resolution,
   specific-team/model selection, passthrough checks and object-ID validation. DB fallback requires its

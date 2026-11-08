@@ -63,7 +63,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "Mounting the routes and their HTTP oracle cases: the wave 17 inference wiring part. Calling the listing filters from /v1/models (B007) and /model/info (B851) is theirs."
+  - "Mounting the routes, their HTTP oracle cases and the listing filter call from /v1/models (B007): B8635. /model/info (B851) calls the filters itself."
   - "Tokenizer selection B195, token counting B196, supported params B175, model info B2219, body safety B884, raw request B5368, the hidden_by_listing_callbacks hook B8399."
 pitfalls:
   - Only the part after the first "/" of the deployment model is counted, so "azure/gpt-4o" counts as gpt-4o.

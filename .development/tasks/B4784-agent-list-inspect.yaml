@@ -1,9 +1,9 @@
 id: B4784
 title: List and inspect agents with spend, keys and model visibility
 description: >-
-  Build the read side of the agents API in betterlite-server, under agent_endpoints: the routes GET `/v1/agents` and GET `/v1/agents/{agent_id}`, and the two helpers that add agents to the model lists. Both routes are tagged "[beta] A2A Agents", are authenticated by B052 and answer with agent records that have spend, virtual keys and the public flag filled in and secrets redacted. The pure pieces are other tasks and this task wires them in the order LiteLLM runs them: B4780 decides which agents a caller sees, B4783 filters unhealthy agents and ranks by query, B4775 redacts the survivors, B4776 is the in-memory registry. Expose one function, `agent_read_routes`, that returns the axum routes for both paths; B074 composes it and this task registers nothing else. `/v1/agents/identity/providers` and `/v1/agents/{agent_id}/identity` are B4781's, and axum picks the static path over `{agent_id}` by itself.
+  Build the read side of the agents API in betterlite-server, under agent_endpoints: the routes GET `/v1/agents` and GET `/v1/agents/{agent_id}`, and the two helpers that add agents to the model lists. Both routes are tagged "[beta] A2A Agents", are authenticated by B052 and answer with agent records that have spend, virtual keys and the public flag filled in and secrets redacted. The pure pieces are other tasks and this task wires them in the order LiteLLM runs them: B4780 decides which agents a caller sees, B4783 filters unhealthy agents and ranks by query, B4775 redacts the survivors, B4776 is the in-memory registry. Expose one function, `agent_read_routes`, that returns the axum routes for both paths; B8647 composes it and this task registers nothing else. `/v1/agents/identity/providers` and `/v1/agents/{agent_id}/identity` are B4781's, and axum picks the static path over `{agent_id}` by itself.
 
-  Ports, in agent_endpoints/agent_reads.rs. Native async fn, no statics, tests use in-memory fakes. `AgentReads` has `has_database(&self) -> bool`, `spend_rows(&self, agent_ids: &[String]) -> Result<Vec<AgentSpendRow>, AgentReadError>` (rows of the agents table whose agent_id is in the list, `AgentSpendRow { agent_id: String, spend: f64 }`), `key_rows(&self, agent_ids: &[String]) -> Result<Vec<AgentKeyRow>, AgentReadError>` (rows of the key table `litellm_verificationtoken` whose agent_id is in the list, `AgentKeyRow { agent_id: String, token: String, key_alias: Option<String>, key_name: Option<String> }`, and no other column is selected) and `agent_row(&self, agent_id: &str) -> Result<Option<AgentResponse>, AgentReadError>` (exact lookup by agent_id: B4777's `AGENT_SELECT_SQL WHERE a.agent_id = $1` decoded with B4777's public `AgentRowCodec`, which joins the object permission and the identity rows, and the `agent` field of its `StoredAgent` is the AgentResponse from B4770; no row decoding is written here). Each method returns an empty result and runs no SQL for an empty id list. The production implementation `PgAgentReads` is in the same module and uses B700's store and `find_many_in` (one `= ANY($1)` read), B726's agents table binding and B720's verification token row type. `AgentReadError` is this module's error enum, with one variant that carries the database error text. `AgentListSettings` is a second port, read once per request: `public_agent_groups(&self) -> Option<Vec<String>>` (`litellm_settings.public_agent_groups`, default absent), `jwt_agent_settings(&self) -> JwtAgentSettings` (B4775's record: `enabled` is general_settings.enable_jwt_auth, `agent_id_field_set` is a non-empty `litellm_jwtauth.agent_id_jwt_field`) and `search_settings(&self) -> AgentSearchSettings` (B4783's section). The server implements it; wiring is not in this task (see the report notes).
+  Ports, in agent_endpoints/agent_reads.rs. Native async fn, no statics, tests use in-memory fakes. `AgentReads` has `has_database(&self) -> bool`, `spend_rows(&self, agent_ids: &[String]) -> Result<Vec<AgentSpendRow>, AgentReadError>` (rows of the agents table whose agent_id is in the list, `AgentSpendRow { agent_id: String, spend: f64 }`), `key_rows(&self, agent_ids: &[String]) -> Result<Vec<AgentKeyRow>, AgentReadError>` (rows of the key table `litellm_verificationtoken` whose agent_id is in the list, `AgentKeyRow { agent_id: String, token: String, key_alias: Option<String>, key_name: Option<String> }`, and no other column is selected) and `agent_row(&self, agent_id: &str) -> Result<Option<AgentResponse>, AgentReadError>` (exact lookup by agent_id: B4777's `AGENT_SELECT_SQL WHERE a.agent_id = $1` decoded with B4777's public `AgentRowCodec`, which joins the object permission and the identity rows, and the `agent` field of its `StoredAgent` is the AgentResponse from B4770; no row decoding is written here). Each method returns an empty result and runs no SQL for an empty id list. The production implementation `PgAgentReads` is in the same module and uses B700's store and `find_many_in` (one `= ANY($1)` read), B726's agents table binding and B720's verification token row type. `AgentReadError` is this module's error enum, with one variant that carries the database error text. `AgentListSettings` is a second port, read once per request: `public_agent_groups(&self) -> Option<Vec<String>>` (`litellm_settings.public_agent_groups`, default absent), `jwt_agent_settings(&self) -> JwtAgentSettings` (B4775's record: `enabled` is general_settings.enable_jwt_auth, `agent_id_field_set` is a non-empty `litellm_jwtauth.agent_id_jwt_field`) and `search_settings(&self) -> AgentSearchSettings` (B4783's section). B8647 implements it.
 
   1. GET `/v1/agents`, in agent_endpoints/agent_listing.rs. Query parameters: `health_check` (boolean, default false), `query` (string, at least 1 character, default absent) and `top_k` (integer 1 to 100, default `DEFAULT_AGENT_SEARCH_TOP_K`, which is 5, from B4783). A value that fails these bounds or is not a boolean or an integer answers 422 in the envelope B003 uses for other query errors, but only after authentication passed, so a bad key with `?query=` answers 401. Then, in this order, and any failure stops the request:
   a. `check_feature_access_for_user(caller, "agents")` from B864. Its error goes out unchanged.
@@ -31,7 +31,6 @@ scope:
     - crates/betterlite-server/src/agent_endpoints/agent_lookup/**
     - crates/betterlite-server/src/agent_endpoints/agent_models.rs
     - crates/betterlite-server/src/agent_endpoints/agent_models/**
-    - tools/oracle/cases/agents/listing/**
     - tools/oracle/helpers/b4784.py
     - tools/oracle/helpers/b4784/**
     - tools/oracle/src/helpers/server/b4784.rs
@@ -59,10 +58,10 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L308-L338
     why: AgentKeySummary and the AgentResponse fields this route fills (spend, keys, search_score, jwt_auth_configured).
 dod:
-  - text: GET /v1/agents and GET /v1/agents/{agent_id} are served by agent_read_routes with the tag "[beta] A2A Agents", and a missing or bad key answers 401 before any query-parameter 422.
-    proof: [route-tests, oracle]
+  - text: GET /v1/agents and GET /v1/agents/{agent_id} are served by agent_read_routes with the tag "[beta] A2A Agents"; B8647 proves over HTTP that a missing or bad key answers 401 before any query-parameter 422.
+    proof: [route-tests]
   - text: query, top_k and health_check are validated with LiteLLM's bounds (query at least 1 character, top_k 1 to 100 with default 5, boolean health_check) and answer 422 when they fail.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: The list route runs feature check, accessible agents, spend and keys, is_public, health filter, ranking and redaction in that order, and each later step sees the output of the earlier one.
     proof: [flow-tests]
   - text: Spend is the sum over an agent's alias ids that have a row, an agent with no row keeps its spend, and no query runs without a database or without agents.
@@ -70,19 +69,21 @@ dod:
   - text: Keys carry only token, key_alias and key_name, come from the agent's alias ids, and are None when none match.
     proof: [join-tests, reads-tests]
   - text: is_public is true only when the group list is present and shares an alias id with the agent, is false for an empty list, and is set before redaction so it survives it.
-    proof: [join-tests, oracle]
+    proof: [join-tests]
   - text: Redaction uses is_admin true only for proxy_admin, litellm_params secrets show REDACTED_BY_LITELM, and the response body is B4775's JSON.
-    proof: [flow-tests, oracle]
+    proof: [flow-tests]
   - text: With a query the response holds the ranked agents with search_score in rank order, NotConfigured answers 400 agent_search_not_configured, and an embedding HTTP error is passed through unchanged.
-    proof: [flow-tests, oracle]
+    proof: [flow-tests]
   - text: "The list route's unexpected failure answers 500 with the prefix Internal server error in detail.error, and typed HTTP errors are not rewrapped."
     proof: [flow-tests]
   - text: The by-id route skips the allowed check for admin-view roles, answers 403, 500 and 404 with LiteLLM's plain string details in that order, finds legacy ids through the registry, refreshes spend by the exact id given, and attaches keys.
-    proof: [lookup-tests, oracle]
+    proof: [lookup-tests]
   - text: The model helpers return rows only for Restricted access, named a2a/<agent_name>, resolve legacy ids, and return an empty list when access resolution fails.
     proof: [models-tests]
   - text: The production reads select only spend, token, key_alias and key_name columns, run no SQL for an empty id list, and read the agent row through B4777's AGENT_SELECT_SQL and AgentRowCodec, with its object permission and identity.
     proof: [reads-tests]
+  - text: Both handlers are tested with tower's oneshot over agent_read_routes and fake ports; B8647 mounts them and proves the HTTP answers with the oracle cases moved there.
+    proof: [route-tests, lookup-tests]
 checks:
   optional: []
   commands:
@@ -104,17 +105,7 @@ checks:
     - id: reads-tests
       why: the agent reads select other columns, run SQL for empty input or miss the object permission and identity joins
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::agent_reads::/)'
-oracle_cases:
-  - tools/oracle/cases/agents/listing/list-config-agents-in-order.yaml
-  - tools/oracle/cases/agents/listing/list-public-agent-groups.yaml
-  - tools/oracle/cases/agents/listing/list-empty-public-groups.yaml
-  - tools/oracle/cases/agents/listing/list-redacts-litellm-params.yaml
-  - tools/oracle/cases/agents/listing/list-empty-query-422.yaml
-  - tools/oracle/cases/agents/listing/list-top-k-over-max-422.yaml
-  - tools/oracle/cases/agents/listing/list-bad-health-check-422.yaml
-  - tools/oracle/cases/agents/listing/list-query-not-configured-400.yaml
-  - tools/oracle/cases/agents/listing/list-bad-key-401.yaml
-  - tools/oracle/cases/agents/listing/get-agent-no-database-500.yaml
+oracle_cases: []
 deviations:
   - what: LiteLLM changes the registry's own agent objects while it lists (spend, keys and litellm_params.is_public stay on them), so a later GET /v1/agents/{agent_id} for a registry agent can show a stale is_public in litellm_params. betterlite works on copies, so by-id never shows is_public.
     why: B4776's registry hands out clones, and a request must not write into shared state. The oracle cases read by-id before any list call.

@@ -25,7 +25,7 @@ scope:
   - tools/oracle/cases/helpers/messages-completion-arguments/**
   - tools/oracle/fuzz/corpus/helper_case/messages_completion_arguments-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/messages_chat_call.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/messages_chat_call.py
   - tools/oracle/cases/sdk-http/messages-chat-call/**

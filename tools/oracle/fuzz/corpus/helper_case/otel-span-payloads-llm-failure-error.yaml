@@ -1,0 +1,24 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-llm-failure-error",
+  "call": {
+    "b3844": {
+      "function": "llm_call",
+      "payload": {
+        "status": "failure",
+        "error_str": "provider exploded",
+        "error_information": {
+          "error_class": "APIError",
+          "error_code": "500",
+          "traceback": "trace"
+        },
+        "response": {}
+      },
+      "capture_content": false
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

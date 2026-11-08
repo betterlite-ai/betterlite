@@ -26,7 +26,7 @@ scope:
   - crates/betterlite-core/fuzz/fuzz_targets/file_upload_location.rs
   - crates/betterlite-core/fuzz/corpus/file_upload_location/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/file_http_upload.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/file_http_upload.py
   - tools/oracle/cases/sdk-http/file-http-upload/**

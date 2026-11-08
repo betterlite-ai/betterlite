@@ -1,0 +1,95 @@
+id: B8662
+title: Mount the spend report and spend log routes and start the spend callback
+description: >-
+  B069 composes LiteLLM's spend_management_router: the report routes of B1721 to B1727, the spend log routes of B1729 to B1732 and GET /spend/capture_rate, in one function, `spend::spend_routes::routes(...)`. It also builds the spend tracking callback in `spend::startup::start(...)`. Neither one reads the server state, so nothing reaches them yet. This task merges the routes in crates/betterlite-server/src/app/spend.rs, starts the callback with the shared instances, and proves the report family over HTTP. B8663 proves the spend log family and capture rate.
+
+  Routes. In `mount(router, state)` (inside the auth layers), merge `spend::spend_routes::routes(...)` once, right after B8482's daily activity routes and before B8661's analytics routes: proxy_server.py includes spend_management_router at L19979, after daily_activity_router (L19971) and before user_agent_analytics_router (L20004). Pass the handles its signature asks for from `state.shared` (the database store is `state.shared.db`). The leaf task files list each path and alias. Do not merge B1709's callback replay route: B1100 already merges routes/callback_replay, and a second merge panics.
+
+  Startup. In `async fn start(state)`, await `spend::startup::start(...)` once with `state.shared.db`, the settlement accessor of `state.shared.budget` (B8481, the port B1719's coordinator calls) and B8660's `app::spend::budget::shadow_spend(&state.shared)` pair for B4083's shadow job loader, and set `state.shared.spend_producer` (B8610's empty OnceLock slot) from what it returns, so B8613's stop can drain the producer at shutdown; when start returns no producer, leave the slot empty. B069 registers the callback only when a database exists; pass the Option through and let it decide. LiteLLM registers these at startup before the first request, which is why this sits in start and not in a handler.
+
+  HTTP oracle cases, through the booted proxy with B860's Postgres fixtures. The leaf tasks tested their handlers with tower's oneshot over their own routers; their booted cases moved here under the file names below: activity reports (B1721), exception charts, end-user reports, reset and refresh (B1722), key, user and tag tables (B1723), monthly and team totals (B1724), cost estimates and provider budgets (B1725), scoped key, user, team and organization reports (B1726) and the global spend report (B1727). Read each leaf's description, DoD and pitfalls for what its cases check.
+
+  Tests in crates/betterlite-server/src/app/spend/tests.rs (names start with `reports_`): build `mount` over fake state and assert that every report and spend log path answers (not 404 or 405), that building the full router with routes.rs does not panic (callback_replay merged once), and that start hands B069's startup the same budget and database instances Shared holds.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/spend.rs
+    - crates/betterlite-server/src/app/spend/tests.rs
+    - tools/oracle/cases/http/spend-activity/**
+    - tools/oracle/cases/http/spend-diagnostics/**
+    - tools/oracle/cases/http/spend-tag-reports/**
+    - tools/oracle/cases/http/spend-totals/**
+    - tools/oracle/cases/http/spend-estimates/**
+    - tools/oracle/cases/http/scoped-spend-reports/**
+    - tools/oracle/cases/http/global-spend-report/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19971-L19981
+    why: spend_management_router is included between daily_activity_router and analytics_router.
+dod:
+  - text: B069's spend routes are merged once in app/spend.rs, after the daily activity routes, without B1709's callback replay route, and every report and spend log path answers.
+    proof: [reports-tests, oracle]
+  - text: start runs B069's callback startup once with the shared database, the shared budget settlement accessor and B8660's shadow spend pair.
+    proof: [reports-tests]
+  - text: Over HTTP, the activity, diagnostics, tag, totals, estimate, scoped and global report routes answer the same status, body and error fields as LiteLLM.
+    proof: [new-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: reports-tests
+      why: the spend routes are not merged, are merged twice, or the callback starts with instances other than the shared ones
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::spend::tests::reports_/)'
+    - id: new-cases
+      why: a report family has no booted-proxy case on this branch
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/spend-activity)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/spend-diagnostics)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/spend-tag-reports)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/spend-totals)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/spend-estimates)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/scoped-spend-reports)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/global-spend-report)"
+oracle_cases:
+  - tools/oracle/cases/http/spend-activity/global-and-internal-user.yaml
+  - tools/oracle/cases/http/spend-activity/missing-dates-user-and-database.yaml
+  - tools/oracle/cases/http/spend-activity/month-label-order-and-top-ten.yaml
+  - tools/oracle/cases/http/spend-activity/provider-removed-and-unresolvable-deployments.yaml
+  - tools/oracle/cases/http/spend-diagnostics/deployment-and-total-429-charts.yaml
+  - tools/oracle/cases/http/spend-diagnostics/chart-validation-and-missing-db.yaml
+  - tools/oracle/cases/http/spend-diagnostics/reset-role-and-retained-logs.yaml
+  - tools/oracle/cases/http/spend-diagnostics/refresh-nonmaterialized-null.yaml
+  - tools/oracle/cases/http/spend-diagnostics/end-user-null-key-and-exclusive-end.yaml
+  - tools/oracle/cases/http/spend-tag-reports/key-and-user-self-scope.yaml
+  - tools/oracle/cases/http/spend-tag-reports/missing-user-password-and-db.yaml
+  - tools/oracle/cases/http/spend-tag-reports/raw-tags-ignore-dates.yaml
+  - tools/oracle/cases/http/spend-tag-reports/all-tags-comma-whitespace-and-rounding.yaml
+  - tools/oracle/cases/http/spend-tag-reports/tag-names-and-missing-date-errors.yaml
+  - tools/oracle/cases/http/spend-totals/monthly-view-and-internal-user.yaml
+  - tools/oracle/cases/http/spend-totals/prometheus-escaped-key-and-required-db.yaml
+  - tools/oracle/cases/http/spend-totals/null-sum-and-global-budget.yaml
+  - tools/oracle/cases/http/spend-totals/keys-ignore-internal-limit-models-do-not.yaml
+  - tools/oracle/cases/http/spend-totals/team-alias-collision-and-rounded-total.yaml
+  - tools/oracle/cases/http/spend-estimates/model-response-precedence-and-missing-messages.yaml
+  - tools/oracle/cases/http/spend-estimates/alias-last-deployment-token-overrides.yaml
+  - tools/oracle/cases/http/spend-estimates/unmapped-model-and-provider-budget-errors.yaml
+  - tools/oracle/cases/http/spend-estimates/provider-spend-and-reset-projection.yaml
+  - tools/oracle/cases/http/scoped-spend-reports/key-hash-and-user-team-self-scope.yaml
+  - tools/oracle/cases/http/scoped-spend-reports/admin-viewer-and-org-admin.yaml
+  - tools/oracle/cases/http/scoped-spend-reports/org-stamp-versus-current-team.yaml
+  - tools/oracle/cases/http/scoped-spend-reports/missing-db-before-dates-and-scope.yaml
+  - tools/oracle/cases/http/scoped-spend-reports/date-range-366-boundary.yaml
+  - tools/oracle/cases/http/global-spend-report/key-before-user-before-team-customer.yaml
+  - tools/oracle/cases/http/global-spend-report/team-null-alias-and-customer-metadata.yaml
+  - tools/oracle/cases/http/global-spend-report/customer-alone-and-api-key-group-filters.yaml
+  - tools/oracle/cases/http/global-spend-report/null-group-and-reversed-dates.yaml
+deviations: []
+out_of_scope:
+  - "The handlers and the composed router: B1721 to B1727, B1729 to B1732 and B069. The callback itself: B069 and B1719."
+  - "The spend log and capture rate HTTP cases: B8663. The daily activity routes: B8482. The analytics and agent activity routes: B8661."
+  - "Draining B1708's producer at shutdown: B069 owns the drain, and the area hooks have no stop step."
+pitfalls:
+  - "routes/callback_replay is already in router(); merging B1709's router again here panics on the duplicate path."
+  - "Merge the spend routes before B8661's analytics lines, not after, so /openapi.json lists them in LiteLLM's include order."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
