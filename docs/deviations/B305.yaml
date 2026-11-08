@@ -1,0 +1,17 @@
+task: B305
+deviations:
+  - what: >-
+      The request-level timeout resolved for a request becomes a whole-routing deadline that every later attempt shares;
+      a deployment change clamps the next attempt to what is left of it instead of restarting the full timeout.
+    why: >-
+      LiteLLM writes the resolved timeout into kwargs["timeout"] and every retry hands the same value to a fresh HTTP call,
+      so N attempts can each take the full timeout. B017 executes retries within this deadline, and a whole-routing cap keeps
+      the request bounded by the value the caller asked for; the shortfall only shows up when retries together outlast that value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4145-L4155
+  - what: >-
+      A timeout that is negative or not finite is a typed TimeoutError naming the configuration field, while a timeout too large
+      for a Duration is refused the same way.
+    why: >-
+      LiteLLM passes float(resolved) straight to httpx, so a negative or infinite value fails later inside the HTTP client with
+      no field name. No working setup relies on such a value, and the checked conversion keeps Rust arithmetic total.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/completion_timeout.py#L52-L70

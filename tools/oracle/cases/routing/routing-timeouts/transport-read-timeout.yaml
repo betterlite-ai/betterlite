@@ -1,0 +1,52 @@
+kind: probe
+name: transport-read-timeout
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        completion:
+          model_timeout: {kind: phases, connect: "1", read: "2.5", write: "3", pool: "4"}
+          provider: groq
+          global_timeout: {seconds: "6000", explicitly_set: false}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        completion:
+          model_timeout: {kind: phases, connect: "1", read: "2.5", write: "3", pool: "4"}
+          provider: openai
+          global_timeout: {seconds: "6000", explicitly_set: false}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        completion:
+          model_timeout: {kind: phases, connect: "1", read: null, write: "3", pool: "4"}
+          provider: groq
+          global_timeout: {seconds: "6000", explicitly_set: false}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        completion:
+          model_timeout: {kind: phases, connect: "1", read: "0", write: "3", pool: "4"}
+          provider: groq
+          global_timeout: {seconds: "6000", explicitly_set: false}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        completion:
+          model_timeout: {kind: seconds, seconds: "9"}
+          provider: groq
+          global_timeout: {seconds: "6000", explicitly_set: false}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        completion:
+          model_timeout: {kind: phases, connect: null, read: null, write: null, pool: null}
+          provider: openai
+          global_timeout: {seconds: "6000", explicitly_set: false}
+compare: {ignore: []}

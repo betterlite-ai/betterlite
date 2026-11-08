@@ -1,0 +1,22 @@
+kind: probe
+name: attempt-408
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        router:
+          timeout: "30"
+          global_timeout: {seconds: "6000", explicitly_set: false}
+          deployment: {timeout: "1"}
+          elapsed_millis: 1500
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        router:
+          timeout: "30"
+          global_timeout: {seconds: "6000", explicitly_set: false}
+          deployment: {timeout: "1"}
+          elapsed_millis: 500
+compare: {ignore: []}
