@@ -47,7 +47,7 @@ fn member<'value>(value: &'value AgentJson, key: &str) -> &'value AgentJson {
 #[case::unknown_shape(r#"{"id":"t"}"#, None)]
 fn send_result_detection(#[case] text: &str, #[case] expected: Option<ProtocolVersion>) {
     assert_eq!(
-        detect::result_version(&object(text), &detect::SEND_ENVELOPE_KEYS),
+        detect::result_version(&value(text), &detect::SEND_ENVELOPE_KEYS),
         expected
     );
 }
@@ -60,7 +60,7 @@ fn send_result_detection(#[case] text: &str, #[case] expected: Option<ProtocolVe
 #[case::unrelated_keys(r#"{"id":"t","jsonrpc":"2.0"}"#, None)]
 fn stream_result_detection(#[case] text: &str, #[case] expected: Option<ProtocolVersion>) {
     assert_eq!(
-        detect::result_version(&object(text), &detect::STREAM_ENVELOPE_KEYS),
+        detect::result_version(&value(text), &detect::STREAM_ENVELOPE_KEYS),
         expected
     );
 }
@@ -72,7 +72,7 @@ fn stream_result_detection(#[case] text: &str, #[case] expected: Option<Protocol
 #[case::first_not_object(r#"{"tasks":["t"]}"#, None)]
 #[case::no_tasks(r#"{"nextPageToken":"n"}"#, None)]
 fn list_tasks_detection(#[case] text: &str, #[case] expected: Option<ProtocolVersion>) {
-    assert_eq!(detect::list_tasks_version(&object(text)), expected);
+    assert_eq!(detect::list_tasks_version(&value(text)), expected);
 }
 
 #[rstest]

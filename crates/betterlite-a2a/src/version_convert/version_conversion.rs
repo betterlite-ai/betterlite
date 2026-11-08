@@ -1,3 +1,4 @@
+use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::provider::a2a::JsonRpcId;
 
 use crate::agent_card::ProtocolVersion;
@@ -6,7 +7,6 @@ use crate::version_convert::JsonObject;
 mod card;
 mod detect;
 mod error;
-mod fields;
 mod json;
 mod request;
 mod tests;
@@ -30,7 +30,7 @@ const fn direction(current: ProtocolVersion, target: ProtocolVersion) -> Option<
 }
 
 pub(super) fn result_for_method(
-    result: &JsonObject,
+    result: &AgentJson,
     target: ProtocolVersion,
     method: &str,
 ) -> Option<JsonObject> {
@@ -61,7 +61,7 @@ pub(super) fn result_for_method(
 }
 
 pub(super) fn stream_for(
-    result: &JsonObject,
+    result: &AgentJson,
     target: ProtocolVersion,
     request_id: Option<&JsonRpcId>,
 ) -> Option<JsonObject> {
@@ -86,9 +86,9 @@ pub(super) fn convert_card(card: &JsonObject, target: ProtocolVersion) -> Option
     }
 }
 
-pub(super) fn request_for(params: &JsonObject, method: &str) -> Option<JsonObject> {
+pub(super) fn request_for(request: &AgentJson, method: &str) -> Option<JsonObject> {
     attempt(&format!("request params ({method})"), || {
-        request::lower(params, method)
+        request::lower(request, method)
     })
 }
 

@@ -1,3 +1,5 @@
+use betterlite_core::agents::json::AgentJson;
+
 use crate::agent_card::ProtocolVersion;
 use crate::agent_card::merge::normalize_protocol_version;
 use crate::version_convert::JsonObject;
@@ -7,29 +9,29 @@ pub(super) const STREAM_ENVELOPE_KEYS: [&str; 4] =
     ["message", "task", "statusUpdate", "artifactUpdate"];
 
 pub(super) fn result_version(
-    result: &JsonObject,
+    result: &AgentJson,
     envelope_keys: &[&str],
 ) -> Option<ProtocolVersion> {
-    if result.contains_key("kind") {
+    if result.get("kind").is_some() {
         return Some(ProtocolVersion::V0_3);
     }
-    if envelope_keys.iter().any(|key| result.contains_key(*key)) {
+    if envelope_keys.iter().any(|key| result.get(key).is_some()) {
         return Some(ProtocolVersion::V1_0);
     }
     None
 }
 
-pub(super) fn task_version(result: &JsonObject) -> ProtocolVersion {
-    if result.contains_key("kind") {
+pub(super) fn task_version(result: &AgentJson) -> ProtocolVersion {
+    if result.get("kind").is_some() {
         return ProtocolVersion::V0_3;
     }
     ProtocolVersion::V1_0
 }
 
-pub(super) fn list_tasks_version(result: &JsonObject) -> Option<ProtocolVersion> {
+pub(super) fn list_tasks_version(result: &AgentJson) -> Option<ProtocolVersion> {
     let tasks = result.get("tasks")?.as_array()?;
-    let first = tasks.first()?.as_object()?;
-    Some(if first.contains_key("kind") {
+    let first = tasks.first()?;
+    Some(if first.get("kind").is_some() {
         ProtocolVersion::V0_3
     } else {
         ProtocolVersion::V1_0

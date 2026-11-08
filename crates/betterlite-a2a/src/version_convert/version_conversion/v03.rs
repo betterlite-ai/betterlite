@@ -7,13 +7,14 @@ use crate::client::convert::to_compat_stream_response;
 use crate::client::records::core::{
     CoreSendResponse, CoreStreamEnvelope, CoreStreamEvent, CoreTask,
 };
-use crate::version_convert::{JsonObject, to_object};
+use crate::version_convert::JsonObject;
 
 use super::error::ConvertError;
-use super::json::{decode, encode};
+use super::json::encode;
 
-pub(super) fn send_result(value: &JsonObject) -> Result<JsonObject, ConvertError> {
-    let response: CoreSendResponse = decode(value)?;
+pub(super) fn send_result(value: &AgentJson) -> Result<JsonObject, ConvertError> {
+    let response: CoreSendResponse =
+        serde_json::from_value(value.clone()).map_err(ConvertError::Decode)?;
     if let Some(task) = response.task {
         let converted = to_compat_task(&task);
         return encode(&converted);
@@ -27,10 +28,11 @@ pub(super) fn send_result(value: &JsonObject) -> Result<JsonObject, ConvertError
 }
 
 pub(super) fn stream_result(
-    value: &JsonObject,
+    value: &AgentJson,
     request_id: Option<&JsonRpcId>,
 ) -> Result<JsonObject, ConvertError> {
-    let envelope: CoreStreamEnvelope = decode(value)?;
+    let envelope: CoreStreamEnvelope =
+        serde_json::from_value(value.clone()).map_err(ConvertError::Decode)?;
     let event = stream_event(envelope).ok_or(ConvertError::MissingEvent {
         label: "stream result",
     })?;
@@ -41,29 +43,30 @@ pub(super) fn stream_result(
     encode(&response.result)
 }
 
-pub(super) fn task(value: &JsonObject) -> Result<JsonObject, ConvertError> {
-    let task: CoreTask = decode(value)?;
+pub(super) fn task(value: &AgentJson) -> Result<JsonObject, ConvertError> {
+    let task: CoreTask = serde_json::from_value(value.clone()).map_err(ConvertError::Decode)?;
     let converted = to_compat_task(&task);
     encode(&converted)
 }
 
-pub(super) fn list_tasks(value: &JsonObject) -> Result<JsonObject, ConvertError> {
+pub(super) fn list_tasks(value: &AgentJson) -> Result<JsonObject, ConvertError> {
     let Some(AgentJson::Array(items)) = value.get("tasks") else {
-        return Ok(value.clone());
+        return Err(ConvertError::NotAnObject);
     };
     let mut converted = Vec::with_capacity(items.len());
     for item in items {
         if item.is_object() {
-            let fields = to_object(item).ok_or(ConvertError::NotAnObject)?;
-            let converted_item = task(&fields)?;
+            let converted_item = task(item)?;
             converted.push(AgentJson::Object(converted_item.into_iter().collect()));
         } else {
             converted.push(item.clone());
         }
     }
-    let mut out = value.clone();
+    let AgentJson::Object(mut out) = value.clone() else {
+        return Err(ConvertError::NotAnObject);
+    };
     out.insert("tasks".to_owned(), AgentJson::Array(converted));
-    Ok(out)
+    Ok(out.into_iter().collect())
 }
 
 fn stream_event(envelope: CoreStreamEnvelope) -> Option<CoreStreamEvent> {

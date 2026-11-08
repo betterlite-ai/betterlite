@@ -9,26 +9,6 @@ pub mod version_conversion;
 
 pub type JsonObject = BTreeMap<String, AgentJson>;
 
-pub(crate) fn to_object(value: &AgentJson) -> Option<JsonObject> {
-    let AgentJson::Object(fields) = value else {
-        return None;
-    };
-    Some(
-        fields
-            .iter()
-            .map(|(key, field)| (key.clone(), field.clone()))
-            .collect(),
-    )
-}
-
-pub(crate) fn to_value(object: &JsonObject) -> AgentJson {
-    let mut fields = JsonObject::new();
-    for (key, value) in object {
-        fields.insert(key.clone(), value.clone());
-    }
-    AgentJson::Object(fields.into_iter().collect())
-}
-
 #[must_use]
 pub fn request_id(value: &AgentJson) -> Option<JsonRpcId> {
     match value {
@@ -71,7 +51,11 @@ pub fn normalize_request_params(
     if served == ProtocolVersion::V0_3 {
         return params;
     }
-    version_conversion::request_for(&params, method).unwrap_or(params)
+    let converted = version_conversion::request_for(
+        &AgentJson::Object(params.clone().into_iter().collect()),
+        method,
+    );
+    converted.unwrap_or(params)
 }
 
 #[must_use]
@@ -85,18 +69,21 @@ pub fn normalize_agent_card(card: JsonObject, target: ProtocolVersion) -> JsonOb
 // Errors and non-object results pass through untouched, and a failed conversion keeps the payload
 fn convert_payload<F>(payload: JsonObject, convert: F) -> JsonObject
 where
-    F: FnOnce(&JsonObject) -> Option<JsonObject>,
+    F: FnOnce(&AgentJson) -> Option<JsonObject>,
 {
     if payload.get("error").is_some_and(|error| !error.is_null()) {
         return payload;
     }
-    let Some(result) = payload.get("result").and_then(to_object) else {
+    let Some(result) = payload.get("result").filter(|result| result.is_object()) else {
         return payload;
     };
-    match convert(&result) {
+    match convert(result) {
         Some(converted) => {
             let mut updated = payload;
-            updated.insert("result".to_owned(), to_value(&converted));
+            updated.insert(
+                "result".to_owned(),
+                AgentJson::Object(converted.into_iter().collect()),
+            );
             updated
         }
         None => payload,

@@ -5,10 +5,10 @@ use crate::client::convert::messages::to_core_message;
 use crate::client::convert::parts::to_core_part;
 use crate::client::records::compat;
 use crate::client::records::core::{CoreMessage, CorePart};
-use crate::version_convert::{JsonObject, to_object};
+use crate::version_convert::JsonObject;
 
 use super::error::ConvertError;
-use super::json::{decode, encode};
+use super::json::encode;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")] #[rustfmt::skip]
@@ -30,14 +30,14 @@ struct StatusUpdate { task_id: String, #[serde(skip_serializing_if = "Option::is
 #[serde(rename_all = "camelCase")] #[rustfmt::skip]
 struct ArtifactUpdate { task_id: String, #[serde(skip_serializing_if = "Option::is_none")] context_id: Option<String>, artifact: Artifact, #[serde(skip_serializing_if = "Option::is_none")] append: Option<bool>, #[serde(skip_serializing_if = "Option::is_none")] last_chunk: Option<bool>, #[serde(skip_serializing_if = "Option::is_none")] metadata: Option<AgentJson> }
 
-pub(super) fn send_result(value: &JsonObject) -> Result<JsonObject, ConvertError> {
+pub(super) fn send_result(value: &AgentJson) -> Result<JsonObject, ConvertError> {
     if value.get("kind").and_then(AgentJson::as_str) == Some("task") {
         return Ok(envelope("task", task_json(value)?));
     }
     Ok(envelope("message", message_json(value)?))
 }
 
-pub(super) fn stream_result(value: &JsonObject) -> Result<JsonObject, ConvertError> {
+pub(super) fn stream_result(value: &AgentJson) -> Result<JsonObject, ConvertError> {
     match value.get("kind").and_then(AgentJson::as_str) {
         Some("task") => Ok(envelope("task", task_json(value)?)),
         Some("status-update") => Ok(envelope("statusUpdate", status_update_json(value)?)),
@@ -46,29 +46,30 @@ pub(super) fn stream_result(value: &JsonObject) -> Result<JsonObject, ConvertErr
     }
 }
 
-pub(super) fn task_json(value: &JsonObject) -> Result<JsonObject, ConvertError> {
-    let task: compat::Task = decode(value)?;
+pub(super) fn task_json(value: &AgentJson) -> Result<JsonObject, ConvertError> {
+    let task: compat::Task = serde_json::from_value(value.clone()).map_err(ConvertError::Decode)?;
     let converted = task_to_v1(task)?;
     encode(&converted)
 }
 
-pub(super) fn list_tasks(value: &JsonObject) -> Result<JsonObject, ConvertError> {
+pub(super) fn list_tasks(value: &AgentJson) -> Result<JsonObject, ConvertError> {
     let Some(AgentJson::Array(items)) = value.get("tasks") else {
-        return Ok(value.clone());
+        return Err(ConvertError::NotAnObject);
     };
     let mut converted = Vec::with_capacity(items.len());
     for item in items {
         if item.is_object() {
-            let fields = to_object(item).ok_or(ConvertError::NotAnObject)?;
-            let task = task_json(&fields)?;
+            let task = task_json(item)?;
             converted.push(AgentJson::Object(task.into_iter().collect()));
         } else {
             converted.push(item.clone());
         }
     }
-    let mut out = value.clone();
+    let AgentJson::Object(mut out) = value.clone() else {
+        return Err(ConvertError::NotAnObject);
+    };
     out.insert("tasks".to_owned(), AgentJson::Array(converted));
-    Ok(out)
+    Ok(out.into_iter().collect())
 }
 
 fn envelope(key: &str, value: JsonObject) -> JsonObject {
@@ -80,20 +81,23 @@ fn envelope(key: &str, value: JsonObject) -> JsonObject {
     envelope
 }
 
-fn message_json(value: &JsonObject) -> Result<JsonObject, ConvertError> {
-    let message: compat::Message = decode(value)?;
+fn message_json(value: &AgentJson) -> Result<JsonObject, ConvertError> {
+    let message: compat::Message =
+        serde_json::from_value(value.clone()).map_err(ConvertError::Decode)?;
     let converted = to_core_message(message)?;
     encode(&converted)
 }
 
-fn status_update_json(value: &JsonObject) -> Result<JsonObject, ConvertError> {
-    let update: compat::TaskStatusUpdate = decode(value)?;
+fn status_update_json(value: &AgentJson) -> Result<JsonObject, ConvertError> {
+    let update: compat::TaskStatusUpdate =
+        serde_json::from_value(value.clone()).map_err(ConvertError::Decode)?;
     let converted = status_update_to_v1(&update)?;
     encode(&converted)
 }
 
-fn artifact_update_json(value: &JsonObject) -> Result<JsonObject, ConvertError> {
-    let update: compat::TaskArtifactUpdate = decode(value)?;
+fn artifact_update_json(value: &AgentJson) -> Result<JsonObject, ConvertError> {
+    let update: compat::TaskArtifactUpdate =
+        serde_json::from_value(value.clone()).map_err(ConvertError::Decode)?;
     let converted = artifact_update_to_v1(&update)?;
     encode(&converted)
 }
