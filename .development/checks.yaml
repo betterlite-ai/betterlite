@@ -88,6 +88,10 @@ base:
       why: no Rust source file may grow past the line limits in settings.file_size; a `mod name;` line does not count, so a parent can declare every child module where cargo-mutants finds it
     - id: crates
       why: every crate inherits the workspace lints, is MIT, and keeps the LiteLLM name out of its name
+    - id: module-tree
+      why: "every Rust file the change adds or edits is part of its crate, reached from a Cargo target through a mod line, #[path] or include!, so its code and its tests compile"
+    - id: case-ignores
+      why: every compare.ignore pointer in a helper case the change adds or edits starts with a field of the helper answer, so it ignores something
   commands:
     - id: committed
       why: every change must be committed, so the branch is exactly what gets merged
