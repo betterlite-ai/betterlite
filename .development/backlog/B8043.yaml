@@ -1,0 +1,13 @@
+id: B8043
+milestone: M12 python
+title: Hook objects, loaded-object kinds and optional Python libraries
+status: todo
+depends_on: [B8042]
+file: tasks/B8043-pyhost-hook-objects.yaml
+covers: []
+parent: B165
+split_from: B165
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

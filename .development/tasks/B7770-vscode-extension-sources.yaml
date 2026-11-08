@@ -1,0 +1,132 @@
+id: B7770
+title: VS Code extension sources, rebranded, with a local build and package check
+description: >-
+  Bring LiteLLM's VS Code extension into this repo as a plain TypeScript project in ui/vscode-extension, rebranded, with every check running offline of any marketplace. The extension is MIT, lives in vscode-extension/ at the pinned commit, and has no enterprise code. It registers one language model chat provider with VS Code. It lists models from GET /model_group/info and streams answers from POST /v1/chat/completions, so it needs nothing from the gateway beyond those two routes (B156 proves them).
+  Copy these files from the read-only LiteLLM checkout (the litellm folder next to the worktrees, see agents.yaml) and change only what is listed below: src/extension.ts, gateway.ts, messages.ts, models.ts, provider.ts, stream.ts, vscode.proposed.d.ts, the five test files plus vscode-mock.ts, package.json, package-lock.json, tsconfig.json, vitest.config.mts, .gitignore, .vscodeignore and LICENSE. Keep Berri AI's copyright line in LICENSE. Write a README.md of a few lines (what it is, npm ci, npm run typecheck, npm test, npm run package); B156 rewrites it.
+  Rename the test folder from test/ to tests/ and update tsconfig.json (include), vitest.config.mts (the vscode alias path and the include glob) and .vscodeignore. The gate's line budget skips folders named tests, and the copied tests are about a thousand lines.
+  Rebrand, since no binary carries the LiteLLM name. package.json: name betterlite-vscode, displayName Betterlite, publisher betterlite, description without LiteLLM, keywords betterlite, ai gateway, llm, chat, copilot. languageModelChatProviders vendor betterlite with displayName Betterlite. Command betterlite.refreshModels with category Betterlite. repository is the url printed by git remote get-url origin with directory ui/vscode-extension; drop homepage and bugs. The extension.ts constants become VENDOR = "betterlite" and REFRESH_COMMAND = "betterlite.refreshModels". USER_AGENT in gateway.ts becomes betterlite-vscode/ plus the package version (0.1.0). package-lock.json keeps its content but its two name fields become betterlite-vscode. Class and type names LiteLLMChatProvider and LiteLLMModel become BetterliteChatProvider and BetterliteModel. The user-facing strings in provider.ts that begin "LiteLLM provider", "LiteLLM gateway URL" and "LiteLLM gateway at" begin "Betterlite provider", "Betterlite gateway URL" and "Betterlite gateway at". The tooltip first line in models.ts becomes "Model group <name> via <providers>". Test fixtures that use litellm.example.com use gateway.example.com. Update the test expectations to match. Everything else (wire paths, field names such as model_group, supported_reasoning_efforts, reasoning_effort, stream_options, the Authorization Bearer header, maxRetries: 0) stays as LiteLLM spells it.
+  Tooling: npm ci with the committed lock, tsc --noEmit, vitest run, an esbuild bundle to dist/extension.js (CJS, vscode external, node22 target) and vsce package --no-dependencies. Nothing is published: the only publish-named script stays vscode:prepublish, which vsce package runs itself. Never run npm install (it rewrites the lock) and never commit node_modules, dist or a .vsix; the copied .gitignore keeps them out.
+scope:
+  paths:
+    - ui/vscode-extension/src/**
+    - ui/vscode-extension/tests/**
+    - ui/vscode-extension/package.json
+    - ui/vscode-extension/package-lock.json
+    - ui/vscode-extension/tsconfig.json
+    - ui/vscode-extension/vitest.config.mts
+    - ui/vscode-extension/.gitignore
+    - ui/vscode-extension/.vscodeignore
+    - ui/vscode-extension/LICENSE
+    - ui/vscode-extension/README.md
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/vscode-extension/package.json#L1-L87
+    why: Manifest to rebrand, the chat provider contribution, the refresh command and the scripts (build, typecheck, test, package).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/vscode-extension/src/gateway.ts#L1-L114
+    why: Gateway config parsing, USER_AGENT, the /model_group/info call and the streaming chat call with maxRetries 0.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/vscode-extension/src/provider.ts#L1-L136
+    why: The LiteLLM-named class and the error strings to rebrand.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/vscode-extension/src/models.ts#L1-L170
+    why: /model_group/info parsing and the model descriptors; the tooltip line to rebrand.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/vscode-extension/src/messages.ts#L1-L188
+    why: Request building (stream_options include_usage, tools, tool_choice required, reasoning_effort).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/vscode-extension/src/stream.ts#L1-L90
+    why: Stream chunk handling, tool call assembly and the output limit error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/vscode-extension/test/vscode-mock.ts#L1-L82
+    why: The vscode module stand-in that vitest aliases in, which is why the tests run without VS Code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/vscode-extension/vitest.config.mts#L1-L12
+    why: The alias and include glob that change with the tests folder rename.
+dod:
+  - text: Every source, test, config and licence file listed in the description exists under ui/vscode-extension, with the tests in tests/ and no test/ folder.
+    proof: [files]
+  - text: package.json carries the Betterlite identity (name, displayName, publisher, vendor, refresh command and category), keeps the engines, openai and @types/vscode pins, and holds no LiteLLM text.
+    proof: [manifest]
+  - text: The sources and tests hold no LiteLLM text, the user agent is betterlite-vscode/ plus the version, and the vendor and command constants match the manifest.
+    proof: [rebrand]
+  - text: tsc --noEmit passes on src and tests.
+    proof: [typecheck]
+  - text: The five copied test files run and pass under vitest with the vscode alias.
+    proof: [unit-tests]
+  - text: The esbuild bundle dist/extension.js is CommonJS, requires vscode at run time and embeds openai and the refresh command id.
+    proof: [bundle]
+  - text: vsce package builds a .vsix and its file list holds the bundle, the manifest, LICENSE and README but no src, tests or node_modules; no script publishes anything; dist and the .vsix are git-ignored.
+    proof: [package-vsix]
+checks:
+  optional: []
+  commands:
+    - id: files
+      why: a copied file is missing, the tests are still in test/, or the lock is missing
+      run: cd ui/vscode-extension && for f in src/extension.ts src/gateway.ts src/messages.ts src/models.ts src/provider.ts src/stream.ts src/vscode.proposed.d.ts tests/gateway.test.ts tests/messages.test.ts tests/models.test.ts tests/provider.test.ts tests/stream.test.ts tests/vscode-mock.ts package.json package-lock.json tsconfig.json vitest.config.mts .gitignore .vscodeignore LICENSE README.md; do test -f "$f" || { echo "missing $f"; exit 1; }; done && test ! -e test && grep -q "Berri AI" LICENSE
+    - id: manifest
+      why: package.json still has LiteLLM identity, lost a pin, or the lock names another package
+      run: >-
+        cd ui/vscode-extension &&
+        jq -e '.name == "betterlite-vscode" and .displayName == "Betterlite" and .publisher == "betterlite" and .contributes.languageModelChatProviders[0].vendor == "betterlite" and .contributes.commands[0].command == "betterlite.refreshModels" and .contributes.commands[0].category == "Betterlite" and .engines.vscode == "^1.115.0" and .dependencies.openai == "^7.18.0" and .devDependencies["@types/vscode"] == "1.115.0" and (has("homepage") | not) and (has("bugs") | not)' package.json &&
+        ! grep -qi litellm package.json &&
+        jq -e '.name == "betterlite-vscode" and .packages[""].name == "betterlite-vscode"' package-lock.json
+    - id: rebrand
+      why: LiteLLM text remains in src or tests, or the user agent, vendor or command constant still has the old name
+      run: >-
+        cd ui/vscode-extension &&
+        ! grep -rniE 'litellm' src tests &&
+        grep -q 'betterlite-vscode/' src/gateway.ts &&
+        grep -q 'VENDOR = "betterlite"' src/extension.ts &&
+        grep -q 'REFRESH_COMMAND = "betterlite.refreshModels"' src/extension.ts &&
+        grep -q 'Betterlite gateway at' src/provider.ts &&
+        grep -q 'betterlite-vscode/' tests/gateway.test.ts
+    - id: typecheck
+      why: the project does not type check with the pinned compiler and the proposed API declarations
+      run: cd ui/vscode-extension && npm ci --ignore-scripts --no-audit --no-fund && npm run typecheck
+    - id: unit-tests
+      why: the copied unit tests do not run or fail
+      run: cd ui/vscode-extension && npm ci --ignore-scripts --no-audit --no-fund && npm test && test "$(ls tests/*.test.ts | wc -l)" -ge 5
+    - id: bundle
+      why: the extension does not bundle into a loadable CommonJS file
+      run: >-
+        cd ui/vscode-extension && npm ci --ignore-scripts --no-audit --no-fund && rm -rf dist && npm run build &&
+        test -s dist/extension.js &&
+        grep -q 'require("vscode")' dist/extension.js &&
+        ! grep -q 'require("openai")' dist/extension.js &&
+        grep -q 'betterlite.refreshModels' dist/extension.js
+    - id: package-vsix
+      why: the extension cannot be packaged, the package holds the wrong files, or a script publishes
+      run: >-
+        cd ui/vscode-extension && npm ci --ignore-scripts --no-audit --no-fund &&
+        out="$(mktemp -d)" && npm run package -- --out "$out/betterlite.vsix" && test -s "$out/betterlite.vsix" &&
+        files="$(npx vsce ls --no-dependencies)" &&
+        printf '%s\n' "$files" | grep -qx 'dist/extension.js' &&
+        printf '%s\n' "$files" | grep -qx 'package.json' &&
+        printf '%s\n' "$files" | grep -qx 'LICENSE' &&
+        printf '%s\n' "$files" | grep -qx 'README.md' &&
+        ! printf '%s\n' "$files" | grep -qE '^(src|tests|node_modules)/' &&
+        jq -e '[.scripts | keys[] | select(test("publish"))] == ["vscode:prepublish"]' package.json &&
+        git check-ignore -q dist/extension.js && git check-ignore -q betterlite.vsix && rm -rf "$out"
+oracle_cases: []
+deviations:
+  - what: The package, vendor id, command id, class names, error text and user agent say Betterlite, not LiteLLM. A user's VS Code settings keyed on the vendor litellm do not carry over.
+    why: No binary or published artifact carries the LiteLLM name (rules.yaml litellm-boundaries). Wire names (paths, JSON fields, headers) stay as LiteLLM spells them.
+  - what: The package.json repository points at this repo, and homepage and bugs are dropped.
+    why: The LiteLLM values name Berri AI's site and tracker.
+  - what: The tests folder is tests/, not test/.
+    why: The gate's line budget skips folders named tests.
+  - what: Nothing is published. The gate builds and lists the package only.
+    why: A marketplace release needs a publisher account and a token, which no check can hold; the architect publishes by hand when Max decides.
+out_of_scope:
+  - "README content for betterlite users, and the oracle cases plus the contract test that tie the extension's requests to the gateway (B156)."
+  - "Publishing to the VS Code marketplace or Open VSX, and the publisher account behind the name betterlite."
+  - "Running the extension inside a real VS Code. The unit tests use the vscode stand-in in tests/vscode-mock.ts, and a real window can only be proven by hand."
+  - "Adding node and npm to the CI toolchain and checks.yaml, and excluding package-lock.json from the line budget, which the architect does."
+pitfalls:
+  - The lock has 3570 lines and must be copied unchanged except its two name fields; never regenerate it with npm install or npm update.
+  - "@types/vscode is pinned to exactly 1.115.0 with no caret, and src/vscode.proposed.d.ts adds members to it; a newer types package can make tsc fail or hide the augmentation."
+  - gateway.ts imports ../package.json for the version, so the user agent follows the manifest version and tests/gateway.test.ts compares against USER_AGENT, not a literal.
+  - esbuild keeps vscode external on purpose, since VS Code supplies that module at run time; bundling it fails at load. openai is bundled because .vscodeignore drops node_modules.
+  - vitest needs the vscode alias to point at tests/vscode-mock.ts; after the folder rename a stale test/ path fails with an unresolved import of vscode.
+  - npm ci runs with --ignore-scripts, which the lock does not need, and the esbuild binary arrives through its platform package.
+  - vsce package runs vscode:prepublish (typecheck and build) by itself, so a check that also runs npm run build first stays deterministic by removing dist before it.
+  - The model list filter keeps groups with mode "chat" or no mode; the rebrand must not change that or the reasoning effort submenu code.
+  - The bare word litellm also appears in the example URLs of the copied tests, so the grep in the rebrand check only passes after those become gateway.example.com.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

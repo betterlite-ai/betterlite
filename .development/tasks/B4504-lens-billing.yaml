@@ -1,0 +1,197 @@
+id: B4504
+title: Authorize and charge Lens analysis calls
+description: >-
+  Build the two server modules that let a Lens worker spend money: lens_billing in crates/betterlite-server/src/lens_billing.rs
+  and lens_inference in crates/betterlite-server/src/lens_inference.rs (a folder of submodules each, with adjacent tests.rs files).
+  Both sit in betterlite-server because they need key auth, the chat pipeline and the router, and betterlite-server is the top crate.
+  Add betterlite-lens to the server's Cargo.toml (no cycle: betterlite-lens depends on no betterlite crate). The Lens records come from B4500
+  (Lens, Job, Worker, ModelRequest, ModelResult) and the pure job helpers renew_budget, current_job and replace_job come from B4500 too.
+  Repository writes go through B4501's LensRepository.update(lens_id, transform), which returns None when it could not apply the transform
+  after its own retries. B4503 and B4505 are the callers: B4503 calls validate_key when a billing key is assigned to a worker, and B4505's
+  worker model route calls analyze. This task registers no route.
+
+  Every outside service comes in through a trait on the struct's constructor, so tests use fakes. Ports: KeyResolver (B870 IdentityStore.resolve
+  by hashed token, giving the resolved key with blocked, is_session_token and team_id), InternalAuthorizer (B052's internal-job adapter,
+  authorize_internal_virtual_key, which resolves the stored key hash and runs the route and budget checks as if the key had called
+  /v1/chat/completions), ChatRunner (the B014 chat dispatch plus the B004 chat route's error mapping, returning the validated completion and
+  the value of the x-litellm-response-cost response header), ReservationReleaser (B3003 release of an unbound budget reservation),
+  ClientIp (B743 get_mcp_client_ip), ModelCatalog (B844 get_model_list(model_name, team_id)), ModelPrices (B2225 get_model_info) and
+  CostCalculator (B068 completion_cost, with the optional custom per-token rates). The Lens flag that marks spend rows as Lens traffic is
+  the B4001 lens_analysis scope and the B188 inherit_message_logging_privacy(true) scope: hold both around the chat call and drop them after it,
+  on success and on error.
+
+  lens_billing::key_validation: validate_key(resolver, key_id: Option<&str>). None returns None. Otherwise resolve the key by the hashed token
+  as given (never hash it again). A key with blocked = true or is_session_token = true fails with status 400 and detail
+  "Choose an active virtual key for Lens analysis". A resolver error propagates unchanged.
+
+  lens_billing::internal_request and lens_billing::completion: complete(key_id, data, reserve, incoming) returns (the completion, Option<f64> billed cost).
+  It builds an in-process request: method POST, path /v1/chat/completions, empty query, one header content-type: application/json, scheme taken from the
+  incoming request (default "http"), server litellm.internal:80, client address = ClientIp of the incoming request paired with the incoming request's port (0 when
+  the incoming request has no client), and no client when ClientIp is empty. The body is data serialized as JSON. Then, in this order: authorize the key with
+  InternalAuthorizer, await the reserve callback, run the chat pipeline with route type acompletion, read the x-litellm-response-cost header. The billed cost is
+  None when the header is missing, "" or "None", otherwise the parsed f64 (an unparsable value is an internal error, status 500). A budget-exceeded error from any step before or inside
+  the pipeline becomes status 402 with detail "The analysis key or its owner has reached a budget limit". Any other pipeline error goes through ChatRunner's failure
+  hook (which releases rate limits and records the failure) and then propagates. In every case, success or not, after the call finishes release the request's budget reservation
+  through ReservationReleaser unless the reservation is already marked callback_bound (a bound reservation is settled by the logging callbacks).
+
+  lens_inference::request_body: the fixed system text _SYSTEM (copy the five sentences exactly from the reference) and build_request(model, prompt, lens id, run id, worker id, team id)
+  giving the JSON body: model = job.settings.model; messages = [system message, user message with the prompt]; max_tokens 4096; stream false; timeout 120; num_retries 0;
+  disable_fallbacks true; response_format {"type": "json_object"}; metadata {tags: ["litellm-lens"], lens_id, lens_run_id (the job id), lens_worker_id, user_api_key_team_id (null when the key has no team)}.
+
+  lens_inference::quote: Deployment (litellm_params.model, optional input_cost_per_token and output_cost_per_token; other fields ignored), Prices (input and output cost per token, each >= 0,
+  plus the four above_200k and above_128k tier rates defaulting to 0) and deployment_prices(deployment): when both custom rates are set use only those two (tiers 0), otherwise take the
+  ModelPrices answer for litellm_params.model. quote(deployments, prompt) is ((utf8 byte length of prompt + _SYSTEM) + 1024) * input_rate + 4096 * output_rate, all times 2,
+  where input_rate is the maximum over all deployments of the maximum of the base, above-200k and above-128k input rates, and output_rate is the same for output. Compute in f64 as the source does,
+  then convert the final value once to the Decimal the Lens records use (see deviations).
+
+  lens_inference::reservation: reserve_transform(lens, job_id, worker_id, estimate, now_for_month, clock) applied inside LensRepository.update. Renew the budget month with renew_budget(lens, now_for_month) (now_for_month is the time taken before the call), find current_job, and fail
+  with status 409 "Job was cancelled or reassigned" when there is no active job, its id differs, its worker_id differs, its lease_until is None, or lease_until is not after the clock's current time (read the clock again here, not now_for_month).
+  Fail with status 402 "Monthly lens budget reached; increase it or wait for next month" when spent + estimate is greater than settings.monthly_budget (equal passes). Otherwise add estimate to the job's cost and to the lens's spent and return the lens
+  through replace_job. The reserve callback passed to complete runs this through the repository and fails with status 409 "Could not reserve analysis budget" when update returns None.
+
+  lens_inference::settlement: settle_transform(lens, job_id, estimate, cost, now_for_month): spent becomes max(0, spent - estimate + cost) only when lens.budget_month equals now_for_month's "%Y-%m"; the job with job_id, if it still exists in lens.jobs, gets cost max(0, cost_before - estimate + cost).
+  A missing job leaves jobs unchanged. The result of the settle update is ignored, as in the source.
+
+  lens_inference::charge: completion_charge(deployments, response, estimate). When there is exactly one deployment and it has both custom rates, return CostCalculator.completion_cost with that model and those two rates. Otherwise compute completion_cost with no custom rates and return it when it is greater than 0, else return the estimate.
+
+  lens_inference::analyze(repo, lens, job, worker, body, request) ties it together. Steps, with the status and detail of each failure: no router configured gives 503 "No analysis models are configured"; worker.analysis_key_id None gives 409 "Assign an analysis key to this worker in Lens setup";
+  validate_key on that id; team_id from the validated key; ModelCatalog.get_model_list(job.settings.model, team_id) as Deployments, and an empty list gives 400 "Analysis model is no longer available"; estimate = quote(...); take now (UTC); build the body; run complete under the Lens and privacy scopes with the reserve callback;
+  decode the completion (extra fields ignored, choices needs at least one entry, message.content optional); cost = billed cost if present, else completion_charge; run settle through repo.update; return ModelResult with content = first choice content, or "{}" when it is missing or the empty string, and the cost.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lens_billing.rs
+    - crates/betterlite-server/src/lens_billing/**
+    - crates/betterlite-server/src/lens_inference.rs
+    - crates/betterlite-server/src/lens_inference/**
+    - tools/oracle/cases/helpers/lens-billing/**
+    - tools/oracle/helpers/b4504.py
+    - tools/oracle/helpers/b4504/**
+    - tools/oracle/src/helpers/server/b4504.rs
+    - tools/oracle/src/helpers/server/b4504/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/billing.py#L19-L31
+    why: validate_key, the 400 for blocked and session keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/billing.py#L34-L98
+    why: complete, the in-process request, ordering of authorize, reserve and pipeline, the cost header read, the 402 mapping and the reservation release in finally.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3938-L3977
+    why: authorize_internal_virtual_key, the port complete calls (owned by B052).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L468-L478
+    why: release_unbound_budget_reservation skips a reservation marked callback_bound (owned by B3003).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/inference.py#L18-L87
+    why: Deployment, Completion and Prices models, the system text, deployment_prices and quote.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/inference.py#L89-L154
+    why: analyze up to the model call, the reserve transform, the request body and the scopes around complete.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/inference.py#L155-L184
+    why: Result decoding, the settle transform and completion_charge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/state.py#L17-L24
+    why: current_job and replace_job as the reserve and settle transforms use them (built by B4500).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L446-L452
+    why: The one call site of analyze (the worker model route, owned by B4505).
+dod:
+  - text: validate_key returns None for no key, rejects a blocked key and a session key with status 400 "Choose an active virtual key for Lens analysis", and passes the key id to the resolver unchanged.
+    proof: [key-validation-tests]
+  - text: complete builds the in-process POST /v1/chat/completions request with the exact headers, scheme, server and client address rules, and authorizes before it reserves and reserves before it runs the pipeline.
+    proof: [internal-request-tests, completion-flow-tests]
+  - text: The x-litellm-response-cost header is None for missing, empty and "None" values and a number otherwise, and a budget-exceeded error becomes status 402 with the budget detail.
+    proof: [completion-flow-tests]
+  - text: The budget reservation is released after success and after every failure unless it is marked callback_bound.
+    proof: [completion-flow-tests]
+  - text: quote follows the byte-length and rate formula, takes the highest tier rate across all deployments, and prefers custom rates over catalog prices.
+    proof: [quote-tests, oracle]
+  - text: The reserve transform rejects a missing, reassigned, wrong-worker or expired job with 409, rejects an over-budget estimate with 402 and accepts an estimate that exactly fills the budget.
+    proof: [reservation-tests, oracle]
+  - text: The settle transform replaces the estimate by the real cost on the job, adjusts spent only inside the reserved month, never goes below 0, and tolerates a missing job.
+    proof: [settlement-tests, oracle]
+  - text: completion_charge uses custom rates for a single custom-priced deployment, otherwise the computed cost when positive, otherwise the estimate; a billed header cost wins over both.
+    proof: [charge-tests, oracle]
+  - text: analyze fails with 503, 409 and 400 on its three early conditions and returns "{}" content for a missing or empty first choice message.
+    proof: [analyze-flow-tests]
+  - text: The request body carries the fixed model call settings, the system text and the lens, run, worker and team metadata.
+    proof: [request-body-tests, oracle]
+  - text: The Lens spend flag and the message-privacy scope are held around the chat call and dropped on success and on error.
+    proof: [analyze-flow-tests]
+  - text: The oracle adapter lints and type-checks.
+    proof: [helper-python]
+checks:
+  optional: []
+  commands:
+    - id: key-validation-tests
+      why: validate_key rules are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_billing::key_validation::/)'
+    - id: internal-request-tests
+      why: the in-process request shape is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_billing::internal_request::/)'
+    - id: completion-flow-tests
+      why: ordering, cost header, 402 mapping or reservation release is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_billing::completion::/)'
+    - id: quote-tests
+      why: the quote formula is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_inference::quote::/)'
+    - id: reservation-tests
+      why: the reserve transform is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_inference::reservation::/)'
+    - id: settlement-tests
+      why: the settle transform is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_inference::settlement::/)'
+    - id: charge-tests
+      why: completion_charge is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_inference::charge::/)'
+    - id: request-body-tests
+      why: the model call body is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_inference::request_body::/)'
+    - id: analyze-flow-tests
+      why: analyze early failures, scopes or the empty content fallback are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^lens_inference::analyze::/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4504)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4504 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4504/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/lens-billing/quote-single-custom-rates.yaml
+  - tools/oracle/cases/helpers/lens-billing/quote-max-tier-rate.yaml
+  - tools/oracle/cases/helpers/lens-billing/quote-multibyte-prompt.yaml
+  - tools/oracle/cases/helpers/lens-billing/reserve-accepted.yaml
+  - tools/oracle/cases/helpers/lens-billing/reserve-exact-budget-fits.yaml
+  - tools/oracle/cases/helpers/lens-billing/reserve-over-budget.yaml
+  - tools/oracle/cases/helpers/lens-billing/reserve-expired-lease.yaml
+  - tools/oracle/cases/helpers/lens-billing/reserve-other-worker.yaml
+  - tools/oracle/cases/helpers/lens-billing/reserve-new-month-resets-spent.yaml
+  - tools/oracle/cases/helpers/lens-billing/settle-same-month.yaml
+  - tools/oracle/cases/helpers/lens-billing/settle-other-month.yaml
+  - tools/oracle/cases/helpers/lens-billing/settle-clamps-at-zero.yaml
+  - tools/oracle/cases/helpers/lens-billing/settle-missing-job.yaml
+  - tools/oracle/cases/helpers/lens-billing/charge-single-custom-rates.yaml
+  - tools/oracle/cases/helpers/lens-billing/request-body-fields.yaml
+deviations:
+  - what: Money in the Lens records (spent, job cost, monthly budget, the estimate and the cost returned in ModelResult) is a Decimal, converted once from the f64 that the price formula produces.
+    why: B4500 keeps all Lens money as Decimal. Cases use rates and prompts whose result is exact in both, so the oracle compares equal values.
+  - what: A catalog price that is null for the above-200k or above-128k tier counts as 0.
+    why: At the pin, Prices(float = 0) rejects the null that get_model_info puts in those keys, so a plain catalog model fails with a validation error (500). Treating null as 0 is the evident intent. A null or negative base input or output rate still fails, as status 500 with a typed error naming the model.
+  - what: The in-process request is a plain struct passed to the chat pipeline, not an ASGI Request with a replayed body.
+    why: There is no ASGI layer in betterlite. The observable parts (path, content-type, client address, scheme) are kept.
+out_of_scope:
+  - "ChatRunner implementation: B004 does not cover _handle_llm_api_exception, so it does not own it. B5102 owns only that handler's status mapping. No task owns the failure hook itself (limit release and failure recording), so the ChatRunner implementation owner must be named when the proxy chat route task is written; this task only calls the hook."
+  - "Routes and access checks: B4503 owns the billing-key route that calls validate_key, B4505 owns the worker model route that calls analyze. This task registers nothing, so HTTP oracle cases come with those tasks."
+  - "authorize_internal_virtual_key and its route, budget and rate checks: B052 owns them. Reservation counters and release_unbound_budget_reservation: B3003. This task only calls them."
+  - "get_model_list, get_model_info and completion_cost: B844, B2225 and B068 own them. Message privacy scope: B188. The Lens spend flag: B4001. Client IP resolution: B743."
+  - "Repository persistence and the version-checked update: B4501. Lens records and renew_budget, current_job, replace_job: B4500."
+pitfalls:
+  - A failed model call is not refunded. The estimate stays in spent and in the job cost when complete errors after the reserve step, because settle only runs after a successful call.
+  - The reserve transform reads the clock a second time for the lease check, separate from the now used for the month. Use the injected clock twice, not one value.
+  - The lease check is lease_until <= now means expired, so a lease that ends exactly now is rejected, while spent + estimate == monthly_budget is accepted.
+  - The month used for settle is the now taken before the call, not the time of settling, so a call that crosses midnight at a month change adjusts only the job cost, not spent.
+  - x-litellm-response-cost values "" and "None" mean no billed cost and fall through to completion_charge; a billed cost of 0 is a real value and is used as is.
+  - completion_charge falls back to the estimate only when the computed cost is not greater than 0, and the custom-rate branch needs exactly one deployment with both rates set.
+  - quote uses the UTF-8 byte length of prompt plus the system text, not the character count, and takes the maximum tier rate over every deployment, not the first one.
+  - The key id handed to the authorizer is the stored hashed token, never a bearer value from the worker request, and the worker's own request headers are not forwarded.
+  - content falls back to "{}" for a missing content and also for the empty string.
+  - The user_api_key_team_id metadata key is null, not absent, when the billing key has no team, and the same team_id feeds get_model_list.
+  - The reservation release in the finally step must also run when the authorizer or the reserve callback fails, and it must be skipped for a callback_bound reservation.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

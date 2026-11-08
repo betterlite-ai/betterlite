@@ -2,8 +2,8 @@ id: B127
 milestone: M8 platform
 title: Object storage caches
 status: todo
-depends_on: [B4350, B4351, B002, B173]
-file: null
+depends_on: [B4350, B4290, B3997, B002, B173]
+file: tasks/B127-gcs-response-cache.yaml
 covers:
   - "litellm/caching/gcs_cache.py"
 parent: null

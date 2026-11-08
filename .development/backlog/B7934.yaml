@@ -1,0 +1,27 @@
+id: B7934
+milestone: M12 python
+title: Python types for guardrail hooks hiddenlayer to pangea (types/proxy/guardrails/guardrail_hooks)
+status: todo
+depends_on: [B5657, B7920, B7921, B7929, B7930, B7932]
+file: tasks/B7934-types-guardrail-hooks-c.yaml
+covers:
+  - "litellm/types/proxy/guardrails/guardrail_hooks/hiddenlayer.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/hide_secrets.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/ibm/**"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/javelin.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/lasso.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/litellm_content_filter.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/mcp_end_user_permission.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/model_armor.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/noma.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/onyx.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/openai/**"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/ovalix.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/pangea.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

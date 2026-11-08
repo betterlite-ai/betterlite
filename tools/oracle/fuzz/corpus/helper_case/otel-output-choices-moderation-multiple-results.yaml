@@ -1,0 +1,9 @@
+kind: helper
+name: moderation-multiple-results
+call:
+  b5240:
+    function: "output_choices"
+    response: {"results": [{"flagged": false}, {"flagged": true, "categories": {}}]}
+env: {}
+compare:
+  ignore: []

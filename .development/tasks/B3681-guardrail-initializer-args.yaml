@@ -1,0 +1,172 @@
+id: B3681
+title: Guardrail initializer argument builders
+description: >-
+  Port the six live functions of litellm/proxy/guardrails/guardrail_initializers.py (299 lines) that turn one configured
+  guardrail (`LitellmParams` plus the guardrail name) into the arguments of the callback class it starts. Each LiteLLM
+  function builds the class and registers it with `litellm.logging_callback_manager`. The sibling classes have no Rust
+  constructor yet and the registry that calls the initializers is B3682's, so this task builds only the part that is pure:
+  one argument struct for each callback and one function for each initializer that fills it. B3682 builds the classes
+  from these structs and registers them.
+
+  Code goes in crates/betterlite-guardrails/src/guardrail_initializers.rs and guardrail_initializers/. Files: bedrock.rs,
+  lakera.rs, lakera_v2.rs, presidio.rs, presidio_mode.rs, hide_secrets.rs, tool_permission.rs, lasso.rs, panw.rs and
+  error.rs. `error.rs` holds `InitializerError`, built with thiserror: `InvalidStreamingParam { name }`,
+  `MissingEnterprisePackage`, `MissingApiKey`, `MissingProfileName`. Its text never holds a parameter value. The types
+  `LitellmParams`, `LitellmParamsMode`, `Mode`, `ModeTarget` and `GuardrailChecks` come from B3662
+  (betterlite-config, sections::guardrail_params). The crate already depends on betterlite-config. Read B3662's
+  params.rs, base.rs and mode.rs for the exact field names and types before you write a struct.
+
+  Every function takes `params: &LitellmParams` and `guardrail_name: Option<&str>`. LiteLLM reads
+  `guardrail.get("guardrail_name", "")`, so an absent name is the empty string in every struct except `PanwArgs`, which
+  falls back to "panw_prisma_airs". Each struct copies the fields that LiteLLM's call passes, with the same names, and
+  owns its data (clone the strings and keep secrets as the `SecretString` that B3662 uses). `event_hook` is a clone of
+  `params.mode` unless said otherwise.
+
+  `initialize_bedrock(params, name) -> Result<BedrockArgs, InitializerError>`. `BedrockArgs` takes the fields on
+  lines 16-49 of the Python file: identifiers, thresholds, `chunk_budget_chars`,
+  `contextual_grounding_from_messages`, the nine `aws_*` credential fields and `aws_bedrock_runtime_endpoint`, the mask
+  flags, `default_on`, `disable_exception_on_block`, `experimental_use_latest_role_message_only`, `timeout`, `checks`,
+  `only_scan_new_messages` and the four streaming fields. `checks` is `Some` only when `params.checks` is the
+  `GuardrailChecks::Bedrock` form, and is `None` for the list form and for no checks. `only_scan_new_messages` is false
+  when absent. The streaming fields come from `BedrockStreamingParams::from_extras(&params.base.extra)`, defined in
+  bedrock.rs with LiteLLM's defaults: `streaming_buffer_until_moderated` true, `streaming_sampling_rate` 5 (an integer of
+  at least 1), `streaming_end_of_stream_only` false, `streaming_buffer_release_on_scan` false. A missing or null extra
+  uses the default. A value of the wrong type, or a sampling rate below 1, is `InvalidStreamingParam` with the field
+  name. Extra keys outside these four are ignored.
+
+  `initialize_lakera` gives `LakeraArgs` (api_base, api_key, category_thresholds, default_on, timeout, event_hook,
+  name). `initialize_lakera_v2` gives `LakeraV2Args` (api_base, api_key, project_id, payload, breakdown, metadata,
+  dev_info, on_flagged, skip_system_message_in_guardrail, skip_tool_message_in_guardrail, advisory_system_message,
+  default_on, timeout, event_hook, name). Both copy fields without change, and an absent value stays absent.
+
+  `initialize_tool_permission` gives `ToolPermissionArgs`. `rules` is `None` when the params have no rules or an empty
+  list. Otherwise it is the rules as plain maps (`Vec<BTreeMap<String, GuardrailValue>>`) in the same order.
+  `default_action` is the `default_action` extra when it is set and "deny" when not. `on_disallowed_action` is the
+  extra when set and "block" when not. B3662 has lowercased both. Then `default_on`, `violation_message_template`,
+  `event_hook` and `name`.
+
+  `initialize_lasso` gives `LassoArgs`: `lasso_api_key` (the `api_key`), `api_base`, `user_id` (from `lasso_user_id`),
+  `conversation_id` (from `lasso_conversation_id`), `mask`, `default_on`, `timeout`, `event_hook`, `name`.
+
+  `initialize_panw_prisma_airs` gives `PanwArgs`. It refuses a missing or empty `api_key` with `MissingApiKey`
+  (message "PANW Prisma AIRS: api_key is required") and then a missing or empty `profile_name` with
+  `MissingProfileName` (message "PANW Prisma AIRS: profile_name is required"), in that order. Defaults: `api_base` is
+  "https://service.api.aisecurity.paloaltonetworks.com/v1/scan/sync/request" when absent or empty,
+  `mask_on_block`, `mask_request_content` and `mask_response_content` false, `app_name` none, `fallback_on_error`
+  "block", `timeout` 10.0 when absent, name "panw_prisma_airs" when absent. Pass `default_on` and
+  `violation_message_template` through. The three flags and `fallback_on_error` and `app_name` come from the params
+  extras, as LiteLLM reads them with `getattr`.
+
+  `initialize_hide_secrets(params, name) -> Result<HideSecretsArgs, InitializerError>`. The callback class lives in
+  LiteLLM's enterprise package, which the open-source install does not have, so LiteLLM raises "Trying to use Secret
+  Detection" followed by `CommonProxyErrors.missing_enterprise_package` text on every call. Return
+  `InitializerError::MissingEnterprisePackage` always. Its message is the full string. Read the constant in
+  litellm/proxy/_types.py. Keep `HideSecretsArgs` (detect_secrets_config, event_hook, name, default_on) as the
+  shape for a later task, and mark in a comment on one line that it is unused until then. If the architect decides
+  against the dead struct, delete it and keep only the error.
+
+  `presidio_mode.rs` has the three pure helpers on lines 94-132. `configured_event_hooks(mode) -> Vec<String>`: a text
+  gives one item, a list gives its items, a `Mode` gives the items of every `tags` value in map order and then the
+  items of `default`, with a text target as one item. `is_mcp_only_mode(mode) -> bool` is true only when the hooks are
+  not empty and every one is `pre_mcp_call`, `during_mcp_call` or `post_mcp_call`.
+  `presidio_output_mode(mode, include_mcp) -> LitellmParamsMode` maps hooks through `output_hooks`: for an empty hook
+  list, or a list that is MCP-only when `include_mcp` is false, the result is an empty list, otherwise it is the list
+  `["post_call"]`. A text or list mode gives `LitellmParamsMode::Many(output_hooks(..))`. A `Mode` gives
+  `LitellmParamsMode::Tagged` where every tag maps to a `ModeTarget::Many` of `output_hooks` of its target, and
+  `default` is `Some(ModeTarget::Many(..))` of `output_hooks(default)` or `None` when it was `None`. The check for the
+  text form uses the one-item hook list.
+
+  `initialize_presidio(params, name) -> Vec<PresidioArgs>`. `filter_scope` is `presidio_filter_scope` when set. When
+  not set it is "input" if `is_mcp_only_mode(params.mode)` and "both" otherwise. `run_input` is scope input or both.
+  `run_output` is scope output or both. `PresidioArgs` has a `role` (`Scan` or `Restore`) and the fields on lines
+  146-168: output_parse_pii, ad hoc recognizers, mock_redacted_text, default_on, pii_entities_config, score thresholds,
+  analyzer and anonymizer base urls, language, entities deny list, `apply_to_output`, `mask_response_content`,
+  `timeout`, `analyze_chunk_size_bytes` (`Option<u64>`), `event_hook`, name. Build in this order and skip the ones that
+  do not run:
+  1. input scan, when `run_input`: role Scan, `apply_to_output` false, `event_hook` the mode as it is, `output_parse_pii`
+     from the params, `mask_response_content` false.
+  2. restore, when `run_input` and `output_parse_pii` is true: role Restore, `output_parse_pii` true, `apply_to_output`
+     false, `event_hook` is `presidio_output_mode(mode, true)`.
+  3. output mask, when `run_output`: role Scan, `apply_to_output` true, `output_parse_pii` false,
+     `mask_response_content` true, `event_hook` is `presidio_output_mode(mode, explicit_scope_is_set)`.
+
+oracle_cases: []
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/guardrail_initializers.rs
+    - crates/betterlite-guardrails/src/guardrail_initializers/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_initializers.py#L10-L91
+    why: Bedrock, Lakera and Lakera v2 argument lists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_initializers.py#L94-L195
+    why: The MCP-only mode helpers and the three-callback Presidio setup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_initializers.py#L198-L299
+    why: Secret detection error, tool permission rules and defaults, Lasso, and PANW checks and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L669-L707
+    why: BedrockGuardrailStreamingParams defaults, the sampling rate bound and from_extras.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L56-L86
+    why: The registry that calls these functions by name (B3682).
+
+dod:
+  - text: Bedrock streaming params read the four extras with LiteLLM's defaults, ignore null and unknown extras, and refuse a wrong type or a sampling rate below 1.
+    proof: [bedrock-tests]
+  - text: BedrockArgs keeps checks only in the Bedrock form and defaults only_scan_new_messages to false.
+    proof: [bedrock-tests]
+  - text: Lakera, Lakera v2, Lasso and tool permission arguments copy the listed fields, and tool permission defaults to deny and block with empty rules as none.
+    proof: [simple-tests]
+  - text: PANW checks api_key before profile_name and applies the api_base, timeout, name and flag defaults.
+    proof: [simple-tests]
+  - text: Secret detection always gives the missing enterprise package error.
+    proof: [simple-tests]
+  - text: The MCP-only helpers and presidio_output_mode give the listed results for a text, a list and a tagged mode, with and without include_mcp.
+    proof: [presidio-mode-tests]
+  - text: Presidio builds the input, restore and output callbacks in that order for each scope, with the right event hooks and flags.
+    proof: [presidio-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: bedrock-tests
+      why: the Bedrock streaming defaults, the checks rule or the bounds are wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_initializers::bedrock::tests::/)'
+    - id: simple-tests
+      why: Lakera, Lasso, tool permission, PANW or secret detection arguments differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_initializers::(lakera|lakera_v2|lasso|tool_permission|panw|hide_secrets)::tests::/)'
+    - id: presidio-mode-tests
+      why: a mode helper gives a wrong hook list
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_initializers::presidio_mode::tests::/)'
+    - id: presidio-tests
+      why: the Presidio callback set, order or overrides are wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_initializers::presidio::tests::/)'
+
+deviations:
+  - what: The initializers return argument structs and register nothing. LiteLLM builds the callback object and adds it to `litellm.logging_callback_manager`.
+    why: The sibling callback classes have no Rust constructor in this task, and registration belongs to B3682's registry. The structs carry the same data.
+  - what: A bad Bedrock streaming extra gives `InvalidStreamingParam` and the guardrail does not start. LiteLLM raises a pydantic ValidationError from the same call.
+    why: Same outcome, with a Rust error type.
+  - what: initialize_hide_secrets never succeeds.
+    why: The class is in LiteLLM's enterprise package, which this rewrite does not ship. LiteLLM gives the same error without that package.
+
+out_of_scope:
+  - "The initializer registry, the registration with the callback manager and the call sites: B3682."
+  - "Building the Bedrock, Lakera, Lasso, tool permission, PANW and Presidio callback classes: their own tasks."
+  - "`async_post_call_streaming_iterator_hook`: B6260."
+  - "`initialize_lasso` and `initialize_panw_prisma_airs` have no caller at the pin (the registry does not list them), so only the function shape is ported."
+
+pitfalls:
+  - Order of the Presidio callbacks is input scan, restore, output mask. B3682 registers them in that order.
+  - The restore callback gets its event hook with `include_mcp` true. The output mask gets `include_mcp` only when the filter scope was set in the config.
+  - A mode that is MCP-only with the scope unset means input-only scanning, so no output mask is built.
+  - "`presidio_output_mode` on a text mode returns a list, never the original text."
+  - An empty hook list is not MCP-only, because the check requires at least one hook.
+  - PANW falls back to "panw_prisma_airs" for the name, while every other initializer falls back to the empty string.
+  - Bedrock `from_extras` skips a null extra, so null means the default and not an error.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1200
+  max_new_expects: 0

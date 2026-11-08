@@ -1,8 +1,19 @@
+pub(crate) mod agent_daily_activity;
+pub(crate) mod assistant_runs;
 pub(crate) mod chat;
 pub(crate) mod completions;
+pub(crate) mod container_files;
+pub(crate) mod containers;
 pub(crate) mod embeddings;
+pub(crate) mod mcp_byok_consent;
+pub(crate) mod mcp_byok_oauth;
 pub(crate) mod moderations;
+pub(crate) mod ocr;
 pub(crate) mod prompts;
+pub(crate) mod video_character;
+pub(crate) mod video_content_remix;
+pub(crate) mod video_create;
+pub(crate) mod video_edit;
 
 use crate::auth::auth_route_patterns::{self, AuthSettings};
 use crate::auth::route_match::stage;

@@ -1,0 +1,16 @@
+id: B8131
+milestone: M11 distribution
+title: Standalone Helm chart workloads
+status: blocked
+depends_on: [B8130, B1232, B5071]
+file: tasks/B8131-helm-chart-workloads.yaml
+covers:
+  - "helm/litellm-helm/templates/deployment.yaml"
+  - "helm/litellm-helm/templates/migrations-job.yaml"
+  - "helm/litellm-helm/templates/service.yaml"
+parent: B151
+split_from: B152
+resolution: null
+superseded_by: null
+blocked_reason: "waits for Max: the gate has no pinned helm or helm-unittest, and the bundled postgresql and redis subcharts need network or vendored chart archives"
+pr: null

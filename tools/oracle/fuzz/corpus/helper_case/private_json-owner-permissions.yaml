@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "private-json-owner-permissions-seed", "call": {"private_json": {"function": "owner_permissions", "name": "token.json", "data": {"token": "sk-123"}}}, "env": {}, "compare": {"ignore": []}}

@@ -1,0 +1,9 @@
+kind: helper
+name: transcription-text
+call:
+  b5240:
+    function: "output_choices"
+    response: {"text": "spoken words"}
+env: {}
+compare:
+  ignore: []

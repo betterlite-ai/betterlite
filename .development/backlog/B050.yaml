@@ -2,11 +2,9 @@ id: B050
 milestone: M3 providers
 title: Agent platform providers
 status: todo
-depends_on: [B142, B2210]
-file: null
+depends_on: [B004, B005, B2230, B8100, B8101, B8102, B8103, B8104, B8105]
+file: tasks/B050-agent-platform-dispatch.yaml
 covers:
-  - "litellm/llms/{a2a,langflow,langgraph,manus}/**"
-  - "litellm/types/llms/langgraph.py"
   - "litellm/main.py"
 parent: null
 split_from: null
