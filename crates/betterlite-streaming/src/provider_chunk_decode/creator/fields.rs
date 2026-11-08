@@ -18,23 +18,31 @@ fn apply_declared_field(model_response: &mut StreamChunk, key: &str, value: &Jso
         ("created", JsonValue::Number(number)) => {
             model_response.created = number.as_i64().unwrap_or(model_response.created);
         }
-        ("system_fingerprint", JsonValue::String(text)) => {
-            model_response.system_fingerprint = Some(text.clone());
+        ("system_fingerprint", fingerprint) => {
+            if let JsonValue::String(text) = fingerprint {
+                model_response.system_fingerprint = Some(text.clone());
+            } else {
+                model_response.system_fingerprint = None;
+            }
         }
-        ("system_fingerprint", JsonValue::Null) => model_response.system_fingerprint = None,
-        ("usage", JsonValue::Object(counted)) => model_response.usage = Some(usage_of(counted)),
-        ("usage", JsonValue::Null) => model_response.usage = None,
-        ("provider_specific_fields", JsonValue::Object(nested)) => {
-            model_response.provider_specific_fields = Some(nested.clone());
+        ("usage", counted) => {
+            if let JsonValue::Object(found) = counted {
+                model_response.usage = Some(usage_of(found));
+            } else {
+                model_response.usage = None;
+            }
         }
-        ("provider_specific_fields", JsonValue::Null) => {
-            model_response.provider_specific_fields = None;
+        ("provider_specific_fields", nested) => {
+            if let JsonValue::Object(found) = nested {
+                model_response.provider_specific_fields = Some(found.clone());
+            } else {
+                model_response.provider_specific_fields = None;
+            }
         }
         ("hidden_params", JsonValue::Object(hidden)) => {
             model_response.hidden_params.clone_from(hidden);
         }
         ("choices", JsonValue::Array(choices)) => model_response.choices = choices_of(choices),
-        ("system_fingerprint" | "usage" | "provider_specific_fields", _) => {}
         _ => return false,
     }
     true
