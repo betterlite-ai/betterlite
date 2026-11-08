@@ -1,14 +1,14 @@
 id: B5970
 milestone: M3 providers
 title: Watsonx credentials, IAM token and URL helpers
-status: todo
+status: done
 depends_on: [B186]
 file: tasks/B5970-watsonx-auth.yaml
 covers:
   - "litellm/llms/watsonx/common_utils.py"
 parent: B042
 split_from: B5842
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 919
