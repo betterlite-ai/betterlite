@@ -76,7 +76,6 @@ fn litellm_api_key_is_absent_without_either_header() {
 #[rstest]
 #[case::matching_case("x-mcp-auth", Some("v"))]
 #[case::configured_case("X-MCP-AUTH", Some("v"))]
-#[case::empty_value("x-mcp-auth", Some(""))]
 #[case::absent("x-other-auth", None)]
 fn mcp_auth_header_uses_the_configured_name(
     #[case] configured_name: &str,
@@ -85,6 +84,13 @@ fn mcp_auth_header_uses_the_configured_name(
     let headers = raw_headers(&[("X-Mcp-Auth", "v")]);
     let value = mcp_auth_header(&headers, configured_name);
     assert_eq!(value.as_ref().map(ExposeSecret::expose_secret), expected);
+}
+
+#[test]
+fn mcp_auth_header_keeps_an_empty_value() {
+    let headers = raw_headers(&[("x-mcp-auth", "")]);
+    let value = mcp_auth_header(&headers, "x-mcp-auth");
+    assert_eq!(value.as_ref().map(ExposeSecret::expose_secret), Some(""));
 }
 
 #[test]
