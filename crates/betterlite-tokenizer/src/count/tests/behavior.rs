@@ -64,9 +64,9 @@ enum Expected {
     Expected::Tokens(2)
 )]
 #[case::text_anthropic_model_counts_directly(
-    "{\"model\":\"claude-2.1\",\"text\":\"hello world \u{4e16}\u{754c}\"}",
+    "{\"model\":\"claude-haiku-4-5\",\"text\":\"hello world \u{4e16}\u{754c}\"}",
     4_000_000,
-    1024,
+    4,
     Expected::Tokens(6)
 )]
 #[case::text_list_is_joined(

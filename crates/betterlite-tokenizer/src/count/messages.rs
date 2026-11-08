@@ -91,12 +91,9 @@ async fn count_fields(texter: &Texter<'_>, message: &Message) -> Result<usize, C
             .ok_or(CountError::Overflow)?;
     }
     if let Some(results) = &message.search_results {
-        let text = search_results_text(results)?;
-        if !text.is_empty() {
-            total = total
-                .checked_add(texter.count(&text).await?)
-                .ok_or(CountError::Overflow)?;
-        }
+        total = total
+            .checked_add(count_search_results(texter, results).await?)
+            .ok_or(CountError::Overflow)?;
     }
     for value in message.passthrough.values() {
         if let Json::Text(text) = value {
@@ -212,6 +209,18 @@ async fn count_tool_definitions(
     let parsed = parse_tool_definitions(&bytes, ToolLimits::default())?;
     let formatted = format_function_definitions(&parsed)?;
     texter.count(&formatted).await
+}
+
+// LiteLLM's string branch runs before the search_results branch, so a string value is counted as it stands
+async fn count_search_results(texter: &Texter<'_>, results: &Json) -> Result<usize, CountError> {
+    if let Json::Text(text) = results {
+        return texter.count(text).await;
+    }
+    let text = search_results_text(results)?;
+    if text.is_empty() {
+        return Ok(0);
+    }
+    texter.count(&text).await
 }
 
 fn search_results_text(results: &Json) -> Result<String, CountError> {
