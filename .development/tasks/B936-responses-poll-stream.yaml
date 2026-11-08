@@ -40,7 +40,7 @@ scope:
   - crates/betterlite-core/fuzz/fuzz_targets/responses_poll_stream.rs
   - crates/betterlite-core/fuzz/corpus/responses_poll_stream/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/responses_poll_stream.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/responses_poll_stream.py
   - tools/oracle/cases/sdk-http/responses-poll-stream/**

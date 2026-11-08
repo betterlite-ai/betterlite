@@ -31,7 +31,6 @@ scope:
     - crates/betterlite-config/src/cli_login_flow.rs
     - crates/betterlite-config/src/cli_login_flow/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/cli-login-flow-*
-    - tools/oracle/cases/sso/cli-flow/**
     - tools/oracle/helpers/b1613.py
     - tools/oracle/helpers/b1613/**
     - tools/oracle/src/helpers/server/b1613.rs
@@ -47,8 +46,10 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1743-L1747
     why: CLI state prefix, cache namespace and lifetime.
 dod:
+  - text: The handlers are tested with tower's oneshot over this task's own Router and fake ports; B8770 mounts them through B063 and B8771 proves them over HTTP.
+    proof: [flow-tests]
   - text: Actual unauthenticated HTTP starts and completion failures preserve status, headers and error envelopes.
-    proof: [flow-tests, oracle]
+    proof: [flow-tests]
   - text: Successful verification changes only its flag, while Redis outages cannot resurrect a local flow.
     proof: [flow-tests]
   - text: The two general settings load with false defaults and new form/cache inputs survive corpus replay.
@@ -65,12 +66,7 @@ checks:
     - id: flow-corpora
       why: CLI cache/form bytes or their config seed have no branch-added regression inputs.
       run: test -f crates/betterlite-server/fuzz/fuzz_targets/cli_login_input.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/cli_login_input)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/cli-login-flow-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(replays_the_cli_login_input_corpus) | test(replays_the_config_yaml_corpus)'
-oracle_cases:
-  - tools/oracle/cases/sso/cli-flow/public-start-without-complete-uri.yaml
-  - tools/oracle/cases/sso/cli-flow/opt-in-complete-uri.yaml
-  - tools/oracle/cases/sso/cli-flow/thirty-first-start.yaml
-  - tools/oracle/cases/sso/cli-flow/legacy-and-invalid-login-id.yaml
-  - tools/oracle/cases/sso/cli-flow/unready-and-expired-session.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - Browser identity completion and its browser token are created by B1615; B1614 consumes verified flows to issue a CLI JWT.

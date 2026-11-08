@@ -1,0 +1,122 @@
+id: B8728
+title: Mount the /mcp transport routes and build the production TransportPorts
+description: >-
+  B8592 builds the /mcp, /mcp/proxy, /toolset/{toolset_name}/mcp and /{mcp_server_name}/mcp routes and B8727 builds McpTransport with the /mcp sub app routes, but nothing builds a real McpTransport or merges either router into the app. This task does both and owns the HTTP oracle cases for the MCP transport.
+
+
+  Code goes in crates/betterlite-server/src/app/mcp/transport.rs and app/mcp/transport/ (ports.rs, a tests.rs beside each), plus one field and one line in B8620's McpState::build (app/mcp/state.rs), one line in app::mcp::mount_public and one line in app::mcp::start (crates/betterlite-server/src/app/mcp.rs).
+
+
+  Where it mounts. LiteLLM declares the four path routes in proxy_server.py with no user_api_key_auth dependency and mounts the server.py sub app at /mcp as a raw ASGI app, so no key check runs before the MCP handler; handle_streamable_http_mcp authenticates inside through MCPRequestHandler.process_mcp_request. So both routers go through app::mcp::mount_public, outside the auth layers. B8592's routes merge before mcp_app_routes, so the static /mcp and /mcp/proxy win over the /mcp/{*rest} wildcard; /toolset/{toolset_name}/mcp must win over /{mcp_server_name}/mcp, as LiteLLM declares it first.
+
+
+  ports.rs. ProdPorts implements B8727's TransportPorts over McpState and Shared, with no fake left:
+
+  1. admit: B4673's RequestAdmission that B8621 builds in McpState's identity.
+
+  2. client_ip: B743's get_mcp_client_ip with the trusted proxy settings McpCore holds.
+
+  3. apply_toolset_scope and toolset_server_ids: B6593's ToolsetScope over the same ActingUsers, GrantedToolsets and ToolsetPermissions adapters B8626 writes for the REST routes (B4672's acting_user_auth and granted_toolset_ids, B6591's ServerUnion in McpState's identity). Reuse those adapters from app::mcp::rest; build only what is missing.
+
+  4. client_allowlist: B8724's allowlist_from_settings over the current snapshot of `shared.general_settings` (B8612), read on every call because LiteLLM re-reads general_settings per request.
+
+  5. cors_origins: B8591's cors_config over LITELLM_CORS_ORIGINS and LITELLM_CORS_ALLOW_CREDENTIALS, computed once.
+
+  6. operations: B8199's GatewayOperations built the way B8626's tools.rs builds it (B8197 listing, B8198 execution, B8195 scoping, B8196 auth), reusing B8626's port implementations.
+
+  7. challenge ports (B8725's ChallengePorts): server_by_name over `shared.mcp_registry` (B4731), ensure_discovered over McpCore's discovery slots (B6762), has_user_oauth_token and preflight_token_exchange over the B8461 upstream client in McpState's tokens, token_exchange_challenge from B4667, allowed_servers from B8195, refuse_empty_initialize and merge_instructions from B8196, cache_instructions over McpCore's B6592 instruction cache, and probe as one POST over `shared.http` (B173) with B8725's probe_request and a 5 second timeout, where a connect, DNS, TLS or timeout failure answers (200, None).
+
+  8. debug headers: B8194's maybe_build_debug_headers.
+
+
+  transport.rs. build_transport(state: &McpState, shared: &Shared) -> Arc<McpTransport<ProdPorts>> is called once from McpState::build, which stores it in the new field `transport`. mount_public merges B8592's routes (with B8592's McpStreamHandler implementation for McpTransport) and B8727's mcp_app_routes(transport). start calls McpTransport::start, so the session cleanup runs from boot; B8701 reads `McpState::shared(state).transport` for B8723's SessionRegistry.
+
+
+  Tests in app::mcp::transport:: : the merged router answers each of the four path routes and /mcp/enabled with something other than 404 through tower's oneshot; /mcp/proxy reaches the transport with proxy_mode true and /toolset/{name}/mcp with its toolset id; ProdPorts reads the allowlist again after general_settings changes; start then stop leaves no cleanup task running.
+
+
+  HTTP oracle cases through the booted proxy, in tools/oracle/cases/http/mcp-transport/, with a master key and one config mcp_servers entry named test_srv (transport http, a made-up url) unless a case says otherwise. MCP requests are POSTs with Accept "application/json, text/event-stream" and Content-Type application/json unless a case says otherwise. Ignore the value of mcp-session-id and compare SSE bodies by their data payloads.
+  enabled: GET /mcp/enabled answers {"enabled": true}.
+  stateless-tools-list: tools/list on /mcp/ with no session id.
+  initialize-stateful: initialize on /mcp; the answer carries an mcp-session-id header.
+  initialize-scoped-server: initialize on /mcp/test_srv; the server name override.
+  named-server-route: tools/list on /test_srv/mcp.
+  named-server-not-found: tools/list on /test-unknown/mcp answers 404.
+  toolset-no-database: tools/list on /toolset/test-set/mcp without a database answers 503.
+  proxy-prompts-rejected: prompts/list on /mcp/proxy answers the METHOD_NOT_FOUND error.
+  unsupported-version: tools/list with MCP-Protocol-Version 1999-01-01 answers 400.
+  not-acceptable: tools/list with Accept application/json only.
+  no-key: tools/list on /mcp/ without any key.
+  origin-refused: LITELLM_CORS_ORIGINS set to https://test-allowed.example and an Origin of https://test-other.example answers 403.
+  client-not-allowed: general_settings mcp_allowed_clients [{alias: test-app, value: test-app}] and mcp_client_id_header x-test-client, request without that header, answers 403.
+  stale-session-delete: DELETE /mcp/ with an unknown mcp-session-id answers 200 {"message": "Session terminated successfully"}.
+  oauth2-challenge: a test_oauth server with auth_type oauth2 and authorization_url and token_url set, initialize on /mcp/test_oauth with the master key answers 401 with the authorization_uri header.
+  passthrough-challenge: a test_pass server with auth_type none and extra_headers [Authorization], initialize on /mcp/test_pass with the key in x-litellm-api-key answers 401 with the resource_metadata header.
+  sse-missing-session: POST /mcp/sse/messages without session_id answers 400.
+  sse-unknown-session: POST /mcp/sse/messages?session_id= a valid hex id nobody opened answers 404.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/mcp.rs
+    - crates/betterlite-server/src/app/mcp/state.rs
+    - crates/betterlite-server/src/app/mcp/transport.rs
+    - crates/betterlite-server/src/app/mcp/transport/**
+    - tools/oracle/cases/http/mcp-transport/**
+    - "tools/oracle/fuzz/corpus/http_case/mcp-transport-*"
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20119-L20166
+    why: /mcp/proxy and the bare /mcp route, declared without an auth dependency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20166-L20175
+    why: /toolset/{toolset_name}/mcp is declared before /{mcp_server_name}/mcp.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L193-L200
+    why: The server.py sub app mounted at /mcp as a raw ASGI app.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L2474-L2508
+    why: The sub app's routes.
+dod:
+  - text: Both routers are merged once through mount_public, outside the auth layers, with the static and toolset routes winning over the wildcards.
+    proof: [mount-tests]
+  - text: ProdPorts backs every TransportPorts method with the production types, re-reads the client allowlist per call and probes upstreams over the shared HTTP client.
+    proof: [mount-tests]
+  - text: McpState holds one McpTransport and start runs its session cleanup.
+    proof: [mount-tests]
+  - text: The /mcp transport, the path routes, the challenges and the SSE message refusals match LiteLLM through the booted proxy.
+    proof: [mount-tests, transport-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: mount-tests
+      why: a router, a production port, the McpState field or the start hook is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::transport::/)'
+    - id: transport-cases
+      why: the MCP transport HTTP cases were not added
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/mcp-transport)"
+oracle_cases:
+  - tools/oracle/cases/http/mcp-transport/enabled.yaml
+  - tools/oracle/cases/http/mcp-transport/stateless-tools-list.yaml
+  - tools/oracle/cases/http/mcp-transport/initialize-stateful.yaml
+  - tools/oracle/cases/http/mcp-transport/initialize-scoped-server.yaml
+  - tools/oracle/cases/http/mcp-transport/named-server-route.yaml
+  - tools/oracle/cases/http/mcp-transport/named-server-not-found.yaml
+  - tools/oracle/cases/http/mcp-transport/toolset-no-database.yaml
+  - tools/oracle/cases/http/mcp-transport/proxy-prompts-rejected.yaml
+  - tools/oracle/cases/http/mcp-transport/unsupported-version.yaml
+  - tools/oracle/cases/http/mcp-transport/not-acceptable.yaml
+  - tools/oracle/cases/http/mcp-transport/no-key.yaml
+  - tools/oracle/cases/http/mcp-transport/origin-refused.yaml
+  - tools/oracle/cases/http/mcp-transport/client-not-allowed.yaml
+  - tools/oracle/cases/http/mcp-transport/stale-session-delete.yaml
+  - tools/oracle/cases/http/mcp-transport/oauth2-challenge.yaml
+  - tools/oracle/cases/http/mcp-transport/passthrough-challenge.yaml
+  - tools/oracle/cases/http/mcp-transport/sse-missing-session.yaml
+  - tools/oracle/cases/http/mcp-transport/sse-unknown-session.yaml
+deviations: []
+out_of_scope:
+  - "The route handlers: B8592. The transport behavior: B8720 to B8727. The /v1/mcp/sessions routes over the SessionRegistry this task stores: B8701."
+pitfalls:
+  - "Mounting inside the auth layers would answer 401 before the MCP handler can send its own challenge with a WWW-Authenticate header, which breaks every OAuth MCP client."
+  - "An initialize case leaves a stateful session open for 30 minutes in the booted proxy, so a later GET /v1/mcp/sessions in the same run reports it; keep that in mind when a sessions case fails."
+  - "The client allowlist must be read per request; caching it at build time ignores a general_settings change made through the config API."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

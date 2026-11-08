@@ -1,0 +1,74 @@
+id: B8648
+title: Mount the A2A agent routes and the agent skills discovery routes
+description: >-
+  Two route modules wait for a mount. B8589's `agent_endpoints::a2a_routes::routes()` serves the agent card (GET `/a2a/{agent_id}/.well-known/agent-card.json` and GET `/a2a/{agent_id}/.well-known/agent.json`) and the invoke handler (POST `/a2a/{agent_id}`, POST `/a2a/{agent_id}/message/send`, POST `/v1/a2a/{agent_id}/message/send`), all behind the key check. B8274's `agent_skills_routes::routes()` serves GET `/.well-known/agent-skills/index.json`, its alias GET `/.well-known/skills/index.json` and GET `/v1/skills/{skill_id}/archive` with no key check, since discovery clients send none. LiteLLM loads the a2a module as a lazy feature (prefix /a2a and suffix /message/send) and includes agent_skills_discovery_router at startup. This task builds the state both modules take and mounts them.
+
+  Where. Module `app::agents::a2a` (crates/betterlite-server/src/app/agents/a2a.rs and a2a/**: state.rs, skills.rs, tests.rs); the skeleton declares it in app/agents.rs. Then add one merge line to `mount` and one to `mount_public` in crates/betterlite-server/src/app/agents.rs (the contract functions B8647 filled; touch nothing else there). Read crates/betterlite-server/src/agent_endpoints/a2a_routes.rs and crates/betterlite-server/src/agent_skills_routes.rs first and use their state types and constructor names. No statics, no trait objects, native async fn.
+
+  1. A2A state (a2a/state.rs). Build B8589's `A2aRouteState` once at mount with these collaborators. The agent lookup is B8231's get_agent_with_read_through over the registry and the one agents read-through that B8645's AgentServices clones from shared.agents. The access check is AgentServices' B4780 resolver, is_agent_allowed. The request preparation (common_processing_pre_call_logic) is B8802's `app::inference::pre_call_step(state)`, the same production step the chat route runs. The send entry point is B4814's asend_message. The forwarding client is `shared.http`. The stream relay ports are B4789's, over `shared.http`. The custom URL value is B7323's custom route URL, built from config the way B7323 reads it. The success hook is B8394's post-call success hook and the failure hook B8395's, both on `shared.proxy_logging`. When a collaborator's owner already exposes a production constructor, call it; write an adapter here only where the owner left a trait for the server.
+
+  2. Skills state (a2a/skills.rs). Build B8274's route state with index_enabled from `config.sections.public_skills_index`, B3212's stored-skill reader over `shared.db` (up to 1000 skills, newest first, get by id answering None for an unknown id) and B3210's build_skill_archive. Without a database the reader answers what B3212 answers for no database; do not invent an empty list.
+
+  3. Mount. In app/agents.rs, mount merges `a2a_routes::routes(...)` with the state from item 1; mount_public merges `agent_skills_routes::routes(...)` with the state from item 2, since LiteLLM checks no key on those three paths. The alias /.well-known/skills/index.json stays out of the OpenAPI document as B8274 built it.
+
+  Tests in app::agents::a2a::tests: the state is built once and its lookup finds a config agent by id and by name and asks the read-through only after both miss; the skills state reads index_enabled from the section.
+
+  HTTP oracle cases through the booted proxy, with a master key and no database. B8589 and B8274 test their handlers with tower's oneshot only, and their HTTP cases moved here; write each from that task's text. From B8589: card-no-credentials and invoke-no-credentials (401 without a key), card-unknown-agent (404 "Agent 'missing' not found"), invoke-bad-jsonrpc-version (400 and the -32600 error) and invoke-unknown-agent (404 and -32000). From B8274: index-disabled, legacy-index-disabled and archive-disabled, all without a key and with public_skills_index off (404 "Not Found"). Plus three of this task's own in tools/oracle/cases/agents/a2a-wiring/: the card of a config agent with agent_card_params (url rewritten to the proxy URL), the same card through /.well-known/agent.json, and POST /v1/a2a/{name}/message/send without a key (401).
+scope:
+  paths:
+    - crates/betterlite-server/src/app/agents/a2a.rs
+    - crates/betterlite-server/src/app/agents/a2a/**
+    - crates/betterlite-server/src/app/agents.rs
+    - tools/oracle/cases/agents/a2a-wiring/**
+    - tools/oracle/cases/agents/a2a-routes/**
+    - tools/oracle/cases/agent-skills/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L566-L650
+    why: The two card paths and the three invoke paths, each with user_api_key_auth and the "[beta] A2A Agents" tag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/agent_skills_endpoints.py#L74-L120
+    why: The three skills routes depend only on ensure_index_enabled and the stored skill readers, never on a key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20007-L20008
+    why: The skills discovery router is included at startup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L198-L213
+    why: _agent_from_registry and get_agent_with_read_through, the lookup the A2A state uses.
+dod:
+  - text: The A2A route state is built once with the read-through lookup, the B4780 access check and the shared router, logging and HTTP client.
+    proof: [a2a-tests]
+  - text: The skills route state takes index_enabled from public_skills_index and the stored skill reader over the database.
+    proof: [a2a-tests]
+  - text: The five A2A paths and the three skills paths answer through the booted proxy as LiteLLM does, the A2A ones with 401 for a missing key and the skills ones without a key.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: a2a-tests
+      why: the A2A or skills route state is missing or built from the wrong collaborators
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::agents::a2a::/)'
+oracle_cases:
+  - tools/oracle/cases/agents/a2a-routes/card-no-credentials.yaml
+  - tools/oracle/cases/agents/a2a-routes/card-unknown-agent.yaml
+  - tools/oracle/cases/agents/a2a-routes/invoke-no-credentials.yaml
+  - tools/oracle/cases/agents/a2a-routes/invoke-bad-jsonrpc-version.yaml
+  - tools/oracle/cases/agents/a2a-routes/invoke-unknown-agent.yaml
+  - tools/oracle/cases/agent-skills/index-disabled.yaml
+  - tools/oracle/cases/agent-skills/legacy-index-disabled.yaml
+  - tools/oracle/cases/agent-skills/archive-disabled.yaml
+  - tools/oracle/cases/agents/a2a-wiring/card-config-agent.yaml
+  - tools/oracle/cases/agents/a2a-wiring/card-legacy-path.yaml
+  - tools/oracle/cases/agents/a2a-wiring/message-send-no-key.yaml
+deviations:
+  - what: The A2A routes are registered at startup, not on the first request under /a2a or a /message/send suffix.
+    why: betterlite has no lazy import cost; requests get the same answers.
+out_of_scope:
+  - "The handlers: B8589 (A2A) and B8274 (skills). The JSON-RPC forwarding and stream relay: B4788 and B4789."
+  - "The agents API routes: B8647."
+pitfalls:
+  - The skills routes go through mount_public; merged in mount they demand a key and break `npx skills add <proxy url>`.
+  - The A2A agent lookup asks the read-through only when both the id and the name lookups miss, and looks up again only when it returned true.
+  - /v1/a2a/{agent_id}/message/send must not shadow /v1/a2a/discover, which another area mounts; register only the exact paths B8589 lists.
+  - The proxy URL in the card comes from B7323's custom route URL for route a2a/<agent_id>, so a configured base path changes the card url.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

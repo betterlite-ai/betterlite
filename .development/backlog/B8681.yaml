@@ -1,0 +1,13 @@
+id: B8681
+milestone: M8 platform
+title: Mount the public provider routes, the API docs pages and the OpenAPI document
+status: todo
+depends_on: [B8610, B3190, B7740, B123, B4200]
+file: tasks/B8681-public-docs-mount.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,103 @@
+id: B8621
+title: Build the MCP caller identity and request admission state
+description: >-
+  The MCP auth tasks (B4658, B4659, B4666, B4671, B4673, B4679, B6591) each define ports with fakes and leave the
+  production implementations and the settings to the composition root. This task writes them and builds one
+  `McpIdentity` value that the OAuth and route wiring parts (B8623 to B8626) borrow. It mounts no route.
+
+
+  Code goes in crates/betterlite-server/src/app/mcp/identity.rs and app/mcp/identity/ (settings.rs, subjects.rs,
+  jwt.rs, access.rs, admission.rs, a tests.rs beside each). `McpIdentity::build(core: &McpCore, config: &Config,
+  shared: &Shared) -> McpIdentity` is called once from B8620's McpState::build (app/mcp/state.rs), where this task adds the field `identity`;
+  it holds Arc fields, no global. It reads `shared.db`, `shared.http`, `shared.auth_cache` and `shared.general_settings`.
+
+
+  Settings (settings.rs), each filled once from the loaded Config and B8620's mcp_gateway_env section.
+  B4658's ActiveSubjectSettings: master_key from general_settings.master_key, admin_name from LITELLM_PROXY_ADMIN_NAME
+  (default "default_user_id", take it from the section that already reads it), custom_auth true when
+  general_settings.custom_auth is set, oidc_userinfo_enabled from litellm_jwtauth.oidc_userinfo_enabled (default
+  false), global_issuer from JWT_ISSUER, issuers from each litellm_jwtauth.issuers entry's issuer, cli_token_hours from
+  B1223's CLI_JWT_EXPIRATION_HOURS (default 24). B4679's LiveAdmissionSettings takes the same master_key and
+  admin_name. B4673's RequestAdmissionSettings takes master_key and the SigningConfig B4653 builds from
+  general_settings.mcp_session_token_signing. B4666's BridgeMintSettings takes master_key and jwt_client_field_set, true
+  exactly when B8724's jwt_client_field_set(general_settings) says so: general_settings.mcp_allowed_clients is set and
+  general_settings.litellm_jwtauth.mcp_client_id_jwt_field is a non-empty string (LiteLLM's load_mcp_client_allowlist(...).jwt_field).
+  Call that function on the general_settings snapshot instead of reading the keys here.
+
+
+  Subjects (subjects.rs). B4658's ActiveSubjects over its LiveSubjectStore with the database and the auth cache, a
+  system clock and an OS random source. B4679's LiveAdmission over LiveAdmittedKeyStore and LiveAdmissionGates. B4659's
+  three ports: ActiveUserEmail is a thin impl on ActiveSubjects (load_active_user with the cache source, keeping
+  user_email; every failure is None); UserCredentialStore reads B4713's get_user_oauth_credential with its decryption
+  and maps a missing database to Ok(None); JsonGet is a GET over `shared.http` with the Oauth2Check client settings, a
+  non-2xx status or a body that is not JSON being an Err whose text is the cause. B4659's IssuerJwks value is built
+  once here and owns its JWKS cache.
+
+
+  JWT and route checks (jwt.rs). B4666's JwtAdmission: enabled() is general_settings.enable_jwt_auth is the boolean
+  true, premium_user is true and `shared.db` exists; mapping_configured() and map_to_key() go to B760's JWT auth and its
+  virtual key mapping; resolve_identity() to B760's resolve_identity; authorize() to B760's authorize_jwt and then the
+  key auth from its result. WriteChecks.admit_write runs B766's is_virtual_key_allowed_to_call_route and then B1221's
+  common checks with empty request data, as B4666's text orders them; the team and organization reads those checks need
+  come from B883 and B877 where B4666 names them. Build B4666's BridgePrep and CredentialWrites with these ports,
+  ActiveSubjects and B4672's ContextServers.
+
+
+  Access (access.rs). B4671's McpAccess with LiveAccessReads over B737's team read, B887 and B752's budget checks, and
+  B4668's key object permission read, all named in B4671's AccessReads text. Its DelegatedHuman port's
+  reload_admitted_user goes to B4673's user_reload. B6591's ServerUnion with UnionSettings, the registry from McpCore,
+  LiveUnionReads over B4711 and B4681, GrantSource over McpAccess (B4671) and B4670's admin_view_unscoped, and the
+  toolset cache with McpCore's toolset_ttl_secs.
+
+
+  Admission (admission.rs). B4673's RequestAdmission: KeyAuthenticator calls B052's user_api_key_auth with the given
+  key and request and maps its rejection to AuthFailure::Http or AuthFailure::Proxy by the error kind it raised, and
+  anything else to Unclassified; UserReads reads users through B756 and object permissions through B736, fresh or
+  cached as asked, mapping a missing database to has_database false; TeamLimits calls
+  McpAccess::admitted_subject_team_rpm_limits. The live field is the LiveAdmission above.
+
+
+  Tests in app::mcp::identity:: use the real types with an in-memory auth cache and no database: the settings come out
+  of a config with master_key, litellm_jwtauth.issuers and JWT_ISSUER as LiteLLM reads them; JwtAdmission.enabled is
+  false without a database even when enable_jwt_auth is true; KeyAuthenticator maps a 401 from the key auth to
+  AuthFailure::Http with its detail; UserReads reports has_database false with no pool; and McpIdentity::build
+  succeeds from an McpCore built from config only.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/mcp/state.rs
+    - crates/betterlite-server/src/app/mcp/identity.rs
+    - crates/betterlite-server/src/app/mcp/identity/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py
+    why: MCPRequestHandler, whose globals (master_key, prisma_client, user_api_key_cache) become the settings and ports here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/litellm_auth_handler.py
+    why: The authenticated MCP user the admission result feeds.
+dod:
+  - text: The four settings structs are filled from config and mcp_gateway_env with LiteLLM's defaults.
+    proof: [identity-tests]
+  - text: Every port of B4658, B4659, B4666, B4671, B4673, B4679 and B6591 has a production implementation over its owning crate.
+    proof: [identity-tests]
+  - text: McpIdentity builds once from McpCore and Shared with no global.
+    proof: [identity-tests]
+checks:
+  optional: []
+  commands:
+    - id: identity-tests
+      why: a setting, an adapter or the McpIdentity build is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::identity::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The HTTP behavior these ports feed: B8624, B8625 and B8626 mount the routes and carry the HTTP cases."
+  - "Per-user token stores and the SSO assertion store: B8622."
+  - "The MCP server transport that calls RequestAdmission for /mcp: B8727, mounted by B8728."
+pitfalls:
+  - JwtAdmission.enabled needs all three of enable_jwt_auth true, premium_user true and a database; open-source betterlite has premium_user false, so it is false by default.
+  - KeyAuthenticator must keep an unclassified failure as Unclassified, because B4673's fallback arms catch only Http and Proxy.
+  - TeamLimits is the only edge from RequestAdmission to McpAccess; do not hold McpAccess inside RequestAdmission or the two types become a cycle.
+  - admin_name defaults to "default_user_id", not "admin".
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

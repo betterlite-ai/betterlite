@@ -3,7 +3,7 @@ title: Check compaction budgets and rate limits without reserving counters
 description: >-
   Build summary_model_limits for compact.py L395-L627, owning all four complete budget/rate helper functions.
   B732 provides parent principals and B969 the typed limiter interfaces. B3006 owns model_max_budget_limiter (B8481 plugs it into these seams) and
-  the B3030 to B3055 limiter parts own parallel_request_limiter_v3 and the wave 17 rate limit wiring part plugs it in, so expose explicit injected read-only
+  the B3030 to B3055 limiter parts own parallel_request_limiter_v3 and B3055's main_limiter() is the production limiter behind these seams (no task passes it into compaction yet), so expose explicit injected read-only
   methods matching these calls rather than inventing their storage or charging implementations. A worker can
   complete this task with those seams; the architect must fill the owners before end-to-end policy execution.
   Budget checks return false on every checker error, whereas rate checks deny only OVER_LIMIT and the limiter's

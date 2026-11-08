@@ -88,7 +88,7 @@ out_of_scope:
   - "Every initializer named above and its argument struct: the task named next to it."
   - "The guardrail classes and their hooks, which act on the spec at request time: their own tasks."
   - "Custom guardrail types loaded from a Python file (a type name with a dot): not built, see B3682."
-  - "Startup, reconciliation and the composition root that calls with_hooks: B3683 and the server wiring."
+  - "Startup and reconciliation: B3683. The with_hooks call at startup: B8374."
 
 pitfalls:
   - 'Azure registers two names, azure/prompt_shield and azure/text_moderations, and both go to one initializer that splits at the slash.'

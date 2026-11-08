@@ -38,7 +38,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/spend_diagnostics.rs
     - crates/betterlite-server/fuzz/corpus/spend_diagnostics/**
-    - tools/oracle/cases/http/spend-diagnostics/**
     - tools/oracle/helpers/b1722.py
     - tools/oracle/helpers/b1722/**
     - tools/oracle/src/helpers/server/b1722.rs
@@ -54,10 +53,12 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2213-L2216
     why: Nullable key and timestamp fields of the end-user spend request.
 dod:
-  - text: Exception charts and end-user reports preserve their distinct dates, grouping, validation and response shapes.
-    proof: [diagnostic-tests, diagnostic-corpus, oracle]
-  - text: Reset and refresh retain partial-write and HTTP-200 failure behavior without leaking their dedicated connection.
-    proof: [diagnostic-tests, oracle]
+  - text: Exception charts and end-user reports preserve their distinct dates, grouping, validation and response shapes. B8662 proves it over HTTP.
+    proof: [diagnostic-tests, diagnostic-corpus]
+  - text: Reset and refresh retain partial-write and HTTP-200 failure behavior without leaking their dedicated connection. B8662 proves it over HTTP.
+    proof: [diagnostic-tests]
+  - text: The handlers answer through tower's oneshot over the module's own Router with fake ports; B8662 merges them through B069's spend routes and proves them over HTTP.
+    proof: [diagnostic-tests]
 checks:
   optional: []
   commands:
@@ -67,12 +68,7 @@ checks:
     - id: diagnostic-corpus
       why: Diagnostic request decoding lacks replayed malformed query/body inputs.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/spend_diagnostics)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_spend_diagnostics_corpus)'
-oracle_cases:
-  - tools/oracle/cases/http/spend-diagnostics/deployment-and-total-429-charts.yaml
-  - tools/oracle/cases/http/spend-diagnostics/chart-validation-and-missing-db.yaml
-  - tools/oracle/cases/http/spend-diagnostics/reset-role-and-retained-logs.yaml
-  - tools/oracle/cases/http/spend-diagnostics/refresh-nonmaterialized-null.yaml
-  - tools/oracle/cases/http/spend-diagnostics/end-user-null-key-and-exclusive-end.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - B1721 owns successful activity/provider reports; B1723 tags and key/user tables, B1724 monthly totals and B1725 estimates/team/provider-budget reports.

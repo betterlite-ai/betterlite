@@ -1,0 +1,19 @@
+kind: helper
+name: vault-auth-approle-beats-tls-and-token
+env: {}
+compare: {ignore: []}
+call:
+  b4416:
+    env:
+      HCP_VAULT_APPROLE_ROLE_ID: role-id
+      HCP_VAULT_APPROLE_SECRET_ID: secret-id
+      HCP_VAULT_CLIENT_CERT: /certs/client.crt
+      HCP_VAULT_CLIENT_KEY: /certs/client.key
+      HCP_VAULT_TOKEN: token-1
+    routes:
+      - route: "POST http://127.0.0.1:8200/v1/auth/approle/login"
+        replies:
+          - {status: 200, body: '{"auth":{"client_token":"hvs.approle","lease_duration":3600}}'}
+    steps:
+      - {op: token}
+      - {op: token_blocking}

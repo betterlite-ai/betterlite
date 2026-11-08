@@ -172,4 +172,5 @@ async fn drain_connections(connections: &mut JoinSet<()>) {
     }
 }
 
+pub mod inputs;
 mod tests;

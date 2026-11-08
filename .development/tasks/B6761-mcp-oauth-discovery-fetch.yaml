@@ -4,7 +4,7 @@ description: >-
   Build the code that fetches and parses OAuth metadata for an MCP server: the protected resource document (RFC 9728), the authorization server document (RFC 8414 and OpenID configuration) and the 401 WWW-Authenticate hint. In LiteLLM these are the `_fetch_*`, `_descovery_metadata` and `_attempt_well_known_discovery` methods of MCPServerManager. This task does the network step and the parse only. It decides nothing about retries, caching or when to run (B6762) and applies no trust rules (B6760).
 
 
-  Code goes in the new betterlite-mcp module oauth_discovery: crates/betterlite-mcp/src/oauth_discovery.rs, oauth_discovery/** and tests beside each file. The record types are MCPOAuthMetadata (B6590, server_record). Network access goes through a trait port, MetadataFetcher, with one method get_json(url, headers) returning a FetchedDocument (status, headers, body bytes) or a FetchError. The architect wires the real implementation from betterlite-http (B171 async_safe_get and B173 pooled client) in the server. Tests use a fake MetadataFetcher that serves canned documents by url. A DiscoverySettings struct holds metadata_timeout, read from env LITELLM_MCP_METADATA_TIMEOUT with default 10.0 seconds, and the fetcher implementation applies it (the port takes a Duration argument).
+  Code goes in the new betterlite-mcp module oauth_discovery: crates/betterlite-mcp/src/oauth_discovery.rs, oauth_discovery/** and tests beside each file. The record types are MCPOAuthMetadata (B6590, server_record). Network access goes through a trait port, MetadataFetcher, with one method get_json(url, headers) returning a FetchedDocument (status, headers, body bytes) or a FetchError. B8614 wires the real implementation from betterlite-http (B171 async_safe_get and B173 pooled client) in the server. Tests use a fake MetadataFetcher that serves canned documents by url. A DiscoverySettings struct holds metadata_timeout, read from env LITELLM_MCP_METADATA_TIMEOUT with default 10.0 seconds, and the fetcher implementation applies it (the port takes a Duration argument).
 
 
   Items to build.
@@ -86,7 +86,7 @@ oracle_cases: []
 
 deviations:
   - what: Network access is a MetadataFetcher trait and DiscoveryOutcome is a typed enum, not exceptions and httpx responses.
-    why: the crate stays free of an HTTP client dependency and tests run offline; the architect wires betterlite-http.
+    why: the crate stays free of an HTTP client dependency and tests run offline; B8614 wires betterlite-http.
 
 out_of_scope:
   - "Retry delays, backoff, slot state, tasks and the 503 on failure: B6762."

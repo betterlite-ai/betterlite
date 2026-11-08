@@ -1,0 +1,103 @@
+id: B8614
+title: MCP, vector store and pass-through registries for Shared and the config boot NonLlmRegistries implementation
+description: >-
+  LiteLLM's load_config fills four in-memory registries from config.yaml through _init_non_llm_configs (L7046): MCP
+  tools, agents, MCP servers and the vector store registry. B8590 ported that step behind the trait `NonLlmRegistries`
+  with four methods, and the server reads the same registries afterwards (B8620 for MCP, the vector store routes for
+  vector stores, B8645 for agents). So each registry is made once at startup, filled by config boot before the listener
+  opens, and handed to Shared. This task builds the two registry bundles the server holds and the trait implementation.
+
+
+  Server side, in crates/betterlite-server/src/server_registries.rs and server_registries/ (declared by the skeleton),
+  error enum ServerRegistryError, constructors `pub` because the binary calls them:
+
+  `McpRegistry` holds `servers: SharedRegistry` (B4731's alias, an Arc of a tokio RwLock of ServerRegistry, created
+  empty here), `mutator: Arc<RegistryMutator>` (B6765), `tools: Arc<ToolRegistry>` (B4680), `oauth_metadata:
+  OAuthMetadataCache` (B6595's one cache, cheap to clone; B8620 and B8624 read it from here) and `instructions:
+  Arc<InstructionsCacheCell>`. `McpRegistry::new(config: &Config, db: Option<Arc<PostgresStore>>, http: ProxiedClient)`
+  builds RegistryMutator over that same SharedRegistry with B6763's ServerBuilder, B6762's DiscoverySlots and these
+  constructor ports, each a small type in server_registries/mcp_ports.rs (read every trait in its merged module):
+  `DbServerRows` implements B6765's ServerRows with B4711's MCPServerRepository find_active (no rows without a database).
+  `DiscoveryInvalidator` implements B6765's CacheInvalidator: invalidate_server(server_id) drops that server from the
+  prompt, resource and template discovery caches DiscoverySlots holds and from the OAuthMetadataCache.
+  `HttpMetadataFetcher` implements B6761's MetadataFetcher: get_json(url, headers) is a GET over the ProxiedClient that
+  returns the status, headers and body bytes as a FetchedDocument, or a FetchError for a transport failure.
+  `CipherDecryptor` implements B6763's Decryptor over B1600's stored cipher with the key the config resolves (the
+  master key or LITELLM_SALT_KEY, as B1600 reads it), returning the value unchanged when it does not decrypt.
+  `RegistrySettings` (B4731) is filled from the loaded config: public_mcp_servers, public_hub_strict and
+  internal_ip_ranges from the keys B4731 names. `ToolRegistrySink` implements B6764's OpenApiToolSink over the
+  ToolRegistry, writing the base and the prefixed name into the tool name mapping as B6764 says.
+  `InstructionsCacheCell` implements B6764's InstructionsCache with a `OnceLock<Arc<dyn InstructionsCache>>`: clear()
+  forwards to the value once it is set and does nothing before, since no instructions are cached until B6592's
+  HealthService exists; B8620 builds that HealthService and calls `set` once. B8384's _init_mcp_servers_in_db and
+  B8620 use this one McpRegistry; nobody builds a second.
+
+  `VectorStores` holds B1062's vector store registry and index registry (LiteLLM's litellm.vector_store_registry and
+  vector_store_index_registry; read core::api::vector_store_registry for the type names), both created empty with
+  `VectorStores::new()`. B1063's tool selection and the vector store routes read them.
+
+  `PassThroughState` holds the three values LiteLLM keeps at module level for pass-through routes:
+  `credentials: Arc<PassthroughEndpointRouter>` (B3602's credential router, whose set_default_vertex_config load_config
+  calls), `vertex_tokens: Arc<CredentialCache>` (B1302's Vertex token state) and `routes`, the shared handle to B3614's
+  RouteTable that B3616's initialize_pass_through_endpoints writes (read B3616's merged signature for the handle type,
+  for example an Arc of a lock around RouteTable). `PassThroughState::new()` makes all three empty. B8613's startup
+  install, B8384's database load, B8520's writes and B8640's routes all use this one value.
+
+
+  Binary side, in crates/betterlite/src/boot_registries.rs and boot_registries/ (declared by the skeleton).
+  `BootRegistries` holds Arc<AgentRegistry> (B4776), Arc<McpRegistry>, Arc<VectorStores> and implements B8590's
+  NonLlmRegistries, each method loading for real, as LiteLLM does before the server starts:
+  `agents` loads the config agent list into the AgentRegistry with the loader B4776 exposes for config entries;
+  `mcp_tools` loads the mcp_tools list into the ToolRegistry with B4680's load_tools_from_config and the config file
+  path (a handler string fails startup with the loader's error, as B4680 says); `mcp_servers` loads the mcp_servers
+  mapping with litellm_settings.mcp_aliases into the SharedRegistry through B6764's config loader; `vector_stores` loads
+  the vector_store_registry block into VectorStores through B1062's config load (load_config's vector_store_registry
+  block, so a configured store is found by the first request). Errors map into B8590's error type unchanged.
+
+
+  Tests: server_registries tests (names start with `mcp_`, `vectors_` and `pass_`) assert the mutator and the readers see the
+  same SharedRegistry, DbServerRows reads nothing without a database, the invalidator drops one server from every cache, the fetcher returns a non-2xx document as a document, CipherDecryptor leaves plain text alone, the cell forwards clear only after set, and VectorStores and PassThroughState start empty. boot_registries
+  tests (names start with `boot_`) load a config with two agents, one mcp_tools entry, two mcp_servers with an alias and
+  one vector store, and assert each lands in its registry and a bad entry returns its loader's error. No oracle case:
+  the routes that read these registries are mounted by the mcp, agents and inference wiring parts, which add the cases.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/server_registries.rs
+    - crates/betterlite-server/src/server_registries/**
+    - crates/betterlite/Cargo.toml
+    - crates/betterlite/src/boot_registries.rs
+    - crates/betterlite/src/boot_registries/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7046-L7060
+    why: _init_non_llm_configs, the four registries config boot fills.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2584-L2661
+    why: The module globals the registries replace; each is one value per process.
+dod:
+  - text: McpRegistry builds one SharedRegistry shared by the RegistryMutator and its readers, with DbServerRows, DiscoveryInvalidator, HttpMetadataFetcher, CipherDecryptor, RegistrySettings from config, ToolRegistrySink and InstructionsCacheCell, and exposes the one OAuthMetadataCache; VectorStores and PassThroughState hold one value each.
+    proof: [registries-tests]
+  - text: BootRegistries loads config agents, MCP tools, MCP servers with aliases and the vector store registry into those values and returns each loader's error.
+    proof: [boot-tests]
+checks:
+  optional: []
+  commands:
+    - id: registries-tests
+      why: the mutator and the readers hold different registries, a constructor port answers wrongly, or the database rows are read without a database
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server_registries::/)'
+    - id: boot-tests
+      why: a config registry is not loaded at boot, is loaded into a copy, or swallows its loader's error
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^boot_registries::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Making the values at startup and passing BootRegistries to load_non_llm_configs: B8613. The Shared fields: B8610."
+  - "The loaders and registries themselves: B4680, B4731, B4776, B6762 to B6765, B1062 and B1063."
+  - "The periodic MCP and database object reload: B8384."
+pitfalls:
+  - SharedRegistry is an Arc the caller builds; building it twice (once for the mutator, once for the readers) leaves the reload writing a registry no request reads.
+  - An explicit null agents key skips both agents and agent_list in B8590; BootRegistries only loads what B8590 hands it and decides nothing about the keys.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

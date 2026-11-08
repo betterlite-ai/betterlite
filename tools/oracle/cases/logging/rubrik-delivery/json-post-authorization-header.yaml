@@ -1,0 +1,13 @@
+kind: helper
+name: rubrik-delivery-json-post-authorization-header
+call:
+  b3976:
+    environment: {RUBRIK_API_KEY: header-key}
+    init: {api_base: "https://rubrik.test"}
+    replies:
+      - {status: 200, body: "{}"}
+    actions:
+      - do: post_prompt
+        payload: {model: gpt-4o}
+env: {}
+compare: {ignore: []}
