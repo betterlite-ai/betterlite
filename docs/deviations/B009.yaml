@@ -1,0 +1,17 @@
+task: B009
+deviations:
+  - what: Cross-origin redirects strip every credential header betterlite knows (Authorization, Cookie, Cookie2, Proxy-Authorization, WWW-Authenticate, api-key, x-api-key, x-goog-api-key and every header the provider marked sensitive), and an HTTPS-to-HTTP redirect or a redirect whose Location carries userinfo is refused; LiteLLM's httpx clients follow redirects with the request as built and only drop Authorization.
+    why: Prevent provider-specific API-key leakage across origins and a TLS downgrade that no working setup relies on; the upstream clients follow redirects by default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L610-L618
+  - what: A configured api_base accepts only the http and https schemes, and a base with userinfo becomes a Basic Authorization header with the userinfo removed from the stored URL; LiteLLM passes any api_base to httpx and fails later at request time.
+    why: A configured base is operator input checked once, so an unsupported transport fails by its config key instead of on every request.
+    link: ""
+  - what: Redirect chains stop after 10 redirects, the bound of LiteLLM's own streamed redirect loop; LiteLLM's non-streaming httpx client follows up to 20.
+    why: betterlite has one shared loop for streamed and buffered calls, and the shorter of LiteLLM's two bounds keeps one poisoned provider from holding a call open.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L768-L779
+  - what: A URL policy input longer than 65536 characters and an allowlist entry longer than 2048 characters are refused, where LiteLLM parses inputs of any length.
+    why: These inputs come from request bodies and provider answers, so bounded parsing keeps untrusted data from allocating without a cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L203-L239
+  - what: A malformed bracketed host in provider_url_destination_allowed_hosts is skipped, where LiteLLM raises the ValueError of urllib.parse and fails the request that triggered the check.
+    why: No working setup relies on an invalid config entry crashing request handling, so the entry simply matches nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L169-L191
