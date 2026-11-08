@@ -587,7 +587,6 @@ enum Base {
     Plain,
     Userinfo(&'static str),
     PercentEncoded,
-    Ftp,
 }
 
 fn authorization(sent: &str) -> String {
@@ -609,7 +608,6 @@ async fn boundary_observation(base: Base, api_key: Option<&str>, body: &str) -> 
         Base::Plain => plain,
         Base::Userinfo(userinfo) => plain.replace("http://", &format!("http://{userinfo}")),
         Base::PercentEncoded => plain.replace("http://", "http://us%40er:p%40ss@"),
-        Base::Ftp => plain.replace("http://", "ftp://"),
     };
     let key = api_key.map_or_else(String::new, |key| format!(", api_key: {key}"));
     let entries = format!(
@@ -618,12 +616,6 @@ async fn boundary_observation(base: Base, api_key: Option<&str>, body: &str) -> 
     let chat = executor(&entries, 1, None, MockPermission::default());
     let request = ChatRequest::parse(body.as_bytes()).unwrap();
     let deployment = chat.deployments.first().unwrap();
-    if matches!(base, Base::Ftp) {
-        return chat
-            .send(deployment, &request)
-            .await
-            .map_or_else(|error| error.to_string(), |_outcome| "answered".to_owned());
-    }
     let mut provider_task = JoinSet::new();
     provider_task.spawn(provider(listener, 200, ANSWER, Duration::ZERO));
     if let Err(error) = chat.send(deployment, &request).await {
@@ -722,10 +714,6 @@ async fn observation(scenario: Scenario) -> String {
 #[case::no_credentials_is_an_error(
     Scenario::Wire(Base::Plain, None, CALL),
     "no API key is set for this deployment, in litellm_settings or in OPENAI_API_KEY"
-)]
-#[case::an_ftp_base_is_refused_by_key(
-    Scenario::Wire(Base::Ftp, Some("k"), CALL),
-    "the provider could not be reached: the configured api_base cannot be used: litellm_params.api_base uses the ftp scheme, and only http and https are supported"
 )]
 #[case::a_provider_redirect_does_not_forward_credentials(
     Scenario::Redirect,

@@ -111,3 +111,51 @@ fn derives_the_model_id_like_litellm(#[case] entry: &str, #[case] id: &str) {
     let resolved = ChatDeployment::resolve(&deployment(entry), &OpenAiDefaults::default()).unwrap();
     assert_eq!(resolved.model_id, id);
 }
+
+fn boundary_observation(api_base: &str) -> String {
+    let entry = format!(
+        "{{model_name: g, litellm_params: {{model: openai/m, api_base: '{api_base}', api_key: k}}}}"
+    );
+    let resolved = match ChatDeployment::resolve(&deployment(&entry), &defaults()) {
+        Ok(resolved) => resolved,
+        Err(error) => return error.to_string(),
+    };
+    let shown = format!("{resolved:?}");
+    let embeddings = resolved.endpoint_for("embeddings").unwrap();
+    format!(
+        "base={}|endpoint={}|embeddings={}|basic={}|debug_leaks={}",
+        resolved.api_base,
+        resolved.endpoint,
+        embeddings,
+        resolved
+            .authorization
+            .as_ref()
+            .map_or("-", |header| header.expose_secret()),
+        shown.contains("s3cret") || shown.contains("dXNlcjpzM2NyZXQ=")
+    )
+}
+
+#[rstest]
+#[case::an_ftp_base_fails_by_key(
+    "ftp://h/v1",
+    "model_list entry g has an api_base that cannot be used: litellm_params.api_base uses the ftp scheme, and only http and https are supported"
+)]
+#[case::a_file_base_fails_by_key(
+    "file:///tmp/x",
+    "model_list entry g has an api_base that cannot be used: litellm_params.api_base uses the file scheme, and only http and https are supported"
+)]
+#[case::userinfo_leaves_the_stored_urls_and_debug(
+    "http://user:s3cret@h/v1?x=1",
+    "base=http://h/v1|endpoint=http://h/v1/chat/completions?x=1|embeddings=http://h/v1/embeddings|basic=Basic dXNlcjpzM2NyZXQ=|debug_leaks=false"
+)]
+#[case::encoded_userinfo_is_decoded_into_the_header(
+    "http://us%40er:p%40ss@h/v1",
+    "base=http://h/v1|endpoint=http://h/v1/chat/completions|embeddings=http://h/v1/embeddings|basic=Basic dXNAZXI6cEBzcw==|debug_leaks=false"
+)]
+#[case::a_private_endpoint_stays_valid(
+    "http://10.0.0.5:8000/v1",
+    "base=http://10.0.0.5:8000/v1|endpoint=http://10.0.0.5:8000/v1/chat/completions|embeddings=http://10.0.0.5:8000/v1/embeddings|basic=-|debug_leaks=false"
+)]
+fn http_boundaries_url_boundary_tests_behavior(#[case] api_base: &str, #[case] expected: &str) {
+    assert_eq!(boundary_observation(api_base), expected);
+}

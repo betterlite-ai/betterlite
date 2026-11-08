@@ -4,7 +4,6 @@ use thiserror::Error;
 use crate::error::HttpError;
 use crate::proxy::limits::{HeadersTooLarge, ReadError};
 use crate::proxy::mock::MockError;
-use crate::url_policy::error::UrlPolicyError;
 use crate::user_url::error::UserUrlError;
 
 #[derive(Debug, Error)]
@@ -49,11 +48,6 @@ pub enum TransportError {
     Closed,
     #[error("{remaining} requests were still running at the drain deadline")]
     DrainTimeout { remaining: usize },
-    #[error("the configured api_base cannot be used: {source}")]
-    ConfiguredUrl {
-        #[source]
-        source: Box<UrlPolicyError>,
-    },
     #[error("the provider redirected the request more than {limit} times")]
     TooManyRedirects { limit: usize },
     #[error("the redirect target cannot be followed")]

@@ -4,7 +4,7 @@ deviations:
     why: Prevent provider-specific API-key leakage across origins and a TLS downgrade that no working setup relies on; the upstream clients follow redirects by default.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L610-L618
   - what: A configured api_base accepts only the http and https schemes, and a base with userinfo becomes a Basic Authorization header with the userinfo removed from the URL the request is sent to; LiteLLM passes any api_base to httpx and fails later inside the client.
-    why: An unsupported transport fails with the config key litellm_params.api_base in the error, and userinfo becomes the Basic header HTTPX would send; the check runs in the chat executor on every call because deployment resolution is outside this task's scope.
+    why: An unsupported transport fails with the config key litellm_params.api_base in the error, and userinfo becomes the Basic header HTTPX would send; the check runs once where the deployment is resolved, so process start fails, and the stored endpoint and its Debug output never hold the password.
     link: https://github.com/encode/httpx/blob/0.28.1/httpx/_client.py#L457-L472
   - what: Redirect chains stop after 10 redirects, the bound of LiteLLM's own streamed redirect loop; LiteLLM's non-streaming httpx client follows up to 20.
     why: betterlite has one shared loop for streamed and buffered calls, and the shorter of LiteLLM's two bounds keeps one poisoned provider from holding a call open.

@@ -5,7 +5,6 @@ use betterlite_config::sections::mock_response::selection::{MockPlan, resolve_mo
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, StreamResponse, UpstreamResponse};
-use betterlite_http::url_policy::base::ConfiguredBase;
 use http::header::{ACCEPT, AUTHORIZATION};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use rand::rngs::StdRng;
@@ -193,18 +192,10 @@ impl ChatExecutor {
         accept: &'static str,
     ) -> Result<OutboundRequest, ChatError> {
         let model = servable(deployment)?;
-        let configured =
-            ConfiguredBase::parse(deployment.endpoint.clone(), "litellm_params.api_base").map_err(
-                |source| ChatError::Http {
-                    source: TransportError::ConfiguredUrl {
-                        source: Box::new(source),
-                    },
-                },
-            )?;
         let body = serde_json::to_vec(&self.body(request, model)?)
             .map_err(|source| ChatError::Encode { source })?;
         let mut headers = HeaderMap::new();
-        let credential = configured.authorization.or_else(|| {
+        let credential = deployment.authorization.clone().or_else(|| {
             deployment
                 .api_key
                 .as_ref()
@@ -224,7 +215,7 @@ impl ChatExecutor {
         }
         Ok(OutboundRequest {
             method: Method::POST,
-            url: configured.url,
+            url: deployment.endpoint.clone(),
             query: Vec::new(),
             headers,
             body: RequestBody::Json(body),

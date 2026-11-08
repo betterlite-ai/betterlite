@@ -20,7 +20,6 @@ pub(super) fn http_failure(source: TransportError) -> ChatError {
         | TransportError::Mock(_)
         | TransportError::Closed
         | TransportError::DrainTimeout { .. }
-        | TransportError::ConfiguredUrl { .. }
         | TransportError::TooManyRedirects { .. }
         | TransportError::RedirectTarget { .. }
         | TransportError::RedirectUrl { .. }
