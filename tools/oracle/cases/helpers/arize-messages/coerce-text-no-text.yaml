@@ -1,0 +1,12 @@
+kind: helper
+name: coerce-text-no-text
+call:
+  b3860:
+    function: coerce_text
+    value:
+      - {type: text, text: ""}
+      - {type: text}
+      - 7
+      - []
+env: {}
+compare: {ignore: []}

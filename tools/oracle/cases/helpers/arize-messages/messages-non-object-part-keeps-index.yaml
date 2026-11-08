@@ -1,0 +1,14 @@
+kind: helper
+name: messages-non-object-part-keeps-index
+call:
+  b3860:
+    function: set_messages
+    messages:
+      - role: user
+        content:
+          - plain text
+          - {type: text, text: hi}
+          - 7
+          - {type: text, text: there}
+env: {}
+compare: {ignore: []}

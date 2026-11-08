@@ -1,0 +1,15 @@
+kind: helper
+name: scope-tags-present-match
+call:
+  b3241:
+    policy_memory_matching_matcher:
+      action: scope_matches
+      scope:
+        tags: [health-*]
+      context:
+        team_alias: t
+        key_alias: k
+        model: gpt-4
+        tags: [health-prod]
+env: {}
+compare: {ignore: []}
