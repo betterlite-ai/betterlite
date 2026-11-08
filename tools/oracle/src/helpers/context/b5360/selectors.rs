@@ -68,14 +68,18 @@ pub(crate) fn vector_stores(_input: &BatchInput, call: &Call) -> CallResult {
     ))
 }
 
+fn search_class(tag: search_harness::SearchConfigTag) -> String {
+    let api = tag == search_harness::SearchConfigTag::SearchAPI;
+    let suffix = if api { "APIConfig" } else { "SearchConfig" };
+    format!("{tag:?}{suffix}")
+}
+
 pub(crate) fn search(_input: &BatchInput, call: &Call) -> CallResult {
     let provider = call
         .search_provider
-        .ok_or_else(|| invalid("search needs a provider"))?;
+        .ok_or_else(|| invalid("search missing"))?;
     let tag = search_harness::select_search_config(provider);
-    let api = tag == search_harness::SearchConfigTag::SearchAPI;
-    let suffix = if api { "APIConfig" } else { "SearchConfig" };
-    Ok(json!({"class": format!("{tag:?}{suffix}"), "arguments": []}))
+    Ok(json!({"class": search_class(tag), "arguments": []}))
 }
 
 pub(crate) fn harness(_input: &BatchInput, call: &Call) -> CallResult {
