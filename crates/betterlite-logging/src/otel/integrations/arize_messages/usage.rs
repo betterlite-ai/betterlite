@@ -21,8 +21,7 @@ where
         .unwrap_or(OtelModelValue::Null(()));
     span.safe_set_attribute(keys::LLM_TOKEN_COUNT_TOTAL, &total);
     write_completion_and_prompt(span, usage);
-    write_reasoning_tokens(span, usage);
-    write_prompt_details(span, usage);
+    write_details(span, usage);
 }
 
 fn write_completion_and_prompt<S>(span: &mut S, usage: &MetadataMap)
@@ -31,20 +30,16 @@ where
 {
     let completion =
         nonzero(usage.get("completion_tokens")).or_else(|| nonzero(usage.get("output_tokens")));
-    if let Some(value) = completion {
-        span.safe_set_attribute(keys::LLM_TOKEN_COUNT_COMPLETION, value);
-    }
+    write_count(span, keys::LLM_TOKEN_COUNT_COMPLETION, completion);
     let prompt = nonzero(usage.get("prompt_tokens")).or_else(|| nonzero(usage.get("input_tokens")));
-    if let Some(value) = prompt {
-        span.safe_set_attribute(keys::LLM_TOKEN_COUNT_PROMPT, value);
-    }
+    write_count(span, keys::LLM_TOKEN_COUNT_PROMPT, prompt);
 }
 
-fn write_reasoning_tokens<S>(span: &mut S, usage: &MetadataMap)
+fn write_details<S>(span: &mut S, usage: &MetadataMap)
 where
     S: Span,
 {
-    let details = pick_details(
+    let completion = pick_details(
         usage
             .get("completion_tokens_details")
             .and_then(OtelModelValue::as_object),
@@ -52,17 +47,9 @@ where
             .get("output_tokens_details")
             .and_then(OtelModelValue::as_object),
     );
-    let reasoning = details.and_then(|fields| nonzero(fields.get("reasoning_tokens")));
-    if let Some(value) = reasoning {
-        span.safe_set_attribute(keys::TOKEN_COUNT_REASONING, value);
-    }
-}
-
-fn write_prompt_details<S>(span: &mut S, usage: &MetadataMap)
-where
-    S: Span,
-{
-    let details = pick_details(
+    let reasoning = completion.and_then(|fields| nonzero(fields.get("reasoning_tokens")));
+    write_count(span, keys::TOKEN_COUNT_REASONING, reasoning);
+    let prompt = pick_details(
         usage
             .get("prompt_tokens_details")
             .and_then(OtelModelValue::as_object),
@@ -70,19 +57,24 @@ where
             .get("input_tokens_details")
             .and_then(OtelModelValue::as_object),
     );
-    let cache_read = details
-        .and_then(|fields| nonzero(fields.get("cached_tokens")))
-        .or_else(|| nonzero(usage.get("cache_read_input_tokens")));
-    if let Some(value) = cache_read {
-        span.safe_set_attribute(keys::TOKEN_COUNT_CACHE_READ, value);
-    }
-    let cache_write = nonzero(usage.get("cache_creation_input_tokens"));
-    if let Some(value) = cache_write {
-        span.safe_set_attribute(keys::TOKEN_COUNT_CACHE_WRITE, value);
-    }
-    let audio = details.and_then(|fields| nonzero(fields.get("audio_tokens")));
-    if let Some(value) = audio {
-        span.safe_set_attribute(keys::TOKEN_COUNT_AUDIO, value);
+    let cached = prompt.and_then(|fields| nonzero(fields.get("cached_tokens")));
+    let cache_read = cached.or_else(|| nonzero(usage.get("cache_read_input_tokens")));
+    write_count(span, keys::TOKEN_COUNT_CACHE_READ, cache_read);
+    write_count(
+        span,
+        keys::TOKEN_COUNT_CACHE_WRITE,
+        nonzero(usage.get("cache_creation_input_tokens")),
+    );
+    let audio = prompt.and_then(|fields| nonzero(fields.get("audio_tokens")));
+    write_count(span, keys::TOKEN_COUNT_AUDIO, audio);
+}
+
+fn write_count<S>(span: &mut S, key: &str, value: Option<&OtelModelValue>)
+where
+    S: Span,
+{
+    if let Some(found) = value {
+        span.safe_set_attribute(key, found);
     }
 }
 

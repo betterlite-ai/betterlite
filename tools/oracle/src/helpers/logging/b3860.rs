@@ -86,16 +86,19 @@ fn internal_error(message: String) -> Box<crate::helpers::HelperError> {
 }
 
 fn attribute_json(value: &Value) -> Json {
-    match value {
-        Value::Bool(flag) => Json::Bool(*flag),
-        Value::I64(number) => Json::from(*number),
-        Value::F64(number) => {
-            serde_json::Number::from_f64(*number).map_or(Json::Null, Json::Number)
-        }
-        Value::String(text) => Json::String(text.to_string()),
-        Value::Array(array) => Json::String(array.to_string()),
-        _ => Json::String(value.to_string()),
+    if let Value::String(text) = value {
+        return Json::String(text.to_string());
     }
+    if let Value::Bool(flag) = value {
+        return Json::Bool(*flag);
+    }
+    if let Value::I64(number) = value {
+        return Json::from(*number);
+    }
+    if let Value::F64(number) = value {
+        return serde_json::Number::from_f64(*number).map_or(Json::Null, Json::Number);
+    }
+    Json::String(value.to_string())
 }
 
 fn drop_array_contents(mut record: Map<String, Json>, messages: &OtelModelValue) -> Json {
@@ -124,30 +127,35 @@ fn drop_array_contents(mut record: Map<String, Json>, messages: &OtelModelValue)
 
 fn normalize_value(value: Json, path: &str) -> Json {
     match value {
-        Json::Object(fields) => Json::Object(
-            fields
-                .into_iter()
-                .map(|(key, entry)| {
-                    let child = if path.is_empty() {
-                        key.clone()
-                    } else {
-                        format!("{path}.{key}")
-                    };
-                    (key, normalize_value(entry, &child))
-                })
-                .collect(),
-        ),
-        Json::Array(items) => Json::Array(
-            items
-                .into_iter()
-                .enumerate()
-                .map(|(index, item)| normalize_value(item, &format!("{path}.{index}")))
-                .collect(),
-        ),
+        Json::Object(fields) => Json::Object(normalize_fields(fields, path)),
+        Json::Array(items) => Json::Array(normalize_items(items, path)),
         Json::String(text) if path == "output.value" || path.ends_with(".function.arguments") => {
             serde_json::from_str(&text)
                 .map_or(Json::String(text), |parsed| normalize_value(parsed, path))
         }
         other @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::String(_)) => other,
     }
+}
+
+fn normalize_fields(fields: Map<String, Json>, path: &str) -> Map<String, Json> {
+    fields
+        .into_iter()
+        .map(|(key, entry)| (key.clone(), normalize_value(entry, &join_path(path, &key))))
+        .collect()
+}
+
+fn join_path(path: &str, key: &str) -> String {
+    if path.is_empty() {
+        key.to_owned()
+    } else {
+        format!("{path}.{key}")
+    }
+}
+
+fn normalize_items(items: Vec<Json>, path: &str) -> Vec<Json> {
+    let mut normalized = Vec::with_capacity(items.len());
+    for (index, item) in items.into_iter().enumerate() {
+        normalized.push(normalize_value(item, &format!("{path}.{index}")));
+    }
+    normalized
 }

@@ -6,39 +6,59 @@ use opentelemetry::trace::Span;
 use super::keys;
 use super::tool_calls;
 
-pub(super) fn set_choice_outputs<S>(span: &mut S, response: &MetadataMap)
+fn for_each_entry<S, F>(span: &mut S, response: &MetadataMap, field: &str, mut visit: F)
 where
     S: Span,
+    F: FnMut(&mut S, &MetadataMap, usize),
 {
-    let empty = MetadataMap::new();
-    let choices = response
-        .get("choices")
-        .and_then(OtelModelValue::as_array)
-        .unwrap_or_default();
-    for (index, choice) in choices.iter().enumerate() {
-        let message = choice
-            .as_object()
-            .and_then(|fields| fields.get("message"))
-            .and_then(OtelModelValue::as_object)
-            .unwrap_or(&empty);
-        span.safe_set_attribute(keys::OUTPUT_VALUE, &choice_output_value(message));
-        let prefix = format!("{}.{index}", keys::LLM_OUTPUT_MESSAGES);
-        let role = message
-            .get("role")
-            .cloned()
-            .unwrap_or(OtelModelValue::Null(()));
-        span.safe_set_attribute(&format!("{prefix}.{}", keys::MESSAGE_ROLE), &role);
-        let content = message
-            .get("content")
-            .cloned()
-            .unwrap_or(OtelModelValue::Null(()));
-        span.safe_set_attribute(&format!("{prefix}.{}", keys::MESSAGE_CONTENT), &content);
-        tool_calls::emit_message_tool_calls(span, &prefix, message);
+    let Some(entries) = response.get(field).and_then(OtelModelValue::as_array) else {
+        return;
+    };
+    for (index, entry) in entries.iter().enumerate() {
+        let Some(fields) = entry.as_object() else {
+            continue;
+        };
+        visit(span, fields, index);
     }
 }
 
-fn choice_output_value(message: &MetadataMap) -> OtelModelValue {
-    let content = message.get("content");
+pub(super) fn set_output_attributes<S>(span: &mut S, response: &MetadataMap)
+where
+    S: Span,
+{
+    for_each_entry(span, response, "choices", write_choice_entry);
+    for_each_entry(span, response, "data", |target, fields, index| {
+        write_media_value(target, index, image_url(fields), keys::IMAGE_URL);
+    });
+    for_each_entry(span, response, "audio", write_audio_entry);
+    for_each_entry(span, response, "data", write_embedding_entry);
+    for_each_entry(span, response, "output", write_structured_entry);
+}
+
+fn write_choice_entry<S>(span: &mut S, fields: &MetadataMap, index: usize)
+where
+    S: Span,
+{
+    let message = fields.get("message").and_then(OtelModelValue::as_object);
+    span.safe_set_attribute(keys::OUTPUT_VALUE, &choice_output_value(message));
+    let prefix = format!("{}.{index}", keys::LLM_OUTPUT_MESSAGES);
+    let role = message
+        .and_then(|message_fields| message_fields.get("role"))
+        .cloned()
+        .unwrap_or(OtelModelValue::Null(()));
+    span.safe_set_attribute(&format!("{prefix}.{}", keys::MESSAGE_ROLE), &role);
+    let content = message
+        .and_then(|message_fields| message_fields.get("content"))
+        .cloned()
+        .unwrap_or(OtelModelValue::Null(()));
+    span.safe_set_attribute(&format!("{prefix}.{}", keys::MESSAGE_CONTENT), &content);
+    if let Some(message_fields) = message {
+        tool_calls::emit_message_tool_calls(span, &prefix, message_fields);
+    }
+}
+
+fn choice_output_value(message: Option<&MetadataMap>) -> OtelModelValue {
+    let content = message.and_then(|message_fields| message_fields.get("content"));
     let blank = match content {
         None | Some(OtelModelValue::Null(())) => true,
         Some(OtelModelValue::String(text)) => text.is_empty(),
@@ -51,7 +71,7 @@ fn choice_output_value(message: &MetadataMap) -> OtelModelValue {
     };
     if blank {
         let summary = message
-            .get("tool_calls")
+            .and_then(|message_fields| message_fields.get("tool_calls"))
             .and_then(OtelModelValue::as_array)
             .filter(|calls| !calls.is_empty())
             .map(tool_calls::summarize_tool_calls);
@@ -62,85 +82,90 @@ fn choice_output_value(message: &MetadataMap) -> OtelModelValue {
     content.cloned().unwrap_or(OtelModelValue::Null(()))
 }
 
-pub(super) fn set_image_outputs<S>(span: &mut S, response: &MetadataMap)
+pub(super) fn image_url(part: &MetadataMap) -> Option<String> {
+    inline_image_url(part)
+        .filter(|url| !url.is_empty())
+        .or_else(|| source_data_url(part))
+        .or_else(|| part_url(part))
+}
+
+fn part_url(part: &MetadataMap) -> Option<String> {
+    part.get("url")
+        .and_then(OtelModelValue::as_str)
+        .filter(|url| !url.is_empty())
+        .map(str::to_owned)
+}
+
+fn inline_image_url(part: &MetadataMap) -> Option<String> {
+    match part.get("image_url") {
+        Some(OtelModelValue::String(text)) => Some(text.clone()),
+        Some(OtelModelValue::Object(image)) => image
+            .get("url")
+            .and_then(OtelModelValue::as_str)
+            .map(str::to_owned),
+        Some(
+            OtelModelValue::Null(())
+            | OtelModelValue::Bool(_)
+            | OtelModelValue::Number(_)
+            | OtelModelValue::Array(_),
+        )
+        | None => None,
+    }
+}
+
+fn source_data_url(part: &MetadataMap) -> Option<String> {
+    let source = part.get("source").and_then(OtelModelValue::as_object)?;
+    let data = source
+        .get("data")
+        .and_then(OtelModelValue::as_str)
+        .filter(|data| !data.is_empty())?;
+    let media_type = source
+        .get("media_type")
+        .and_then(OtelModelValue::as_str)
+        .unwrap_or("image/jpeg");
+    Some(format!("data:{media_type};base64,{data}"))
+}
+
+fn write_audio_entry<S>(span: &mut S, fields: &MetadataMap, index: usize)
 where
     S: Span,
 {
-    let Some(images) = response.get("data").and_then(OtelModelValue::as_array) else {
-        return;
-    };
-    for (index, image) in images.iter().enumerate() {
-        let Some(fields) = image.as_object() else {
-            continue;
-        };
-        let found_url = data_url(fields, "data:image/png;base64,");
-        let Some(url) = found_url else {
-            continue;
-        };
+    let url = data_url(fields, "data:audio/wav;base64,");
+    write_media_value(span, index, url, keys::AUDIO_URL);
+    let text_fields = [
+        ("mime_type", keys::AUDIO_MIME_TYPE),
+        ("transcript", keys::AUDIO_TRANSCRIPT),
+    ];
+    for (field, key) in text_fields {
+        write_nonempty_text(span, fields, field, key, index);
+    }
+}
+
+fn write_media_value<S>(span: &mut S, index: usize, text: Option<String>, key: &str)
+where
+    S: Span,
+{
+    if let Some(found) = text {
+        let value = OtelModelValue::String(found);
         if index == 0 {
-            span.safe_set_attribute(keys::OUTPUT_VALUE, &OtelModelValue::String(url.clone()));
+            span.safe_set_attribute(keys::OUTPUT_VALUE, &value);
         }
-        span.safe_set_attribute(
-            &format!("{}.{index}", keys::IMAGE_URL),
-            &OtelModelValue::String(url),
-        );
+        span.safe_set_attribute(&format!("{key}.{index}"), &value);
     }
 }
 
-pub(super) fn set_audio_outputs<S>(span: &mut S, response: &MetadataMap)
+fn write_nonempty_text<S>(span: &mut S, fields: &MetadataMap, field: &str, key: &str, index: usize)
 where
     S: Span,
 {
-    let Some(audio_items) = response.get("audio").and_then(OtelModelValue::as_array) else {
-        return;
-    };
-    for (index, item) in audio_items.iter().enumerate() {
-        let Some(fields) = item.as_object() else {
-            continue;
-        };
-        write_audio_url(span, fields, index);
-        write_audio_text(span, fields, index);
-    }
-}
-
-fn write_audio_url<S>(span: &mut S, fields: &MetadataMap, index: usize)
-where
-    S: Span,
-{
-    let Some(url) = data_url(fields, "data:audio/wav;base64,") else {
-        return;
-    };
-    if index == 0 {
-        span.safe_set_attribute(keys::OUTPUT_VALUE, &OtelModelValue::String(url.clone()));
-    }
-    span.safe_set_attribute(
-        &format!("{}.{index}", keys::AUDIO_URL),
-        &OtelModelValue::String(url),
-    );
-}
-
-fn write_audio_text<S>(span: &mut S, fields: &MetadataMap, index: usize)
-where
-    S: Span,
-{
-    let mime_type = fields
-        .get("mime_type")
+    let value = fields
+        .get(field)
         .and_then(OtelModelValue::as_str)
-        .filter(|value| !value.is_empty());
-    if let Some(found_mime) = mime_type {
+        .filter(|text| !text.is_empty());
+    if let Some(text) = value {
         span.safe_set_attribute(
-            &format!("{}.{index}", keys::AUDIO_MIME_TYPE),
-            &OtelModelValue::String(found_mime.to_owned()),
-        );
-    }
-    let transcript = fields
-        .get("transcript")
-        .and_then(OtelModelValue::as_str)
-        .filter(|value| !value.is_empty());
-    if let Some(found_transcript) = transcript {
-        span.safe_set_attribute(
-            &format!("{}.{index}", keys::AUDIO_TRANSCRIPT),
-            &OtelModelValue::String(found_transcript.to_owned()),
+            &format!("{key}.{index}"),
+            &OtelModelValue::String(text.to_owned()),
         );
     }
 }
@@ -159,42 +184,20 @@ fn data_url(fields: &MetadataMap, prefix: &str) -> Option<String> {
         .filter(|candidate| !candidate.is_empty())
 }
 
-pub(super) fn set_embedding_outputs<S>(span: &mut S, response: &MetadataMap)
+fn write_embedding_entry<S>(span: &mut S, fields: &MetadataMap, index: usize)
 where
     S: Span,
 {
-    let Some(items) = response.get("data").and_then(OtelModelValue::as_array) else {
-        return;
-    };
-    for (index, item) in items.iter().enumerate() {
-        let Some(fields) = item.as_object() else {
-            continue;
-        };
-        let vector = fields
-            .get("embedding")
-            .and_then(OtelModelValue::as_array)
-            .filter(|values| !values.is_empty());
-        if let Some(values) = vector {
-            let text = vector_text(values);
-            if index == 0 {
-                span.safe_set_attribute(keys::OUTPUT_VALUE, &OtelModelValue::String(text.clone()));
-            }
-            span.safe_set_attribute(
-                &format!("{}.{index}", keys::EMBEDDING_VECTOR),
-                &OtelModelValue::String(text),
-            );
-        }
-        let embedding_text = fields
-            .get("text")
-            .and_then(OtelModelValue::as_str)
-            .filter(|value| !value.is_empty());
-        if let Some(label) = embedding_text {
-            span.safe_set_attribute(
-                &format!("{}.{index}", keys::EMBEDDING_TEXT),
-                &OtelModelValue::String(label.to_owned()),
-            );
-        }
-    }
+    write_media_value(span, index, vector_value(fields), keys::EMBEDDING_VECTOR);
+    write_nonempty_text(span, fields, "text", keys::EMBEDDING_TEXT, index);
+}
+
+fn vector_value(fields: &MetadataMap) -> Option<String> {
+    fields
+        .get("embedding")
+        .and_then(OtelModelValue::as_array)
+        .filter(|values| !values.is_empty())
+        .map(vector_text)
 }
 
 fn vector_text(values: &[OtelModelValue]) -> String {
@@ -212,36 +215,25 @@ fn vector_text(values: &[OtelModelValue]) -> String {
     format!("[{}]", parts.join(", "))
 }
 
-pub(super) fn set_structured_outputs<S>(span: &mut S, response: &MetadataMap)
+fn write_structured_entry<S>(span: &mut S, fields: &MetadataMap, index: usize)
 where
     S: Span,
 {
-    let Some(items) = response.get("output").and_then(OtelModelValue::as_array) else {
-        return;
-    };
-    for (index, item) in items.iter().enumerate() {
-        let Some(fields) = item.as_object() else {
-            continue;
-        };
-        let Some(item_type) = fields.get("type").and_then(OtelModelValue::as_str) else {
-            continue;
-        };
-        let prefix = format!("{}.{index}", keys::LLM_OUTPUT_MESSAGES);
-        match item_type {
-            "reasoning" => emit_reasoning_summaries(span, &prefix, fields),
-            "message" => emit_structured_message(span, &prefix, fields),
-            _ => {}
-        }
+    match fields.get("type").and_then(OtelModelValue::as_str) {
+        Some("reasoning") => emit_reasoning_summaries(span, index, fields),
+        Some("message") => emit_structured_message(span, index, fields),
+        _ => {}
     }
 }
 
-fn emit_reasoning_summaries<S>(span: &mut S, prefix: &str, item: &MetadataMap)
+fn emit_reasoning_summaries<S>(span: &mut S, index: usize, item: &MetadataMap)
 where
     S: Span,
 {
     let Some(summaries) = item.get("summary").and_then(OtelModelValue::as_array) else {
         return;
     };
+    let prefix = format!("{}.{index}", keys::LLM_OUTPUT_MESSAGES);
     for summary in summaries {
         let text = summary.as_object().and_then(|fields| fields.get("text"));
         if let Some(found_text) = text {
@@ -253,7 +245,7 @@ where
     }
 }
 
-fn emit_structured_message<S>(span: &mut S, prefix: &str, item: &MetadataMap)
+fn emit_structured_message<S>(span: &mut S, index: usize, item: &MetadataMap)
 where
     S: Span,
 {
@@ -271,6 +263,7 @@ where
         .get("role")
         .cloned()
         .unwrap_or_else(|| OtelModelValue::String("assistant".to_owned()));
+    let prefix = format!("{}.{index}", keys::LLM_OUTPUT_MESSAGES);
     span.safe_set_attribute(keys::OUTPUT_VALUE, &text);
     span.safe_set_attribute(&format!("{prefix}.{}", keys::MESSAGE_CONTENT), &text);
     span.safe_set_attribute(&format!("{prefix}.{}", keys::MESSAGE_ROLE), &role);

@@ -101,7 +101,18 @@ where
         };
         let part_prefix = format!("{contents_prefix}.{part_index}");
         match fields.get("type").and_then(OtelModelValue::as_str) {
-            Some("text" | "input_text") => emit_text_part(span, &part_prefix, fields),
+            Some("text" | "input_text") => {
+                if let Some(text) = fields.get("text").and_then(OtelModelValue::as_str) {
+                    span.safe_set_attribute(
+                        &format!("{part_prefix}.{MESSAGE_CONTENT_TYPE}"),
+                        &OtelModelValue::String("text".to_owned()),
+                    );
+                    span.safe_set_attribute(
+                        &format!("{part_prefix}.{MESSAGE_CONTENT_TEXT}"),
+                        &OtelModelValue::String(text.to_owned()),
+                    );
+                }
+            }
             Some("image_url" | "image" | "input_image") => {
                 emit_image_part(span, &part_prefix, fields);
             }
@@ -110,77 +121,20 @@ where
     }
 }
 
-fn emit_text_part<S>(span: &mut S, part_prefix: &str, part: &MetadataMap)
-where
-    S: Span,
-{
-    let Some(text) = part.get("text").and_then(OtelModelValue::as_str) else {
-        return;
-    };
-    span.safe_set_attribute(
-        &format!("{part_prefix}.{MESSAGE_CONTENT_TYPE}"),
-        &OtelModelValue::String("text".to_owned()),
-    );
-    span.safe_set_attribute(
-        &format!("{part_prefix}.{MESSAGE_CONTENT_TEXT}"),
-        &OtelModelValue::String(text.to_owned()),
-    );
-}
-
 fn emit_image_part<S>(span: &mut S, part_prefix: &str, part: &MetadataMap)
 where
     S: Span,
 {
-    let Some(url) = image_url(part) else {
-        return;
-    };
-    span.safe_set_attribute(
-        &format!("{part_prefix}.{MESSAGE_CONTENT_TYPE}"),
-        &OtelModelValue::String("image".to_owned()),
-    );
-    span.safe_set_attribute(
-        &format!("{part_prefix}.{MESSAGE_CONTENT_IMAGE_URL}"),
-        &OtelModelValue::String(url),
-    );
-}
-
-fn image_url(part: &MetadataMap) -> Option<String> {
-    let direct = match part.get("image_url") {
-        Some(OtelModelValue::String(text)) => Some(text.clone()),
-        Some(OtelModelValue::Object(image)) => image
-            .get("url")
-            .and_then(OtelModelValue::as_str)
-            .map(str::to_owned),
-        Some(
-            OtelModelValue::Null(())
-            | OtelModelValue::Bool(_)
-            | OtelModelValue::Number(_)
-            | OtelModelValue::Array(_),
-        )
-        | None => None,
-    };
-    direct
-        .filter(|url| !url.is_empty())
-        .or_else(|| source_data_url(part))
-        .or_else(|| {
-            part.get("url")
-                .and_then(OtelModelValue::as_str)
-                .map(str::to_owned)
-        })
-        .filter(|url| !url.is_empty())
-}
-
-fn source_data_url(part: &MetadataMap) -> Option<String> {
-    let source = part.get("source").and_then(OtelModelValue::as_object)?;
-    let data = source
-        .get("data")
-        .and_then(OtelModelValue::as_str)
-        .filter(|data| !data.is_empty())?;
-    let media_type = source
-        .get("media_type")
-        .and_then(OtelModelValue::as_str)
-        .unwrap_or("image/jpeg");
-    Some(format!("data:{media_type};base64,{data}"))
+    if let Some(url) = output::image_url(part) {
+        span.safe_set_attribute(
+            &format!("{part_prefix}.{MESSAGE_CONTENT_TYPE}"),
+            &OtelModelValue::String("image".to_owned()),
+        );
+        span.safe_set_attribute(
+            &format!("{part_prefix}.{MESSAGE_CONTENT_IMAGE_URL}"),
+            &OtelModelValue::String(url),
+        );
+    }
 }
 
 pub fn set_response_attributes<S>(span: &mut S, response: &OtelModelValue)
@@ -190,10 +144,6 @@ where
     let Some(fields) = response.as_object() else {
         return;
     };
-    output::set_choice_outputs(span, fields);
-    output::set_image_outputs(span, fields);
-    output::set_audio_outputs(span, fields);
-    output::set_embedding_outputs(span, fields);
-    output::set_structured_outputs(span, fields);
+    output::set_output_attributes(span, fields);
     usage::set_usage_outputs(span, fields);
 }
