@@ -1,0 +1,7 @@
+https://user:pass@api.example.com:8443/v1
+https://api.example.com:8443/v1
+https://user:pass@api.example.com/v1
+api.example.com:8o
+api.example.com:99999
+user@api.example.com
+ftp://api.example.com
