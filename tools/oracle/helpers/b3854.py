@@ -166,12 +166,12 @@ def run(input_value: dict[str, Json]) -> Json:  # noqa: C901, PLR0911, PLR0912, 
     if function == "capture_resolve":
         logger = new_logger(config_from(cast("dict[str, Json]", input_value.get("config"))))
         logger._capture_mode_cached = logger._compute_capture_mode_from_init_state()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-        logger.message_logging = cast(bool, input_value.get("message_logging"))
-        litellm.turn_off_message_logging = cast(bool, input_value.get("turn_off_message_logging"))
+        flags = cast("dict[str, Json]", input_value.get("flags", {}))
+        logger.message_logging = cast(bool, flags.get("message_logging"))
+        litellm.turn_off_message_logging = cast(bool, flags.get("turn_off_message_logging"))
         mode = logger._resolve_capture_mode()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         return {
-            "mode": mode,
-            "in_span": logger._capture_in_span(),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+            "mode": mode, "in_span": logger._capture_in_span(),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
             "in_event": logger._capture_in_event(),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         }
     if function == "emit_once":
