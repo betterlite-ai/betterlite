@@ -29,7 +29,12 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::SilentTargets { value } => target_list(value.as_ref()),
+            Input::SilentTargets { value } => Ok(Value::Array(
+                silent_targets(value.as_ref())
+                    .into_iter()
+                    .map(Value::String)
+                    .collect(),
+            )),
             Input::SilentKwargs { request } => silent_kwargs(request)
                 .map(Value::Object)
                 .map_err(|error| helper_error("SilentExperimentError", error.to_string())),
@@ -44,15 +49,6 @@ impl Helper for Op {
             .map_err(|error| helper_error("SerializationError", error.to_string())),
         }
     }
-}
-
-fn target_list(value: Option<&Value>) -> HelperResult {
-    Ok(Value::Array(
-        silent_targets(value)
-            .into_iter()
-            .map(Value::String)
-            .collect(),
-    ))
 }
 
 fn helper_error(class: &str, message: String) -> Box<HelperError> {
