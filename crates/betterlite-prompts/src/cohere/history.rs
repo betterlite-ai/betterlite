@@ -147,9 +147,7 @@ fn assistant_entry(
     }
     let mut tool_calls = Vec::new();
     for (position, item) in run.iter().enumerate() {
-        let Some(tools) = message_tool_calls(item, offset.saturating_add(position))? else {
-            continue;
-        };
+        let tools = message_tool_calls(item, offset.saturating_add(position))?;
         tool_calls.extend(convert_to_cohere_tool_invoke(&tools)?);
     }
     // LiteLLM drops a run with no text, its tool calls included, and never turns function_call into one

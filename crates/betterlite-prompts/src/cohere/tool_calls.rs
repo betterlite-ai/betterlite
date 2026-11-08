@@ -17,9 +17,7 @@ struct MessageToolCalls {
 pub fn collect_tool_calls(messages: &[Message]) -> Result<Vec<CohereTool>, CohereError> {
     let mut collected = Vec::new();
     for (index, message) in messages.iter().enumerate() {
-        let Some(tools) = message_tool_calls(message, index)? else {
-            continue;
-        };
+        let tools = message_tool_calls(message, index)?;
         if collected.len().saturating_add(tools.len()) > MAX_TOOL_CALLS {
             return Err(CohereError::TooManyToolCalls {
                 limit: MAX_TOOL_CALLS,
@@ -33,12 +31,12 @@ pub fn collect_tool_calls(messages: &[Message]) -> Result<Vec<CohereTool>, Coher
 pub(crate) fn message_tool_calls(
     message: &Message,
     index: usize,
-) -> Result<Option<Vec<CohereTool>>, CohereError> {
+) -> Result<Vec<CohereTool>, CohereError> {
     let fields = serde_json::to_value(&message.provider_specific_fields)
         .map_err(|source| CohereError::FieldsEncode { index, source })?;
     let decoded: MessageToolCalls = serde_path_to_error::deserialize(fields)
         .map_err(|source| CohereError::Fields { index, source })?;
-    Ok(decoded.tool_calls)
+    Ok(decoded.tool_calls.unwrap_or_default())
 }
 
 pub fn convert_to_cohere_tool_invoke(
