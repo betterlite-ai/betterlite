@@ -170,9 +170,15 @@ pub struct OcrErrorFields {
     pub param: Option<&'static str>,
     pub code: String,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OcrErrorKind {
+    Request,
+    Response,
+    Other,
+}
 impl OcrError {
     #[must_use]
-    pub fn http_status_code(&self) -> Option<u16> {
+    pub const fn http_status_code(&self) -> Option<u16> {
         if let Self::Provider { status, .. } = self {
             return Some(*status);
         }
@@ -182,53 +188,32 @@ impl OcrError {
         if matches!(self, Self::Transport(OcrTransportError::Timeout)) {
             return Some(408);
         }
-        self.is_request().then_some(400)
+        match self.kind() {
+            OcrErrorKind::Request => Some(400),
+            OcrErrorKind::Response | OcrErrorKind::Other => None,
+        }
     }
     #[must_use]
-    pub const fn is_request(&self) -> bool {
-        matches!(
-            self,
-            Self::EmptyFile
-                | Self::InvalidMimeType(_)
-                | Self::CohereImageOnly
-                | Self::RequestFormat
-                | Self::RequestField { .. }
-                | Self::MissingField(_)
-                | Self::MissingDocumentUrl
-                | Self::InvalidDataUri
-                | Self::ReductoSource
-                | Self::InlineDocumentTooLarge
-                | Self::BlockedDocumentUrl
-                | Self::DownloadDisabled
-                | Self::DownloadTooLarge
-                | Self::TooManyRedirects
-                | Self::Pages(_)
-                | Self::Features
-                | Self::DotModel
-                | Self::InvalidRequest(_)
-                | Self::InvalidProvider(_)
-                | Self::InvalidModel { .. }
-                | Self::Params(_)
-                | Self::Headers(_)
-                | Self::Http(_)
-        )
-    }
-    #[must_use]
-    pub const fn is_response(&self) -> bool {
-        matches!(
-            self,
-            Self::TooLarge { .. }
-                | Self::ResponseField { .. }
-                | Self::EmptyContent
-                | Self::MissingRedirectLocation
-                | Self::InvalidRedirect
-                | Self::OperationStatus(_)
-                | Self::NumericRange(_)
-                | Self::PollLocation
-                | Self::PollOrigin
-                | Self::PollTimeout
-                | Self::InvalidResponse(_)
-        )
+    #[rustfmt::skip]
+    pub const fn kind(&self) -> OcrErrorKind {
+        match self {
+            Self::EmptyFile | Self::InvalidMimeType(_) | Self::CohereImageOnly | Self::RequestFormat
+            | Self::RequestField { .. } | Self::MissingField(_) | Self::MissingDocumentUrl
+            | Self::InvalidDataUri | Self::ReductoSource | Self::InlineDocumentTooLarge
+            | Self::BlockedDocumentUrl | Self::DownloadDisabled | Self::DownloadTooLarge
+            | Self::TooManyRedirects | Self::Pages(_) | Self::Features | Self::DotModel
+            | Self::InvalidRequest(_) | Self::InvalidProvider(_) | Self::InvalidModel { .. }
+            | Self::Params(_) | Self::Headers(_) | Self::Http(_) => OcrErrorKind::Request,
+            Self::TooLarge { .. } | Self::ResponseField { .. } | Self::EmptyContent
+            | Self::MissingRedirectLocation | Self::InvalidRedirect | Self::OperationStatus(_)
+            | Self::NumericRange(_) | Self::PollLocation | Self::PollOrigin | Self::PollTimeout
+            | Self::InvalidResponse(_) => OcrErrorKind::Response,
+            Self::Provider { .. } | Self::FileRead { .. } | Self::DocumentTask(_)
+            | Self::Unsupported(_) | Self::MissingAzureAiCredentials | Self::MissingDocIntelCredentials
+            | Self::MissingReductoApiKey | Self::Secret(_) | Self::Auth(_) | Self::Transport(_) => {
+                OcrErrorKind::Other
+            }
+        }
     }
     #[must_use]
     pub fn fields(&self) -> OcrErrorFields {
