@@ -1,0 +1,13 @@
+kind: helper
+name: token-count-threshold-unicode
+call:
+  token_count:
+    function: token_counter
+    model: gpt-3.5-turbo
+    text: "Héllo, 世界! 👋 the quick brown fox"
+    max_exact_chars: 16
+    chunk_size_chars: 4
+env:
+  TOKEN_COUNTER_MAX_EXACT_CHARS: "16"
+  TIKTOKEN_ENCODE_CHUNK_SIZE_CHARS: "4"
+compare: {ignore: []}
