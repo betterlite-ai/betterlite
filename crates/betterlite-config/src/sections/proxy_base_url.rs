@@ -8,7 +8,10 @@ mod tests;
 const PROXY_BASE_URL_NAME: &str = "PROXY_BASE_URL";
 
 #[derive(Debug, Default, Deserialize)]
-pub struct Raw {}
+pub struct Raw {
+    #[serde(skip)]
+    _unused: (),
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {

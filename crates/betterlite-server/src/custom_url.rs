@@ -32,8 +32,8 @@ pub fn get_custom_url(
 ) -> String {
     let base_url = proxy_base_url.unwrap_or(request_base_url);
     match route {
-        Some(route) if request_root_path.is_empty() => join_paths(base_url, route),
-        Some(route) => join_paths(&join_paths(base_url, request_root_path), route),
+        Some(route_path) if request_root_path.is_empty() => join_paths(base_url, route_path),
+        Some(route_path) => join_paths(&join_paths(base_url, request_root_path), route_path),
         None => join_paths(base_url, request_root_path),
     }
 }
