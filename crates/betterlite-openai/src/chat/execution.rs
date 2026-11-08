@@ -5,6 +5,7 @@ use betterlite_config::sections::mock_response::selection::{MockPlan, resolve_mo
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, StreamResponse, UpstreamResponse};
+use betterlite_http::url_policy::base::ConfiguredBase;
 use http::header::{ACCEPT, AUTHORIZATION};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use rand::rngs::StdRng;
@@ -182,12 +183,29 @@ impl ChatExecutor {
         request: &ChatRequest,
         accept: &'static str,
     ) -> Result<OutboundRequest, ChatError> {
-        let (model, api_key) = servable(deployment)?;
+        let model = servable(deployment)?;
+        let configured =
+            ConfiguredBase::parse(deployment.endpoint.clone(), "litellm_params.api_base").map_err(
+                |source| ChatError::Http {
+                    source: TransportError::ConfiguredUrl {
+                        source: Box::new(source),
+                    },
+                },
+            )?;
         let body = serde_json::to_vec(&self.body(request, model)?)
             .map_err(|source| ChatError::Encode { source })?;
         let mut headers = HeaderMap::new();
-        let bearer = format!("Bearer {}", api_key.expose_secret());
-        headers.insert(AUTHORIZATION, header_value(&bearer, "authorization")?);
+        let credential = configured.authorization.or_else(|| {
+            deployment
+                .api_key
+                .as_ref()
+                .map(|key| SecretString::from(format!("Bearer {}", key.expose_secret())))
+        });
+        let authorization = credential.ok_or(ChatError::MissingApiKey)?;
+        headers.insert(
+            AUTHORIZATION,
+            header_value(authorization.expose_secret(), "authorization")?,
+        );
         headers.insert(ACCEPT, HeaderValue::from_static(accept));
         if let Some(organization) = &deployment.organization {
             headers.insert(
@@ -197,7 +215,7 @@ impl ChatExecutor {
         }
         Ok(OutboundRequest {
             method: Method::POST,
-            url: deployment.endpoint.clone(),
+            url: configured.url,
             query: Vec::new(),
             headers,
             body: RequestBody::Json(body),
@@ -246,20 +264,13 @@ impl ChatExecutor {
     }
 }
 
-fn servable(deployment: &ChatDeployment) -> Result<(&str, &SecretString), ChatError> {
-    let model = match &deployment.provider {
-        Provider::OpenAi { model } => model,
-        Provider::Unsupported { model } => {
-            return Err(ChatError::UnsupportedProvider {
-                model: model.clone(),
-            });
-        }
-    };
-    let api_key = deployment
-        .api_key
-        .as_ref()
-        .ok_or(ChatError::MissingApiKey)?;
-    Ok((model, api_key))
+fn servable(deployment: &ChatDeployment) -> Result<&str, ChatError> {
+    match &deployment.provider {
+        Provider::OpenAi { model } => Ok(model),
+        Provider::Unsupported { model } => Err(ChatError::UnsupportedProvider {
+            model: model.clone(),
+        }),
+    }
 }
 
 fn header_value(text: &str, name: &str) -> Result<HeaderValue, ChatError> {
@@ -288,7 +299,15 @@ fn http_failure(source: TransportError) -> ChatError {
         | TransportError::MultipartBoundary { .. }
         | TransportError::Mock(_)
         | TransportError::Closed
-        | TransportError::DrainTimeout { .. } => ChatError::Http { source },
+        | TransportError::DrainTimeout { .. }
+        | TransportError::ConfiguredUrl { .. }
+        | TransportError::TooManyRedirects { .. }
+        | TransportError::RedirectTarget { .. }
+        | TransportError::RedirectUrl { .. }
+        | TransportError::RedirectUserinfo
+        | TransportError::RedirectScheme { .. }
+        | TransportError::InsecureRedirect
+        | TransportError::RedirectBody => ChatError::Http { source },
     }
 }
 

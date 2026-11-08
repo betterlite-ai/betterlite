@@ -581,3 +581,111 @@ async fn a_stripped_client_mock_warns_with_the_field_name() {
     assert!(warnings.contains("mock_response"), "{warnings}");
     assert!(warnings.contains("mock_tool_calls"), "{warnings}");
 }
+
+#[derive(Clone, Copy)]
+enum Base {
+    Plain,
+    Userinfo(&'static str),
+    PercentEncoded,
+    Ftp,
+}
+
+fn authorization(sent: &str) -> String {
+    sent.to_ascii_lowercase()
+        .lines()
+        .find_map(|line| line.strip_prefix("authorization: ").map(str::to_owned))
+        .unwrap_or_else(|| "-".to_owned())
+}
+
+const CALL: &str = r#"{"model":"g","messages":[]}"#;
+const HIJACK: &str = r#"{"model":"http://127.0.0.1:1/v1","messages":[],"api_base":"http://127.0.0.1:1/v1","base_url":"http://127.0.0.1:1/v1","endpoint":"http://127.0.0.1:1/v1","url":"http://127.0.0.1:1/v1"}"#;
+
+async fn boundary_observation(base: Base, api_key: Option<&str>, body: &str) -> String {
+    let (listener, plain) = listen().await;
+    let api_base = match base {
+        Base::Plain => plain,
+        Base::Userinfo(userinfo) => plain.replace("http://", &format!("http://{userinfo}")),
+        Base::PercentEncoded => plain.replace("http://", "http://us%40er:p%40ss@"),
+        Base::Ftp => plain.replace("http://", "ftp://"),
+    };
+    let key = api_key.map_or_else(String::new, |key| format!(", api_key: {key}"));
+    let entries = format!(
+        "[{{model_name: g, litellm_params: {{model: openai/up, api_base: '{api_base}'{key}}}}}]"
+    );
+    let chat = executor(&entries, 1, None, MockPermission::default());
+    let request = ChatRequest::parse(body.as_bytes()).unwrap();
+    let deployment = chat.deployments.first().unwrap();
+    if matches!(base, Base::Ftp) {
+        return chat
+            .send(deployment, &request)
+            .await
+            .map_or_else(|error| error.to_string(), |_outcome| "answered".to_owned());
+    }
+    let mut provider_task = JoinSet::new();
+    provider_task.spawn(provider(listener, 200, ANSWER, Duration::ZERO));
+    if let Err(error) = chat.send(deployment, &request).await {
+        drop(provider_task);
+        return error.to_string();
+    }
+    let sent = provider_task.join_next().await.unwrap().unwrap();
+    let upstream = sent.split_once("\r\n\r\n").map_or("", |(_, text)| text);
+    format!(
+        "{}|auth={}|leak={}",
+        sent.lines().next().unwrap_or_default(),
+        authorization(&sent),
+        upstream.contains("\"api_base\"")
+    )
+}
+
+#[rstest]
+#[case::userinfo_becomes_basic_auth_over_the_api_key(
+    Base::Userinfo("user:pass@"),
+    Some("k"),
+    CALL,
+    "POST /v1/chat/completions HTTP/1.1|auth=Basic dXNlcjpwYXNz|leak=false"
+)]
+#[case::percent_encoded_userinfo_is_decoded(
+    Base::PercentEncoded,
+    Some("k"),
+    CALL,
+    "POST /v1/chat/completions HTTP/1.1|auth=Basic dXNAZXI6cEBzcw==|leak=false"
+)]
+#[case::userinfo_alone_authenticates_a_loopback_provider(
+    Base::Userinfo("user:pass@"),
+    None,
+    CALL,
+    "POST /v1/chat/completions HTTP/1.1|auth=Basic dXNlcjpwYXNz|leak=false"
+)]
+#[case::the_api_key_bearer_is_used_without_userinfo(
+    Base::Plain,
+    Some("k"),
+    CALL,
+    "POST /v1/chat/completions HTTP/1.1|auth=Bearer k|leak=false"
+)]
+#[case::request_fields_cannot_change_the_destination(
+    Base::Plain,
+    Some("k"),
+    HIJACK,
+    "POST /v1/chat/completions HTTP/1.1|auth=Bearer k|leak=true"
+)]
+#[case::no_credentials_is_an_error(
+    Base::Plain,
+    None,
+    CALL,
+    "no API key is set for this deployment, in litellm_settings or in OPENAI_API_KEY"
+)]
+#[case::an_ftp_base_is_refused_by_key(
+    Base::Ftp,
+    Some("k"),
+    CALL,
+    "the provider could not be reached: the configured api_base cannot be used: litellm_params.api_base uses the ftp scheme, and only http and https are supported"
+)]
+#[tokio::test]
+async fn http_boundaries_url_boundary_tests_behavior(
+    #[case] base: Base,
+    #[case] api_key: Option<&str>,
+    #[case] body: &str,
+    #[case] expected: &str,
+) {
+    assert_eq!(boundary_observation(base, api_key, body).await, expected);
+}
