@@ -1,0 +1,113 @@
+id: B3496
+title: Settle background interaction usage before deletion
+description: >-
+  Build the part of background interaction billing that decides who pays and when the budget reservation is released, once B3481 has the poll loop.
+  A create with background=true returns status in_progress with no usage. The create's logging object stays alive, a poll task fetches the interaction until it is terminal, and the final usage is billed once as a second success event of the original request. Polls are never billed.
+  Build three small modules. (1) `betterlite-interactions::poll_settings`: `PollSettings` with the four values LiteLLM reads in constants.py: BACKGROUND_INTERACTION_COST_POLL_INITIAL_INTERVAL_SECONDS (default 5), BACKGROUND_INTERACTION_COST_POLL_MAX_INTERVAL_SECONDS (default 60), BACKGROUND_INTERACTION_COST_POLL_TIMEOUT_SECONDS (default 3600), and BACKGROUND_INTERACTION_COST_POLLING_ENABLED (default true; enabled only when the lowercased value equals "true", with no trimming, so " true" and "1" are off). The loader is `PollSettings::from_env_map(&BTreeMap<String, String>) -> Result<PollSettings, PollSettingsError>`; nothing here reads the process environment. The three numbers parse as f64 (Python float()); an unparsable value, including an empty string, is an error naming the variable, like the import failure in LiteLLM.
+  (2) `betterlite-interactions::settlement`: the settle-before-delete algorithm and its helpers, written against one trait, `SettlementHost`, that the create's logging object implements. The trait has an associated type `Reservation` and three methods: `budget_reservation(&self) -> Option<Self::Reservation>`, `async log_background_completion(&self, response: &InteractionResponse) -> Result<(), BillingError>` and `async release_reservation(&self, reservation: &Self::Reservation) -> Result<(), ReleaseError>`. Use B3481's types for the interaction response, the poll context (the one carrying interaction id, provider, api key and base, and the host), the status sets, `claim_settlement`, the registry lookup of the active poll for an interaction id, and the `FetchInteraction` function type; do not redefine them. If B3481 has no registry lookup by interaction id, add nothing here and report it in the worker notes.
+  Functions: `release_open_reservation(host)` takes the host's reservation; when there is none it returns; otherwise it calls `release_reservation` and, if that fails, logs the error (log message "Failed to release budget reservation for an unbilled background interaction") and returns Ok. A failed release never reaches the caller, since the counters expire on their own. `bill_settled_interaction(host, response)` calls `log_background_completion`; on error it calls `release_open_reservation` and then returns the billing error to the caller. `settle_before_delete(interaction_id, fetch)` is the entry B3500's async delete calls before it dispatches the delete: look up the active poll for the id and return at once when there is none (no fetch, no claim). Otherwise fetch the interaction with the poll's own context (the create's credentials). A fetch error is logged at debug level; then claim the settlement and, if the claim succeeded, release the reservation, and return. After a successful fetch, claim the settlement; if another settler already holds it, return without billing or releasing. With the claim held, a terminal status that has usage goes to `bill_settled_interaction`; every other case (non-terminal status, or terminal without usage) goes to `release_open_reservation`. Terminal statuses are completed, failed, cancelled, incomplete, budget_exceeded and requires_action. The function never cancels the poll task: the task sees the claimed flag after its next sleep and stops.
+  (3) `betterlite-logging::logging_interactions`, the interactions pieces of the logging object. `is_billable_interaction(call_type, has_usage)` is the recognition LiteLLM adds to its "is this a recognized call type" check: true only when the call type is one of create_interaction, acreate_interaction, create or acreate and the response carries a usage block. Get, delete and cancel return the same response shape and must not be recognized, or every poll would write spend. `log_background_completion` is the logging-object side of the trait method: remove `response_cost`, `model_id` and `litellm_model_name` from the response's hidden params (the poll priced the body against a throwaway logging object with no deployment context), then call `reset_success_emission_dedupe`, then B250's async success handler with the response. `reset_success_emission_dedupe` removes the `has_logged_async_success` marker from the request's call details and, under litellm_params.metadata._otel_internal.spans_logged, removes every key that is a tuple whose last element is "success"; any level that is missing or not a map stops the walk without error. Use B250's typed dedupe markers for these fields; if B250 stores them differently, keep the same observable effect. The logging-side trait implementation reads the reservation with B206's get_litellm_metadata_from_kwargs (litellm_metadata wins over metadata) and treats `user_api_key_budget_reservation` as present only when it is a map; the release call itself is injected by the server wiring, which this task does not write.
+  Why it matters: a caller can fetch a finished background interaction themselves and then delete it. After the delete every poll fails, so without the settle step the work would be unbilled and the reservation refunded at the timeout.
+  Budget about 190 logic lines, 110 trait and error types, 330 tests (about 630 total).
+scope:
+  paths:
+    - crates/betterlite-interactions/src/poll_settings.rs
+    - crates/betterlite-interactions/src/poll_settings/**
+    - crates/betterlite-interactions/src/settlement.rs
+    - crates/betterlite-interactions/src/settlement/**
+    - crates/betterlite-logging/Cargo.toml
+    - crates/betterlite-logging/src/logging_interactions.rs
+    - crates/betterlite-logging/src/logging_interactions/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L1-L111
+    why: The module comment explains billing at create, requires_action as a terminal billable state and settle-before-delete; the settlement flag and its claim function are the gate to reuse from B3481.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L166-L200
+    why: release_open_budget_reservation (no-op without a dict reservation, swallows release errors) and bill_settled_interaction (releases and re-raises on billing failure).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L287-L311
+    why: maybe_settle_background_interaction_before_delete, the order of fetch, claim, bill or release.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L461-L480
+    why: adelete, the only caller; sync delete and cancel never settle.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2604-L2676
+    why: The interactions branch of the recognized-call-type check, _is_interactions_create_call_type and async_log_background_interaction_completion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2678-L2701
+    why: _reset_success_emission_dedupe, which clears the markers so the completion is not dropped as a duplicate of the in-progress create.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1831-L1843
+    why: The four polling settings, their defaults and the "true" comparison.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L349-L366
+    why: get_litellm_metadata_from_kwargs, used to find the budget reservation.
+dod:
+  - text: PollSettings::from_env_map returns 5, 60, 3600 and enabled=true when the variables are absent, reads each override, enables polling only for the exact lowercased text "true", and rejects an unparsable or empty number with an error naming the variable.
+    proof: [settings-tests]
+  - text: settle_before_delete returns without fetching or claiming when the interaction has no active poll.
+    proof: [settle-no-poll]
+  - text: With a terminal status and usage, settle_before_delete claims the settlement and bills once; with a non-terminal status or a terminal status without usage it releases the reservation and does not bill.
+    proof: [settle-bill-release]
+  - text: A fetch error makes settle_before_delete claim the settlement and release the reservation; when the claim is already held by the poll task it neither bills nor releases.
+    proof: [settle-fetch-error, settle-claim-lost]
+  - text: A billing error releases the reservation and then reaches the caller; a release error is logged and swallowed; a host with no reservation releases nothing.
+    proof: [release-and-bill-errors]
+  - text: is_billable_interaction accepts create_interaction, acreate_interaction, create and acreate with usage, and rejects those with no usage and any other call type including get, delete and cancel.
+    proof: [billable-recognition]
+  - text: log_background_completion strips response_cost, model_id and litellm_model_name from hidden params, clears the dedupe markers, then calls the success handler once.
+    proof: [completion-logging]
+  - text: reset_success_emission_dedupe removes has_logged_async_success and only the spans_logged keys that are tuples ending in "success", and tolerates missing or non-map levels.
+    proof: [dedupe-reset]
+checks:
+  optional: []
+  commands:
+    - id: settings-tests
+      why: the four polling settings do not parse, default or reject bad values
+      run: cargo nextest run --locked -p betterlite-interactions --no-tests=fail -E 'test(/^poll_settings::/)'
+    - id: settle-no-poll
+      why: settle_before_delete fetches or claims when no poll is active, or the test is missing
+      run: cargo nextest run --locked -p betterlite-interactions --no-tests=fail -E 'test(/^settlement::.*no_active_poll/)'
+    - id: settle-bill-release
+      why: the terminal-with-usage bill path or the release path for everything else is missing
+      run: cargo nextest run --locked -p betterlite-interactions --no-tests=fail -E 'test(/^settlement::.*(bills_terminal_with_usage|releases_without_usage|releases_non_terminal)/)'
+    - id: settle-fetch-error
+      why: an unfetchable interaction does not settle by release
+      run: cargo nextest run --locked -p betterlite-interactions --no-tests=fail -E 'test(/^settlement::.*fetch_error_releases/)'
+    - id: settle-claim-lost
+      why: a lost claim still bills or releases, which would double settle
+      run: cargo nextest run --locked -p betterlite-interactions --no-tests=fail -E 'test(/^settlement::.*claim_lost/)'
+    - id: release-and-bill-errors
+      why: billing and release failure handling differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-interactions --no-tests=fail -E 'test(/^settlement::.*(bill_error_releases_then_fails|release_error_is_swallowed|no_reservation_is_noop)/)'
+    - id: billable-recognition
+      why: the create-only recognition rule is missing or accepts poll, delete or cancel results
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logging_interactions::.*billable/)'
+    - id: completion-logging
+      why: the settled body keeps poll-scoped hidden params or the success handler is not called after the reset
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logging_interactions::.*completion/)'
+    - id: dedupe-reset
+      why: the dedupe markers are not cleared, or too many span keys are cleared
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logging_interactions::.*dedupe/)'
+oracle_cases: []
+deviations:
+  - what: Rust names are shorter than LiteLLM's (settle_before_delete for maybe_settle_background_interaction_before_delete, log_background_completion, release_open_reservation, is_billable_interaction).
+    why: A lint refuses names over 30 characters. B3500's adelete calls settle_before_delete.
+  - what: Settlement talks to the logging object through the SettlementHost trait, not a Python object whose call details are a dict.
+    why: Typed collaborators come in through constructors, and betterlite-interactions must not depend on betterlite-logging, which depends on it.
+  - what: A polling setting with text Rust's f64 parser rejects but Python's float() accepts (digit underscores such as "1_0") is a startup error.
+    why: Rust's parser is stricter; no one sets these values that way.
+out_of_scope:
+  - "B3481 owns the poll loop, poll_intervals, BackgroundInteractionPollContext, the settlement flag and claim_settlement, the active-poll registry, maybe_schedule_background_interaction_cost_polling, is_pollable_background_interaction, missing_usage_is_expected and the default aget-based fetcher."
+  - "B3500 owns adelete and the call to settle_before_delete; B3499 owns scheduling a poll after a create."
+  - "B3003 owns release_budget_reservation; the server wiring that implements SettlementHost::release_reservation with it has no owner in this task."
+  - "B250 owns the success handler, success dedupe markers and the rest of the recognized-call-type check; B069 owns the proxy cost callback that decides a reservation stays open for a pollable create."
+  - "Rest of litellm_logging.py, including the other InteractionsAPIResponse conversion at lines 4149-4160."
+pitfalls:
+  - settle_before_delete claims the settlement before it bills or releases; claiming after the await lets the poll task bill the same interaction.
+  - A fetch error in settle_before_delete still claims and releases, while a fetch error in the poll loop only retries on the next interval.
+  - Release failure is logged and swallowed, but a billing failure is re-raised after the release; mixing the two leaves the reservation pinned until TTL.
+  - The delete-time fetch uses the create's api_key and api_base from the poll context, and the "no-log" kwarg, so it neither bills nor logs a second request.
+  - requires_action is terminal and billable; settling an interaction in that state with usage bills it, it does not release.
+  - A queued or in_progress interaction at delete time is not billed even if later polls would have found usage; it releases the reservation.
+  - The enable flag compares the lowercased text to "true" with no trimming, unlike betterlite-env's flag helper, which also accepts 1, yes and on; do not use that helper.
+  - The recognition rule keys on call type strings create_interaction, acreate_interaction, create and acreate; the proxy sets the first two and the SDK the last two.
+  - spans_logged keys are tuples; a key that is a string or a tuple ending in anything but "success" stays.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

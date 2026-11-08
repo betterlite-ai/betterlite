@@ -1,0 +1,183 @@
+id: B3687
+title: Guardrail catalog downloads and direct apply API
+description: >-
+  Build four admin routes of the guardrail API in betterlite-server: the category file download, the airline list, the blocked-words file check and the direct apply route. Everything goes in crates/betterlite-server/src/guardrails/catalog_apply.rs and catalog_apply/. The list, info and form routes are B3684, create, change and delete are B3685, submissions and the custom-code test route are B3686 and the usage routes are B3689 (B104 mounts them). Expose `pub fn routes()` the way the sibling modules in crates/betterlite-server/src/guardrails/ do. The architect's skeleton mounts it, so do not touch app.rs. Every route sits behind the normal key check: any valid key, any role, no other permission.
+
+  Files under catalog_apply/, each below 300 lines: `error.rs`, `category.rs`, `airlines.rs`, `blocked_words.rs`, `input_type.rs`, `ports.rs`, `apply.rs`, `success_logs.rs`, `tests.rs`.
+
+  `error.rs` holds `CatalogApplyError`, a thiserror enum with one variant per HTTP outcome below and a `status()` and `detail()` for each. `ports.rs` holds the traits that cut this module off from code other tasks own (see the notes for who writes the real implementations).
+
+  `GET /guardrails/ui/category_yaml/{category_name}` (category.rs). `category_name` is one path segment. Step 1: `safe_join(CATEGORIES_DIR, format!("{category_name}.yaml"))` from B4260's `betterlite-server::assets`; a failure (a NUL byte, or a name that resolves outside the folder) is 400 with detail "Invalid category name". `CATEGORIES_DIR` is the bundled categories folder from B3691's root constants. Step 2: `find_category_file(category_name, roots)` with B3691's `DATA_ROOTS` (a `.yaml` file wins over `.json` in the same folder, bundled folder before the legacy one). None is 404 with detail "Category file not found: {category_name} (tried .yaml and .json)". Step 3: the found path must be inside one of `category_dirs(roots)` by B4260's `is_within` (this catches a symlink that points out of the folder), else 400 "Invalid category name". Step 4: `file_type` is "yaml" when the path ends in `.yaml`, else "json". Read the file as UTF-8 text. A read failure is 500 with detail "Error reading category file: {error}". The body is `{"category_name": ..., "yaml_content": <raw file text>, "file_type": ...}`. The key stays `yaml_content` for JSON files too. The roots are passed in by the caller (LiteLLM's `content_filter_data_roots` dependency), so a test can point the route at a temporary folder.
+
+  `GET /guardrails/ui/major_airlines` (airlines.rs) returns `{"airlines": <the parsed list>}` from B3697's `major_airlines.json` (351 entries, each `id`, `match`, `tags`), in file order, values unchanged. Read it from `pub const MAJOR_AIRLINES_JSON: &str = include_str!("competitor_intent/major_airlines.json")`, which this task adds in `crates/betterlite-guardrails/src/content_filter/competitor_intent_airline.rs` (module `betterlite_guardrails::content_filter::competitor_intent_airline`) by renaming the existing private `AIRLINES_JSON` const, making it public and updating its one use there, and parse it in airlines.rs with serde_json; the route cannot return LiteLLM's 404 "major_airlines.json not found" or its 500 "Error reading major_airlines.json: {error}", see the deviations.
+
+  `POST /guardrails/validate_blocked_words_file` (blocked_words.rs). The body is a JSON object whose values are all text (LiteLLM's `dict[str, str]`); any other body is the normal 422 of the sibling routes. The decoder is `validate_blocked_words(body: &[u8]) -> Result<ValidationOutcome, BodyError>` and the check inside it is `check_blocked_words(file_content: &str) -> BlockedWordsVerdict`. The verdict serializes to one of these bodies, and the status is always 200:
+  1. `file_content` missing or "" gives `{"valid": false, "error": "No file content provided"}`.
+  2. Parse the text as YAML. A syntax error gives `{"valid": false, "error": "Invalid YAML syntax: {error}"}`.
+  3. A document that is not a mapping, or has no `blocked_words` key, gives `{"valid": false, "error": "Invalid format: file must contain 'blocked_words' key with a list"}`.
+  4. A `blocked_words` value that is not a list gives `{"valid": false, "error": "'blocked_words' must be a list"}` (null counts as not a list).
+  5. Walk the entries by index from 0 and collect messages into `errors`: an entry that is not a mapping gives "Entry {i}: must be an object" and the walk goes on to the next entry. For a mapping: no `keyword` gives "Entry {i}: missing 'keyword' field", a `keyword` that is not text gives "Entry {i}: 'keyword' must be a string"; no `action` gives "Entry {i}: missing 'action' field", an `action` other than the text BLOCK or MASK gives "Entry {i}: action must be 'BLOCK' or 'MASK', got '{action}'"; a present `description` that is not text gives "Entry {i}: 'description' must be a string". The checks run in that order, so one entry can add up to three messages. Any message gives `{"valid": false, "errors": [...]}`.
+  6. Otherwise `{"valid": true, "message": "Valid YAML file with {n} blocked word(s)"}` with n the list length (an empty list is valid with 0).
+  Parse with serde-saphyr (already in the workspace, B002 chose it) into a plain value tree. Nothing may panic on any input, and `file_content` is untrusted: bound it with axum's default request body limit (2 MiB through the Json extractor, the limit every admin JSON route in betterlite-server uses today, since none sets its own) and let the parser's own depth limit apply. Add the fuzz target `blocked_words_file` at `crates/betterlite-server/fuzz/fuzz_targets/blocked_words_file.rs`, feeding bytes to `validate_blocked_words`, with a `[[bin]]` entry in `crates/betterlite-server/fuzz/Cargo.toml` shaped like the existing targets. Seed `crates/betterlite-server/fuzz/corpus/blocked_words_file/` with a valid body, a body with errors, truncated JSON, bytes that are not UTF-8 and a body with a deeply nested YAML flow list. Add `replays_the_blocked_words_file_corpus` to tests.rs, shaped like `replays_the_scim_resource_corpus` in `crates/betterlite-server/src/scim_records/tests.rs`.
+
+  `POST /guardrails/apply_guardrail` and its alias `POST /apply_guardrail` (apply.rs, input_type.rs, success_logs.rs) run one guardrail on a text. The body is B3662's `ApplyGuardrailRequest` (`guardrail_name`, `text` required; `language`, `entities`, `input_type` default "request", `messages`, `metadata`); decode it with B3662's `decode_apply_request(body: &[u8])` and answer a bad body with the normal 422. The answer is B3662's `ApplyGuardrailResponse` (`response_text`). `language` and `entities` are accepted and never read, as in LiteLLM. Order inside the handler:
+  1. `data = {"guardrail_name": name, "input": [text], "messages": request.messages or [], "metadata": {"route": "/apply_guardrail"}}`. The `metadata.route` value is "/apply_guardrail" even on the long path.
+  2. Look the guardrail up by name with B8231's `get_guardrail_with_read_through` from `crate::registry_read_through::lookup` (the in-memory handler first, then one database re-sync), passing B8231's `GuardrailLookup` registry port and the guardrails `RegistryReadThrough` from state. Import that trait; do not declare a second `GuardrailLookup` in ports.rs. None is 404 with detail "Guardrail '{name}' not found. Please ensure the guardrail is configured in your LiteLLM proxy.". This 404 is raised inside the same try block as everything below, so it goes through the failure path in step 7 and the client sees the proxy's OpenAI-style error body, not `{"detail": ...}`.
+  3. Run `ApplyHooks::pre_call(data, key, "apply_guardrail")`. It returns the updated data and an optional logging handle.
+  4. With a logging handle, call `ApplyLog::mark_pass_through(messages)`: the handle's call type becomes "pass_through_endpoint" (also inside its call details) and its messages become `request.messages` when that is a non-empty list, else `[{"role": "user", "content": text}]`.
+  5. Build `request_data` with only the keys that were sent: `messages` when `request.messages` is not null (an empty list counts) and `metadata` when `request.metadata` is not null. Resolve the input type in input_type.rs: `request` becomes `response` when the guardrail's event hook is `post_call`; `response` stays; any other text (including an unknown one) becomes `request`. Open B3664's invocation record with `GuardrailHookName::ApplyGuardrail` before the call and finish it after, since Rust cannot wrap `apply_guardrail` the way LiteLLM's `__init_subclass__` does. Call the guardrail's `apply_guardrail(GuardrailApiInputs { texts: Some(vec![text]), ..Default::default() }, &mut request_data, input_type, ..)` from B5471's `GuardrailContract`.
+  6. `response_text` is the first item of the returned `texts` when the list is not empty, else the request `text`.
+  7. Failure path, for any error from steps 2 to 6: with a logging handle and an error that is not an HTTP error (the 404 above is one), call the handle's async failure handler, then submit its sync failure handler to the background executor; a failure of either is logged ("apply_guardrail: async_failure_handler failed", "apply_guardrail: failure_handler submit failed") and never changes the answer. Then call `ApplyHooks::post_call_failure(key, error, data)`; when it returns a replacement error use that one, and when the hook itself fails log "apply_guardrail: post_call_failure_hook failed" and keep the original. The error then becomes the proxy's OpenAI-style error: an HTTP error keeps its status and message with type "internal_server_error"; any other error uses its own status when it has one, else 500, with its text as message.
+  8. Success path (success_logs.rs), outside the failure handling above so a hook error never starts failure handlers. Call `ApplyHooks::post_call_success(data, key, response)`; a returned `ApplyGuardrailResponse` replaces the response, any failure is logged ("apply_guardrail: post_call_success_hook failed") and ignored. Build the logging payload from the response after that hook: `{"response": <response as JSON with null fields left out>}`. With a logging handle, call its async success handler with that payload, the start time, an end time taken now and `cache_hit` false, then submit the sync success handler to the background executor with the same values; failures are logged ("apply_guardrail: async_success_handler failed", "apply_guardrail: success_handler submit failed") and ignored. Return the response.
+
+  Oracle: HTTP cases boot LiteLLM and betterlite with the same config. Use a `tool_permission` guardrail (no external service) for the success case: with text input only it hands the text back, so `response_text` equals `text`. The worker reads tool_permission.py to confirm that before writing the case and picks another local guardrail if it does not hold. The category cases use the bundled files `bias_gender` (yaml) and `harm_toxic_abuse_au` (json). The success logging and failure hook branches need the proxy's logging objects, so named Rust tests with fake ports cover them.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/catalog_apply.rs
+    - crates/betterlite-server/src/guardrails/catalog_apply/**
+    - crates/betterlite-server/fuzz/fuzz_targets/blocked_words_file.rs
+    - crates/betterlite-server/fuzz/corpus/blocked_words_file/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-guardrails/src/content_filter/competitor_intent_airline.rs
+    - tools/oracle/cases/guardrails/catalog-apply/**
+    - tools/oracle/helpers/b3687.py
+    - tools/oracle/helpers/b3687/**
+    - tools/oracle/src/helpers/server/b3687.rs
+    - tools/oracle/src/helpers/server/b3687/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1450-L1495
+    why: >-
+      The roots dependency and the category_yaml route with its two traversal checks and the 404 and 500 texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1498-L1527
+    why: >-
+      The major_airlines route and its response shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1530-L1618
+    why: >-
+      validate_blocked_words_file, every verdict and message text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2241-L2334
+    why: >-
+      _resolve_guardrail_input_type, the logging protocols, _patch_logging_obj_for_guardrail and _emit_guardrail_success_logs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2337-L2453
+    why: >-
+      The apply_guardrail route with both paths, from the decorators to the failure path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L222-L228
+    why: >-
+      get_initialized_guardrail_with_read_through, the lookup the route calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8237
+    why: >-
+      handle_exception_on_proxy, the error shape of the failure path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/content_filter_data/__init__.py#L16-L39
+    why: >-
+      DATA_ROOTS, category_dirs and find_category_file as B3691 ports them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1361-L1372
+    why: >-
+      ApplyGuardrailRequest and ApplyGuardrailResponse.
+dod:
+  - text: >-
+      category_yaml returns the raw file text with `category_name`, `yaml_content` and `file_type`, prefers yaml over json, answers 400 "Invalid category name" for a NUL byte and for a symlink that points out of the folder, and 404 with the exact "tried .yaml and .json" text for an unknown name.
+    proof: [catalog-category-tests, oracle]
+  - text: >-
+      major_airlines returns the 351 entries of B3697's file as `{"airlines": [...]}` in file order.
+    proof: [catalog-airlines-tests, oracle]
+  - text: >-
+      validate_blocked_words_file gives each verdict body exactly (missing content, YAML syntax error, wrong shape, non-list, per-entry messages in order, valid with the count) and always answers 200.
+    proof: [catalog-blocked-words-tests, oracle]
+  - text: >-
+      The blocked-words decoder never panics, its fuzz target exists and its corpus replays.
+    proof: [catalog-blocked-words-corpus]
+  - text: >-
+      apply_guardrail answers `response_text` from the first returned text, falls back to the request text when no text comes back, and serves both paths.
+    proof: [catalog-apply-tests, oracle]
+  - text: >-
+      An unknown guardrail name gives the exact 404 message in the proxy's error body and runs the failure hook once.
+    proof: [catalog-apply-tests, oracle]
+  - text: >-
+      The input type becomes response for a post_call guardrail only when `request` was sent, an unknown input type becomes request, and the invocation record is opened before the guardrail call and finished after it.
+    proof: [catalog-input-type-tests]
+  - text: >-
+      Failure and success logging follow the order and the swallow rules (a failing hook or handler is logged and never changes the answer; the failure handlers do not run for an HTTP error or after a success-hook error).
+    proof: [catalog-apply-logging-tests]
+  - text: >-
+      Every route needs a valid key; a request without one gets the usual 401 body.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: catalog-category-tests
+      why: the category download, its traversal checks or its error texts are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::catalog_apply::tests::category_/)'
+    - id: catalog-airlines-tests
+      why: the airline list route or its embedded data is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::catalog_apply::tests::airlines_/)'
+    - id: catalog-blocked-words-tests
+      why: a blocked-words verdict or message is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::catalog_apply::tests::blocked_words_/) - test(replays_the_blocked_words_file_corpus)'
+    - id: catalog-blocked-words-corpus
+      why: the blocked-words fuzz target or its replay corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-server/fuzz/fuzz_targets/blocked_words_file.rs &&
+        grep -q 'name = "blocked_words_file"' crates/betterlite-server/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/blocked_words_file)" &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_blocked_words_file_corpus)'
+    - id: catalog-apply-tests
+      why: the apply route, its lookup, its answer or its error body is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::catalog_apply::tests::apply_/)'
+    - id: catalog-input-type-tests
+      why: the input type rule or the invocation record order is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::catalog_apply::tests::input_type_/)'
+    - id: catalog-apply-logging-tests
+      why: a success or failure logging step, or its swallow rule, is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::catalog_apply::tests::logging_/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/catalog-apply/category-yaml-found.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/category-json-found.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/category-not-found.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/category-invalid-name.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/major-airlines.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/blocked-words-valid.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/blocked-words-entry-errors.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/blocked-words-bad-shape.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/blocked-words-empty.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/apply-echo-text.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/apply-alias-echo-text.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/apply-unknown-guardrail.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/apply-missing-text.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/auth-required.yaml
+deviations:
+  - what: >-
+      major_airlines never answers 404 or 500; the list is compiled into the binary.
+    why: >-
+      LiteLLM reads a file from its package folder at request time and only fails when the install is broken. A compiled-in file cannot go missing.
+  - what: >-
+      The YAML syntax error text after "Invalid YAML syntax: " comes from serde-saphyr, not PyYAML, and the parser follows YAML 1.2 (so `yes`, `no`, `on` and `off` are plain text, not booleans).
+    why: >-
+      PyYAML's marks and messages are not reproducible. The oracle case for bad syntax therefore compares status and `valid` only. The entry checks are unaffected because `keyword` and `action` are compared as text.
+  - what: >-
+      A request body that is not valid JSON or has the wrong field types gets the 422 body the sibling routes give.
+    why: >-
+      Same rule as every other admin route in the crate; the body decoder is B3662's.
+out_of_scope:
+  - "get_initialized_guardrail_with_read_through and the registry re-sync behind it (registry_read_through.py): B8231 owns the code, B3683 builds `sync_locked` and `poll_database`. B8231 also declares the `GuardrailLookup` port in registry_read_through/lookup.rs; this task imports it and calls get_guardrail_with_read_through."
+  - "common_processing_pre_call_logic, post_call_failure_hook, post_call_success_hook and the proxy logging object (async_failure_handler, failure_handler, async_success_handler, success_handler, update_messages): B004, B014 and B124. This task declares `ApplyHooks` and `ApplyLog` and calls them."
+  - "handle_exception_on_proxy and ProxyException (proxy/utils.py): B124. This task builds only the mapping from its own error to status and message, and the shared error renderer of the server turns it into the body."
+  - "Category file decoding and loading (content_filter.py): B3692. DATA_ROOTS, category_dirs and find_category_file: B3691. safe_join and is_within: B4260. major_airlines.json and its use in the competitor intent check: B3697."
+  - "The guardrail's own apply_guardrail logic and the GuardrailContract trait: B5471 and each provider task."
+  - "The list, info and form routes (B3684), mutations (B3685), submissions and the custom-code test route with `_execution_timeout_response` and `_run_test_guardrail` (B3686), the usage router mount at L2457 (B104)."
+pitfalls:
+  - "The 404 for an unknown guardrail is raised inside the try block, so it passes post_call_failure_hook and comes out as the proxy error body with type internal_server_error and code 404, not as `{\"detail\": ...}` like the three catalog routes."
+  - "category_yaml checks the traversal twice: `safe_join` on the `.yaml` name first (400), then `is_within` on the file actually found (400). A symlink inside categories/ that points elsewhere passes the first and must fail the second."
+  - "A category stored as `.json` is returned under the key `yaml_content` with `file_type` \"json\"; the key name is kept for old UI clients."
+  - "validate_blocked_words_file answers 200 for every verdict, including invalid ones. The no-content, wrong-shape and not-a-list cases use the key `error` (one text); the per-entry cases use `errors` (a list)."
+  - "An entry that is not a mapping stops that entry only (`continue`), so later entries are still checked and their messages follow in index order."
+  - "`blocked_words: null` is present but not a list, so it gets \"'blocked_words' must be a list\", not the missing-key message."
+  - "`action` is compared as exact text: `block` in lower case is an error, and the message repeats the value as it was written."
+  - "apply_guardrail builds `inputs` with only `texts`, so any other field of the guardrail input (images, tools, model) is empty; `language` and `entities` from the body never reach the guardrail."
+  - "`request_data` holds `messages` only when the body sent the key, and an empty list still counts as sent; the `messages` in `data` use `or []` instead, so an empty list and null look the same there."
+  - "The input type upgrade applies to the literal `request` only. A body of `response` or `foo` is never upgraded, and `foo` becomes `request`."
+  - "Success logging runs after the try block, so an error in the success hooks never runs the failure handlers and never turns into an error answer."
+  - "The sync handlers (`failure_handler`, `success_handler`) go to the background executor with positional arguments in this order: error then traceback for failure; result, start time, end time, cache_hit for success."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

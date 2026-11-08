@@ -1,0 +1,15 @@
+id: B8273
+milestone: M4 keys, spend and management
+title: Build the ROI demo sample report
+status: todo
+depends_on: [B3150, B3151]
+file: tasks/B8273-roi-sample-report.yaml
+covers:
+  - "litellm/proxy/roi_calculator/__init__.py"
+  - "litellm/proxy/roi_calculator/sample.py"
+parent: B076
+split_from: B076
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

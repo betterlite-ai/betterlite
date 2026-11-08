@@ -146,16 +146,16 @@ oracle_cases:
   - tools/oracle/cases/helpers/sap-chat/embedding-params-url-response.yaml
 deviations:
   - what: Config objects are built from plain arguments (token, base URL, resource group, deployment URL). LiteLLM's lazy `run_env_setup` and `cached_property` caching belong to the caller that holds the config.
-    why: These modules are pure. B042 builds the config per deployment and caches the deployment URL.
+    why: These modules are pure. B8331 builds one config per call and keeps its deployment URL for that call.
   - what: The Markdown fence strip uses the Rust regex crate with the same pattern.
     why: Rust and Python regex engines agree on this pattern. Cases with a fence, no fence and a `json` tag confirm it.
 out_of_scope:
   - OpenAIGPTConfig members the SAP config inherits and does not override (map_openai_params, the error class for chat, `_transform_messages`); B668 owns them.
   - '`_SAP_MODEL_PARAMS_EXCLUDED_KEYS` and `_tools_response_format_and_stream` in transformation.py have no caller at the pin.'
   - EmbeddingsResponse, FinalResult, EmbeddingItem and Usage in embed/transformation.py have no caller at the pin (the response is read straight from `final_result`).
-  - The class-level settings of `GenAIHubOrchestrationConfig.__init__` and `get_config`, which main.py:2363 merges into optional_params for keys not already set; B042 owns `_complete_sap` and that merge. `model_version = "latest"` is always part of that merge.
-  - Provider selection for `sap/`, ProviderConfigManager entries and utils.py:3990 embedding mapping; B2230 and B042 own them.
-  - Real HTTP, the dispatch wiring, the route cases through the booted proxy and `sap_gen_ai_hub_emb`; B042 owns them.
+  - The class-level settings of `GenAIHubOrchestrationConfig.__init__` and `get_config`, which main.py:2363 merges into optional_params for keys not already set; B8331 owns `_complete_sap` and that merge. `model_version = "latest"` is always part of that merge.
+  - Provider selection for `sap/`, ProviderConfigManager entries and utils.py:3990 embedding mapping; B2230 owns the chat config selection, B8331 the SAP embedding config branch and B157 the utils.py:3990 mapping.
+  - Real HTTP, the dispatch wiring, the route cases through the booted proxy and `sap_gen_ai_hub_emb`; B8331 owns them.
 pitfalls:
   - '`tool_choice` is in the supported list for most models but `transform_request` pops it, so it never reaches SAP.'
   - '`validate_environment` returns SAP''s headers and drops the caller''s headers, so `extra_headers` do not reach SAP.'

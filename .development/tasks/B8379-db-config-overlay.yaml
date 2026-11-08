@@ -1,0 +1,104 @@
+id: B8379
+title: Database config overlay, config reload and general settings sync
+description: >-
+  With store_model_in_db, LiteLLM lays the config rows saved from the admin UI (general_settings, router_settings,
+  litellm_settings, environment_variables) over the config file every time it re-reads config, and when the
+  general_settings row changes it applies side effects to the running proxy. Build this in
+  crates/betterlite/src/db_config_overlay.rs (declared by the skeleton; it sits in the binary crate because it calls
+  B8371's hooks). It works on B8380's ProxyConfigState, which holds B4140's four SettingsStores. Error enum
+  OverlayError.
+
+  `reload_config(state, source, db, env)` ports ProxyConfig.get_config: read the config from the bucket when
+  LITELLM_CONFIG_BUCKET_NAME is set (B4143; LITELLM_CONFIG_BUCKET_OBJECT_KEY missing is "LITELLM_CONFIG_BUCKET_OBJECT_KEY
+  must be set to load the config from a bucket.", nothing loaded is "Unable to load config from given source.") or from
+  the file through betterlite-config, reload each settings store from the file sections (_reload_settings_store, which
+  keeps the serving pass_through_endpoints), overlay the database rows when a database is connected and
+  store_model_in_db is true, build the resolved config (each section from its store, with
+  pass_through_endpoints merged so database entries win by path and file entries with other paths follow), resolve
+  os.environ/ values, apply runtime values to the stores, and store the snapshot.
+
+  `overlay_db_rows(state, db)` ports _update_config_from_db: fetch all four rows at once through B8397's
+  get_config_param; for each present row, prepare its values and apply them to that store (litellm_settings goes
+  through apply_litellm_settings, which also sets each key of LITELLM_SETTINGS_SAFE_DB_OVERRIDES on the runtime
+  settings); then warn once per newly shadowed key with B4140's config_ownership_message. Preparing a row:
+  environment_variables are decrypted with B8382, set in the process environment for the providers that read it, and
+  also stored under their upper-case names; every other section goes through `scrub_remote_modules(section, value)`,
+  the port of _scrub_db_overlay_remote_module_loads: s3:// and gcs:// values are refused from the database (set to null
+  or dropped from lists, each with LiteLLM's warning) in the per-section string and list fields, in
+  litellm_settings.custom_provider_map[].custom_handler, in each guardrail's callbacks and guardrail fields (both the
+  inner mappings and litellm_params), in general_settings.litellm_jwtauth.custom_validate and in
+  general_settings.pass_through_endpoints[].target.
+
+  `apply_general_settings_row(state, row, scheduler, caches)` ports _update_general_settings and
+  _apply_general_settings_side_effects, in this order: remember whether user_api_key_cache_max_size came from the
+  database and the cleanup schedule (B8371's cleanup_schedule_of), apply the row, then run the effects: alerting
+  (alerting list, and alerting_args, alert_types, alert_to_webhook_url and plugins (B8230's PluginRegistry::replace_from_settings) only when their source is db),
+  pass-through endpoints (a database list is published and served through B3616's initialize_pass_through_endpoints; with none, publish the empty set unless the store
+  has the key), the three booleans store_prompts_in_spend_logs, disable_auto_add_proxy_admin_to_teams and
+  apply_user_budget_to_team_keys (coerced unless the file owns them), B8371's on_cache_size_changed, store_model_in_db
+  (coerced), B8371's on_settings_changed, and B5082's SSRF settings. The supported_db_objects gate is B8380's
+  should_load_db_object.
+
+  Tests run the overlay against an in-memory config repository and assert store contents, scrub results, warning
+  lines and the side-effect order. Helper cases (operation b8379 with an `operation:` field) compare
+  scrub_remote_modules output for each refused field. The worker writes them under tools/oracle/cases/helpers/db-config-overlay/.
+scope:
+  paths:
+    - crates/betterlite/src/db_config_overlay.rs
+    - crates/betterlite/src/db_config_overlay/**
+    - tools/oracle/cases/helpers/db-config-overlay/**
+    - tools/oracle/helpers/b8379.py
+    - tools/oracle/helpers/b8379/**
+    - tools/oracle/src/helpers/server/b8379.rs
+    - tools/oracle/src/helpers/server/b8379/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4715-L4836
+    why: The remote module scrub for database values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5207-L5310
+    why: The settings store helpers, including the pass-through merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6014-L6076
+    why: get_config with the bucket, overlay, resolution and snapshot order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7833-L8062
+    why: _update_general_settings, the side effects and _update_config_from_db.
+dod:
+  - text: reload_config reads bucket or file, overlays database rows only with store_model_in_db, merges pass-through endpoints by path and stores the snapshot.
+    proof: [overlay-tests]
+  - text: Database values that load s3:// or gcs:// modules are refused field by field with LiteLLM's warnings.
+    proof: [overlay-tests, oracle, helper-python]
+  - text: Environment variable rows are decrypted, exported and upper-cased, and shadowed keys warn once.
+    proof: [overlay-tests]
+  - text: A general_settings row runs the side effects in LiteLLM's order, including B8371's two hooks.
+    proof: [overlay-tests]
+checks:
+  optional: []
+  commands:
+    - id: overlay-tests
+      why: The config overlay, scrub, reload or a general settings side effect is missing or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^db_config_overlay::/)'
+    - id: helper-python
+      why: The strict oracle adapter for the overlay cases fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8379)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8379 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8379/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/db-config-overlay/scrub-custom-handler.yaml
+  - tools/oracle/cases/helpers/db-config-overlay/scrub-guardrail-callbacks.yaml
+  - tools/oracle/cases/helpers/db-config-overlay/scrub-jwt-custom-validate.yaml
+  - tools/oracle/cases/helpers/db-config-overlay/scrub-pass-through-target.yaml
+deviations: []
+out_of_scope:
+  - "SettingsStore, ownership and source rules: B4140. The config param cache: B8397. Bucket download: B4143."
+  - "ProxyConfig.load_config and the config file read itself: B002's loader and B4142's includes, with each key in its config section task."
+  - "Secret manager init from the raw config (_initialize_secret_manager_from_raw_config): B4412."
+pitfalls:
+  - The cache size hook needs whether the key came from the database before the row is applied, so read it first.
+  - Pass-through endpoints merge by path with database entries first; a file entry whose path the database also has is dropped.
+  - Environment variable rows are written to the process environment under both the stored and the upper-case names.
+  - The scrub copies the value first, so the cached database row is never changed in place.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

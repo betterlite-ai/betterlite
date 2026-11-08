@@ -1,0 +1,14 @@
+id: B8062
+milestone: M12 python
+title: Python get_llm_provider and the provider lookup helpers
+status: todo
+depends_on: [B5369, B157, B158, B5658, B174, B209, B210, B211]
+file: tasks/B8062-python-provider-lookup.yaml
+covers:
+  - "litellm/litellm_core_utils/get_llm_provider_logic.py"
+parent: B166
+split_from: B166
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

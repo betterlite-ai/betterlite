@@ -3,7 +3,7 @@ title: SageMaker runtime calls with SigV4 signing
 description: >-
   The module sagemaker_runtime in betterlite-bedrock (it already holds the AWS signing, credentials and region code) for
   `completion/handler.py` and the AWS half of `chat/transformation.py`. It builds and signs the calls; B5960 and B5961 own
-  the bodies and the replies, and B042 wires the module in and owns the HTTP cases.
+  the bodies and the replies, and B8331 wires the module in and owns the HTTP cases.
 
 
   Endpoint. The name is the model with its `sagemaker/` or `sagemaker_chat/` prefix removed. The region comes from B591's
@@ -116,7 +116,7 @@ deviations:
     why: One code path avoids the two iterators drifting, and the two error policies stay in B5961.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L420-L560
 out_of_scope:
-  - The core and provider dispatch files, `operation.rs` and the HTTP cases are B042's. This task adds none of them.
+  - The core and provider dispatch files, `operation.rs` and the HTTP cases are B8331's. This task adds none of them.
   - B5960 owns the TGI and chat request bodies and B5961 the embedding transforms and the stream decoder.
   - Signing, credentials and region functions are B594, B595 and B591; only calls into them are here.
   - Code with no caller at the pin (`chat/handler.py`) and the unused config merge are not built.

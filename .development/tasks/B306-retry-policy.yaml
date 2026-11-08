@@ -138,6 +138,7 @@ deviations:
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/get_retry_from_policy.py#L19-L70
 out_of_scope:
 - Provider calls and stream retries.
+- "B8350 builds `raise_mock_rate_limit` in `betterlite_router::router_predicates`. Router.async_function_with_retries calls it with the group and its deployments where LiteLLM calls _handle_mock_testing_rate_limit_error (router.py L7708), and does not rebuild the switch."
 pitfalls:
 - A per-model retry policy replaces the global policy rather than merging unset fields.
 - Retry count excludes the initial attempt.

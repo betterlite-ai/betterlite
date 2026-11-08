@@ -1,0 +1,25 @@
+# async_send_batch PUTs {"items": [...]} to /records/bulk with timeout=60000 and flush_queue clears the queue on a successful answer
+kind: helper
+name: argilla-async-batch-put-with-items-envelope
+call:
+  b3960:
+    scenarios:
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        batch_size: 2
+        random: [0.0, 0.0]
+        replies:
+          - {status: 200, body: '{"items": [{"id": "ds-1"}]}'}
+          - {status: 200, body: ""}
+        actions:
+          - do: async_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+          - do: async_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: flush
+env: {}
+compare: {ignore: []}

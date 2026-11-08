@@ -1,0 +1,226 @@
+id: B3248
+title: Policy and attachment CRUD routes
+description: >-
+  Build the ten HTTP routes that list, create, read, update and delete single policies and policy attachments, plus the pure body decoders they
+  use. LiteLLM keeps them in policy_endpoints.py. B3241 gives the in-memory policy and attachment registries (with `list_config_policies` and
+  `get_config_attachments`), B3242 gives the request and response records and the single-row lookup `get_policy_by_id_from_db`, B3243 gives the
+  database operations (`add_policy_to_db`, `update_policy_in_db`, `delete_policy_from_db`, `get_all_policies_from_db`,
+  `resolve_guardrails_from_db`, `add_attachment_to_db`, `get_attachment_by_id_from_db`, `delete_attachment_from_db`,
+  `get_all_attachments_from_db`) and B3245 gives `PolicyValidator::find_invalid_scope_entries`. Use the exact names and types as they exist
+  when you start and re-implement none of them. Other tasks own the rest of the `/policies` paths: B3244 the version routes (`/policies/name/...`,
+  `/policies/{policy_id}/status`, `/policies/compare`), B3247 `POST /policies/test-pipeline`, B3249 `POST /policies/attachments/estimate-impact`,
+  B3250 `/policies/resolve` and the `/policy/...` routes. This task registers none of those.
+
+  All code goes in crates/betterlite-server/src/policy_crud_routes.rs and policy_crud_routes/ (routes.rs, config_view.rs, request.rs,
+  error.rs). The state struct `PolicyCrudState` takes through its constructor: the B3243 persistence handle as an `Option` (`None` stands for
+  LiteLLM's `prisma_client is None`), the policy registry handle, the attachment registry handle and the `PolicyValidator`. LiteLLM's
+  `get_policy_registry()` and `get_attachment_registry()` singletons and its `from litellm.proxy.proxy_server import prisma_client, llm_router`
+  imports become those handles; the task holds no module-level state. Every route has tag `Policies` and sits in the standard authenticated group
+  (B003, B855, B756 and B732 own the auth). `created_by` and `updated_by` are the authenticated key's `user_id` from B732's principal. The routes
+  are listed with their LiteLLM line ranges below. Errors use `PolicyCrudError`, a `thiserror` enum in error.rs that turns into the JSON
+  `{"detail": <text>}` body with the status named in each route. Log each handled failure at error level with the prefix shown (LiteLLM's
+  `verbose_proxy_logger.exception`); a deliberate 404 or 400 raised as `HTTPException` is not logged.
+
+  Routes that need the database check it first: with no database they answer HTTP 500 with `detail` `Database not connected`, after the body
+  validation (a bad body is 422 even with no database). `GET /policies/list` and `GET /policies/attachments/list` do not check it and just skip the
+  database half.
+
+  Policies (policy_endpoints.py L67-L219 and L383-L555):
+  - GET `/policies/list`, optional query `version_status`. Read the database rows with `get_all_policies_from_db(version_status)` (empty when
+    there is no database). Collect the names of rows whose `version_status` is `production`. Config policies are added only when `version_status`
+    is absent or `production`, skipping every config policy whose name is in that set. Each config policy becomes a `PolicyDBResponse` in
+    config_view.rs: `policy_id` and `policy_name` both the config name, `version_number` 1, `version_status` `production`, `inherit` and
+    `description` from the policy, `guardrails_add` and `guardrails_remove` the policy's add and remove lists (empty when unset), `condition`
+    and `pipeline` the full dumped JSON of the config objects or null when absent, `definition_location` `config`, and every other field at its
+    default (dates and users null). Return `PolicyListDBResponse` with database rows first, then config rows, and `total_count` the length of the
+    joined list. A version_status that is not draft, published or production is not an error (empty database part, config part only for the
+    names above). Failure prefix `Error listing policies: `, status 500.
+  - POST `/policies`, body `PolicyCreateRequest`. Call `add_policy_to_db(request, created_by)` and return its `PolicyDBResponse`. On a failure whose
+    text, lowercased, contains `unique constraint` the answer is 400 with `Policy with name '<policy_name>' already exists`; every other failure
+    is 500 with the error text. Prefix `Error creating policy: `.
+  - GET `/policies/{policy_id}`. `get_policy_by_id_from_db`; a missing row is 404 `Policy with ID <policy_id> not found`; other failures 500
+    (prefix `Error getting policy: `).
+  - PUT `/policies/{policy_id}`, body `PolicyUpdateRequest`. Read the row; missing is 404 with the same text. A row whose `version_status` is not
+    `draft` is 400 `Only draft versions can be updated. Publish or create a new version to change published/production.` (this is the route's text;
+    B3243's plain error text is different and never reaches the client). Otherwise call `update_policy_in_db(policy_id, request, updated_by)` and
+    return the row. Other failures 500, prefix `Error updating policy: `.
+  - DELETE `/policies/{policy_id}`. Read the row; missing is 404 `Policy with ID <policy_id> not found`. Then `delete_policy_from_db(policy_id)` and
+    return its map unchanged (`message`, and `warning` when a production row was deleted). Other failures 500, prefix `Error deleting policy: `.
+  - GET `/policies/{policy_id}/resolved-guardrails`. Read the row (missing is 404 as above), call `resolve_guardrails_from_db(policy_name)` and
+    return `{"policy_id", "policy_name", "resolved_guardrails"}` (the sorted list). Every failure is 500 with the error text, prefix
+    `Error resolving guardrails: `. The LiteLLM handler also has an `except ValueError` branch for 400, but `resolve_guardrails_from_db` wraps every
+    error in a plain `Exception`, so that branch never fires at the pin; do not build it.
+
+  Attachments (policy_endpoints.py L561-L889):
+  - GET `/policies/attachments/list`. Database rows from `get_all_attachments_from_db` (none when there is no database), then one row per config
+    attachment: `attachment_id` `config-<index>` (index in the config list, starting at 0), `policy_name` the attachment's policy, `scope`, `teams`,
+    `keys`, `models` and `tags` (empty when unset), `priority`, `default`, `definition_location` `config`, the rest at defaults. Return
+    `PolicyAttachmentListResponse` with `total_count` the joined length. Failure prefix `Error listing policy attachments: `, 500.
+  - POST `/policies/attachments`, body `PolicyAttachmentCreateRequest`. In this order: (1) `get_all_policies_from_db(version_status="production")` and
+    check that `policy_name` is among those names, else 404 `Policy '<policy_name>' not found. Create the policy first.`; (2) call
+    `find_invalid_scope_entries(policy_name, teams, keys, models)` (tags are not checked) and, when it returns errors, answer 400 with each error's
+    `message` joined by ` | `; (3) `add_attachment_to_db(request, created_by)` and return the row. Other failures 500, prefix
+    `Error creating policy attachment: `.
+  - GET `/policies/attachments/{attachment_id}`. Missing is 404 `Attachment with ID <attachment_id> not found`; other failures 500, prefix
+    `Error getting policy attachment: `.
+  - DELETE `/policies/attachments/{attachment_id}`. Read the row first (missing is the same 404), then `delete_attachment_from_db` and return its
+    `{"message": ...}`. Prefix `Error deleting policy attachment: `, other failures 500.
+
+  Routing. Axum picks static segments over parameters, so `/policies/list`, `/policies/attachments/...`, B3244's `/policies/compare` and
+  `/policies/name/...` win over `/policies/{policy_id}`. The umbrella (B079) composes this router with the others and never registers a path again.
+
+  Body decoders in request.rs pull the three JSON bodies out of bytes and return the shared 422 on failure: `decode_policy_create(bytes: &[u8]) ->
+  Result<PolicyCreateRequest, PolicyCrudRequestError>`, `decode_policy_update(bytes: &[u8]) -> Result<PolicyUpdateRequest, PolicyCrudRequestError>` and
+  `decode_attachment_create(bytes: &[u8]) -> Result<PolicyAttachmentCreateRequest, PolicyCrudRequestError>`. Each takes a JSON object and ignores
+  unknown fields. `policy_name` is required in create and attachment bodies; list fields hold strings; `condition` is an object whose optional
+  `model` is a string; `pipeline` is any JSON object; `priority` is an integer in -2147483648..=2147483647; `default` is a boolean. Add one cargo-fuzz
+  target that feeds all three decoders.
+
+  Tests. Name native tests under `policy_crud_routes::tests` with the prefixes `policy_`, `attachment_`, `config_` and `body_`, since the checks filter
+  on them. The `policy_` and `attachment_` tests run each route against a real Postgres through POSTGRES_TEST_URL or testcontainers, with the
+  registries built by B3241, and also cover the no-database 500. The `config_` tests build the config-policy and config-attachment rows from a
+  registry loaded with config and check the list merge rules. The `body_` tests check the decoders. There are no helper cases: the routes read
+  and write rows and registries, which a helper adapter cannot do.
+
+  Oracle. HTTP cases go in tools/oracle/cases/policies/crud/. They send the real request to the booted proxy with the master key, an empty config
+  and no database. They cover the two list routes (200 with empty lists), the 500 for every database route, the 422 for a bad body, and the 401
+  without a key. The database paths are covered by the native tests.
+
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-server/src/policy_crud_routes.rs
+    - crates/betterlite-server/src/policy_crud_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/policy_crud_request.rs
+    - crates/betterlite-server/fuzz/corpus/policy_crud_request/**
+    - tools/oracle/cases/policies/crud/**
+    - tools/oracle/helpers/b3248.py
+    - tools/oracle/helpers/b3248/**
+    - tools/oracle/src/helpers/server/b3248.rs
+    - tools/oracle/src/helpers/server/b3248/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L28-L64
+    why: The two config-to-response converters, which decide the shape of config rows in both list routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L67-L173
+    why: GET /policies/list from its decorator, including the production-name filter and the version_status rule for config rows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L176-L219
+    why: POST /policies and its unique-constraint answer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L383-L555
+    why: GET, PUT and DELETE /policies/{policy_id} and GET /policies/{policy_id}/resolved-guardrails, including the draft-only update check and the dead ValueError branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L561-L627
+    why: GET /policies/attachments/list and the config-attachment index ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L630-L752
+    why: POST /policies/attachments, the production-policy check and the scope validation step.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L755-L889
+    why: GET and DELETE /policies/attachments/{attachment_id}.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/resolver_types.py#L113-L360
+    why: Request and response shapes of the policy and attachment routes, including the int32 bounds on priority.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L82-L85
+    why: The /policies prefix that loads these routes.
+
+dod:
+  - text: >-
+      GET /policies/list returns database rows first and then config policies not hidden by a production database row, adds config rows only when
+      version_status is absent or production, and builds each config row with LiteLLM's field values.
+    proof: [config-tests, policy-route-tests, oracle]
+  - text: >-
+      GET /policies/attachments/list returns database rows first and then config attachments with ids config-<index> and definition_location config.
+    proof: [config-tests, attachment-route-tests, oracle]
+  - text: >-
+      POST /policies returns the created row, answers 400 `Policy with name '<name>' already exists` for a unique-constraint failure and 500 for
+      other failures.
+    proof: [policy-route-tests]
+  - text: >-
+      GET, PUT and DELETE /policies/{policy_id} answer 404 `Policy with ID <id> not found` for a missing row; PUT answers 400 for a non-draft row with
+      the route's text and returns the updated row for a draft.
+    proof: [policy-route-tests]
+  - text: >-
+      DELETE /policies/{policy_id} returns the persistence map including its warning, and the resolved-guardrails route returns the sorted list with
+      policy_id and policy_name and answers 500, never 400, for a resolution failure.
+    proof: [policy-route-tests]
+  - text: >-
+      POST /policies/attachments answers 404 for a policy without a production row, 400 with the scope errors joined by ` | ` and the created row
+      otherwise, in that order.
+    proof: [attachment-route-tests]
+  - text: >-
+      GET and DELETE /policies/attachments/{attachment_id} answer 404 `Attachment with ID <id> not found` for a missing row and return the row or
+      the delete message otherwise.
+    proof: [attachment-route-tests]
+  - text: >-
+      Every database route answers 500 `Database not connected` with no database, after the body validation, and a bad or missing body is 422.
+    proof: [policy-route-tests, attachment-route-tests, oracle]
+  - text: >-
+      The three body decoders reject malformed bytes and wrong shapes (including a priority outside the int32 range) without panicking and have
+      committed corpus inputs.
+    proof: [body-tests, request-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: policy-route-tests
+      why: a policy route, its status mapping or its no-database answer is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^policy_crud_routes::.*tests::policy_/)'
+    - id: attachment-route-tests
+      why: an attachment route, its check order or its status mapping is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^policy_crud_routes::.*tests::attachment_/)'
+    - id: config-tests
+      why: the config row converters or the list merge rules are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^policy_crud_routes::.*tests::config_/)'
+    - id: body-tests
+      why: a body decoder accepts a wrong shape or rejects a valid one
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^policy_crud_routes::.*tests::body_/)'
+    - id: request-corpus
+      why: the body decoders have no committed malformed-input regressions or no replay test
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/policy_crud_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_policy_crud_request_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/policies/crud/list-policies-empty-200.yaml
+  - tools/oracle/cases/policies/crud/list-attachments-empty-200.yaml
+  - tools/oracle/cases/policies/crud/create-policy-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/create-policy-missing-name-422.yaml
+  - tools/oracle/cases/policies/crud/get-policy-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/update-policy-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/update-policy-bad-type-422.yaml
+  - tools/oracle/cases/policies/crud/delete-policy-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/resolved-guardrails-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/create-attachment-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/create-attachment-bad-priority-422.yaml
+  - tools/oracle/cases/policies/crud/get-attachment-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/delete-attachment-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/list-policies-no-auth-401.yaml
+
+deviations:
+  - what: GET `/policies/attachments/resolved-guardrails` reaches the attachment route (attachment id `resolved-guardrails`) and answers as a missing attachment. In LiteLLM it reaches the resolved-guardrails route for a policy whose id is `attachments`.
+    why: Axum always prefers the static `attachments` segment, while FastAPI uses registration order; no real policy_id is the string `attachments`, so no usable request changes.
+  - what: The 422 body for a bad request body uses the server's shared validation response and wording, not FastAPI's `loc` and `msg` strings.
+    why: Every route in the server shares one validation response; status 422 matches.
+  - what: Unknown fields in the three bodies are ignored, and the wrong JSON type for a known field is 422.
+    why: Pydantic's default config ignores extra fields, and the decoders do the same.
+
+out_of_scope:
+  - "B3241 owns the in-memory registries, `list_config_policies` and `get_config_attachments` (policy_registry.py, attachment_registry.py); this task only reads them."
+  - "B3242 owns the request and response records, the row adapter and get_policy_by_id_from_db (resolver_types.py L113-L360, policy_registry.py L564-L589)."
+  - "B3243 owns every database operation the routes call (policy_registry.py L381-L760 and the attachment registry's database methods)."
+  - "B3245 owns PolicyValidator and find_invalid_scope_entries (policy_validator.py L176-L240)."
+  - "B3244 owns the version routes (policy_endpoints.py L222-L380); B3247 owns POST /policies/test-pipeline; B3249 and B3250 own the estimate-impact, resolve and /policy/... routes."
+  - "B003, B855, B756 and B732 own authentication, route admission, header selection and the principal."
+
+pitfalls:
+  - "`resolve_guardrails_from_db` wraps every error in a plain `Exception`, so the handler's `except ValueError` to 400 is dead code: an inheritance cycle or a missing parent gives 500 `Error resolving guardrails from DB: ...`."
+  - "The PUT draft check answers 400 `Only draft versions can be updated. Publish or create a new version to change published/production.`, while `update_policy_in_db` raises its own shorter text; the route checks first, so only the route's text is ever seen."
+  - "In list_policies only production database rows hide a config policy. A draft or published row with the same name leaves the config row in the list, and a `version_status=draft` query returns no config rows at all."
+  - "A config policy's `condition` is dumped from a model with `model` as a string, a list or null, and `pipeline` is dumped with every default field, so both are full JSON objects (null only when the config has none)."
+  - "Config attachment ids are `config-<index>` over the config list alone, so the index does not shift when database rows are added to the list."
+  - "POST /policies/attachments looks the policy up among production rows only, so a policy that exists only as a draft or published version is 404 `Policy '<name>' not found. Create the policy first.`."
+  - "Scope errors from `find_invalid_scope_entries` cover teams, keys and models; `tags` entries are never validated."
+  - "`/policies/list` and `/policies/attachments/list` work with no database (config rows only), while all other routes here answer 500 `Database not connected`."
+  - "The unique-constraint check on POST /policies is a lowercase substring test on the error text, so it relies on B3243 passing the database message through in its error text."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

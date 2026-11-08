@@ -24,7 +24,7 @@ description: >-
   spend=sum(key.spend default 0). Strip password from dict/model user_info, set missing metadata
   to null, and remove only scim_enterprise,scim_entitlements,scim_roles from metadata dicts.
   Other metadata and non-dictionaries pass through the helper; malformed values may fail
-  response validation. Add non-null model_max_budget_usage from B071 with entity USER, ID,
+  response validation. Add non-null model_max_budget_usage from B3005's build_model_max_budget_usage with entity USER, ID,
   user's model budgets and limiter dual cache. Cases response_nulls_and_spend, password_removed,
   directory_metadata_redacted, metadata_other_values_preserved and model_budget_usage pin this.
 
@@ -42,7 +42,7 @@ description: >-
   V2 returns only user_id,user_email,user_alias,user_role,spend,max_budget,models,budget_duration,
   budget_reset_at,metadata,created_at,updated_at,sso_user_id,teams,object_permission,
   model_max_budget,model_max_budget_usage. Missing spend defaults 0, falsey models/teams become
-  empty lists, other optional values stay null. Apply directory redaction and B071 usage.
+  empty lists, other optional values stay null. Apply directory redaction and B3005 usage.
   Spend is the current resettable counter, not lifetime usage; no keys or team objects and
   no pagination. Cases v2_projection_defaults and v2_reset_counter_not_history compare all fields.
 
@@ -61,7 +61,7 @@ description: >-
   literal string 'None'. Cases key_master_exact_boolean, key_ui_session_filtered,
   key_dump_fallback and key_alias_null_vs_string cover these branches.
 
-  Each route's own except logs then calls B124 handle_exception_on_proxy: HTTPException becomes
+  Each route's own except logs then calls B2400 handle_exception_on_proxy: HTTPException becomes
   internal_server_error with its status and param from detail or string 'None'; ordinary errors
   become 500, existing ProxyException passes through. Preserve B2334 query-decoder errors under
   this mapping. Cases route_error_mapping and query_decoder_error compare status,type,message,
@@ -131,8 +131,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/user_info.rs
     - crates/betterlite-server/src/routes/user_info/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/user-info/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/user-info-*
@@ -179,7 +177,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1258-L1263
     why: general_settings.disable_master_key_return default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3567-L3600
-    why: B124 owns the complete response models.
+    why: B8411 owns the complete response models.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L17-L19
     why: Exact directory keys used by the owned redaction set at L879-L881.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
@@ -234,8 +232,8 @@ deviations:
     why: Source logs whole key rows; README requires native_admin_results_redacted to prove redaction.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1203-L1205
 out_of_scope:
-  - B2334 owns query decoding and bulk records; B124 owns response models and exception conversion;
-    B071 owns model-budget usage; B813 owns team-list service authorization.
+  - B2334 owns query decoding and bulk records; B8411 owns response models and B2400 (proxy/utils.py) exception conversion;
+    B3005 owns model-budget usage; B813 owns team-list service authorization.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
     _team_table (L128-L132), _verification_token_table (L135-L141), _organization_membership_table (L148-L154),

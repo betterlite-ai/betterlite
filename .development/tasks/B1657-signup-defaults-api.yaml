@@ -3,9 +3,9 @@ title: Manage signup defaults and validate their existing teams and organization
 description: >-
   Implement signup_defaults_routes for GET /get/internal_user_settings and /get/default_team_settings
   and PATCH /update/internal_user_settings and /update/default_team_settings. Use B052's route
-  authorization without inventing another local admin check. GET loads B124's current config
+  authorization without inventing another local admin check. GET loads the current config with B8379's reload_config
   and B1656's schema response for default_internal_user_params or default_team_params. Use
-  B124's DefaultInternalUserParams and NewUserRequestTeam records and B1608's DefaultTeamSSOParams.
+  B8411's NewUserRequestTeam and B1608's DefaultTeamSSOParams. No other task declares DefaultInternalUserParams, so this task builds it in betterlite-server's signup_defaults_routes::user_defaults module.
   User-role default is internal_user_viewer, other user defaults are null; team models default []
   and other team parameters are null. Reuse B1616/B1621's configuration bindings, which default
   the whole corresponding litellm setting to None rather than an eagerly materialized object.
@@ -56,6 +56,8 @@ dod:
     proof: [signup-defaults-tests, oracle]
   - text: Request unions, money values and authentication follow the existing record and management contracts.
     proof: [signup-defaults-tests, oracle, signup-defaults-corpus]
+  - text: This task builds DefaultInternalUserParams in signup_defaults_routes::user_defaults with the four allowed roles, internal_user_viewer as the default role and a teams list of all strings or all NewUserRequestTeam objects.
+    proof: [signup-defaults-tests, oracle]
 checks:
   optional: []
   commands:

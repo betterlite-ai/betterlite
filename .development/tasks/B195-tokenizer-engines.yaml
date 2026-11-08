@@ -230,7 +230,7 @@ out_of_scope:
   - Hub settings and the token lookup belong to B5085, OIDC and OAuth refresh to B5088. The requests, the cache layout, locks, retries and Xet are hf-hub's.
   - HUGGINGFACE_CO_STAGING is read by B5085; this task only uses the endpoint and token path it gives.
   - Message, tool and image accounting belongs to B196 and B197; the encoding name for a model (token_counter.py L663-L690) belongs to B259.
-  - The /utils/token_counter handler that reads model_info.custom_tokenizer (proxy_server.py L14024-L14058) calls this task's select but is not built here; its owner is still open.
+  - The /utils/token_counter handler that reads model_info.custom_tokenizer (proxy_server.py L14024-L14058) calls this task's select but is not built here; B8598 builds that route.
   - Python's mutable tokenizer methods and the SDK pretrained-download helpers belong to B166.
   - LiteLLM's optional Rust codec (tokenizer.py L38-L217, LITELLM_RUST) is not ported; the Python backend is the reference.
   - Progress bars, telemetry and HF_XET_HIGH_PERFORMANCE tuning are not built.

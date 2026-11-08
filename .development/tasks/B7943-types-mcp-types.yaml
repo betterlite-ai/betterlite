@@ -1,0 +1,55 @@
+id: B7943
+title: Python types for MCP and MCP server manager (types/mcp.py, types/mcp_server/*)
+description: >-
+  This task ports `mcp.py` (384 lines) and `mcp_server/` (`mcp_server_manager.py` 309 lines, `mcp_toolset.py`, `tool_registry.py`) into
+  `crates/betterlite-python/python/betterlite/types/mcp.py` (a package if over 300 lines) and `crates/betterlite-python/python/betterlite/types/mcp_server/`. It is Python only.
+
+
+  `mcp.py` has three `str, enum.Enum` types (`MCPTransport`, `MCPSpecVersion`, `MCPAuth`), pydantic models (`MCPPublicServer`,
+  `MCPAllowedClient`, `MCPToolSearchSettings`), the `MCPCredentials` TypedDict and the functions `normalize_upstream_header_name` and
+  `same_header`. `mcp_server_manager.py` has the OAuth metadata and identity binding models, `PinnedMCPTool`, `MCPServer`, and two functions,
+  `_validate_mcp_protocol_metadata` and `parse_pinned_tools`. Each function keeps its output and its raised errors for every input.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/mcp.py
+  - crates/betterlite-python/python/betterlite/types/mcp/**
+  - crates/betterlite-python/python/betterlite/types/mcp_server/**
+  - crates/betterlite-python/tests/test_types_mcp_types.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L1-L384
+  why: Enums, models and header functions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L1-L309
+  why: MCPServer, pinned tools and the metadata check.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/tool_registry.py#L1-L23
+  why: Tool, schema and list models.
+out_of_scope:
+- >-
+  The MCP gateway runtime belongs to the MCP Rust tasks.
+pitfalls:
+- >-
+  `_validate_mcp_protocol_metadata` and `parse_pinned_tools` raise on bad input. A test sends bad input to each and compares the exception type and message with LiteLLM.
+- >-
+  `mcp.py` becomes a package if it passes 300 lines; the package `__init__.py` is B167's, so put the Enums in `mcp/enums.py` and keep the module `mcp` importable as before.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_mcp_types.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

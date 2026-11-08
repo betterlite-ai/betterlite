@@ -7,7 +7,7 @@ description: >-
   B2222 built), embed/fireworks_ai_transformation.py, cost_calculator.py and rerank/transformation.py. Nothing here
   reads an env var or the process clock: the caller passes a FireworksEnv value (the four key variables
   FIREWORKS_API_KEY, FIREWORKS_AI_API_KEY, FIREWORKSAI_API_KEY, FIREWORKS_AI_TOKEN as the caller resolved them; an empty
-  value counts as unset) and an explicit billing instant. B042 and the dispatch tasks wire them in.
+  value counts as unset) and an explicit billing instant. B8310 and the dispatch tasks wire them in.
 
 
   Common. FireworksError carries status, message and optional headers (LiteLLM FireworksAIException, built by get_error_class).
@@ -165,7 +165,7 @@ out_of_scope:
   - B1672 owns cache_pricing.py (with_default_cache_read_rate) and generic_cost_per_token; B2222 owns resolve_fireworks_resource_name; B2219 owns get_model_info.
   - FireworksAIEmbeddingConfig.is_fireworks_embedding_model has no caller at the pin, so it is not built and gets no case.
   - B1686 owns the fireworks_ai branch of the cost dispatch in litellm/cost_calculator.py and calls cost_per_token here.
-  - B2454 owns the rerank HTTP execution and B1013 owns the rerank records and get_optional_rerank_params. B042 wires these modules into dispatch.
+  - B2454 owns the rerank HTTP execution and B1013 owns the rerank records and get_optional_rerank_params. B8310 wires these modules into dispatch.
   - The embedding request itself is OpenAI-shaped and goes through the generic embedding path; this task owns only the param list.
 pitfalls:
   - 'A MoE name whose product is above the 176 limit does not stop in the MoE branch: "8x30b" (240) falls to the (\d+)b search, reads 30 and returns "fireworks-ai-above-16b", while "8x22b" (176) is still "fireworks-ai-56b-to-176b".'

@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-results-tool-result-missing-id
+call:
+  anthropic_results:
+    function: tool_result
+    id: fixed-id
+    data_urls: {}
+    message:
+      role: tool
+      content: hi
+env: {}
+compare:
+  ignore: []

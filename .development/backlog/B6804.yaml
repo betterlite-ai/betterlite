@@ -1,0 +1,14 @@
+id: B6804
+milestone: M5 api families
+title: Azure AI OCR providers for Mistral and Cohere Parse
+status: todo
+depends_on: [B6800, B6801, B6803]
+file: tasks/B6804-azure-ai-ocr-providers.yaml
+covers:
+  - "litellm/ocr/**"
+parent: B092
+split_from: B092
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

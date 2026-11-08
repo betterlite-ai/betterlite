@@ -4,7 +4,7 @@ description: >-
   Implement team callback add/delete with B1210 validation/audit helpers, B246 credential-family checks,
   B2304 encrypt_callback_vars/decrypt_callback_vars and B1231 contracts. B1211 owns get/disable_logging.
   Both routes first require a database (500, the CommonProxyErrors db_not_connected_error detail), then
-  B124's unique team read. Missing teams use B1210's anti-enumeration helper: proxy admins see add400
+  B8397's unique team read. Missing teams use B1210's anti-enumeration helper: proxy admins see add400
   or delete404 with Team id = <id> does not exist.; all other callers see403 You do not have access to
   this team. B800 TeamAccess allows proxy admin or this team's org/team admin; denial precedes callback
   validation and credential decryption. No unrelated ordinary-user write is allowed.
@@ -61,7 +61,7 @@ description: >-
   scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
 
 
-  B1231 decodes AddTeamCallback; the route only mutates its typed metadata. Compare add/delete against
+  B8412 decodes AddTeamCallback; the route only mutates its typed metadata. Compare add/delete against
   the MIT server with fixture callback credentials and assert ciphertext in Postgres after either write.
 
 
@@ -81,8 +81,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/team_callbacks.rs
     - crates/betterlite-server/src/routes/team_callbacks/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-callbacks/**
     - tools/oracle/helpers/b057.py
     - tools/oracle/helpers/b057/**

@@ -1,0 +1,14 @@
+task: B4746
+deviations:
+  - what: "MCP list pagination keeps the collected items and logs a warning when the server repeats a cursor; LiteLLM raises RuntimeError."
+    why: "The pages are already loaded, so a chat keeps working against a buggy server instead of failing on data it has."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L976-L977
+  - what: "Reaching the 1,000 page cap returns the collected items with a warning; LiteLLM raises RuntimeError."
+    why: "A catalog longer than 1,000 pages is rare, and the partial list is still usable with a warning that names the cap."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L980-L982
+  - what: "The list walk stops at max(client timeout, MCP_TOOL_LISTING_TIMEOUT) and returns the collected items with a warning; LiteLLM lets anyio.fail_after raise TimeoutError, which list operations swallow into an empty list."
+    why: "Partial results beat discarding the pages the server did return, and the larger timeout keeps a single slow page successful."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L963-L967
+  - what: "A method-not-found answer on the first list page returns an empty list; on a later page the walk fails."
+    why: "A server without the optional list method should not block a chat, matching LiteLLM's fallback; a later-page failure means capabilities changed mid-walk."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L1000-L1007

@@ -15,8 +15,8 @@ checks:
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
   - id: case-mantle-bearer-precedence
-    why: Resolve the first truthy value from explicit api_key, B129 get_secret_str(BEDROCK_MANTLE_API_KEY), then
-      B129 get_secret_str(AWS_BEARER_TOKEN_BEDROCK). Empty explicit strings do not suppress environment fallback,
+    why: Resolve the first truthy value from explicit api_key, B8500 get_secret_str(BEDROCK_MANTLE_API_KEY), then
+      B8500 get_secret_str(AWS_BEARER_TOKEN_BEDROCK). Empty explicit strings do not suppress environment fallback,
       unlike B590 bedrock_bearer_token. Missing all sources returns None without an error. The mixin _resolve_bearer_token
       delegates identically.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_inputs_cases::case_[0-9]+_mantle_bearer_precedence$/)'
@@ -78,8 +78,8 @@ description: >-
   L58-L84.
 
 
-  Named case contracts: mantle_bearer_precedence: Resolve the first truthy value from explicit api_key, B129 get_secret_str(BEDROCK_MANTLE_API_KEY),
-  then B129 get_secret_str(AWS_BEARER_TOKEN_BEDROCK). Empty explicit strings do not suppress environment fallback,
+  Named case contracts: mantle_bearer_precedence: Resolve the first truthy value from explicit api_key, B8500 get_secret_str(BEDROCK_MANTLE_API_KEY),
+  then B8500 get_secret_str(AWS_BEARER_TOKEN_BEDROCK). Empty explicit strings do not suppress environment fallback,
   unlike B590 bedrock_bearer_token. Missing all sources returns None without an error. The mixin _resolve_bearer_token
   delegates identically. mantle_region_prefix: Split only the first slash, and recognize the head only if it is
   an exact member of the B2203 full Bedrock region catalog. A recognized prefix returns that region and the rest
@@ -111,7 +111,7 @@ description: >-
 
 
   The three Mantle-specific environment/config values default to None; us-east-1 is a resolver fallback, not a replacement
-  for an absent configured value. B590/B591/B129 own existing api_key,aws_region_name,AWS_BEARER_TOKEN_BEDROCK,AWS_REGION_NAME,AWS_REGION
+  for an absent configured value. B590/B591/B8500 own existing api_key,aws_region_name,AWS_BEARER_TOKEN_BEDROCK,AWS_REGION_NAME,AWS_REGION
   and secret-resolution fields. B193 supplies the model map, and B2203 supplies the full region catalog. Reuse those
   actual loaders and direct helpers.
 
@@ -165,8 +165,8 @@ dod:
   - helper-case-corpus
   text: New bedrock_mantle_inputs seeds parse as the intended call variant and replay through the shared production
     parser.
-- text: 'mantle_bearer_precedence: Resolve the first truthy value from explicit api_key, B129 get_secret_str(BEDROCK_MANTLE_API_KEY),
-    then B129 get_secret_str(AWS_BEARER_TOKEN_BEDROCK). Empty explicit strings do not suppress environment fallback,
+- text: 'mantle_bearer_precedence: Resolve the first truthy value from explicit api_key, B8500 get_secret_str(BEDROCK_MANTLE_API_KEY),
+    then B8500 get_secret_str(AWS_BEARER_TOKEN_BEDROCK). Empty explicit strings do not suppress environment fallback,
     unlike B590 bedrock_bearer_token. Missing all sources returns None without an error. The mixin _resolve_bearer_token
     delegates identically.'
   proof:

@@ -1,14 +1,14 @@
 id: B5470
 milestone: M6 guardrails
 title: Guardrail content inspection primitives
-status: todo
+status: done
 depends_on: [B3660]
 file: tasks/B5470-content-inspection-primitives.yaml
 covers:
   - "litellm/proxy/guardrails/_content_utils.py"
 parent: B104
 split_from: B3664
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 865

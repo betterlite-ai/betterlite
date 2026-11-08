@@ -107,7 +107,7 @@ deviations:
     why: The shared stored-input parser requires a finite resource bound.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L83-L85
 out_of_scope:
-  - B136 owns every other type/function in these two MCP files, including MCPSpecVersion, MCPServer,
+  - B6590 (types/mcp_server record) and B7943 (types/mcp.py) own every other type/function in these two MCP files, including MCPSpecVersion, MCPServer,
     MCPOAuthMetadata, MCPOAuthIdentityBinding, header/origin helpers and transport operations.
   - B858 owns the database MCP server row that calls these validators; B2303 owns secret-map encryption.
 pitfalls:

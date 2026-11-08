@@ -131,7 +131,7 @@ out_of_scope:
 - B3695 owns _filter_single_text, which is called for descriptions, scalar values and keys; this task uses it, does not reimplement it.
 - B3696 owns the competitor configuration and text_for_entity_matching; this task accesses prepared refuse/reframe templates and calls the competitor checker's run method.
 - B3690 owns typed detection records (ContentFilterDetection, CompetitorIntentDetection, etc.) and the DEFAULT_MAX_RECURSE_DEPTH constant through B002's config section.
-- B104 owns CustomGuardrail.raise_passthrough_exception, _event_hook_is_event_type and Router.acompletion; these are unresolved B104 callees available through the parent guardrail class.
+- B5471 owns CustomGuardrail.raise_passthrough_exception, B3665 _event_hook_is_event_type and B6020 Router.acompletion; this task calls them and does not rebuild them.
 - litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py lines outside CF:1456-1872 (e.g., apply_guardrail orchestration, category/pattern compilation, single-text filtering, streaming) are owned by other tasks.
 pitfalls:
 - Image descriptions are gathered concurrently with asyncio.gather but filtered sequentially in the order they were requested, preserving deterministic ordering. Appending the description to the error detail is necessary for debugging image-based blocks; the description text itself is not masked in the error.

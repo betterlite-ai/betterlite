@@ -1,0 +1,82 @@
+id: B7920
+title: Python types for OpenAI files, batches, threads and the shared aliases (types/llms/openai L1-L1007)
+description: >-
+  A user's code does `from litellm.types.llms.openai import OpenAIFileObject, CreateBatchRequest, ChatCompletionToolCallChunk`.
+  After `import betterlite as litellm` the same import must give the same names. This task ports lines 1 to 1007 of
+  litellm/types/llms/openai.py into the package `crates/betterlite-python/python/betterlite/types/llms/openai/core/`. It is Python only. The umbrella B167 writes
+  `llms/openai/__init__.py` (it merges this part with B7921 and B7922), so import your own modules by their full path in tests.
+
+
+  Port, in source order: the aliases `FileContent`, `FileTypes`, `EmbeddingInput` and `AllPromptValues`; `BinaryResponseSummary`;
+  the assistants and thread TypedDicts (`ToolResourcesCodeInterpreter` to `MessageData`, L177-L283); `Thread`;
+  `OpenAIFilesPurpose` and `CREATE_FILE_REQUESTS_PURPOSE`; `BatchGuardrailRecord`, `BatchGuardrailReport`,
+  `BATCH_GUARDRAIL_RESPONSE_FIELD`, `OpenAIFileObject` (it drops the batch guardrail field when absent, see
+  `_omit_absent_batch_guardrail` L411) and `FileListPage`; the file and batch request TypedDicts L458-L586; `BatchJobStatus`;
+  the chat building blocks L599-L1007 (tool call chunks, thinking and reasoning blocks, web search options, annotations, content
+  part objects, the user, assistant, tool, function, system and developer message TypedDicts), the lists
+  `ValidUserMessageContentTypes`, `ValidAssistantMessageContentTypes` and `ValidChatCompletionMessageContentTypes` with their
+  Literal twins, and `AllMessageValues`. Pydantic models become subclasses of `ResponseObject` (B5657) with the same fields
+  and defaults. `NotGiven` and `NOT_GIVEN` are ported as is: falsy, with repr `NOT_GIVEN`.
+
+
+  The module imports many classes from the `openai` package. The wheel doesn't depend on openai, so a name that exists only
+  as that import (`Batch`, `FileObject`, `Assistant`, `Run`, `ChatCompletionAudioParam` and the like) is not exported, and a field
+  typed by one is typed as a JSON mapping. `ChatCompletionAudioObject` (L774) extends the SDK's input-audio TypedDict, so give it
+  that TypedDict's two keys, `input_audio` and `type`, written out.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/llms/openai/core/**
+  - crates/betterlite-python/tests/test_types_openai_files_batches.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L96-L360
+  why: Aliases, NotGiven, thread types, file purposes and the batch guardrail records.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L362-L598
+  why: OpenAIFileObject, file and batch requests, BatchJobStatus.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L599-L1007
+  why: Chat building blocks, message TypedDicts and the valid content type lists.
+dod:
+- text: Every name this task lists exists in `betterlite.types.llms.openai.core` modules and in the same LiteLLM module, with the same TypedDict keys, required keys and Literal values.
+  proof: [names]
+- text: "`OpenAIFileObject` and `Thread` build from the same input as LiteLLM and give the same `model_dump()`, with the batch guardrail field dropped when absent."
+  proof: [models]
+- text: "`NOT_GIVEN` is falsy and prints as `NOT_GIVEN`, and the three valid content type lists hold the same entries in the same order."
+  proof: [constants]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name or a TypedDict key is missing, so a user's import or typed call breaks.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_openai_files_batches.py -k names
+  - id: models
+    why: A model field default or the dropped guardrail field differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_openai_files_batches.py -k models
+  - id: constants
+    why: A sentinel or a content type list differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_openai_files_batches.py -k constants
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names that LiteLLM only imports from the openai package are not exported, and fields they type hold JSON mappings.
+  why: The wheel depends only on python-dotenv and typing_extensions, so no openai import can exist at import time.
+out_of_scope:
+- >-
+  `HttpxBinaryResponseContent` L121-L145: it subclasses the SDK's httpx wrapper, and the gateway does its own HTTP, so
+  nothing builds it. The same holds for the SDK stream manager imports at the top of the file.
+- >-
+  Everything from L1008 on belongs to B7921 and B7922. The `openai` stream manager and cursor page imports at the top are not exported.
+pitfalls:
+- >-
+  `ValidUserMessageContentTypes` is rebound at L939, so the first list at L913 never reaches a caller. A test reading the name sees the second one.
+- >-
+  `ChatCompletionToolCallChunk` carries a comment that it is the result of a /chat/completions call, but `ChatCompletionAssistantToolCall` is the request-side twin. Keep the two apart.
+- >-
+  `FileContentRequest` and `CreateFileRequest` use `total=False`, while `ImageFileObject` and `MessageData` are total. Copy each flag, since a typed caller sees it.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

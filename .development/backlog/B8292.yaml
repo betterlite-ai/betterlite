@@ -1,0 +1,14 @@
+id: B8292
+milestone: M5 api families
+title: Langfuse pass-through route
+status: todo
+depends_on: [B3615, B5082, B052]
+file: tasks/B8292-langfuse-passthrough.yaml
+covers:
+  - "litellm/proxy/vertex_ai_endpoints/langfuse_endpoints.py"
+parent: B103
+split_from: B103
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

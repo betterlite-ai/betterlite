@@ -1,0 +1,160 @@
+id: B122
+title: Request size limit, buffered gzip and security headers middleware
+description: >-
+  Build the three request middleware LiteLLM's proxy installs next to its per-request root path middleware (B4200, already merged): the request size limit, the buffered gzip responder and the security headers. B4200 owns get_request_root_path and the root path wrap in server.rs; this task does not touch them. B7323 (planned) builds get_custom_url; nothing here builds URLs.
+
+
+  Body limit decision, stated once so route tasks can rely on it. The middleware sets no body limit by default. With general_settings.max_request_size_mb unset (the default), zero or negative, nothing is installed for it, and axum's own default stays in force: the Bytes and Json extractors refuse a body over 2 MiB (2097152 bytes) with their own 413. Admin JSON routes keep depending on that 2 MiB. Do not call DefaultBodyLimit::disable and do not add any other global cap. LiteLLM has no cap at all in this case, so this is a deviation (see deviations). When max_request_size_mb is set to a positive number, that number replaces the 2 MiB for every route: the size layer rejects the request itself, and the same layer also applies DefaultBodyLimit::max with the same byte count so extractors accept bodies up to the configured size instead of stopping at 2 MiB.
+
+
+  Config. Two small sections, each parsing its own view of the file. Section `request_size_limit` (crates/betterlite-config/src/sections/request_size_limit.rs): `Settings { max_request_size_mb: Option<f64> }` read from general_settings.max_request_size_mb. Absent or null gives None. LiteLLM declares it as an int and the middleware accepts any number, so accept YAML integers and floats. There is no environment spelling and no root-level spelling. Section `security_headers` (crates/betterlite-config/src/sections/security_headers.rs): `Settings { enable_hsts: bool }` read from the environment variable LITELLM_ENABLE_HSTS through the same `EnvironmentLookup` the `request_root_paths` section uses. The value counts as true only when, after trimming whitespace and lowercasing, it equals "true". "1", "yes" and "on" are false, and unset is false. The skeleton creates both stub files and their lines in sections.rs.
+
+
+  Request size limit, module `middleware::request_size_limit` (crates/betterlite-server/src/middleware/request_size_limit.rs). It is an axum middleware that wraps the whole router and handles HTTP requests only. Limit in bytes is the truncating integer of max_request_size_mb times 1048576. None or a value of zero or below disables the whole layer, so build no layer at all in that case. 1) Read the Content-Length header; when there are duplicates the last one wins (LiteLLM builds a dict from the header list); a value that is not a plain decimal integer counts as absent. 2) A Content-Length strictly greater than the limit is answered at once with 413 and the request body is never read. Equality passes. 3) Otherwise run the inner service with a request body wrapped in a counting stream. It adds the byte length of every data frame; when the running total is strictly greater than the limit it stops the stream with an error and records that in a flag shared with the middleware. After the inner service returns its response, if the flag is set, replace that response with the same 413. Build the wrapper with Body::from_stream over into_data_stream and futures-util, so no new crate is needed; trailers are not forwarded. The 413 answer is status 413, content-type application/json and exactly the compact body {"error":"Request size is too large. Max size is N MB"} where N is the configured number printed the way Rust's Display prints an f64 (5 prints "5", 0.5 prints "0.5"). That body is LiteLLM's plain {"error": ...} shape: do not use json_error or the OpenAI error envelope for it. The module owns its error enum for the one internal failure (the stream stop error).
+
+
+  No license gate. LiteLLM installs this middleware but only enforces it when premium_user is true (proxy_server.py L20014-L20018). betterlite enforces it whenever max_request_size_mb is set, the same decision B744 took for its own size check (see deviations). B744's check is a different, later one: it runs inside auth, answers 400 and looks at Content-Length only. Both exist in LiteLLM; this one runs first and answers 413.
+
+
+  Buffered gzip, module `middleware::gzip_buffered` (crates/betterlite-server/src/middleware/gzip_buffered.rs). Port GZipBufferedResponseMiddleware. It handles HTTP requests only. Parse the Accept-Encoding request header with `accepts_gzip(raw: &[u8]) -> bool`: split on commas, skip blank parts; each part is a coding name before the first ";" (trimmed, lowercased) with a q value taken from the first parameter that starts with "q=" after trimming (case-insensitive), default 1; a q value that is not a number counts as 0. Gzip is accepted when the weight of "gzip", else of "x-gzip", else of "*", else 0, is greater than 0. The header bytes are decoded one byte per character (latin-1), never as UTF-8, so non-UTF-8 bytes cannot fail the parse; this function takes bytes and has a fuzz target (below). If two parts name the same coding the later one wins. Response rule: a response is negotiable when its body is complete in hand, meaning the body's exact size hint is known (axum Json, String and Bytes responses; not a stream), the size is at least 500 bytes (MINIMUM_SIZE_BYTES), the status is not 206, and the response has no Content-Encoding header, no ETag header, and a Cache-Control value that does not contain "no-transform" (case-insensitive substring). Streaming responses (unknown size hint, SSE, chunked streams) are passed through untouched and never delayed or buffered. For a negotiable response, always add Accept-Encoding to Vary: if Vary exists, set it to the old value, ", " and "Accept-Encoding" (no deduplication); otherwise set it to "Accept-Encoding". This happens even when the client does not accept gzip. When the client accepts gzip and the response is negotiable, compress the body with flate2 at level 6 (COMPRESS_LEVEL), set Content-Encoding to gzip and Content-Length to the compressed length, and send it. Bodies of 1048576 bytes (OFF_LOOP_SIZE_BYTES) or more are compressed on tokio's spawn_blocking and awaited; smaller bodies are compressed inline. Responses with status 101 and responses to HEAD pass through untouched.
+
+
+  Security headers, module `middleware::security_headers` (crates/betterlite-server/src/middleware/security_headers.rs). Port SecurityHeadersMiddleware. HTTP responses only. Set each header only if the response does not already carry it (header names compare case-insensitively), so a route that sets its own value keeps it: X-Frame-Options: DENY, Content-Security-Policy: frame-ancestors 'none', X-Content-Type-Options: nosniff. When Settings.enable_hsts is true, also Strict-Transport-Security: max-age=31536000; includeSubDomains. Skip responses with status 101. The setting is read once when the layer is built, not per response (see deviations). The layer applies to every response the router produces, 404 and 405 included.
+
+
+  Order, module `middleware::request_stack` (crates/betterlite-server/src/middleware/request_stack.rs). One function `wrap(application: Router, size_limit: &request_size_limit::Settings, security: &security_headers::Settings) -> Router` that composes the three layers in LiteLLM's order. From outermost to innermost: request size limit, gzip, security headers, then the router. So a 413 from the size limit carries no security headers and is never gzipped, a gzipped response carries the security headers, and the size limit sees the request before anything inside. In server.rs `application`, call `request_stack::wrap` on the router and then keep B4200's `RootPaths::wrap` as the outermost wrap, as it is today. Change nothing else in server.rs. Other planned middleware (admission control, billable metrics and the rest) are not installed here; they will slot in around this stack: admission control sits between the root path wrap and the size limit.
+
+
+  Tests live in tests.rs files of each module. Size limit: Content-Length over, equal and under the limit; no Content-Length with a chunked body over the limit; the 413 body bytes and content-type; disabled for None, 0 and negative; handler never runs on a Content-Length rejection; a body over 2 MiB and under the configured 10 MiB passes through a Bytes extractor route (proves DefaultBodyLimit is raised); with no setting a body over 2 MiB still gets axum's 413. Gzip: accepted and refused Accept-Encoding forms (q=0, q=0.5, x-gzip, *, "gzip;q=abc"), bodies of 499 and 500 bytes, 206, ETag, Content-Encoding and no-transform responses, Vary appended to an existing Vary, a stream body untouched, a body over 1 MiB compressed and decoding back to the original. Security headers: all three present on 200, 404 and 405 responses, a route-set X-Frame-Options kept, HSTS present only when enabled. Stack: 413 has no security headers, gzip responses have them. Config tests under `sections::request_size_limit::` and `sections::security_headers::`.
+
+
+  Fuzz: `accepts_gzip` takes arbitrary bytes. Add the cargo-fuzz target `accept_encoding` to the existing crates/betterlite-server/fuzz crate (add a [[bin]] entry to its Cargo.toml like the others), seed its corpus with the Accept-Encoding values the gzip tests use plus one invalid-UTF-8 file, and replay every corpus file in a test named replays_the_accept_encoding_corpus, in the style of replays_the_route_path_corpus in auth/route_match/tests.rs.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-config/src/sections/request_size_limit.rs
+    - crates/betterlite-config/src/sections/request_size_limit/**
+    - crates/betterlite-config/src/sections/security_headers.rs
+    - crates/betterlite-config/src/sections/security_headers/**
+    - crates/betterlite-server/src/middleware/request_size_limit.rs
+    - crates/betterlite-server/src/middleware/request_size_limit/**
+    - crates/betterlite-server/src/middleware/gzip_buffered.rs
+    - crates/betterlite-server/src/middleware/gzip_buffered/**
+    - crates/betterlite-server/src/middleware/security_headers.rs
+    - crates/betterlite-server/src/middleware/security_headers/**
+    - crates/betterlite-server/src/middleware/request_stack.rs
+    - crates/betterlite-server/src/middleware/request_stack/**
+    - crates/betterlite-server/src/server.rs
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/accept_encoding.rs
+    - crates/betterlite-server/fuzz/corpus/accept_encoding/**
+    - tools/oracle/cases/request-middleware/**
+    - tools/oracle/helpers/b122.py
+    - tools/oracle/helpers/b122/**
+    - tools/oracle/src/helpers/server/b122.rs
+    - tools/oracle/src/helpers/server/b122/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/request_size_limit_middleware.py#L1-L118
+    why: The whole size limit middleware, its 413 body and the byte counting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/gzip_middleware.py#L1-L96
+    why: Accept-Encoding weights, the negotiable rules, Vary handling and the off-loop threshold.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/security_headers_middleware.py#L1-L50
+    why: The three static headers, the opt-in HSTS header and the set-if-absent rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2473-L2474
+    why: SecurityHeadersMiddleware and GZipBufferedResponseMiddleware are installed, gzip added last so it is the outer one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20014-L20039
+    why: RequestSizeLimitMiddleware reads general_settings max_request_size_mb and is enforced only for premium_user; admission control and the root path middleware are added after it, so they are outside it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/middleware/test_security_headers_middleware.py#L1-L80
+    why: LiteLLM's own expectations for the headers and for which LITELLM_ENABLE_HSTS values turn HSTS on.
+  - url: https://docs.rs/axum/0.8.9/axum/extract/struct.DefaultBodyLimit.html
+    why: The 2 MiB default that Bytes and Json enforce, and how a layer replaces it.
+dod:
+  - text: general_settings.max_request_size_mb loads as an optional number and LITELLM_ENABLE_HSTS loads as true only for "true" after trim and lowercase.
+    proof: [config-tests]
+  - text: A Content-Length over the limit is answered 413 with the exact LiteLLM body and the handler never runs; equal passes; the last duplicate Content-Length wins and a non-numeric one counts as absent.
+    proof: [size-limit-tests]
+  - text: A body without Content-Length that goes over the limit while streaming is answered 413 with the same body.
+    proof: [size-limit-tests]
+  - text: With max_request_size_mb unset, zero or negative no size layer is installed and axum's 2 MiB default still applies; with it set to 10, a 5 MiB body reaches a Bytes extractor.
+    proof: [size-limit-tests, stack-tests]
+  - text: accepts_gzip follows the q-value rules for gzip, x-gzip and "*", and tolerates arbitrary bytes.
+    proof: [gzip-tests, accept-encoding-fuzz]
+  - text: Complete bodies of at least 500 bytes are gzipped when accepted, get Vary Accept-Encoding either way, and are skipped for 206, ETag, Content-Encoding and no-transform; streams are untouched.
+    proof: [gzip-tests, oracle]
+  - text: The three security headers are set when absent on every response including 404 and 405, an existing value is kept, and HSTS appears only when enabled.
+    proof: [security-header-tests, oracle]
+  - text: The layers are ordered size limit, gzip, security headers, router, with the root path wrap outermost; a 413 has no security headers.
+    proof: [stack-tests]
+  - text: >-
+      request_stack installs B8295's Redis request batch layer, the layer that task exports.
+    proof: [stack-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-tests
+      why: the request size or HSTS config sections are missing or parse wrongly
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::(request_size_limit|security_headers)::/)'
+    - id: size-limit-tests
+      why: the size limit layer is missing or answers wrongly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::request_size_limit::/)'
+    - id: gzip-tests
+      why: the buffered gzip layer or the Accept-Encoding parser is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::gzip_buffered::/) - test(replays_the_accept_encoding_corpus)'
+    - id: security-header-tests
+      why: the security headers layer is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::security_headers::/)'
+    - id: stack-tests
+      why: the three layers are not composed in order or not installed in server.rs
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^middleware::request_stack::/)'
+    - id: accept-encoding-fuzz
+      why: the Accept-Encoding fuzz target or its replayed corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-server/fuzz/fuzz_targets/accept_encoding.rs &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/accept_encoding)" &&
+        grep -q 'name = "accept_encoding"' crates/betterlite-server/fuzz/Cargo.toml &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_accept_encoding_corpus)'
+oracle_cases:
+  - tools/oracle/cases/request-middleware/security-headers-default.yaml
+  - tools/oracle/cases/request-middleware/security-headers-hsts.yaml
+  - tools/oracle/cases/request-middleware/gzip-large-accepted.yaml
+  - tools/oracle/cases/request-middleware/gzip-large-refused.yaml
+  - tools/oracle/cases/request-middleware/gzip-small-body.yaml
+deviations:
+  - what: With max_request_size_mb unset, betterlite keeps axum's 2 MiB body limit on the Bytes and Json extractors; LiteLLM has no limit.
+    why: Rule bounded-inputs asks for a cap on every inbound body, and the admin JSON routes already rely on the 2 MiB. Setting max_request_size_mb replaces it for all routes.
+  - what: max_request_size_mb is enforced without a license.
+    why: README Decisions enables the MIT premium_user branches, and B744 did the same for its own size check. No oracle case can cover the 413, because the oracle's LiteLLM runs unlicensed and skips the check; unit tests cover it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20014-L20018
+  - what: LITELLM_ENABLE_HSTS is read once at startup, not on every response.
+    why: Environment reads belong to the config crate, and the value cannot change in a running process.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/security_headers_middleware.py#L29-L30
+  - what: Gzip output bytes differ from Python's gzip.compress (header mtime and compressor), though the decoded body, Content-Encoding, Content-Length semantics and Vary are the same.
+    why: flate2 writes mtime 0 and its own deflate stream.
+  - what: Gzip applies to a response whose body size is known in advance, where LiteLLM looks at whether the first ASGI body message is the last.
+    why: axum has no body message boundary; a known exact size is the same set of responses (JSON and text replies) and streams stay untouched.
+  - what: A request body that goes over the limit while the handler is already streaming its response cannot be turned into a 413 or abort the response.
+    why: The 413 replaces the response only when the inner service has not yet returned one, as in LiteLLM when response start was already sent the error is re-raised; axum cannot abort after the head is sent without a special error path.
+out_of_scope:
+  - "get_request_root_path, the root path middleware and the SERVER_ROOT_PATH settings: B4200, already merged."
+  - "get_custom_url, join_paths and PROXY_BASE_URL: B7323."
+  - "AdmissionControlMiddleware, InFlightRequestsMiddleware, BillableRequestMetricsMiddleware, BudgetReservationReleaseMiddleware, RedisRequestBatchMiddleware and PrometheusAuthMiddleware: other tasks own these files."
+  - "check_if_request_size_is_safe and the response size check in auth_utils.py: B744."
+  - "A body limit for LLM data-plane routes that is larger than 2 MiB without configuration: not decided here, see the architect note."
+pitfalls:
+  - The size limit sits outside gzip and security headers in LiteLLM (it is added after them), so its 413 has neither the security headers nor a gzip body; install the layers in that order.
+  - 'The 413 body is {"error": "..."} with no type, param or code, unlike every other betterlite error; json_error would change what a client sees.'
+  - Content-Length equal to the limit passes and so does a total byte count equal to it; both tests are strictly greater than.
+  - A zero or negative max_request_size_mb disables the check, it does not mean "reject everything".
+  - DefaultBodyLimit::max must be applied with the same byte count when the limit is on, otherwise a configured 10 MB limit still fails at axum's 2 MiB on Bytes and Json routes.
+  - 'Vary is appended to without a duplicate check, so a response that already says "Vary: Accept-Encoding" ends with "Accept-Encoding, Accept-Encoding".'
+  - Vary is added to negotiable responses even for clients that did not ask for gzip; a response under 500 bytes gets no Vary at all.
+  - A q value that is not a number makes that coding weight 0, so "gzip;q=abc" means gzip is refused, and "gzip, *;q=0" still accepts gzip.
+  - Compress with spawn_blocking only for bodies of 1048576 bytes or more; a smaller body compressed there would pay a thread hop for nothing, and a large one compressed inline would block the async runtime.
+  - 'Setting a header that exists must not replace it: use the entry API or a contains check, since HeaderMap::insert overwrites.'
+  - Router::layer may not wrap the fallback in the way you expect; test a 404 and a 405 for the security headers, and wrap with fallback_service as RootPaths::wrap does if they come back bare.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

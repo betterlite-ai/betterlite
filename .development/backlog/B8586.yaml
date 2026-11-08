@@ -1,0 +1,13 @@
+id: B8586
+milestone: M8 platform
+title: Manual cost map and Anthropic beta header reload routes
+status: todo
+depends_on: [B8385, B052, B194, B725, B959, B2314, B4145, B8397]
+file: tasks/B8586-reload-routes.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -199,7 +199,16 @@ fn run_group_capture(input: GroupCaptureInput<'_>) -> Result<Vec<bool>, OracleEr
         mock,
         |http_client, gateway| capture_gateway(http_client, gateway, cases),
     )?;
-    compare_group(root, cases, &captures)
+    let prepared_cases = comparison_cases(cases, options.self_check);
+    compare_group(root, &prepared_cases, &captures)
+}
+
+pub(crate) fn comparison_cases(cases: &[Case], self_check: bool) -> Vec<Case> {
+    let mut owned = Vec::with_capacity(cases.len());
+    for case in cases {
+        owned.push(case.with_self_check(self_check));
+    }
+    owned
 }
 
 // Shared by the Http and Scenario pipelines: start a gateway, capture against it, then the next.

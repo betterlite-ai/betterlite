@@ -132,7 +132,7 @@ deviations:
 out_of_scope:
 - B1031 owns upload helpers, B1032 create_file, B1033 get_file_content and B087 delete_file. B1017 owns list-page records and B1019 limit/ID codecs.
 - Managed hook retrieval L1361-L1370 and managed listing L1780-L1788 have no reachable MIT caller. They do not justify B1018 ownership filtering or managed repository dependencies here.
-- B1020/B886 own credential grants and their errors; B003/B004 own validation/error serialization and custom headers; B124 owns callback execution/status persistence.
+- B1020/B886 own credential grants and their errors; B003/B004 own validation/error serialization and custom headers; B8393 and B8394 own callback execution and B8395 status persistence (update_request_status).
 pitfalls:
 - target_model_names list splitting does not trim spaces or remove empty entries.
 - List success hooks replace a page only when they return a single OpenAIFileObject.

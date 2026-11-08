@@ -1,0 +1,125 @@
+id: B8602
+title: Streaming chunk shaping and SSE frame helpers
+description: >-
+  Build the per-chunk helpers of LiteLLM's proxy streaming generator (litellm/proxy/proxy_server.py L9344-L9623): the stream item types, the client model and fallback metadata reads, the fallback metadata event, the model restamp, the chunk serializer, the injected usage check and the SSE frame helpers. They are pure functions over JSON, and the SSE data generator (B8604) calls them in order. Everything goes in crates/betterlite-server, module `stream_chunks` (stream_chunks.rs and stream_chunks/), with tests in stream_chunks/tests.rs, plus one config section. Every name stays at 30 characters or fewer.
+
+  Types. `ChunkKind` is `ModelStream` (LiteLLM's ModelResponseStream), `ModelFull` (ModelResponse), `Event` (any other pydantic object that reaches the generator, such as a Responses API event; these accept extra fields) and `Plain` (a dict). `StreamChunk { body: Map<String, Value>, kind: ChunkKind, hidden: Map<String, Value> }`: `body` holds the fields the object would dump (null fields may be present and are dropped when serialized) and `hidden` is its `_hidden_params`. `StreamItem` is `Chunk(StreamChunk)`, `Bytes(Bytes)` or `Text(String)`, the three shapes the generator sees. `StreamItem::hidden_params(&self) -> Option<&Map<String, Value>>` gives the chunk's map and None for bytes and text. Constants: `DONE_FRAME` is "data: [DONE]\n\n", `SSE_FRAME_DELIMITERS` is ["\r\n\r\n", "\n\n", "\r\r"] in that order and `MAX_RAW_SSE_BUFFER_CHARS` is 8 * 1024 * 1024.
+
+  `client_requested_model(request_data: &Map<String, Value>) -> String` replaces _get_client_requested_model_for_streaming (L9344-L9356): `_litellm_client_requested_model` when it is a JSON string, else `model` when it is a string, else "".
+  `is_positive_int_like(value: Option<&Value>) -> bool` replaces _is_positive_int_like (L9359-L9363), Python's `int(value) > 0` with TypeError and ValueError giving false. A JSON integer counts as itself, a JSON float is truncated toward zero (2.7 is 2, 0.9 is 0), and a string is parsed like Python's int(): surrounding whitespace, an optional sign, ASCII digits with single underscores between digits, and nothing else ("2.5" fails). Everything else is false.
+  `include_fallback_errors(expose: bool, request_data) -> bool` replaces _should_include_fallback_errors (L9366-L9369): `expose` is `general_settings.expose_fallback_errors_to_caller`, and the request must also carry `include_fallback_errors` as the JSON bool true.
+  `FallbackMeta { attempted: bool, model: Option<String>, errors: Vec<Map<String, Value>> }` and `fallback_metadata(hidden: &Map<String, Value>) -> FallbackMeta` replace _get_streaming_fallback_metadata (L9372-L9386). `hidden["additional_headers"]` must be an object and its `x-litellm-attempted-fallbacks` must be positive-int-like, or the answer is not attempted with no model and no errors. Then attempted is true, `model` is `x-litellm-model-group` when it is a non-empty string, and `errors` comes from B398's port of get_fallback_errors_from_headers in betterlite-router's fallback_observations module (a list keeps its object items, a string is parsed as a JSON list, anything else gives no errors). Call that function; do not copy it.
+  `fallback_event_frame(model: Option<&str>, errors: &[Map<String, Value>], created: i64) -> String` replaces _format_fallback_metadata_sse_event (L9389-L9407). The payload has id "litellm-fallback-metadata", object "chat.completion.chunk", `created` (the caller passes the unix seconds), model (the model or ""), choices [] and `litellm_fallback` with `fallback_model` (the model or JSON null) and `errors`. The frame is "data: " + JSON + "\n\n".
+
+  `should_return_raw_model_name(request_data) -> bool` replaces _should_return_raw_model_name (common_request_processing.py L279-L283): true when `metadata` or `litellm_metadata` is an object whose `_complexity_router_return_raw_model_name` is the JSON bool true.
+  `RouterCheck` is `fn(&str) -> bool`, the Azure Model Router test (_is_azure_model_router_request, common_request_processing.py L1291-L1310). This task takes it as a value and never names the real check: the wave 17 inference wiring part passes B562's is_model_router_call, called with the model name and no hidden params, and the tests pass fakes such as a function that answers true only for "my-model-router".
+  `RestampInput<'a> { requested_model: &'a str, request_data: &'a Map<String, Value>, fallback_attempted: bool, fallback_model: Option<&'a str>, is_model_router: RouterCheck }` and `restamp_chunk_model(item: &mut StreamItem, input: &RestampInput<'_>, mismatch_logged: bool) -> bool` replace _restamp_streaming_chunk_model (L9410-L9473); the result is the new mismatch_logged. The caller builds RestampInput, so the check is named where the input is made. In order: when should_return_raw_model_name is true, change nothing. The target is `fallback_model` when a fallback was attempted, else `requested_model`; change nothing when the target is missing or empty or the item is not a Chunk. When no fallback was attempted, change nothing when `(input.is_model_router)(input.requested_model)` is true, and change nothing when `request_data["fastest_response"]` is the JSON bool true. When `body["model"]` already equals the target, change nothing. Otherwise, the first time only, log at debug "litellm_call_id={id}: streaming chunk model mismatch - target={target} downstream={downstream} fallback_was_attempted={flag}. Overriding chunk model to target." and return true; then set `body["model"]` to the target for every chunk kind, adding the key when it is missing.
+  `serialize_chunk(chunk: &StreamChunk) -> String` replaces _serialize_streaming_chunk and _fast_serialize_simple_model_response_stream (L9476-L9560). LiteLLM writes `model_dump_json(exclude_none=True, exclude_unset=True)`, and its fast path for simple text chunks writes the same keys and values, so there is one rule: the body as compact JSON with every null-valued key removed from every object at any depth (null items inside arrays stay). A `Plain` chunk is written as its body JSON with nothing removed; LiteLLM writes the dict's Python repr there, and docs/compatibility.md covers repr text.
+  `is_usage_artifact(chunk: &StreamChunk) -> bool` replaces _is_injected_stream_usage_artifact and _is_empty_streaming_choice (L9563-L9579). Only a ModelStream chunk can be one, and only when its `provider_specific_fields` is missing or null. Then it is one when every entry of `choices` is empty, so a missing, null or empty list counts. A choice is empty when `finish_reason` and `logprobs` are missing or null and `delta` is missing, null, or an object whose values are all null.
+  `chunk_response_text(chunk: &StreamChunk) -> String` is the standard branch of litellm.get_response_string (utils.py L5419-L5432), which the generator uses to grow `str_so_far`. Join, for every choice, `delta.content` of a ModelStream chunk or `message.content` of a ModelFull chunk when it is not null: a string as it is and any other value as its JSON text. Other kinds give "".
+  `sse_data_frame(payload: &str) -> String` replaces _format_streaming_sse_chunk (L9603-L9606): "data: " + payload + "\n\n". `pop_sse_frame(buffer: &str) -> (Option<String>, String)` replaces _pop_complete_sse_frame (L9614-L9623): find each delimiter's first position, take the earliest, and return the text up to and including that delimiter as the frame plus the rest; with no delimiter return (None, the whole buffer). `ends_with_frame_delimiter(text: &str) -> bool` is the `endswith(_SSE_FRAME_DELIMITERS)` test the generator uses twice.
+
+  Config. Section `fallback_errors` in crates/betterlite-config/src/sections/fallback_errors.rs owns `general_settings.expose_fallback_errors_to_caller`, a bool that defaults to false (LiteLLM reads it with general_settings.get, so missing or null means off). The section type is `FallbackErrors { expose_to_caller: bool }` with a Default of false. It reaches the generator, and B8605's pre-call flag drop, as config.sections.fallback_errors. Its test `sections::fallback_errors::tests::loads_expose_flag` loads the production Config with the key true, false and missing.
+
+  Tests live in stream_chunks/tests.rs and the section's tests.rs. Helper oracle cases compare the pure functions with LiteLLM through the operation named b8602; the Python side builds a ModelResponseStream or ModelResponse from the case JSON for ModelStream and ModelFull chunks, a dict for Plain, and masks `created` in the fallback event. The Rust side of b8602 passes a RouterCheck that always answers false, so the restamp cases only use model names that LiteLLM's AzureFoundryModelInfo.is_model_router_call rejects (plain names such as gpt-4o); the router skip is proven by unit tests with a fake check.
+scope:
+  paths:
+  - crates/betterlite-server/src/stream_chunks.rs
+  - crates/betterlite-server/src/stream_chunks/**
+  - crates/betterlite-config/src/sections/fallback_errors.rs
+  - crates/betterlite-config/src/sections/fallback_errors/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/fallback-errors-*
+  - tools/oracle/cases/helpers/stream-chunks/**
+  - tools/oracle/helpers/b8602.py
+  - tools/oracle/helpers/b8602/**
+  - tools/oracle/src/helpers/server/b8602.rs
+  - tools/oracle/src/helpers/server/b8602/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9344-L9407
+  why: The client model read, the positive-int test, the fallback errors gate, the fallback metadata read and the fallback event payload.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9410-L9473
+  why: _restamp_streaming_chunk_model and the order of its skip rules.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9476-L9623
+  why: The fast and canonical serializers, the injected usage check, the frame formatter, the delimiters and the raw frame splitter.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L279-L283
+  why: _should_return_raw_model_name and the two metadata maps it reads.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1291-L1310
+  why: _is_azure_model_router_request, a thin call to AzureFoundryModelInfo.is_model_router_call (B562) that this task receives as its RouterCheck value.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/add_retry_fallback_headers.py#L196-L258
+  why: get_hidden_params_dict and get_fallback_errors_from_headers (B398), which the fallback metadata read calls.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5389-L5432
+  why: get_response_string; only its last branch applies to chat chunks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/base.py#L29-L30
+  why: Responses API events allow extra fields, which is why the restamp adds a model key to them.
+dod:
+- text: >-
+    client_requested_model prefers a string _litellm_client_requested_model, then a string model, then "",
+    and is_positive_int_like accepts 2, 2.7, "3" and " +4 " and rejects 0, 0.9, "2.5", "abc" and null.
+  proof: [chunk-tests, oracle, helper-python]
+- text: >-
+    fallback_metadata reports no fallback without additional_headers or a positive attempt count, reports the model group only when it is
+    a non-empty string, and reads the errors from a list or a JSON string; fallback_event_frame writes the fixed id, object, empty choices,
+    "" as the top-level model and null as fallback_model when there is no model.
+  proof: [chunk-tests, oracle, helper-python]
+- text: >-
+    restamp_chunk_model sets the client model (or the fallback model after a fallback) on chat chunks and Responses events, adds the key
+    when it is missing, leaves bytes, text and matching chunks alone, and skips the raw-name flag, an empty target, an Azure model router
+    name and fastest_response, the last two only when no fallback happened; it logs the mismatch once.
+  proof: [chunk-tests, oracle, helper-python]
+- text: >-
+    serialize_chunk drops null keys at every depth for model and event chunks and keeps a plain chunk's body as it is;
+    is_usage_artifact is true only for a ModelStream chunk without provider_specific_fields whose choices are all empty or absent.
+  proof: [chunk-tests, oracle, helper-python]
+- text: >-
+    pop_sse_frame splits at the earliest of the three delimiters with the delimiter kept in the frame, and returns no frame and the whole
+    buffer when none is present; sse_data_frame and chunk_response_text match LiteLLM.
+  proof: [chunk-tests, oracle, helper-python]
+- text: general_settings.expose_fallback_errors_to_caller loads as true, false and missing (false), and include_fallback_errors needs both the setting and the request flag.
+  proof: [config-tests, config-corpus, chunk-tests]
+checks:
+  optional: [mutants]
+  commands:
+  - id: chunk-tests
+    why: a chunk helper, the restamp rules, the serializer, the usage check or the frame helpers are missing or wrong
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^stream_chunks::/)'
+  - id: config-tests
+    why: the expose_fallback_errors_to_caller key is never loaded by the real Config loader
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::fallback_errors::tests::loads_expose_flag($|::)/)'
+  - id: config-corpus
+    why: the new key has no config replay seeds
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/fallback-errors-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the chunk helpers have no pinned LiteLLM comparison through the b8602 helper
+    run: grep -qE '^[[:space:]]+b8602:' tools/oracle/fuzz/corpus/helper_case/b8602-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/stream-chunks/requested-model-and-int-like.yaml
+- tools/oracle/cases/helpers/stream-chunks/fallback-metadata-headers.yaml
+- tools/oracle/cases/helpers/stream-chunks/fallback-event-payload.yaml
+- tools/oracle/cases/helpers/stream-chunks/restamp-chat-and-events.yaml
+- tools/oracle/cases/helpers/stream-chunks/restamp-skip-rules.yaml
+- tools/oracle/cases/helpers/stream-chunks/serialize-drops-nulls.yaml
+- tools/oracle/cases/helpers/stream-chunks/usage-artifact-shapes.yaml
+- tools/oracle/cases/helpers/stream-chunks/sse-frame-split.yaml
+- tools/oracle/cases/helpers/stream-chunks/response-text.yaml
+deviations:
+- what: Chunks are JSON maps tagged with a ChunkKind instead of pydantic objects, so the restamp cannot fail to set a model and LiteLLM's "failed to override chunk.model" error log has no counterpart.
+  why: The objects that reach the generator either have a model field or accept extra fields, so the visible output is the same.
+out_of_scope:
+- "data_generator (L9280-L9287): no caller at the pin. async_assistants_data_generator (L9290-L9341): B089."
+- "_apply_streaming_chunk_hooks (L9582-L9600) and async_data_generator (L9830-L10079): B8604. The keepalive helpers (L9626-L9827): B8603."
+- "get_hidden_params_dict and get_fallback_errors_from_headers (add_retry_fallback_headers.py): B398, and this task calls them. AzureFoundryModelInfo.is_model_router_call: B562; this task only takes a RouterCheck, and the wave 17 inference wiring part passes B562's is_model_router_call."
+- "The rest of litellm/proxy/proxy_server.py: owners by area are listed in the proxy_server.py inventory head of B1216, B1125, B850, B848, B779, B899, B849 and B851."
+pitfalls:
+- 'x-litellm-attempted-fallbacks as the string "2.5" is not a fallback (Python int("2.5") fails), while the number 2.5 is (int(2.5) is 2).'
+- 'A fallback can be attempted with no usable x-litellm-model-group; the restamp target is then missing and the chunk keeps the model the provider sent.'
+- 'Responses API events get a top-level "model" key from the restamp, because LiteLLM sets the attribute on objects that allow extra fields.'
+- 'The Azure model router and fastest_response skips apply only before a fallback; after one, the fallback model is stamped even on those requests.'
+- 'The router check is called with `requested_model` only, never with the fallback model or the chunk''s own model, and it is skipped entirely once a fallback was attempted.'
+- 'The fallback event has "model": "" at the top level but "fallback_model": null inside litellm_fallback when no model group is known.'
+- 'is_usage_artifact is true for a chunk whose choices list is empty or missing, since all() over nothing is true.'
+- 'pop_sse_frame picks the earliest position across all three delimiters, not the first delimiter in list order that appears.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

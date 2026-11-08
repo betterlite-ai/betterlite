@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 async-trait = "0.1.92"
+base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-http = { path = "../betterlite-http" }
@@ -22,6 +23,7 @@ indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 minijinja = { version = "3.0.4", features = ["builtins", "fuel", "preserve_order", "serde"] }
 minijinja-contrib = { version = "3.0.4", default-features = false, features = ["pycompat"] }
+nix = { version = "0.31.3", default-features = false, features = ["feature"] }
 opentelemetry = { version = "0.33.1", default-features = false, features = ["logs", "metrics", "trace"] }
 opentelemetry-http = { version = "0.33.1", default-features = false }
 opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["grpc-tonic", "http-json", "http-proto", "logs", "metrics", "trace"] }
@@ -32,6 +34,7 @@ parquet2 = { version = "0.17.2", default-features = false, features = ["snappy"]
 pep440_rs = "0.7.3"
 percent-encoding.workspace = true
 prost = "0.14.4"
+rand = { version = "0.10.3", default-features = false, features = ["std_rng"] }
 regex.workspace = true
 rust_decimal.workspace = true
 ryu = "1.0.23"
@@ -42,6 +45,7 @@ serde_path_to_error = "0.1.20"
 serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }
 sha2.workspace = true
 strum = { version = "0.28.0", features = ["derive"] }
+tempfile = "3.27.0"
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tokio-util = { version = "0.7.20", features = ["rt"] }

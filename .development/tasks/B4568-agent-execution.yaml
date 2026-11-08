@@ -97,9 +97,9 @@ deviations:
   - what: process::replace (or the native equivalent) is called only for the agent binary, never for a proxy process or fallback.
     why: The betterlite proxy runs out-of-process as a managed child; the CLI does not launch or manage a local gateway.
 out_of_scope:
-  - The banner shown when starting the gateway, and the gateway startup contract. B121 owns the banner; the native launcher replaces the Python invocation with a concrete executable/startup contract.
+  - The banner shown when starting the gateway, and the gateway startup contract. B4175 owns the banner and B8375 the proxy CLI startup; the native launcher replaces the Python invocation with a concrete executable/startup contract.
   - The HTTPClient for fetching models. B169 (or its leaf) owns the client; this task injects it as an injected requests.get dependency.
-  - Storage of credentials and token refresh. B135 (or its leaf) owns token storage; this task injects it as secrets read through context_secret_vault.
+  - Storage of credentials and token refresh. B4590 (keyring secret storage) and B4591 (token records and freshness) own token storage; this task injects it as secrets read through context_secret_vault.
 pitfalls:
   - _PREPARERS maps binary name (e.g. "codex", "pi") to a preparer function, placed above both prepare_codex and prepare_pi so neither sees the other.
   - _codex_debug_models must call _windows_command to quote the binary and args for cmd.exe on Windows; the result goes through subprocess.run exactly.

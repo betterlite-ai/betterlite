@@ -30,7 +30,8 @@ description: >-
   status is "failed", raise an error with the HTTP status (200 stays 200) and message error.message, or "Unknown Perplexity
   error"; unreadable JSON is ignored; anything else goes to B508's reply decoder. Native websocket support is false.
 
-  perplexity_search. Implement the SearchProvider trait from B3270. Display name is Perplexity and the request is a POST.
+  perplexity_search. Implement the SearchProvider trait from B3270. It implements the widened signatures from B3276 (transform_search_request gets api_key, api_base and headers; complete_url gets api_key).
+  Display name is Perplexity and the request is a POST.
   Credentials follow B3270's server key policy with the key variable PERPLEXITYAI_API_KEY only (PERPLEXITY_API_KEY is not
   read here), base variable PERPLEXITY_API_BASE and default https://api.perplexity.ai. A missing key is an error whose text is
   "PERPLEXITYAI_API_KEY is not set. Set `PERPLEXITYAI_API_KEY` environment variable." Success sets Authorization: Bearer <key>
@@ -147,7 +148,7 @@ out_of_scope:
   - B6120 owns chat/transformation.py and cost_calculator.py.
   - B506, B507 and B508 own the OpenAI Responses base transforms this config extends, including _validate_input_param and the ordinary request and reply decode.
   - B2202 owns BaseLLMException, B006 owns EmbeddingResponse and the base embedding path, B3270 owns the search trait, records and server key policy, and B3511 owns the DecisionsProviderConfig trait.
-  - B041 wires Perplexity into dispatch.rs and adds the HTTP cases for chat, embeddings, Responses, search and decisions. This task touches no dispatch file.
+  - B8310 wires Perplexity into dispatch and builds its embedding arm; Perplexity chat goes through B024's OpenAI-compatible arm. This task touches no dispatch file.
   - Search execution, search tool registry and search pricing belong to B3272, B3271 and B3274.
   - PerplexitySearchRequest is only a typed request body here; the LiteLLM TypedDict has no other caller.
 pitfalls:

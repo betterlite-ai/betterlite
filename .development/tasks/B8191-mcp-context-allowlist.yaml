@@ -1,0 +1,90 @@
+id: B8191
+title: MCP request context, client allowlist, elicitation and legacy callbacks
+description: >-
+  Port four small gateway files. mcp_context.py keeps per-request state in ContextVars. Rust has
+  no module state and no ContextVars, so the same fields become an explicit McpContext struct
+  that the caller builds and passes down. Name every field the Python sets and reads.
+
+  client_allowlist.py decides whether an MCP client may use the gateway, from its name and
+  version. Port the matching rules and the allow and deny messages exactly.
+
+  elicitation_handler.py answers a server's elicitation request by building the form result or
+  the decline. legacy_callbacks.py adapts the old callback style so servers that still use it
+  keep working.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/request_context.rs
+    - crates/betterlite-mcp/src/request_context/**
+    - crates/betterlite-mcp/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-request-context/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-request-context-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_context.py#L1-L42
+    why: The per-request fields that become McpContext.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/client_allowlist.py#L1-L171
+    why: Allowlist matching rules and messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/elicitation_handler.py#L1-L173
+    why: Elicitation request handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/legacy_callbacks.py#L1-L81
+    why: Legacy callback adaptation.
+
+dod:
+  - text: >-
+      McpContext carries every field mcp_context.py stores, built by the caller and passed by
+      reference. No static, thread local or task local holds it.
+    proof: [context-tests]
+  - text: >-
+      The allowlist accepts and rejects each client name and version pattern the Python does, with
+      the same message text.
+    proof: [context-tests, context-oracle]
+  - text: >-
+      Elicitation requests produce the same accepted, declined and cancelled results as the
+      Python for each input shape.
+    proof: [context-tests, context-oracle]
+  - text: Legacy callbacks produce the same calls as the Python for each callback kind.
+    proof: [context-tests]
+  - text: Every mutant in the allowlist and elicitation logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: context-tests
+      why: A field, allowlist rule, elicitation branch or callback differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-mcp --no-tests=fail
+        -E 'test(/^request_context::/)'
+    - id: context-oracle
+      why: Allowlist or elicitation answers differ from LiteLLM on the same input.
+      run: >-
+        cargo run --locked -p betterlite-oracle -- --self-check
+        tools/oracle/cases/helpers/mcp-request-context
+
+oracle_cases: []
+
+deviations:
+  - what: Per-request state is an explicit McpContext argument, not a ContextVar.
+    why: The Rust rules forbid module state and ContextVars. Callers pass the context down.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_context.py#L1-L42
+
+out_of_scope:
+  - Wire result types and error types (B8190).
+  - The sampling handler (B8192, B8193).
+
+pitfalls:
+  - >-
+    A Python ContextVar returns a default when unset. Decide the Rust default per field from that
+    default and name it in a case. Do not use Option for a field the Python always reads.
+  - >-
+    Allowlist matching is case sensitive or not exactly as in the Python. Read the comparison
+    before writing the matcher.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

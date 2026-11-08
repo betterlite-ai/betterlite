@@ -6,7 +6,7 @@ description: >-
   composition module. B938 lifecycle, B939 compact/input_tokens, B940 Cursor and B941 websocket factories mount from their own route stubs, so do not mount or repeat them here. B1100 reads the request body;
   B004 owns common_processing_pre_call_logic, required-input validation, base_process_llm_request,
   create_response and exception translation. Use B732/B756/B855 admitted principals and B929's
-  installed ID security. B124 supplies failure-hook dispatch and B104 blocked-response translation
+  installed ID security. B8399 supplies failure-hook dispatch and B104 blocked-response translation
   through explicit typed ports; do not copy their implementations into this route.
 
   Select polling with B935 using raw background default=false and model default="". If selected,
@@ -215,7 +215,7 @@ deviations:
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L327-L343
 out_of_scope:
 - B940 owns endpoint tool/Cursor helpers and Cursor routes; B938 owns retrieve/delete/input-items/cancel routes, B939 compact/input_tokens and B941 websocket routes/helpers.
-- B104 owns blocked-response/SSE construction; B004 owns common request processing, required parameters and error envelopes, B124 failure callback dispatch.
+- B3673 owns blocked-response/SSE construction, with B3663's blocked usage; B004 owns common request processing, required parameters and error envelopes, B8399 failure callback dispatch.
 - B955 owns MCP and emulated file-search internals; B930 affinity is installed by its router owner B324, not by this create route.
 - Enterprise managed-file storage after the import is unreachable in this checkout; its warning-and-skip/storage-error paths are excluded with the enterprise implementation.
 - Accelerator selection in litellm/rust_bridge is excluded; B158 owns Python module binding machinery around the retained public call signature.

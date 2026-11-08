@@ -84,7 +84,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/compatible-chat-plan/model-prefix-and-base-model.yaml
 deviations: []
 out_of_scope:
-  - B038 supplies provider bindings; Groq, WatsonX and SageMaker retain their own subclasses and signed/custom-decoder setup in B041/B042 leaves.
+  - B038 supplies provider bindings; Groq, WatsonX and SageMaker retain their own subclasses and signed/custom-decoder setup in their leaves (Groq B5833, WatsonX B5971, SageMaker B5840).
   - B609 owns the fake iterator's chunk semantics; B1427 owns legacy line parsing and B005 stream cancellation/backpressure primitives.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as compatible_chat_plan in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/compatible_chat_plan.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/compatible_chat_plan.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

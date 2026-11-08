@@ -23,7 +23,7 @@ description: >-
   merge incoming fields over it and upsert the whole JSON-string row. Existing unknown keys
   survive this write and appear in PATCH's returned settings even though GET hides them.
   Apply runtime flags after DB persistence, set the sanitized cache, and only then submit the
-  B124 audit record through B065. Do not reject config-owned fields here: the DB write can
+  B8594 audit record through B065. Do not reject config-owned fields here: the DB write can
   succeed while the configured effective value still wins on GET. Cache/application failures
   after upsert do not roll the row back. Native tests exercise those boundaries and GET's
   refresh side effects; multi-step HTTP oracle cases prove partial patches, unchanged derived

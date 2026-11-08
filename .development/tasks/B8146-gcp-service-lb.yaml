@@ -1,0 +1,152 @@
+id: B8146
+title: "GCP Terraform module: Cloud Run service, load balancer and outputs"
+description: >-
+  Finish the GCP module in packaging/terraform/gcp/: the betterlite Cloud Run service, the migration job, the external HTTPS load balancer and the outputs. LiteLLM runs gateway, backend and ui as separate services behind path rules.
+  betterlite is one binary that serves everything on port 4000 (B5071 image, CMD ["--port", "4000"]), so this module has one service, one serverless NEG, one backend service and a URL map with only a default service.
+  It uses the names from B8144 and B8145: local.name, local.labels, var.project_id, var.region, google_vpc_access_connector.this, google_sql_database_instance.writer and reader, google_redis_instance.this,
+  google_service_account.runtime, the secrets, both buckets and local.proxy_config_hash. With create_runtime = false nothing in this part is created except outputs that read the stores.
+
+  variables_service.tf: image (string, no default, must be non-empty), cpu ("2"), memory ("4Gi"), min_instances (1), max_instances (10), concurrency (80), timeout_seconds (300), lb_domains (list(string), []), allow_plaintext_lb (bool, false),
+  extra_env (map(string), {}), connection_pool_enabled (bool, false), pool_max_db_connections (20), pool_max_client_conn (1000) and otel_endpoint ("").
+
+  cloudrun.tf: one google_cloud_run_v2_service.betterlite (count create_runtime): ingress INTERNAL_LOAD_BALANCER, service account runtime, container port 4000, args ["--port", "4000"], vpc_access connector with egress PRIVATE_RANGES_ONLY,
+  scaling min and max, startup_probe http_get /health/readiness (period 10, failure_threshold 12), liveness_probe /health/liveliness. Env: DATABASE_HOST (writer private IP), DATABASE_PORT 5432, DATABASE_USER, DATABASE_NAME, DATABASE_HOST_READ_REPLICA
+  (reader private IP), DATABASE_PORT_READ_REPLICA, REDIS_HOST, REDIS_PORT when Redis exists (REDIS_SSL=true only when redis_transit_encryption), STORE_MODEL_IN_DB=true, GCS_BUCKET_NAME (the data bucket), LITELLM_CONFIG_BUCKET_NAME,
+  LITELLM_CONFIG_BUCKET_OBJECT_KEY ("config.yaml"), LITELLM_CONFIG_BUCKET_TYPE=gcs and PROXY_CONFIG_HASH when a proxy_config exists, the pool variables when enabled, OTEL_ENDPOINT when set, then var.extra_env with a caller name replacing a module name.
+  Secrets as env from Secret Manager: LITELLM_MASTER_KEY, LITELLM_LICENSE and UI_PASSWORD when they exist, DATABASE_PASSWORD, plus every extra_secrets entry. google_cloud_run_v2_service_iam_member gives allUsers roles/run.invoker (the LB is the gate;
+  ingress blocks direct calls). A precondition: connection_pool_enabled needs the database (it is always on in this module, so the check guards a future create flag).
+  google_cloud_run_v2_job.migrate (count create_runtime): the same image, command ["betterlite-db-admin"], args ["migrate"], the database env and DATABASE_PASSWORD, max_retries 0, the connector. terraform_data.migration runs
+  `gcloud run jobs execute <job> --region <region> --project <project> --wait` through local-exec and fails the apply on a non-zero exit. The service has depends_on terraform_data.migration. Needs the gcloud CLI on the machine that applies;
+  the README (B8147) says so.
+
+  load_balancer.tf (count create_runtime): google_compute_global_address, google_compute_region_network_endpoint_group (SERVERLESS, cloud_run block with the service name), google_compute_backend_service (protocol HTTPS, EXTERNAL_MANAGED, the NEG as the only backend,
+  timeout from timeout_seconds), google_compute_url_map (default_service only, no path matcher), google_compute_target_http_proxy and a forwarding rule on 80. When lb_domains is not empty: a second URL map that redirects to HTTPS with
+  https_redirect true and strip_query false, used by the HTTP proxy; google_compute_managed_ssl_certificate for the domains, google_compute_target_https_proxy and a forwarding rule on 443. When lb_domains is empty the HTTP proxy uses the main URL map.
+  A precondition on the backend service fails the plan unless lb_domains is not empty or allow_plaintext_lb is true.
+  outputs.tf: lb_ip (null without the runtime), lb_url (https://first domain, or http://ip), service_url, cloud_run_service_name, runtime_service_account, writer_private_ip, reader_private_ip, redis_host (null without Redis), data_bucket, config_bucket (null
+  without a config), master_key_secret_id, db_password_secret_id, network_id and migration_job_name.
+  bootstrap.tf holds terraform_data.migration only (GCP uses a password, so there is no IAM bootstrap step), so the migration order is in one place.
+
+  Tests with a mocked google provider: tests/service_wiring.tftest.hcl (env and secrets for the default case, caller extra_env override, create_runtime = false builds no service, job, NEG or LB, the pool precondition, the plaintext precondition),
+  tests/load_balancer.tftest.hcl (one NEG, a URL map with no path matcher, redirect map and HTTPS resources only with lb_domains) and tests/connection_pool.tftest.hcl (pool variables absent by default, present when enabled).
+
+scope:
+  paths:
+    - packaging/terraform/gcp/variables_service.tf
+    - packaging/terraform/gcp/cloudrun.tf
+    - packaging/terraform/gcp/load_balancer.tf
+    - packaging/terraform/gcp/outputs.tf
+    - packaging/terraform/gcp/bootstrap.tf
+    - packaging/terraform/gcp/tests/service_wiring.tftest.hcl
+    - packaging/terraform/gcp/tests/load_balancer.tftest.hcl
+    - packaging/terraform/gcp/tests/connection_pool.tftest.hcl
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudrun.tf
+    why: Service stanza, env, secrets, probes and the migration job.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/load_balancer.tf
+    why: NEG, backend service, URL maps, proxies, certificate and forwarding rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/outputs.tf
+    why: Output names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/tests/deps_only.tftest.hcl
+    why: How a deps-only run is asserted.
+
+dod:
+  - text: One Cloud Run service on port 4000 with internal-and-LB ingress, the connector, the readiness startup probe and the liveness probe, and none when create_runtime is false.
+    proof: [gcp-run-literals, gcp-service-tests]
+  - text: The env and secrets match the description and a caller extra_env name replaces the module value.
+    proof: [gcp-env-literals, gcp-service-tests]
+  - text: The migration job runs betterlite-db-admin migrate before the service and fails the apply on a non-zero exit.
+    proof: [gcp-migration-literals]
+  - text: The load balancer has one NEG and one default service, redirects HTTP to HTTPS and builds a certificate only with lb_domains, and refuses plaintext unless allow_plaintext_lb is true.
+    proof: [gcp-lb-literals, gcp-lb-tests]
+  - text: The pool variables reach the service only when enabled.
+    proof: [gcp-pool-tests]
+  - text: The listed outputs exist.
+    proof: [gcp-output-literals]
+  - text: The whole module passes fmt and validate.
+    proof: [gcp-fmt-service, gcp-validate-service]
+
+checks:
+  optional: []
+  commands:
+    - id: gcp-fmt-service
+      why: A Terraform file is not formatted the way terraform fmt writes it.
+      run: >-
+        test -f packaging/terraform/gcp/cloudrun.tf && terraform -chdir=packaging/terraform/gcp fmt -check -recursive -diff
+    - id: gcp-validate-service
+      why: The full module does not validate.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/gcp" TF_IN_AUTOMATION=1 && test -f packaging/terraform/gcp/outputs.tf &&
+        terraform -chdir=packaging/terraform/gcp init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/gcp validate
+    - id: gcp-run-literals
+      why: The service port, ingress or probes differ from the description.
+      run: >-
+        f=packaging/terraform/gcp/cloudrun.tf; grep -q 'container_port *= *4000' $f && grep -q 'INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER' $f && grep -q '/health/readiness' $f && grep -q '/health/liveliness' $f && grep -q '"--port", "4000"' $f && grep -q 'roles/run.invoker' $f
+    - id: gcp-env-literals
+      why: An environment variable or secret name from the description is missing.
+      run: >-
+        for n in DATABASE_HOST DATABASE_HOST_READ_REPLICA DATABASE_PORT_READ_REPLICA DATABASE_PASSWORD REDIS_HOST STORE_MODEL_IN_DB GCS_BUCKET_NAME LITELLM_CONFIG_BUCKET_NAME LITELLM_CONFIG_BUCKET_OBJECT_KEY LITELLM_CONFIG_BUCKET_TYPE PROXY_CONFIG_HASH LITELLM_MASTER_KEY LITELLM_PGBOUNCER_MAX_CLIENT_CONN; do grep -q "\"$n\"" packaging/terraform/gcp/cloudrun.tf || { echo "missing $n"; exit 1; }; done
+    - id: gcp-migration-literals
+      why: The migration job does not run betterlite-db-admin migrate or does not fail on a bad exit code.
+      run: >-
+        f=packaging/terraform/gcp/cloudrun.tf; g=packaging/terraform/gcp/bootstrap.tf; grep -q 'betterlite-db-admin' $f && grep -q '"migrate"' $f && grep -q 'resource "terraform_data" "migration"' $g && grep -q 'gcloud run jobs execute' $g && grep -q -e '--wait' $g
+    - id: gcp-lb-literals
+      why: The load balancer shape differs from the description.
+      run: >-
+        f=packaging/terraform/gcp/load_balancer.tf; grep -q 'SERVERLESS' $f && grep -q 'EXTERNAL_MANAGED' $f && grep -q 'https_redirect *= *true' $f && grep -q 'google_compute_managed_ssl_certificate' $f && grep -q 'allow_plaintext_lb' $f && ! grep -q 'path_matcher' $f
+    - id: gcp-output-literals
+      why: An output from the description is missing.
+      run: >-
+        for o in lb_ip lb_url service_url cloud_run_service_name runtime_service_account writer_private_ip reader_private_ip redis_host data_bucket config_bucket master_key_secret_id db_password_secret_id network_id migration_job_name; do grep -q "^output \"$o\"" packaging/terraform/gcp/outputs.tf || { echo "missing output $o"; exit 1; }; done
+    - id: gcp-service-tests
+      why: The wiring plan tests fail or are missing.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/gcp" TF_IN_AUTOMATION=1 && test -f packaging/terraform/gcp/tests/service_wiring.tftest.hcl &&
+        terraform -chdir=packaging/terraform/gcp init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/gcp test -filter=tests/service_wiring.tftest.hcl
+    - id: gcp-lb-tests
+      why: The load balancer plan tests fail or are missing.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/gcp" TF_IN_AUTOMATION=1 && test -f packaging/terraform/gcp/tests/load_balancer.tftest.hcl &&
+        terraform -chdir=packaging/terraform/gcp init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/gcp test -filter=tests/load_balancer.tftest.hcl
+    - id: gcp-pool-tests
+      why: The connection pool plan tests fail or are missing.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/gcp" TF_IN_AUTOMATION=1 && test -f packaging/terraform/gcp/tests/connection_pool.tftest.hcl &&
+        terraform -chdir=packaging/terraform/gcp init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/gcp test -filter=tests/connection_pool.tftest.hcl
+
+oracle_cases: []
+
+deviations:
+  - what: One Cloud Run service, one NEG and one backend service replace the gateway, backend and ui services, and the URL map has no path matcher.
+    why: betterlite serves the API, the management routes and the admin UI from one process on port 4000.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/load_balancer.tf
+  - what: No num_workers variable, no --workers flag and no config download step; the config comes from the bucket through LITELLM_CONFIG_BUCKET_* variables.
+    why: betterlite is one async process and reads the bucket itself.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudrun.tf
+  - what: The image variable has no default and there is no separate migrations image.
+    why: There is no published betterlite image name yet, and B5071 puts betterlite and betterlite-db-admin in one image.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/variables.tf
+
+out_of_scope:
+  - "The collector sidecar and the Prometheus metrics sidecar, with their tests/collector.tftest.hcl and tests/metrics_sidecar.tftest.hcl. betterlite has no collector process or metrics subcommand to run as a second container yet."
+  - "Billing metrics variables and secrets. Not built in this module."
+  - "Network, Cloud SQL and Redis (B8144), secrets, service account and buckets (B8145), example and README (B8147)."
+
+pitfalls:
+  - "A Cloud Run env var can come from a value or from a secret, not both; DATABASE_PASSWORD and the master key use value_source.secret_key_ref only."
+  - "ingress INTERNAL_LOAD_BALANCER blocks direct calls from the internet, so allUsers run.invoker is safe; do not add a second public path."
+  - "Everything in load_balancer.tf and the service has count = var.create_runtime ? 1 : 0, and outputs use one() or a conditional so create_runtime = false plans cleanly."
+  - "The managed certificate takes time to turn ACTIVE after apply; that is normal, do not add a wait."
+  - "terraform_data.migration needs the gcloud CLI and a logged-in account; plan tests never run it because mocked plans do not execute provisioners."
+  - "REDIS_SSL is set only when redis_transit_encryption is true, and the server CA still has no betterlite owner, so the README (B8147) calls it unsupported for now."
+
+review_level: standard
+budget:
+  max_changed_lines: 1400
+  max_new_expects: 0
