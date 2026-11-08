@@ -1,0 +1,14 @@
+id: B7811
+milestone: M3 providers
+title: MongoDB sidecar vector store
+status: todo
+depends_on: [B1131]
+file: tasks/B7811-mongodb-vector-store.yaml
+covers:
+  - "litellm/llms/mongodb/**"
+parent: B049
+split_from: B049
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

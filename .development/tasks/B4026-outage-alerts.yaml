@@ -17,7 +17,7 @@ description: >-
   reads and writes the two record kinds by cache key, and a write takes an optional TTL in seconds. `OutageDeployments`
   looks up a deployment by id and returns a small `OutageDeployment` view (model, custom_llm_provider, region_name,
   vertex_location, aws_region_name, watsonx_region_name) or None, and its error type is a typed error. `OutageApiBase`
-  returns LiteLLM's get_api_base for a deployment. B7320 builds the real lookup behind it. `OutageSender` calls B4024's send entry point with the message, a
+  returns LiteLLM's get_api_base for a deployment. B7320 builds the real lookup behind it: `betterlite_models::api_base_lookup::get_api_base`. `OutageSender` calls B4024's send entry point with the message, a
   level, alert type outage_alerts and empty alerting metadata. A clock trait gives the current Unix seconds as f64. The
   architect wires real implementations later (B4293 cache, B844 router lookup), so tests use fakes.
 

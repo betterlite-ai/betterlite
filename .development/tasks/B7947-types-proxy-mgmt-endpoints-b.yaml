@@ -1,0 +1,57 @@
+id: B7947
+title: Python types for team, SCIM and SSO endpoints and public endpoints (types/proxy)
+description: >-
+  This task ports `proxy/management_endpoints/team_endpoints.py`, `scim_v2.py`, `ui_sso.py`, `proxy/ui_sso.py` and
+  `proxy/public_endpoints/public_endpoints.py` into `crates/betterlite-python/python/betterlite/types/proxy/management_endpoints/`, `crates/betterlite-python/python/betterlite/types/proxy/ui_sso.py` and
+  `crates/betterlite-python/python/betterlite/types/proxy/public_endpoints/`. It is Python only.
+
+
+  `team_endpoints.py` has the team member permission request and response models and `TeamListItem(LiteLLM_TeamTable)`,
+  `TeamListResponse`. `scim_v2.py` has the SCIM user models and `SCIMUserManager`. `ui_sso.py` has `LiteLLM_UpperboundKeyGenerateParams`,
+  Microsoft Graph TypedDicts, `AccessControl_UI_AccessMode`, `RoleMappings` and `TeamMappings` on `LiteLLMPydanticObjectBase` (B7929).
+  `proxy/ui_sso.py` has two TypedDicts. `public_endpoints.py` has the provider and agent creation info models and
+  `PublicModelHubInfo`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/proxy/management_endpoints/team_endpoints.py
+  - crates/betterlite-python/python/betterlite/types/proxy/management_endpoints/scim_v2.py
+  - crates/betterlite-python/python/betterlite/types/proxy/management_endpoints/ui_sso.py
+  - crates/betterlite-python/python/betterlite/types/proxy/ui_sso.py
+  - crates/betterlite-python/python/betterlite/types/proxy/public_endpoints/**
+  - crates/betterlite-python/tests/test_types_proxy_mgmt_endpoints_b.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L1-L202
+  why: SCIM models.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/ui_sso.py#L1-L189
+  why: SSO mapping models and Microsoft Graph TypedDicts.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/public_endpoints/public_endpoints.py#L1-L85
+  why: Public endpoint models.
+out_of_scope:
+- >-
+  The seven files in B7946.
+pitfalls:
+- >-
+  `TeamListItem` extends `LiteLLM_TeamTable` from `proxy/_types.py`, which has no Python owner. Put the fields on the port class and name the gap in the notes.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_proxy_mgmt_endpoints_b.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

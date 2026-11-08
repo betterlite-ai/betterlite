@@ -1,0 +1,17 @@
+id: B8141
+milestone: M11 distribution
+title: "AWS Terraform module: secrets, IAM, bucket, cluster and database bootstrap"
+status: blocked
+depends_on: [B8140]
+file: tasks/B8141-aws-identity-storage.yaml
+covers:
+  - "terraform/litellm/aws/secrets.tf"
+  - "terraform/litellm/aws/iam.tf"
+  - "terraform/litellm/aws/s3.tf"
+  - "terraform/litellm/aws/bootstrap.tf"
+parent: B154
+split_from: B154
+resolution: null
+superseded_by: null
+blocked_reason: "waits for Max: the gate has no pinned terraform 1.13.x, and terraform init needs registry network for the aws, google and random providers"
+pr: null

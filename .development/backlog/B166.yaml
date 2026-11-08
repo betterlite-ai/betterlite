@@ -2,12 +2,11 @@ id: B166
 milestone: M12 python
 title: Python helpers for token counting, cost, model info, provider lookup, caching and budgets
 status: todo
-depends_on: [B158, B013, B068, B125, B2204]
-file: null
+depends_on: [B158, B8060, B8061, B8062, B8063, B8064, B8065, B8066]
+file: tasks/B166-python-budget-core-helpers.yaml
 covers:
-  - "litellm/{utils,cost_calculator,budget_manager}.py"
-  - "litellm/caching/{__init__,caching}.py"
-  - "litellm/litellm_core_utils/{token_counter,get_llm_provider_logic,get_model_cost_map}.py"
+  - "litellm/budget_manager.py"
+  - "litellm/utils.py"
   - "litellm/litellm_core_utils/core_helpers.py"
 parent: null
 split_from: null

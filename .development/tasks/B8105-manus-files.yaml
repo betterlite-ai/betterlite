@@ -1,0 +1,109 @@
+id: B8105
+title: Manus files API config
+description: >-
+  Build the Manus file provider, in the module manus_files of betterlite-provider. It covers litellm/llms/manus/files/transformation.py
+  (ManusFilesConfig, 369 code lines) over B1015's file provider contract and B1128's file records. Manus has an OpenAI-shaped Files API
+  with a two-step upload: POST /v1/files with {"filename": ...} returns a record with upload_url, then a PUT of the raw bytes to that URL.
+
+
+  Provider and headers. custom_llm_provider is manus. The key is the explicit api_key, else the global api_key, else MANUS_API_KEY; no
+  key raises ValueError "Manus API key is required. Set MANUS_API_KEY environment variable or pass api_key parameter." Headers get
+  API_KEY and Content-Type application/json (the multipart comment in LiteLLM is wrong: it sets JSON). Supported create params are
+  only purpose, and mapping returns the options unchanged. get_error_class returns the OpenAI error type with the status, message and
+  headers.
+
+
+  URL. The base is api_base, else the global api_base, else MANUS_API_BASE, else https://api.manus.im, trailing slashes removed;
+  the URL is {base}/files when the base ends with /v1, else {base}/v1/files. The same function serves every operation.
+
+
+  Create. transform_create_file_request needs create_file_data file; none raises ValueError "File data is required". The shared
+  extract_file_data helper (B1128) gives filename and content; the filename defaults to "file_" plus the current unix seconds. The
+  key is the litellm_params api_key, else global api_key, else MANUS_API_KEY, with the same ValueError when missing (api_key in
+  litellm_params, not the header). The result is a two-step plan: the first request is POST to the files URL with headers API_KEY and
+  Content-Type application/json and data {"filename": name}; the second is PUT to an empty URL (filled from the first reply) with no
+  headers and the content bytes; the upload URL is read from the first reply body under the key upload_url.
+
+
+  Create reply. If litellm_params carries initial_file_response, that stored first reply is used instead of the raw response (the
+  second reply is the PUT result). The file object is id (default empty), bytes (default 0), created_at, filename (default empty),
+  object file, purpose (default assistants), status always uploaded, status_details. created_at parses the first 19 characters of
+  the created_at text (after replacing Z with +00:00) as %Y-%m-%dT%H:%M:%S; an empty or unparseable value gives the current unix seconds.
+  Any failure while building raises ValueError "Error parsing Manus file response: <error>" and logs the exception.
+
+
+  Other operations. Retrieve: URL {files URL}/{id} with the id encoded by B171's encode_url_path_segment (field name file_id), empty
+  params; the reply goes through the create-reply routine with no model. Delete: the same URL and empty params; the reply body is
+  built into the OpenAI file-deleted record. List: the files URL, params {purpose} only when purpose is truthy; the reply data list
+  maps each item through the list parser. The list parser is the same as create except the status is the item's status (default
+  uploaded). Content: URL {files URL}/{id}/content with empty params; the reply is wrapped as binary content.
+scope:
+  paths:
+    - crates/betterlite-provider/src/manus_files.rs
+    - crates/betterlite-provider/src/manus_files/**
+    - tools/oracle/cases/helpers/manus-files/**
+    - tools/oracle/helpers/b8105.py
+    - tools/oracle/helpers/b8105/**
+    - tools/oracle/src/helpers/provider/b8105.rs
+    - tools/oracle/src/helpers/provider/b8105/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L43-L154
+    why: Provider name, headers, supported params, the files URL and the error class.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L156-L215
+    why: The two-step upload plan and its key and filename defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L217-L283
+    why: Create reply, stored first reply and created_at parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L285-L371
+    why: Retrieve, delete and list request and reply mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/files/transformation.py#L373-L427
+    why: The list item parser, file content request and reply.
+  - url: https://open.manus.im/docs/openai-compatibility#file-management
+    why: The two-step upload and file record fields.
+dod:
+  - text: Headers and the key chain follow API_KEY, Content-Type and the MANUS_API_KEY error text.
+    proof: [manus-files-tests, oracle]
+  - text: The create request builds the two-step plan with the default filename and the upload_url location.
+    proof: [manus-files-tests, oracle]
+  - text: The create reply uses the stored first reply when present, forces status uploaded and parses created_at with the current-time fallback.
+    proof: [manus-files-tests, oracle]
+  - text: Retrieve, delete, list and content requests build the encoded URLs and params.
+    proof: [manus-files-tests, oracle]
+  - text: List items keep their own status and default the other fields.
+    proof: [manus-files-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: manus-files-tests
+      why: the manus_files behavior tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^manus_files::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/manus-files/headers-and-url.yaml
+  - tools/oracle/cases/helpers/manus-files/create-request-plan.yaml
+  - tools/oracle/cases/helpers/manus-files/create-request-no-file.yaml
+  - tools/oracle/cases/helpers/manus-files/create-response-stored-first.yaml
+  - tools/oracle/cases/helpers/manus-files/create-response-created-at.yaml
+  - tools/oracle/cases/helpers/manus-files/retrieve-delete-urls.yaml
+  - tools/oracle/cases/helpers/manus-files/list-request-and-items.yaml
+  - tools/oracle/cases/helpers/manus-files/content-url.yaml
+deviations:
+  - what: created_at text is read as UTC. LiteLLM turns it into a unix time with time.mktime, which uses the server's local time zone.
+    why: Manus sends UTC. On a UTC host both agree, and an offset depending on the host zone is a bug, not a feature.
+  - what: The 19-character cut still applies, so a fractional second or an offset in the text is ignored as in LiteLLM.
+    why: Keeps the same parsed seconds as LiteLLM on a UTC host.
+out_of_scope:
+  - "The file contract (BaseFilesConfig, TwoStepFileUploadConfig) belongs to B1015 and B1128; the HTTP upload execution belongs to B2461 and B2480 to B2482."
+  - "Choosing ManusFilesConfig for the manus provider (utils.py L9429) belongs to B2464, which depends on B050."
+  - "files/main.py handling of the manus provider (supported lists, error texts) belongs to the file API tasks."
+  - "The Manus Responses API belongs to B8104."
+pitfalls:
+  - The create reply is built from the first reply stored in litellm_params under initial_file_response, so the PUT response body is ignored when it exists.
+  - status is the fixed text uploaded on create and retrieve, but a list item keeps its own status.
+  - The API key for the two-step plan comes from litellm_params, not from the headers built by validate_environment.
+  - The upload PUT has no headers and an empty URL until the first reply fills the URL from the body key upload_url.
+  - Delete builds FileDeleted from the whole body with keyword arguments, so an unexpected shape fails there rather than being defaulted.
+  - A purpose of "" is dropped from list params because only a truthy purpose is sent.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

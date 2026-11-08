@@ -1,0 +1,22 @@
+kind: helper
+name: responses-bridge-foundry-none-effort
+call:
+  b5651:
+    request:
+      model: gpt-5.6
+      custom_llm_provider: azure_ai
+      reasoning_effort: none
+      tools:
+        - type: function
+          function: {name: lookup, parameters: {}}
+    capabilities:
+      resolved_openai_api_base: https://api.openai.com/v1
+      foundry:
+        supports_native_responses: true
+        chat_rejects_function_tools: true
+        model: gpt-5.6
+        effort: none
+      gpt: {five: true, model: gpt-5.6}
+env: {}
+compare:
+  ignore: []
