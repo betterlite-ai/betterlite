@@ -1,0 +1,13 @@
+id: B8312
+milestone: M3 providers
+title: GigaChat, NLP Cloud, MiniMax, DashScope and Volcengine dispatch
+status: todo
+depends_on: [B2230, B5360, B1084, B7325, B8170, B8171, B8172, B8173, B8174, B8175, B8176, B8177, B8178, B8179]
+file: tasks/B8312-regional-host-dispatch.yaml
+covers: []
+parent: B043
+split_from: B043
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

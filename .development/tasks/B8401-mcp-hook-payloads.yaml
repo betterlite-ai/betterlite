@@ -1,0 +1,54 @@
+id: B8401
+title: MCP tool call payloads for guardrail hooks
+description: >-
+  When an MCP tool call goes through the regular guardrail hooks, ProxyLogging first turns the call into a chat-shaped request and afterwards turns the guardrail's answer back into an MCP decision. Port those pure conversions from utils.py L1447-L1766: `_convert_user_api_key_auth_to_dict`, `_convert_mcp_to_llm_format`, `_convert_llm_result_to_mcp_response`, `_extract_modified_arguments_from_content`, `_parse_arguments_manually`, `_convert_llm_result_to_mcp_during_response`, `_parse_pre_mcp_call_hook_response`, `_create_mcp_request_object_from_kwargs` and `_convert_mcp_hook_response_to_kwargs`. Their callers are the MCP server manager, the tool catalog guard and the MCP guardrail translation handler. Code goes in crates/betterlite-server/src/mcp/hook_payloads.rs and hook_payloads/ (to_llm.rs, from_llm.rs, kwargs.rs, tests.rs). Values are `serde_json` maps; the request and response objects are typed structs `McpPreCallRequest`, `McpPreCallResponse` and `McpDuringCallResponse` with LiteLLM's field names.
+
+  to_llm.rs. `mcp_to_llm_request(request, kwargs)` builds one user message "Tool: {tool_name}\nDescription: {description}\nArguments: {arguments}" (no description line when the description is empty), the model from `guardrail_context.model`, else kwargs model, else "mcp-tool-call", the user, team, end user, hash and route fields, mcp_tool_name, mcp_arguments, the optional description and input schema, mcp_server_name from `mcp_rate_limit_server_name`, incoming_bearer_token, and metadata copied from `guardrail_context.metadata` without its guardrails plus headers and the three ids. With a key auth object, add its guardrails as add_guardrails_from_auth_metadata does (B1106) and copy its metadata and team metadata. Metadata guardrails are the auth ones then the parent ones, repeats dropped.
+
+  from_llm.rs. Pre-call: an error stops with its text; a string stops with it; a map whose first message content differs from "Tool: {name}\nArguments: {args}" stops with "Content blocked by guardrail" when the content is empty or contains blocked or violation (any case), else proceeds with arguments parsed from the "Arguments:" line as JSON, falling back to the manual pattern that replaces only string values the text names; no parse gives None with a warning. During-call: an error or a string stops; a changed map stops with "Content blocked by guardrail during execution" when empty or containing blocked, else "Content modified by guardrail during execution".
+
+  kwargs.rs. `parse_pre_mcp_call_response` keeps the original arguments when none were modified. `mcp_request_from_kwargs` reads name (default ""), arguments (default {}), server_name and the auth as a map. `mcp_response_to_kwargs` replaces arguments when modified_arguments is set and merges extra_headers over existing ones; no response data returns the kwargs unchanged.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/hook_payloads.rs
+    - crates/betterlite-server/src/mcp/hook_payloads/**
+    - tools/oracle/cases/helpers/mcp-hook-payloads/**
+    - tools/oracle/helpers/b8401.py
+    - tools/oracle/helpers/b8401/**
+    - tools/oracle/src/helpers/server/b8401.rs
+    - tools/oracle/src/helpers/server/b8401/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1447-L1766
+    why: All the MCP conversion methods of ProxyLogging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py
+    why: The caller that runs pre_call_hook and during_call_hook on these payloads.
+dod:
+  - text: The synthetic chat request carries LiteLLM's message text, model fallback, ids and merged guardrails.
+    proof: [payload-tests, oracle]
+  - text: Guardrail answers become proceed, block or modified-argument decisions by LiteLLM's text rules, including the manual argument fallback.
+    proof: [payload-tests, oracle]
+  - text: The kwargs helpers keep original arguments and merge extra headers.
+    proof: [payload-tests]
+checks:
+  optional: []
+  commands:
+    - id: payload-tests
+      why: an MCP payload conversion is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::hook_payloads::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-hook-payloads/to-llm-with-description.yaml
+  - tools/oracle/cases/helpers/mcp-hook-payloads/blocked-content.yaml
+  - tools/oracle/cases/helpers/mcp-hook-payloads/masked-arguments-json.yaml
+  - tools/oracle/cases/helpers/mcp-hook-payloads/masked-arguments-manual.yaml
+deviations: []
+out_of_scope:
+  - "Running the hooks on these payloads: B8392 and B8393. The MCP server manager that calls them: B136's parts."
+pitfalls:
+  - The comparison text for a changed answer has no Description line, even when the request message had one, so a described tool call always counts as changed.
+  - The pre-call block words are blocked and violation, but the during-call check looks only for blocked.
+  - The manual fallback replaces only keys whose original value is a string and only with a non-empty match.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

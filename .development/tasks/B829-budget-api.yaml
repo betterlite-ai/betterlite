@@ -4,8 +4,8 @@ description: >-
   Build betterlite-server::budget_api with POST /budget/new, /budget/update, /budget/info and
   /budget/delete, and GET /budget/settings and /budget/list. Own all six functions in
   budget_management_endpoints.py L35-L362. B052 authenticates the routes; use B725 BudgetRepository,
-  B124 request contracts, B2314 user_api_key_has_admin_view, B732 principals, B861 validate_budget_duration,
-  B1224 validate_model_max_budget, B2317 get_budget_reset_time and B124 jsonify_object. There is no
+  B8411's BudgetNewRequest, BudgetRequest and BudgetDeleteRequest (proxy_request_contracts::budget), B2314 user_api_key_has_admin_view, B732 principals, B861 validate_budget_duration,
+  B1224 validate_model_max_budget, B2317 get_budget_reset_time and B2362 jsonify_object. There is no
   management effects decorator or route-level license branch. Dependencies supply typed inputs and
   decoding; this task introduces no parser. Monetary values are Decimal with the pinned SQL types.
 
@@ -44,7 +44,7 @@ description: >-
   admin-view). Delete by data.id and return the deleted row. Keep database foreign-key and unknown-row
   failures; do not invent linked-row cleanup. All explicit errors above are HTTPException detail
   bodies, without error.type/param/code. There is no handle_exception_on_proxy call. Compare status,
-  content-type and body through the booted HTTP servers; ignore only diagnostic wording. B124's
+  content-type and body through the booted HTTP servers; ignore only diagnostic wording. B8591's
   server exception handlers govern propagated repository errors, including service unavailability.
 
   B860 supplies separate pinned Postgres fixtures using POSTGRES_TEST_URL in CI or testcontainers
@@ -65,8 +65,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/budget_api.rs
     - crates/betterlite-server/src/routes/budget_api/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/budget-api/**
     - tools/oracle/helpers/b829.py
     - tools/oracle/helpers/b829/**

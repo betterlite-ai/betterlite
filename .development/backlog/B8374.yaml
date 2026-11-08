@@ -1,0 +1,13 @@
+id: B8374
+milestone: M8 platform
+title: Proxy lifespan startup and shutdown order
+status: todo
+depends_on: [B8370, B8372, B8373, B8377, B8381, B051, B712, B730, B731, B733, B758, B786, B1652, B1747, B1748, B3078, B3102, B3853, B3887, B3903, B4175, B4331, B4448, B4776, B5075, B3682, B3683, B3616, B8230, B8521, B8590]
+file: tasks/B8374-proxy-lifespan.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

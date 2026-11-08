@@ -1,0 +1,79 @@
+id: B8595
+title: /config/field update, info and delete and /config/list routes
+description: >-
+  The admin UI edits one general setting at a time through four routes. Build them in
+  crates/betterlite-server/src/config_fields.rs (declared by the skeleton) with `pub fn routes()`, error enum
+  ConfigFieldError. Every refusal is 400 {"error": ...} with LiteLLM's CommonProxyErrors text unless stated.
+
+
+  UI litellm fields. GENERAL_SETTINGS_UI_LITELLM_FIELDS lists budget_exceeded_throttle_percentage (Float),
+  enable_anthropic_prompt_caching (Boolean, tab prompt_caching), anthropic_prompt_caching_ttl (Select 5m or 1h),
+  openai_system_messages_first (Boolean), budget_rollover (Boolean) and max_ui_session_budget (Dollar, default 1.0),
+  each with LiteLLM's description. Their default is the spec default, else false for Boolean, else null. Validation: null
+  or "" gives the default; Boolean needs a bool; Select needs one of the options; Float needs a non-bool number in (0,
+  1]; Dollar needs a non-bool number above 0; each failure has LiteLLM's message. Persisting sets
+  litellm_settings.<field> through B8380's config save after reject_config_owned_writes on litellm_settings and audits
+  it; reset removes the key and writes the default.
+
+
+  POST /config/field/update: no database, then not PROXY_ADMIN, then a UI litellm field goes to the persist path; an
+  unknown ConfigGeneralSettings field or a value that fails its type gives "Invalid field=<name> passed in." or "Invalid
+  type of field value=<type> passed in."; alerting_args must also pass SlackAlertingArgs. It loads the general_settings
+  row, runs reject_config_owned_writes, keeps stored plugin keys with B8230's preserve step for plugins, upserts the row,
+  invalidates it, applies it to the settings store, re-serves pass-through endpoints through B8379 when the field is a
+  resource list, audits, re-registers plugins, and re-applies the SSRF settings through B5082. It returns the upserted
+  row. GET /config/field/info?field_name=: admin view needed; an unknown field is invalid; `declared_setting` reads the
+  writer row for resource lists and the store otherwise; absent is "Field name=<name> is not set"; the value goes
+  through B8594's redact_setting_value, plugin keys show "***", and the answer carries source and editable (source not
+  "config"). GET /config/list?config_type=general_settings: admin view needed; one entry per field in
+  GENERAL_SETTINGS_CONFIG_LIST_FIELD_TYPES in ConfigGeneralSettings order, with stored_in_db true (in the row), false (in
+  memory only) or null, nested fields for pass_through_endpoints, then one entry per UI litellm field. POST
+  /config/field/delete: no database, not PROXY_ADMIN, UI litellm fields go to reset, unknown field is invalid, B8380's
+  reject_config_owned_deletes runs, a missing row is "Field name=<name> not in config", else the key is popped, upserted,
+  invalidated, applied, pass-through endpoints re-served and the delete audited.
+scope:
+  paths:
+    - crates/betterlite-server/src/config_fields.rs
+    - crates/betterlite-server/src/config_fields/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18215-L18256
+    why: GENERAL_SETTINGS_CONFIG_LIST_FIELD_TYPES.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18258-L18370
+    why: /config/field/update.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18511-L18580
+    why: _declared_general_setting and /config/field/info.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18581-L18727
+    why: The UI litellm field specs, validation, persist and reset.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18728-L18903
+    why: /config/list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18904-L18990
+    why: /config/field/delete.
+dod:
+  - text: /config/field/update validates, stores, re-applies and audits like LiteLLM, including the UI litellm fields and alerting_args.
+    proof: [config-field-tests]
+  - text: /config/field/info and /config/list answer LiteLLM's values, sources, stored_in_db flags and redaction for admins and admin viewers.
+    proof: [config-field-tests]
+  - text: /config/field/delete refuses, pops, re-serves and audits like LiteLLM, and resets UI litellm fields to their defaults.
+    proof: [config-field-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-field-tests
+      why: a /config/field or /config/list answer differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^config_fields::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Mounting the routes and their HTTP oracle cases: the wave 17 config admin wiring part."
+  - "Redaction and the audit log: B8594. Plugin key preservation and plugin registration: B8230. Pass-through re-serve: B8379. SSRF re-apply: B5082. Config-owned guards and saves: B8380. Settings sources: B4140."
+pitfalls:
+  - Only update and delete need PROXY_ADMIN; info and list accept an admin viewer and redact for them.
+  - A null in-memory value falls back to the database value in /config/list only when the source is not "config".
+  - Booleans are numbers in Python, so Float and Dollar checks must refuse true and false first.
+  - Deleting a UI litellm field writes the default into litellm but removes the key from the stored config.
+  - "This task builds _preserve_redacted_plugin_keys (proxy_server.py L18225; its only caller is update_config_general_settings at L18341) and the _types.py records ConfigFieldDelete (L2560) and FieldDetail (L2569); no other task builds them."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,118 @@
+id: B8311
+title: OpenRouter, Vercel AI Gateway and Eden AI dispatch
+description: >-
+  B5830 and B6080 (OpenRouter), B5835 (Vercel AI Gateway) and B6100 and B5838 (Eden AI) build pure configs and leave their call sites to the umbrella. This task owns those call sites. Put them in the module gateway_provider_dispatch of betterlite-provider and plug each arm into the dispatch table through B2230's chat selection and B5360's media and resource selection, the same way B8157 does for the self-hosted providers. Unknown providers still fail as before.
+
+
+  Settings. Add the config section gateway_provider_keys. It reads the litellm_settings globals api_key, api_base, headers and openrouter_key, and the env vars OPENROUTER_API_BASE, OPENROUTER_API_KEY, OR_API_KEY, OR_SITE_URL, OR_APP_NAME, VERCEL_AI_GATEWAY_API_BASE, VERCEL_AI_GATEWAY_API_KEY, VERCEL_OIDC_TOKEN, VERCEL_SITE_URL, VERCEL_APP_NAME, EDENAI_API_KEY and EDENAI_API_BASE. Every value defaults to None and an empty string counts as unset. The section also fills B6100's EdenAiEnv (api_key from EDENAI_API_KEY, api_base from EDENAI_API_BASE, global_api_key from the global api_key), and every Eden AI config gets that struct.
+
+
+  _complete_openrouter (main.py L3444-L3518). api_base is api_base, else the global api_base, else OPENROUTER_API_BASE, else "https://openrouter.ai/api/v1". api_key is api_key, else the global api_key, else openrouter_key, else OPENROUTER_API_KEY, else OR_API_KEY. Headers start as {"HTTP-Referer": OR_SITE_URL or "https://litellm.ai", "X-Title": OR_APP_NAME or "liteLLM"}; then the request headers, else the global headers, are laid on top when they are not empty, so a caller can replace either value. Merge OpenrouterConfig.get_config() (B6080) into optional_params: for extra_body, update an existing extra_body map key by key, or set it when there is none; any other key is added only when optional_params lacks it. Call the shared HTTP completion handler with custom_llm_provider "openrouter" and no provider_config. After a successful call, log post_call with the response.
+
+
+  _complete_vercel_ai_gateway (L3548-L3623). The same shape with other names: base VERCEL_AI_GATEWAY_API_BASE, default "https://ai-gateway.vercel.sh/v1"; key api_key, else the global api_key, else VERCEL_AI_GATEWAY_API_KEY (chat does not read VERCEL_OIDC_TOKEN); headers start as {"http-referer": VERCEL_SITE_URL or "https://litellm.ai", "x-title": VERCEL_APP_NAME or "liteLLM"} in lower case; the config merge uses VercelAIGatewayConfig.get_config() (B5835); custom_llm_provider is "vercel_ai_gateway".
+
+
+  _complete_edenai (L3626-L3649). api_base is B6100's chat get_api_base(api_base) and api_key is its get_api_key(api_key, else the global api_key). headers are headers, else the global headers. Call the handler with custom_llm_provider "edenai" and provider_config, then log post_call with the resolved key and the response.
+
+
+  Arms in the completion dispatch: edenai (L5926-L5927), openrouter (L5992-L5993) and vercel_ai_gateway (L5996-L5997).
+
+
+  Embedding arms in main.py embedding(). edenai (L6597-L6611) calls the shared HTTP embedding handler with api_base, api_key and headers exactly as they came; the base and key come from the config there. openrouter (L6687-L6728) uses the same base, key and referer header rules as chat. vercel_ai_gateway (L6729-L6758) uses the chat base chain, adds VERCEL_OIDC_TOKEN as the last key fallback, and sends the request headers with no referer headers.
+
+
+  Speech. The edenai arm of speech() (main.py L8319-L8333) sets api_base in litellm_params, passes voice only when it is a string, uses the selected speech config or else B5838's Eden AI speech config, and calls B1084's text to speech handler. Transcription, video and image generation for edenai, and image generation and image edit for openrouter, need no extra code in main.py: build B5838's and B5830's configs where B5360 returns their tags (B5830's get OPENROUTER_API_KEY, OPENROUTER_API_BASE and the global api_key from this section), and B1082, B998 and B999 make the calls.
+
+
+  Model lists. B5835 and B6100 parse the reply of a GET to "{base}/models". This task sends it with the injected HTTP client and no Authorization header, using the chat base chain of each provider, and returns the parsed ids.
+
+
+  HTTP oracle cases through the booted proxy prove the parts end to end, since this is the first place a route reaches them: POST /v1/chat/completions for openrouter (check the HTTP-Referer, X-Title and authorization headers the upstream gets), vercel_ai_gateway (lower case referer headers) and edenai models with api_base set to the mock upstream, a streaming openrouter call, and POST /v1/embeddings for openrouter, vercel_ai_gateway with only VERCEL_OIDC_TOKEN set, and edenai. Helper cases cover the key chains and the config merge, and the speech arm's argument building.
+scope:
+  paths:
+    - crates/betterlite-provider/src/gateway_provider_dispatch.rs
+    - crates/betterlite-provider/src/gateway_provider_dispatch/**
+    - crates/betterlite-config/src/sections/gateway_provider_keys.rs
+    - crates/betterlite-config/src/sections/gateway_provider_keys/**
+    - Cargo.lock
+    - tools/oracle/cases/gateway-providers/**
+    - tools/oracle/cases/helpers/gateway-provider-dispatch/**
+    - tools/oracle/helpers/b8311.py
+    - tools/oracle/helpers/b8311/**
+    - tools/oracle/src/helpers/provider/b8311.rs
+    - tools/oracle/src/helpers/provider/b8311/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3444-L3518
+    why: _complete_openrouter, the referer headers and the extra_body merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3548-L3649
+    why: _complete_vercel_ai_gateway and _complete_edenai.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5926-L5927
+    why: The edenai arm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5992-L5997
+    why: The openrouter and vercel_ai_gateway arms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6597-L6611
+    why: The edenai embedding arm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6687-L6758
+    why: The openrouter and vercel_ai_gateway embedding arms, including VERCEL_OIDC_TOKEN.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8319-L8333
+    why: The edenai speech arm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/common_utils.py#L1-L80
+    why: How B6100's get_api_base and get_api_key resolve the Eden AI values the section supplies.
+dod:
+  - text: The OpenRouter and Vercel AI Gateway dispatch functions resolve base, key and referer headers as LiteLLM does and merge the provider config without overwriting request values.
+    proof: [gateway-dispatch-tests, oracle]
+  - text: _complete_edenai uses B6100's base and key resolution, passes provider_config and logs post_call.
+    proof: [gateway-dispatch-tests, oracle]
+  - text: The three embedding arms and the edenai speech arm build the same arguments as LiteLLM, including the VERCEL_OIDC_TOKEN fallback.
+    proof: [gateway-dispatch-tests, oracle]
+  - text: The models GET for vercel_ai_gateway and edenai goes to the resolved base with no Authorization header.
+    proof: [gateway-dispatch-tests]
+  - text: The gateway_provider_keys section loads every listed global and env var, with None defaults.
+    proof: [gateway-keys-tests]
+  - text: Chat and embedding calls for these providers through the proxy return the same status, body and upstream headers as LiteLLM.
+    proof: [gateway-cases, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: gateway-dispatch-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^gateway_provider_dispatch::/)'
+      why: Without the dispatch functions there are no such tests, so the check fails on the base branch.
+    - id: gateway-keys-tests
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::gateway_provider_keys::/)'
+      why: Without the section its loader tests are missing.
+    - id: gateway-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/gateway-providers tools/oracle/cases/helpers/gateway-provider-dispatch)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/gateway-providers/openrouter-chat-headers.yaml
+  - tools/oracle/cases/gateway-providers/openrouter-stream.yaml
+  - tools/oracle/cases/gateway-providers/vercel-chat-headers.yaml
+  - tools/oracle/cases/gateway-providers/edenai-chat.yaml
+  - tools/oracle/cases/gateway-providers/openrouter-embedding.yaml
+  - tools/oracle/cases/gateway-providers/vercel-embedding-oidc.yaml
+  - tools/oracle/cases/gateway-providers/edenai-embedding.yaml
+  - tools/oracle/cases/helpers/gateway-provider-dispatch/openrouter-key-order.yaml
+  - tools/oracle/cases/helpers/gateway-provider-dispatch/extra-body-merge.yaml
+  - tools/oracle/cases/helpers/gateway-provider-dispatch/edenai-speech-args.yaml
+deviations:
+  - what: The post_call log after an openrouter or vercel_ai_gateway call records no api key.
+    why: LiteLLM logs openai.api_key there, the OpenAI SDK's module global, which is not the resolved key and has no betterlite counterpart; nothing reaches the client.
+  - what: Reply ids LiteLLM generates and token usage estimates are compared as present, not equal, in the HTTP cases.
+    why: The ids are random and usage comes from each side's tokenizer.
+out_of_scope:
+  - "The provider configs and transforms belong to B5830, B5835, B5838, B6080 and B6100; picking a config from the provider name is B2230 and B5360."
+  - "The get_llm_provider branches for these providers (get_llm_provider_logic.py) are B209 and B211."
+  - "The image, transcription and speech calls are B998, B999, B1082 and B1084; their routes are not added here."
+  - "Eden AI Messages (B6100's edenai_messages in betterlite-core) is not wired here, because betterlite-provider does not depend on betterlite-core."
+  - "litellm/types/llms/openrouter.py only holds TypedDicts; plain Rust records replace them."
+pitfalls:
+  - "OpenRouter header names are HTTP-Referer and X-Title, Vercel's are http-referer and x-title; a test must check the exact case."
+  - "The request headers replace the referer headers only when they are not empty; an empty map keeps the defaults."
+  - "The Vercel chat key chain stops at VERCEL_AI_GATEWAY_API_KEY, while the embedding chain goes on to VERCEL_OIDC_TOKEN."
+  - "The extra_body merge updates the request's extra_body in place; other config keys never overwrite a request value."
+  - "The edenai embedding arm resolves nothing in main.py: it passes api_base and api_key exactly as they came."
+  - "The models GET carries no Authorization header for either provider."
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

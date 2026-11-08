@@ -108,7 +108,7 @@ deviations:
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L1-L236
 out_of_scope:
 - B360 owns final integration and the remaining functions listed in its implementation boundary.
-- 'litellm/caching/in_memory_cache.py: B125 owns: InMemoryCache.async_get_cache (L238-L239), InMemoryCache.async_batch_get_cache
+- 'litellm/caching/in_memory_cache.py: B4290 owns: InMemoryCache.async_get_cache (L238-L239), InMemoryCache.async_batch_get_cache
   (L241-L246), InMemoryCache.async_increment (L248-L249), InMemoryCache.async_increment_pipeline (L251-L258), InMemoryCache.flush_cache
   (L260-L263), InMemoryCache.disconnect (L265-L266), InMemoryCache.delete_cache (L268-L269), InMemoryCache.async_get_ttl
   (L271-L275), InMemoryCache.async_get_oldest_n_keys (L277-L283).'

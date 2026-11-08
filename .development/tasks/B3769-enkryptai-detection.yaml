@@ -10,7 +10,7 @@ description: >-
   Configuration carries api_key (required, reads ENKRYPTAI_API_KEY), api_base (optional, default
   https://api.enkryptai.com, reads ENKRYPTAI_API_BASE), policy_name (optional, sent via x-enkrypt-policy
   header if set). Additional fields in the config model (deployment_name, detectors, block_on_violation)
-  are present but not used to modify the outgoing detection call at this pin; B107 owns any wiring of
+  are present but not used to modify the outgoing detection call at this pin (no caller), so no task wires
   those toggles to the detection behavior. HTTP headers include Content-Type (application/json), apikey
   (the API key value, not Bearer), and x-enkrypt-policy (if policy_name is set).
 

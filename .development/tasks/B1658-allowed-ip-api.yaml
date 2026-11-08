@@ -12,7 +12,7 @@ description: >-
   runtime list before checking store_model_in_db is True; a disabled storage guard returns
   the source's 500 but leaves that runtime mutation visible. Load config, create missing
   general_settings/allowed_ips containers, append to the persisted list only if absent, save,
-  then submit the B124 config-audit record through B065. Delete instead checks membership
+  then submit the B8594 config-audit record through B065. Delete instead checks membership
   first, returning 404 when absent, and has no explicit DB or store_model_in_db guard. Remove
   every exact occurrence from the runtime sequence, but only the first occurrence from the
   loaded persisted list, then save and audit with action deleted. Preserve the source's

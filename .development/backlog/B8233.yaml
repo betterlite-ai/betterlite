@@ -1,0 +1,15 @@
+id: B8233
+milestone: M8 platform
+title: Gateway and backend container images
+status: todo
+depends_on: [B003, B4471, B5070]
+file: tasks/B8233-component-images.yaml
+covers:
+  - "gateway/Dockerfile"
+  - "backend/Dockerfile"
+parent: B131
+split_from: B131
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

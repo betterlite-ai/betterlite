@@ -6,7 +6,7 @@ description: >-
   _daily_rows_table, _next_export_cursor and every DailyActivityRepository method. Use B700's
   query/chunked-IN primitives, B714's database routing, B727/B728's builders and B2312's records.
   The constructor requires both the database and a DailyActivityProxyReads implementation;
-  the interface is B2312's and the higher-level implementation is injected by B074. There is no
+  the interface is B2312's and the higher-level implementation is B3092's _ProxyDailyActivityReads, injected by its daily_activity_repository factory. There is no
   dependency back into that caller or a duplicate proxy recovery algorithm.
 
   _query logs only the SQL's first nonblank line, stripped of leading opening parentheses and
@@ -67,7 +67,7 @@ description: >-
   api_keys whenever not None including empty arrays. It does NOT remove PTU sentinel rows.
   Run count and find_many concurrently using identical predicates, skip=(page-1)*page_size,
   take=page_size, order date descending then id ascending; return count and ordered rows.
-  There is no local pagination clamp/default or transaction. B074 validates public page inputs;
+  There is no local pagination clamp/default or transaction. B3096 and B3097 validate public page inputs;
   internal negative/overflow arithmetic must produce a typed failure rather than panic. Count
   and rows can legitimately observe different committed states. Do not transform daily rows
   through an aggregate adapter or silently remove null/invalid rows.
@@ -110,7 +110,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2170-L2176
     why: Three fixed maxima of 100 and export batch size 1000; no configuration reads.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L480-L553
-    why: B074 injects the recovery implementation; this reference is a consumer boundary, not ownership.
+    why: B3092 injects the recovery implementation; this reference is a consumer boundary, not ownership.
 dod:
   - text: 'Pure cases name tags_nonlist_empty, tags_mixed_list_drops_all, tags_order_duplicates_empty,
       metadata_fields_and_exists_flag, metadata_email_initially_null,
@@ -165,8 +165,8 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - types/repositories/__init__.py is empty at the pin; no initializer or re-export behavior is required.
-  - B074 owns daily_activity_routes.py and common_daily_activity.py route authorization,
-    request pagination, CSV streaming, metadata enrichment and spend-log fallback queries.
+  - B3094 to B3098 own daily_activity_routes.py and common_daily_activity.py route authorization,
+    request pagination and CSV streaming (B3098); B3092 owns metadata enrichment and spend-log fallback queries.
   - B727/B728 own SQL construction; B2312 owns the records, enum mappings and recovery interface.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as daily_activity_repository in the db group. Replace the stub Op in tools/oracle/src/helpers/db/daily_activity_repository.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/daily_activity_repository.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

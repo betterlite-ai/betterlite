@@ -2,15 +2,15 @@ id: B1653
 title: Save coordination Redis settings and probe disposable connections
 description: >-
   Add coordination_redis_routes for GET/POST /coordination_redis/settings and POST
-  /coordination_redis/settings/test. Authenticate with B052; GET accepts B124's admin-view
+  /coordination_redis/settings/test. Authenticate with B052; GET accepts B2314's user_api_key_has_admin_view
   predicate, while both POST handlers require the exact proxy_admin role and otherwise return
   403 with detail.error. Use B1652's body decoder, field catalog, current-settings lookup,
   marker restoration and validation. GET copies field metadata before attaching masked values,
   so one request cannot contaminate another response. A save requires DB then effective
   store_model_in_db is True, with the source's distinct 500 messages, before reading or
-  validating settings. After validation, call B124's reject_config_owned_writes for
+  validating settings. After validation, call B8380's reject_config_owned_writes for
   general_settings/coordination_redis; read the persisted general_settings row, replace just
-  coordination_redis, write through B725 and invalidate the config parameter through B124.
+  coordination_redis, write through B725 and invalidate the config parameter through B8397.
   Retain unrelated persisted general settings, but do not retain omitted Redis fields.
   Do not replace any running cache/client: the 200 success message explicitly requires restart.
   Determine audit action from the previous DB value being a dictionary, not from file fallback.
@@ -18,7 +18,7 @@ description: >-
   coordination_redis, every before/after value masked, and the truthy litellm-changed-by header
   taking precedence over caller user_id and the proxy admin name. This route does not consult
   the general changed-by metadata opt-in. A failed save or invalidation must not submit that audit.
-  Connection tests need neither DB nor storage enabled. Build a disposable client through B124
+  Connection tests need neither DB nor storage enabled. Build a disposable client through B8377's build_usage_redis
   and B126 from resolved validated params, await ping with a five-second deadline and always
   attempt disconnect, suppressing disconnect errors. Return HTTP 200 with status healthy and
   error=null on success, or unhealthy and a scrubbed error for connection failures; timeout text
@@ -93,7 +93,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/coordination_redis_endpoints.py#L254-L270
 out_of_scope:
   - B1652 owns every settings helper L76-L225 and the coordination field/source definitions; its byte decoder is reused rather than duplicated.
-  - B124 owns runtime Redis startup, config ownership policy and config invalidation; B065 owns delivery after audit submission.
+  - B8377 owns runtime Redis startup, B8380 config ownership policy and B8397 config invalidation; B065 owns delivery after audit submission.
 pitfalls:
   - The connection-test route returns unhealthy with HTTP 200 even when the Redis client constructor fails.
   - Audit created versus updated depends on persisted settings, so editing a file-only configuration emits created.

@@ -1,0 +1,13 @@
+id: B8157
+milestone: M3 providers
+title: Self-hosted providers dispatch in main.py and Lemonade chat config
+status: todo
+depends_on: [B004, B005, B2230, B2220, B2224, B1440, B8150, B8151, B8152, B8153, B8154, B8155, B8156]
+file: tasks/B8157-self-hosted-dispatch.yaml
+covers: []
+parent: B040
+split_from: B040
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

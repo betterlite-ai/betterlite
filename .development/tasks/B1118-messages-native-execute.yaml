@@ -10,8 +10,8 @@ description: >-
   The existing B982 entry depends on this task although source anthropic_messages calls its handler. Avoid a
   reverse implementation edge: define a typed MessagesExecutionContinuation here, returning a prepared dispatch
   effect to the composing caller, which executes B982 and resumes this pipeline's result/error handling. No
-  import or closure calls back into B982/B081. Likewise B119's cache-control/web-search implementations depend
-  on Messages and have no task file: accept typed installed hook capabilities/outcomes here, supplied by the
+  import or closure calls back into B982/B081. Likewise B4126's cache-control hook and B4115's web-search short circuit depend
+  on Messages and are not imported here: accept typed installed hook capabilities/outcomes here, supplied by the
   composition layer. B189 owns callback identity/order; B987 supplies interceptor contracts. The interfaces must
   carry actual calls/results, not pretend those later implementations already exist.
 
@@ -74,7 +74,7 @@ dod:
     short circuit also returns B2435 fake SSE. Only WebSearchInterceptionLogger callbacks are tried, in order;
     first non-null result, including {}, ends the search. Pass modified tools/provider/messages and kwargs with
     current metadata overriding any extra metadata. A nonstream synthetic result is returned directly and makes
-    no LLM request; the web-search implementation itself remains the installed B119 capability.
+    no LLM request; the web-search implementation itself remains the installed B4115 capability (try_short_circuit_search).
   proof: [behavior-tests, oracle, python-adapter]
 - text: >-
     first_matching_interceptor_wins skips the registry entirely after a web-search result. Otherwise call
@@ -125,7 +125,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - B982 owns messages/handler.py L50-L106 selection helpers, L411-L420 metadata validation and whole anthropic_messages_handler L423-L675; the composer executes its continuation, not this leaf.
-- B119 owns cache-control/web-search implementations, B987 advisor interceptor bodies and B189 callback registry identity. Only their typed invocation seams live here.
+- B4126 owns the cache-control hook, B4115 the web-search short circuit (try_short_circuit_search), B987 advisor interceptor bodies and B189 callback registry identity. Only their typed invocation seams live here.
 - B571/B572 own message sanitization and B2435 fake SSE. B011/@client own public SDK exception normalization; B081 owns routes.
 pitfalls:
 - original_stream is captured before callback changes and governs short circuits but not ordinary final dispatch.

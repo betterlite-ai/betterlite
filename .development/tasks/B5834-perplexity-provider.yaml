@@ -148,7 +148,7 @@ out_of_scope:
   - B6120 owns chat/transformation.py and cost_calculator.py.
   - B506, B507 and B508 own the OpenAI Responses base transforms this config extends, including _validate_input_param and the ordinary request and reply decode.
   - B2202 owns BaseLLMException, B006 owns EmbeddingResponse and the base embedding path, B3270 owns the search trait, records and server key policy, and B3511 owns the DecisionsProviderConfig trait.
-  - B041 wires Perplexity into dispatch.rs and adds the HTTP cases for chat, embeddings, Responses, search and decisions. This task touches no dispatch file.
+  - B8310 wires Perplexity into dispatch and builds its embedding arm; Perplexity chat goes through B024's OpenAI-compatible arm. This task touches no dispatch file.
   - Search execution, search tool registry and search pricing belong to B3272, B3271 and B3274.
   - PerplexitySearchRequest is only a typed request body here; the LiteLLM TypedDict has no other caller.
 pitfalls:

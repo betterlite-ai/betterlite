@@ -19,7 +19,7 @@ description: >-
   existing general_settings policy. Cases membership_identity_matrix, parent_model_disclosure and
   caller_edit_access_projection distinguish visibility from edit authority.
 
-  B124 receives expires=datetime.now() and optional limit, but its team_id branch does not filter expiry,
+  B8397 receives expires=datetime.now() and optional limit, but its team_id branch does not filter expiry,
   so expired keys are included; null results become
   []. Preserve the source collection: its token.pop operates on a temporary model_dump/dict inside the
   loop and does not replace the original keys, so do not claim this handler strips hashes. The HTTP
@@ -35,7 +35,7 @@ description: >-
   deduplicate model/MCP/agent unions as sets (compare those arrays without ordering). Null resource lists
   contribute nothing. Hydrate roster members in their original order with one user query for sorted unique
   non-null IDs; skip the query for an email-only roster, retain a truthy roster email, fill falsey email
-  from the user row, and use user_alias or null. Finally attach B071 model_max_budget_usage for entity
+  from the user row, and use user_alias or null. Finally attach B3005's model_max_budget_usage for entity
   TEAM and the limiter's dual_cache, then return team_id, team_info, keys and all annotated memberships.
   Cases group_union_and_detail_order, unknown_group_omitted, member_hydration_one_query and model_usage
   verify the computed fields without reimplementing the dependency algorithms.
@@ -75,8 +75,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/team_info.rs
     - crates/betterlite-server/src/routes/team_info/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-info/**
     - tools/oracle/helpers/b812.py
     - tools/oracle/helpers/b812/**

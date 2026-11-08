@@ -109,8 +109,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/auth_model_lists.rs
     - crates/betterlite-server/src/state/auth_model_lists/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-model-lists/**
     - crates/betterlite-server/src/auth/auth_model_lists.rs
     - crates/betterlite-server/src/auth/auth_model_lists/**

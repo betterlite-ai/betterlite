@@ -2,7 +2,7 @@ id: B310
 milestone: M2 routing
 title: Execute authorized fallback attempts
 status: todo
-depends_on: [B309, B017, B052, B071, B014, B012, B011, B301, B398]
+depends_on: [B309, B017, B052, B3008, B014, B012, B011, B301, B398, B8350]
 file: tasks/B310-fallback-attempts.yaml
 covers:
   - "litellm/router_utils/fallback_event_handlers.py"

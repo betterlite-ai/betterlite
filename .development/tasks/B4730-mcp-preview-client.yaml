@@ -87,7 +87,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-- MCPClient creation and connection (B136).
+- MCPClient creation and connection (B8461, create_client).
 - OAuth token refresh and cache (B4715).
 - Actual tool execution and logging (B4728).
 - Request validation and payload normalization (B4716).

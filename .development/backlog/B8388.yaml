@@ -1,0 +1,13 @@
+id: B8388
+milestone: M8 platform
+title: Health results into the router health state
+status: todo
+depends_on: [B016, B304, B307, B308, B842, B4443]
+file: tasks/B8388-health-router-state.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

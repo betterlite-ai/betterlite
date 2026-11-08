@@ -11,7 +11,7 @@ description: >-
 
   At initialization, read PROXY_BASE_URL and SERVER_ROOT_PATH with empty-string defaults. The form
   action concatenates base + nonempty root + /login literally; do not normalize double slashes.
-  The new-login link instead calls B124.get_custom_url("", "ui/login") once at initialization,
+  The new-login link instead calls B7323.get_custom_url("", "ui/login") once at initialization,
   preserving its join_paths/root selection. show_deprecation_banner and the renderer argument
   hide_default_credentials_hint both default false. The banner appears only for the first argument
   and contains the new-login link. The helper hides the hint if LITELLM_HIDE_DEFAULT_CREDENTIALS_HINT
@@ -56,7 +56,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/default_credentials_hint.py#L5-L10
     why: Exact hint predicate, setting identity test and environment defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8287-L8347
-    why: B124 owns join_paths, get_custom_url and get_proxy_base_url used for the banner link.
+    why: B7323 owns join_paths, get_custom_url and get_proxy_base_url used for the banner link.
 dod:
   - text: 'Renderer tests default_form, banner_link, hidden_hint, form_fields, toggle_password and
       retained_styles compare source markup contracts. Native tests rebranded_login and escaped_urls
@@ -99,7 +99,7 @@ deviations:
     why: README retains and rebrands the MIT UI; a quote in configuration must not inject markup.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/ui_login.py#L14-L278
 out_of_scope:
-  - B124 supplies get_custom_url and its root-path collaborators; B899 registers login handlers and
+  - B7323 supplies get_custom_url and its root-path collaborators; B899 registers login handlers and
     B788 owns password authentication. Neither covered form file has another function.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as login_form in the server group. Replace the stub Op in tools/oracle/src/helpers/server/login_form.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/login_form.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

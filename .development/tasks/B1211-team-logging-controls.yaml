@@ -1,7 +1,7 @@
 id: B1211
 title: Read team callbacks and disable team logging
 description: >-
-  Implement GET /team/{team_id:path}/callback and POST /team/{team_id}/disable_logging. Both use B124
+  Implement GET /team/{team_id:path}/callback and POST /team/{team_id}/disable_logging. Both use B8397
   get_data(team, find_unique), fail without DB with HTTPException 500 detail.error, and require B800
   TEAM_OR_ORG_ADMIN access. GET delegates a missing team to B1210 _unknown_team_error: proxy admin gets
   404 detail.error, other roles get 403 string detail. Disable returns 404 detail.error for any caller
@@ -75,8 +75,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/team_logging_controls.rs
     - crates/betterlite-server/src/routes/team_logging_controls/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-logging-controls/**
     - tools/oracle/helpers/b1211.py
     - tools/oracle/helpers/b1211/**

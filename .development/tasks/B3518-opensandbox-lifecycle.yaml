@@ -131,7 +131,7 @@ oracle_cases:
   - tools/oracle/cases/sandbox/opensandbox-delete-bare-id.yaml
 deviations: []
 out_of_scope:
-  - Environment variable expansion or secret-manager full dispatch beyond os.environ/; needs the unresolved B129 leaf.
+  - Environment variable expansion or secret-manager full dispatch beyond os.environ/; needs the unresolved B8500 leaf.
   - Retries, timeouts and connection pooling for HTTP operations; those come from AsyncHTTPHandler in betterlite-http (B173).
   - The helper methods and constants from B3517; they are composed, not implemented here.
   - Metadata, resource_requests or other advanced sandbox options beyond what _create_body (B3517) accepts.

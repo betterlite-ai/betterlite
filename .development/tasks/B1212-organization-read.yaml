@@ -74,8 +74,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/organization_read.rs
     - crates/betterlite-server/src/routes/organization_read/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/organization-read/**
     - tools/oracle/helpers/b1212.py
     - tools/oracle/helpers/b1212/**

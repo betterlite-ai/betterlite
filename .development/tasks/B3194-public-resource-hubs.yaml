@@ -107,7 +107,7 @@ deviations: []
 out_of_scope:
   - B4777 owns `global_agent_registry.get_public_agent_list()` and `ids_for_agent()` (litellm/proxy/agent_endpoints/agent_registry.py);
     B3194 calls them to retrieve and filter agents.
-  - B136 owns `global_mcp_server_manager.get_public_mcp_servers()` (litellm/proxy/_experimental/mcp_server/mcp_server_manager.py);
+  - B4731 owns `global_mcp_server_manager.get_public_mcp_servers()` (litellm/proxy/_experimental/mcp_server/mcp_server_manager.py);
     B3194 calls it to retrieve and filter MCP servers.
   - B000 or the Anthropic endpoints module owns `_get_prisma_client` (litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py);
     B3194 uses it to fetch the prisma client for plugin table queries.

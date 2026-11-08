@@ -1,0 +1,98 @@
+id: B8272
+title: Serve model insights and task insights routes
+description: >-
+  Register `GET /model-insights` and `GET /model-insights/tasks` (no aliases) in betterlite-server and read their numbers from the `LiteLLM_DailyModelUsage` table. These two routes are the admin UI's Model Insights page backend. Files: `crates/betterlite-server/src/model_insights_routes.rs` and its folder for the routes and the shaping, and `crates/betterlite-db/src/model_usage_reads.rs` for the three grouped reads. B1734 owns the write side (`model_usage_rollup`) and the `ModelInsightTask` record plus `load_model_insight_tasks` with the twenty-entry task catalog; call those, do not rebuild them. The response records are this task's: `ModelInsightMetric`, `ModelInsightDailyMetric`, `ModelInsightDailyTotal`, `ModelInsightTaskSummary`, `ModelInsightsResponse` and `ModelInsightTasksResponse` (litellm/types/model_insights.py), with the field order LiteLLM prints. `pub fn routes()` is built like the sibling route modules; the architect mounts it.
+
+  Constants (litellm/constants.py L1796-L1799): top models 10, max range 365 days, default task `uncategorized`.
+
+  Window (`_resolve_window`, run in this order). (1) The caller's role must be `proxy_admin` or `proxy_admin_viewer`; any other role gets 403 `{"detail": "Only proxy admins can view deployment-wide model insights"}`. (2) No database gives 500 with the `db_not_connected_error` text (B003/B861 own the constant; reuse it). (3) `end_date` defaults to today in UTC; `start_date` defaults to end minus 364 days. A value that is not `YYYY-MM-DD` gives 400 `{"detail": "Dates must use YYYY-MM-DD"}` (end is parsed before start). (4) If start is after end, or the span in days (end minus start) is 365 or more, 400 `{"detail": "Date range must be between 1 and 365 days"}`. The date filter is `date >= start and date <= end`, on the stored ISO date text.
+
+  `metric` is a query parameter with the values `requests`, `spend`, `tokens`; the default is `tokens` for `/model-insights` and `spend` for `/model-insights/tasks`. Another value is the usual 422 enum error. `start_date` and `end_date` are optional strings.
+
+  `GET /model-insights`. Three grouped reads over the window, each summing `spend`, `prompt_tokens`, `completion_tokens`, `request_count`, `successful_requests`, `failed_requests`: (a) by `model_group`, `model`, `custom_llm_provider`; (b) by `date`, `model_group`, `model`, `custom_llm_provider`, ordered by date ascending, restricted to the deployments chosen in (a), and skipped (empty) when (a) returned no rows; (c) by `date` alone, over the whole window and ordered by date ascending. Rank the rows of (a) by the metric, highest first, and keep 10: `requests` ranks by request_count, `spend` by spend, `tokens` by prompt plus completion tokens. The sort is stable, so ties keep the database's row order. The response is `{start_date, end_date, daily, daily_totals, top_models}` in that order, with `top_models` and `daily` carrying `provider` (from custom_llm_provider) and `requests` (from request_count), and each daily row also `date`. `daily_totals` rows carry `date`, `spend`, `prompt_tokens`, `completion_tokens`, `requests` only.
+
+  `GET /model-insights/tasks`. One grouped read by `task_type`, `model_group`, `model`, `custom_llm_provider` over the window. Group the rows by task type in first-seen order. For each task: its total is the sum of the metric over its rows; its leader is the row with the highest metric value (the first one wins a tie); `share` is total divided by the grand total times 100, or 0 when the grand total is 0. Sort tasks by total descending (stable on first-seen order). A task type found in the catalog takes its label and category; an unknown one is `Uncategorized` / `General` with the task_type replaced by the unknown value. Each summary is `{task_type, label, category, value, share, leader, provider}`, where leader is the leader row's model_group and provider is its custom_llm_provider. The response is `{start_date, end_date, tasks}`.
+
+  The grouped reads sit behind a trait `ModelUsageReads` (three methods, typed rows, a window as two date strings) implemented in betterlite-db over sqlx against `LiteLLM_DailyModelUsage`; the route tests use a fake. Sums of an empty group read as 0. Use the integer and float types of the table's columns (B709 owns the schema) and convert as LiteLLM's float fields print.
+scope:
+  paths:
+    - crates/betterlite-server/src/model_insights_routes.rs
+    - crates/betterlite-server/src/model_insights_routes/**
+    - crates/betterlite-db/src/model_usage_reads.rs
+    - crates/betterlite-db/src/model_usage_reads/**
+    - tools/oracle/cases/model-insights/**
+    - tools/oracle/helpers/b8272.py
+    - tools/oracle/helpers/b8272/**
+    - tools/oracle/src/helpers/server/b8272.rs
+    - tools/oracle/src/helpers/server/b8272/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_insights_endpoints.py#L1-L178
+    why: Row records, parsing, ranking, the deployment filter, the task summary and _resolve_window.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_insights_endpoints.py#L180-L254
+    why: The two routes from their decorators, and the three group_by calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/model_insights.py#L1-L56
+    why: The response records and the metric literal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1796-L1799
+    why: The four insight constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/model_insights_tasks.json#L1-L22
+    why: The task catalog B1734 loads; unknown task types are the case this task adds.
+dod:
+  - text: Both routes answer on exactly their paths for GET, need a valid key, and answer 403 for any role other than proxy_admin and proxy_admin_viewer.
+    proof: [route-tests, oracle]
+  - text: With no database the routes answer 500 with the db-not-connected text; the 403 check comes first.
+    proof: [window-tests, oracle]
+  - text: A bad date gives 400 "Dates must use YYYY-MM-DD", a reversed or 365-day-or-longer range gives 400 "Date range must be between 1 and 365 days", and the defaults are today in UTC and 364 days before.
+    proof: [window-tests]
+  - text: An unknown metric value gives the usual 422, and the metric defaults are tokens and spend for the two routes.
+    proof: [window-tests, oracle]
+  - text: The top 10 models are ranked by the chosen metric, daily rows cover only those models and are empty when there are none, and daily_totals cover the whole window.
+    proof: [insights-tests]
+  - text: Task summaries are ordered by total, carry share, leader and provider as described, and an unknown task type shows as Uncategorized / General with its own task_type.
+    proof: [tasks-tests]
+  - text: The grouped reads in betterlite-db sum the six columns per group, filter on the date window and the deployment list, and order by date where asked.
+    proof: [reads-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: route-tests
+      why: a route path, method, role check or response shape is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_insights_routes::tests::route_/)'
+    - id: window-tests
+      why: the date window, the database gate or the metric parameter is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_insights_routes::tests::window_/)'
+    - id: insights-tests
+      why: top model ranking, the daily rows or the daily totals are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_insights_routes::tests::insights_/)'
+    - id: tasks-tests
+      why: task grouping, share, leader or the uncategorized rule is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_insights_routes::tests::tasks_/)'
+    - id: reads-tests
+      why: the grouped database reads are missing or wrong
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^model_usage_reads::/)'
+    - id: new-cases
+      why: the model insights routes have no HTTP parity case on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/model-insights)"
+oracle_cases:
+  - tools/oracle/cases/model-insights/auth-required.yaml
+  - tools/oracle/cases/model-insights/no-database.yaml
+  - tools/oracle/cases/model-insights/tasks-no-database.yaml
+  - tools/oracle/cases/model-insights/invalid-metric.yaml
+deviations: []
+out_of_scope:
+  - "ModelInsightTask, load_model_insight_tasks and the JSON catalog: B1734. The daily model usage upsert: B1734."
+  - "The LiteLLM_DailyModelUsage migration: B709."
+  - "The admin UI page that calls these routes: B146."
+  - "Prisma's group_by itself and DailyModelUsageRepository (table_repositories.py): the typed reads in this task replace them."
+pitfalls:
+  - "The role check runs before the database check, so a non-admin with no database gets 403, not 500."
+  - "Ranking is stable: two models with the same metric value keep the order the group read returned them in, so the read needs a fixed order for tests (order by the three key columns)."
+  - "The daily read is filtered by an OR over (model_group, model, custom_llm_provider) triples, not by model_group alone; two providers behind one group name stay separate."
+  - "daily_totals comes from its own read over every model in the window, not from the daily rows, so it still counts models outside the top 10."
+  - "A task_type not in the catalog keeps its own task_type string in the summary while taking the Uncategorized label and General category."
+  - "The span test is (end - start).days >= 365, so a 365-day request with start and end 364 days apart is valid and 365 days apart is not."
+  - "daily_totals is a tuple in LiteLLM and prints as a JSON list; the fields spend and the token counts of the totals have no model fields."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

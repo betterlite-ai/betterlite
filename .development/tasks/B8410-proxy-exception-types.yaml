@@ -1,0 +1,102 @@
+id: B8410
+title: Proxy exception, error type values and special headers
+description: >-
+  Build the error record every LiteLLM proxy route returns and the small enums around it, all from litellm/proxy/_types.py. Auth checks, management routes and the request pipeline raise this record, so it goes low, in betterlite-error, where betterlite-auth and betterlite-server can both use it. Nothing here does I/O.
+
+  Module `proxy_exception` (crates/betterlite-error/src/proxy_exception.rs, with submodules under crates/betterlite-error/src/proxy_exception/ and tests in proxy_exception/tests.rs).
+
+  `ProxyException` mirrors LiteLLM's class of the same name (L4325-L4371). Build it with `ProxyException::new(init: ProxyExceptionInit)`, where ProxyExceptionInit has `message: String`, `error_type: String` (LiteLLM's `type`), `param: Option<String>`, `code: ExceptionCode`, `headers: BTreeMap<String, String>` (default empty), `openai_code: Option<String>` and `provider_specific_fields: Option<serde_json::Map<String, Value>>`. `ExceptionCode` is `Absent`, `Status(i64)` or `Text(String)`, because LiteLLM accepts an int, a string or None. The stored `code` is always a string: Status(429) gives "429", Text keeps its text, Absent gives "None" (Python's str(None)). The stored `openai_code` is the given openai_code when it is Some and not empty, otherwise the code as given (Absent stays None, Status(400) becomes "400"). Then the two message rules, in this order: when the message contains "No healthy deployment available" or "No deployments available", code becomes "429"; otherwise, when it contains "Not allowed to access model due to tags configuration" (RouterErrors.no_deployments_with_tag_routing in litellm/types/router.py), code becomes "401". Matching is case-sensitive substring search. Keep public read access to message, error_type, param, code, openai_code, headers and provider_specific_fields.
+
+  `ProxyException::to_body(&self) -> ProxyErrorBody` is LiteLLM's to_dict. ProxyErrorBody serializes as {"message", "type", "param", "code"} in that order, param as JSON null when None, code as the stored string, plus "provider_specific_fields" only when that map is Some and not empty (LiteLLM tests it for truthiness). Implement Display as the message and std::error::Error for ProxyException.
+
+  `ModelAccessDeniedProxyException` (L4374-L4387) holds a ProxyException built from message, error_type, param and code (no headers, no openai_code, no provider fields) plus `internal_message: String`. `sanitized_internal_message(&self) -> String` removes every "\r" and "\n". Give it `as_proxy_exception(&self) -> &ProxyException` so callers that catch any proxy exception see it.
+
+  Module `proxy_error_types` (crates/betterlite-error/src/proxy_error_types.rs and its folder). `ProxyErrorTypes` (L4410-L4559) is a fieldless enum whose serde and Display text is the value: budget_exceeded, no_db_connection, token_not_found_in_db, key_model_access_denied, team_model_access_denied, user_model_access_denied, org_model_access_denied, project_model_access_denied, agent_model_access_denied, model_cost_map_missing, expired_key, auth_error, auth_provider_unavailable, internal_server_error, bad_request_error, not_found_error, validation_error, cache_ping_error, team_member_permission_error, key_vector_store_access_denied, team_vector_store_access_denied, org_vector_store_access_denied, team_member_already_in_team and tool_access_denied. Check the list against the reference before you write it. `ProxyErrorTypes::model_access_denied_for(object: ModelAccessObject) -> Self` maps Key, Team, User, Org, Project and Agent to the six *_model_access_denied values, and `vector_store_access_denied_for(object: VectorStoreObject) -> Self` maps Key, Team and Org to the three *_vector_store_access_denied values. Both input enums are closed, so the None that LiteLLM returns for an unknown string cannot happen. `CommonProxyErrors` (L4390-L4407) is a fieldless enum with an `as_str` that returns LiteLLM's exact message for db_not_connected_error, no_llm_router, not_allowed_access, not_premium_user, max_parallel_request_limit_reached, missing_enterprise_package and missing_enterprise_package_docker; copy the strings from the reference character for character.
+
+  Module `proxy_enums` (crates/betterlite-error/src/proxy_enums.rs and its folder). `SpecialHeaders` (L4943-L4976) has the nine header values Authorization, API-Key, x-api-key, x-goog-api-key, Ocp-Apim-Subscription-Key, x-litellm-api-key, x-mcp-auth, x-mcp-servers and x-mcp-access-groups, each with `as_str`. `SpecialHeaders::litellm_credential_header_names() -> BTreeSet<String>` returns the lowercased names of the first six only (the MCP headers are not credentials): authorization, api-key, x-api-key, x-goog-api-key, ocp-apim-subscription-key and x-litellm-api-key. The configured general_settings.litellm_key_header_name is added by the caller, not here. `SupportedDbObjectType` (L124-L143) is a fieldless enum with LiteLLM's values (models, mcp, guardrails, policies, vector_stores, pass_through_endpoints, prompts, model_cost_map, tools, config_overrides, websearch_interception_settings; check the reference for any value above models) whose Display and serde text is the value, which is all its __str__ does.
+
+  Tests: proxy_exception::tests covers code stringification for each ExceptionCode form, the openai_code fallback (None, empty string, given), each message rule and their order (a message with both phrases gives 429), header and provider-field passthrough, the body with and without provider fields (an empty map is left out) and the sanitized internal message. proxy_error_types::tests covers every value's text and both mapping functions for every input. proxy_enums::tests covers the nine header values, the six credential names and every SupportedDbObjectType text. Helper oracle cases compare to_body, the 429 and 401 rules, the sanitized message and the credential header set with LiteLLM.
+scope:
+  paths:
+    - crates/betterlite-error/src/proxy_exception.rs
+    - crates/betterlite-error/src/proxy_exception/**
+    - crates/betterlite-error/src/proxy_error_types.rs
+    - crates/betterlite-error/src/proxy_error_types/**
+    - crates/betterlite-error/src/proxy_enums.rs
+    - crates/betterlite-error/src/proxy_enums/**
+    - crates/betterlite-error/Cargo.toml
+    - tools/oracle/cases/helpers/proxy-exception/**
+    - tools/oracle/helpers/b8410.py
+    - tools/oracle/helpers/b8410/**
+    - tools/oracle/src/helpers/error/b8410.rs
+    - tools/oracle/src/helpers/error/b8410/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4387
+    why: ProxyException, its code rules and to_dict, and ModelAccessDeniedProxyException with the sanitized message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4390-L4559
+    why: CommonProxyErrors messages, every ProxyErrorTypes value and the two mapping class methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4943-L4976
+    why: SpecialHeaders and litellm_credential_header_names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L124-L143
+    why: SupportedDBObjectType values and its __str__.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L735-L735
+    why: The tag-routing message that turns the code into 401.
+dod:
+  - text: The stored code is a string for int, string and absent codes, and openai_code falls back to the given code when it is missing or empty.
+    proof: [exception-tests, oracle, helper-python]
+  - text: A message with either no-deployment phrase gets code 429, a message with the tag-routing phrase gets 401, and the 429 rule wins when both appear.
+    proof: [exception-tests, oracle, helper-python]
+  - text: The error body has message, type, param and code, and carries provider_specific_fields only when the map is not empty.
+    proof: [exception-tests, oracle, helper-python]
+  - text: The model access denied exception keeps the client message and strips carriage returns and newlines from the internal message.
+    proof: [exception-tests, oracle, helper-python]
+  - text: Every ProxyErrorTypes value has LiteLLM's text and both mapping functions return the right value for every object kind.
+    proof: [error-type-tests]
+  - text: The credential header set holds exactly the six lowercased auth headers, and every SpecialHeaders and SupportedDbObjectType value has LiteLLM's text.
+    proof: [enum-tests, oracle, helper-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: exception-tests
+      why: the proxy exception code rules, body or sanitized message are missing
+      run: cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^proxy_exception::/)'
+    - id: error-type-tests
+      why: the error type values or their mapping functions are missing
+      run: cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^proxy_error_types::/)'
+    - id: enum-tests
+      why: the special headers, the credential header set or the db object types are missing
+      run: cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^proxy_enums::/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8410)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8410 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8410/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/proxy-exception/code-stringified.yaml
+  - tools/oracle/cases/helpers/proxy-exception/no-healthy-deployment-429.yaml
+  - tools/oracle/cases/helpers/proxy-exception/tag-routing-401.yaml
+  - tools/oracle/cases/helpers/proxy-exception/provider-fields.yaml
+  - tools/oracle/cases/helpers/proxy-exception/model-access-sanitized.yaml
+  - tools/oracle/cases/helpers/proxy-exception/credential-headers.yaml
+deviations:
+  - what: Header values are typed strings, so LiteLLM's step that turns non-string header values into str is not built.
+    why: A Rust caller cannot pass a non-string header value; what reaches the wire is the same.
+  - what: The object-kind mappings take closed enums and always return a value, where LiteLLM returns None for an unknown kind.
+    why: LiteLLM's callers only pass the declared literals; an unknown kind cannot be built in Rust.
+out_of_scope:
+  - "handle_exception_on_proxy and the exception handler that turns a ProxyException into an HTTP response: the proxy/utils.py and proxy_server.py parts of B124."
+  - "should_load_db_object and general_settings.supported_db_objects parsing: B8380; this task only gives it the enum."
+  - "The LiteLLM exception classes in litellm/exceptions.py and the error envelope already on main: B011 and B184 (crates/betterlite-error/src/error.rs and envelope.rs)."
+  - "ModelAccessDeniedHTTPException in proxy/auth/model_access_denied.py: B747."
+pitfalls:
+  - LiteLLM sets code to "429" after it already stored str(code), so a ProxyException built with code 500 and the message "No deployments available for group x" still answers 429.
+  - The tag-routing 401 rule is an elif, so it never runs when a no-deployment phrase matched first.
+  - openai_code uses Python `or`, so an empty openai_code string falls back to the raw code, which may be an int in LiteLLM; store it as its decimal text.
+  - to_dict leaves provider_specific_fields out for an empty dict too, not only for None.
+  - litellm_credential_header_names skips x-mcp-auth, x-mcp-servers and x-mcp-access-groups even though they sit in the same enum.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

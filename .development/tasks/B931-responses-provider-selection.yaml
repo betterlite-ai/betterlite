@@ -7,7 +7,7 @@ description: >-
   They do not send provider requests. B174 supplies model resolution; B157 supplies a typed provider
   config lookup and B1114 the capability contract. Also own the complete OpenAILikeResponsesConfig
   class in betterlite-openai::response_compatible: its three overrides supply identity, headers
-  and URL; inherited operations reuse B506/B507/B508/B509. B117 supplies
+  and URL; inherited operations reuse B506/B507/B508/B509. B8560 supplies
   synchronous prompt hooks through an injected PromptManager port; return merged messages, model and
   optional parameters without implementing its remote stores here. B905 converts and merges prompt
   input. B234 owns supplied file/vector ID mapping, B184 exception records, B185/B186 exception_type and B010 generic
@@ -19,7 +19,7 @@ description: >-
   _litellm_carry_unmatched_cache_control_points=true only during a bridged hook and remove it in
   finally, even if it existed beforehand. Async merged outcomes are consumed once and bypass the
   sync hook. The fallback config resolves OPENAI_LIKE_API_KEY and OPENAI_LIKE_API_BASE through
-  B129's get_secret_str port, both default unset; B002 supplies the environment snapshot and
+  B8500's get_secret_str port, both default unset; B002 supplies the environment snapshot and
   its production loader tests. No global OpenAI key/base fallback is added. DEFAULT_MAX_TOKENS
   is not read by these functions. The provider leaf takes typed values, never imports core.
 
@@ -166,10 +166,10 @@ deviations:
   why: Reuse the established B184/B187 diagnostic policy and assert the original literal cause separately.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L473-L487
 out_of_scope:
-- B038 owns dynamic JSON-provider class generation; it reuses this lower OpenAILikeResponsesConfig contract. B129 owns secret-store retrieval, exposed here through get_secret_str without remote I/O in the helper adapter.
+- B038 owns dynamic JSON-provider class generation; it reuses this lower OpenAILikeResponsesConfig contract. B8500 owns secret-store retrieval, exposed here through get_secret_str without remote I/O in the helper adapter.
 - B1078 owns the whole responses function and mock response builder; B932 owns aresponses.
 - B955 owns MCP/file-search dispatch functions; B1116 owns delete/cancel, B933 retrieve/input-items, B934 compact and B943 websocket functions in main.py.
-- B117 owns prompt-store access; B234 owns the mapping algorithms. This task invokes their typed interfaces only.
+- B8560 selects the prompt manager and B4058 owns prompt-store access; B234 owns the mapping algorithms. This task invokes their typed interfaces only.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as responses_provider_selection in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_provider_selection.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_provider_selection.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - An empty api_key or api_base still prevents a prompt from crossing the credential boundary.
