@@ -139,6 +139,9 @@ pub fn backfill_cache_usage(usage: &mut Usage) {
             JsonValue::Number(Number::from(creation)),
         );
     }
+    if counted.is_some() {
+        usage.prompt_tokens_details = counted;
+    }
     if usage.prompt_tokens_details.is_none() {
         let defaults = TokenDetails {
             cached_tokens: Some(0),

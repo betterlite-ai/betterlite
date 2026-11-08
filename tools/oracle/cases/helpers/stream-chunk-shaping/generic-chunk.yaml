@@ -14,7 +14,7 @@ call:
 env: {}
 compare:
   ignore:
-    - {pointer: /2/result/id, why: "LiteLLM picks a fresh uuid for every generic chunk"}
-    - {pointer: /2/result/created, why: "LiteLLM stamps the generic chunk with the wall clock"}
-    - {pointer: /3/result/id, why: "LiteLLM picks a fresh uuid for every generic chunk"}
-    - {pointer: /3/result/created, why: "LiteLLM stamps the generic chunk with the wall clock"}
+    - {pointer: /value/2/result/id, why: "LiteLLM picks a fresh uuid for every generic chunk"}
+    - {pointer: /value/2/result/created, why: "LiteLLM stamps the generic chunk with the wall clock"}
+    - {pointer: /value/3/result/id, why: "LiteLLM picks a fresh uuid for every generic chunk"}
+    - {pointer: /value/3/result/created, why: "LiteLLM stamps the generic chunk with the wall clock"}

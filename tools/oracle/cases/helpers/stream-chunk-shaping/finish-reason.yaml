@@ -20,7 +20,7 @@ call:
 env: {}
 compare:
   ignore:
-    - {pointer: /0/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}
-    - {pointer: /2/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}
-    - {pointer: /4/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}
-    - {pointer: /6/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}
+    - {pointer: /value/0/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}
+    - {pointer: /value/2/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}
+    - {pointer: /value/4/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}
+    - {pointer: /value/6/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}

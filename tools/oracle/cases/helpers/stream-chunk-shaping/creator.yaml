@@ -30,10 +30,10 @@ call:
         chunk: {id: c, created: 1, model: provider-model, hidden_params: {provider_specific_fields: {a: 1}}}
         provider_response_model: provider-model
       - op: stamp_service_tier
-        chunk: {id: c, created: 1, model: gpt-4}
+        chunk: {id: c, created: 1, model: gpt-4, choices: [{index: 0, delta: {}}]}
         complete: {id: d, created: 1, model: gpt-4, service_tier: scale}
 env: {}
 compare:
   ignore:
-    - {pointer: /0/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}
-    - {pointer: /1/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}
+    - {pointer: /value/0/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}
+    - {pointer: /value/1/result/hidden_params/created_at, why: "the chunk's creation time comes from the wall clock"}

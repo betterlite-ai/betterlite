@@ -97,6 +97,16 @@ fn usage_backfill_keeps_an_explicit_cache_field() {
 }
 
 #[test]
+fn usage_backfill_mirrors_the_cache_write_count_into_cache_creation() {
+    let mut usage = usage_with(1, 1);
+    usage.prompt_tokens_details = Some(details(r#"{"cached_tokens": 3, "cache_write_tokens": 4}"#));
+    backfill_cache_usage(&mut usage);
+    let counted = usage.prompt_tokens_details.expect("details are kept");
+    assert_eq!(counted.cache_write_tokens, Some(4));
+    assert_eq!(counted.cache_creation_tokens, Some(4));
+}
+
+#[test]
 fn usage_backfill_defaults_to_zero_cached_details() {
     let mut usage = usage_with(1, 1);
     backfill_cache_usage(&mut usage);
