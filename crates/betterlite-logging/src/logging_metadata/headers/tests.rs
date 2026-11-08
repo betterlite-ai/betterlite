@@ -67,7 +67,7 @@ fn integers_beyond_float_precision_are_kept_exactly() {
     .expect("headers convert");
     assert_eq!(
         converted.get("x_ratelimit_limit_tokens"),
-        Some(&number(9_007_199_254_740_993))
+        Some(&number(0x0020_0000_0000_0001))
     );
 }
 
