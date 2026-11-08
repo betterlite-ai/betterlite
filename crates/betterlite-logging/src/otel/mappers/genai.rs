@@ -40,7 +40,7 @@ const LLM_CALL_ATTRS: AttributeTable<LLMCallSpanData> = &[
     (gen_ai::RESPONSE_MODEL, |data| data.response_model.clone().map(Value::from)),
     (gen_ai::RESPONSE_ID, |data| data.response_id.clone().map(Value::from)),
     (gen_ai::RESPONSE_FINISH_REASONS, |data| (!data.finish_reasons.is_empty()).then(|| string_array(&data.finish_reasons))),
-    (gen_ai::RESPONSE_TIME_TO_FIRST_CHUNK, |data| data.time_to_first_chunk_seconds.and_then(|cost| cost.to_f64()).map(Value::F64)),
+    (gen_ai::RESPONSE_TIME_TO_FIRST_CHUNK, |data| data.time_to_first_chunk_seconds.and_then(|seconds| seconds.to_f64()).map(Value::F64)),
     (gen_ai::USAGE_INPUT_TOKENS, |data| data.usage.input_tokens.map(Value::I64)),
     (gen_ai::USAGE_OUTPUT_TOKENS, |data| data.usage.output_tokens.map(Value::I64)),
     (gen_ai::USAGE_CACHE_CREATION_TOKENS, |data| data.usage.cache_creation_input_tokens.map(Value::I64)),
