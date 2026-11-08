@@ -1,0 +1,89 @@
+id: B8606
+title: Mount the common provider and OpenAI pass-through routes
+description: >-
+  B8640 builds the shared pass-through state and calls `openai_common::mount` and `openai_common::mount_public` with a stub body. This task fills crates/betterlite-server/src/app/pass_through/routes/openai_common.rs (and its folder for tests) so the routes of B3619 and B3628 answer through the booted proxy, and it takes over their HTTP oracle cases, which could not pass at their own gates.
+  Read everything from B8640's `PassThroughState`; never read Shared here. Read each deps struct's merged fields and fill them from PassThroughState; when a field has no source there, stop and report.
+
+  `mount(router, ps)` merges:
+  - B3619's `common_routes_router` with B3613's HandlerDeps from ps: `/cohere/{*endpoint}`, `/mistral/{*endpoint}`, `/typesafe/{*endpoint}`, `/openrouter/{*endpoint}`, `/anthropic/{*endpoint}`, `/cursor/{*endpoint}`, and POST, PUT, DELETE and PATCH on `/openai_passthrough/{*endpoint}`;
+  - B3628's router: GET, POST, PUT, DELETE and PATCH on `/openai/{*endpoint}` (its own GET handler picks the WebSocket route for an upgrade), the WebSocket paths `/deepgram/v1/listen` and `/deepgram/listen`, and `/nvidia_nim/{*endpoint}`. Its deps take ps's `AxumSocketServe` as the `SocketServePort`, B8641's AllowlistAdapter as `ModelAllowlistPort`, ps's WebSocketRelay as `WebSocketRelayPort`, the router hop for the NVIDIA relay, and `config.sections.passthrough_websocket` for the switch;
+  - one GET handler on `/openai_passthrough/{*endpoint}`. A request with `connection: upgrade` and `upgrade: websocket` (case-insensitive) goes to ps's SocketServePort with `SocketAuth::Key` and a route closure that calls B3628's `openai_websocket_route`. Every other GET goes to B3619's `openai_alias_route`. LiteLLM serves both forms on this path (llm_passthrough_endpoints.py L3105 and openai_passthrough_endpoints.py), and axum allows only one GET handler per path.
+  `mount_public(router, ps)` merges B3619's `gemini_router` (`/gemini/{*endpoint}`), outside the auth layers: LiteLLM's Gemini route has no auth dependency and authenticates the `key` query value or the `x-goog-api-key` header itself through B052.
+
+  Oracle cases. Take over B3619's 15 cases and the seven HTTP cases of B3628 (the openai-route and nvidia ones) at their paths; do not move or rename the files. Add two cases of your own under tools/oracle/cases/server/pass-through-openai/: `GET /openai/v1/models` with no Authorization header (the auth error through the booted proxy), and `GET /openai_passthrough/v1/models` with the master key and OPENAI_API_KEY unset in the case environment (a plain GET on a path that also serves WebSockets still reaches the HTTP route and answers LiteLLM's 500 with the missing key message).
+scope:
+  paths:
+    - crates/betterlite-server/src/app/pass_through/routes/openai_common.rs
+    - crates/betterlite-server/src/app/pass_through/routes/openai_common/**
+    - tools/oracle/cases/server/pass-through-openai/**
+    - tools/oracle/cases/server/passthrough-common-routes/**
+    - tools/oracle/cases/server/passthrough-relays/openai-route-forwards-chat.yaml
+    - tools/oracle/cases/server/passthrough-relays/openai-route-missing-key.yaml
+    - tools/oracle/cases/server/passthrough-relays/openai-route-threads-beta.yaml
+    - tools/oracle/cases/server/passthrough-relays/nvidia-infer-forwards.yaml
+    - tools/oracle/cases/server/passthrough-relays/nvidia-no-group-400.yaml
+    - tools/oracle/cases/server/passthrough-relays/nvidia-mixed-group-400.yaml
+    - tools/oracle/cases/server/passthrough-relays/nvidia-stream-sse.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3105-L3110
+    why: The two WebSocket decorators that share their paths with the HTTP routes of /openai and /openai_passthrough.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/openai_passthrough_endpoints.py#L1-L42
+    why: The /openai_passthrough HTTP route and its methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L313-L379
+    why: gemini_proxy_route, registered without the user_api_key_auth dependency.
+dod:
+  - text: Every path of B3619 and B3628 reaches its handler through the merged app, and the merge does not panic.
+    proof: [registration-tests, oracle]
+  - text: On /openai_passthrough an upgrade GET reaches openai_websocket_route after WebSocket auth and every other GET reaches openai_alias_route.
+    proof: [shared-path-tests, oracle]
+  - text: The Gemini route answers a request whose key is only in the query or in x-goog-api-key, so it sits outside the auth layers.
+    proof: [registration-tests, oracle]
+  - text: The common provider, OpenAI and NVIDIA routes answer through the booted proxy as LiteLLM does.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: registration-tests
+      why: a common provider or OpenAI path is not mounted, sits on the wrong side of the auth layers, or two routers collide
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::routes::openai_common::tests::registration(::|$)/)'
+    - id: shared-path-tests
+      why: a GET on /openai_passthrough reaches the wrong form or a socket runs without auth
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::routes::openai_common::tests::shared_path(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/server/passthrough-common-routes/gemini-key-in-query.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/gemini-key-in-header.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/gemini-no-upstream-key.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/gemini-stream-in-path.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/cohere-bearer-key.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/mistral-body-stream.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/typesafe-headers.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/openrouter-strips-v1-base.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/anthropic-proxy-key.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/anthropic-caller-key.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/anthropic-no-credential.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/anthropic-base-url-fallback.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/cursor-basic-auth.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/cursor-no-key.yaml
+  - tools/oracle/cases/server/passthrough-common-routes/openai-passthrough-alias.yaml
+  - tools/oracle/cases/server/passthrough-relays/openai-route-forwards-chat.yaml
+  - tools/oracle/cases/server/passthrough-relays/openai-route-missing-key.yaml
+  - tools/oracle/cases/server/passthrough-relays/openai-route-threads-beta.yaml
+  - tools/oracle/cases/server/passthrough-relays/nvidia-infer-forwards.yaml
+  - tools/oracle/cases/server/passthrough-relays/nvidia-no-group-400.yaml
+  - tools/oracle/cases/server/passthrough-relays/nvidia-mixed-group-400.yaml
+  - tools/oracle/cases/server/passthrough-relays/nvidia-stream-sse.yaml
+  - tools/oracle/cases/server/pass-through-openai/openai-no-key.yaml
+  - tools/oracle/cases/server/pass-through-openai/openai-passthrough-http-get.yaml
+deviations: []
+out_of_scope:
+  - "The route logic: B3619 and B3628. The shared state and AxumSocketServe: B8640. The socket bridge: B8642."
+  - "The realtime WebSocket routes (/openai/v1/realtime, /v1/realtime, /realtime): the inference wiring part. axum's static path wins over /openai/{*endpoint}, as the earlier app.websocket registration wins in LiteLLM."
+pitfalls:
+  - "An upgrade request is a GET, so a WebSocket route and an HTTP GET route on one path collide in axum; one handler picks by the upgrade headers."
+  - "The Gemini route must not sit behind the global auth stage, or a request that carries its key only as `?key=` gets a 401 that LiteLLM never sends."
+  - "OPENAI_API_KEY and FAL_AI_API_KEY style env values must be set or unset per case, since the oracle boots both proxies with the case environment."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

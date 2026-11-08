@@ -1,0 +1,14 @@
+kind: helper
+name: schema-mismatch
+call:
+  schema_validation:
+    mode: validate
+    schema:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+    response: '{"age": 36}'
+env: {}
+compare:
+  ignore: []

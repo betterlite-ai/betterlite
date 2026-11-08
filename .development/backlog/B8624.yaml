@@ -1,0 +1,13 @@
+id: B8624
+milestone: M9 agents and mcp
+title: Mount the MCP OAuth discovery documents, token routes and BYOK routes
+status: todo
+depends_on: [B8620, B8623, B8610, B052, B743, B878, B4200, B4654, B4663, B4677, B4678, B4713, B5121, B7321, B7972, B173]
+file: tasks/B8624-mcp-oauth-route-mount.yaml
+covers: []
+parent: B137
+split_from: B137
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

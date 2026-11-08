@@ -15,7 +15,6 @@ aws-smithy-types = "=1.9.1"
 aws-types = "=1.6.0"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
 base64 = "0.23.1"
-betterlite = { path = "../../crates/betterlite" }
 betterlite-a2a = { path = "../../crates/betterlite-a2a" }
 betterlite-anthropic = { path = "../../crates/betterlite-anthropic" }
 betterlite-auth = { path = "../../crates/betterlite-auth" }
@@ -39,10 +38,12 @@ betterlite-ocr = { path = "../../crates/betterlite-ocr" }
 betterlite-openai = { path = "../../crates/betterlite-openai" }
 betterlite-openapi = { path = "../../crates/betterlite-openapi" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
+betterlite-policy = { path = "../../crates/betterlite-policy" }
 betterlite-postgres-fixture = { path = "../postgres-fixture" }
 betterlite-prompts = { path = "../../crates/betterlite-prompts" }
 betterlite-provider = { path = "../../crates/betterlite-provider" }
 betterlite-proxy = { path = "../../crates/betterlite-proxy" }
+betterlite-rag = { path = "../../crates/betterlite-rag" }
 betterlite-rate-limit = { path = "../../crates/betterlite-rate-limit" }
 betterlite-redact = { path = "../../crates/betterlite-redact" }
 betterlite-redis = { path = "../../crates/betterlite-redis" }
@@ -64,6 +65,7 @@ hex = "0.4.3"
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+opentelemetry = { version = "0.33.1", default-features = false }
 percent-encoding.workspace = true
 quick-xml.workspace = true
 rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }

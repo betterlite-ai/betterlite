@@ -48,7 +48,7 @@ description: >-
   Move agent_caller.py _header L24-L26 and agent_caller_from_headers L29-L37 down here: only a truthy
   agent_id enables first case-insensitive x-litellm-user-id/x-litellm-team-id lookup; strip values and
   treat empty as absent. With neither return None, otherwise a typed AgentCaller. These headers only
-  narrow access through B748 and never replace grants; the wave 17 agents wiring part installs the other agent services.
+  narrow access through B748 and never replace grants; B8646 installs the other agent services.
 
   WebSocket authentication constructs a GET request with original query/headers, shared state,
   scope.path default empty and optional root_path/app_root_path. The URL may carry Host input but

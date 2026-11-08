@@ -1,0 +1,12 @@
+kind: helper
+name: rule-decision-seed
+call:
+  rule_decision:
+    phase: post
+    model: gpt-4o
+    mock_response: schema_validation
+    rules:
+      - null
+      - {decision: true, message: schema_validation}
+env: {}
+compare: {ignore: []}

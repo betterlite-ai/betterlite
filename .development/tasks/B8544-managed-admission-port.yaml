@@ -14,7 +14,7 @@ description: >-
   New betterlite-server module `managed_admission_port` (crates/betterlite-server/src/managed_admission_port.rs and
   managed_admission_port/, declared by the skeleton). `AgentAdmission` is a struct holding the B4776 `AgentRegistry`, the B4778
   and B4780 `AgentAccessResolver`, the read-through registry lookup B4781's invoke step takes, and an
-  `Option<AgentIdentityStore>`. Build it at server start: the store is Some exactly when the server holds a database pool (B700),
+  `Option<AgentIdentityStore>`; take all four from B8645's AgentServices::new(config, shared) instead of building them here. Build it at server start: the store is Some exactly when the server holds a database pool (B700),
   built over B726's repositories and the shared cache B4773 names, and None otherwise, which is what LiteLLM's "create a managed
   identity store only when DB exists" means. Implement B855's ManagedAdmission for it. The admit method forwards to
   admit_managed_actor with the store as Option<&S>; the prepare method forwards to prepare_agent_invocation with the target name and

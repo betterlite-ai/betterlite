@@ -1,0 +1,9 @@
+kind: helper
+name: rule-decision-schema-validation
+call:
+  schema_validation:
+    mode: validate
+    schema: {type: object, properties: {name: {type: STRING}}}
+    response: '{"name": "Ada"}'
+env: {}
+compare: {ignore: []}

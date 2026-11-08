@@ -1,0 +1,97 @@
+id: B8720
+title: MCP gateway protocol handler and session auth
+description: >-
+  LiteLLM answers MCP traffic with the Python SDK's low level Server, which server.py builds once and gives eight request handlers. This task builds the Rust side of that Server: the handler that answers initialize and the eight methods, and the auth context each request runs under. The HTTP transports that feed it are B8721 (streamable HTTP), B8722 (single exchange) and B8726 (legacy SSE); B8727 composes them. Code goes in betterlite-server, module mcp::gateway_server (crates/betterlite-server/src/mcp/gateway_server.rs) with the submodules session_auth, init_options and handler, each with a tests.rs beside it.
+
+
+  Library. Use the rmcp crate 3.4.1 from crates.io (Apache-2.0) with default-features = false and features = ["server"]. It gives the JSON-RPC model types, the ServerHandler trait, the Peer for notifications and server to client requests, and serve_server and serve_directly, which the transports run over in-memory channels. Add it to crates/betterlite-server/Cargo.toml. Do not turn on any rmcp transport feature: the HTTP transports are ported by hand so the wire matches the Python SDK. If cargo deny refuses a second version of a crate that rmcp pulls in, report it as a blocker instead of working around it.
+
+
+  session_auth. SessionAuth replaces LiteLLM's auth_context_var and the per-session entry of _stateful_session_auth_contexts. It is a cheap clone handle (an Arc around a lock) over B8200's McpAuthenticatedUser. AuthFields holds the seven values LiteLLM passes around: user_api_key_auth (Option of B2314's UserAPIKeyAuth), mcp_auth_header, mcp_servers (Option<Vec<String>>), mcp_server_auth_headers, oauth2_headers, raw_headers and client_ip.
+
+  1. SessionAuth::new(fields) is set_auth_context: a new handle; mcp_server_auth_headers None becomes an empty map through B8200's constructor.
+
+  2. set_or_update(existing: Option<&SessionAuth>, fields, copy_existing: bool) -> SessionAuth is _set_or_update_auth_context without the last seen stamp (B8723 owns that map). With a handle and copy_existing false it overwrites all seven fields of that same handle in place (_update_auth_context, where None headers become an empty map) and returns a clone of it. With copy_existing true, or no handle, it returns SessionAuth::new(fields).
+
+  3. snapshot() returns the seven values in get_auth_context's order.
+
+  The in place overwrite matters: a stateful session keeps one handler for its life, and every later request on that session must make the handler see the newest caller's headers, as LiteLLM's mutated object does. get_or_extract_auth_context, _cache_auth_context_lazily, _recover_auth_from_session, _get_current_session, get_active_mcp_session and get_active_auth_context all collapse into the handler holding its SessionAuth and the request's rmcp Peer. No static, thread local or task local holds either.
+
+
+  init_options. InitOverrides has instructions: Option<String>, server_name: Option<String> and proxy_mode: bool. B8725 computes the first two per request and B8727 passes them in. GatewayServer's get_info and initialize port _gateway_create_initialization_options: server name LITELLM_MCP_SERVER_NAME and version LITELLM_MCP_SERVER_VERSION from B6594; in proxy mode the prompts and resources capabilities are absent; Some instructions replace the instructions; Some server_name replaces the server name. initialize also runs B8190's GatewayVersionPolicy (capabilities.py L114-L145): the requested revision negotiates to itself when it is in HANDSHAKE_PROTOCOL_VERSIONS and to LATEST_HANDSHAKE_VERSION otherwise, a negotiated revision outside configured_versions() fails with JSON-RPC error -32022, message "Unsupported MCP protocol version" and data {"supported": [the configured list]}, and the result's capabilities are replaced by B8190's discovery answer for that revision. Every other request checks the session's revision against configured_versions() the same way before dispatch.
+
+
+  handler. GatewayServer<O> holds the operations port O (B8199's GatewayOperations, with the generic parameters B8199 declares), a SessionAuth, the InitOverrides and the McpContext that B8191 defines for this request. Each method first builds the operation context the way _legacy_operation_context does: snapshot the SessionAuth, then call B8199's prepare_context with auth, token, servers, server headers, oauth2 headers, raw headers, client ip, proxy_mode, B8190's wire_compat_for(protocol version) and the protocol version, then call B8199's GatewayOperations::execute with the matching operation. Methods and their failure rules, in LiteLLM's registration order:
+
+  a. server/discover goes through rmcp's on_custom_request. It is never rejected in proxy mode and gets no progress callback.
+
+  b. tools/list: an MCP error passes through; an HTTP error becomes JSON-RPC error -32600 (INVALID_REQUEST) whose message is B8195's http_detail_message of its detail; any other failure logs "Error in list_tools endpoint: {err}" at error level and returns an empty tool list.
+
+  c. tools/call: every error passes through.
+
+  d. prompts/list, resources/list and resources/templates/list: in proxy mode fail first with B8199's proxy rejection (METHOD_NOT_FOUND, "Operation unavailable on /mcp/proxy"); otherwise any failure, MCP errors included, logs "Error in list_prompts endpoint: {err}" (list_resources, list_resource_templates for the other two) and returns an empty list.
+
+  e. prompts/get and resources/read: the proxy rejection first, then every error passes through.
+
+  Progress, _capture_host_progress_callback: when the request's _meta has a progressToken, B8199 gets a callback that sends notifications/progress with that token, the progress and the total through the request's Peer. A failed send logs "Failed to forward progress to Host: {err}" and is swallowed. Without a token there is no callback.
+
+  Results reach the handler as B8190's wire shapes. Convert them into rmcp's model types through serde_json values, keeping _meta and any field rmcp's model has room for. A field that rmcp drops is a deviation to report, with the method and field name.
+
+
+  Tests use a fake operations port that records each operation and context and a synthetic auth builder. Ids and names start with test-.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/gateway_server.rs
+    - crates/betterlite-server/src/mcp/gateway_server/**
+    - crates/betterlite-server/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L560-L600
+    why: _gateway_create_initialization_options, the Server name and version, and the GatewayVersionPolicy middleware.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L811-L973
+    why: _legacy_operation_context, the eight handlers, the progress callback and the handler registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L2514-L2776
+    why: The auth context functions that SessionAuth replaces.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/capabilities.py#L114-L145
+    why: GatewayVersionPolicy, the -32022 refusal and the discovery capabilities on initialize.
+  - url: https://docs.rs/rmcp/3.4.1/rmcp/handler/server/trait.ServerHandler.html
+    why: The rmcp handler trait, on_custom_request and the request context.
+dod:
+  - text: SessionAuth overwrites a session's seven fields in place on update, makes a new handle on copy or without a session, and turns missing per-server headers into an empty map.
+    proof: [auth-tests]
+  - text: initialize answers LiteLLM's server name and version, drops prompts and resources in proxy mode, applies the instruction and server name overrides, negotiates the revision and refuses one outside the configured list with -32022 and the supported list.
+    proof: [init-tests]
+  - text: Each of the eight methods builds the context from the session auth and dispatches the matching operation; the proxy rejection, the -32600 mapping and the empty list fallbacks follow LiteLLM per method.
+    proof: [handler-tests]
+  - text: A progress token turns into notifications/progress through the peer, a failed send is swallowed, and no token means no callback.
+    proof: [handler-tests]
+checks:
+  optional: []
+  commands:
+    - id: auth-tests
+      why: the in place update, the copy rule or the header default of the session auth is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::gateway_server::session_auth::/)'
+    - id: init-tests
+      why: the initialize options or the version policy differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::gateway_server::init_options::/)'
+    - id: handler-tests
+      why: a method's dispatch, proxy rejection, error mapping, fallback or progress forwarding differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::gateway_server::handler::/)'
+oracle_cases: []
+deviations:
+  - what: The per request auth is a SessionAuth handle held by the session's handler instead of a ContextVar plus a WeakKeyDictionary keyed by the SDK session.
+    why: The Rust rules forbid module state and task locals; the handle gives the handler the same newest-caller view.
+out_of_scope:
+  - "The HTTP transports: B8721, B8722 and B8726. The session maps keyed by mcp-session-id: B8723. The order of checks before dispatch: B8727."
+  - "_reject_mcp_proxy_operation, prepare_context and GatewayOperations: B8199. _http_detail_message: B8195. GatewayVersionPolicy, configured_versions, build_discovery and wire_compat_for: B8190. McpContext: B8191. McpAuthenticatedUser: B8200."
+  - "_mcp_meta_trace_carrier and the _otel_* carrier functions: not built, since no betterlite task builds LiteLLM's otel_v2 MCP span plumbing they feed, and they are no-ops without it."
+pitfalls:
+  - "Only tools/list re-raises an MCP error. The prompt and resource list handlers catch every failure, MCP errors included, and answer an empty list."
+  - "The proxy rejection in the four prompt and resource handlers runs before the try, so in proxy mode it is an error and never an empty list."
+  - "server/discover is the one method that is answered in proxy mode and never gets a progress callback."
+  - "In proxy mode the prompts and resources capabilities are removed from the initialize result, not set to empty objects."
+  - "copy_existing true (an initialize that arrives with an existing session id) must build a new handle; mutating the stored one would rewrite the old session's caller."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

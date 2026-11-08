@@ -7,7 +7,7 @@ description: >-
   Nothing here writes to the database. The one write-like effect is the registry add in route 7.
 
 
-  Layout. crates/betterlite-server/src/mcp/catalog_views.rs holds CatalogViews (a struct whose fields are the ports and values the routes need, built by the composition root with a struct literal), the CatalogError enum (thiserror, one variant per failure, a status mapping used by the routes) and `routes()` which returns the axum router with the nine routes.
+  Layout. crates/betterlite-server/src/mcp/catalog_views.rs holds CatalogViews (a struct whose fields are the ports and values the routes need, built by B8625 with a struct literal), the CatalogError enum (thiserror, one variant per failure, a status mapping used by the routes) and `routes()` which returns the axum router with the nine routes.
   The files beside it, each with a tests.rs: small_reads.rs (routes 1 to 3), registry_feed.rs (route 4), server_list.rs (route 5), health_routes.rs (route 6), server_detail.rs (route 7), discovery.rs (routes 8 and 9).
   No global state. The LiteLLM globals become fields: the registry (B4731 ServerRegistry behind B6592's shared handle), the health service (B6592), the database port (B4711), the settings (B4717's management mode, this task's registry flag), the clock and the tool lister.
 
@@ -16,7 +16,7 @@ description: >-
 
 
   Route 1. GET /v1/mcp/tools (any valid key) returns {"tools": [...]}, every tool of the caller's key serialized with its aliased field names (inputSchema, not input_schema) and with null fields kept.
-  The tool list comes from LiteLLM's _list_mcp_tools called with only the auth: no auth header, no server filter, no per-server headers, no client ip. Define a port trait ToolLister with one async method list_tools(auth) -> Result<Vec<tool>, ListToolsError>, where the tool type is the one the MCP client crates already define (read crates/betterlite-mcp for the Tool type and its serde names). The composition root wires the real lister; this task only calls the port. Only the tools are returned, not the per-server outcome that the listing also carries.
+  The tool list comes from LiteLLM's _list_mcp_tools called with only the auth: no auth header, no server filter, no per-server headers, no client ip. Define a port trait ToolLister with one async method list_tools(auth) -> Result<Vec<tool>, ListToolsError>, where the tool type is the one the MCP client crates already define (read crates/betterlite-mcp for the Tool type and its serde names). B8625 wires the real lister; this task only calls the port. Only the tools are returned, not the per-server outcome that the listing also carries.
 
   Route 2. GET /v1/mcp/access_groups (any valid key, no role check) returns {"access_groups": [...]}, the sorted union of the access group names of every config-loaded server and of every row of the MCP server table.
   Config servers carry the names in their access_groups field and table rows carry them in mcp_access_groups, so the two spellings differ. Skip empty lists.
@@ -29,7 +29,7 @@ description: >-
   Otherwise: client_ip is B743's get_mcp_client_ip(request); base_url is B4654's get_request_base_url(request); the response is {"servers": [{"server": entry}, ...]}. The first element is the built-in entry for this gateway, then one element per record of B4731's filtered_registry(client_ip) (get_filtered_registry), values only, sorted by the registry name, a stable sort on the plain string.
   The registry name of a record is its alias, else its server_name, else its server_id (the first non-empty one).
   An entry is {"name": N, "title": N, "description": N, "version": "1.0.0", "remotes": [{"type": "streamable-http", "url": U}]} with N the registry name. For a record U is base_url with trailing slashes removed, then "/", then B6594's get_server_prefix(record), then "/mcp". A record whose prefix is empty is skipped (LiteLLM raises ValueError and the loop catches it, logging at debug level "Skipping MCP server %s in registry: %s").
-  The built-in entry uses the gateway name and description and U = base_url without trailing slashes + "/mcp". The gateway name is the env var LITELLM_MCP_SERVER_NAME (default "litellm-mcp-server") and the description is LITELLM_MCP_SERVER_DESCRIPTION (default "MCP Server for LiteLLM"). CatalogViews takes both as plain string fields that the composition root fills from the environment; the module reads no environment variable itself.
+  The built-in entry uses the gateway name and description and U = base_url without trailing slashes + "/mcp". The gateway name is the env var LITELLM_MCP_SERVER_NAME (default "litellm-mcp-server") and the description is LITELLM_MCP_SERVER_DESCRIPTION (default "MCP Server for LiteLLM"). CatalogViews takes both as plain string fields that B8625 fills from B8620's config section; the module reads no environment variable itself.
   Key order inside an entry is name, title, description, version, remotes.
 
   Route 5. GET /v1/mcp/server lists servers for the dashboard. Query: team_id (optional string) and connected_app_view (bool, default false). The response model is a list of B858's LiteLLM_MCPServerTable, every field serialized, nulls included.
@@ -74,7 +74,6 @@ scope:
     - crates/betterlite-server/data/mcp_registry.json
     - crates/betterlite-config/src/sections/mcp_registry.rs
     - crates/betterlite-config/src/sections/mcp_registry/**
-    - tools/oracle/cases/http/mcp-catalog/**
     - tools/oracle/helpers/b4720.py
     - tools/oracle/helpers/b4720/**
     - tools/oracle/src/helpers/server/b4720.rs
@@ -110,35 +109,37 @@ references:
     why: The defaults of LITELLM_MCP_SERVER_NAME and LITELLM_MCP_SERVER_DESCRIPTION used by the built-in registry entry.
 
 dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports; B8625 mounts the routes and proves the items below over HTTP with the cases that moved there.
+    proof: [catalog-tests]
   - text: >-
       GET /v1/mcp/registry.json answers 404 "MCP registry is not enabled" when enable_mcp_registry is false or absent without needing a key,
       and when it is true returns the built-in gateway entry first, then the ip-filtered servers sorted by alias, server_name or server_id, with the exact entry shape and the remote url built from the request base url and the server prefix.
-    proof: [registry-feed-tests, config-tests, oracle]
+    proof: [registry-feed-tests, config-tests]
   - text: >-
       The enable_mcp_registry key is read by a betterlite-config section that defaults it to false and loads true and false from a config file.
     proof: [config-tests]
   - text: >-
       GET /v1/mcp/tools returns {"tools": [...]} from the tool lister called with the auth only, GET /v1/mcp/access_groups returns the sorted union of config and table groups and survives a table error,
       and GET /v1/mcp/network/client-ip returns the resolved ip or null.
-    proof: [small-reads-tests, oracle]
+    proof: [small-reads-tests]
   - text: >-
       GET /v1/mcp/server follows steps a to h: team_id handling (blank value ignored, restricted key 403, non-member 403, admin bypass), team-scoped union with allow-all-keys servers, display-order sorting,
       the connected app and has_user_credential annotations with their conditions, and the virtual key, non-admin and full-admin exits.
-    proof: [server-list-tests, oracle]
+    proof: [server-list-tests]
   - text: >-
       GET /v1/mcp/server/health returns server_id and status rows, maps reachable to unknown unless include_reachability is true, uses the unfiltered check in view_all mode,
       and merges auth contexts first-seen without checking a server twice.
-    proof: [health-routes-tests, oracle]
+    proof: [health-routes-tests]
   - text: >-
       GET /v1/mcp/server/{server_id} checks the database first (500 object detail), resolves and authorizes with the exact 404 and 403 texts and the catalog-view rule,
       adds database servers to the registry, attaches the health result or the unknown fallback, and redacts or sanitizes by role.
-    proof: [server-detail-tests, oracle]
+    proof: [server-detail-tests]
   - text: >-
       GET /v1/mcp/discover and GET /v1/mcp/openapi-registry answer 403 with the exact role text to callers without admin view;
       discover filters by query and category and lists categories from the full catalog, and the embedded catalog equals the pinned file.
-    proof: [discovery-tests, catalog-data, oracle]
+    proof: [discovery-tests, catalog-data]
   - text: All nine routes are registered once under /v1/mcp with the methods and paths in the description, and /server/health does not fall into the /server/{server_id} handler.
-    proof: [catalog-tests, oracle]
+    proof: [catalog-tests]
 
 checks:
   optional: [mutants]
@@ -174,30 +175,7 @@ checks:
         d05e9b1e729d659440e4a0799563c0cea5d4b2bbb64baa8986566da53ad01be2  crates/betterlite-server/data/mcp_registry.json
         SUMS
 
-oracle_cases:
-  - tools/oracle/cases/http/mcp-catalog/registry-disabled-404.yaml
-  - tools/oracle/cases/http/mcp-catalog/registry-enabled-builtin-entry.yaml
-  - tools/oracle/cases/http/mcp-catalog/registry-enabled-no-key-needed.yaml
-  - tools/oracle/cases/http/mcp-catalog/access-groups-config-only.yaml
-  - tools/oracle/cases/http/mcp-catalog/access-groups-no-key-401.yaml
-  - tools/oracle/cases/http/mcp-catalog/client-ip-shape.yaml
-  - tools/oracle/cases/http/mcp-catalog/tools-empty-list.yaml
-  - tools/oracle/cases/http/mcp-catalog/server-list-admin-config-servers.yaml
-  - tools/oracle/cases/http/mcp-catalog/server-list-blank-team-id-ignored.yaml
-  - tools/oracle/cases/http/mcp-catalog/server-list-team-non-member-403.yaml
-  - tools/oracle/cases/http/mcp-catalog/server-list-sorted-by-name.yaml
-  - tools/oracle/cases/http/mcp-catalog/server-list-regular-user-sanitized.yaml
-  - tools/oracle/cases/http/mcp-catalog/health-all-servers.yaml
-  - tools/oracle/cases/http/mcp-catalog/health-unknown-id-empty.yaml
-  - tools/oracle/cases/http/mcp-catalog/server-by-id-no-database-500.yaml
-  - tools/oracle/cases/http/mcp-catalog/server-by-id-unknown-404.yaml
-  - tools/oracle/cases/http/mcp-catalog/server-health-path-not-id.yaml
-  - tools/oracle/cases/http/mcp-catalog/discover-regular-user-403.yaml
-  - tools/oracle/cases/http/mcp-catalog/discover-admin-full-list.yaml
-  - tools/oracle/cases/http/mcp-catalog/discover-query-filter.yaml
-  - tools/oracle/cases/http/mcp-catalog/discover-category-filter.yaml
-  - tools/oracle/cases/http/mcp-catalog/openapi-registry-regular-user-403.yaml
-  - tools/oracle/cases/http/mcp-catalog/openapi-registry-admin-ok.yaml
+oracle_cases: []
 
 deviations:
   - what: The discovery catalog is embedded in the binary at build time and read from memory, not opened from a file next to the code on the first request.

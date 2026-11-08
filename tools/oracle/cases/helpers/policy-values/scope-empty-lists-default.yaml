@@ -1,0 +1,13 @@
+kind: helper
+name: scope-empty-lists-default
+call:
+  b3240:
+    function: attachment_scope
+    attachment:
+      policy: baseline
+      teams: []
+      keys: []
+      models: []
+      tags: []
+env: {}
+compare: {ignore: []}

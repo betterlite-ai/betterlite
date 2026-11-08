@@ -19,7 +19,7 @@ scope:
   - crates/betterlite-core/src/api/assistant_run_sdk.rs
   - crates/betterlite-core/src/api/assistant_run_sdk/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/assistant_run.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/assistant_run.py
   - tools/oracle/cases/sdk-http/assistant-run/**

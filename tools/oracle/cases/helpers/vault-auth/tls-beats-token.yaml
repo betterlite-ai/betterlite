@@ -1,0 +1,17 @@
+kind: helper
+name: vault-auth-tls-beats-token
+env: {}
+compare: {ignore: []}
+call:
+  b4416:
+    env:
+      HCP_VAULT_CLIENT_CERT: /certs/client.crt
+      HCP_VAULT_CLIENT_KEY: /certs/client.key
+      HCP_VAULT_TOKEN: token-1
+    routes:
+      - route: "POST http://127.0.0.1:8200/v1/auth/cert/login"
+        replies:
+          - {status: 200, body: '{"auth":{"client_token":"hvs.tls","lease_duration":60}}'}
+    steps:
+      - {op: token}
+      - {op: namespaces}

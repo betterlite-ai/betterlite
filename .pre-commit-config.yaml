@@ -55,7 +55,8 @@ repos:
         types_or: [rust, python]
       - id: typos
         name: typos
-        entry: typos --threads 2
+        # typos keeps about 0.5 MB per path argument until it exits, so a whole-repo run goes in batches
+        entry: sh -c 'printf "%s\n" "$@" | xargs -d "\n" -n 500 typos --threads 2' typos
         language: system
         types: [text]
         exclude: ^\.development/|^crates/betterlite-config/assets/content_filter/

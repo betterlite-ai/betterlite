@@ -8,7 +8,7 @@ description: >-
   /videos/extensions (B3345 and B6360) are not registered here. axum matches the literal
   /videos/characters path before /videos/{video_id}, so the order of the merges does not matter.
 
-  Every handler builds a data map, hands it to B004's common request processor with a fixed route_type and passes the
+  Every handler builds a data map, runs B8801's PreCall step on it (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step) and hands it to B004's common request processor with a fixed route_type and passes the
   server's user_model, user_temperature, user_request_timeout, user_max_tokens, user_api_base and version. Failures go
   through B004's handle-exception step, so the error envelope, status, x-litellm-call-id and the other x-litellm-*
   headers are B004's. model is always passed as None to the processor.
@@ -154,7 +154,7 @@ out_of_scope:
   - "video_edit and video_extension (endpoints.py 725-923): B6360."
   - "get_custom_provider_from_data, extract_model_from_target_model_names and video_reference_to_id in video_endpoints/utils.py: B3330. No handler in this task calls them."
   - "batch_to_bytesio (image_endpoints/endpoints.py): B082. This task calls it."
-  - "ProxyBaseLLMRequestProcessing and its exception handler: B004. The provider hint getters and is_known_model: B2400. Body reading: B1100. Model-id lookup: B844."
+  - "common_processing_pre_call_logic: B8801. The rest of ProxyBaseLLMRequestProcessing and its exception handler: B004. The provider hint getters and is_known_model: B2400. Body reading: B1100. Model-id lookup: B844."
   - "route_llm_request itself: B6460 owns the video route choice (plan_video_route) and the router wrappers. This task calls them from its three dispatch entries."
 pitfalls:
   - "List builds data as {query_params: {...}} and never spreads it, so GET /v1/videos?limit=2 sends no limit upstream. Do not 'fix' this by unpacking the query."
