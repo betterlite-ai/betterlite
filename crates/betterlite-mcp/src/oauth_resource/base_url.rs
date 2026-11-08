@@ -47,10 +47,7 @@ pub fn normalize_proxy_base_url(raw: &str) -> Option<String> {
         matches!(parsed.scheme.as_str(), "http" | "https") && !parsed.netloc.is_empty()
     });
     let Some(parsed) = usable else {
-        warn!(
-            value = %configured,
-            "PROXY_BASE_URL is not a valid http(s) URL and is ignored for MCP OAuth origin resolution"
-        );
+        warn!(value = %configured, "PROXY_BASE_URL is not a valid http(s) URL; ignoring it");
         return None;
     };
     let normalized = python_url::join(&parsed.scheme, &parsed.netloc, &parsed.path, "", "");

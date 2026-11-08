@@ -59,7 +59,7 @@ pub fn resolve_upstream_resource(server: &UpstreamServer<'_>) -> Option<String> 
     let Some(server_url) = server.url.filter(|value| !value.is_empty()) else {
         warn!(
             server_id = server.server_id,
-            "upstream_resource=auto needs a server url to derive an RFC 8707 resource identifier; omitting it"
+            "auto upstream_resource needs a url; omitting it"
         );
         return None;
     };
@@ -69,7 +69,7 @@ pub fn resolve_upstream_resource(server: &UpstreamServer<'_>) -> Option<String> 
     }
     warn!(
         server_id = server.server_id,
-        "the server url yields no RFC 8707 resource for upstream_resource=auto; omitting it"
+        "the url yields no resource; omitting it"
     );
     None
 }

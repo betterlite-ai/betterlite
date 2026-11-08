@@ -84,19 +84,12 @@ fn path_without_params<'url>(scheme: &str, after_netloc: &'url str) -> &'url str
 }
 
 fn split_scheme(url: &str) -> Option<(String, &str)> {
-    let colon = url.find(':')?;
-    let candidate = url.get(..colon)?;
+    let (candidate, rest) = url.split_once(':')?;
     let mut characters = candidate.chars();
     let first = characters.next()?;
     let rest_valid = characters
         .all(|character| character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.'));
-    if !first.is_ascii_alphabetic() || !rest_valid {
-        return None;
-    }
-    Some((
-        candidate.to_lowercase(),
-        url.get(colon.saturating_add(1)..)?,
-    ))
+    (first.is_ascii_alphabetic() && rest_valid).then(|| (candidate.to_lowercase(), rest))
 }
 
 fn split_netloc(remainder: &str) -> Result<(String, &str), UrlParseError> {

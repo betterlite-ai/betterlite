@@ -71,11 +71,10 @@ impl RawHeaders {
 
     #[must_use]
     pub fn items(&self) -> Vec<(&str, &str)> {
-        let mut items = Vec::with_capacity(self.entries.len());
-        for (name, value) in &self.entries {
-            items.push((name.as_str(), value.as_str()));
-        }
-        items
+        self.entries
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect()
     }
 }
 

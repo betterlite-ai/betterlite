@@ -22,9 +22,8 @@ pub fn route_relative_request_path(
     app_root_path: Option<&str>,
     root_path: Option<&str>,
 ) -> String {
-    let raw_path = original_path
-        .filter(|value| !value.is_empty())
-        .unwrap_or(path);
+    let first = original_path.filter(|value| !value.is_empty());
+    let raw_path = first.unwrap_or(path);
     let root = app_root_path
         .filter(|value| !value.is_empty())
         .or_else(|| root_path.filter(|value| !value.is_empty()))

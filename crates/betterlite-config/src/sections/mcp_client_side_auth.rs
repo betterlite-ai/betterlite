@@ -49,12 +49,11 @@ impl Section for Raw {
                 None => DEFAULT_HEADER_NAME.to_owned(),
             },
         };
-        Ok(Settings {
-            header_name: if resolved.is_empty() {
-                DEFAULT_HEADER_NAME.to_owned()
-            } else {
-                resolved
-            },
-        })
+        let header_name = if resolved.is_empty() {
+            DEFAULT_HEADER_NAME.to_owned()
+        } else {
+            resolved
+        };
+        Ok(Settings { header_name })
     }
 }
