@@ -55,14 +55,6 @@ class Factory:
         return cast(object, type(self.label, (), {})())
 
 
-class PlainFactory:
-    def __init__(self, label: str) -> None:
-        self.label = label
-
-    def __call__(self, *_args: Json, **_kwargs: Json) -> object:
-        return cast(object, type(self.label, (), {})())
-
-
 class MantleFactory:
     def __call__(self, _signer: object = None, *, use_openai_path: bool = True) -> object:
         _ARGUMENTS["BedrockMantleResponsesAPIConfig"] = use_openai_path
@@ -224,7 +216,7 @@ def _install(stack: ExitStack, input_value: dict[str, Json]) -> None:
         (
             litellm,
             "GithubCopilotResponsesAPIConfig",
-            PlainFactory("GithubCopilotResponsesAPIConfig"),
+            lambda: cast(object, type("GithubCopilotResponsesAPIConfig", (), {})()),
         ),
     ]
     for target, attribute, replacement in patches:

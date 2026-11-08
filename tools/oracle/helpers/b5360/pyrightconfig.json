@@ -1,6 +1,1 @@
-{
-  "include": ["."],
-  "typeCheckingMode": "strict",
-  "reportAny": "error",
-  "reportMissingTypeStubs": "none"
-}
+{"include": ["."], "typeCheckingMode": "strict", "reportAny": "error", "reportMissingTypeStubs": "none"}
