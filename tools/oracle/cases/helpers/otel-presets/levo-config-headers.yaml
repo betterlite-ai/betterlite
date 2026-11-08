@@ -1,0 +1,17 @@
+kind: helper
+name: levo-config-headers
+call:
+  b3850:
+    function: levo_config
+    environment:
+      LEVOAI_API_KEY: key
+      LEVOAI_ORG_ID: org
+      LEVOAI_WORKSPACE_ID: workspace
+      LEVOAI_COLLECTOR_URL: https://levo.example/v1/traces
+env:
+  LEVOAI_API_KEY: key
+  LEVOAI_ORG_ID: org
+  LEVOAI_WORKSPACE_ID: workspace
+  LEVOAI_COLLECTOR_URL: https://levo.example/v1/traces
+compare:
+  ignore: []

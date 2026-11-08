@@ -1,0 +1,30 @@
+kind: helper
+name: logging-fields-payload-seed
+call:
+  logging_fields:
+    function: payload_record
+    payload:
+      id: chatcmpl-1
+      trace_id: trace-1
+      session_id: session-1
+      call_type: completion
+      response_cost: 0.25
+      status: failure
+      status_fields: {llm_api_status: failure, guardrail_status: guardrail_intervened}
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      startTime: 1704067200.0
+      endTime: 1704067201.0
+      completionStartTime: 1704067201.0
+      response_time: 1.0
+      model_map_information: {model_map_key: "", model_map_value: null}
+      model: gpt-4o
+      api_base: https://api.openai.com
+      metadata: {user_api_key_spend: null}
+      saved_cache_cost: 0.0
+      request_tags: []
+      model_parameters: {}
+      hidden_params: {}
+env: {}
+compare: {ignore: []}
