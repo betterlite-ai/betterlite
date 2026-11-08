@@ -1,0 +1,12 @@
+kind: helper
+name: token-count-response-count-null
+call:
+  token_count:
+    function: token_counter
+    model: gpt-3.5-turbo
+    count_response_tokens: null
+    messages:
+      - role: user
+        content: hello world
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: token_count-default-seed
+call:
+  token_count:
+    function: default_encoding
+    text: hello world
+env: {}
+compare: {ignore: []}

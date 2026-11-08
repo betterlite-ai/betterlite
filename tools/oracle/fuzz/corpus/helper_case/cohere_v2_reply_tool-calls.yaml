@@ -1,0 +1,18 @@
+kind: helper
+name: cohere-v2-reply-seed-tool-calls
+call:
+  cohere_v2_reply:
+    function: reply
+    requests:
+      - body: '{"message":{"tool_calls":[{"id":"seed_call","type":"function","function":{"name":"seed","parameters":{"n":1}}}],"citations":[{"sources":[{"type":"document","document":{"title":"Seed"},"unused":true}]}]},"usage":{"tokens":{"input_tokens":2,"output_tokens":3}}}'
+        status: 200
+        model: command-r
+        created: 9
+        id: seed-template
+        finish_reason: stop
+        message: {content: seed-content}
+compare:
+  ignore:
+    - pointer: /value/0/value/tool_calls/0/function/arguments
+      why: betterlite writes compact JSON where Python's json.dumps adds spaces
+env: {}

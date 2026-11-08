@@ -1,0 +1,14 @@
+kind: helper
+name: vault-secret-operations-read-http-500-error
+env: {}
+compare: {ignore: []}
+call:
+  b4417:
+    env:
+      HCP_VAULT_TOKEN: token
+    routes:
+      - route: "GET http://127.0.0.1:8200/v1/secret/data/BROKEN"
+        replies:
+          - {status: 500, body: ''}
+    steps:
+      - {op: read, name: BROKEN}

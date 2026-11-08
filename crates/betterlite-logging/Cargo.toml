@@ -10,6 +10,7 @@ async-trait = "0.1.92"
 base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-env = { path = "../betterlite-env" }
+betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-prometheus = { path = "../betterlite-prometheus" }

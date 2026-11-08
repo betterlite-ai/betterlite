@@ -1,0 +1,15 @@
+kind: helper
+name: scope-tags-absent-check-skipped
+call:
+  b3241:
+    policy_memory_matching_matcher:
+      action: scope_matches
+      scope:
+        teams: [team-a]
+      context:
+        team_alias: team-a
+        key_alias: k
+        model: gpt-4
+        tags: [anything]
+env: {}
+compare: {ignore: []}

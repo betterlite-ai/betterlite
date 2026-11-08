@@ -88,6 +88,10 @@ base:
       why: no Rust source file may grow past the line limits in settings.file_size; a `mod name;` line does not count, so a parent can declare every child module where cargo-mutants finds it
     - id: crates
       why: every crate inherits the workspace lints, is MIT, and keeps the LiteLLM name out of its name
+    - id: module-tree
+      why: "every Rust file the change adds or edits is part of its crate, reached from a Cargo target through a mod line, #[path] or include!, so its code and its tests compile"
+    - id: case-ignores
+      why: every compare.ignore pointer in a helper case the change adds or edits starts with a field of the helper answer, so it ignores something
   commands:
     - id: committed
       why: every change must be committed, so the branch is exactly what gets merged
@@ -125,8 +129,10 @@ base:
         if [ -z "$packages" ]; then echo "no package owns the corpus in $dirs"; exit 1; fi
         cargo nextest run --locked --no-tests=warn $packages -E 'test(/replays_the_/)'
     - id: hooks
-      why: the prek pre-commit hooks pass on every file (hygiene, test placement, ast-grep rules, typos, rustfmt)
-      run: prek run --all-files
+      why: the prek pre-commit hooks (hygiene, test placement, ast-grep rules, typos, rustfmt) pass on the files the change touches, and on every file when it touches hook config or tool versions
+      run: |-
+        config=(.pre-commit-config.yaml sgconfig.yml .ast-grep rust-toolchain.toml .development/checks.yaml typos.toml tools/oracle/helpers/pyrightconfig.json tools/oracle/helpers/ruff.toml tools/oracle/litellm/pyproject.toml tools/oracle/litellm/uv.lock)
+        if git diff --quiet "$GATE_BASE" HEAD -- "${config[@]}"; then prek run --from-ref "$GATE_BASE" --to-ref HEAD; else prek run --all-files; fi
     - id: similarity
       why: no two functions are near copies of each other
       run: similarity-rs $(ls -d crates tools 2>/dev/null) --threshold 0.85 --min-lines 8 --skip-test --fail-on-duplicates
