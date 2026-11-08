@@ -83,29 +83,38 @@ pub(crate) struct WriteInput {
 impl RequestInput {
     pub(crate) fn into_request(self) -> Result<GcsRequest, Box<HelperError>> {
         match self {
-            Self::Get(input) => Ok(GcsRequest::Get(GcsReadRequest {
-                url: input.url,
-                params: input.params,
-                headers: header_map(input.headers)?,
-                follow_redirects: input.follow_redirects,
-            })),
+            Self::Get(input) => Ok(GcsRequest::Get(input.into_read()?)),
             Self::Post(input) => Ok(GcsRequest::Post(input.into_write()?)),
             Self::Delete(input) => Ok(GcsRequest::Delete(input.into_write()?)),
         }
     }
 }
 
+impl ReadInput {
+    fn into_read(self) -> Result<GcsReadRequest, Box<HelperError>> {
+        Ok(GcsReadRequest {
+            url: self.url,
+            params: self.params,
+            headers: header_map(self.headers)?,
+            follow_redirects: self.follow_redirects,
+        })
+    }
+}
+
 impl WriteInput {
     fn into_write(self) -> Result<GcsWriteRequest, Box<HelperError>> {
+        let headers = header_map(self.headers)?;
+        let timeout = self.timeout_ms.map(Duration::from_millis);
+        let content = self.content.map(String::into_bytes);
         Ok(GcsWriteRequest {
             url: self.url,
             data: self.data,
             json: self.json,
             params: self.params,
-            headers: header_map(self.headers)?,
-            timeout: self.timeout_ms.map(Duration::from_millis),
+            headers,
+            timeout,
             stream: self.stream,
-            content: self.content.map(String::into_bytes),
+            content,
         })
     }
 }

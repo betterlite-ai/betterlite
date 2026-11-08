@@ -6,13 +6,13 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
-use http::HeaderMap;
+use http::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::gcs_mock::auth::{
     AccessToken, EnsureAccessToken, GetTokenAndUrl, TokenAndUrl, VertexAuth,
 };
 use crate::gcs_mock::client::{GcsHttpClient, GcsHttpResponse};
-use crate::gcs_mock::request::{GcsReadRequest, GcsRequest, GcsWriteRequest};
+use crate::gcs_mock::request::{GcsMethod, GcsReadRequest, GcsRequest, GcsWriteRequest};
 
 pub(crate) fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -21,28 +21,38 @@ pub(crate) fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
-pub(crate) fn read_request(url: &str) -> GcsRequest {
-    GcsRequest::Get(GcsReadRequest {
-        url: url.to_owned(),
-        params: BTreeMap::from([("alt".to_owned(), "media".to_owned())]),
-        headers: HeaderMap::from_iter([(
-            http::HeaderName::from_static("authorization"),
-            http::HeaderValue::from_static("Bearer mock-gcs-token"),
-        )]),
-        follow_redirects: Some(false),
-    })
+fn headers(name: &'static str, value: &'static str) -> HeaderMap {
+    HeaderMap::from_iter([(
+        HeaderName::from_static(name),
+        HeaderValue::from_static(value),
+    )])
 }
 
-pub(crate) fn write_request(url: &str) -> GcsWriteRequest {
+fn params(name: &str, value: &str) -> BTreeMap<String, String> {
+    BTreeMap::from([(name.to_owned(), value.to_owned())])
+}
+
+pub(crate) fn request(url: &str, method: GcsMethod) -> GcsRequest {
+    match method {
+        GcsMethod::Get => GcsRequest::Get(GcsReadRequest {
+            url: url.to_owned(),
+            params: params("alt", "media"),
+            headers: headers("authorization", "Bearer mock-gcs-token"),
+            follow_redirects: Some(false),
+        }),
+        GcsMethod::Post => GcsRequest::Post(write_fields(url)),
+        GcsMethod::Delete => GcsRequest::Delete(write_fields(url)),
+    }
+}
+
+fn write_fields(url: &str) -> GcsWriteRequest {
+    let data = Json::Text("{\"kind\":\"storage#object\"}".to_owned());
     GcsWriteRequest {
         url: url.to_owned(),
-        data: Some(Json::Text("{\"kind\":\"storage#object\"}".to_owned())),
+        data: Some(data),
         json: None,
-        params: BTreeMap::from([("uploadType".to_owned(), "media".to_owned())]),
-        headers: HeaderMap::from_iter([(
-            http::HeaderName::from_static("content-type"),
-            http::HeaderValue::from_static("application/json"),
-        )]),
+        params: params("uploadType", "media"),
+        headers: headers("content-type", "application/json"),
         timeout: Some(Duration::from_secs(30)),
         stream: false,
         content: None,

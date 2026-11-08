@@ -92,32 +92,38 @@ where
         &self,
         request: EnsureAccessToken,
     ) -> Result<AccessToken, Self::Error> {
-        if self.installed {
-            return Ok(AccessToken {
-                token: MOCK_TOKEN.to_owned(),
-                project_id: MOCK_PROJECT_ID.to_owned(),
-            });
+        if let Some(token) = mock_access_token(self.installed) {
+            return Ok(token);
         }
         self.real.ensure_access_token_async(request).await
     }
 
     fn ensure_access_token(&self, request: EnsureAccessToken) -> Result<AccessToken, Self::Error> {
-        if self.installed {
-            return Ok(AccessToken {
-                token: MOCK_TOKEN.to_owned(),
-                project_id: MOCK_PROJECT_ID.to_owned(),
-            });
+        if let Some(token) = mock_access_token(self.installed) {
+            return Ok(token);
         }
         self.real.ensure_access_token(request)
     }
 
     fn get_token_and_url(&self, request: GetTokenAndUrl) -> Result<TokenAndUrl, Self::Error> {
-        if self.installed {
-            return Ok(TokenAndUrl {
-                token: MOCK_TOKEN.to_owned(),
-                url: MOCK_STORAGE_URL.to_owned(),
-            });
+        if let Some(token) = mock_token_and_url(self.installed) {
+            return Ok(token);
         }
         self.real.get_token_and_url(request)
     }
+}
+
+fn mock_access_token(installed: bool) -> Option<AccessToken> {
+    installed.then(|| AccessToken {
+        token: MOCK_TOKEN.to_owned(),
+        project_id: MOCK_PROJECT_ID.to_owned(),
+    })
+}
+
+fn mock_token_and_url(installed: bool) -> Option<TokenAndUrl> {
+    let access = mock_access_token(installed)?;
+    Some(TokenAndUrl {
+        token: access.token,
+        url: MOCK_STORAGE_URL.to_owned(),
+    })
 }

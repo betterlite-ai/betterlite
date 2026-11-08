@@ -12,7 +12,7 @@ use crate::gcs_mock::payload::{MOCK_LOGGING_PAYLOAD, MOCK_STORAGE_OBJECT};
 use crate::gcs_mock::request::{GcsMethod, GcsRequest};
 use crate::gcs_mock::settings::{ENABLE_ENV, GcsMockSettings, LATENCY_ENV};
 
-use super::support::{FailingClient, RecordingClient, environment, read_request, write_request};
+use super::support::{FailingClient, RecordingClient, environment, request};
 
 const STORAGE_URL: &str =
     "https://storage.googleapis.com/storage/v1/b/mock-bucket/o/mock-object?alt=media";
@@ -33,7 +33,7 @@ async fn get_to_storage_returns_the_canned_payload() {
     let client =
         create_mock_gcs_client(&environment(&[(ENABLE_ENV, "true")]), Some(original)).unwrap();
     let response = client
-        .send(read_request(STORAGE_URL))
+        .send(request(STORAGE_URL, GcsMethod::Get))
         .await
         .expect("mock response");
     assert_eq!(response.status, 200);
@@ -51,7 +51,10 @@ async fn get_to_other_hosts_delegates_unchanged() {
     let (original, sent) = recorder(418, "original-response");
     let client =
         create_mock_gcs_client(&environment(&[(ENABLE_ENV, "true")]), Some(original)).unwrap();
-    let request = read_request("https://example.com/storage/v1/b/mock-bucket/o/mock-object");
+    let request = request(
+        "https://example.com/storage/v1/b/mock-bucket/o/mock-object",
+        GcsMethod::Get,
+    );
     let response = client
         .send(request.clone())
         .await
@@ -67,7 +70,7 @@ async fn post_to_storage_returns_the_factory_response() {
     let client =
         create_mock_gcs_client(&environment(&[(ENABLE_ENV, "true")]), Some(original)).unwrap();
     let response = client
-        .send(GcsRequest::Post(write_request(UPLOAD_URL)))
+        .send(request(UPLOAD_URL, GcsMethod::Post))
         .await
         .expect("mock response");
     assert_eq!(response.status, 200);
@@ -84,7 +87,7 @@ async fn post_to_other_hosts_delegates_unchanged() {
     let (original, sent) = recorder(418, "original-response");
     let client =
         create_mock_gcs_client(&environment(&[(ENABLE_ENV, "true")]), Some(original)).unwrap();
-    let request = GcsRequest::Post(write_request("https://example.com/upload"));
+    let request = request("https://example.com/upload", GcsMethod::Post);
     let response = client
         .send(request.clone())
         .await
@@ -99,7 +102,7 @@ async fn delete_to_storage_returns_204_with_an_empty_body() {
     let client =
         create_mock_gcs_client(&environment(&[(ENABLE_ENV, "true")]), Some(original)).unwrap();
     let response = client
-        .send(GcsRequest::Delete(write_request(STORAGE_URL)))
+        .send(request(STORAGE_URL, GcsMethod::Delete))
         .await
         .expect("mock response");
     assert_eq!(response.status, 204);
@@ -112,7 +115,7 @@ async fn delete_to_other_hosts_delegates_unchanged() {
     let (original, sent) = recorder(418, "original-response");
     let client =
         create_mock_gcs_client(&environment(&[(ENABLE_ENV, "true")]), Some(original)).unwrap();
-    let request = GcsRequest::Delete(write_request("https://example.com/object"));
+    let request = request("https://example.com/object", GcsMethod::Delete);
     let response = client
         .send(request.clone())
         .await
@@ -126,9 +129,10 @@ async fn post_matching_ignores_url_case() {
     let client: GcsMockClient<RecordingClient> =
         create_mock_gcs_client(&environment(&[(ENABLE_ENV, "true")]), None).unwrap();
     let response = client
-        .send(GcsRequest::Post(write_request(
+        .send(request(
             "https://STORAGE.GOOGLEAPIS.COM/upload",
-        )))
+            GcsMethod::Post,
+        ))
         .await
         .expect("mock response");
     assert_eq!(response.status, 200);
@@ -140,7 +144,10 @@ async fn get_matching_is_case_sensitive() {
     let client =
         create_mock_gcs_client(&environment(&[(ENABLE_ENV, "true")]), Some(original)).unwrap();
     let response = client
-        .send(read_request("https://STORAGE.GOOGLEAPIS.COM/object"))
+        .send(request(
+            "https://STORAGE.GOOGLEAPIS.COM/object",
+            GcsMethod::Get,
+        ))
         .await
         .expect("delegated response");
     assert_eq!(response.status, 418);
@@ -153,13 +160,13 @@ async fn default_latency_delays_every_response() {
         create_mock_gcs_client(&environment(&[(ENABLE_ENV, "true")]), None).unwrap();
     let early = timeout(
         Duration::from_millis(149),
-        client.send(read_request(STORAGE_URL)),
+        client.send(request(STORAGE_URL, GcsMethod::Get)),
     )
     .await;
     early.unwrap_err();
     let response = timeout(
         Duration::from_millis(151),
-        client.send(read_request(STORAGE_URL)),
+        client.send(request(STORAGE_URL, GcsMethod::Get)),
     )
     .await
     .expect("completes after the default latency")
@@ -176,13 +183,13 @@ async fn latency_reads_milliseconds_from_the_environment() {
     .unwrap();
     let early = timeout(
         Duration::from_millis(24),
-        client.send(read_request(STORAGE_URL)),
+        client.send(request(STORAGE_URL, GcsMethod::Get)),
     )
     .await;
     early.unwrap_err();
     let response = timeout(
         Duration::from_millis(26),
-        client.send(read_request(STORAGE_URL)),
+        client.send(request(STORAGE_URL, GcsMethod::Get)),
     )
     .await
     .expect("completes after the configured latency")
@@ -196,13 +203,13 @@ async fn latency_applies_to_post_and_delete() {
         create_mock_gcs_client(&environment(&[(ENABLE_ENV, "true")]), None).unwrap();
     let post = timeout(
         Duration::from_millis(149),
-        client.send(GcsRequest::Post(write_request(UPLOAD_URL))),
+        client.send(request(UPLOAD_URL, GcsMethod::Post)),
     )
     .await;
     post.unwrap_err();
     let delete = timeout(
         Duration::from_millis(149),
-        client.send(GcsRequest::Delete(write_request(STORAGE_URL))),
+        client.send(request(STORAGE_URL, GcsMethod::Delete)),
     )
     .await;
     delete.unwrap_err();
@@ -217,7 +224,7 @@ async fn zero_latency_returns_immediately() {
     .unwrap();
     let response = timeout(
         Duration::from_millis(1),
-        client.send(read_request(STORAGE_URL)),
+        client.send(request(STORAGE_URL, GcsMethod::Get)),
     )
     .await
     .expect("a zero latency needs no wait")
@@ -230,7 +237,7 @@ async fn missing_original_errors_for_non_gcs_urls() {
     let client: GcsMockClient<RecordingClient> =
         create_mock_gcs_client(&environment(&[(ENABLE_ENV, "true")]), None).unwrap();
     let error = client
-        .send(read_request("https://example.com/object"))
+        .send(request("https://example.com/object", GcsMethod::Get))
         .await
         .unwrap_err();
     assert!(matches!(
@@ -251,7 +258,7 @@ async fn disabled_mock_delegates_storage_urls() {
     let client =
         create_mock_gcs_client(&environment(&[(ENABLE_ENV, "false")]), Some(original)).unwrap();
     let response = client
-        .send(read_request(STORAGE_URL))
+        .send(request(STORAGE_URL, GcsMethod::Get))
         .await
         .expect("delegated response");
     assert_eq!(response.status, 418);
@@ -270,19 +277,19 @@ async fn install_is_idempotent() {
         mocks_initialized: false,
     };
     let delegated = client
-        .send(read_request(STORAGE_URL))
+        .send(request(STORAGE_URL, GcsMethod::Get))
         .await
         .expect("delegated response");
     assert_eq!(delegated.status, 418);
     assert_eq!(client.install(), Installation::Installed);
     let mocked = client
-        .send(read_request(STORAGE_URL))
+        .send(request(STORAGE_URL, GcsMethod::Get))
         .await
         .expect("mock response");
     assert_eq!(mocked.status, 200);
     assert_eq!(client.install(), Installation::AlreadyInstalled);
     let still_mocked = client
-        .send(read_request(STORAGE_URL))
+        .send(request(STORAGE_URL, GcsMethod::Get))
         .await
         .expect("mock response");
     assert_eq!(still_mocked.status, 200);
@@ -294,7 +301,7 @@ async fn transport_failures_keep_their_source() {
     let client =
         create_mock_gcs_client(&environment(&[(ENABLE_ENV, "true")]), Some(FailingClient)).unwrap();
     let error = client
-        .send(read_request("https://example.com/object"))
+        .send(request("https://example.com/object", GcsMethod::Get))
         .await
         .unwrap_err();
     assert!(matches!(error, GcsMockError::Transport { .. }));
