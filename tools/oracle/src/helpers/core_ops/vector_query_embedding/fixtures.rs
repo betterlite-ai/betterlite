@@ -47,10 +47,6 @@ pub(super) enum FixtureError {
     Contract(#[from] VectorStoreContractError),
 }
 
-const fn contract_error() -> FixtureError {
-    FixtureError::Contract(VectorStoreContractError::ApiBaseRequired)
-}
-
 pub(super) fn helper_error(message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: String::from("ValueError"),
@@ -122,13 +118,14 @@ impl VectorStoreRouter for RouterFixture {
     async fn embedding(
         &self,
         _entry: EmbeddingEntry,
-        _model: &str,
+        model: &str,
         _input: &[String],
         _configuration: Params,
     ) -> Result<EmbeddingResponse, BaseLlmException> {
+        let message = format!("no deployment for {model}");
         Err(BaseLlmException {
             status_code: 404,
-            message: "no deployment".to_owned(),
+            message,
             headers: Params::new(),
         })
     }
@@ -162,7 +159,9 @@ impl VectorStoreConfig for QueryFixture {
         &self,
         _request: SearchRequest<'_>,
     ) -> Result<PreparedRequest, FixtureError> {
-        Err(contract_error())
+        Err(FixtureError::Contract(
+            VectorStoreContractError::ApiBaseRequired,
+        ))
     }
 
     fn transform_search_response(
@@ -170,7 +169,9 @@ impl VectorStoreConfig for QueryFixture {
         _response: &VectorStoreResponse,
         _logging: &mut VectorStoreLogging,
     ) -> Result<VectorStoreSearchResponse, FixtureError> {
-        Err(contract_error())
+        Err(FixtureError::Contract(
+            VectorStoreContractError::ApiBaseRequired,
+        ))
     }
 
     fn transform_create_request(
@@ -178,14 +179,18 @@ impl VectorStoreConfig for QueryFixture {
         _optional_params: &Params,
         _api_base: &str,
     ) -> Result<PreparedRequest, FixtureError> {
-        Err(contract_error())
+        Err(FixtureError::Contract(
+            VectorStoreContractError::ApiBaseRequired,
+        ))
     }
 
     fn transform_create_response(
         &self,
         _response: &VectorStoreResponse,
     ) -> Result<VectorStoreCreateResponse, FixtureError> {
-        Err(contract_error())
+        Err(FixtureError::Contract(
+            VectorStoreContractError::ApiBaseRequired,
+        ))
     }
 }
 
@@ -207,7 +212,10 @@ fn arguments(search: &SearchRequest<'_>) -> Json {
     };
     let argument = |name: &str, value: Json| Json::List(vec![Json::Text(name.to_owned()), value]);
     Json::List(vec![
-        argument("vector_store_id", Json::Text(search.vector_store_id.to_owned())),
+        argument(
+            "vector_store_id",
+            Json::Text(search.vector_store_id.to_owned()),
+        ),
         argument("query", query),
         argument("optional_params", literal(search.optional_params)),
         argument("api_base", Json::Text(search.api_base.to_owned())),
@@ -227,11 +235,13 @@ impl QueryFixture {
             ("arguments".to_owned(), arguments(&search)),
             (
                 "embedding_executor".to_owned(),
-                Json::Text(match embedding_executor {
-                    Some(_) => "explicit",
-                    None => "none",
-                }
-                .to_owned()),
+                Json::Text(
+                    match embedding_executor {
+                        Some(_) => "explicit",
+                        None => "none",
+                    }
+                    .to_owned(),
+                ),
             ),
         ]);
         let calls = match search.logging.model_call_details.get("calls") {

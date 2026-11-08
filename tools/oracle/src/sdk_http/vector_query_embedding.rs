@@ -18,34 +18,21 @@ use betterlite_provider::api::vector_query_embedding::error::QueryEmbeddingError
 use betterlite_provider::api::vector_store_contracts::config::{EmbeddingEntry, Params};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
+use serde_json::Number;
 use uuid::Uuid;
 
 use super::VectorQueryEmbeddingCall;
-use super::capture::{Execution, Stop, run_until_stopped};
 use super::error::SdkHttpError;
 use super::native::openai_defaults;
 use super::result::{Failure, QueryVectors, SdkResult};
 
-pub(crate) fn execute(
-    call: &VectorQueryEmbeddingCall,
-    api_base: &str,
-    env: &BTreeMap<String, String>,
-    stop: &Stop<'_>,
-) -> Execution {
-    run_until_stopped(send(call, api_base, env), stop)
-}
-
 // LiteLLM's embed_query runs first, and its aembed_query only runs when the first call returned
-async fn send(
+pub(crate) async fn send(
     call: &VectorQueryEmbeddingCall,
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
-    let policy = Arc::new(
-        ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
-    );
-    let client =
-        ProxiedClient::outbound(&policy).map_err(|error| SdkHttpError::Client(Box::new(error)))?;
+    let client = outbound_client(env)?;
     let defaults = environment_defaults(env)?;
     let litellm_params = with_api_base(&call.litellm_params, api_base);
     let sync = match embed_query(
@@ -72,12 +59,22 @@ async fn send(
         Ok(vector) => vector,
         Err(error) => return Ok(failure(&error)),
     };
+    let numbers = |vector: Vec<f64>| -> Vec<Number> {
+        vector.into_iter().filter_map(Number::from_f64).collect()
+    };
     Ok(SdkResult::Vectors {
         value: QueryVectors {
-            sync: numbers(&sync)?,
-            asynchronous: numbers(&asynchronous)?,
+            sync: numbers(sync),
+            asynchronous: numbers(asynchronous),
         },
     })
+}
+
+fn outbound_client(env: &BTreeMap<String, String>) -> Result<ProxiedClient, SdkHttpError> {
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), env).map_err(SdkHttpError::ProxyPolicy)?,
+    );
+    ProxiedClient::outbound(&policy).map_err(|error| SdkHttpError::Client(Box::new(error)))
 }
 
 // the harness owns the mock's base, so it takes the place of the configured api_base
@@ -119,11 +116,6 @@ fn direct_executor(client: &ProxiedClient, defaults: &OpenAiDefaults) -> DirectE
         defaults: defaults.clone(),
         catalog: BundledCatalog::default().get(),
     }
-}
-
-fn numbers(vector: &[f64]) -> Result<Vec<Json>, SdkHttpError> {
-    let value = serde_json::to_value(vector).map_err(SdkHttpError::Serialize)?;
-    serde_json::from_value(value).map_err(SdkHttpError::Serialize)
 }
 
 // the class each LiteLLM error projects to; a plain exception carries no status, type, param or code

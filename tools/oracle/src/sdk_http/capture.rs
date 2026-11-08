@@ -1,16 +1,18 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
+use tokio::runtime::Builder;
+use tokio::time::timeout;
 
-use super::embedding_executor;
 use super::error::SdkHttpError;
-use super::native;
 use super::python::PythonSdk;
 use super::result::SdkResult;
 use super::{OracleLimits, SdkHttpCall, Side};
+use super::{embedding_executor, native, vector_query_embedding};
 use crate::OracleError;
 use crate::compare::multipart::masked_boundary;
 use crate::mock::{MockProvider, ProviderRequest};
@@ -44,11 +46,45 @@ impl<'sdk> Sdk<'sdk> {
         match (self, call) {
             (Self::Python(python), _) => python.execute(call, api_base, stop),
             (Self::Native, SdkHttpCall::OpenaiChat(chat)) => {
-                native::execute(chat, api_base, env, stop)
+                run_until_stopped(native::send(chat, api_base, env), stop)
             }
             (Self::Native, SdkHttpCall::VectorStoreEmbeddingExecutor(embedding)) => {
-                embedding_executor::execute(embedding, api_base, env, stop)
+                run_until_stopped(embedding_executor::send(embedding, api_base, env), stop)
             }
+            (Self::Native, SdkHttpCall::VectorQueryEmbedding(query)) => {
+                run_until_stopped(vector_query_embedding::send(query, api_base, env), stop)
+            }
+        }
+    }
+}
+
+const POLL: Duration = Duration::from_millis(10);
+
+// the request future is dropped, and its connection with it, as soon as the stop fires
+pub(crate) fn run_until_stopped<F>(sending: F, stop: &Stop<'_>) -> Execution
+where
+    F: Future<Output = Result<SdkResult, SdkHttpError>>,
+{
+    let result = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(SdkHttpError::Io)
+        .and_then(|runtime| runtime.block_on(until_stopped(sending, stop)));
+    Execution {
+        result,
+        log: Vec::new(),
+    }
+}
+
+async fn until_stopped<F>(sending: F, stop: &Stop<'_>) -> Result<SdkResult, SdkHttpError>
+where
+    F: Future<Output = Result<SdkResult, SdkHttpError>>,
+{
+    let mut pinned = Box::pin(sending);
+    loop {
+        stop.check()?;
+        if let Ok(sent) = timeout(POLL, &mut pinned).await {
+            return sent;
         }
     }
 }

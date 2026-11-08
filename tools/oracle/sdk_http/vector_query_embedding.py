@@ -1,7 +1,9 @@
 import asyncio
 from typing import cast
 
-from litellm.llms.base_llm.vector_store.transformation import BaseQueryEmbeddingVectorStoreConfig
+from litellm.llms.base_llm.vector_store.transformation import (
+    BaseQueryEmbeddingVectorStoreConfig,
+)
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -57,7 +59,9 @@ def run_query(call: QueryEmbeddingCall, api_base: str) -> QueryOutcome:
         }
     try:
         sync = fixture.embed_query(call.query_text, litellm_params, None)
-        asynchronous = asyncio.run(fixture.aembed_query(call.query_text, litellm_params, None))
+        asynchronous = asyncio.run(
+            fixture.aembed_query(call.query_text, litellm_params, None)
+        )
     except Exception as error:  # noqa: BLE001 - LiteLLM raises a bare exception around the executor call
         return QueryOutcome(failure=project(error))
     return QueryOutcome(
