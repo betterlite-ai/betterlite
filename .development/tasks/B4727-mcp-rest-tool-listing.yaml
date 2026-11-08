@@ -31,6 +31,8 @@ description: >-
   non-search contexts, supports admin-only include_disabled_tools to bypass filters, and resolves
   effective auth when a toolset name is given.
 
+  The plan registers helper operation b4727 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b4727.rs, write tools/oracle/helpers/b4727.py, and leave both registries as they are.
+
 scope:
   paths:
     - crates/betterlite-server/src/api/mcp_rest_tools.rs
@@ -39,6 +41,10 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/mcp-rest-tools/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-rest-tools-*
+    - tools/oracle/helpers/b4727.py
+    - tools/oracle/helpers/b4727/**
+    - tools/oracle/src/helpers/mcp/b4727.rs
+    - tools/oracle/src/helpers/mcp/b4727/**
   lint_tables: false
 
 references:

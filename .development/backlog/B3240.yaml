@@ -1,7 +1,7 @@
 id: B3240
 milestone: M6 guardrails
 title: Policy values, conditions and inheritance
-status: todo
+status: done
 depends_on: [B882]
 file: tasks/B3240-policy-values-conditions.yaml
 covers:
@@ -13,7 +13,7 @@ covers:
   - "litellm/proxy/policy_engine/policy_resolver.py"
 parent: B079
 split_from: B079
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 905

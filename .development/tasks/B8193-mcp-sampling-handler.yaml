@@ -12,6 +12,8 @@ description: >-
 
   Owners of the checks this handler calls (call them, do not copy them): the key check `can_key_call_model`, the team check `can_team_access_model`, the user check `can_user_call_model` and the project check `can_project_access_model` are B886's (betterlite-auth, module `entity_model_access`). The team member check `_check_team_member_model_access` is B887's (module `team_budget_admission`). The budget check `common_checks` is B754's `CommonAuthChecks` (module `auth_common_checks`). The reads `get_team_object`, `get_user_object` and `get_project_object` are B737's, B736's and B879's.
 
+  The plan registers helper operation b8193 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8193.rs, write tools/oracle/helpers/b8193.py, and leave both registries as they are.
+
 scope:
   paths:
     - crates/betterlite-server/src/mcp/sampling_handler.rs
@@ -20,6 +22,10 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/mcp-sampling-handler/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-sampling-handler-*
+    - tools/oracle/helpers/b8193.py
+    - tools/oracle/helpers/b8193/**
+    - tools/oracle/src/helpers/mcp/b8193.rs
+    - tools/oracle/src/helpers/mcp/b8193/**
   lint_tables: false
 
 references:

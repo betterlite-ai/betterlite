@@ -19,11 +19,17 @@ description: >-
   (defaulting to None), supplied by the caller; get_daily_activity and get_daily_activity_aggregated always derive
   the window from the records they aggregate. Recovery order, window boundary enforcement and fault tolerance justify
   keeping this adapter in a separate security-focused module.
+
+  The plan registers helper operation b3092 as a not_built stub in tools/oracle/src/helpers/server.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/server/b3092.rs, write tools/oracle/helpers/b3092.py, and leave both registries as they are.
 scope:
   paths:
     - crates/betterlite-server/src/daily_activity/recovery.rs
     - crates/betterlite-server/src/daily_activity/recovery/**
     - tools/oracle/cases/helpers/daily-activity-recovery/**
+    - tools/oracle/helpers/b3092.py
+    - tools/oracle/helpers/b3092/**
+    - tools/oracle/src/helpers/server/b3092.rs
+    - tools/oracle/src/helpers/server/b3092/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L453-L457
