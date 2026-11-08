@@ -1,0 +1,264 @@
+id: B3250
+title: Policy validation, inspection and resolution routes
+description: >-
+  Build the read-only half of the policy API and the policy startup loader. Four routes inspect or validate policies (POST /policy/validate, GET /policy/list,
+  GET /policy/info/{policy_name}, POST /policy/test), one route resolves a request context (POST /policies/resolve), and `init_policies` loads the
+  `policies` and `policy_attachments` config sections into the registries at startup. B3240 gives the value types and `resolve_policy_guardrails`, B3241
+  gives the policy and attachment registries and the matcher, B3242 gives the response records, B3243 gives the database sync, B3245 gives
+  `PolicyValidator`. Use their exact names as they exist when you start and re-implement none of them. LiteLLM's `get_policy_registry()` and
+  `get_attachment_registry()` singletons become registry handles passed in through constructors, with no module-level state.
+
+  Policy-crate logic goes in betterlite-policy, in two modules. `inspection` (crates/betterlite-policy/src/inspection.rs and inspection/) holds three
+  things. First, `get_all_resolved_policies(policies, context: Option<&PolicyMatchContext>) -> BTreeMap<String, ResolvedPolicy>` (policy_resolver.py
+  L262-L296): one `resolve_policy_guardrails` call per policy name, in the map's order. When the registry is not initialized the caller gets an empty map
+  (the registry check lives in `get_policies_summary`, below, which is its only caller). Second, `get_policies_summary(policy_registry,
+  attachment_registry) -> PoliciesSummary` (init_policies.py L221-L270). A registry that is not initialized gives `initialized` false with no policies and
+  no attachments. Otherwise it resolves every policy with no context (so conditions are ignored) and fills: `initialized` true, `policy_count` (the number
+  of resolved policies), `attachment_count`, one entry per policy with `inherit`, `description`, `guardrails_add`, `guardrails_remove`, `condition` (the
+  policy's condition as JSON, or none), `resolved_guardrails` and `inheritance_chain`, and one entry per attachment with `policy`, `scope`, `teams`, `keys`
+  and `models`. Third, `resolve_context(...)` for the /policies/resolve route (policy_resolve_endpoints.py L246-L310): see the route text.
+
+  `startup` (crates/betterlite-policy/src/startup.rs and startup/) holds `PolicyStartup` and `PolicyStartupError`. `PolicyStartup::new` takes the two
+  registry handles and a `PolicyValidator`; the validator already holds its database and router handles. `init_policies(policies_config,
+  policy_attachments_config, validate_db, fail_on_error) -> Result<PolicyValidationResponse, PolicyStartupError>` follows init_policies.py L99-L183 in this
+  order. (1) Log at info `Initializing <n> policies...`. (2) Print the policy table with `print_policies_on_startup` (below). (3) Call
+  `validate_policy_config(policies_config, validate_db)` and pass `validate_db` through unchanged (the validator ignores it, as in LiteLLM). (4) Log each
+  error at error level as `Policy validation error in '<policy_name>': [<error_type>] <message>` and each warning at warning level as `Policy validation
+  warning in '<policy_name>': [<error_type>] <message>`. (5) When the result is not valid and `fail_on_error` is true, return `PolicyStartupError::
+  ValidationFailed` whose `Display` text is `Policy validation failed with <n> error(s):` plus a newline and then the lines `[<policy_name>] <message>` joined
+  by newlines. Nothing is loaded in that case. (6) Otherwise call the policy registry's `load_policies(policies_config)` even when there are warnings, or
+  when errors exist and `fail_on_error` is false; log at info `Successfully loaded <n> policies`; on failure log at error level `Failed to load
+  policies: <cause>` and return `PolicyStartupError::LoadPolicies`. (7) When `policy_attachments_config` is present and non-empty, call the attachment
+  registry's `load_attachments`, log at info `Successfully loaded <n> policy attachments`; on failure log `Failed to load policy attachments: <cause>` at
+  error level and return `PolicyStartupError::LoadAttachments`. Return the validation result. Policies are already loaded when the attachment step fails,
+  as in LiteLLM; do not roll back. `init_policies_sync` has no caller at the pin and is not built.
+
+  `print_policies_on_startup(out: &mut impl std::io::Write, policies_config, policy_attachments_config)` (init_policies.py L28-L96) writes LiteLLM's
+  stdout text to the writer it is given; the caller passes stdout, since clippy forbids print macros. Colors are ANSI codes: green `\x1b[92m`, blue `\x1b[94m`,
+  yellow `\x1b[93m`, reset `\x1b[0m`. Output in order: a blank line, then the green line `LiteLLM Policy Engine: Loaded <n> policies`, then a blank line
+  (the Python text starts with `\n` and `print` adds one more). For each policy in config order: the blue line `  - <name>` with ` (inherits: <parent>)` appended
+  when `inherit` is set; then `      description: <text>` when a description is set; `      guardrails.add: <list>` when the add list is non-empty;
+  `      guardrails.remove: <list>` when the remove list is non-empty; and `      condition.model: <value>` when `condition.model` is set. A `guardrails` value that
+  is not an object counts as empty lists. Lists print as `['a', 'b']`. With attachments: a blank line, the yellow line `Policy Attachments: <n>
+  attachment(s)`, and for each attachment `  - <policy> -> <scope text>`, where `<policy>` is `unknown` when missing and the scope text joins, with `, `, these
+  parts that apply: `scope=* (global)` when `scope` is `*`, then `teams=<list>`, `keys=<list>`, `models=<list>` for non-empty lists; no part at all prints
+  `all`. Without attachments (missing or empty): a blank line and the yellow line `Warning: No policy_attachments configured. Policies will not be applied to
+  any requests.` Last, one blank line. Tags are not printed.
+
+  Routes go in crates/betterlite-server/src/policy_inspect_routes.rs and policy_inspect_routes/ (routes.rs, request.rs, error.rs). The state struct
+  `PolicyInspectState` takes through its constructor: the two registry handles, a `PolicyValidator` built with the database handle and no router handle (the
+  validate route never passes a router), and `Option<...>` for B3243's sync operations (policy sync and attachment sync), where `None` stands for LiteLLM's
+  `prisma_client is None`. No module-level state. All five routes sit in the standard authenticated group (B855 and B756 own auth). The four /policy routes
+  are wrapped by B865's management completion wrapper, as `@management_endpoint_wrapper` does; /policies/resolve is not. None of the paths is in a role
+  list, so route access follows the shared route checks for an unlisted path; do not special-case it. Tags: `policy management` for the /policy routes
+  and `Policies` for /policies/resolve. Every error body is `{"detail": <text>}`.
+  - POST `/policy/validate` (endpoints.py L383-L449). Body `PolicyValidateRequest`: an object with a required `policies` object, and any other field is a
+    422 (pydantic `extra="forbid"`). Define the request type in request.rs (validation_types.py L69-L78). Log at debug `Validating policy configuration with
+    <n> policies`, then call `validate_policy_config(policies, validate_db)` where `validate_db` is true when the state holds a database handle. Return the
+    `PolicyValidationResponse` unchanged with status 200, errors included.
+  - GET `/policy/list` (L452-L488). Call `get_policies_summary` and map it as LiteLLM does: each entry becomes a `PolicySummaryItem` whose `inherit`,
+    `resolved_guardrails` and `inheritance_chain` come from the summary, `scope` is an empty `PolicyScopeResponse` (four empty lists) and `guardrails` is an empty
+    `PolicyGuardrailsResponse` (add and remove empty), and `total_count` is always 0. This is what LiteLLM returns today (see pitfalls); keep it and do not
+    fix it. With the engine not initialized the answer is `{"policies": {}, "total_count": 0}`.
+  - GET `/policy/info/{policy_name}` (L491-L545). Engine not initialized: 404 `Policy engine not initialized. No policies loaded.` Unknown name: 404 `Policy
+    '<name>' not found`. Otherwise resolve with `resolve_policy_guardrails(name, all policies)` and no context, and return `policy_name`, `inherit`, an empty
+    `scope`, `guardrails` with the policy's own add and remove lists, `resolved_guardrails` and `inheritance_chain`.
+  - POST `/policy/test` (L548-L604). Body `PolicyMatchContext` (`team_alias`, `key_alias`, `model`, `tags`, all optional and nullable, unknown fields a 422).
+    Not initialized: 200 with `context` echoed, empty `matching_policies` and `resolved_guardrails`, and `message` `Policy engine not initialized. No policies
+    loaded.` Otherwise `matching_policies` is B3241's `get_matching_policies(context)`, `resolved_guardrails` is B3241's `resolve_guardrails_for_context(context,
+    policies)`, and `message` is null. The echoed `context` always has all four keys, null when absent.
+  - POST `/policies/resolve` (policy_resolve_endpoints.py L215-L315, query parameter `force_sync` bool, default false). Body `PolicyResolveRequest`
+    (`team_alias`, `key_alias`, `model`, `tags`; optional, nullable; unknown fields are ignored, as pydantic does by default for this model). Order: body and
+    query validation (422), then no database handle is 500 `Database not connected`, then, only when `force_sync` is true, the policy sync and then the
+    attachment sync from B3243. Then build the context from the four fields, ask the attachment registry for `get_attached_policies_with_reasons(context,
+    policy_applies(context))`, and with no matches return `{"effective_guardrails": [], "matched_policies": []}`. Otherwise keep the matches whose policy name
+    survives `get_policies_with_matching_conditions(names, context)`, in the match order. For each kept match call `resolve_policy_guardrails(name, all
+    policies, context)` and add a `PolicyMatchDetail` with `policy_name`, `matched_via` (the match reason) and `guardrails_added` (the resolved guardrails). Put
+    the union of all guardrails in `effective_guardrails`, sorted by plain string order. Any failure of the sync or the lookups is 500 with the error text as `detail`.
+    Implement the matching and resolving part as `resolve_context` in the `inspection` module so the route only does the database check, the sync and the
+    mapping.
+
+  Add three pure decoders in request.rs, each returning the shared 422 response on failure: `decode_validate_request(bytes: &[u8]) ->
+  Result<PolicyValidateRequest, InspectRequestError>`, `decode_resolve_request(bytes: &[u8]) -> Result<PolicyResolveRequest, InspectRequestError>` and
+  `decode_match_context(bytes: &[u8]) -> Result<PolicyMatchContext, InspectRequestError>`. A string field of the wrong JSON type, or `tags` that is not a list of
+  strings, is a 422. Add one cargo-fuzz target `inspect_request` that feeds all three.
+
+  Tests. Name native tests under `inspection::tests` (prefixes `resolved_`, `summary_`, `resolve_context_`), `startup::tests` (prefixes `init_`, `print_`)
+  and `policy_inspect_routes::tests` (prefixes `validate_`, `list_`, `info_`, `test_`, `resolve_`, `decode_`). Startup tests capture the writer into a
+  Vec<u8> and compare the exact text. Route tests build registries from B3241 with a fake sync, so they need no database. The test named
+  `replays_the_inspect_request_corpus` replays the fuzz corpus.
+
+  Oracle. HTTP cases go in tools/oracle/cases/policies/inspect/ and send the real request to the booted proxy with the master key `oracle-master` and no
+  database, no `policies` config. They cover: validate with an empty policy map (valid true), with `inherit` naming an undefined parent, with two policies that
+  inherit each other, with an unknown extra field (422) and without `policies` (422); list with nothing loaded; info for an unknown name (404, engine not
+  initialized); test with `model` only (message in the body) and with an unknown field (422); resolve without a database (500), with `tags` as a string (422),
+  and every route without a key (401). Cases that load config policies need the proxy startup to call `init_policies`; see the task notes. Compare status and
+  ignore the validation `detail` text (see deviations).
+
+scope:
+  paths:
+    - crates/betterlite-policy/Cargo.toml
+    - crates/betterlite-policy/src/inspection.rs
+    - crates/betterlite-policy/src/inspection/**
+    - crates/betterlite-policy/src/startup.rs
+    - crates/betterlite-policy/src/startup/**
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-server/src/policy_inspect_routes.rs
+    - crates/betterlite-server/src/policy_inspect_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/inspect_request.rs
+    - crates/betterlite-server/fuzz/corpus/inspect_request/**
+    - tools/oracle/cases/policies/inspect/**
+    - tools/oracle/helpers/b3250.py
+    - tools/oracle/helpers/b3250/**
+    - tools/oracle/src/helpers/policy/b3250.rs
+    - tools/oracle/src/helpers/policy/b3250/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolver.py#L262-L296
+    why: get_all_resolved_policies, the only part of the resolver file this task owns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolver.py#L69-L127
+    why: resolve_policy_guardrails (B3240), read for what it returns and the unordered guardrail list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/init_policies.py#L28-L96
+    why: Startup table text, colors, and which lines print for which fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/init_policies.py#L99-L183
+    why: init_policies order of validate, log, fail, load policies, load attachments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/init_policies.py#L221-L270
+    why: get_policies_summary and the keys it fills, which the list route reads wrongly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L383-L449
+    why: POST /policy/validate from its decorator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L452-L545
+    why: GET /policy/list and GET /policy/info/{policy_name}.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L548-L604
+    why: POST /policy/test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolve_endpoints.py#L215-L315
+    why: POST /policies/resolve from its decorator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/validation_types.py#L69-L78
+    why: PolicyValidateRequest with extra forbidden.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/resolver_types.py#L14-L39
+    why: PolicyMatchContext, the /policy/test body, with extra forbidden.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/resolver_types.py#L82-L116
+    why: Info, summary item, list and test response shapes (B3242 owns the records).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/resolver_types.py#L373-L410
+    why: PolicyResolveRequest, PolicyMatchDetail and PolicyResolveResponse (B3242 owns the records).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7105-L7140
+    why: The only caller of init_policies, with fail_on_error true and validate_db set from the database handle.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L76-L90
+    why: Which path prefixes load the /policy and /policies route modules.
+
+dod:
+  - text: >-
+      get_all_resolved_policies returns one ResolvedPolicy per policy name, ignores conditions when no context is given, and applies them when one is.
+    proof: [inspection-tests]
+  - text: >-
+      get_policies_summary returns initialized false for an uninitialized registry, and otherwise the policy and attachment counts, per-policy fields
+      and per-attachment fields listed in the description.
+    proof: [inspection-tests]
+  - text: >-
+      resolve_context returns no matches as empty lists, drops policies whose conditions fail, reports matched_via and the resolved guardrails per policy,
+      and sorts effective_guardrails.
+    proof: [inspection-tests]
+  - text: >-
+      init_policies validates, logs errors and warnings, stops with `Policy validation failed with <n> error(s):` text when invalid and fail_on_error is
+      true, and loads policies even with warnings or with fail_on_error false.
+    proof: [startup-tests]
+  - text: >-
+      init_policies loads attachments only when present and non-empty, and leaves the policies loaded when the attachment step fails.
+    proof: [startup-tests]
+  - text: >-
+      print_policies_on_startup writes the exact colored table text for policies with and without inherit, description, guardrails and model condition,
+      and for attachments with each scope part, no scope part, and no attachments.
+    proof: [startup-tests]
+  - text: >-
+      POST /policy/validate returns the validator's result with 200, treats a missing policies field or any extra field as 422, and passes validate_db
+      from the database handle.
+    proof: [route-tests, oracle]
+  - text: >-
+      GET /policy/list returns the quirky LiteLLM shape (empty scope, empty guardrails, total_count 0) and an empty result when nothing is loaded.
+    proof: [route-tests, oracle]
+  - text: >-
+      GET /policy/info/{policy_name} answers the two 404 texts and otherwise returns the policy's own add and remove lists with its resolved guardrails
+      and chain.
+    proof: [route-tests, oracle]
+  - text: >-
+      POST /policy/test echoes the context with four keys, returns the not-initialized message, and otherwise returns matching policies and resolved
+      guardrails.
+    proof: [route-tests, oracle]
+  - text: >-
+      POST /policies/resolve answers 422 before 500 `Database not connected`, runs both syncs only when force_sync is true, and returns matched policies
+      and sorted effective guardrails.
+    proof: [route-tests, oracle]
+  - text: >-
+      The three body decoders reject malformed bytes and wrong shapes without panicking, accept unknown fields only for the resolve body, and have
+      committed corpus inputs.
+    proof: [request-corpus, route-tests]
+checks:
+  optional: []
+  commands:
+    - id: inspection-tests
+      why: the resolved-policies map, the summary or the context resolver is missing or wrong
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^inspection::.*tests::/)'
+    - id: startup-tests
+      why: init_policies, its error text, its load order or the startup table text is missing or wrong
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^startup::.*tests::/)'
+    - id: route-tests
+      why: one of the five routes, its status mapping, its response shape or a body decoder is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^policy_inspect_routes::/) - test(replays_the_inspect_request_corpus)'
+    - id: request-corpus
+      why: the request decoders have no committed malformed-input regressions or no replay test
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/inspect_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_inspect_request_corpus)'
+oracle_cases:
+  - tools/oracle/cases/policies/inspect/validate-empty-valid.yaml
+  - tools/oracle/cases/policies/inspect/validate-undefined-parent.yaml
+  - tools/oracle/cases/policies/inspect/validate-circular-parents.yaml
+  - tools/oracle/cases/policies/inspect/validate-extra-field-422.yaml
+  - tools/oracle/cases/policies/inspect/validate-missing-policies-422.yaml
+  - tools/oracle/cases/policies/inspect/validate-no-auth-401.yaml
+  - tools/oracle/cases/policies/inspect/list-nothing-loaded.yaml
+  - tools/oracle/cases/policies/inspect/list-no-auth-401.yaml
+  - tools/oracle/cases/policies/inspect/info-not-initialized-404.yaml
+  - tools/oracle/cases/policies/inspect/test-not-initialized.yaml
+  - tools/oracle/cases/policies/inspect/test-extra-field-422.yaml
+  - tools/oracle/cases/policies/inspect/resolve-no-database-500.yaml
+  - tools/oracle/cases/policies/inspect/resolve-tags-string-422.yaml
+  - tools/oracle/cases/policies/inspect/resolve-no-auth-401.yaml
+
+deviations:
+  - what: The 422 body for a bad request body or query parameter uses the server's shared validation response and wording, not FastAPI's `loc` and `msg` strings.
+    why: Every route in the server shares one validation response; the status code matches.
+  - what: Startup validation errors are logged with the error type's wire value (`invalid_guardrail`) inside the brackets.
+    why: LiteLLM formats the Python enum member; the wire value is the stable name and no client reads these log lines.
+  - what: The startup table is written to a writer the caller passes (stdout in production) and not printed from inside the function.
+    why: Print macros are forbidden by lint, and a writer lets a test compare the exact text.
+  - what: GET /policy/list returns empty `scope` and `guardrails` for every policy and a `total_count` of 0, as LiteLLM does today.
+    why: LiteLLM's list route reads summary keys the summary never sets. Parity first; the architect decides whether to fix it later (see notes).
+out_of_scope:
+  - "B3249 owns POST /policies/attachments/estimate-impact and its helpers (policy_resolve_endpoints.py L1-L208, L318-L425) and POST /policy/templates/test with `_test_guardrail_definitions` (endpoints.py L1123-L1265). It registers its own route in its own module."
+  - "B3251 owns apply_policies, the compliance test request and POST /utils/test_policies_and_guardrails (endpoints.py L67-L380)."
+  - "B3252 owns the template enrich routes and competitor helpers (endpoints.py L667-L1084 except the suggest route); B3253 owns GET /policy/templates (L607-L664) and POST /policy/templates/suggest (L1087-L1120)."
+  - "B3248 owns the /policies CRUD, attachment and resolved-guardrails routes in policy_engine/policy_endpoints.py; B3244 owns the version routes; B3247 owns pipeline testing."
+  - "B3240 owns resolve_policy_guardrails and resolve_inheritance_chain. B3241 owns the registries, get_matching_policies, policy_applies, get_policies_with_matching_conditions, get_attached_policies_with_reasons, resolve_guardrails_for_context and load_policies. B3243 owns sync_policies_from_db and sync_attachments_from_db. B3245 owns PolicyValidator and the validation response types."
+  - "B3242 owns the response records used here (PolicyInfoResponse, PolicySummaryItem, PolicyListResponse, PolicyTestResponse, PolicyResolveRequest, PolicyMatchDetail, PolicyResolveResponse)."
+  - "init_policies_sync (init_policies.py L186-L218): no caller at the pin."
+  - "ProxyConfig._init_policies_in_db and the call of init_policies from config loading (proxy_server.py L7105-L7140, L8834-L8856) belong to the proxy config-loading task, not this one."
+  - "The route module composition for /policy and /policies is the umbrella's (B079); this task never registers a path another task registers."
+pitfalls:
+  - "get_policies_summary fills `guardrails_add`, `guardrails_remove` and `policy_count`, but the list route reads `scope`, `guardrails` and `total_count`, so every list item has empty scope and guardrails and `total_count` is 0 even with policies loaded."
+  - "GET /policy/info always returns an empty scope (four empty lists), even for a policy that has attachments, because the route builds `PolicyScopeResponse(teams=[], keys=[], models=[])`."
+  - "POST /policy/test returns `resolved_guardrails` in set order (`list(set)` in LiteLLM), and `guardrails_added` in /policies/resolve is unordered the same way; oracle cases use at most one guardrail per policy so the comparison cannot flake."
+  - "/policies/resolve needs a database handle only to answer 500 before any work: a proxy without a database cannot resolve even when config policies are loaded."
+  - "The 500 `Database not connected` comes after body validation, so a bad body is 422 even with no database."
+  - "force_sync runs the policy sync first and the attachment sync second; swapping them changes which policies the attachments see."
+  - "get_policies_summary resolves with no context, so a policy whose condition would not match a request still lists its guardrails in /policy/list and /policy/info."
+  - "validate_policy_config is called with `validate_db = prisma_client is not None`, and the validator never reads it, so a database handle changes nothing in the result."
+  - "The route builds its PolicyValidator with a database handle and no router, so model-existence checks never run from /policy/validate."
+  - "PolicyMatchContext and PolicyValidateRequest forbid extra fields, but PolicyResolveRequest ignores them: `{\"model\": \"x\", \"extra\": 1}` is 422 on /policy/test and 200 on /policies/resolve."
+  - "init_policies loads policies even when the result has warnings, and with fail_on_error false it loads them even when it has errors."
+  - "The ValueError text for a failed validation is built from `[policy_name] message` lines only, with no error type."
+  - "A policy's `guardrails` that is not an object prints no add or remove line, since the printer checks for a dict before reading `add` and `remove`."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

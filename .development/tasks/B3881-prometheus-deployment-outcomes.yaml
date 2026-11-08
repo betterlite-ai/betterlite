@@ -19,7 +19,7 @@ description: >-
   litellm_deployment_cooled_down by 1 with the five values as positional label values, in the order litellm_model_name,
   model_id, api_base, api_provider, exception_status. It does not use the label factory, so custom metadata and tag labels
   never reach it. increment_callback_logging_failure(callback_name) increments litellm_callback_logging_failures_metric by
-  1 with the single label callback_name, unsanitized and without the factory. record_managed_batch_created(model, api_provider,
+  1 with the single label callback_name, unsanitized and without the factory. The Prometheus exporter type implements B3931's `CallbackFailureCounter` trait with this method, so the callback failure paths B3931 wires reach this metric. record_managed_batch_created(model, api_provider,
   user, user_email, api_key_alias: all Option<String>) increments litellm_managed_batch_created_total by 1 with those five fixed
   labels. It catches any collector error and logs it at warning as "Error recording batch created metric: <error>".
 
@@ -140,6 +140,8 @@ dod:
   - text: increment_deployment_cooled_down increments litellm_deployment_cooled_down by 1 with five sanitized positional values in schema order, and never calls the label factory.
     proof: [callback-counter-tests]
   - text: increment_callback_logging_failure increments litellm_callback_logging_failures_metric with the label callback_name only.
+    proof: [callback-counter-tests]
+  - text: The Prometheus exporter implements B3931's CallbackFailureCounter trait with increment_callback_logging_failure, so a callback failure reported through that trait increments the metric.
     proof: [callback-counter-tests]
   - text: record_managed_batch_created increments its counter with the five fixed labels, and a collector error is caught and logged at warning, not returned.
     proof: [callback-counter-tests]

@@ -1,0 +1,183 @@
+id: B4843
+title: Serve authenticated per-session harness model endpoints
+description: >-
+  A CLI harness inside the sandbox sends its model calls to a small HTTP server on the host, bound to loopback and protected
+  by a random per-session token. This task builds that server: start it on a free port, route the six paths, check the
+  token, parse the body, hand the request to the relay, and stop it. Everything else is built already and is called, not
+  rebuilt. B4841 (crates/betterlite-harness/src/endpoint.rs) owns `ModelEndpoint` with its fields, `token`, `usage`, the
+  auth check (`_authorized`, `_unauthorized`), `_json`, `_error`, `_secrets`, `_record`, `route_of` and `extract_token`.
+  B4842 (crates/betterlite-harness/src/relay.rs) owns the per-request work: `_forward` for gateway mode and `_call_sdk` for
+  SDK mode, `RelayReply` and the `GatewaySend` and `SdkCalls` traits. Read both files on main for the exact Rust names and
+  signatures before you write code, and do not copy their logic.
+
+
+  Put the code in a new module `serve` (crates/betterlite-harness/src/serve.rs and src/serve/), because endpoint.rs belongs
+  to B4841. The module has `EndpointServer` (the port of `ModelEndpoint.start`, `stop`, `__aenter__`, `__aexit__` and `url`),
+  `serve/routes.rs` (the port of `_build_app`, `_handle` and `_models`), `serve/body.rs` (request body parsing) and
+  `ServeError`, the module's own error enum (thiserror) with variants for a bind failure and for a failed stop.
+
+
+  Start (`start`, L406-L418). `EndpointServer::start` takes an `Arc<ModelEndpoint>`, the gateway sender and the SDK caller
+  as arguments, so tests inject fakes. The gateway sender is `Arc<dyn GatewaySend>`; `_gateway_client` (L430-L441) becomes a
+  plain function `gateway_sender` that returns the injected sender when there is one, and otherwise B4842's production
+  sender around a shared `betterlite_http::ProxiedClient` with the 600 second deadline (`HARNESS_ENDPOINT_REQUEST_TIMEOUT_SECONDS`).
+  The sender is built only when the endpoint has a gateway target, as Python builds its client only then. Bind a
+  `tokio::net::TcpListener` on `127.0.0.1` (`HARNESS_ENDPOINT_HOST`) with port 0, read the chosen port from `local_addr()`,
+  and run `axum::serve` on it in a spawned task with `with_graceful_shutdown`. The accessors are `port()`, `url()` (the text
+  `http://127.0.0.1:<port>`) and `endpoint()` (the shared `ModelEndpoint`, so the session runtime reads its usage). A
+  bind failure returns `ServeError` and leaves nothing running.
+
+
+  Stop (`stop`, L419-L429). Signal the graceful shutdown, then wait for the server task for at most 5 seconds
+  (`HARNESS_PROCESS_KILL_GRACE_SECONDS`, uvicorn's `timeout_graceful_shutdown`). When the wait runs out, abort the task, so
+  open connections and streaming bodies are dropped; B4842's record guard then still records their usage. Stopping twice, or
+  stopping a server that never started, does nothing. Never close the gateway sender: it may be shared or injected. After
+  stop the port refuses connections.
+
+
+  Routes (`_build_app`, L467-L484). POST on `/messages`, `/chat/completions`, `/responses` and the same three under `/v1`
+  (`/v1/messages`, `/v1/chat/completions`, `/v1/responses`) all go to one handler. GET on `/models` and `/v1/models` go to
+  the models handler. Build the paths from the two prefixes `""` and `"/v1"` and the three route names, not as six literals
+  written by hand. Any other path is 404 and any other method on these paths is 405, both with an empty body that
+  carries no secrets.
+
+
+  Models (`_models`, L512-L518). With a bad token, answer B4841's 401 reply. Otherwise answer 200 with
+  `{"object": "list", "data": [...]}`. `data` holds one entry `{"id": <model>, "object": "model", "created": 0, "owned_by":
+  "litellm"}` when the endpoint has a model, and is empty when it has none.
+
+
+  Handle (`_handle`, L519-L532). Check the token first with B4841's check, and answer 401 before reading the body. Then
+  parse the body with `parse_request_body(bytes) -> Result<serde_json::Map, BodyError>`: it accepts exactly one JSON object
+  and nothing else. Invalid JSON, invalid UTF-8 and an empty body are status 400 through B4841's `_error`, with error type
+  `JSONDecodeError` (invalid UTF-8: `UnicodeDecodeError`). A valid JSON value that is not an object (an array, a string, a
+  number, `null`) is status 400 with error type `ValueError` and message `request body must be a JSON object`. Error
+  messages for the JSON cases are betterlite's own. Cap the body read at 64 MiB with axum's body limit, since the listener
+  is local but a harness can send large contexts; a larger body is 413. Then take `route_of` of the request path. With a gateway target, call B4842's
+  forward with the request headers, the route and the body. Without one, call B4842's SDK call with the route and the body.
+  Turn the `RelayReply` into the axum response: `Json { status, body }` becomes a JSON response with that status, and
+  `Stream { status, headers, media_type, body }` becomes a streaming response with those headers and the media type, and the
+  body stream passed through without buffering or changing a byte.
+
+
+  Decoder fuzzing. `parse_request_body` reads bytes from outside. Add the cargo-fuzz target
+  crates/betterlite-harness/fuzz/fuzz_targets/endpoint_body.rs, which calls it on arbitrary bytes and checks that it never
+  panics and that a success is always an object. Add at least four corpus seeds under
+  crates/betterlite-harness/fuzz/corpus/endpoint_body/ (an object, an empty file, an array, bad UTF-8) and a test named
+  `replays_the_endpoint_body_corpus` that runs every file of that folder through the function. The fuzz Cargo.toml is written
+  by the architect.
+
+
+  This task adds `axum` (workspace dependency) and the `net`, `sync` and `macros` features of `tokio` to
+  crates/betterlite-harness/Cargo.toml; B4842 added the http, core and sdk crates. axum does not depend on the harness
+  crate, so there is no cycle. Tests use real loopback sockets on port 0 with a hand-written HTTP/1.1 client over
+  `tokio::net::TcpStream` and fake `GatewaySend` and `SdkCalls` implementations; no external network. The local endpoint is
+  not a proxy route, so the task has no HTTP oracle cases.
+scope:
+  paths:
+    - crates/betterlite-harness/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-harness/src/serve.rs
+    - crates/betterlite-harness/src/serve/**
+    - crates/betterlite-harness/fuzz/fuzz_targets/endpoint_body.rs
+    - crates/betterlite-harness/fuzz/corpus/endpoint_body/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L362-L441
+    why: ModelEndpoint's url, start, stop, context-manager methods and the gateway client choice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L442-L484
+    why: Startup wait, the server config on 127.0.0.1 port 0 with a 5 second graceful shutdown, and the route table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L512-L532
+    why: The models handler and the POST handler with its 401, 400 and mode choice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L48-L53
+    why: Route names and the two path prefixes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2215-L2224
+    why: Host, startup timeout, request timeout, token size and kill grace constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L620-L679
+    why: The caller; it starts the endpoint before the CLI runs and closes it after, and reads usage from it.
+dod:
+  - text: >-
+      A started server listens on 127.0.0.1 at a free port, `url()` is `http://127.0.0.1:<port>`, and after `stop` the port
+      refuses connections; stopping twice does nothing.
+    proof: [serve-lifecycle]
+  - text: >-
+      A stop with a request still streaming waits at most 5 seconds, then drops the connection, and the dropped relay still
+      records its usage.
+    proof: [serve-lifecycle]
+  - text: >-
+      POST to each of `/messages`, `/chat/completions`, `/responses` and their `/v1` forms reaches the handler, GET on
+      `/models` and `/v1/models` reaches the models handler, and an unknown path is 404 and a wrong method is 405.
+    proof: [serve-routes]
+  - text: >-
+      A POST or GET without the session token, or with a wrong one, is 401 with error type `authentication_error`, and the
+      body is not read or relayed; the token is accepted as `Authorization: Bearer` and as `x-api-key`.
+    proof: [serve-routes]
+  - text: >-
+      The models list holds the endpoint model with owned_by `litellm` and created 0, and is empty when the endpoint has no
+      model.
+    proof: [serve-routes]
+  - text: >-
+      Invalid JSON, invalid UTF-8 and an empty body are 400 with type `JSONDecodeError` or `UnicodeDecodeError`, and a JSON
+      array, string, number or null is 400 with type `ValueError`; none of them reaches the relay and no secret appears in
+      the message.
+    proof: [serve-routes, serve-body]
+  - text: >-
+      A request on an endpoint with a gateway target goes to the gateway forward and one without goes to the SDK call, with
+      the route from `route_of` and the parsed object; a JSON reply and a streaming reply are returned with the relay's
+      status, headers and bytes unchanged.
+    proof: [serve-routes]
+  - text: >-
+      `parse_request_body` accepts exactly one JSON object, and the fuzz target and a nonempty corpus replay without a panic.
+    proof: [serve-body, serve-body-corpus]
+  - text: The harness crate depends on axum and the tokio net feature and builds with no dependency cycle.
+    proof: [serve-deps]
+checks:
+  optional: []
+  commands:
+    - id: serve-lifecycle
+      why: server start, port reporting, stop, the 5 second grace or double stop is missing or wrong
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^serve::tests::lifecycle/)'
+    - id: serve-routes
+      why: route table, token check, models list, error replies or the gateway and SDK dispatch is missing or wrong
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^serve::routes::/)'
+    - id: serve-body
+      why: request body parsing accepts or rejects the wrong input
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^serve::body::/) - test(replays_the_endpoint_body_corpus)'
+    - id: serve-body-corpus
+      why: the fuzz target, its corpus or the replay test is missing
+      run: test -f crates/betterlite-harness/fuzz/fuzz_targets/endpoint_body.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-harness/fuzz/corpus/endpoint_body)" && cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(replays_the_endpoint_body_corpus)'
+    - id: serve-deps
+      why: the harness crate does not yet depend on axum
+      run: grep -q '^axum' crates/betterlite-harness/Cargo.toml && cargo tree --locked -p betterlite-harness -e normal > /dev/null
+oracle_cases: []
+deviations:
+  - what: The listener is bound before the server task starts, so there is no startup wait loop and no 10 second startup timeout (`HARNESS_ENDPOINT_STARTUP_TIMEOUT_SECONDS`); a bind failure returns an error at once.
+    why: Rust knows the port as soon as the bind returns; Python had to poll uvicorn's `started` flag.
+  - what: starlette and uvicorn are not optional, so the `MISSING_DEPS_MESSAGE` install error and `_load_server_deps` do not exist.
+    why: axum is compiled into the binary; there is nothing to import at runtime.
+  - what: A request body over 64 MiB is answered with 413.
+    why: Starlette reads any size into memory; a local endpoint still should not let a runaway client exhaust the host. No harness sends a body near this size.
+  - what: Error text for invalid JSON is betterlite's own, with Python's exception class names kept as the error type.
+    why: Error messages are betterlite's own under rule errors-match-litellm; the type name is what a harness client can match on.
+  - what: The server does not install or avoid signal handlers (`capture_signals`, `install_signal_handlers`).
+    why: axum never touches the host process's signals, so the Python workaround has nothing to port.
+  - what: 404 and 405 replies have an empty body, not Starlette's plain-text "Not Found" and "Method Not Allowed".
+    why: No harness reads these bodies; axum's defaults are kept.
+out_of_scope:
+  - ModelEndpoint fields, the session token, usage tracker, auth check, `_json`, `_error`, `_secrets`, `_record`, `route_of`, `extract_token` and the header and chunk helpers (B4841).
+  - The gateway forward, SDK call, SDK stream, `RelayReply`, `GatewaySend`, `SdkCalls` and the production gateway sender (B4842).
+  - Opening and closing the endpoint around a session and reading its usage into the session result (`runtime.py` `_open_endpoint` and `_close_endpoint`, owned by the runtime task).
+  - "`_noop`, `_ServerDeps`, `_load_server_deps` and `_build_server`'s signal-handler patches: no Rust equivalent, see deviations."
+pitfalls:
+  - "`_handle` checks the token before it reads the body, so an unauthenticated request with a huge or invalid body gets 401, not 400."
+  - "Python parses with `json.loads`, so a body of `null`, `[]` or `\"x\"` is valid JSON and must fail the object check with `ValueError`, not the parse step with `JSONDecodeError`."
+  - "Both prefixes apply to POST and to GET models: `/v1/models` and `/models` exist, but there is no `/v1/v1/...` and no GET on `/messages`."
+  - "The token can arrive as `Authorization: Bearer <token>` or as `x-api-key`, and `extract_token` looks at the bearer header first; reuse B4841's check, do not re-parse headers here."
+  - "`_models` returns an empty `data` list, not `[{\"id\": null}]`, when the endpoint has no model."
+  - "The port is 0 on purpose: two sessions on one host must never share a port, so tests start two servers and compare ports."
+  - "On stop, aborting the server task must drop in-flight response bodies; a body held somewhere else would keep B4842's record guard from firing."
+  - "The gateway sender exists only in gateway mode; building a `ProxiedClient` for an SDK-mode endpoint would open a pool nobody uses."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,148 @@
+id: B3613
+title: Pass-through HTTP request lifecycle
+description: >-
+  Build the second half of LiteLLM's pass_through_request in betterlite-server, in the new module handler
+  (crates/betterlite-server/src/pass_through_lifecycle/handler.rs and its folder; the folder and `pub mod handler;` are added next to B6510's request_prep).
+  B6510 prepares the request and sends it upstream. This task takes the live response and builds the client's reply: the three streamed replies, the
+  buffered reply with post-call guardrails, success logging, the response headers, and the failure path. It is LiteLLM's pass_through_request from the
+  `apply_upstream_reported_usage` call after the send (L1418, L1506) to the end of the function (L1890). B3615 (route factory) calls it. There is no HTTP route
+  yet, so every test is a native test with fake collaborators.
+
+  Entry point. `PassThroughHandler::new(deps: HandlerDeps)` and `handle(&self, args: &PassThroughArgs, req: &IncomingRequest, auth: &UserApiKeyAuth) ->
+  Result<PassThroughReply, ProxyException>`. `PassThroughReply { status: u16, headers: indexmap::IndexMap<String, String>, body: ReplyBody }` and `ReplyBody` is
+  Bytes(bytes::Bytes) or Stream(a boxed `futures::Stream<Item = Result<Bytes, RelayError>>`). B3615 turns it into the framework response. `ProxyException` is the merged one (read
+  the exception module; if it is not there, stop and report). `HandlerDeps` holds: prep (B6510's RequestPrep), sender (B6510's UpstreamSender), hooks (`Arc<dyn ProxyHooks>`; B6510 declares the trait with all four hook methods and only this task calls the three post-call ones), headers (`Arc<dyn CustomHeaders>`), keepalive (`Arc<dyn SseKeepalive>`), completion (`Arc<PassThroughSuccessCompletion>`, B3607), worker (the B191 handle),
+  binder (`Arc<dyn ReservationBinder>`, declared by B3607), and the streaming logger handle that B3609's chunk_processor takes.
+
+  Hook methods this task calls on ProxyHooks (B6510 owns the trait, the signatures and the ResponseView and FailureCause types): post_call_response_headers_hook, post_call_success_hook and post_call_failure_hook. Do not edit the trait. `CustomHeaders::custom_headers(&self, auth, call_id: &str, api_base: Option<&str>) -> IndexMap<String,String>` is ProxyBaseLLMRequestProcessing.get_custom_headers with model_id None and
+  cache_key None. `SseKeepalive::wrap(&self, stream, ping_interval_seconds: Option<f64>, upstream_headers: &HeaderMap) -> BoxStream` is wrap_passthrough_sse_bytes_with_keepalive_pings
+  (litellm/proxy/common_utils/sse_keepalive.py L103). Read the merged code for each; write an adapter when it exists and a recording fake for tests. If a piece has no merged code, report it as a blocker with its name.
+  Call `error_body_call_id` and `with_call_id` (litellm/proxy/common_utils/error_body_call_id.py) and `error_status_code`, `openai_error_type` and `openai_error_param`
+  (litellm/proxy/common_utils/openai_error_payload.py) directly from their merged crate functions.
+
+  Flow of `handle` (the try block). Call `prep.prepare`; on Err(PrepareFailure) go to the failure path with its FailureContext. Then send with `sender.send`; on Err go to the failure path with a context built from the
+  PreparedRequest. `post_call_guardrail_data` starts as None and only the buffered path sets it. Then:
+  (1) Usage. Call B3605's apply_upstream_reported_usage on the logging object with the live response headers and store the result in prepared.state.call (B3607's record_on_logging_object later writes the marker, response_cost and combined_usage_object onto the logging object); keep the returned value as upstream_usage. It runs once, right after the send, on every branch.
+  (2) Streaming branch, when prepared.stream is Some(true) (the send was already a streaming send). Set the logging object's stream true and model_call_details["stream"] true; log the upstream failure; build headers; return the SSE reply (see SSE reply).
+  (3) Detected SSE branch, when prepared.stream is not true and `is_streaming_response(response)` (B3600; Content-Type contains "text/event-stream"). Same as (2), with the same order.
+  (4) Relay branch, when not buffered by B3600's should_buffer_passthrough_response (status < 400 and a non-JSON media type). custom headers = headers.custom_headers(auth, call_id, api_base = the URL's path and query only, no scheme or host);
+  then post_call_response_headers_hook with data = body (or empty map), the response view and the request headers, and merge its map into custom headers (its keys win). Return a Stream reply using B3607's relay_response_bytes with a RelayInput filled
+  from the prepared request, status = response status, headers = B3600's get_response_headers(response headers, no call id, custom_headers). The relay does the success logging itself, so this branch does not enqueue anything.
+  (5) Buffered branch, everything else: read the whole body; response_body = B3600's get_response_body (None when not a JSON object); build the failure payload (B3610's build_passthrough_failure_request_payload with upstream_usage) with its response_body field set;
+  call B3610's log_passthrough_upstream_failure (it only logs for status >= 400; its return value is not used here). If status < 400 and response_body is an object and guardrails_to_run is not empty: hook_data = a copy of the body with metadata = existing metadata
+  (only when it is an object, else empty) plus "guardrails" = guardrails_to_run; store hook_data as post_call_guardrail_data; response_body = post_call_success_hook(hook_data, auth, response_body); when the result is an object, the content becomes
+  its JSON text (Python json.dumps formatting, see docs/compatibility.md; use the shared serializer) and content_modified is true; when it is not an object, log at debug "post_call_success_hook returned <type>, expected dict, using original response" and keep the original
+  content. When response_body is None, log at debug that the body is not JSON and skip. (The enterprise managed-id output rewrite between these steps is not built, see out_of_scope.)
+  Then payload.response_body = response_body and end_time = now. When status < 400, enqueue one event on the B191 worker that runs `completion.complete` with CompletionInput: the response (status, headers, bytes), response_body, url_route = the URL text, result "", start_time,
+  end_time, the logging object, cache_hit false, the request body, custom_llm_provider, prepared.state and the kwargs. Right after an accepted enqueue call the binder with the logging object's litellm_params. A rejected enqueue binds nothing (B3607's deviation). A status of 400 or more enqueues nothing,
+  since the failure was already logged. Then custom headers (as in the relay branch, same api_base), post_call_response_headers_hook (its keys win), response headers = get_response_headers(response headers, custom_headers). Then the call-id rule: emitted_call_id = the
+  "x-litellm-call-id" response header when status >= 400, else None; error_call_id = error_body_call_id(settings, emitted_call_id) when emitted_call_id is a string; the content sent is the JSON text of with_call_id(response_body, error_call_id) when error_call_id is Some and response_body is an object,
+  else the content from above. When content_modified, remove content-length from the headers. Return a Bytes reply with the upstream status.
+
+  SSE reply (steps 2 and 3). First log the upstream failure with B3610's log_passthrough_upstream_failure; it returns the response to stream (B3610 replays the bytes it already read when the status is 4xx or 5xx). Build headers: get_response_headers(relay
+  response headers, call id) updated with the post_call_response_headers_hook map (data = body or empty map, response = the relay response). The body is, from the inside out: B3609's chunk_processor over the relay response (request body, logging object, endpoint type, start time, the success logger, url_route = the URL text);
+  B3610's relay_reporting_failures over that (upstream status, auth, B3610's failure request payload built WITHOUT upstream_usage); then `keepalive.wrap` with ping_interval_seconds from the settings value `sse_keepalive_ping_interval_seconds` and the relay response headers.
+  Status is the relay response's status. LiteLLM also wraps the stream in _own_streamed_managed_ids between the last two layers. That is not built.
+
+  Failure path (the except blocks). Two cases, in this order. (a) The error is a ModifyResponseException: log at info "pass_through_endpoint: Guardrail <guardrail_name> modified response: <message cut to 200 chars>"; call post_call_failure_hook with its request_data; an error from that
+  hook is logged at warn "pass_through_endpoint: post_call_failure_hook raised during guardrail block" and swallowed; return a Bytes reply with status 200, Content-Type application/json and the JSON text of {"error": {"message": message or "Response blocked by guardrail", "type": "content_filter", "guardrail_name": ..., "model": ...}}.
+  (b) Any other error: custom headers with api_base = the URL's path and query when the URL is known, else None; when the error is a guardrail intervention (CustomGuardrail._is_guardrail_intervention, read the merged name) log at warn
+  "pass_through_endpoint: request blocked by guardrail - <error>", else log the error with its trace at error level with "litellm.proxy.proxy_server.pass_through_endpoint(): Exception occured - <error>". Build request_payload = the body (or empty map), then every kwargs entry copied over it (kwargs win),
+  then "litellm_logging_obj" = the logging object when it exists, then "model" = the body's model or "" only when the key is missing and the body is not empty, then "custom_llm_provider" only when the key is missing and the provider is set; then B3610's carry_guardrail_logging_info(request_payload, post_call_guardrail_data).
+  Call post_call_failure_hook with that payload and the trace cut to MAXIMUM_TRACEBACK_LINES_TO_LOG lines. Then raise: a ProxyException is returned as it is; an HttpError becomes ProxyException with message = the error's message, else its detail text, else its text; type = openai_error_type(e, error_status_code(e, 400)); param = openai_error_param(e);
+  code = error_status_code(e, 400); headers = the custom headers; any other error becomes the same with the error's message else its text and the default 500. An error from the failure hook itself is not caught (LiteLLM lets it propagate), so it is returned in place of the ProxyException.
+  The failure path must work with an empty FailureContext (no URL, body, kwargs or logging object).
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_lifecycle/handler.rs
+    - crates/betterlite-server/src/pass_through_lifecycle/handler/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1416-L1481
+    why: The streaming branch and its SSE reply. Read the order of the usage call, the failure log, the headers hook and the wrapper layers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1504-L1607
+    why: The non-streaming send's usage call, the detected SSE branch and the relay branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1609-L1664
+    why: The buffered branch, the failure log and the post-call guardrails.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1723-L1791
+    why: Success logging, the reservation bind, custom headers, the call-id rule and the final Response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1792-L1890
+    why: The two except blocks, the guardrail-modified reply and the ProxyException mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2737-L2795
+    why: _is_streaming_response and _should_buffer_passthrough_response (B3600 owns them), plus the _own_streamed_managed_ids that is not built.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/error_body_call_id.py#L11-L30
+    why: error_body_call_id and with_call_id, called in the buffered reply.
+dod:
+  - text: A body with stream true, and a response whose Content-Type holds text/event-stream, both return the SSE reply in the right layer order with the headers hook merged, and the relay branch returns a Stream reply from relay_response_bytes without enqueueing a completion.
+    proof: [stream-tests, sse-tests, relay-tests]
+  - text: The usage headers are applied once per request, right after the send, on every branch.
+    proof: [usage-tests]
+  - text: The buffered branch parses the body, logs an upstream failure only for 4xx and 5xx, runs post-call guardrails only for status below 400 with an object body and guardrails, replaces the content only when the hook returns an object, and drops content-length when it did.
+    proof: [buffered-tests, guard-tests]
+  - text: Success logging is enqueued once for status below 400 with the right CompletionInput, the reservation is bound only after an accepted enqueue, and nothing is enqueued for 400 and above.
+    proof: [log-tests]
+  - text: Custom headers use the path-and-query api_base, the hook's headers win over them, and the call id is added to an error body only when the settings rule gives one.
+    proof: [header-tests]
+  - text: A ModifyResponseException gives a 200 content_filter reply and swallows a failure-hook error, and every other error calls the failure hook with the merged payload and raises the mapped ProxyException with status 400 for HTTP errors and 500 for the rest.
+    proof: [fail-tests]
+  - text: The failure path works when prepare failed early, with no URL, body, kwargs or logging object.
+    proof: [fail-tests]
+checks:
+  optional: []
+  commands:
+    - id: stream-tests
+      why: the stream flag branch or the detected SSE branch is missing, or sets the logging object's stream flag in the wrong place
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::handler::tests::stream_/)'
+    - id: sse-tests
+      why: the SSE reply layers, headers or status are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::handler::tests::sse_/)'
+    - id: relay-tests
+      why: the relay branch builds the wrong RelayInput or headers, or enqueues a completion itself
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::handler::tests::relay_/)'
+    - id: usage-tests
+      why: the upstream usage is applied twice, late or not stored on the request state
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::handler::tests::usage_/)'
+    - id: buffered-tests
+      why: the buffered read, body parse, failure log or reply is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::handler::tests::buffered_/)'
+    - id: guard-tests
+      why: the post-call guardrail conditions, hook data or content replacement are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::handler::tests::guard_/)'
+    - id: log-tests
+      why: the success logging enqueue, the status guard or the reservation bind is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::handler::tests::log_/)'
+    - id: header-tests
+      why: custom headers, the hook merge or the error body call id are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::handler::tests::header_/)'
+    - id: fail-tests
+      why: the guardrail-modified reply, the failure payload or the ProxyException mapping is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_lifecycle::handler::tests::fail_/)'
+oracle_cases: []
+deviations:
+  - what: The SSE reply has no managed-id layer, and the enterprise managed-id output rewrite is not built.
+    why: The rewrite only runs when an enterprise hook is registered. Open-source LiteLLM never registers it, so at the pin the stream layer returns the stream unchanged.
+  - what: The failure hook error is returned instead of raised, and a ProxyException is returned as a value.
+    why: Rust has no exceptions. The caller gets the same error at the same point.
+  - what: The request body is copied before the failure payload is built, not changed in place.
+    why: LiteLLM writes the kwargs into the parsed body itself. Nothing reads the body after the failure hook, so the observable result is the same (docs/compatibility.md).
+out_of_scope:
+  - "Everything up to and including the upstream send belongs to B6510; the usage header functions to B3605; the success logging internals and the byte relay to B3607."
+  - "chunk_processor and the stream lifecycle belong to B3609; log_passthrough_upstream_failure, relay_reporting_failures, build_passthrough_failure_request_payload and carry_guardrail_logging_info belong to B3610."
+  - "get_response_headers, get_response_body, is_streaming_response and should_buffer_passthrough_response belong to B3600."
+  - "The managed-id output rewrite (L1665-L1721), the streamed managed-id layer _own_streamed_managed_ids (L2744-L2771) and the managed_id_rewriter and managed_id_codec modules need the enterprise managed_files hook, which open-source LiteLLM never registers. Nothing here builds them."
+  - "The route factory, request state cleanup and the first-byte SSE opener belong to B3615; the WebSocket path to B3612."
+  - "ProxyLogging's hook methods, get_custom_headers, the keepalive wrapper and the OpenAI error mapping functions are not built here. B6510 declares the ProxyHooks trait. This task defines the CustomHeaders and SseKeepalive traits and an adapter over merged code where it exists."
+pitfalls:
+  - "upstream_usage goes into the failure payload that is built before the stream (L1423-L1432, L1515-L1526) and the buffered one (L1618-L1624). The payload built for relay_reporting_failures inside the SSE reply (L1465-L1470, L1557-L1562) does not take it. Keep that difference."
+  - "The streaming branch sets logging_obj.stream before the failure log. The detected SSE branch sets it only after the response arrived, so a non-stream request that turns out to be SSE is logged as streaming from that point."
+  - "The relay branch's api_base is the URL's path and query (httpx's _uri_reference), not the full URL. The same value is used in the buffered branch and in the failure path."
+  - "The relay branch calls get_response_headers with no call id; the call id comes only through the custom headers. The streaming branches pass the call id and no custom headers."
+  - "The reservation bind in the buffered branch runs only when status < 400, directly after the enqueue and before the custom headers are built."
+  - "get_response_headers already drops content-length, so the content-length removal after a modified body changes nothing in the output. Keep the step anyway, in case the header set is built another way."
+  - "post_call_guardrail_data is set before the hook runs, so it reaches the failure path even when the hook itself fails."
+  - "A guardrail intervention logs at warn without a trace, while all other errors log the trace. Do not log both."
+  - "The failure path needs the LiteLLM call id, and prepare may have failed before the logging object existed. Use the FailureContext fields, never unwrap."
+review_level: security
+budget:
+  max_changed_lines: 1600
+  max_new_expects: 0

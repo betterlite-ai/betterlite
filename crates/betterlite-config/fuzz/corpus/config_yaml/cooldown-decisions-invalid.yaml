@@ -1,0 +1,3 @@
+router_settings:
+  allowed_fails_policy:
+    BadRequestErrorAllowedFails: not-a-number

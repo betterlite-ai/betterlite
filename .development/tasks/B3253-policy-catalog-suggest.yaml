@@ -1,0 +1,244 @@
+id: B3253
+title: Remote template catalog and AI suggestions
+description: >-
+  Build two routes from LiteLLM's policy_endpoints and the suggester behind one of them: GET /policy/templates (the template catalog, fetched
+  from GitHub with a local fallback) and POST /policy/templates/suggest (an LLM picks templates for the caller's attack examples).
+  Pure logic goes in betterlite-policy and the routes go in betterlite-server. B3252 already builds the local lookup, so do not build another:
+  call `betterlite_policy::template_catalog::local_templates() -> Result<Vec<serde_json::Value>, TemplateCatalogError>` for the 18 local
+  records, in LiteLLM's backup-file order. B3252 also enables serde_json's `preserve_order`, so records keep their key order.
+
+
+  Catalog route, in crates/betterlite-server/src/policy_catalog_routes.rs and policy_catalog_routes/. `GET /policy/templates` (endpoints.py
+  L626-L662, tag "policy management", standard authenticated route group; B855 and B756 own auth, B865 owns the management wrapper effects). It takes no
+  parameters and answers a JSON array. The settings struct `PolicyCatalogSettings { local_only: bool }` is read once at server start from the
+  env var `LITELLM_LOCAL_POLICY_TEMPLATES`: true when the value, trimmed and lowercased, is `true`, `1` or `yes`, and false when unset or anything
+  else. Flow per request:
+  1. `local_only`: return `local_templates()`; no network call.
+  2. Otherwise do one GET of `https://raw.githubusercontent.com/BerriAI/litellm/main/policy_templates.json` (constant `POLICY_TEMPLATES_GITHUB_URL`) with a
+     total deadline of 10 seconds, through B173's pooled client in betterlite-http (read its request API in crates/betterlite-http/src before you
+     write the call). Send no auth header and do not follow redirects. Status 200: parse the body as JSON and return it exactly as it is, whatever it
+     holds, so an empty array `[]` is returned as `[]` and is not replaced by the local records. Key order of the remote records is kept.
+  3. Any transport error, deadline, over-limit body, non-200 status or body that is not a JSON array returns `local_templates()`. A transport error,
+     an over-limit body or a body that does not parse is logged at debug level with the text
+     `Failed to fetch policy templates from GitHub, using local backup: <error>`; a plain non-200 status is not logged (LiteLLM only logs exceptions).
+  There is no cache: every request fetches again. The fetcher is a struct `PolicyCatalogFetcher` that takes the URL in its constructor, so tests
+  point it at a local test server; production passes `POLICY_TEMPLATES_GITHUB_URL`. A local-records error (a fragment that does not parse) is a 500 with
+  the shared internal-error response. It cannot happen with the embedded fragments, so a test uses a failing source only to prove it does not panic.
+
+
+  Published fixture. LiteLLM's remote catalog is the root file policy_templates.json. B3255, B3257, B3259, B3260, B3263 to B3265 and B3267 wrote its 16
+  records, one JSON object per file, in crates/betterlite-policy/assets/templates/published/. Embed them for tests only: add a cargo feature `fixtures` to
+  betterlite-policy (off by default) and, in crates/betterlite-policy/src/published_fixture.rs, `published_fixture() -> Result<Vec<serde_json::Value>, TemplateCatalogError>`
+  that parses an explicit `include_str!` list in the remote file's order: advanced-au-pii-protection, baseline-pii-protection, nsfw-content-filter-australia,
+  nsfw-content-filter-basic, nsfw-content-filter-all-regions, gdpr-eu-pii-protection, eu-ai-act-article5, mcp-security-unregistered-server-block,
+  airline-passenger-data-protection-uae, aviation-operations-security, uae-regulatory-compliance, competitor-mention-detection, pdpa-singapore,
+  mas-ai-risk-management, claims-agent-safety, canadian-pii-protection. The module is declared `#[cfg(feature = "fixtures")]`. betterlite-server lists
+  betterlite-policy with `features = ["fixtures"]` under dev-dependencies only, so the release binary does not embed the 16 files. Do not scan the
+  folder at run time. The published records differ from the local ones (the local copies add example_sentences and use `guardrails` where the published ones use
+  `guardrails_add`), so a test asserts the fetched body equals the published fixture and is not equal to the local list.
+  Route tests start a local HTTP server (axum is already a dependency) that serves the fixture JSON, and cover: 200 body returned as served, 200 with `[]`
+  returned as `[]`, 404, 500, an invalid JSON body, a JSON object body, a refused connection and a response slower than the deadline (use a
+  deadline passed to the fetcher, with the production value 10 seconds as a constant) all giving the local 18 records, and `local_only` never contacting the server.
+
+
+  Suggest logic, in crates/betterlite-policy/src/policy_suggester.rs and policy_suggester/ (ai_policy_suggester.py, whole file). Port:
+  - `SUGGEST_TOOL` (L14-L48) as `suggest_tool() -> serde_json::Value`: a function tool named `select_policy_templates` with the exact description and parameter
+    schema, keys in LiteLLM's order.
+  - `_build_system_prompt` (L112-L132) as `build_system_prompt(templates: &[Value]) -> Result<String, SuggesterError>`. Each entry is
+    `- ID: <id>\n  Title: <title>\n  Description: <description>\n  Example attacks it protects against: <examples>` where examples is the
+    `example_sentences` strings each wrapped in double quotes (no escaping) and joined with `, `, or `none` when the key is missing or the list is
+    empty. Entries are joined with a blank line (`\n\n`). The fixed intro text is copied character for character, ending with `Available templates:\n\n`.
+    A template without `id`, `title` or `description`, or with one that is not a string, is a `SuggesterError`.
+  - `_build_user_prompt` (L134-L143) as `build_user_prompt(attack_examples: &[String], description: &str) -> String`. Examples that are empty after trimming are
+    dropped. If any remain, the parts start with `Example attack prompts I want to block:` followed by `  <n>. <example>` (n from 1, the example as given, not
+    trimmed). If the description is not empty after trimming, a part `\nDescription of what I want to block: <description>` (description as given) is added. Parts are
+    joined with `\n`. No parts gives an empty string. Python's `str.strip` also strips U+001C to U+001F; follow docs/compatibility.md for whitespace.
+  - The result filter from `suggest` (L94-L103) as `filter_selection(result: Value, templates: &[Value]) -> Result<Value, SuggesterError>`: `result` must be a JSON
+    object (else `SuggesterError`). If `selected_templates` is missing it is set to an empty array at the end of the object. Keep only the entries whose
+    `template_id` equals the `id` of one of the templates; an entry that is not an object or has no matching `template_id` is dropped. A value of
+    `selected_templates` that is not an array is a `SuggesterError`. All other keys of the object (`explanation` and anything extra) pass through unchanged.
+  - Constants: `SUGGEST_TEMPERATURE` 0.2, `SUGGEST_TOOL_NAME` `select_policy_templates`, `NO_MATCH_EXPLANATION` `No templates could be matched to your requirements.`
+    The default model is `gpt-4o-mini` (LiteLLM's DEFAULT_COMPETITOR_DISCOVERY_MODEL, the same value B3252 defines in competitor_enrich; define your own constant in this module so
+    the two tasks do not edit each other's files).
+  Each fallible function owns the `SuggesterError` enum (thiserror) in this module.
+
+
+  Suggest route, in the same server module. `POST /policy/templates/suggest` (endpoints.py L1087-L1120, tag "policy management", same auth group and wrapper
+  note). The body `SuggestTemplatesRequest` (L1087-L1090) is decoded by the pure function
+  `decode_suggest_request(bytes: &[u8]) -> Result<SuggestTemplatesRequest, SuggestRequestError>`: `attack_examples` is an array of strings (default empty),
+  `description` is a string (default empty), `model` is a string or null (default null). Invalid JSON, a body that is not an object, a null or non-string
+  `description`, a null `attack_examples`, a non-string item, or a non-string `model` is the server's shared 422 validation response. Unknown keys are ignored.
+  An empty object is valid. Flow:
+  1. `templates = local_templates()?` (the local records; the suggester never reads the remote catalog).
+  2. `model = request.model` when non-empty, else the default model. The provider is the text before the first `/` of the model when it contains one, else none.
+  3. Ask the model client for the supported parameters of that model and provider. When it answers a list that does not contain `tools`, return the shared
+     ProxyException response (B003): status 400, type `validation_error`, param `model`, code `400`, message
+     `AI policy suggestion requires tool calling; model '<model>' does not support it`. When it answers none (unknown model), go on.
+  4. One non-streaming call with system prompt, user prompt, the single tool, forced tool choice of `select_policy_templates`, temperature 0.2 and parameter
+     dropping on (an unsupported parameter is dropped, not an error).
+  5. No tool calls in the first choice: answer `{"selected_templates": [], "explanation": "No templates could be matched to your requirements."}`.
+  6. Otherwise parse the first tool call's `arguments` string as JSON, run `filter_selection`, and answer the result.
+  7. Any failure in steps 4 to 6 (model error, arguments that are not JSON, a non-object result) is logged at error level with
+     `AI policy suggestion failed: <error>` and then returned as the shared internal-error response; do not retry and do not fall back. Step 3's 400 is not logged.
+  Model access. LiteLLM calls `litellm.acompletion` and `litellm.get_supported_openai_params` directly, not the router, so deployments from the config do not apply and the
+  provider key comes from the environment. Do not import a router. Define the trait `PolicySuggestModel` in betterlite-server (native `async fn` in trait, no `dyn`,
+  like B3103's model client) with `supported_params(&self, model: &str, provider: Option<&str>) -> Option<Vec<String>>` and
+  `select_templates(&self, request: &SuggestModelRequest) -> Result<SuggestModelReply, SuggestModelError>`. `SuggestModelRequest` holds `model`, `system_prompt`, `user_prompt`,
+  the tool JSON, `temperature`. `SuggestModelReply` holds `tool_arguments: Option<String>` (the first choice's first tool call arguments, none when there is no tool call).
+  `SuggestModelError` carries a message string. Production wiring: `supported_params` is B175's supported-OpenAI-parameter query (read its signature in crates/betterlite-models/src/params
+  and use it unchanged), and `select_templates` is one OpenAI-style chat call through the provider dispatcher using environment keys. That wiring needs the dispatcher handle and belongs to the
+  task that builds the handle (see notes); tests use a fake client.
+
+
+  Tests. Native tests named for the filters in the checks: `policy_suggester::tests::` in betterlite-policy (`tool_` for the exact tool JSON, `system_` and `user_` for the prompt
+  texts with and without examples, with an empty example, with a whitespace-only description, `filter_` for dropped unknown ids, a missing `selected_templates`, extra keys kept, a non-object
+  result), `published_fixture::tests::` (under the `fixtures` feature: 16 ids in order, each file's `id` equals its name) and `policy_catalog_routes::tests::` in betterlite-server (`settings_` for
+  the env values true, 1, yes, TRUE with spaces, false, empty; `fetch_` for the cases above; `suggest_` with the fake client for a valid selection, unknown ids dropped, no tool calls, the 400 for a
+  model whose list lacks `tools`, an unknown model going on, the `openai/` provider split, an empty `model` string falling back to the default, model error, bad arguments JSON; `decode_` for the body decoder).
+  Add a cargo-fuzz target `suggest_request` in crates/betterlite-server/fuzz that feeds `decode_suggest_request`, and commit corpus files for it (empty input, truncated JSON, `attack_examples` that is a
+  string, `description` that is null, a list holding a number); a test named `replays_the_suggest_request_corpus` replays them.
+
+
+  Oracle. The helper operation for this task (the skeleton names it b3253 in the policy helper group) runs LiteLLM's own `AiPolicySuggester._build_system_prompt`, `_build_user_prompt` and
+  the filter step through `function`; the Python adapter imports `AiPolicySuggester` from litellm.proxy.management_endpoints.policy_endpoints.ai_policy_suggester and takes the template list
+  from `_load_policy_templates_from_local_backup()`. HTTP cases go in tools/oracle/cases/policies/templates-catalog/ and tools/oracle/cases/policies/templates-suggest/, master key
+  `oracle-master`. The catalog cases set `env: {LITELLM_LOCAL_POLICY_TEMPLATES: ...}` to `true`, `1`, `yes` and ` TRUE ` (the 18 records come back in order) and send no key for the 401 case.
+  The remote fetch has no oracle case because it needs the internet. The suggest cases set `env: {OPENAI_API_KEY: oracle-key, OPENAI_API_BASE: "{{upstream}}"}` and ask with model
+  `openai/gpt-suggest-upstream` (copy the `upstream` reply shape of tools/oracle/cases/chat/openai-basic.yaml, with `message.tool_calls` holding one `function` call named
+  `select_policy_templates` and an `arguments` JSON string). Cases: one valid and one unknown id mixed, no tool call in the reply, an empty body `{}` (the upstream request then has an empty user
+  message), a model given as `gpt-4o-mini` is not used since it would need the real API, bad body 422 and no key 401.
+
+scope:
+  paths:
+    - crates/betterlite-policy/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-policy/src/policy_suggester.rs
+    - crates/betterlite-policy/src/policy_suggester/**
+    - crates/betterlite-policy/src/published_fixture.rs
+    - crates/betterlite-policy/src/published_fixture/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/policy_catalog_routes.rs
+    - crates/betterlite-server/src/policy_catalog_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/suggest_request.rs
+    - crates/betterlite-server/fuzz/corpus/suggest_request/**
+    - tools/oracle/cases/helpers/policy-suggester/**
+    - tools/oracle/cases/policies/templates-catalog/**
+    - tools/oracle/cases/policies/templates-suggest/**
+    - "tools/oracle/fuzz/corpus/helper_case/policy-suggester-*"
+    - tools/oracle/helpers/b3253.py
+    - tools/oracle/helpers/b3253/**
+    - tools/oracle/src/helpers/policy/b3253.rs
+    - tools/oracle/src/helpers/policy/b3253/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L606-L662
+    why: POLICY_TEMPLATES_GITHUB_URL, the local loader and GET /policy/templates from its decorator, with the env switch, the 10 second fetch and the fallbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L1087-L1120
+    why: SuggestTemplatesRequest and the POST /policy/templates/suggest route from its decorator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/ai_policy_suggester.py#L14-L48
+    why: SUGGEST_TOOL, the exact tool schema sent to the model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/ai_policy_suggester.py#L51-L110
+    why: suggest, with the tools check, the forced tool call, the id filter and the error log.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/ai_policy_suggester.py#L112-L143
+    why: The system and user prompt builders.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L1-L2700
+    why: The published catalog the fetch returns; the 16 ids in file order are listed in the description.
+
+dod:
+  - text: >-
+      GET /policy/templates with LITELLM_LOCAL_POLICY_TEMPLATES set to true, 1 or yes (any case, spaces trimmed) returns the 18 local records in order without a network call,
+      and a false or unset value does not.
+    proof: [catalog-route-tests, oracle]
+  - text: >-
+      GET /policy/templates returns a 200 remote body as served (an empty array included) and returns the local records on a transport error, a deadline, a non-200 status,
+      invalid JSON or a body that is not an array.
+    proof: [catalog-route-tests]
+  - text: >-
+      The published fixture holds the 16 remote records in the remote file's order and is compiled only under the `fixtures` feature.
+    proof: [fixture-tests]
+  - text: >-
+      The tool JSON, the system prompt and the user prompt equal LiteLLM's text, including the `none` placeholder, the dropped empty examples, the numbering and the untrimmed description.
+    proof: [suggester-tests, oracle, helper-python]
+  - text: >-
+      filter_selection keeps only entries with a known template_id, sets a missing selected_templates to an empty array, keeps extra keys and rejects a non-object result.
+    proof: [suggester-tests, oracle, helper-python]
+  - text: >-
+      POST /policy/templates/suggest answers 400 validation_error for a model whose supported parameters lack tools, answers the fixed no-match body when the reply has no tool call,
+      answers the filtered selection otherwise, and returns a logged internal error on a model failure or bad arguments.
+    proof: [catalog-route-tests, oracle]
+  - text: >-
+      The suggest body decoder applies the defaults, rejects wrong shapes with the shared 422 without panicking and has committed corpus inputs.
+    proof: [suggest-corpus, catalog-route-tests]
+checks:
+  optional: []
+  commands:
+    - id: suggester-tests
+      why: a prompt builder, the tool JSON or the selection filter is missing or differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^policy_suggester::.*tests::/)'
+    - id: fixture-tests
+      why: the published fixture is missing, out of order or not feature gated
+      run: cargo nextest run --locked -p betterlite-policy --features fixtures --no-tests=fail -E 'test(/^published_fixture::.*tests::/)'
+    - id: catalog-route-tests
+      why: the catalog route, its fallbacks, the suggest route, its fake-client behavior or the body decoder is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^policy_catalog_routes::/) - test(replays_the_suggest_request_corpus)'
+    - id: suggest-corpus
+      why: the suggest body decoder has no committed malformed-input regressions or no replay test
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/suggest_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_suggest_request_corpus)'
+    - id: helper-python
+      why: the Python oracle helper adapter for this task fails strict Python checks
+      run: test -f tools/oracle/helpers/b3253.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/policy-suggester/system-prompt-with-examples.yaml
+  - tools/oracle/cases/helpers/policy-suggester/system-prompt-none-placeholder.yaml
+  - tools/oracle/cases/helpers/policy-suggester/user-prompt-numbered.yaml
+  - tools/oracle/cases/helpers/policy-suggester/user-prompt-blank-example-dropped.yaml
+  - tools/oracle/cases/helpers/policy-suggester/user-prompt-description-only.yaml
+  - tools/oracle/cases/helpers/policy-suggester/user-prompt-empty.yaml
+  - tools/oracle/cases/helpers/policy-suggester/filter-drops-unknown-id.yaml
+  - tools/oracle/cases/helpers/policy-suggester/filter-missing-selection.yaml
+  - tools/oracle/cases/policies/templates-catalog/local-true.yaml
+  - tools/oracle/cases/policies/templates-catalog/local-one.yaml
+  - tools/oracle/cases/policies/templates-catalog/local-yes.yaml
+  - tools/oracle/cases/policies/templates-catalog/local-padded-upper.yaml
+  - tools/oracle/cases/policies/templates-catalog/no-auth-401.yaml
+  - tools/oracle/cases/policies/templates-suggest/valid-and-unknown-id.yaml
+  - tools/oracle/cases/policies/templates-suggest/no-tool-calls.yaml
+  - tools/oracle/cases/policies/templates-suggest/empty-body.yaml
+  - tools/oracle/cases/policies/templates-suggest/bad-body-422.yaml
+  - tools/oracle/cases/policies/templates-suggest/no-auth-401.yaml
+
+deviations:
+  - what: A remote body that is valid JSON but not an array (an object, a string) falls back to the local records.
+    why: LiteLLM declares `-> list` and FastAPI would fail response validation with a 500; the fallback is the behavior its own docstring promises.
+  - what: LITELLM_LOCAL_POLICY_TEMPLATES is read once at server start, not on each request.
+    why: betterlite reads its environment into typed settings at start; LiteLLM re-reads os.getenv per call, which only differs when the environment changes while running.
+  - what: The 18 local records come from embedded fragments (B3252) and the 16 published records exist only as a test fixture.
+    why: A binary has no source tree next to it, and the remote file is fetched at run time, so there is nothing to embed for production.
+  - what: A model failure in the suggest route is answered with the shared 500 internal-error response.
+    why: LiteLLM re-raises the provider exception and the proxy picks a status from the exception type; betterlite has no provider exception classes here (open question in notes).
+
+out_of_scope:
+  - "_load_policy_templates_from_local_backup (L610-L623) is B3252's local_templates; this task calls it."
+  - "apply_policies, validate, list, info and match routes (L67-L605) are B3250's and B3251's."
+  - "The enrich routes, _build_refinement_prompt and the competitor builders (L667-L1084) are B3252's."
+  - "test_policy_template and _test_guardrail_definitions (L1123-L1265) are B3249's."
+  - "ai_policy_suggester.py has no other function than the three ported here (suggest, _build_system_prompt, _build_user_prompt)."
+  - "The production implementation of PolicySuggestModel (the dispatcher call behind litellm.acompletion) is not built here; see notes."
+
+pitfalls:
+  - "A 200 answer from GitHub is returned as it is, so an empty array `[]` reaches the client; only failures fall back, not emptiness."
+  - "The fallback uses the 18 local records, which carry example_sentences and `guardrails`, while the fetched published records carry `guardrails_add`, so the two lists differ in shape and a test must not treat them as equal."
+  - "A plain non-200 status falls back silently; only exceptions get the `Failed to fetch policy templates from GitHub, using local backup` debug line."
+  - "The suggester reads only the local records and never the remote catalog, so a template that exists only on GitHub can never be suggested (its id would be filtered out)."
+  - "`model` is tested for truthiness, so an empty string means the default `gpt-4o-mini`; the provider split uses the first `/` only, so `openrouter/openai/gpt-4o` has provider `openrouter`."
+  - "A model with an unknown parameter list (none) is allowed through; only a known list without `tools` is refused with 400."
+  - "The 400 for missing tool support is raised before the try block in LiteLLM, so it is not logged as `AI policy suggestion failed`."
+  - "`selected_templates` is set to an empty array when missing, after other keys, so `explanation` stays first in the output object."
+  - "The example attacks in the system prompt are wrapped in plain double quotes without escaping, so an example holding a quote is copied raw."
+  - "The user prompt numbers examples after dropping blank ones, so the numbers have no gaps, and the description line starts with a newline that follows the join newline."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

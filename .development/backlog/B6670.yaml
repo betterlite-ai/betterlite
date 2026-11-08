@@ -1,0 +1,14 @@
+id: B6670
+milestone: M6 guardrails
+title: Bounded custom-code guardrail test route
+status: todo
+depends_on: [B3802, B732]
+file: tasks/B6670-custom-code-test-route.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_endpoints.py"
+parent: B104
+split_from: B3686
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

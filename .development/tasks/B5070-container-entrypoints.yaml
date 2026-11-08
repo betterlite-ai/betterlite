@@ -1,0 +1,114 @@
+id: B5070
+title: Container command entrypoints and migration handoff
+description: >-
+  Write the four shell scripts the container images run, in packaging/docker/. They are the same scripts LiteLLM ships in docker/, with the Python and ddtrace parts replaced by the native binaries.
+  Other tasks copy them into images (B5071, B5073, B5074) and compose files call them, so file names, the exec behavior and the exit codes below are the contract.
+  Do not write any Dockerfile here.
+
+
+  packaging/docker/prod_entrypoint.sh (#!/bin/sh) is the image ENTRYPOINT. It runs "exec betterlite \"$@\"" so the container's CMD (for example --port 4000) reaches the server and signals reach the server process, not a shell.
+  LiteLLM runs "exec ddtrace-run litellm" when USE_DDTRACE matches true in any case (the case pattern [Tt][Rr][Uu][Ee], nothing else) and sets DD_TRACE_OPENAI_ENABLED=False first.
+  betterlite has no ddtrace. When USE_DDTRACE matches the same pattern, print one line to stderr saying USE_DDTRACE is ignored because the native server has no ddtrace support, then exec betterlite as usual. Any other value, or an unset variable, prints nothing. The script must not fail when USE_DDTRACE is unset, and it does not set DD_TRACE_OPENAI_ENABLED.
+
+
+  packaging/docker/component_entrypoint.sh (#!/bin/sh) wraps the first argument as the command: "exec \"$@\"". First, when PROMETHEUS_MULTIPROC_DIR is non-empty, it runs mkdir -p on it and removes every *.db file in it with rm -f, because stale samples from an earlier container would be summed into the aggregate. Other files in the folder stay. The same USE_DDTRACE rule applies: the same one stderr line, then exec "$@" unchanged (no ddtrace-run prefix).
+
+
+  packaging/docker/entrypoint.sh (#!/bin/bash, set -euo pipefail) is the migration handoff. LiteLLM runs prisma_migration.py through the venv Python, uv or python3. betterlite runs "betterlite-db-admin migrate \"$@\"" from PATH (B1232 owns that binary and its exit codes: 0 done, 1 retries or index job failed, 2 unrecoverable), so extra arguments such as --config <file> reach it. When it exits 0 the script prints "Migration script ran successfully!" on stdout, exactly as LiteLLM does. Any non-zero exit stops the script with that same code through set -e and prints no success line. There is no Python, uv, venv or prisma generate step.
+
+
+  packaging/docker/build_admin_ui.sh (#!/bin/bash) is run by image builds. LiteLLM prints an empty line and the working directory (pwd), then, unless enterprise/enterprise_ui/enterprise_colors.json exists, prints "Admin UI - using default LiteLLM UI" and exits 0. Only enterprise installs have that file, and the enterprise branch (installing curl, nvm and node, then ui/litellm-dashboard/build_ui.sh) is not built. betterlite prints the empty line, the working directory and that message, and exits 0 whether or not the file exists. The script never downloads or installs anything.
+
+
+  Tests live in packaging/docker/tests/entrypoints.sh (a bash script, no framework). It creates a temp folder with stub executables named betterlite and betterlite-db-admin that print their argv one item per line and exit with a code set by an env var, puts that folder first on PATH, and runs each script with sh or bash against the stubs. It exits non-zero on the first failed assertion. It prints nothing but a final "ok" line when everything passes. Cases are named in the dod below.
+scope:
+  paths:
+    - packaging/docker/prod_entrypoint.sh
+    - packaging/docker/component_entrypoint.sh
+    - packaging/docker/entrypoint.sh
+    - packaging/docker/build_admin_ui.sh
+    - packaging/docker/tests/entrypoints.sh
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/prod_entrypoint.sh#L1-L10
+    why: The USE_DDTRACE case pattern, the DD_TRACE_OPENAI_ENABLED export and the two exec lines.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/component_entrypoint.sh#L1-L16
+    why: The PROMETHEUS_MULTIPROC_DIR cleanup (mkdir -p, rm -f of *.db) and the generic exec "$@".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/entrypoint.sh#L1-L16
+    why: set -euo pipefail, the Python resolution order being replaced, and the success line.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/build_admin_ui.sh#L1-L71
+    why: The default-UI exit at lines 12-15 and the enterprise-only build path after it that is dropped.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/Dockerfile#L110-L168
+    why: How the images use entrypoint.sh and prod_entrypoint.sh (CRLF strip, chmod +x, ENTRYPOINT, working directory /app).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/Dockerfile#L125
+    why: A caller of component_entrypoint.sh, so the first argument is the whole command to exec.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L681-L701
+    why: The proxy itself creates PROMETHEUS_MULTIPROC_DIR for multi-worker runs; the script only cleans a folder that is already configured.
+dod:
+  - text: Each of the four scripts and the test script exists with the shebang named above, and passes a syntax check with sh -n or bash -n.
+    proof: [scripts-exist, scripts-syntax]
+  - text: prod_entrypoint.sh execs betterlite with every argument unchanged, and with no arguments passes none. The exec replaces the shell (the stub sees its own parent was not the script).
+    proof: [entrypoint-tests]
+  - text: prod_entrypoint.sh prints the ignored-ddtrace line to stderr for USE_DDTRACE of true, TRUE, True and tRuE, and prints nothing for false, 1, yes, empty and unset. The server runs in every case.
+    proof: [entrypoint-tests]
+  - text: component_entrypoint.sh removes only *.db files from PROMETHEUS_MULTIPROC_DIR, creates the folder when missing, leaves other files, does nothing to the file system when the variable is unset or empty, and then runs its arguments as the command with the same exit code.
+    proof: [entrypoint-tests]
+  - text: entrypoint.sh calls betterlite-db-admin with migrate first and the caller's extra arguments after it, prints the success line only on exit 0, and returns exit code 1 and 2 from the tool unchanged without the success line.
+    proof: [entrypoint-tests]
+  - text: build_admin_ui.sh prints an empty line, the working directory and the default-UI message, exits 0, and also exits 0 with the same output when enterprise/enterprise_ui/enterprise_colors.json exists in the working directory. It runs no network or package command.
+    proof: [entrypoint-tests, admin-ui-no-install]
+checks:
+  optional: []
+  commands:
+    - id: scripts-exist
+      why: One of the four scripts or the test script is missing, or its first line is not the shebang the task names.
+      run: >-
+        test "$(head -n1 packaging/docker/prod_entrypoint.sh)" = '#!/bin/sh' &&
+        test "$(head -n1 packaging/docker/component_entrypoint.sh)" = '#!/bin/sh' &&
+        test "$(head -n1 packaging/docker/entrypoint.sh)" = '#!/bin/bash' &&
+        test "$(head -n1 packaging/docker/build_admin_ui.sh)" = '#!/bin/bash' &&
+        test -f packaging/docker/tests/entrypoints.sh
+    - id: scripts-syntax
+      why: A script has a shell syntax error.
+      run: >-
+        sh -n packaging/docker/prod_entrypoint.sh &&
+        sh -n packaging/docker/component_entrypoint.sh &&
+        bash -n packaging/docker/entrypoint.sh &&
+        bash -n packaging/docker/build_admin_ui.sh &&
+        bash -n packaging/docker/tests/entrypoints.sh
+    - id: entrypoint-tests
+      why: A script's behavior (exec, arguments, ddtrace line, *.db cleanup, migrate handoff, exit codes, default UI message) differs from the task.
+      run: bash packaging/docker/tests/entrypoints.sh | grep -qx ok
+    - id: admin-ui-no-install
+      why: build_admin_ui.sh still contains the enterprise download and install path.
+      run: "! grep -E 'curl|nvm|apt-get|apk|brew|npm' packaging/docker/build_admin_ui.sh"
+oracle_cases: []
+deviations:
+  - what: prod_entrypoint.sh and component_entrypoint.sh print one stderr line and carry on when USE_DDTRACE is true; LiteLLM switches to ddtrace-run and exports DD_TRACE_OPENAI_ENABLED=False.
+    why: The native server has no Datadog tracer to start, and the container must still boot with the setting LiteLLM users already have.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/prod_entrypoint.sh#L3-L10
+  - what: entrypoint.sh runs betterlite-db-admin migrate and skips the Prisma client generation that prisma_migration.py ran after a good migration.
+    why: Native SQL needs no generated client, as B1232 already records.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/entrypoint.sh#L8-L16
+  - what: build_admin_ui.sh never takes the enterprise branch, so it exits 0 with the default-UI message even when enterprise_colors.json exists.
+    why: Enterprise-only code is not built; open-source LiteLLM never has that file.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/build_admin_ui.sh#L11-L15
+  - what: The scripts live in packaging/docker/ instead of docker/.
+    why: B5071, B5073 and B5074 already copy them from packaging/docker/; only the folder differs, not the file names.
+out_of_scope:
+  - B5071, B5073 and B5074 own the Dockerfiles that copy these scripts, strip CRLF and set the executable bit.
+  - B1232 owns betterlite-db-admin, its migrate command and the 0/1/2 exit codes; B003 owns the betterlite binary and its --port flag.
+  - B151 owns docker/README.md, install_auto_router.sh and the non-root container test file.
+  - The enterprise admin UI build path in build_admin_ui.sh (curl, nvm and node install, ui/litellm-dashboard/build_ui.sh) is enterprise-only and not built.
+pitfalls:
+  - The case pattern is [Tt][Rr][Uu][Ee] and nothing else, so USE_DDTRACE=1 or yes is not true; do not use a lowercase-and-compare shortcut that accepts more.
+  - USE_DDTRACE and PROMETHEUS_MULTIPROC_DIR are often unset, and the two sh scripts do not use set -u, so reading them unset must not fail.
+  - The cleanup is rm -f "$PROMETHEUS_MULTIPROC_DIR"/*.db with the variable quoted; an unquoted variable breaks on a path with spaces, and a folder with no .db files must not make the script fail.
+  - entrypoint.sh has set -e, so the exit code of betterlite-db-admin is the script's exit code; do not wrap the call in an if or add || true, or the success line prints after a failed migration.
+  - The test stubs must be found through PATH only; the scripts call betterlite and betterlite-db-admin by bare name, never by an absolute path.
+  - exec must be the last command in prod_entrypoint.sh and component_entrypoint.sh, or the server runs as a child and misses SIGTERM from the container runtime.
+  - Images strip CRLF with sed before running these files, but write them with LF line endings anyway.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

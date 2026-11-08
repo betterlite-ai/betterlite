@@ -1,0 +1,18 @@
+kind: helper
+name: vector-store-request-metadata-precedence
+call:
+  vector_store_contracts:
+    operation: request_metadata_precedence
+    cases:
+      - litellm_metadata: {kind: entries, entries: [[team, a]]}
+        metadata: {kind: entries, entries: [[team, b]]}
+      - litellm_metadata: {kind: entries, entries: []}
+        metadata: {kind: entries, entries: [[team, b]]}
+      - litellm_metadata: {kind: value, value: raw}
+        metadata: {kind: entries, entries: [[team, b]]}
+      - {}
+      - litellm_metadata: {kind: value, value: 5}
+        metadata: {kind: value, value: null}
+      - metadata: {kind: entries, entries: [[1, a]]}
+env: {}
+compare: {ignore: []}
