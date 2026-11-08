@@ -8,7 +8,7 @@ use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use betterlite_logging::otel::span_attributes::LLMObsAttributes as _;
 use opentelemetry::Value;
 use opentelemetry::trace::{Span as _, Tracer as _, TracerProvider as _};
-use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, Span as SdkSpan};
 use serde::Deserialize;
 use serde_json::{Map, Value as Json, json};
 
@@ -39,7 +39,7 @@ impl crate::helpers::Helper for Op {
             Input::SetResponse { response } => Json::Object(span_attributes(|span| {
                 set_response_attributes(span, response);
             })?),
-            Input::CoerceText { value } => json!(coerce_text(value)),
+            Input::CoerceText { value: raw } => json!(coerce_text(raw)),
             Input::SummarizeToolCalls { tool_calls } => {
                 let summary = summarize_tool_calls(tool_calls);
                 let parsed = serde_json::from_str(&summary).unwrap_or(Json::String(summary));
@@ -52,7 +52,7 @@ impl crate::helpers::Helper for Op {
 
 fn span_attributes<F>(record: F) -> Result<Map<String, Json>, Box<crate::helpers::HelperError>>
 where
-    F: FnOnce(&mut opentelemetry_sdk::trace::Span),
+    F: FnOnce(&mut SdkSpan),
 {
     let exporter = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()
@@ -64,10 +64,10 @@ where
     let spans = exporter
         .get_finished_spans()
         .map_err(|error| internal_error(error.to_string()))?;
-    let Some(span) = spans.first() else {
+    let Some(finished) = spans.first() else {
         return Ok(Map::new());
     };
-    Ok(span
+    Ok(finished
         .attributes
         .iter()
         .map(|pair| (pair.key.to_string(), attribute_json(&pair.value)))
@@ -98,10 +98,10 @@ fn attribute_json(value: &Value) -> Json {
 }
 
 fn drop_array_contents(mut record: Map<String, Json>, messages: &OtelModelValue) -> Json {
-    let Some(messages) = messages.as_array() else {
+    let Some(entries) = messages.as_array() else {
         return Json::Object(record);
     };
-    let last_has_array_content = messages
+    let last_has_array_content = entries
         .last()
         .and_then(OtelModelValue::as_object)
         .and_then(|message| message.get("content"))
@@ -109,7 +109,7 @@ fn drop_array_contents(mut record: Map<String, Json>, messages: &OtelModelValue)
     if last_has_array_content {
         record.remove("input.value");
     }
-    for (index, message) in messages.iter().enumerate() {
+    for (index, message) in entries.iter().enumerate() {
         let has_array_content = message
             .as_object()
             .and_then(|message| message.get("content"))
@@ -126,13 +126,13 @@ fn normalize_value(value: Json, path: &str) -> Json {
         Json::Object(fields) => Json::Object(
             fields
                 .into_iter()
-                .map(|(key, value)| {
+                .map(|(key, entry)| {
                     let child = if path.is_empty() {
                         key.clone()
                     } else {
                         format!("{path}.{key}")
                     };
-                    (key, normalize_value(value, &child))
+                    (key, normalize_value(entry, &child))
                 })
                 .collect(),
         ),

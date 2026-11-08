@@ -24,17 +24,17 @@ impl LLMObsAttributes for ArizeOtelAttributes {
     where
         S: Span,
     {
-        let messages = kwargs
+        let found = kwargs
             .get("messages")
             .and_then(OtelModelValue::as_array)
             .filter(|messages| !messages.is_empty());
-        let Some(messages) = messages else {
+        let Some(messages) = found else {
             return;
         };
         let last_content = messages
             .last()
             .and_then(OtelModelValue::as_object)
-            .and_then(|message| message.get("content"));
+            .and_then(|last_message| last_message.get("content"));
         span.safe_set_attribute(
             INPUT_VALUE,
             &last_content.cloned().unwrap_or(OtelModelValue::Null(())),
@@ -48,12 +48,12 @@ impl LLMObsAttributes for ArizeOtelAttributes {
                 .get("role")
                 .cloned()
                 .unwrap_or(OtelModelValue::Null(()));
-            span.safe_set_attribute(&format!("{prefix}.{}", MESSAGE_ROLE), &role);
+            span.safe_set_attribute(&format!("{prefix}.{MESSAGE_ROLE}"), &role);
             let content = fields
                 .get("content")
                 .cloned()
                 .unwrap_or(OtelModelValue::Null(()));
-            span.safe_set_attribute(&format!("{prefix}.{}", MESSAGE_CONTENT), &content);
+            span.safe_set_attribute(&format!("{prefix}.{MESSAGE_CONTENT}"), &content);
             emit_input_message_extras(span, &prefix, fields);
         }
     }
@@ -67,20 +67,20 @@ where
         .get("name")
         .and_then(OtelModelValue::as_str)
         .filter(|name| !name.is_empty());
-    if let Some(name) = name {
+    if let Some(found_name) = name {
         span.safe_set_attribute(
-            &format!("{prefix}.{}", MESSAGE_NAME),
-            &OtelModelValue::String(name.to_owned()),
+            &format!("{prefix}.{MESSAGE_NAME}"),
+            &OtelModelValue::String(found_name.to_owned()),
         );
     }
     let tool_call_id = message
         .get("tool_call_id")
         .and_then(OtelModelValue::as_str)
         .filter(|tool_call_id| !tool_call_id.is_empty());
-    if let Some(tool_call_id) = tool_call_id {
+    if let Some(found_id) = tool_call_id {
         span.safe_set_attribute(
-            &format!("{prefix}.{}", MESSAGE_TOOL_CALL_ID),
-            &OtelModelValue::String(tool_call_id.to_owned()),
+            &format!("{prefix}.{MESSAGE_TOOL_CALL_ID}"),
+            &OtelModelValue::String(found_id.to_owned()),
         );
     }
     tool_calls::emit_message_tool_calls(span, prefix, message);
@@ -94,7 +94,7 @@ where
     let Some(parts) = message.get("content").and_then(OtelModelValue::as_array) else {
         return;
     };
-    let contents_prefix = format!("{prefix}.{}", MESSAGE_CONTENTS);
+    let contents_prefix = format!("{prefix}.{MESSAGE_CONTENTS}");
     for (part_index, part) in parts.iter().enumerate() {
         let Some(fields) = part.as_object() else {
             continue;
@@ -118,11 +118,11 @@ where
         return;
     };
     span.safe_set_attribute(
-        &format!("{part_prefix}.{}", MESSAGE_CONTENT_TYPE),
+        &format!("{part_prefix}.{MESSAGE_CONTENT_TYPE}"),
         &OtelModelValue::String("text".to_owned()),
     );
     span.safe_set_attribute(
-        &format!("{part_prefix}.{}", MESSAGE_CONTENT_TEXT),
+        &format!("{part_prefix}.{MESSAGE_CONTENT_TEXT}"),
         &OtelModelValue::String(text.to_owned()),
     );
 }
@@ -131,7 +131,21 @@ fn emit_image_part<S>(span: &mut S, part_prefix: &str, part: &MetadataMap)
 where
     S: Span,
 {
-    let mut url = match part.get("image_url") {
+    let Some(url) = image_url(part) else {
+        return;
+    };
+    span.safe_set_attribute(
+        &format!("{part_prefix}.{MESSAGE_CONTENT_TYPE}"),
+        &OtelModelValue::String("image".to_owned()),
+    );
+    span.safe_set_attribute(
+        &format!("{part_prefix}.{MESSAGE_CONTENT_IMAGE_URL}"),
+        &OtelModelValue::String(url),
+    );
+}
+
+fn image_url(part: &MetadataMap) -> Option<String> {
+    let direct = match part.get("image_url") {
         Some(OtelModelValue::String(text)) => Some(text.clone()),
         Some(OtelModelValue::Object(image)) => image
             .get("url")
@@ -145,37 +159,28 @@ where
         )
         | None => None,
     };
-    if url.as_deref().is_none_or(str::is_empty) {
-        let source = part.get("source").and_then(OtelModelValue::as_object);
-        let encoded = source
-            .and_then(|source| source.get("data"))
-            .and_then(OtelModelValue::as_str)
-            .filter(|data| !data.is_empty());
-        url = match encoded {
-            Some(data) => {
-                let media_type = source
-                    .and_then(|source| source.get("media_type"))
-                    .and_then(OtelModelValue::as_str)
-                    .unwrap_or("image/jpeg");
-                Some(format!("data:{media_type};base64,{data}"))
-            }
-            None => part
-                .get("url")
+    direct
+        .filter(|url| !url.is_empty())
+        .or_else(|| source_data_url(part))
+        .or_else(|| {
+            part.get("url")
                 .and_then(OtelModelValue::as_str)
-                .map(str::to_owned),
-        };
-    }
-    let Some(url) = url.filter(|url| !url.is_empty()) else {
-        return;
-    };
-    span.safe_set_attribute(
-        &format!("{part_prefix}.{}", MESSAGE_CONTENT_TYPE),
-        &OtelModelValue::String("image".to_owned()),
-    );
-    span.safe_set_attribute(
-        &format!("{part_prefix}.{}", MESSAGE_CONTENT_IMAGE_URL),
-        &OtelModelValue::String(url),
-    );
+                .map(str::to_owned)
+        })
+        .filter(|url| !url.is_empty())
+}
+
+fn source_data_url(part: &MetadataMap) -> Option<String> {
+    let source = part.get("source").and_then(OtelModelValue::as_object)?;
+    let data = source
+        .get("data")
+        .and_then(OtelModelValue::as_str)
+        .filter(|data| !data.is_empty())?;
+    let media_type = source
+        .get("media_type")
+        .and_then(OtelModelValue::as_str)
+        .unwrap_or("image/jpeg");
+    Some(format!("data:{media_type};base64,{data}"))
 }
 
 pub fn set_response_attributes<S>(span: &mut S, response: &OtelModelValue)

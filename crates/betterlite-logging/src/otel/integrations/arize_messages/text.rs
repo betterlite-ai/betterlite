@@ -3,7 +3,6 @@ use crate::otel::model::utils::coercion::OtelModelValue;
 #[must_use]
 pub fn coerce_text(value: &OtelModelValue) -> Option<String> {
     match value {
-        OtelModelValue::Null(()) => None,
         OtelModelValue::String(text) => Some(text.clone()),
         OtelModelValue::Array(parts) => {
             let collected = parts.iter().filter_map(part_text).collect::<Vec<_>>();
@@ -13,7 +12,10 @@ pub fn coerce_text(value: &OtelModelValue) -> Option<String> {
                 Some(collected.join("\n"))
             }
         }
-        OtelModelValue::Bool(_) | OtelModelValue::Number(_) | OtelModelValue::Object(_) => None,
+        OtelModelValue::Null(())
+        | OtelModelValue::Bool(_)
+        | OtelModelValue::Number(_)
+        | OtelModelValue::Object(_) => None,
     }
 }
 

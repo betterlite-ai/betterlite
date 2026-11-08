@@ -18,11 +18,10 @@ where
     for (index, choice) in choices.iter().enumerate() {
         let message = choice
             .as_object()
-            .and_then(|choice| choice.get("message"))
+            .and_then(|fields| fields.get("message"))
             .and_then(OtelModelValue::as_object)
             .unwrap_or(&empty);
-        let output_value = choice_output_value(message);
-        span.safe_set_attribute(keys::OUTPUT_VALUE, &output_value);
+        span.safe_set_attribute(keys::OUTPUT_VALUE, &choice_output_value(message));
         let prefix = format!("{}.{index}", keys::LLM_OUTPUT_MESSAGES);
         let role = message
             .get("role")
@@ -56,8 +55,8 @@ fn choice_output_value(message: &MetadataMap) -> OtelModelValue {
             .and_then(OtelModelValue::as_array)
             .filter(|calls| !calls.is_empty())
             .map(tool_calls::summarize_tool_calls);
-        if let Some(summary) = summary {
-            return OtelModelValue::String(summary);
+        if let Some(summary_text) = summary {
+            return OtelModelValue::String(summary_text);
         }
     }
     content.cloned().unwrap_or(OtelModelValue::Null(()))
@@ -74,15 +73,8 @@ where
         let Some(fields) = image.as_object() else {
             continue;
         };
-        let url = match fields.get("url").and_then(OtelModelValue::as_str) {
-            Some(url) => Some(url.to_owned()),
-            None => fields
-                .get("b64_json")
-                .and_then(OtelModelValue::as_str)
-                .filter(|encoded| !encoded.is_empty())
-                .map(|encoded| format!("data:image/png;base64,{encoded}")),
-        };
-        let Some(url) = url.filter(|url| !url.is_empty()) else {
+        let found_url = data_url(fields, "data:image/png;base64,");
+        let Some(url) = found_url else {
             continue;
         };
         if index == 0 {
@@ -106,44 +98,65 @@ where
         let Some(fields) = item.as_object() else {
             continue;
         };
-        let url = match fields.get("url").and_then(OtelModelValue::as_str) {
-            Some(url) => Some(url.to_owned()),
-            None => fields
-                .get("b64_json")
-                .and_then(OtelModelValue::as_str)
-                .filter(|encoded| !encoded.is_empty())
-                .map(|encoded| format!("data:audio/wav;base64,{encoded}")),
-        };
-        if let Some(url) = url.filter(|url| !url.is_empty()) {
-            if index == 0 {
-                span.safe_set_attribute(keys::OUTPUT_VALUE, &OtelModelValue::String(url.clone()));
-            }
-            span.safe_set_attribute(
-                &format!("{}.{index}", keys::AUDIO_URL),
-                &OtelModelValue::String(url),
-            );
-        }
-        if let Some(mime_type) = fields
-            .get("mime_type")
-            .and_then(OtelModelValue::as_str)
-            .filter(|mime_type| !mime_type.is_empty())
-        {
-            span.safe_set_attribute(
-                &format!("{}.{index}", keys::AUDIO_MIME_TYPE),
-                &OtelModelValue::String(mime_type.to_owned()),
-            );
-        }
-        if let Some(transcript) = fields
-            .get("transcript")
-            .and_then(OtelModelValue::as_str)
-            .filter(|transcript| !transcript.is_empty())
-        {
-            span.safe_set_attribute(
-                &format!("{}.{index}", keys::AUDIO_TRANSCRIPT),
-                &OtelModelValue::String(transcript.to_owned()),
-            );
-        }
+        write_audio_url(span, fields, index);
+        write_audio_text(span, fields, index);
     }
+}
+
+fn write_audio_url<S>(span: &mut S, fields: &MetadataMap, index: usize)
+where
+    S: Span,
+{
+    let Some(url) = data_url(fields, "data:audio/wav;base64,") else {
+        return;
+    };
+    if index == 0 {
+        span.safe_set_attribute(keys::OUTPUT_VALUE, &OtelModelValue::String(url.clone()));
+    }
+    span.safe_set_attribute(
+        &format!("{}.{index}", keys::AUDIO_URL),
+        &OtelModelValue::String(url),
+    );
+}
+
+fn write_audio_text<S>(span: &mut S, fields: &MetadataMap, index: usize)
+where
+    S: Span,
+{
+    let mime_type = fields
+        .get("mime_type")
+        .and_then(OtelModelValue::as_str)
+        .filter(|value| !value.is_empty());
+    if let Some(found_mime) = mime_type {
+        span.safe_set_attribute(
+            &format!("{}.{index}", keys::AUDIO_MIME_TYPE),
+            &OtelModelValue::String(found_mime.to_owned()),
+        );
+    }
+    let transcript = fields
+        .get("transcript")
+        .and_then(OtelModelValue::as_str)
+        .filter(|value| !value.is_empty());
+    if let Some(found_transcript) = transcript {
+        span.safe_set_attribute(
+            &format!("{}.{index}", keys::AUDIO_TRANSCRIPT),
+            &OtelModelValue::String(found_transcript.to_owned()),
+        );
+    }
+}
+
+fn data_url(fields: &MetadataMap, prefix: &str) -> Option<String> {
+    let direct = fields
+        .get("url")
+        .and_then(OtelModelValue::as_str)
+        .map(str::to_owned);
+    let encoded = fields
+        .get("b64_json")
+        .and_then(OtelModelValue::as_str)
+        .filter(|value| !value.is_empty());
+    direct
+        .or_else(|| encoded.map(|base64| format!("{prefix}{base64}")))
+        .filter(|candidate| !candidate.is_empty())
 }
 
 pub(super) fn set_embedding_outputs<S>(span: &mut S, response: &MetadataMap)
@@ -161,8 +174,8 @@ where
             .get("embedding")
             .and_then(OtelModelValue::as_array)
             .filter(|values| !values.is_empty());
-        if let Some(vector) = vector {
-            let text = vector_text(vector);
+        if let Some(values) = vector {
+            let text = vector_text(values);
             if index == 0 {
                 span.safe_set_attribute(keys::OUTPUT_VALUE, &OtelModelValue::String(text.clone()));
             }
@@ -171,14 +184,14 @@ where
                 &OtelModelValue::String(text),
             );
         }
-        if let Some(text) = fields
+        let embedding_text = fields
             .get("text")
             .and_then(OtelModelValue::as_str)
-            .filter(|text| !text.is_empty())
-        {
+            .filter(|value| !value.is_empty());
+        if let Some(label) = embedding_text {
             span.safe_set_attribute(
                 &format!("{}.{index}", keys::EMBEDDING_TEXT),
-                &OtelModelValue::String(text.to_owned()),
+                &OtelModelValue::String(label.to_owned()),
             );
         }
     }
@@ -230,13 +243,13 @@ where
         return;
     };
     for summary in summaries {
-        let Some(text) = summary.as_object().and_then(|summary| summary.get("text")) else {
-            continue;
-        };
-        span.safe_set_attribute(
-            &format!("{prefix}.{}", keys::MESSAGE_REASONING_SUMMARY),
-            text,
-        );
+        let text = summary.as_object().and_then(|fields| fields.get("text"));
+        if let Some(found_text) = text {
+            span.safe_set_attribute(
+                &format!("{prefix}.{}", keys::MESSAGE_REASONING_SUMMARY),
+                found_text,
+            );
+        }
     }
 }
 
