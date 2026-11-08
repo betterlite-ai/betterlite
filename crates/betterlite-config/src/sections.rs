@@ -132,6 +132,7 @@ pub mod complexity_turn_overrides;
 pub mod component_contracts;
 pub mod compresr_writeback;
 pub mod compression_interception_state;
+pub mod config_param_cache;
 pub mod content_category;
 pub mod content_filter_catalog;
 pub mod content_filter_inputs;
@@ -145,6 +146,7 @@ pub mod cost_routing;
 pub mod current_spend;
 pub mod custom_auth;
 pub mod custom_dimensions;
+pub mod data_cloud_credentials;
 pub mod database_availability;
 pub mod database_diagnostics;
 pub mod database_failures;
@@ -154,6 +156,7 @@ pub mod database_startup;
 pub mod database_tls;
 pub mod database_tokens;
 pub mod database_urls;
+pub mod db_watchdog;
 pub mod deepinfra_settings;
 pub mod deepkeep_firewall;
 pub mod deepseek_identity;
@@ -171,9 +174,11 @@ pub mod embedding_provider_settings;
 pub mod end_user_identity;
 pub mod end_user_registry;
 pub mod enkryptai_detection;
+pub mod enterprise_ml_credentials;
 pub mod error_body_call_id;
 pub mod executed_batch_runner;
 pub mod fallback_budget;
+pub mod fallback_errors;
 pub mod fallback_plans;
 pub mod file_upload_options;
 pub mod file_upload_routing;
@@ -183,10 +188,14 @@ pub mod foundry_credentials;
 pub mod foundry_image_edits;
 pub mod foundry_vector_stores;
 pub mod full_model_metadata;
+pub mod gateway_provider_keys;
+pub mod gcs_response_cache;
 pub mod gdc_settings;
 pub mod gemini_cache_create;
 pub mod gemini_cache_prefix;
 pub mod generic_guardrail_api;
+pub mod gigachat_auth;
+pub mod gigachat_route;
 pub mod grayswan;
 pub mod guardrail_identity;
 pub mod guardrail_judge;
@@ -198,9 +207,12 @@ pub mod guardrail_translation;
 pub mod headroom_compression;
 pub mod headroom_hiddenlayer_support;
 pub mod health_probe_policy;
+pub mod health_readiness;
+pub mod health_services;
 pub mod hiddenlayer_evaluation;
 pub mod host_identity_settings;
 pub mod hosted_chat_settings;
+pub mod hosted_platform_keys;
 pub mod huggingface_hub;
 pub mod huggingface_oidc;
 pub mod ibm_guardrails;
@@ -254,7 +266,9 @@ pub mod mcp_access_requirements;
 pub mod mcp_allow_all_scope;
 pub mod mcp_bearer_credentials;
 pub mod mcp_client_side_auth;
+pub mod mcp_discovery;
 pub mod mcp_env_values;
+pub mod mcp_registry;
 pub mod mcp_required_fields;
 pub mod mcp_sso_assertion_cache;
 pub mod mcp_tool_helpers;
@@ -279,6 +293,7 @@ pub mod mock_response;
 pub mod model_create;
 pub mod model_effective_fields;
 pub mod model_generalizations;
+pub mod model_hub_credentials;
 pub mod model_info_v1;
 pub mod model_management;
 pub mod model_patch;
@@ -300,6 +315,7 @@ pub mod otel_settings;
 pub mod panw_prisma_airs;
 pub mod pass_through_registry;
 pub mod passthrough_request_policies;
+pub mod passthrough_websocket;
 pub mod password_login;
 pub mod password_policy;
 pub mod payload_exclusions;
@@ -309,11 +325,15 @@ pub mod prometheus_budget_refresh;
 pub mod prometheus_exporter;
 pub mod prompt_affinity;
 pub mod prompt_cache_accounting;
+pub mod prompt_injection;
+pub mod prompts;
 pub mod provider_resolution;
 pub mod provider_url_destination;
+pub mod proxy_base_url;
 pub mod proxy_custom_dispatch;
 pub mod proxy_provider_options;
 pub mod public_router_presets;
+pub mod public_skills_index;
 pub mod quality_router;
 pub mod rag_records_and_chunking;
 pub mod rate_limit_usage;
@@ -323,6 +343,7 @@ pub mod redis_cache;
 pub mod redis_cache_primitives;
 pub mod redis_credentials;
 pub mod redis_failure_policy;
+pub mod regional_host_keys;
 pub mod request_body;
 pub mod request_body_safety;
 pub mod request_form;
@@ -335,6 +356,7 @@ pub mod request_root_paths;
 pub mod request_scheduler;
 pub mod request_setup;
 pub mod request_setup_options;
+pub mod request_size_limit;
 pub mod resource_sdk_settings;
 pub mod responses_id_security;
 pub mod responses_mcp_execute;
@@ -354,6 +376,7 @@ pub mod routing_timeouts;
 pub mod s3_response_cache;
 pub mod sandbox_dispatch;
 pub mod scheduled_job_stagger;
+pub mod security_headers;
 pub mod semantic_embedding_inputs;
 pub mod semantic_router;
 pub mod sensitive_data_routing;
@@ -361,6 +384,7 @@ pub mod service_callback;
 pub mod session_iteration_limits;
 pub mod session_token_codec;
 pub mod settings;
+pub mod smtp_transport;
 pub mod speech_call;
 pub mod spend_reseed;
 pub mod static_eligibility;
@@ -375,11 +399,13 @@ pub mod team_limits;
 pub mod team_state;
 pub mod tier_artifact_predictor;
 pub mod tier_definitions;
+pub mod tinyfish_route;
 pub mod token_counting;
 pub mod tokenizer_engines;
 pub mod transcription_call;
 pub mod trusted_network;
 pub mod two_solver_classifier;
+pub mod ui_discovery;
 pub mod ui_session_cleanup;
 pub mod usage_routing;
 pub mod usage_routing_v2;
@@ -397,6 +423,7 @@ pub mod virtual_key_auth;
 pub mod virtual_key_routes;
 pub mod voyage_credentials;
 pub mod websearch_request_hooks;
+pub mod weighted_failover;
 pub mod worker_options_reload;
 pub mod xai_identity;
 pub mod xai_oauth_settings;
@@ -529,10 +556,10 @@ sections! {
     error_body_call_id, executed_batch_runner, fallback_budget, fallback_plans,
     file_upload_options, file_upload_routing, file_upload_validation, focus_export_schedule,
     foundry_credentials, foundry_image_edits, foundry_vector_stores, full_model_metadata,
-    gdc_settings, gemini_cache_create, gemini_cache_prefix, generic_guardrail_api, grayswan,
+    gcs_response_cache, gdc_settings, gemini_cache_create, gemini_cache_prefix, generic_guardrail_api, gigachat_auth, gigachat_route, grayswan,
     guardrail_identity, guardrail_judge, guardrail_message_skip, guardrail_modes, guardrail_params, guardrail_scan_cache, guardrail_translation,
-    headroom_compression, headroom_hiddenlayer_support, health_probe_policy,
-    hiddenlayer_evaluation, host_identity_settings, hosted_chat_settings, huggingface_hub,
+    headroom_compression, headroom_hiddenlayer_support, health_probe_policy, health_readiness,
+    health_services, hiddenlayer_evaluation, host_identity_settings, hosted_chat_settings, huggingface_hub,
     huggingface_oidc, ibm_guardrails, image_edit_call, image_generation_call, image_url_download,
     image_variations, includes, io_token_reservations, jev_classifier, jina_infinity_rerank,
     jwt_auth, jwt_claims, jwt_db_teams, jwt_key_resolution, jwt_keys, jwt_permissions,
@@ -543,7 +570,7 @@ sections! {
     lemonade_model_metadata, llm_classifier, local_ttl_cache, logging_privacy, login_form,
     login_return, login_routes, login_throttle, management_rbac, mcp_access_requirements,
     mcp_allow_all_scope, mcp_bearer_credentials, mcp_client_side_auth, mcp_env_values,
-    mcp_required_fields, mcp_sso_assertion_cache, mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
+    mcp_registry, mcp_required_fields, mcp_sso_assertion_cache, mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
     messages_native_call, messages_native_stream, messages_response_call,
     messages_responses_output, messages_thinking, migration_drift, migration_ledger,
     migration_recovery, mistral_credentials, mistral_options, mistral_resources, mock_response,
@@ -552,27 +579,28 @@ sections! {
     native_messages_hosts_settings, oauth_tokens, ollama_model_metadata, openai_chat_content,
     openai_credentials, openai_like_settings, openai_mock_transport, openai_provider,
     openai_realtime, openai_workload_identity, otel_settings, panw_prisma_airs,
-    pass_through_registry, passthrough_request_policies, password_login, password_policy, payload_exclusions,
+    pass_through_registry, passthrough_request_policies, passthrough_websocket, password_login, password_policy, payload_exclusions,
     pre_routing_registry, prometheus_bounded_series, prometheus_budget_refresh,
-    prometheus_exporter, prompt_affinity, prompt_cache_accounting, provider_resolution,
-    provider_url_destination, proxy_custom_dispatch, proxy_provider_options, public_router_presets,
+    prometheus_exporter, prompt_affinity, prompt_cache_accounting, prompt_injection, provider_resolution,
+    provider_url_destination, proxy_base_url, proxy_custom_dispatch, proxy_provider_options, public_router_presets,
     quality_router, rag_records_and_chunking, rate_limit_usage, rate_limiter_settings,
     rds_credentials, redis_cache, redis_cache_primitives, redis_credentials, redis_failure_policy,
     request_body, request_body_safety, request_form, request_headers, request_intake,
     request_metadata_safety, request_model_overrides, request_records, request_root_paths,
-    request_scheduler, request_setup, request_setup_options, resource_sdk_settings,
+    request_scheduler, request_setup, request_setup_options, request_size_limit, resource_sdk_settings,
     responses_id_security, responses_mcp_execute, responses_parameters, responses_ws_auth,
     responses_ws_native, retry_policy, router_compaction, router_core, router_weights,
     routing_budgets, routing_groups, routing_plugins, routing_state, routing_state_store,
     routing_timeouts, s3_response_cache, sandbox_dispatch, scheduled_job_stagger,
-    semantic_embedding_inputs, semantic_router, sensitive_data_routing, service_callback,
+    security_headers, semantic_embedding_inputs, semantic_router, sensitive_data_routing, service_callback,
     session_iteration_limits, session_token_codec, settings, speech_call, spend_reseed,
     static_eligibility, studio_identity, summary_model_access, tag_matchers, tag_routing,
     team_admin_fields, team_create, team_fields, team_limits, team_state, tier_artifact_predictor,
-    tier_definitions, token_counting, tokenizer_engines, transcription_call, trusted_network,
-    two_solver_classifier, ui_session_cleanup, usage_routing, usage_routing_v2,
+    tier_definitions, tinyfish_route, token_counting, tokenizer_engines, transcription_call, trusted_network,
+    two_solver_classifier, ui_discovery, ui_session_cleanup, usage_routing, usage_routing_v2,
     usage_v2_accounting, user_delete, user_fields, user_info, user_update, user_url_policy,
     vector_context_shaping, verbose_hooks, vertex_credential_sources, vertex_embedding_dispatch,
     vertex_schema_shaping, virtual_key_auth, virtual_key_routes, voyage_credentials,
     websearch_request_hooks, worker_options_reload, xai_identity, xai_oauth_settings,
+    config_param_cache, data_cloud_credentials, db_watchdog, enterprise_ml_credentials, fallback_errors, gateway_provider_keys, hosted_platform_keys, mcp_discovery, model_hub_credentials, prompts, public_skills_index, regional_host_keys, smtp_transport, weighted_failover,
 }

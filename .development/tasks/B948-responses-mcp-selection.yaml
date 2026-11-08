@@ -1,7 +1,7 @@
 id: B948
 title: Responses mcp selection
 description: >-
-  Select Responses MCP tools through B136's registered server/toolset view, enforce B137 permission context and
+  Select Responses MCP tools through the registered server/toolset view (B4731's get_registry and get_mcp_server_by_name, B6592's get_toolset_by_name_cached, B6591's resolve_toolset_tool_permissions), enforce B137 permission context and
   normalize/deduplicate allowed tools. A request server_url only identifies an already configured gateway server
   and is never an outbound destination; return a typed selected-tool set.
 
@@ -53,7 +53,7 @@ description: >-
   30 wiring; 441 total within the 450-line cap. The estimate includes tests and adapters, not just production code.
 
 
-  Direct inputs come from B136 (MCP gateway server, transports and server registry), B137 (MCP auth, OAuth flows,
+  Direct inputs come from B4731 (MCP server registry reads), B6591 (toolset permissions), B6592 (cached toolset lookup), B137 (MCP auth, OAuth flows,
   BYOK and outbound credentials), B171 (Direct helper oracle and URL path encoding), B902 (Responses shapes), B1087
   (Api boundaries). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
   ids retain ownership on the provider and keys/data branches.

@@ -1,0 +1,14 @@
+id: B8064
+milestone: M12 python
+title: Python OCR, rerank, media, batch and realtime cost functions
+status: todo
+depends_on: [B8063, B5658, B1674, B1676, B1678, B1679, B1680, B1681, B1689]
+file: tasks/B8064-python-cost-extra.yaml
+covers:
+  - "litellm/cost_calculator.py"
+parent: B166
+split_from: B166
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

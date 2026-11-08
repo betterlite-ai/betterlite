@@ -12,7 +12,7 @@ description: >-
   user IDs and missing/nonmapping/empty budgets. Team enforcement skips null team IDs or falsey team
   budgets; pass the key budget map unchanged so the limiter can implement overrides. Both visit every
   input model in order, including duplicates, ignore the limiter's boolean return and propagate errors.
-  The three limiter protocols owned here are the dependency boundary; B071 installs their implementation.
+  The three limiter protocols owned here are the dependency boundary; B8481 installs their implementation over B3006's limiter.
 
 
   A key check catches only BudgetExceededError. Nested-model requests whose top-level model differs
@@ -115,8 +115,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/auth_model_budgets.rs
     - crates/betterlite-server/src/state/auth_model_budgets/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-model-budgets/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-model-budgets-*
@@ -251,7 +249,7 @@ oracle_cases:
   - tools/oracle/cases/auth/auth-model-budgets/global-spend-singleflight.yaml
 deviations: []
 out_of_scope:
-  - B052 owns the WebSocket adapter. B071 supplies the limiter implementations through the protocols
+  - B052 owns the WebSocket adapter. B8481 supplies the limiter implementations through the protocols
     owned here; their counter queries and fallback selection algorithm are not duplicated.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate

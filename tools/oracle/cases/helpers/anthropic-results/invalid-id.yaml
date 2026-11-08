@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-results-invalid-id
+call:
+  anthropic_results:
+    function: sanitize_anthropic_ids
+    values:
+      - "call.123/abc"
+      - "abc_DEF-9"
+      - ""
+      - "ümlaut"
+      - "a b"
+env: {}
+compare:
+  ignore: []

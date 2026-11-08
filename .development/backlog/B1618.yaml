@@ -2,7 +2,7 @@ id: B1618
 milestone: M4 keys, spend and management
 title: Validate SSO return targets and set session cookies
 status: todo
-depends_on: [B002, B124, B4297, B4299, B4302, B4327, B171, B733, B743]
+depends_on: [B002, B4297, B4299, B4302, B4327, B171, B733, B743, B7323]
 file: tasks/B1618-sso-return-targets.yaml
 covers:
   - "litellm/proxy/management_endpoints/ui_sso.py"

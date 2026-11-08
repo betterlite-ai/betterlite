@@ -22,6 +22,8 @@ description: >-
   ProxyBaseLLMRequestProcessing.get_custom_headers. Return the response. On exception, call
   post_call_failure_hook and raise ProxyException with litellm_call_id headers.
 
+  Handler argument. The one PassThroughHandler of B3613 (`handle(&self, args: &PassThroughArgs, req: &IncomingRequest, auth: &UserApiKeyAuth) -> Result<PassThroughReply, ProxyException>`, so it only needs a shared reference) is built once by the server and passed into create_pass_through_route as an argument of type `Arc<PassThroughHandler>`. The factory clones that Arc into every endpoint_func it returns and never builds a handler itself.
+
   Implement create_pass_through_route as a factory that takes endpoint: str, target: str, and
   optional custom_headers, forward_headers, merge_query_params, dependencies, include_subpath,
   cost_per_request, custom_llm_provider, is_streaming_request, query_params, default_query_params,
@@ -41,6 +43,8 @@ description: >-
   open_sse_before_first_byte with ping_interval_seconds set to litellm.sse_keepalive_ping_interval_seconds
   for streaming requests, None otherwise. Set LITELLM_PASS_THROUGH_ENDPOINT_MARKER attribute on
   endpoint_func to True for auth discovery.
+
+  Request state. Add a typed per-request value PassThroughState in the request extensions that holds the three entries (custom body, raw body, deployment model info; the key names stay MODEL_INFO_STATE_KEY, CUSTOM_BODY_STATE_KEY and RAW_BODY_STATE_KEY from B3600). Provide set_passthrough_state(extensions, state) and take_passthrough_state(extensions) -> Option<PassThroughState>; callers such as B3623 set the value through these functions and the relay cleanup takes it with take_passthrough_state in its finally step. The relay returns Result<Response, ProxyException>, the error type of B3613 PassThroughHandler::handle.
 
 scope:
   paths:
@@ -146,6 +150,10 @@ dod:
     request.state cleanup in finally block deletes all three state keys using hasattr and delattr.
     State key string values match LiteLLM's literals: "litellm_pass_through_custom_body",
     "litellm_pass_through_raw_body", "litellm_pass_through_deployment_model_info".
+  proof:
+  - state-cleanup-cases
+- text: >-
+    PassThroughState in the request extensions holds the custom body, raw body and deployment model info; set_passthrough_state stores it, and the relay cleanup calls take_passthrough_state so a second take returns None.
   proof:
   - state-cleanup-cases
 - text: >-
@@ -331,8 +339,8 @@ out_of_scope:
   and log_llm_api_exception; these are error handling utilities owned elsewhere and called from
   the exception path.
 - >-
-  open_sse_before_first_byte wrapper for keepalive pings; this is owned by gap D (shared
-  proxy infrastructure); this task calls it with the relay result and ping interval.
+  open_sse_before_first_byte wrapper for keepalive pings; B7324 builds the real function
+  (Common request processing helpers); this task calls it with the relay result and ping interval.
 - >-
   get_request_route lookup for the URL branch's path extraction; owned by gap D; this task
   calls it to get the canonical route for registry lookups.

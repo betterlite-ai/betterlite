@@ -6,7 +6,7 @@ description: >-
   management_endpoint_wrapper: password values must never reach generic management span kwargs.
   B2333 owns the extracted expired-session cleanup job, including its batch-size setting.
 
-  Password change requires B124 ChangePasswordRequest.current_password and new_password strings,
+  Password change requires B8411 ChangePasswordRequest.current_password and new_password strings,
   both excluded from diagnostic representations; missing/wrong-type fields return schema 422.
   Require DB first (HTTP 500 detail.error), then a session team_id exactly litellm-dashboard and
   metadata.login_method exactly username_password (HTTP 403 detail.error otherwise). Invalid
@@ -55,7 +55,7 @@ description: >-
   Logout has no catch: archive failure leaves the live row; delete failure leaves an archive;
   cache failure leaves deletion committed and does not reach cookie clearing. Cases
   logout_archive_failure, logout_delete_failure and logout_cache_failure compare those effects.
-  Unexpected errors use B124's outer 500 internal_server_error message/type envelope without
+  Unexpected errors use the server's outer 500 internal_server_error message/type envelope (openai_exception_handler; the wave 17 server wiring part mounts it) without
   param/code, except B731 database-unavailability classification. There is no overall transaction.
 
   B001 route cases run against booted proxies and independent Postgres schemas, using
@@ -68,7 +68,7 @@ description: >-
   workspace, with ui_sessions target and valid/missing/type/duplicate/truncated/limit seeds.
   Keep request byte/depth bounds inherited from B003/B009 and the repository fallback 1048576/64.
   Native password_body_limits proves the recorded bound deviation. Other request/response record
-  declarations remain B124's contract. Production files stay below 300 lines.
+  declarations are B8411's contracts (proxy_request_contracts::user). Production files stay below 300 lines.
 
   Sizing: about 199 nonblank, noncomment source lines including docstrings before translation;
   allow 200 production, 330 behavior/Postgres tests, 65 HTTP wiring and 45 fuzz, 640 within 700.
@@ -80,8 +80,6 @@ scope:
     - crates/betterlite-server/src/ui_sessions/**
     - crates/betterlite-server/src/routes/ui_sessions.rs
     - crates/betterlite-server/src/routes/ui_sessions/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/ui_sessions.rs
@@ -98,7 +96,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/session_endpoints.py#L48-L175
     why: Own best-effort revocation and the logout route with its different failure contract.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2021-L2032
-    why: B124 request/response fields have no optional password or response-message defaults.
+    why: B8411 request/response fields have no optional password or response-message defaults.
 dod:
   - text: Every named password, revocation and logout branch above passes with its real envelope and cookie behavior.
     proof: [behavior-tests, oracle]
@@ -132,7 +130,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/password_endpoints.py#L70-L80
 out_of_scope:
   - B2333 owns expired-session cleanup and its settings. B786 owns password policy/hash/verify/HIBP;
-    B777 archives tokens, B734 evicts key objects, B2330 audits, B124 owns wire record declarations
+    B777 archives tokens, B734 evicts key objects, B2330 audits, B8411 owns the password wire records
     and outer error handling, B731 database-unavailability classification, B052 authentication.
   - All functions in the two covered endpoint modules are owned here; no cryptographic storage format is added.
 pitfalls:

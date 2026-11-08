@@ -1,0 +1,123 @@
+id: B8372
+title: Scheduled background job registration
+description: >-
+  At startup, when a database is connected, LiteLLM's ProxyStartupEvent.initialize_scheduled_background_jobs builds the one
+  proxy scheduler, registers every periodic proxy job on it, staggers them and starts it. Many tasks build those jobs and
+  each says "register me at startup"; this task is that registration. Build it in crates/betterlite/src/background_jobs.rs
+  (declared in lib.rs by the skeleton) as `register_background_jobs(inputs: BackgroundJobInputs, rng) ->
+  Result<RegisteredJobs, BackgroundJobError>`, on B8370's ProxyScheduler. `BackgroundJobInputs` holds the typed general
+  settings view, the database handle, the shared PodLockManager from the spend writer, the alerting interface, the router
+  handle, the auth cache, the env map, and B8381's DeploymentSync,
+  B8384's DbObjectSync and B8385's PeriodicReloads; `RegisteredJobs` returns the scheduler and the B731 worker heartbeat so B8374 can
+  stop both at shutdown.
+
+  Order, as in LiteLLM (L10562-L10988). Build the scheduler with B8370's JobDefaults. budget_interval =
+  proxy_budget_rescheduler_min_time + random 0..=min(30, max - min) (general settings keys
+  proxy_budget_rescheduler_min_time and proxy_budget_rescheduler_max_time, defaults from PROXY_BUDGET_RESCHEDULER_MIN_TIME
+  597 and PROXY_BUDGET_RESCHEDULER_MAX_TIME 605); batch_writing_interval = proxy_batch_write_at (PROXY_BATCH_WRITE_AT, 10) +
+  random 0..=5. Then: beat the B731 heartbeat once and add proxy_worker_heartbeat_job every 60 seconds; unless
+  general_settings.disable_reset_budget is true, add reset_budget_job every budget_interval seconds (B3009's reset job);
+  add update_spend_job every batch_writing_interval (B1747's update_spend); add update_daily_tag_spend_job every
+  int(batch_writing_interval * 2.3) seconds and log "Tag spend update job scheduled at {n}s interval ({ratio:.1f}x main job
+  interval)"; add update_gateway_requests_job every batch_writing_interval (B3102's flush); unless disable_spend_logs is true,
+  start B1747's spend logs queue monitor task.
+
+  Then the reload jobs. store_model_in_db is the STORE_MODEL_IN_DB env flag or the setting; when it is still not true,
+  a general_settings row (B725's config repository) whose store_model_in_db is true or "true" turns it on with the info
+  log "store_model_in_db=True loaded from DB, overriding config/env" (a read error logs at debug and leaves it off). The
+  interval is proxy_config_reload_interval_seconds (PROXY_CONFIG_RELOAD_INTERVAL_SECONDS); a value that is not a positive
+  integer warns "proxy_config_reload_interval_seconds={v} must be a positive integer; falling back to 30s" and uses 30.
+  Add periodic_reload_job (B8385's check_periodic_reloads) at that interval, then start B8381's auth cache invalidation
+  subscriber. With store_model_in_db, add add_deployment_job (B8381's add_deployment), run it once right away, then start
+  B8381's config sync subscriber. Without it, run B8384's init_mcp_servers_from_db and reload_search_tools_from_db once,
+  and with a database add reload_search_tools_job and reload_mcp_servers_job (B8384's two reloads) at that interval (the
+  MCP job falls back to 30 without a warning). Each of these passes replace_existing and APSCHEDULER_MISFIRE_GRACE_TIME.
+  Then B8373's enforce_tuning_baseline with the auto-router capability limit (its error stops startup), then the Slack
+  alerting jobs (_initialize_slack_alerting_jobs: B4029's weekly and
+  monthly spend reports when alerting is configured), then the spend-tracking jobs (_initialize_spend_tracking_background_jobs:
+  B3071 CloudZero when set up, B3066 Focus, B3067 Vantage including the DB-only logger registration, B3068 Mavvrik, B3884
+  Prometheus budget metrics when prometheus_initialize_budget_metrics is true, B779's key_rotation_job every
+  LITELLM_KEY_ROTATION_CHECK_INTERVAL_SECONDS when LITELLM_KEY_ROTATION_ENABLED is true, then B2333's
+  litellm_expired_ui_session_key_cleanup_job when LITELLM_EXPIRED_UI_SESSION_KEY_CLEANUP_ENABLED is true), then the spend
+  capture rate check (_initialize_spend_capture_rate_check_job: always registered, cron 01:15 UTC, id
+  spend_capture_rate_check_job, first run now plus two minutes; each run re-reads general_settings.spend_capture_rate_check
+  and, when it is absent, clears the gauge for every provider instead of running B1712's check), then B1692's PTU rollup at
+  00:15 UTC when PTU cost attribution is enabled, alerting at level High with alert type failed_tracking_spend, then B8371's
+  register_cleanup_job. Finally attach B4172's job timing logger, apply its stagger with the settings parsed from general
+  settings, and start the scheduler, logging "APScheduler started with memory leak prevention settings: removed jitter,
+  increased intervals, misfire_grace_time={n}".
+
+  The model info refresh job also lives here, as `register_model_info_refresh(scheduler: Option<&mut ProxyScheduler>, ...)`
+  from proxy_startup_event L1547-L1567: unless general_settings.disable_model_info_refresh is exactly true, add
+  refresh_model_info (the router's model info refresh from B845) with an interval of MODEL_INFO_REFRESH_SECONDS, first run now,
+  max_instances 1 and replace_existing, on the proxy scheduler when there is one, else on a scheduler of its own that it
+  starts; the returned handle says which, so shutdown removes the job and stops only the private one.
+  The ROI calculator sync job also lives here, as `register_roi_sync(scheduler: Option<&mut ProxyScheduler>, ...)` from
+  proxy_startup_event L1566-L1569 (register_scheduled_sync): when there is a proxy scheduler and a database, add
+  roi_calculator_refresh every 30 seconds with max_instances 1 and replace_existing, running B8588's run_scheduled_sync.
+  B8374 calls it right after the model info refresh.
+
+  Every job that uses a lock (reset budget, key rotation, UI session cleanup, capture rate, PTU) shares the spend writer's
+  one PodLockManager; never build another. Jobs added without replace_existing in LiteLLM (key_rotation_job and the UI
+  session cleanup job) keep that, so a second registration is B8370's ConflictingId error.
+
+  Tests run register_background_jobs against a recording ProxyScheduler with paused tokio time and fake job handles, and
+  assert ids, triggers, intervals with a seeded Rng, conditions and order. No helper or HTTP oracle case: every value here
+  comes from proxy_server globals and a connected database, which a helper adapter cannot call.
+scope:
+  paths:
+    - crates/betterlite/Cargo.toml
+    - crates/betterlite/src/background_jobs.rs
+    - crates/betterlite/src/background_jobs/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10562-L10988
+    why: initialize_scheduled_background_jobs with every job id, interval, random offset and condition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10992-L11344
+    why: Spend tracking jobs, UI session cleanup job, spend capture rate check and Slack alerting jobs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1547-L1567
+    why: The refresh_model_info job and its private scheduler fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1810-L1870
+    why: PROXY_BUDGET_RESCHEDULER_*, PROXY_BATCH_WRITE_AT, PROXY_CONFIG_RELOAD_INTERVAL_SECONDS and DAILY_TAG_SPEND_BATCH_MULTIPLIER.
+dod:
+  - text: The heartbeat, reset budget, update spend, daily tag spend and gateway request jobs get LiteLLM's ids, intervals and random offsets, and the reset job honors disable_reset_budget.
+    proof: [jobs-tests]
+  - text: The Slack, spend export, Prometheus, key rotation and UI session cleanup jobs are added only under LiteLLM's conditions and in its order.
+    proof: [jobs-tests]
+  - text: The spend capture rate job is always added at 01:15 UTC with a first run two minutes out, and clears the gauge when its setting is absent.
+    proof: [jobs-tests]
+  - text: The PTU rollup is added at 00:15 UTC only when attribution is enabled, and every locking job shares one PodLockManager.
+    proof: [jobs-tests]
+  - text: The reload jobs follow store_model_in_db with its database override and the 30 second fallback, and add_deployment runs once before the config sync subscriber starts.
+    proof: [jobs-tests]
+  - text: The cleanup job goes through B8371, then timing logger and stagger are applied and the scheduler starts.
+    proof: [jobs-tests]
+  - text: refresh_model_info runs on the proxy scheduler when there is one, on a private one otherwise, and not at all when disable_model_info_refresh is true.
+    proof: [jobs-tests]
+  - text: roi_calculator_refresh runs B8588's run_scheduled_sync every 30 seconds on the proxy scheduler, only when there is a scheduler and a database.
+    proof: [jobs-tests]
+checks:
+  optional: []
+  commands:
+    - id: jobs-tests
+      why: A background job is missing, has the wrong id, interval or condition, or registers in another order
+      run: >-
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^background_jobs::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "CheckBatchCost and CheckResponsesCost: imported from litellm_enterprise, so never registered in open-source LiteLLM; not built."
+  - "run_scheduled_sync, the ROI calculator sync this task registers as roi_calculator_refresh: B8588."
+  - "The spend log cleanup job's trigger and rescheduling: B8371."
+  - "The scheduler itself and its shutdown: B8370; B8374 calls the shutdown steps."
+pitfalls:
+  - The heartbeat beats once before its job is added, so a database failure there stops startup before any job exists.
+  - The reset budget interval offset is capped at 30 seconds by min(30, max - min), so with max below min the randint range is invalid in LiteLLM; keep the min(30, max - min) bound and refuse a negative range with a typed error.
+  - The daily tag spend interval truncates int(batch_writing_interval * 2.3), so a 13 second batch interval gives 29, not 30.
+  - The spend capture rate settings are parsed once at registration, so an invalid spend_capture_rate_check stops startup, but each run parses them again.
+  - key_rotation_job and the UI session cleanup job pass no misfire_grace_time, so they get the scheduler default, while every other job passes APSCHEDULER_MISFIRE_GRACE_TIME explicitly to the same value.
+  - The Vantage branch registers a logger from database settings only when Vantage is set up in the database and not in config callbacks.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,178 @@
+id: B7971
+title: "MCP OAuth browser routes: callback, authorize, register, connect flow and complete, session reader and vendor credential state"
+description: >-
+  Build the browser-facing routes of discoverable_endpoints.py as a thin axum layer over logic that other tasks own. The routes are: GET /callback, GET /authorize/mcp-session, GET /authorize, GET /{mcp_server_name}/authorize, POST /register, POST /{mcp_server_name}/register, GET /authorize/flow, POST /authorize/complete and GET /.well-known/litellm-cli-auth. The route layer picks the server, reads the session, chooses which flow to call and turns the flow's reply into an HTTP response. It adds no OAuth logic of its own, with one exception: the callback has no other owner, so its state handling is built here (see A).
+
+
+  Code goes in betterlite-server, new module mcp::oauth_browser: crates/betterlite-server/src/mcp/oauth_browser.rs (the router builder OauthBrowser, the shared 422 error shape and the module's error enum), and the submodules ports, reply, callback, authorize, register, connect and vendor_state, each with a tests.rs beside it. OauthBrowser is one struct built by the composition root. Its fields are the registry (B4731's SharedRegistry), the SealCipher (B7530), the OauthFlows port (B4719), the gateway pieces B4675 needs (cipher, token source, consent page renderer, the SingleUseGuard from B4674, the consent team lookup, the reachability lookup), the SessionReader port below, the redirect trust port, the clock and the trusted-proxy settings for the client ip. Nothing is global. Ports are traits with native async fn, taken as generics.
+
+
+  New ports (ports.rs). `SessionReader`: `async fn session_user_id(&self, parts: &RequestParts) -> Option<String>` is LiteLLM's `_session_cookie_user_id`, a wrapper over byok_oauth_endpoints `_user_id_from_session_cookie`. B4655 owns the cookie decode and the liveness check behind it, so the composition root implements this trait with B4655's function and this task never decodes a cookie. `RedirectTrust`: `fn validate(&self, parts: &RequestParts, redirect_uri: &str) -> Result<(), TrustRejection>` is B4655's validate_trusted_redirect_uri. TrustRejection holds the status and the text of the HTTPException it raises, and a route returns it as {"detail": <text>} with that status. The server lookups are plain methods on B4731's registry, taken under a read lock.
+
+
+  Shared request handling (reply.rs). `RequestParts` is B4719's. Build B4675's `RequestView` from it: base_url from B4654's get_request_base_url, path and query from the URL, cookies from the Cookie header with the last value winning for a repeated name. Turn B4675's `GatewayReply` into a response: Redirect is status 303 with Location and an optional Set-Cookie and delete cookie; Html is 200 text/html with its headers and an optional Set-Cookie; Json is 200 with its headers; Error(OauthError) is the status, headers and body B4674 defines. Cookie header text follows Starlette: `<name>=<value>; HttpOnly; Max-Age=<n>; Path=<p>; SameSite=lax` and `; Secure` last when secure (Python sorts the attributes, so the order is fixed). A delete cookie is `<name>=""; expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; Max-Age=0; Path=<p>; SameSite=lax` and `; Secure` when secure. Unit-test the exact strings; no oracle case can reach a cookie without a signed-in user. A missing required query or form field is 422 in FastAPI's shape {"detail": [{"type": "missing", "loc": ["query", "<name>"], "msg": "Field required", "input": null}]} with "body" instead of "query" for a form field; reuse B4719's form error type for it. Starlette percent-encodes a redirect Location with quote(url, safe=":/%#?=@[]!$&'()*+,;"), so do the same for the 302 and 303 redirects built here.
+
+
+  The client ip for registry lookups is B743's get_mcp_client_ip, computed once per request and passed to B4731's server_by_name, server_by_id and filtered_registry.
+
+
+  A. Callback (callback.rs, L2210-L2377, L453-L516). GET /callback with optional query code, state, error, error_description, error_uri (never required, so no 422 here). Use B7530's decode_state, seal_bridge_code, seal_passthrough_code, state_cookie_name, resolve_encoded_state, clear_state_cookie and append_query_params, and B4650's normalize_token_endpoint_auth_method. `callback_reply(params, cookies, parts, ports) -> CallbackReply`, steps in order:
+  1. `error` is non-empty. Log "MCP /callback received IdP error" at info. With a non-empty state: the encoded state is resolve_encoded_state(cookies, state); decode it, take original_state, and validate the redirect with `validated_redirect` (below). Any failure in those three (undecryptable, malformed JSON, untrusted or missing redirect) is the HTML error page with status 400 and the state cookie cleared. Otherwise build the query: error; error_description when non-empty; error_uri when non-empty; state only when original_state is present (Option is Some, even when empty). The reply is a 302 redirect to append_query_params(redirect_uri, those pairs) with the state cookie cleared. With no state, return the HTML error page with no cookie work.
+  2. No error, and code or state is missing or empty: the HTML error page with error "invalid_request" and description "Missing authorization " followed by the missing names in the order code, state, each quoted with single quotes as Python repr does ('code'), joined with " and ", then " parameter(s)." (so "Missing authorization 'code' and 'state' parameter(s)."). The page escaping turns every apostrophe into &#x27;.
+  3. Success. Resolve and decode the state as in step 1, then validate the redirect. A TrustRejection or the missing-redirect failure here is NOT caught: it is returned as {"detail": <text>} with status 400 and the state cookie is left alone. Any other failure (undecryptable, malformed, original_state absent) answers 200 HTML "<html><body>Authentication incomplete. You can close this window.</body></html>" with the state cookie cleared. Then pick the forwarded code. When litellm_user_id and mcp_server_id are both non-empty strings, seal_bridge_code(code, litellm_user_id, mcp_server_id, oauth_nonce). Else when dcr_client_id and mcp_server_id are both non-empty, seal_passthrough_code(code, dcr_client_id, dcr_client_secret only when non-empty else None, mcp_server_id, normalize_token_endpoint_auth_method(dcr_token_endpoint_auth_method)). Else the raw code. The reply is a 302 to append_query_params(redirect_uri, [code, state]) where state is original_state, and the state cookie is cleared.
+  `validated_redirect(state, parts, redirect_trust)` (`_get_validated_client_redirect_uri`, L507-L515): the target is client_redirect_uri when non-empty, else base_url; empty or missing is 400 "Invalid redirect URI" (string detail); then RedirectTrust::validate. The cookie is cleared with B7530's clear_state_cookie, which returns nothing when the request did not carry that cookie.
+  The HTML error page (`_render_oauth_error_html`): status 400, content type text/html; charset=utf-8, body "<html><body><h2>Authentication failed</h2><p><strong>Error:</strong> {error}</p>{description}<p>You can close this window and try again.</p></body></html>". error is the escaped text, or "unknown_error" when empty. description is "<p>{escaped}</p>" only when the description is non-empty, else nothing. Escaping is Python html.escape with quote=True: & < > " ' become &amp; &lt; &gt; &quot; &#x27;.
+
+
+  B. Authorize (authorize.rs, L1926-L2021). Two routes.
+  `GET /authorize/mcp-session`: query redirect_uri and client_id required (422 each when missing), state default "", code_challenge, code_challenge_method, response_type, resource optional. Reply is B4675's aggregate_authorize with the session user from SessionReader, the registry read lock held for the call, the cipher, the token source and the clock.
+  `GET /authorize` and `GET /{mcp_server_name}/authorize`: query redirect_uri required, client_id, state default "", code_challenge, code_challenge_method, response_type, scope, resource optional. Order:
+  1. No path name, client_id non-empty and B4674's is_gateway_dcr_client_id(client_id): when B4675's is_proxy_api_resource(base_url, resource) the reply is native_client_authorize (with the consent team lookup), else aggregate_authorize, both with the session user.
+  2. Otherwise lookup_name is the path name, else client_id. The server is `server_by_name` then, only if that finds nothing, `server_by_id`, with the client ip (name first here; B4719's cookie auth tries the id first, do not mix them). With no server and no path name, use the single OAuth2 server for root endpoints: from filtered_registry(client_ip), the records whose auth_type is exactly oauth2 (not true_passthrough, not oauth_delegate); it counts only when exactly one exists. No server is 404 with string detail "MCP server not found".
+  3. B4719's ensure_oauth2 (a non-OAuth server is 400 server_not_oauth2).
+  4. resolved_client_id is server.client_id, else the query client_id, else "" (empty strings count as unset). An empty one is 400 with detail {"error": "client_id is required but was not supplied and is not stored on the MCP server record. Provide client_id as a query parameter or configure it on the server."}. This is not B4719's missing_client_id body.
+  5. OauthFlows::authorize_with_server with resolved_client_id, redirect_uri, state, code_challenge, code_challenge_method, response_type, scope, and no ephemeral client. The reply is returned as the flow gave it. resource is not forwarded on this path.
+
+
+  C. Register (register.rs, L2944-L3010). POST /register and POST /{mcp_server_name}/register; no auth, no required body. Read the body with B1100 (an empty body is {}). client_redirect_uris is B7530's client_supplied_redirect_uris(body.redirect_uris), through the OauthFlows port. request_base_url comes from the port as well. The dummy reply is 200 JSON {"client_id": mcp_server_name or "dummy_client", "client_secret": "dummy", "redirect_uris": client_redirect_uris or ["<base>/callback"]}. Order:
+  1. No path name and body.redirect_uris is truthy (a non-empty list; any non-empty value counts, even one client_supplied_redirect_uris rejects): B4674's register_aggregate_client(body, token_exchange_available, now, cipher). Registered gives status 201 with its response body; Refused gives the OauthError reply. token_exchange_available comes from a field the composition root fills (B4663's token_exchange_available).
+  2. No path name otherwise: the single OAuth2 server for root endpoints as in B. When found, OauthFlows::register_client_with_server with client_name body.client_name or "" (a missing key only; an explicit null stays null), grant_types and response_types default empty list, token_endpoint_auth_method default "", fallback_client_id server_name or name, client_redirect_uris, and persist_credentials false. Not found: the dummy reply.
+  3. With a path name: server_by_name then server_by_id with the client ip. Not found is the dummy reply. Found: register_client_with_server with the same arguments and fallback_client_id the path name.
+  This route does not call ensure_oauth2 itself (the flow does) and never sets persist_credentials.
+
+
+  D. Connect flow (connect.rs, L2118-L2155). `GET /authorize/flow`: query flow required (422 with loc ["query","flow"]). Reply is B4675's describe_connect_flow with the session user, the vendor credential lookup (E) and the reachability lookup. `POST /authorize/complete`: form flow required (422 with loc ["body","flow"]), delivery, team_id, decision optional. Reply is B4675's complete_connect_flow with the session user, the single-use guard, the vendor and reachability lookups, and the three form values as given. Both read the registry under the read lock the way B4675 expects. The reachability lookup is B7532's UserAccess::user_can_reach (LiteLLM `_user_can_reach_mcp_server`, L878-L892); the composition root passes the same value to both.
+
+
+  E. Vendor credential state (vendor_state.rs, L2097-L2115). `VendorState` implements B4674's LookupVendorCredential over a port `CredentialRead`: `async fn credential(&self, user_id: &str, server_id: &str) -> Result<Option<OauthCredential>, ReadFailure>`, which the composition root implements with B4713's get_user_oauth_credential (read B4713 for the exact Rust names of the type and of oauth_grant_state). Result: no database configured (the port reports it with ReadFailure::NoDatabase) or any read failure is `unavailable`; a credential whose B4713 oauth_grant_state is "absent" is `absent`; "valid" and "refreshable" are `present`; no credential is `absent`.
+
+
+  F. Discovery of the native client contract (in oauth_browser.rs). `GET /.well-known/litellm-cli-auth`: 200 JSON from B4675's native_client_auth_contract(base_url, token_exchange_available) with TOKEN_NO_CACHE_HEADERS.
+
+
+  Do NOT register: GET /.well-known/oauth-authorization-server (bare, B4678), anything under /.well-known/oauth-protected-resource or the aggregate authorization-server document (B7972), the discovery documents, jwks, POST /token, /revoke and /introspect (B7321), and the /v1/mcp/server/oauth routes (B4719). axum panics on a duplicate route. OauthBrowser has a `routes()` method that returns a Router with only the paths above; a test merges it with each other task's router stub and checks it builds.
+
+
+  Tests use synthetic servers (test-oauth-1, https://mcp.example.test/sse), a fake registry, fakes for OauthFlows (records its arguments), SessionReader, RedirectTrust, the B4675 ports and CredentialRead, and a fixed clock. The HTTP oracle cases run the booted proxy with a master key, no database and MCP servers in the config. They cover the answers that need no identity provider: 404, 422, 400, the dummy register reply, the aggregate register refusal, the callback pages and the unknown-flow answers. A good authorize redirect, token exchange or signed-in flow is covered by unit tests only.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/oauth_browser.rs
+    - crates/betterlite-server/src/mcp/oauth_browser/**
+    - tools/oracle/cases/http/mcp-oauth-browser/**
+    - tools/oracle/helpers/b7971.py
+    - tools/oracle/helpers/b7971/**
+    - tools/oracle/src/helpers/server/b7971.rs
+    - tools/oracle/src/helpers/server/b7971/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L420-L524
+    why: Session cookie reader, login redirect, the state cookie helpers, the validated redirect and _append_query_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L525-L556
+    why: Lookup by name then id, and the single OAuth2 server for root endpoints.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1926-L2021
+    why: The /authorize/mcp-session route and both authorize routes, from their decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2097-L2155
+    why: Vendor credential state, /authorize/flow and /authorize/complete.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2191-L2377
+    why: litellm-cli-auth, the HTML error page and the callback in its three arms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2944-L3010
+    why: Both register routes and the dummy reply.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L505-L660
+    why: aggregate_authorize, native_client_authorize and is_proxy_api_resource, the functions the authorize route chooses between.
+  - url: https://www.rfc-editor.org/rfc/rfc6749#section-4.1.2.1
+    why: The error response the callback passes back to the client.
+  - url: https://www.rfc-editor.org/rfc/rfc7591
+    why: Dynamic client registration, the body of POST /register.
+
+dod:
+  - text: The routes are exactly the nine listed paths and methods, none of the paths owned by B4678, B7321, B7972 or B4719, and the merged router builds without a duplicate.
+    proof: [router-tests, oracle]
+  - text: The callback follows its three arms, with the 302 redirect, the cookie clearing rules, the 400 JSON for an untrusted redirect on success and the escaped HTML pages.
+    proof: [callback-tests, oracle]
+  - text: The callback forwards the raw code, the sealed bridge code or the sealed passthrough code by the state fields LiteLLM tests, in that order.
+    proof: [callback-tests]
+  - text: Authorize sends gateway DCR client ids without a path name to the native or aggregate flow, and everything else through the name-then-id lookup, the single-OAuth2-server fallback, ensure_oauth2 and the client_id rule with LiteLLM's 404 and 400 bodies.
+    proof: [authorize-tests, oracle]
+  - text: Register returns the dummy reply for an unknown server, routes redirect_uris requests without a name to register_aggregate_client with a 201, and passes the right fallback_client_id and defaults to the flow.
+    proof: [register-tests, oracle]
+  - text: The connect flow routes pass the session user, the lookups and the form values to B4675, with 422 for a missing flow, and the vendor credential state maps absent, valid, refreshable and read failures as LiteLLM does.
+    proof: [connect-tests, oracle]
+  - text: GatewayReply values become responses with the status, headers and cookie header text above.
+    proof: [reply-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: router-tests
+      why: the router has no behavior test for its paths, its duplicate-route check or the cli-auth document
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_browser::tests::/)'
+    - id: reply-tests
+      why: the reply conversion and the cookie header text have no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_browser::reply::/)'
+    - id: callback-tests
+      why: the callback arms, the sealing choice or the HTML pages have no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_browser::callback::/)'
+    - id: authorize-tests
+      why: the authorize routes have no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_browser::authorize::/)'
+    - id: register-tests
+      why: the register routes have no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_browser::register::/)'
+    - id: connect-tests
+      why: the connect flow routes or the vendor credential state have no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_browser::(connect|vendor_state)::/)'
+
+oracle_cases:
+  - tools/oracle/cases/http/mcp-oauth-browser/authorize-unknown-server-404.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/authorize-root-no-oauth-server-404.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/authorize-missing-redirect-422.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/authorize-non-oauth-server-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/authorize-no-client-id-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/mcp-session-missing-params-422.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/register-unknown-server-dummy.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/register-root-dummy.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/register-unknown-server-keeps-redirect-uris.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/register-aggregate-bad-redirect-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/register-non-oauth-server-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/callback-no-params-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/callback-error-no-state-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/callback-error-escapes-html.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/callback-error-bad-state-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/callback-code-bad-state-incomplete.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/flow-missing-param-422.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/flow-unknown-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/complete-missing-flow-422.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/complete-bad-delivery-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/complete-unknown-flow-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/cli-auth-contract.yaml
+
+deviations:
+  - what: The state decoded in the callback is B7530's typed OauthState, so a state JSON that lacks base_url fails to decode and answers like any decode failure (HTML, 200 on success, 400 on an IdP error), where LiteLLM would read base_url with .get and answer 400 "Invalid redirect URI" when client_redirect_uri is also missing.
+    why: Only betterlite seals states and it always writes both keys, so the two differ only for a hand-made state that decrypts. Typed fields keep the callback free of untyped maps.
+
+out_of_scope:
+  - "State, sealed codes, the state cookie helpers, append_query_params and client_supplied_redirect_uris: B7530. register_client_with_server and resolve_ephemeral_dcr_client: B7531. authorize_with_server and exchange_token_with_server: B7532. The OauthFlows trait, RequestParts and ensure_oauth2: B4719."
+  - "aggregate_authorize, native_client_authorize, is_proxy_api_resource, describe_connect_flow, complete_connect_flow and native_client_auth_contract: B4675. register_aggregate_client and the DCR contracts: B4674."
+  - "Cookie decode and liveness for the session reader, and validate_trusted_redirect_uri: B4655. get_request_base_url: B4654. get_mcp_client_ip: B743. Registry reads: B4731. Credential reads and oauth_grant_state: B4713."
+  - "The discovery documents, jwks, POST /token, /revoke, /introspect and OauthFlowsImpl: B7321. The bare /.well-known/oauth-authorization-server route: B4678. The protected-resource routes and the aggregate authorization-server route: B7972. The faults package: B7970."
+
+pitfalls:
+  - The root authorize route uses name-then-id lookup, while B4719's cookie auth uses id-then-name; copying one into the other changes which server a shared value picks.
+  - The single-server fallback counts only auth_type oauth2 exactly, and only when one such server is visible to the client ip, so two OAuth servers give 404 on /authorize and the dummy reply on /register.
+  - The 400 for a missing client_id here has the detail object with the key error and the text "client_id is required but was not supplied", not the missing_client_id body of the /v1/mcp/server/oauth routes.
+  - /register with a non-empty redirect_uris and no path name never reaches the single-server branch, even when the list would be rejected by client_supplied_redirect_uris.
+  - register never sets persist_credentials and uses the path name, not the record's server_id, as fallback_client_id; the root branch uses server_name or name.
+  - In the callback, a state cookie is cleared only when the request carried it, and the 400 JSON from an untrusted redirect on the success arm leaves the cookie in place, while the IdP error arm clears it for the same failure.
+  - The IdP error redirect puts state last and only when original_state is present, and it drops empty error_description and error_uri.
+  - Python repr quotes the missing names with single quotes, and html.escape then turns each into &#x27;, so the missing-parameter page shows &#x27;code&#x27;.
+  - Both seal branches need non-empty strings for mcp_server_id and the user or client id, otherwise the raw code is forwarded, and an empty dcr_client_secret becomes None, not an empty secret.
+  - /authorize/complete reads a form, so a request with no flow field is 422 before B4675 sees it; a bad delivery with a flow field present is B4675's 400.
+  - The route for /authorize/mcp-session must not be shadowed by /{mcp_server_name}/authorize; axum prefers the static segment, but the router test must request both.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -80,7 +80,7 @@ deviations: []
 out_of_scope:
   - "get_session_id_from_request_data helper (belongs to B104)"
   - "InternalUsageCache.async_get_cache, async_set_cache (belong to B124)"
-  - "RedisCache.async_set_cache (belongs to B126)"
+  - "RedisCache.async_set_cache (belongs to B4327)"
   - "log_redis_failure implementation (belongs to B393)"
   - "Request/response translation and hook registration (belongs to B105)"
 

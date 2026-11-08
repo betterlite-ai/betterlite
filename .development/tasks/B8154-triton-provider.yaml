@@ -1,0 +1,78 @@
+id: B8154
+title: triton completion, generate, infer and embedding configs
+description: >-
+  Build the triton provider in betterlite-provider as crates/betterlite-provider/src/triton.rs and its folder. All are pure transforms; the HTTP call and the main.py dispatch stay with B8157.
+
+  TritonError (common_utils.py). TritonConfig (get_error_class, validate_environment, get_supported_openai_params, map_openai_params, get_complete_url, transform_response, transform_request, _get_triton_llm_type, get_model_response_iterator), TritonGenerateConfig (transform_request, transform_response), TritonInferConfig (transform_request, transform_response) and TritonResponseIterator.chunk_parser. The endpoint type is chosen from the api base path by _get_triton_llm_type. completion/handler.py holds only a docstring.
+
+  TritonEmbeddingConfig: get_supported_openai_params, map_openai_params, validate_environment, transform_embedding_request, transform_embedding_response, _build_embedding_usage, get_error_class and split_embedding_by_shape. Shape splitting must keep LiteLLM's handling of the shape list.
+
+  Triton replies come from the network. Decode them with typed structs and add a fuzz target; a field of the wrong type is an error, never a default. Stream line decoding in the chunk parser uses the shared iterator primitives of B2214.
+
+  Where the source and this text differ, the source at the pinned commit wins.
+scope:
+  paths:
+    - crates/betterlite-provider/src/triton.rs
+    - crates/betterlite-provider/src/triton/**
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/triton_reply.rs
+    - crates/betterlite-provider/fuzz/corpus/triton_reply/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/triton-provider/**
+    - tools/oracle/helpers/b8154.py
+    - tools/oracle/helpers/b8154/**
+    - tools/oracle/src/helpers/provider/b8154.rs
+    - tools/oracle/src/helpers/provider/b8154/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/triton/common_utils.py#L1-L13
+    why: TritonError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/triton/completion/transformation.py#L1-L335
+    why: Triton, generate and infer configs and the chunk parser.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/triton/embedding/transformation.py#L1-L141
+    why: Triton embedding config and shape split.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/triton/completion/handler.py#L1-L5
+    why: Docstring only.
+dod:
+  - text: The endpoint type is chosen from the api base the same way, and generate and infer requests match.
+    proof: [triton-provider-tests, triton-provider-cases]
+  - text: Generate and infer replies, usage and finish reasons match, and the chunk parser yields the same chunks.
+    proof: [triton-provider-tests, triton-provider-cases]
+  - text: Embedding requests, replies, usage and shape splitting match, and bad replies give the same error.
+    proof: [triton-provider-tests, triton-provider-cases]
+  - text: The reply decoder rejects malformed bodies without panicking and its corpus replays.
+    proof: [triton-provider-corpus]
+  - text: New helper cases for these functions exist.
+    proof: [triton-provider-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: triton-provider-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^triton::/)'
+      why: Without this provider code there are no such tests, so the check fails on the base branch.
+    - id: triton-provider-corpus
+      run: test -f crates/betterlite-provider/fuzz/fuzz_targets/triton_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/triton_reply)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_triton_reply_corpus)'
+      why: Bytes come from outside and need a fuzz target with a replayed corpus.
+    - id: triton-provider-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/triton-provider)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/helpers/triton-provider/llm-type.yaml
+  - tools/oracle/cases/helpers/triton-provider/request-generate.yaml
+  - tools/oracle/cases/helpers/triton-provider/request-infer.yaml
+  - tools/oracle/cases/helpers/triton-provider/reply-generate.yaml
+  - tools/oracle/cases/helpers/triton-provider/reply-infer.yaml
+  - tools/oracle/cases/helpers/triton-provider/chunk-parser.yaml
+  - tools/oracle/cases/helpers/triton-provider/embedding-split.yaml
+deviations:
+  []
+out_of_scope:
+  - "B8157 owns the main.py triton dispatch."
+  - "B2214 owns the shared iterator primitives; B7929 owns the Triton types in types/llms/triton.py."
+  - "The BaseEmbeddingConfig contract has no owner in the backlog; this task builds only the triton side."
+pitfalls:
+  - "The oracle helper for this task is pre-registered as b8154 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task's to edit."
+  - "The infer config sends a list of named inputs with shapes; copy the field names and order exactly."
+  - "Embedding usage is computed from the request data, not read from the reply."
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

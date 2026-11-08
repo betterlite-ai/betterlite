@@ -1,0 +1,16 @@
+id: B8025
+milestone: M3 providers
+title: Map Nimble and Parallel AI search requests, replies and usage
+status: todo
+depends_on: [B002, B3270, B171, B3274]
+file: tasks/B8025-nimble-parallel-search.yaml
+covers:
+  - "litellm/llms/nimble/**"
+  - "litellm/llms/parallel_ai/search/__init__.py"
+  - "litellm/llms/parallel_ai/search/transformation.py"
+parent: B048
+split_from: B048
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

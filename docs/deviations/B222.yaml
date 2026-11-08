@@ -1,0 +1,11 @@
+task: B222
+deviations:
+  - what: >-
+      A tool message whose content list holds more than 256 parts is refused with
+      ToolResultError::TooManyParts before any part is converted; LiteLLM loops over every part it
+      is given.
+    why: >-
+      The bounded-inputs rule forbids work proportional to untrusted input without a cap. The 256
+      part ceiling is the one B234's traversal and the media module already put on a message's
+      content list, and every list within it converts exactly as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1612-L1672

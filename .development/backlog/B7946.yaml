@@ -1,0 +1,20 @@
+id: B7946
+milestone: M12 python
+title: Python types for proxy management endpoints common_daily_activity to model_management (types/proxy/management_endpoints)
+status: todo
+depends_on: [B5657]
+file: tasks/B7946-types-proxy-mgmt-endpoints-a.yaml
+covers:
+  - "litellm/types/proxy/management_endpoints/common_daily_activity.py"
+  - "litellm/types/proxy/management_endpoints/config_overrides.py"
+  - "litellm/types/proxy/management_endpoints/customer_endpoints.py"
+  - "litellm/types/proxy/management_endpoints/internal_user_endpoints.py"
+  - "litellm/types/proxy/management_endpoints/key_management_endpoints.py"
+  - "litellm/types/proxy/management_endpoints/management_v1.py"
+  - "litellm/types/proxy/management_endpoints/model_management_endpoints.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -24,7 +24,7 @@ description: >-
 
   failure_http_dict extracts detail.error or str(exception); failure_http_string uses detail;
   failure_proxy_message uses ProxyException.message; failure_other uses str(exception). For ordinary
-  bulk, failure_info_refetch calls B124 PrismaClient.get_data(token=input,table_name='key',
+  bulk, failure_info_refetch calls B722 PrismaClient.get_data(token=input,table_name='key',
   query_type='find_unique'), uses model_dump before legacy dict, and removes token from nonempty
   key_info. failure_refetch_swallowed returns key_info=null on any refetch error. Never roll back
   earlier row writes. Redact raw keys from the source's exception log; preserve failed_reason
@@ -89,8 +89,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/key_bulk_update.rs
     - crates/betterlite-server/src/routes/key_bulk_update/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-bulk-update/**
     - tools/oracle/helpers/b776.py
     - tools/oracle/helpers/b776/**

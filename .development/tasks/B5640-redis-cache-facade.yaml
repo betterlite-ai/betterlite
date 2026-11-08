@@ -4,7 +4,7 @@ description: >-
   B4325 to B4329 each built one slice of LiteLLM's `RedisCache` in betterlite-redis.
   This task adds the module `redis_cache` there. It joins the slices into one
   `RedisCache` value and builds what no slice owns: the constructor, six guarded
-  async methods and the guarded script run. B4293, B4294, B360, B4330 and B126
+  async methods and the guarded script run. B4293, B4294, B360, B4330 and the proxy usage-cache builders (B8377 to B8389)
   reach Redis through this type.
 
   The module reads no config key and no env var of its own, and it knows nothing
@@ -47,7 +47,7 @@ description: >-
   namespace, the hooks, the gate and that major version. B4329 names neither the type
   nor its constructor, so use what merged. If it asks for the raw `RedisVersionValue`
   and the default, pass those. Last, call `admin.setup_health_pings().await`.
-  Passing `RedisCacheFamily::Cluster` is allowed, because B126's cluster constructor
+  Passing `RedisCacheFamily::Cluster` is allowed, because the cluster form of the constructor
   comes through here. `connect` does not choose the family.
 
   Guard rule, used by every method below. Start with `gate.enter(name)`, where `name`
@@ -351,7 +351,7 @@ out_of_scope:
   - "`RedisCircuitBreaker`, `_redis_circuit_breaker_guard`, `_redis_circuit_breaker_guard_sync`, `_enter_circuit_breaker`, `_exit_circuit_breaker`, `_run_under_circuit_breaker`, `_run_under_circuit_breaker_sync`, `log_redis_failure`, `_record_swallowed_redis_failure`, `_breaker_metrics`, `_explicit_causes`, `_redis_health_error_types` and `_redis_timeout_error_types`; B393 owns them and B5630 implements `BreakerGate` over them."
   - "`ServiceLogging` in `litellm/_service_logger.py`; B012 owns it and B5630 implements `ServiceHooks` over it."
   - "Reading `litellm.default_redis_ttl` and `redis_flush_size` from config; B5630 reads them and passes them in."
-  - "`RedisClusterCache`, `GcpTokenFetcher`, `AzureTokenFetcher`, `AwsCredentialsResolver` and the choice of the cluster family; B126 owns them."
+  - "`RedisClusterCache`'s methods are B4325's and B4326's, B8501 builds the production `GcpTokenFetcher`, `AzureTokenFetcher` and `AwsCredentialsResolver`, and B4299, B360 and the proxy usage-cache builders (B8377 to B8389) choose the cluster family."
   - "`get_redis_client`, `get_redis_connection_pool` and `_get_redis_client_logic`; B4323 owns them, and `connect` calls its Rust counterparts."
   - "`init_async_client`, `init_pubsub_client`, `_cluster_node_pubsub_client`, `_async_commands`, `_get_async_client_cache_key`, `_opaque_kwarg_key` and the MGET operations; B4325 owns them."
   - "`_setup_health_pings`, `ping`, `sync_ping`, `_handle_async_ping_error`, `_handle_sync_ping_error`, `disconnect`, `test_connection`, `delete_cache_keys`, `async_delete_cache`, `delete_cache`, `client_list`, `info`, `flush_cache` and `flushall`; B4326 owns them."

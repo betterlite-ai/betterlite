@@ -1,0 +1,147 @@
+id: B8501
+title: Production cloud credentials for Redis AUTH
+description: >-
+  B4320 ported LiteLLM's Redis credential providers (GCP IAM, Azure AD, ElastiCache IAM) in
+  crates/betterlite-config/src/sections/redis_credentials/ but left the cloud calls behind three traits:
+  `GcpTokenFetcher`, `AzureTokenFetcher` and `AwsCredentialsResolver`. B5220's `LiveClientFactory::new(credentials:
+  Option<Arc<dyn RedisCredentialSource>>)` refuses a record with credential provider settings until a source is
+  given. No production implementation exists, so a configured gcp_service_account, azure_client_id or aws_iam_auth
+  cannot connect today. This task writes the three implementations and the source that joins them, in the module
+  `redis_cloud_auth` of betterlite-server (crates/betterlite-server/src/redis_cloud_auth.rs and redis_cloud_auth/**),
+  the only crate that sees betterlite-config, betterlite-redis, betterlite-azure and betterlite-vertex together. Add
+  those crates and `aws-config` (the workspace pin `=1.12.0`, `default-features = false`, `rt-tokio`) to
+  crates/betterlite-server/Cargo.toml as needed.
+
+
+  Every trait method is sync, and B5220 runs `fetch` inside `spawn_blocking`. Each implementation holds a
+  `tokio::runtime::Handle` given at construction and uses `handle.block_on` for its async work. Never create a runtime
+  per call.
+
+
+  1. `IamTokenFetcher` implements `GcpTokenFetcher`, LiteLLM's `_generate_gcp_iam_access_token`. It POSTs
+  `<base>/v1/<service_account>:generateAccessToken` with the JSON body {"scope": ["https://www.googleapis.com/auth/cloud-platform"]}
+  and an `Authorization: Bearer <adc token>` header. `base` is a field that defaults to https://iamcredentials.googleapis.com
+  so tests point it at a loopback server. The service account is used as the resource name as given
+  (projects/-/serviceAccounts/name@project.iam.gserviceaccount.com). The bearer token comes from the port `AdcTokenSource`
+  (`fn access_token(&self, scope: &str) -> Result<SecretString, AdcError>`). Its production impl calls B1301's
+  `betterlite_vertex::credential_sources::adc_access_token` with scope https://www.googleapis.com/auth/cloud-platform.
+  Decode the reply with `decode_iam_token(body: &[u8]) -> Result<SecretString, IamTokenError>`, which reads the
+  "accessToken" string. A non-2xx status is an error that names the status. B4320's `GcpTokenCache` already caches for
+  3300 seconds, so add no cache here.
+
+  2. `AzureRedisTokens` implements `AzureTokenFetcher`, LiteLLM's `_build_azure_credential` plus `get_token`. It
+  matches B4320's `AzureCredential`: `ClientSecret` uses B673's client-secret grant with tenant_id, client_id and
+  client_secret from `AzureSettings`, `ManagedIdentity` uses B676's managed-identity grant with client_id, and `Default`
+  uses B677's DefaultAzureCredential chain. The scope is B4320's `AZURE_REDIS_SCOPE` (https://redis.azure.com/.default).
+  Build each credential once on first use and keep it, because the grants cache and refresh tokens inside the credential.
+  The grants sit behind the port `AzureGrants` (one method per kind, each returning `SecretString`), and its production
+  impl calls the betterlite-azure functions merged by B673, B676 and B677.
+
+  3. `SdkAwsCredentials` implements `AwsCredentialsResolver`, LiteLLM's botocore `get_session().get_credentials()`.
+  Load `aws_config::defaults(BehaviorVersion::latest())` once and keep its credentials provider, which already follows
+  the env, profile, web identity, ECS and IMDS order and caches. `resolve` calls `provide_credentials` and maps an error
+  to `ElastiCacheSigningError::Credentials`. Tests give the struct a static `SharedCredentialsProvider` instead.
+
+  4. `CloudRedisAuth` implements B5220's `RedisCredentialSource` over `config.sections.redis_credentials.provider`.
+  `Gcp` calls `token_cache.get_or_fetch(service_account, ttl, clock, &IamTokenFetcher)` and returns no username;
+  `Azure` builds B4320's `AzureAdCredentialProvider` over `AzureRedisTokens` and returns its username and token;
+  `Aws` calls `ElastiCacheIamProvider::get_credentials(&SdkAwsCredentials, SystemTime::now())` and returns the user name
+  and signed token. `refresh_after` is 3300 seconds for GCP (the token TTL), 300 seconds for Azure and 840 seconds for
+  AWS (60 seconds before the 900-second presign expiry). `cloud_redis_auth(settings, deps) -> Option<Arc<dyn
+  RedisCredentialSource>>` returns None when `provider` is None. Map every error to `RedisCredentialError` with its
+  source text; never put a token in an error or a log line.
+
+
+  Tests in `redis_cloud_auth::tests`, one file per group: `gcp_` (request path, body and bearer header against an axum
+  loopback server, token decode, non-2xx and malformed replies), `azure_` (each credential kind picks its grant, the
+  credential is built once, username handling), `aws_` (static credentials give a signed token, a provider error maps
+  to the credentials error) and `source_` (None without a provider, refresh_after per provider). No oracle cases:
+  LiteLLM's side needs real cloud accounts, and B4320's helper cases already cover the signing and caching.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/redis_cloud_auth.rs
+    - crates/betterlite-server/src/redis_cloud_auth/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/gcp_iam_token.rs
+    - crates/betterlite-server/fuzz/corpus/gcp_iam_token/**
+    - Cargo.lock
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis_credential_provider.py#L41-L66
+    why: The GCP IAM generateAccessToken request and its cloud-platform scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis_credential_provider.py#L151-L200
+    why: botocore session credentials, resolved once and reused, and the RuntimeError when none resolve.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis_credential_provider.py#L203-L229
+    why: The Azure provider asks the long-lived credential for the Redis scope on every connection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L363-L398
+    why: _build_azure_credential picks ClientSecretCredential, ManagedIdentityCredential or DefaultAzureCredential.
+  - url: https://cloud.google.com/iam/docs/reference/credentials/rest/v1/projects.serviceAccounts/generateAccessToken
+    why: The REST form of the IAM call and the accessToken member of its reply.
+  - url: https://docs.rs/aws-config/1.12.0/aws_config/default_provider/credentials/index.html
+    why: The default credential chain order that replaces botocore's.
+
+dod:
+  - text: The GCP fetcher sends the generateAccessToken request with the ADC bearer and returns accessToken, and fails on a non-2xx or malformed reply.
+    proof: [gcp-tests]
+  - text: The Azure fetcher picks the grant for each credential kind with the Redis scope and builds each credential once.
+    proof: [azure-tests]
+  - text: The AWS resolver returns default-chain credentials and maps a provider failure to the credentials error.
+    proof: [aws-tests]
+  - text: The credential source returns the right username, token and refresh interval per provider and None without one.
+    proof: [source-tests]
+  - text: The IAM reply decoder survives valid, truncated and malformed bodies.
+    proof: [decoder-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: gcp-tests
+      why: the IAM request, its decode or its errors are wrong
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^redis_cloud_auth::tests::gcp_/) - test(replays_the_gcp_iam_token_corpus)'
+    - id: azure-tests
+      why: the Azure grant choice, scope or credential reuse is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^redis_cloud_auth::tests::azure_/)'
+    - id: aws-tests
+      why: AWS credentials are not resolved or errors are not mapped
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^redis_cloud_auth::tests::aws_/)'
+    - id: source-tests
+      why: the credential source or its refresh intervals are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^redis_cloud_auth::tests::source_/)'
+    - id: decoder-corpus
+      why: the IAM reply fuzz target or its new corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-server/fuzz/fuzz_targets/gcp_iam_token.rs &&
+        grep -q 'name = "gcp_iam_token"' crates/betterlite-server/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/gcp_iam_token)" &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_gcp_iam_token_corpus)'
+
+oracle_cases: []
+
+deviations:
+  - what: A Redis connection authenticated by a cloud token sends AUTH again on a timer (3300 s GCP, 300 s Azure, 840 s AWS).
+    why: redis-py asks the provider on each new pooled connection; betterlite keeps one multiplexed connection, so it re-authenticates before the token expires.
+  - what: Missing cloud libraries never raise the "pip install google-cloud-iam", "pip install azure-identity" or "pip install boto3" ImportError.
+    why: The clients are compiled in.
+
+out_of_scope:
+  - "Provider choice, the GCP token cache, the Azure provider and ElastiCache signing; B4320 built them."
+  - "RedisCredentialSource, its streaming adapter and LiveClientFactory; B5220 owns them."
+  - "The Azure grants and the default chain (B673, B676, B677) and Google application default credentials (B1301)."
+  - "Passing cloud_redis_auth's source to LiveClientFactory::new where a cache is built: the wave 17 cache and secrets wiring part mounts it."
+  - "_generate_azure_ad_redis_token and get_redis_url_from_environment; no caller at the pin (B4320)."
+
+pitfalls:
+  - "Build the Azure credential and the AWS provider once. Rebuilding them per fetch drops their token caches and makes every AUTH a network round trip."
+  - "Do not call Handle::current() inside fetch: B5220 may run it on a plain thread with no runtime context. Use the handle given at construction."
+  - "A source without a username still needs one in redis-rs BasicAuth; B5220 sends `default`, so return None here and leave that to it."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

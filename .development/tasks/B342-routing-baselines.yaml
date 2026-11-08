@@ -1,7 +1,7 @@
 id: B342
 title: Auto-router savings baselines and cache observations
 description: 'Compute the canonical counterfactual baseline through B068 cost calculation using the pinned
-  reference request and B013 catalog facts. Add the baseline observation hook for B075''s native prompt-cache
+  reference request and B013 catalog facts. Add the baseline observation hook for B3123''s native prompt-cache
   prediction, with bounded count cache, caller/session scope and invalidation on retry or incomplete responses.
   Carry typed evidence to B344 session rollups without retaining plaintext keys. Do not invent a substitute
   baseline when no candidate can be priced. Implement the owned native service in crates/betterlite-router/src/routing_baselines.rs.

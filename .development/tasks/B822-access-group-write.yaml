@@ -3,7 +3,7 @@ title: Create, update and delete access groups
 description: >-
   Implement the create, PUT and DELETE access-group routes with B821 request models/guards/projections
   and B2340 assignment/cache effects. All first require proxy_admin (viewers are denied with B821's 403)
-  then B124's connected-DB check (500); neither check is inside the route try. There is no management
+  then B4711's connected-DB check (500); neither check is inside the route try. There is no management
   effects decorator. Create and PUT return AccessGroupResponse at 201 and 200; DELETE returns an empty
   204. Register each original and unified alias once. Cases write_roles_and_db_order and
   unified_write_statuses exercise every method/path through B052.
@@ -91,8 +91,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/access_group_write.rs
     - crates/betterlite-server/src/routes/access_group_write/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/access-group-write/**
     - crates/betterlite-server/src/access_group_write/fixtures.rs
     - crates/betterlite-server/src/access_group_write/fixtures/**

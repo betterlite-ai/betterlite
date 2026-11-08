@@ -1,0 +1,13 @@
+id: B8193
+milestone: M9 agents and mcp
+title: MCP sampling model access, budgets and completion
+status: todo
+depends_on: [B8190, B8192, B886, B887, B754, B736, B737, B879]
+file: tasks/B8193-mcp-sampling-handler.yaml
+covers: []
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

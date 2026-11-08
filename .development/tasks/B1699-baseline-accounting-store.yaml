@@ -91,7 +91,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L620-L639
 out_of_scope:
   - B1698 owns all accounting/publication data records, JSON decoders, canonical serialization, correction SQL and _publish/_project_group; B1696 owns the pure history algorithm.
-  - B070 wires the exported baseline flush service and notifier into spend persistence; B075 supplies captured provider baseline observations, and B344 retains session turn collection/drain orchestration.
+  - B070 wires the exported baseline flush service and notifier into spend persistence; B3122 supplies captured provider baseline observations, and B344 retains session turn collection/drain orchestration.
 pitfalls:
   - Identical duplicate observations do not advance revision, but differing same-scope duplicates must retract affected published savings.
   - The page limit counts distinct timestamps, not observation rows, so tied requests must stay in one replay group.

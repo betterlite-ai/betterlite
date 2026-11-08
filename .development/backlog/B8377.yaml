@@ -1,0 +1,13 @@
+id: B8377
+milestone: M8 platform
+title: Coordination Redis startup and usage cache selection
+status: todo
+depends_on: [B733, B4306, B5630, B8411]
+file: tasks/B8377-coordination-redis-boot.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

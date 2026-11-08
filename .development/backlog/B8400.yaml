@@ -1,0 +1,14 @@
+id: B8400
+milestone: M8 platform
+title: Proxy utility checks, projected spend and SMTP email
+status: todo
+depends_on: []
+file: tasks/B8400-proxy-helpers-smtp.yaml
+covers:
+  - "litellm/proxy/utils.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

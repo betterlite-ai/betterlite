@@ -1,0 +1,14 @@
+id: B8270
+milestone: M4 keys, spend and management
+title: Release unclaimed budget reservations when a request ends
+status: todo
+depends_on: [B003, B3003]
+file: tasks/B8270-reservation-release-layer.yaml
+covers:
+  - "litellm/proxy/middleware/budget_reservation_release_middleware.py"
+parent: B071
+split_from: B071
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

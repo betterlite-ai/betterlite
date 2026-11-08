@@ -109,7 +109,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - In types/utils.py this leaf extracts BudgetConfig's provider-limit aliases; B014 retains its unrelated shared type helpers and B020/B383 retain non-provider budget policy.
-  - B068 performs pricing; B020/B383 retain filtering/window initialization and consume the extracted read view; B116 owns alert delivery using this query service.
+  - B068 performs pricing; B020/B383 retain filtering/window initialization and consume the extracted read view; B4029 owns alert delivery using this query service.
   - B020/B326/B383 retain other budget_limiter methods; earlier routing tasks retain unrelated router.py methods.
   - B1721-B1724, B1726/B1727, B1704, B069 and the log-detail/session leaves own the other spend endpoint functions; earlier _types.py owners retain unrelated records.
 pitfalls:

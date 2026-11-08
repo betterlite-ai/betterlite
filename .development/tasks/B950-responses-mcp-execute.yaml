@@ -1,7 +1,7 @@
 id: B950
 title: Responses mcp execute
 description: >-
-  Execute extracted MCP function/custom calls through B136 and B137 using typed parsed arguments and normalized
+  Execute extracted MCP function/custom calls through B8465's MCPServerManager.call_tool (mcp::tool_call), with B8195's _resolve_display_name_to_original for display names, and B137 using typed parsed arguments and normalized
   tool results. Preserve source authorization and failure logging for every call; do not treat a model-emitted tool
   name as permission to access another server.
 
@@ -60,8 +60,8 @@ description: >-
   code.
 
 
-  Direct inputs come from B136 (MCP gateway server, transports and server registry), B137 (MCP auth, OAuth flows,
-  BYOK and outbound credentials), B171 (Direct helper oracle and URL path encoding), B949 (Responses mcp discovery),
+  Direct inputs come from B8465 (MCP upstream tool call dispatch), B8195 (display name resolution), B137 (MCP auth, OAuth flows,
+  BYOK and outbound credentials), B171 (Direct helper oracle and URL path encoding),
   B1087 (Api boundaries), B732 (Typed authentication principals and grant resolution), B1106 (Principal metadata
   and tags), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not provider-family
   umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.

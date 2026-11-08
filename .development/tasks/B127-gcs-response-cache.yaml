@@ -1,0 +1,193 @@
+id: B127
+title: Store response cache objects in Google Cloud Storage
+description: >-
+  Build `crates/betterlite-cache/src/gcs_cache.rs`, the GCS response-cache backend
+  that ports GCSCache from litellm/caching/gcs_cache.py. The type is `GcsCache`,
+  and it stores `crate::s3_cache::entry::CachedEntry` values (the same JSON wrapper
+  B4350 and B4351 use). It talks to the GCS JSON API over B173's pooled client from
+  betterlite-http and gets its bearer token from B3997's GCS storage client in
+  betterlite-logging. Add `betterlite-http` and `betterlite-logging` to
+  crates/betterlite-cache/Cargo.toml. Neither depends on betterlite-cache, so there
+  is no cycle. Follow B4290's cache backend contract for the method shapes, and copy
+  the sync wrapper pattern of `AzureBlobCache` in azure_blob_cache.rs: a sync method
+  takes a tokio `Handle`, logs and returns the miss or nothing when called inside a
+  running runtime, and otherwise runs the async method with `block_on`.
+
+  Settings live in a new betterlite-config section, `gcs_response_cache`
+  (crates/betterlite-config/src/sections/gcs_response_cache.rs). It follows
+  azure_blob_cache.rs: it returns `None` unless `litellm_settings.cache` is true and
+  `litellm_settings.cache_params.type` is `gcs`. Its keys are `gcs_bucket_name`,
+  `gcs_path_service_account` and `gcs_path`, all optional strings resolved with
+  `resolve_string`. A missing or empty `gcs_bucket_name` falls back to the
+  `GCS_BUCKET_NAME` env var, and a missing or empty `gcs_path_service_account` falls
+  back to `GCS_PATH_SERVICE_ACCOUNT`, both read through `EnvironmentLookup`. This
+  mirrors `bucket_name or GCSBucketBase(bucket_name=None).BUCKET_NAME` in the Python
+  constructor. If both the key and the env var are missing the section returns a
+  `ConfigError` (see deviations). The section also has a `gcs_path` string, stored
+  as given.
+
+  `GcsCache::new(settings, auth, client, base_url)` builds the cache. `key_prefix` is
+  `gcs_path.trim_end_matches('/')` plus `/` when `gcs_path` is non-empty, otherwise
+  an empty string (so `gcs_path: "/"` gives prefix `/`, and `"a//"` gives `a/`).
+  `base_url` defaults to `https://storage.googleapis.com` and exists so tests can
+  point at a local server. It is a constructor argument, not a config key.
+
+  Every operation computes `object_name = key_prefix + key`, then percent-encodes it
+  with Python's `quote(object_name, safe='')`: every byte except ASCII letters,
+  digits, `_`, `.`, `-` and `~` becomes `%XX`, so `/` becomes `%2F`. Do not call
+  B2208's `encode_gcs_object_name_for_url`, which unquotes first (see pitfalls). The
+  bucket name goes into the URL as configured, with no folder splitting. Both
+  directions send the headers from B3997's sync header operation
+  (`sync_construct_request_headers`: `Authorization: Bearer <token>` and
+  `Content-Type: application/json`), built fresh on every call from the configured
+  bucket and service-account path. Run it with `tokio::task::spawn_blocking` inside
+  async methods so the token refresh does not block the runtime.
+
+  Writes (`set_cache` and `async_set_cache`): serialize the value to JSON, then
+  `POST {base_url}/upload/storage/v1/b/{bucket}/o?uploadType=media&name={encoded}`
+  with that body. Header, serialization and transport errors are caught and logged
+  at debug level without the Authorization value, and nothing is returned. The
+  response status is never checked, so a 403 or 500 is silent. TTL kwargs are
+  ignored. Reads (`get_cache` and `async_get_cache`): `GET
+  {base_url}/storage/v1/b/{bucket}/o/{encoded}?alt=media`. On status 200, decode the
+  body as UTF-8 JSON into a `CachedEntry` and return it. Any other status returns
+  `None` with no log line. A header, transport, UTF-8 or JSON failure logs at error
+  level (key and error text only, never the response body or token) and returns
+  `None`. Put the decoder in `crates/betterlite-cache/src/gcs_cache/body.rs` as
+  `decode_body(bytes: &[u8]) -> Result<CachedEntry, GcsCacheError>`.
+  `async_set_cache_pipeline(cache_list)` starts one `async_set_cache(key, value)` per
+  `(key, value)` pair and awaits all of them; the writes are independent and one
+  failure does not stop the others. `disconnect` is a no-op that stays callable.
+
+  `GcsCacheError` in gcs_cache/error.rs (or gcs_cache.rs) is the module's error enum
+  for construction and decoding, built with thiserror.
+
+  Tests live in `gcs_cache::tests`. Run a tokio TCP listener on 127.0.0.1 that
+  records the request line, headers and body and answers with a chosen status and
+  body, and stub the B3997 header source with a fixed token. Name the cases:
+  prefix_from_gcs_path (including empty, `/` and `a//`), object_name_percent_encoding
+  (slash, space, `%`, `+`, unicode), write_url_and_body, write_ignores_failure_status,
+  write_swallows_transport_error, read_hit_on_200, read_miss_on_404_without_log,
+  read_miss_on_bad_json_logs_error, read_miss_on_header_failure,
+  async_matches_sync, pipeline_writes_every_pair, headers_sent_on_read_and_write,
+  and credentials_absent_from_debug_output.
+
+scope:
+  paths:
+    - crates/betterlite-cache/Cargo.toml
+    - crates/betterlite-cache/src/gcs_cache.rs
+    - crates/betterlite-cache/src/gcs_cache/**
+    - crates/betterlite-cache/fuzz/Cargo.toml
+    - crates/betterlite-cache/fuzz/fuzz_targets/gcs_cache_body.rs
+    - crates/betterlite-cache/fuzz/corpus/gcs_cache_body/**
+    - crates/betterlite-config/src/sections/gcs_response_cache.rs
+    - crates/betterlite-config/src/sections/gcs_response_cache/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/gcs_cache.py#L21-L108
+    why: GCSCache in full, from __init__ through async_set_cache_pipeline.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L278-L283
+    why: Cache.__init__ builds GCSCache from gcs_bucket_name, gcs_path_service_account and gcs_path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L106-L110
+    why: The three constructor parameters that reach GCSCache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6304-L6314
+    why: litellm_settings.cache_params is passed to Cache(**cache_params); this is the only config source.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L31-L44
+    why: GCSBucketBase env defaults GCS_BUCKET_NAME and GCS_PATH_SERVICE_ACCOUNT used by the constructor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L81-L115
+    why: sync_construct_request_headers, the header source every GCSCache call uses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cloud_storage_security.py#L110-L111
+    why: encode_gcs_object_name_for_url unquotes first; GCSCache does not use it.
+  - url: https://cloud.google.com/storage/docs/json_api/v1/objects/insert
+    why: The media upload endpoint, uploadType=media and the name query parameter.
+  - url: https://cloud.google.com/storage/docs/json_api/v1/objects/get
+    why: The object get endpoint with alt=media.
+
+dod:
+  - text: >-
+      The key prefix is `gcs_path` with trailing slashes removed plus one slash, and empty when
+      `gcs_path` is absent or empty.
+    proof: [gcs-tests]
+  - text: >-
+      Object names are percent-encoded with nothing kept safe except letters, digits, `_`, `.`, `-` and `~`,
+      without unquoting first, so a key containing `%2F` is sent as `%252F`.
+    proof: [gcs-tests]
+  - text: >-
+      Writes POST the JSON body to the upload URL with the bearer and JSON content-type headers, return nothing, and swallow
+      header, serialization and transport errors and any non-200 status.
+    proof: [gcs-tests]
+  - text: >-
+      Reads GET the alt=media URL, return the decoded JSON on 200, return None on any other status, and log and return
+      None on header, transport, UTF-8 or JSON failure.
+    proof: [gcs-tests]
+  - text: >-
+      The async methods behave like the sync ones, the pipeline writes every pair, and disconnect is a callable no-op.
+    proof: [gcs-tests]
+  - text: >-
+      Authorization values and service-account paths never appear in log output or Debug output.
+    proof: [gcs-tests]
+  - text: >-
+      The `gcs_response_cache` section reads `gcs_bucket_name`, `gcs_path_service_account` and `gcs_path` from
+      `litellm_settings.cache_params` only for cache type `gcs`, falls back to `GCS_BUCKET_NAME` and
+      `GCS_PATH_SERVICE_ACCOUNT`, and errors when no bucket is found.
+    proof: [config-gcs]
+  - text: >-
+      The object-body decoder has a cargo-fuzz target and `replays_the_gcs_cache_body_corpus` replays every corpus file
+      without a panic.
+    proof: [gcs-fuzz-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: gcs-tests
+      why: the GCS cache behavior tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^gcs_cache::/) - test(replays_the_gcs_cache_body_corpus)'
+    - id: config-gcs
+      why: GCS cache settings are not loaded through betterlite-config, the env fallbacks are missing, or a section builds settings for another cache type
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::gcs_response_cache::/)'
+    - id: gcs-fuzz-corpus
+      why: the GCS cache body fuzz target or its corpus is missing, or replaying the corpus fails
+      run: >-
+        test -f crates/betterlite-cache/fuzz/fuzz_targets/gcs_cache_body.rs &&
+        grep -q 'name = "gcs_cache_body"' crates/betterlite-cache/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-cache/fuzz/corpus/gcs_cache_body)" &&
+        cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(replays_the_gcs_cache_body_corpus)'
+
+oracle_cases: []
+
+deviations:
+  - what: Construction fails with a typed error when neither `gcs_bucket_name` nor `GCS_BUCKET_NAME` is set.
+    why: LiteLLM accepts a missing bucket and then requests `.../b/None/o/...`, which can never work. This is an open question for the architect; for now betterlite refuses to build the cache.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/gcs_cache.py#L22-L33
+  - what: Async methods run the token lookup on the blocking pool and the HTTP call on the async client, and sync methods block on the same async path.
+    why: betterlite-http has one async client, so there is no separate sync transport. The requests and results are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/gcs_cache.py#L33-L40
+  - what: Response bodies over B173's 16 MiB buffered limit read as a miss, and body text is decoded as UTF-8 only.
+    why: The bounded-inputs rule caps buffered bodies. httpx's `response.text` guesses a charset and Python's `json.loads` also accepts the bare tokens NaN, Infinity and -Infinity, which serde_json rejects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/gcs_cache.py#L68-L70
+
+out_of_scope:
+  - "GCSBucketBase, its headers, Vertex instance cache and the mock transport: B3997 and B3996 own them; this task calls B3997's sync header operation."
+  - "flush_cache: it is a `pass` and nothing calls it on a GCSCache at the pin."
+  - "Cache.__init__ backend selection, TTL defaults and namespaces: B4299 owns them, and today it raises not-implemented for type gcs. B4299's owner wires `GcsCache` in after this task."
+  - "The response-cache facade, cache keys and TTL inheritance."
+  - "Folder splitting of the bucket name (`split_configured_cloud_bucket_name`): GCSCache never calls it."
+  - "Other backends: S3 (B4350), Azure Blob (B4351), Redis, disk and semantic caches."
+
+pitfalls:
+  - "GCSCache encodes with `quote(object_name, safe='')`, not B2208's `encode_gcs_object_name_for_url`, which runs `unquote` first. A key holding `%2F` must become `%252F`, not `%2F`."
+  - "The bucket name is not split on `/`, so `my-bucket/folder` goes into the URL as one path segment; only the logger and download paths in B3997 split it."
+  - "The sync header operation reads `GOOGLE_SECRET_MANAGER_PROJECT_ID` at call time and is used by the async methods too, so async calls pass the project from that env var, unlike the logger's async headers."
+  - "`_construct_headers` builds a new GCSBucketBase per call and overwrites its service-account path with `path_service_account`, which may be None (default credentials). Do not cache headers between calls."
+  - "`set_cache` and `async_set_cache` ignore the response status; `get_cache` and `async_get_cache` treat only 200 as a hit. A 404 is a quiet miss, but a 401 is also just a miss with no log."
+  - "Only get_cache logs the decoded value at debug level in LiteLLM; log the key only, since cached responses hold user content."
+  - "`async_get_cache` has no debug log line while `get_cache` has one, and both end in the same `None` on failure."
+  - "The `Authorization` header and the service-account path must not reach logs, error text or Debug output."
+  - "A key longer than the GCS 1024-byte object name limit is rejected by GCS with a non-200 status; for writes that is silent, for reads a quiet miss."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,14 @@
+id: B7791
+milestone: M12 python
+title: Management clients for virtual keys and credentials
+status: todo
+depends_on: [B7790]
+file: tasks/B7791-proxy-client-keys.yaml
+covers:
+  - "litellm/proxy/client/{keys,credentials}.py"
+parent: B169
+split_from: B169
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

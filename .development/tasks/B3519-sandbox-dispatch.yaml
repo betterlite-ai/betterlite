@@ -124,7 +124,7 @@ out_of_scope:
   E2B and OpenSandbox concrete implementations are provided by B3516 and B3518; this task
   only calls their acreate_sandbox/arun_code/adelete_sandbox methods.
 - >-
-  Secret manager dispatch for non-os.environ/ prefixes is deferred to a named B129 leaf;
+  Secret manager dispatch for non-os.environ/ prefixes is deferred to a named B8500 leaf;
   this task resolves only the os.environ/ case directly.
 pitfalls:
 - >-

@@ -1,0 +1,15 @@
+id: B8350
+milestone: M2 routing
+title: Router deployment predicates and mock test errors
+status: todo
+depends_on: [B002, B010, B011]
+file: tasks/B8350-router-predicates.yaml
+covers:
+  - "litellm/router.py"
+  - "litellm/types/router.py"
+parent: B162
+split_from: B162
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

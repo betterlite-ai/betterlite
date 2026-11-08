@@ -1,0 +1,93 @@
+id: B7878
+title: Python assistant and thread functions
+description: >-
+  The OpenAI assistants API in LiteLLM starts with `get_assistants`, `create_assistants`, `delete_assistant`, `create_thread`
+  and `get_thread`, each with an `a`-prefixed async twin (ten functions). This part builds them. Provider work for OpenAI
+  and Azure is Rust (B1055 create, B1056 threads, B1130 list and delete), so Python builds arguments and result objects.
+
+
+  Native side, the family `assistant_calls`: `src/assistant_calls.rs` with `register` that adds `NativeAssistantSession`
+  and `NativeAssistantError`. Methods `get_assistants`, `create_assistants`, `delete_assistant`, `create_thread`, `get_thread`
+  and `a` twins take `(payload_text, blobs)`. Conversion lives in `src/assistant_calls/convert.rs` with tests `request_*` and
+  `error_*`. The architect writes the `lib.rs` lines.
+
+
+  Python side, `python/betterlite/assistants/_records.py`. Signatures (assistants/main.py): `get_assistants(custom_llm_provider,
+  client=None, api_key=None, api_base=None, api_version=None, **kwargs)`; `create_assistants(custom_llm_provider, model, name,
+  description, instructions, tools, tool_resources, metadata, temperature, top_p, response_format, client, api_key, api_base,
+  api_version, **kwargs)`; `delete_assistant(custom_llm_provider, assistant_id, ...)`; `create_thread(custom_llm_provider,
+  messages, metadata, tool_resources, client, **kwargs)`; `get_thread(custom_llm_provider, thread_id, client, **kwargs)`. The
+  async twins at the pin take `custom_llm_provider, client, **kwargs` only (the real arguments ride in `kwargs`), so the
+  signature test must match that shape. `custom_llm_provider` is "openai" or "azure". Sync functions accept `aget_assistants=True`,
+  `acreate_assistants=True`, `adelete_assistant=True`, `acreate_thread=True` and `aget_thread=True` and then return a coroutine.
+  Results are `AsyncCursorPage[Assistant]` style pages, `Assistant`, `AssistantDeleted`, `Thread` (types from B167).
+  `client` is an OpenAI SDK object in LiteLLM; here it raises `UnsupportedCallArgument` (B158), as do `api_version` objects that
+  are not strings.
+scope:
+  paths:
+  - crates/betterlite-python/src/assistant_calls.rs
+  - crates/betterlite-python/src/assistant_calls/**
+  - crates/betterlite-python/python/betterlite/_native_assistant_calls.pyi
+  - crates/betterlite-python/python/betterlite/assistants/_records.py
+  - crates/betterlite-python/tests/assistant_server.py
+  - crates/betterlite-python/tests/test_assistants_records.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L38-L372
+  why: aget_assistants, get_assistants, acreate_assistants and create_assistants
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L374-L525
+  why: adelete_assistant and delete_assistant
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L526-L840
+  why: create_thread and get_thread
+dod:
+- text: The ten functions keep LiteLLM's signatures, including the thin `a` twins.
+  proof: [asst-signature]
+- text: Create, get, delete and thread calls reach the local server with every field and give the same objects as LiteLLM.
+  proof: [asst-calls]
+- text: Each sync function returns a coroutine under its flag.
+  proof: [asst-async]
+- text: A provider error keeps its class and cause, and `client` raises `UnsupportedCallArgument`.
+  proof: [asst-error]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [asst-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: asst-signature
+    why: A caller's keyword is refused.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_assistants_records.py -k signature
+  - id: asst-calls
+    why: A field is lost.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_assistants_records.py -k calls
+  - id: asst-async
+    why: A flag does not give a coroutine.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_assistants_records.py -k async
+  - id: asst-error
+    why: Error class or client check is wrong.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_assistants_records.py -k error
+  - id: asst-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^assistant_calls::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for the assistant calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`client` (an OpenAI SDK object) is refused with `UnsupportedCallArgument`."
+  why: The OpenAI SDK is no dependency of the wheel and Rust drives the HTTP client.
+- what: This task has no helper oracle cases.
+  why: pytest compares both packages against one local server.
+out_of_scope:
+- "Messages and runs (`add_message`, `get_messages`, `run_thread`, the stream functions) and litellm/assistants/utils.py are B7879."
+- "Provider I/O belongs to B1055, B1056 and B1130, and the SDK settings and timeout rule to B2487."
+pitfalls:
+- "The async twins have no named parameters, so `aget_assistants(custom_llm_provider=\"openai\")` works only through keywords, and a positional second argument is `client`."
+- "`create_thread` takes `messages` as a list of dicts or message objects, and a pydantic object must be dumped before it goes into JSON."
+- "`temperature` and `top_p` of 0 are values, so test `is None`."
+- "`tools` can hold dicts with `type` \"code_interpreter\", \"file_search\" or \"function\" and goes through unchanged."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

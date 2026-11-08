@@ -1,0 +1,163 @@
+id: B7430
+title: Container route types, router wrappers, route choice and direct SDK calls
+description: >-
+  Give the nine async container route types a path from the proxy to the SDK. The proxy's container routes (B3372 for the file routes) hand a data map and a route type
+  ("aupload_container_file", "alist_container_files", "aretrieve_container_file", "adelete_container_file", "aretrieve_container_file_content", "acreate_container",
+  "alist_containers", "aretrieve_container", "adelete_container") to B004's common request processing. LiteLLM then runs route_llm_request.py L586-L598, which calls
+  `llm_router.<route_type>(**data)`. Those Router methods are built by Router._initialize_container_endpoints (router.py L2143-L2170) with factory_function, and the factory's
+  container branch calls Router._init_containers_api_endpoints (L7050-L7106). No other task owns this mapping: B3368 builds `acontainer_file_call` and B3369/B3370 build the container
+  calls, but nothing connects a route type to them. This task is that connection, in three places that form no cycle. betterlite-core cannot import betterlite-sdk, so the core side
+  holds plain types, the route choice and the dispatch entry, and the sdk side implements the calls.
+
+  Core side, module `api::container_router_calls` in betterlite-core (files container_router_calls.rs and container_router_calls/**). (1) `ContainerRouteType`, an enum with the nine
+  route types and two methods: `name` (the text above) and `from_name` (None for any other text). (2) `ContainerCallArgs`, a struct with `fields: serde_json::Map<String, Value>` (every
+  key the SDK call gets: container_id, file_id, custom_llm_provider, model_id, model, after, limit, order, query_params and the rest) and `file: Option<ContainerFileUpload>` (B3363's
+  type, for the upload). (3) `ContainerReply`, an enum: `Json(Value)` for objects, lists and deletes, `Bytes(Vec<u8>)` for file content. (4) `ContainerCalls`, an async trait with one method
+  `call(&self, route: ContainerRouteType, args: ContainerCallArgs) -> Result<ContainerReply, ContainerCallError>`. Two implementations exist: the router one and the direct SDK one,
+  both on the sdk side. (5) `ContainerCallError` wraps the router error and the SDK error as two cases, each by `#[from]`, and has `Unavailable(String)` for a route type the direct path
+  does not have (see pitfalls).
+
+  Route choice, `plan_container_route(input: &ContainerRouteInput, has_router: bool) -> ContainerRoute`, the container part of `_route_request_single_attempt` (route_llm_request.py
+  L472-L722). `ContainerRouteInput` holds `has_api_key_or_base: bool` (data has `api_key` or `api_base`) and `user_model: Option<&str>`. `ContainerRoute` is `Router`, `Direct` or
+  `NotFound`. Rules, in LiteLLM's order. (1) `has_api_key_or_base`: `Router` with a router, `Direct` without one. (2) A router exists: `Router`, because the container list at L587-L598 has no
+  model test. (3) No router: `Direct` when `user_model` is set, else `NotFound`. The branches that LiteLLM tests between these (user_config, router_settings_override, batch completion, the
+  blocked-model check) are B004's and B014's.
+
+  Router call plan, `plan_container_call(args: ContainerCallArgs, wrapper_provider: Option<&str>, decoder: &dyn ContainerIdDecoder) -> ContainerCallPlan`, which is
+  `_init_containers_api_endpoints` (router.py L7050-L7106). `ContainerIdDecoder` is a trait with `decode(&self, container_id: &str) -> DecodedContainerId` (provider and model_id as
+  Option<String>, response_id as String); the server implements it with B903's `_decode_container_id`. `ContainerCallPlan` is `Generic { model: String, passthrough_on_no_deployment: bool, args }`
+  or `Direct { args }`. Steps. (1) If `wrapper_provider` is set and `args` has no `custom_llm_provider` key, add it. (2) If `container_id` is a string: decode it; `original_id` is the decoded
+  response_id (the input when none); when it differs from the input, replace `container_id` with it; when the decoded provider is non-empty and `custom_llm_provider` is the string "openai",
+  replace it with the decoded one; `model_id` is the decoded model_id when non-empty, else the forwarded `model_id` argument when it is a string that is not blank after trimming (the trimmed
+  text is used). When `model_id` is found, set `model` to it and return `Generic` with that model and `passthrough_on_no_deployment` false. (3) Otherwise, if `model` is a string that
+  is not blank, return `Generic` with that model (not trimmed) and `passthrough_on_no_deployment` true. (4) Otherwise return `Direct`. `model_id` is never removed from the args.
+
+  Dispatch entry. The architect adds one core entry for these routes to B014's core-stubs list, `ContainerCall` with module `container_call`
+  (operation/container_call.rs and dispatch/container_call.rs). The request holds a `ContainerRouteType` and a `ContainerCallArgs`; the result is a `ContainerReply`. This task replaces the
+  NotBuilt stub and its stub test. Its execute function takes the route input and two injected `ContainerCalls` (the router one, which may be absent, and the direct one) and runs the plan:
+  `Router` calls the router implementation, `Direct` calls the direct one, `NotFound` returns the model-not-found error with route name and the model from the args (empty text when none).
+  Leave operation.rs and dispatch.rs as they are.
+
+  Sdk side, module `router_container` in betterlite-sdk (files router_container.rs and router_container/**). It plugs the nine calls into B6021's `RouterGeneric`. `ContainerExecutor` is a
+  `GenericCallExecutor` holding one `ContainerRouteType`. It reads the `GenericRequest` map by the same key names as `ContainerCallArgs.fields`, and calls: for the five file route types
+  B3368's `acontainer_file_call` (the generated functions the router registers, with the endpoint name from B3360's catalog); for acreate_container and alist_containers B3369; for
+  aretrieve_container and adelete_container B3370. It returns `ContainerReply::Bytes` for aretrieve_container_file_content and Json otherwise. `RouterContainer` implements `ContainerCalls`
+  for the router path: it builds `ContainerCallArgs` into a `GenericRequest` (the upload becomes a JSON object `{"filename", "content_type", "data_base64"}` under "file", as in
+  B6460; the executor turns it back), calls `plan_container_call`, then `Generic` runs B6021's `dispatch_generic_call_type` for the route type name with `model` set and
+  `passthrough_on_no_deployment` in the request, and `Direct` calls the executor straight. It removes `client` from the arguments (the wrapper swallows it) and re-adds `custom_llm_provider` as step (1)
+  describes. `container_executors(...)` returns `Vec<(String, Arc<dyn GenericCallExecutor>)>` for the code that builds `RouterGeneric`. `DirectContainer` implements `ContainerCalls`
+  for the no-router path: it calls the functions the `litellm` module exposes under each route type name. Those are `alist_container_files` and `aupload_container_file` from containers/main.py
+  (B3366, B3367) and the four container calls (B3369, B3370). aretrieve_container_file, adelete_container_file and aretrieve_container_file_content do not exist on the `litellm` module,
+  so `DirectContainer` answers `ContainerCallError::Unavailable` with the route type name for them.
+
+  Counts: about 85 non-blank LiteLLM lines. Budget 380 implementation, 380 tests. No oracle cases and no fuzz target: the choice sits inside an async proxy function that reads proxy_server
+  globals, nothing here parses bytes, and B3372 owns the HTTP cases for the file routes. Core tests are in `api::container_router_calls::tests` (prefixes `types_`, `route_` and `plan_`) and
+  `dispatch::container_call::tests` (prefix `entry_`); sdk tests are in `router_container::tests` (prefixes `executor_`, `wrapper_` and `direct_`) and use fakes for the decoder, the generic
+  dispatch and the SDK calls.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/container_router_calls.rs
+    - crates/betterlite-core/src/api/container_router_calls/**
+    - crates/betterlite-core/src/operation/container_call.rs
+    - crates/betterlite-core/src/operation/container_call/**
+    - crates/betterlite-core/src/dispatch/container_call.rs
+    - crates/betterlite-core/src/dispatch/container_call/**
+    - crates/betterlite-sdk/src/router_container.rs
+    - crates/betterlite-sdk/src/router_container/**
+    - crates/betterlite-sdk/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2143-L2170
+    why: _initialize_container_endpoints builds the container Router methods; the file ones come from the generated endpoint table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6919-L6935
+    why: The container branch of factory_function's async_wrapper, which takes custom_llm_provider and client as named parameters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7050-L7106
+    why: _init_containers_api_endpoints, the decode, model_id forwarding, requested model and direct-call steps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L586-L598
+    why: The container route types call the router method of the same name without model routing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L717-L726
+    why: With no router, user_model decides between a direct litellm call and the model-not-found error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L226-L239
+    why: The generated functions the router registers, and the module-level aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L32-L45
+    why: The __all__ list that `from .containers.main import *` in litellm/__init__.py L1469 re-exports; it names only alist_container_files and aupload_container_file of the file calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L730-L770
+    why: _decode_container_id, the decoder behind ContainerIdDecoder (B903).
+dod:
+  - text: >-
+      ContainerRouteType has the nine route types, name returns the LiteLLM text for each, from_name returns None for any other text, and the file route types match the five async_names of B3360's catalog.
+    proof: [route-types]
+  - text: >-
+      plan_container_route answers Router when a router exists, Direct without one when user_model is set, NotFound without one when it is not, and api_key or api_base in the data gives Router with a router and Direct without.
+    proof: [route-choice]
+  - text: >-
+      plan_container_call copies custom_llm_provider from the wrapper argument only when the key is absent, replaces container_id with the decoded original, replaces an "openai" provider with the decoded one, and leaves a non-"openai" provider alone.
+    proof: [plan-decode]
+  - text: >-
+      plan_container_call returns Generic with passthrough false and model set when the decoded id or the forwarded model_id (trimmed, non-blank) gives one, Generic with passthrough true for a non-blank model argument, and Direct otherwise; model_id stays in the args.
+    proof: [plan-model]
+  - text: >-
+      The ContainerCall dispatch entry runs the Router, Direct and NotFound results of the plan against the matching collaborator, and a NotFound plan returns the model-not-found error.
+    proof: [entry-dispatch]
+  - text: >-
+      The sdk executors read their arguments by the shared key names and call B3368, B3369 or B3370 for their route type; content comes back as Bytes and every other reply as Json.
+    proof: [executor-calls]
+  - text: >-
+      RouterContainer drops client, round-trips an upload through base64 unchanged, runs Generic plans through the generic dispatch with the model and passthrough flag, and returns router and SDK errors unchanged.
+    proof: [wrapper-calls]
+  - text: >-
+      DirectContainer calls the SDK function for alist_container_files, aupload_container_file and the four container calls, and answers Unavailable with the route type name for the other three.
+    proof: [direct-calls]
+checks:
+  optional: [mutants]
+  commands:
+    - id: route-types
+      why: a route type, its name text or the catalog match is missing
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_router_calls::tests::types_/)'
+    - id: route-choice
+      why: the route choice differs from router, user_model, api_key or api_base rules
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_router_calls::tests::route_/)'
+    - id: plan-decode
+      why: the provider copy, the id replacement or the openai provider swap is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_router_calls::tests::plan_decode/)'
+    - id: plan-model
+      why: the generic or direct plan, the passthrough flag or the model_id trim is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_router_calls::tests::plan_model/)'
+    - id: entry-dispatch
+      why: the ContainerCall entry still answers NotBuilt or runs the wrong collaborator
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^dispatch::container_call::tests::entry_/)'
+    - id: executor-calls
+      why: an executor reads the wrong argument names or returns the wrong reply form
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_container::tests::executor_/)'
+    - id: wrapper-calls
+      why: client reaches the generic call, an upload changes in the round trip, or an error is swallowed
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_container::tests::wrapper_/)'
+    - id: direct-calls
+      why: a direct call goes to the wrong function or the three missing ones do not answer Unavailable
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_container::tests::direct_/)'
+oracle_cases: []
+deviations:
+  - what: Uploads cross the generic call as base64 inside the JSON argument map.
+    why: B6021's GenericRequest is a JSON map and cannot hold raw buffers. The provider sees the same filename and bytes, so no client can tell.
+  - what: The nine synchronous Router container methods (create_container, list_containers and the rest without the a prefix) are not built.
+    why: Nothing calls them at the pin and the gateway has no blocking SDK surface; see out_of_scope.
+out_of_scope:
+  - "The synchronous Router.create_container, list_containers, retrieve_container, delete_container, list_container_files, upload_container_file, retrieve_container_file, delete_container_file and retrieve_container_file_content (router.py L2160-L2170 and the sync half of factory_function): no caller at the pin. The proxy only calls the a-prefixed names."
+  - "The generic engine (_ageneric_api_call_with_fallbacks, its helper, _dispatch_generic_call_type) is B6021; selection, retries, slots and the refusal check are B016, B017, B303 and B310. This task only plugs executors into it."
+  - "The generic parts of _route_request_single_attempt (user_config, router_settings_override, batch completion, the blocked-model check, mock-testing checks) belong to B004 and B014."
+  - "The SDK calls the executors reach: B3368 (the five file calls), B3369 (create, list), B3370 (retrieve, delete), B3366 and B3367 (the explicit list and upload functions the direct path uses)."
+  - "The ContainerIdDecoder implementation over B903's _decode_container_id, the server implementation of the generic wiring, and the construction of RouterGeneric with container_executors: the architect's wiring, see notes."
+  - "The container HTTP routes themselves and the request data maps: B3372 (file routes) and the routes of proxy/container_endpoints/endpoints.py."
+pitfalls:
+  - "async_wrapper takes custom_llm_provider and client as named parameters and passes neither through, so _init_containers_api_endpoints puts custom_llm_provider back only when kwargs has no such key, and client is dropped for good."
+  - "model_id is read from kwargs but never removed, so it travels to the SDK call as an extra keyword; the model is set only when a decoded or forwarded model_id exists."
+  - "The forwarded model_id is trimmed before it becomes the model, but a requested `model` in step (3) is only tested for blankness and passed on untrimmed."
+  - "The decoded provider replaces custom_llm_provider only when the current value is exactly the string \"openai\", so a request that named azure keeps azure even when the id says otherwise."
+  - "Step (3) sets passthrough_on_no_deployment true and step (2) does not, so a managed id whose deployment is gone is an error while a plain requested model falls back to a direct call."
+  - "Without a router the proxy calls `litellm.<route_type>`; `litellm/__init__.py` re-exports containers/main.py only, and its __all__ has alist_container_files and aupload_container_file but not aretrieve_container_file, adelete_container_file or aretrieve_container_file_content, so those three raise AttributeError (a 500) on the direct path."
+  - "With a router, list and upload run the generated endpoint_factory functions, but on the direct path they run the explicit main.py functions (B3366, B3367), which differ in logging and parameters. Do not unify the two paths."
+  - "The container list at route_llm_request.py L587-L598 sits inside the `llm_router is not None` branch and tests no model, so a container request with a router never gets model-not-found; only the no-router path can."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

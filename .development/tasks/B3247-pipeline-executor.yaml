@@ -258,7 +258,7 @@ out_of_scope:
   - "B3240 owns PipelineStep, GuardrailPipeline, PipelineStepResult, PipelineExecutionResult and the action and mode validation (pipeline_types.py)."
   - "B3680 owns UnifiedLLMGuardrails pre_call and post_call_success; B3666 owns mark_pre_call_hook_ran; B5471 owns CustomGuardrail's is_guardrail_intervention (as GuardrailFailure::is_intervention) and scan_raw_request."
   - "B2204 owns independent_snapshot; B206 owns get_metadata_variable_name_from_kwargs and get_or_create_metadata_bucket."
-  - "B3244 and B3248 own the other routes of policy_endpoints.py; B124 owns ProxyLogging._handle_pipeline_result, _policy_pipelines and the callers of execute_steps in litellm/proxy/utils.py (L2218 and L4056); B6370 owns the stream wrapper that calls execute_steps."
+  - "B3244 and B3248 own the other routes of policy_endpoints.py; B8393 owns ProxyLogging._handle_pipeline_result and _maybe_execute_pipelines (the execute_steps caller at L2218 of litellm/proxy/utils.py), B8391 owns _policy_pipelines, and B6370 owns _pipeline_gated_stream (the caller at L4056)."
   - "No task owns the production implementation of the guardrail handle's own pre-call and post-call hooks for registered non-unified guardrails; this task defines how it calls them (see notes) and tests with fakes."
 
 pitfalls:

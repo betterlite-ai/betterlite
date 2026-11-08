@@ -1,0 +1,13 @@
+id: B8041
+milestone: M12 python
+title: JSON values, callable handles and Python errors for the embedded interpreter
+status: todo
+depends_on: [B8040]
+file: tasks/B8041-pyhost-callables.yaml
+covers: []
+parent: B165
+split_from: B165
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

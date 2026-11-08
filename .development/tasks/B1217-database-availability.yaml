@@ -17,7 +17,7 @@ description: >-
   without suggesting retry. If no outage is found use the supplied error to select wording. Error
   messages remain betterlite's own and the oracle ignores only /error/message.
 
-  general_settings.allow_requests_on_db_unavailable defaults False. Booleans pass through; B129 str_to_bool
+  general_settings.allow_requests_on_db_unavailable defaults False. Booleans pass through; B8500 str_to_bool
   accepts trimmed case-insensitive true/false, unrecognized strings or None become false. There is no
   top-level alias or environment binding. Non-null values that are neither booleans nor strings fail
   when the consumer tries string normalization; do not silently turn numbers/lists/maps into false.

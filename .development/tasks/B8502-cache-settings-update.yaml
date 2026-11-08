@@ -1,0 +1,163 @@
+id: B8502
+title: Save cache settings and reload the cache from the database
+description: >-
+  Port the write half of litellm/proxy/management_endpoints/cache_settings_endpoints.py: POST /cache/settings
+  (update_cache_settings, L567-L675), `CacheSettingsManager` (L331-L419) and the audit row it writes (L262-L328).
+  B4306 built the pure helpers, B4307 serves GET /cache/settings and B4308 serves POST /cache/settings/test. Code goes in
+  the module `cache_settings_update` of betterlite-server (crates/betterlite-server/src/cache_settings_update.rs and
+  cache_settings_update/**), split into `route.rs`, `manager.rs` and `audit.rs`.
+
+
+  Rebuilding the cache is ProxyConfig._init_cache and switch_on_llm_response_caching in proxy_server.py, which another
+  task owns. This module reaches them through the port `CacheReinit` with `fn init_cache(&self, params: &Map<String,
+  Json>) -> Result<(), CacheReinitError>` and `fn switch_on_response_caching(&self)`. Tests use a recording fake.
+
+
+  `CacheSettingsManager` is one shared value with `last_params: Mutex<Option<Map<String, Json>>>` (LiteLLM's class
+  variable `_last_cache_params`). `params_equal(a, b)` drops the key "redis_type" and every null value from both, turns
+  every value that is not an array or object into its Python `str()` text (true is "True", 1 is "1", 1.5 is "1.5"),
+  keeps arrays and objects as they are, and compares the two maps. `update_params(params)` stores a copy.
+  `init_from_db(repo, crypto, reinit)` is LiteLLM's init_cache_settings_in_db: read row "cache_config" through B726's
+  cache config repository wrapped in B872's call_with_db_reconnect_retry with reason
+  "init_cache_settings_in_db_lookup_failure". When the row has non-empty cache_settings, parse it (a JSON string must
+  hold an object, an already-parsed object is used as is), decrypt each value as B1600's decrypt_value_helper does with
+  return_original_value true, and drop "redis_type". When last_params is set and `params_equal` holds, log at debug
+  "Cache settings unchanged, skipping reinitialization" and stop. Otherwise call `init_cache`, store the params, call
+  `switch_on_response_caching` and log at info "Cache settings initialized from database". Any error is logged with
+  "litellm.proxy.management_endpoints.cache_settings_endpoints.py::CacheSettingsManager::init_cache_settings_in_db -
+  <error>" and not returned. Startup and the periodic config reload call it; this task only exposes it.
+
+
+  POST /cache/settings takes the JSON body {"cache_settings": {...}} (an object is required) and the optional header
+  litellm-changed-by. It uses the same key auth and route checks as B4308's /cache/settings/test. Steps:
+  1. No database: 500 with {"detail": {"error": "Database not connected. Please connect a database."}}.
+  2. store_model_in_db not true (read it the way B1653's coordination Redis routes do): 500 with {"detail": {"error":
+  "Set `'STORE_MODEL_IN_DB='True'` in your env to enable this feature."}}.
+  3. Read row "cache_config" (no retry here). When it has non-empty cache_settings, `before` is B4306's
+  parse_stored_settings of it and `saved` is that map decrypted. The action is "updated" when the row exists, even with
+  empty settings, and "created" otherwise.
+  4. `settings` = B4306's resolve_cache_url_precedence(merge_over_saved(body.cache_settings, saved)).
+  5. Encrypt each value with B1600's encrypt_value_helper and upsert row "cache_config" with the JSON text of the
+  encrypted map for both create and update.
+  6. Decrypt the encrypted map again, drop "redis_type", call `init_cache` with it, then `update_params`, then
+  `switch_on_response_caching`.
+  7. Write the audit row through B2330's audit sink when is_audit_logging_enabled is true, on a spawned task that is not
+  awaited. The row has a new uuid4 id, updated_at now in UTC, changed_by = the header, else the key's user_id, else
+  "default_user_id" (litellm_proxy_admin_name), changed_by_api_key = the key's hashed token, table_name
+  "LiteLLM_CacheConfig", object_id "cache_config", the action, updated_values = the JSON text of {"settings":
+  redact_settings(settings)} and before_value = the JSON text of {"settings": redact_settings(before)}.
+  `redact_settings` maps every key to "***REDACTED***" and gives {} for a missing or empty map. A failed task logs a
+  warning "Failed to write cache-settings audit log: <error>".
+  8. Answer 200 with {"message": "Cache settings updated successfully", "status": "success", "settings":
+  B4306's redact_credentials(settings)}.
+  Any error in steps 3 to 7 answers 500 with {"detail": "Error updating cache settings: <error text>"} (a string
+  detail, unlike steps 1 and 2) and logs "Error updating cache settings: <error>" at error level.
+
+  Expose `pub fn router(state) -> axum::Router` from route.rs for the architect to merge. Do not touch lib.rs or another
+  route list.
+
+
+  Tests: `cache_settings_update::manager::` (params_equal, skip on equal params, reinit on change, errors logged and
+  swallowed), `cache_settings_update::route::` (each 500, merge over saved secrets, encryption round trip, created versus
+  updated, the reinit order, the redacted reply) and `cache_settings_update::audit::` (row fields, redaction, disabled
+  logging, a failing sink only warns). Helper operation b8502 has the pure functions `cache_params_equal` (inputs
+  `params1`, `params2`) and `redact_settings` (input `settings`); its Python side calls
+  CacheSettingsManager._cache_params_equal and _redact_settings. HTTP cases run against the booted proxy, which has no
+  database.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/cache_settings_update.rs
+    - crates/betterlite-server/src/cache_settings_update/**
+    - tools/oracle/cases/cache_settings_update/**
+    - tools/oracle/cases/helpers/cache-settings-update/**
+    - "tools/oracle/fuzz/corpus/helper_case/cache_settings_update-*"
+    - tools/oracle/helpers/b8502.py
+    - tools/oracle/helpers/b8502/**
+    - tools/oracle/src/helpers/server/b8502.rs
+    - tools/oracle/src/helpers/server/b8502/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L567-L675
+    why: The POST /cache/settings decorator, its two 500 checks, the read, merge, encrypt, upsert, reinit and audit order and the reply.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L331-L419
+    why: CacheSettingsManager, its str() normalisation and the startup reload.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L262-L328
+    why: _redact_settings, the audit task and its warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7575-L7622
+    why: _encrypt_env_variables and _decrypt_db_variables encrypt and decrypt each value of the map.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L27-L45
+    why: is_audit_logging_enabled, which B2330 ports.
+
+dod:
+  - text: params_equal ignores redis_type and nulls and compares Python str() texts, and the startup reload skips equal params and swallows errors.
+    proof: [manager-tests, oracle, helper-python]
+  - text: POST /cache/settings answers the two configuration 500s, merges over saved secrets, stores the encrypted map and reinitialises the cache in LiteLLM's order.
+    proof: [route-tests, oracle]
+  - text: The reply redacts credentials and a failure in the body answers the string-detail 500.
+    proof: [route-tests]
+  - text: The audit row carries the redacted before and after keys and a failing sink only warns.
+    proof: [audit-tests, oracle, helper-python]
+  - text: New helper corpus cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: manager-tests
+      why: params_equal or the startup reload is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_settings_update::manager::/)'
+    - id: route-tests
+      why: a step of the POST route is missing or out of order
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_settings_update::route::/)'
+    - id: audit-tests
+      why: the audit row or its redaction is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_settings_update::audit::/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8502)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8502 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8502/pyrightconfig.json
+    - id: helper-case-corpus
+      why: new cache-settings helper cases are missing or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/cache_settings_update-*")" &&
+        grep -lE '^[[:space:]]+b8502:' tools/oracle/fuzz/corpus/helper_case/cache_settings_update-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/cache_settings_update/post-without-database.yaml
+  - tools/oracle/cases/cache_settings_update/post-without-key.yaml
+  - tools/oracle/cases/helpers/cache-settings-update/params-equal-str-forms.yaml
+  - tools/oracle/cases/helpers/cache-settings-update/params-equal-skips-redis-type.yaml
+  - tools/oracle/cases/helpers/cache-settings-update/params-differ-lists.yaml
+  - tools/oracle/cases/helpers/cache-settings-update/redact-settings-keys.yaml
+  - tools/oracle/cases/helpers/cache-settings-update/redact-settings-empty.yaml
+
+deviations:
+  - what: The text after the "Error updating cache settings" prefix is betterlite error text.
+    why: Python exception strings have no Rust equivalent; status and prefix match.
+  - what: params_equal renders floats with Rust's shortest round-trip form where Python's str() would use exponent form (1e-05).
+    why: Both compare one stored map with another, so only the equality result matters and it is the same for values a JSON body carries.
+
+out_of_scope:
+  - "GET /cache/settings (B4307) and POST /cache/settings/test (B4308)."
+  - "_parse_stored_settings, _resolve_cache_url_precedence, _redact_credentials, _merge_over_saved and the other pure helpers; B4306 built them."
+  - "ProxyConfig._init_cache, switch_on_llm_response_caching and the startup and reload calls of init_from_db; the wave 17 cache and secrets wiring part mounts it, with the production CacheReinit impl."
+  - "Cache.__init__ behind init_cache; B4299 owns it."
+  - "litellm/caching/_internal_lru_cache.py (lru_cache_wrapper): no caller at the pin."
+  - "litellm/caching/__init__.py: Python re-exports only."
+
+pitfalls:
+  - "The two configuration 500s put an object in detail ({\"error\": ...}); the catch-all 500 puts a string. Keep both shapes."
+  - "The audit before_value comes from the stored row before decryption and redaction keeps only its keys, so no secret reaches the audit table."
+  - "The route reinitialises from the map decrypted after encryption, not from the request body, and drops redis_type only there; the stored row keeps redis_type."
+  - "init_cache runs before update_params, so a failed init_cache answers 500 and keeps the old params. Do not store them first."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

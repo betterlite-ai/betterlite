@@ -65,6 +65,7 @@ fn capture_and_compare(input: ScenarioCaptureInput<'_>) -> Result<bool, OracleEr
         options.self_check,
     )?;
     let (first_input, second_input) = gateway_input_pair(options, &scenario_config);
+    let comparison_case = case.with_self_check(options.self_check);
     let client = http::client()?;
     let captures = capture_gateways(
         &first_input,
@@ -81,7 +82,7 @@ fn capture_and_compare(input: ScenarioCaptureInput<'_>) -> Result<bool, OracleEr
             Ok(responses)
         },
     )?;
-    compare_scenario(root, case, &captures)
+    compare_scenario(root, &comparison_case, &captures)
 }
 
 struct ScenarioConfig {

@@ -1,0 +1,135 @@
+id: B3275
+title: Search tool management and connection routes
+description: >-
+  Build `search_tool_routes` in betterlite-server: the seven `/search_tools` management routes. There are no `/v1` or other aliases, and LiteLLM only loads the module on the first request under `/search_tools` (a lazy mount that no client can see). Expose `pub fn routes()` the way the sibling modules in crates/betterlite-server/src/ do; the architect's skeleton mounts it, so do not touch app.rs. The files are crates/betterlite-server/src/search_tool_routes.rs and search_tool_routes/. The records `SearchTool`, `SearchToolInfoResponse` and `ListSearchToolsResponse` are B3270's, the database reads and writes are B3271's `SearchToolRegistry`, the search call is B3272's `asearch`, the permission test is B749's `can_user_view_search_tool` and the team row read is B737's `get_team_object`.
+
+  Routes, each behind the normal key check. The write routes and test_connection are admin only and the two read routes (`/search_tools/list` and `/search_tools/ui/available_providers`) are open to internal users; that role table is B742's, so register the routes and do not build a role check here. (1) `GET /search_tools/list`. (2) `POST /search_tools` with body `{"search_tool": SearchTool}`. (3) `PUT /search_tools/{search_tool_id}` with the same body. (4) `DELETE /search_tools/{search_tool_id}`. (5) `GET /search_tools/{search_tool_id}`. (6) `POST /search_tools/test_connection` with body `{"litellm_params": {...}}`. (7) `GET /search_tools/ui/available_providers`. A body that does not match the record (missing `search_tool`, missing `search_tool_name`, missing `litellm_params.search_provider`) is the usual 422 detail list, before any handler code runs.
+
+  Database gate. Routes 1 to 5 answer 500 with `{"detail": "Prisma client not initialized"}` when no database is configured, before anything else. This check sits outside the try block in LiteLLM, so it is never wrapped. After it, any error inside the handler (other than the 404s below) becomes 500 with `{"detail": str(error)}`; an `HTTPException` raised inside the list and the id routes passes through unchanged.
+
+  List (route 1). Read all rows with B3271's `get_all_search_tools_from_db` (newest first). Read the config tools through an injected `ConfigSearchTools` trait that returns the `search_tools:` list (or `general_settings.search_tools`) of the loaded file as `SearchTool` values; ProxyConfig.get_config and parse_search_tools have no Rust owner at this pin, so the trait is this task's seam and the architect wires it. If that trait call fails, log at debug and treat it as no config tools. Config tools with an empty name are dropped; config tools whose name is also a database name are dropped; the answer is the remaining config tools first (in file order), then every database row. Config items carry `search_tool_id` null, `created_at` and `updated_at` null, `is_from_config` true; database items carry `is_from_config` false. Every item's `litellm_params` goes through B3684's `mask_sensitive_values` (unmasked length 4, four asterisks; that function is `pub(crate)` in this crate at `crate::guardrails::admin_reads::masking`). A config item's `search_tool_info` is its object or null; a database item's is stored as read. Timestamps from the registry are already ISO strings; a value that is a datetime becomes its ISO text and null stays null.
+
+  Visibility filter. A caller whose role is `proxy_admin` or `proxy_admin_viewer` (B732's role type) sees everything. Anyone else sees a tool only when B749's `can_user_view_search_tool(name, caller, team_object)` returns true. The team row comes from B737's `get_team_object` for the caller's `team_id`, read once per request, and only when the caller has a team id that is not the sentinel `litellm-dashboard` (every Admin UI session key carries that sentinel and it has no team row, so a lookup would 404). A failed lookup of a real team id surfaces as its own error (404 stays 404; other failures are 500 with the text). A tool with an empty name is never visible to a non-admin. Inject the team read through a `TeamObjectLookup` trait so tests can fake it.
+
+  Create, update, delete, get (routes 2 to 5). Create calls B3271's `add_search_tool_to_db`, then refreshes the router, then returns the registry result as it is (unmasked, with the plain `api_key`). Update and delete first read the row by id with `get_search_tool_by_id_from_db`; a missing row is 404 `{"detail": "Search tool with ID {id} not found"}`; then call `update_search_tool_in_db` or `delete_search_tool_from_db`, refresh the router, and return the registry result unmasked (update returns the row, delete returns `{"message": "Search tool {id} deleted successfully", "search_tool_name": ...}`). Get reads by id, answers the same 404, and returns `SearchToolInfoResponse` with masked `litellm_params` and `is_from_config` false. Create, update and delete log the success at debug.
+
+  Router refresh. After a successful write call an injected `RouterSearchRefresh` trait (LiteLLM's `proxy_config.reload_search_tools_from_db`). It is best effort: a refresh error is logged with `tracing::error!` and never changes the response, because the row is already committed and a 500 would make the client retry and create a duplicate. The write itself is not wrapped in a transaction with the refresh.
+
+  Test connection (route 6). It never answers an error status for a failure, only for body validation. Read `search_provider`, `api_key` and `api_base` from `litellm_params` (every other key is ignored). A missing or empty `search_provider` is raised as a 400 inside the try block and the catch-all turns it into a 200 answer, see the pitfalls. Otherwise call B3272's `asearch` with query "test", that provider, the key and base, `max_results` 1 and a 10 second timeout, through an injected `ConnectionSearch` trait. Success is 200 `{"status": "success", "message": "Successfully connected to {provider} search provider", "test_query": "test", "results_count": N}` where N is the length of the response results, 0 when there are none. Any failure is 200 `{"status": "error", "message": str(error), "error_type": ClassName}`, logged at error level. `error_type` is the LiteLLM exception class name that B3272's error conversion produced (for example AuthenticationError); for an error that is not a LiteLLM class use the Python class name LiteLLM would show (HTTPException, ValueError).
+
+  Available providers (route 7). Walk the `SearchProviders` values in LiteLLM's enum order (perplexity, tavily, parallel_ai, exa_ai, brave, google_pse, dataforseo, firecrawl, fastcrw, searxng, linkup, duckduckgo, searchapi, serper, you_com, apiserpent, tinyfish, agentcore, nimble, bing_grounding) and for each ask B2202's search provider lookup for the config. A provider without a config, or whose lookup fails, is skipped (debug log). The rest give `{"provider_name": value, "ui_friendly_name": config.ui_friendly_name()}` under `{"providers": [...]}`. A failure outside the loop is 500 with the text. Inject the lookup through a `ProviderCatalog` trait.
+
+  Wiring: the traits are constructor arguments of the state struct that `routes()` takes, in the way the sibling route modules take theirs. A fake of each trait lives in tests.rs. Put the HTTP handlers in search_tool_routes.rs, the list merge and visibility filter in search_tool_routes/list.rs, and the connection test and providers in search_tool_routes/connection.rs, each with its own error enum.
+scope:
+  paths:
+    - crates/betterlite-server/src/search_tool_routes.rs
+    - crates/betterlite-server/src/search_tool_routes/**
+    - tools/oracle/cases/search-tools/**
+    - tools/oracle/helpers/b3275.py
+    - tools/oracle/helpers/b3275/**
+    - tools/oracle/src/helpers/server/b3275.rs
+    - tools/oracle/src/helpers/server/b3275/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L28-L132
+    why: Router, datetime helper, refresh helper, team lookup, the dashboard sentinel rule and the visibility filter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L135-L260
+    why: GET /search_tools/list, from its decorator, including config and database merge, masking and the 500 path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L263-L332
+    why: POST /search_tools and its request model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L335-L475
+    why: PUT and DELETE /search_tools/{search_tool_id}, with the existence check and the HTTPException passthrough.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L478-L548
+    why: GET /search_tools/{search_tool_id}, masked, is_from_config false.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L551-L643
+    why: POST /search_tools/test_connection and its catch-all error answer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L646-L707
+    why: GET /search_tools/ui/available_providers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4346-L4404
+    why: The masking rule applied to litellm_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L5406-L5426
+    why: can_user_view_search_tool, true unless the key or team check raises a ProxyException.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L884-L909
+    why: The two search_tools read routes in internal_user_routes, with the comment that the rest stay admin only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9039-L9057
+    why: reload_search_tools_from_db, what the refresh trait stands for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9859-L9916
+    why: get_provider_search_config and the provider map; a provider missing from it returns None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4202-L4231
+    why: The SearchProviders enum values and order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/search.py#L1-L78
+    why: SearchTool, SearchToolInfoResponse and ListSearchToolsResponse field sets.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1725
+    why: UI_SESSION_TOKEN_TEAM_ID is "litellm-dashboard".
+dod:
+  - text: All seven routes answer on exactly their paths and methods, and every one needs a valid key (a missing key gets the usual 401 body).
+    proof: [route-tests, oracle]
+  - text: Routes 1 to 5 answer 500 with detail "Prisma client not initialized" when no database exists, and an invalid body gives the usual 422 before the handler.
+    proof: [route-tests, oracle]
+  - text: The list drops config tools shadowed by a database name, puts config tools first and database rows after, nulls the config ids and timestamps, and masks litellm_params with the 4/4 rule.
+    proof: [list-tests]
+  - text: Admin and admin-viewer callers see all tools; other callers see only tools that can_user_view_search_tool allows, the dashboard sentinel team is never looked up, and a failed real team lookup surfaces.
+    proof: [list-tests]
+  - text: Create returns the unmasked registry row; update and delete answer 404 "Search tool with ID {id} not found" for a missing id; delete returns the message and name; get masks litellm_params and sets is_from_config false.
+    proof: [write-tests]
+  - text: A failing router refresh after a write is logged and the write still answers its normal body; a failing registry call answers 500 with the error text.
+    proof: [write-tests]
+  - text: test_connection calls asearch with query "test", max_results 1 and timeout 10, answers the success body with results_count, and answers 200 with status "error", message and error_type for any failure, including a missing search_provider.
+    proof: [connection-tests, oracle]
+  - text: available_providers lists the providers in enum order, skips a provider with no config or a failing lookup, and returns the ui_friendly_name of each.
+    proof: [connection-tests]
+  - text: The oracle cases for the database gate, the 422, test_connection's missing provider and the 401 on each route exist and match LiteLLM.
+    proof: [new-cases, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: route-tests
+      why: a route path, method, body check or database gate is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^search_tool_routes::tests::routes_/)'
+    - id: list-tests
+      why: the list merge, masking or visibility filter is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^search_tool_routes::tests::list_/)'
+    - id: write-tests
+      why: a create, update, delete, get or refresh behaviour is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^search_tool_routes::tests::write_/)'
+    - id: connection-tests
+      why: test_connection or available_providers behaviour is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^search_tool_routes::tests::(connection_|providers_)/)'
+    - id: new-cases
+      why: the search tool routes have no HTTP parity cases on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/search-tools)"
+oracle_cases:
+  - tools/oracle/cases/search-tools/list-no-database.yaml
+  - tools/oracle/cases/search-tools/create-no-database.yaml
+  - tools/oracle/cases/search-tools/update-no-database.yaml
+  - tools/oracle/cases/search-tools/delete-no-database.yaml
+  - tools/oracle/cases/search-tools/get-no-database.yaml
+  - tools/oracle/cases/search-tools/create-invalid-body.yaml
+  - tools/oracle/cases/search-tools/test-connection-no-provider.yaml
+  - tools/oracle/cases/search-tools/test-connection-invalid-body.yaml
+  - tools/oracle/cases/search-tools/auth-required.yaml
+deviations:
+  - what: The route module is mounted at startup, where LiteLLM imports it on the first request under /search_tools.
+    why: The lazy import has no visible effect for a client, and the paths and answers are the same.
+  - what: The config search tools, the router refresh, the team row read and the provider lookup are injected traits that the architect wires.
+    why: ProxyConfig's get_config, parse_search_tools and reload_search_tools_from_db are B8379's and B8384's, in the binary crate above this one, and the others live in crates that must not depend on the server.
+out_of_scope:
+  - "ProxyConfig.get_config, parse_search_tools, reload_search_tools_from_db, _init_search_tools_in_db and _merge_config_and_db_search_tools (proxy_server.py L6014-L6160, L8997-L9072): B8379 and B8384; B8384 implements this task's injected trait."
+  - "The role table that makes the write routes admin only and the two read routes open to internal users (LiteLLMRoutes in _types.py): B742."
+  - "The /search and /v1/search call routes in litellm/proxy/search_endpoints/endpoints.py: another entry."
+  - "SearchToolRegistry methods: B3271. asearch and its error conversion: B3272. Search records and BaseSearchConfig: B3270."
+  - "The per-provider search configs and their ui_friendly_name values: the provider tasks. This task only calls them."
+pitfalls:
+  - "test_connection raises HTTPException(400) for a missing search_provider inside its own try block, so the catch-all turns it into a 200 body with status error, message `400: search_provider is required in litellm_params` and error_type HTTPException."
+  - "Create and update return the registry row unmasked, with the plain api_key; only list and get mask litellm_params."
+  - "Masking tests the key name for the substrings token, key, secret, password, passwd, authorization and credentials, so api_key is masked and api_base is not; non-string values and short strings (4 characters or fewer) become `*****`."
+  - "The dashboard session key has team_id `litellm-dashboard`, which has no team row; looking it up would give 404 for every Admin UI user, so skip the lookup and use the key allowlist alone."
+  - "A config tool is hidden by a database tool of the same name, but only the config side is deduplicated, so a database row is never hidden."
+  - "The router refresh runs after the row is committed and must not change the response; the 'Prisma client not initialized' check runs before the try block, so it is a 500 even where the other errors are wrapped."
+  - "The ids routes `/search_tools/{search_tool_id}` and the fixed paths `/search_tools/list` and `/search_tools/ui/available_providers` share a prefix; register the fixed paths so `list` is never read as an id. PUT and DELETE on `/search_tools/list` still mean id `list`."
+  - "test_connection takes api_key and api_base only from litellm_params; with no api_key, B3270's server-credential check decides whether the server's own key may go to a caller-chosen api_base, so do not add a bypass."
+  - "available_providers skips a provider whose config lookup fails and logs at debug; it does not fail the route."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

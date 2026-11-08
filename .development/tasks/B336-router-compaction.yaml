@@ -1,6 +1,6 @@
 id: B336
 title: Complexity routing through context compaction
-description: 'Integrate B100 compaction with B385 typed summary inputs and B386 context-fit checks. Own
+description: 'Integrate B3545 native compaction with B385 typed summary inputs and B386 context-fit checks. Own
   pending state, recursion protection, native/client-managed routing, authorized summary calls and post-summary
   revalidation. Adapt through server services for B080/B081, charge B068/B012 caller cost and preserve
   cancellation. Keep the integration adapter in betterlite-server in this task module; consume predecessor
@@ -113,7 +113,7 @@ oracle_cases:
 - tools/oracle/cases/routing/router-compaction/caller-cost-attribution.yaml
 deviations: []
 out_of_scope:
-- B100's general compression API.
+- The general compression API of B3540 to B3544.
 - Changing the user's tool outputs beyond the pinned compaction contract.
 - B385 owns compaction history partition and fit inputs; consume its tested public interface.
 - 'litellm/router_strategy/complexity_router/context_compaction.py: B385 owns: _unavailable (L173-L176),
@@ -127,6 +127,7 @@ pitfalls:
   a hard request error.
 - The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
   at the repository 300-line limit.
+- "The entry that asks for a summary receives B8291's compaction loopback executor as an argument, typed by the CompactionExecutor trait this task defines. B8291 depends on this task, so this task never builds or imports it."
 review_level: standard
 budget:
   max_changed_lines: 1500

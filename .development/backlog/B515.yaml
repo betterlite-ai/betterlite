@@ -2,7 +2,7 @@ id: B515
 milestone: M3 providers
 title: OpenAI audio transcription mapping
 status: todo
-depends_on: [B173, B171, B004, B206, B1001, B668, B129, B249]
+depends_on: [B173, B171, B004, B206, B1001, B668, B8500, B249]
 file: tasks/B515-openai-transcription.yaml
 covers:
   - "litellm/llms/openai/transcriptions/handler.py"

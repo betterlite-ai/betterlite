@@ -1,0 +1,16 @@
+id: B7928
+milestone: M12 python
+title: Python types for OCI, OpenAI evals and watsonx (types/llms/oci, openai_evals, watsonx)
+status: todo
+depends_on: [B5657]
+file: tasks/B7928-types-oci-evals-watsonx.yaml
+covers:
+  - "litellm/types/llms/oci.py"
+  - "litellm/types/llms/openai_evals.py"
+  - "litellm/types/llms/watsonx.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

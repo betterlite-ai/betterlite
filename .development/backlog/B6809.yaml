@@ -1,0 +1,14 @@
+id: B6809
+milestone: M5 api families
+title: OCR request types, document intake and the aocr entry
+status: todo
+depends_on: [B6800, B6808, B3300]
+file: tasks/B6809-ocr-request-and-aocr.yaml
+covers:
+  - "litellm/ocr/**"
+parent: B092
+split_from: B092
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

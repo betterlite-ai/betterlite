@@ -1,0 +1,69 @@
+id: B8155
+title: Ollama chat config, request, reply and stream chunks
+description: >-
+  Build OllamaChatConfig in betterlite-provider as crates/betterlite-provider/src/ollama_chat.rs and its folder. Pure transforms only; the HTTP call and the main.py dispatch stay with B8157.
+
+  OllamaChatConfig: get_config, get_supported_openai_params, map_openai_params, validate_environment, get_complete_url, transform_request, transform_response, get_error_class and get_model_response_iterator. Then _done_chunk_usage and OllamaChatCompletionResponseIterator (_is_function_call_complete, chunk_parser) for the stream. The api key and api base come from B2223. This task builds OllamaError (common_utils.py L11-L13): get_error_class returns it and the chunk parser raises it, and B8156's generate config reuses it. The chat transform never calls _convert_image. Prompt rendering through ollama_pt comes from B177. Reasoning content and tool calls follow the source branch by branch.
+
+  Replies and stream lines come from the network. Decode them with typed structs; a field of the wrong type is an error, never a default. Add a fuzz target for the reply and the chunk parser.
+
+  Where the source and this text differ, the source at the pinned commit wins.
+scope:
+  paths:
+    - crates/betterlite-provider/src/ollama_chat.rs
+    - crates/betterlite-provider/src/ollama_chat/**
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/ollama_chat_reply.rs
+    - crates/betterlite-provider/fuzz/corpus/ollama_chat_reply/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/ollama-chat-config/**
+    - tools/oracle/helpers/b8155.py
+    - tools/oracle/helpers/b8155/**
+    - tools/oracle/src/helpers/provider/b8155.rs
+    - tools/oracle/src/helpers/provider/b8155/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/chat/transformation.py#L1-L557
+    why: Whole chat config, reply transform and stream iterator.
+dod:
+  - text: Supported params and map_openai_params give LiteLLM's options, including format, tools and reasoning.
+    proof: [ollama-chat-config-tests, ollama-chat-config-cases]
+  - text: The request body, URL and headers match for plain, tool, image and json-mode calls.
+    proof: [ollama-chat-config-tests, ollama-chat-config-cases]
+  - text: Replies give the same content, tool calls, reasoning and usage, and the stream chunk parser yields the same chunks including the final usage chunk.
+    proof: [ollama-chat-config-tests, ollama-chat-config-cases]
+  - text: The reply decoder rejects malformed bodies without panicking and its corpus replays.
+    proof: [ollama-chat-config-corpus]
+  - text: New helper cases for these functions exist.
+    proof: [ollama-chat-config-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: ollama-chat-config-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^ollama_chat::/)'
+      why: Without this provider code there are no such tests, so the check fails on the base branch.
+    - id: ollama-chat-config-corpus
+      run: test -f crates/betterlite-provider/fuzz/fuzz_targets/ollama_chat_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/ollama_chat_reply)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_ollama_chat_reply_corpus)'
+      why: Bytes come from outside and need a fuzz target with a replayed corpus.
+    - id: ollama-chat-config-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/ollama-chat-config)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/helpers/ollama-chat-config/param-mapping.yaml
+  - tools/oracle/cases/helpers/ollama-chat-config/request-body.yaml
+  - tools/oracle/cases/helpers/ollama-chat-config/request-images.yaml
+  - tools/oracle/cases/helpers/ollama-chat-config/reply-text.yaml
+  - tools/oracle/cases/helpers/ollama-chat-config/reply-tools.yaml
+  - tools/oracle/cases/helpers/ollama-chat-config/stream-chunks.yaml
+deviations:
+  []
+out_of_scope:
+  - "B8157 owns the ollama dispatch in main.py and Ollama get_models (common_utils.py L93-L134)."
+  - "B2223 owns the api key and base lookup and runtime model info; B8156 builds _convert_image."
+  - "B8156 owns the generate (completion) config and the embedding handler."
+pitfalls:
+  - "The oracle helper for this task is pre-registered as b8155 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task's to edit."
+  - "A tool call whose arguments are an incomplete JSON string is held back until complete; see _is_function_call_complete."
+  - "The final done chunk carries usage; the other chunks do not."
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard
