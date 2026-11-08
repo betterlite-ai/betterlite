@@ -3,10 +3,10 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use std::time::Duration;
 
-use super::support::{build, build_in, encoded, init, object, params, redactor, text, try_build};
-use crate::logging_state::correlation::{
-    CorrelationContext, CorrelationSettings, CorrelationSetup, SecretRedaction,
+use super::support::{
+    build, build_clocked, build_in, encoded, init, object, params, text, try_build,
 };
+use crate::logging_state::correlation::{CorrelationContext, CorrelationSettings, SecretRedaction};
 use crate::logging_state::types::{Messages, RequestLoggingFlags};
 use crate::logging_state::{LoggingInit, LoggingState};
 
@@ -63,7 +63,7 @@ fn broken_session_outcome() -> String {
         "litellm_session_id",
         Json::Number(serde_json::Number::from(7_i32)),
     )]);
-    try_build(fixture)
+    try_build(fixture, Duration::default)
         .expect_err("a numeric session id is refused")
         .to_string()
 }
@@ -92,24 +92,6 @@ fn trusted_json(state: &LoggingState) -> Json {
     )
 }
 
-fn completion_json(state: &LoggingState) -> Json {
-    state
-        .completion_start_time
-        .map_or(Json::Null, |moment| Json::Text(moment.to_rfc3339()))
-}
-
-fn timing_json(state: &LoggingState) -> Json {
-    let timing = state
-        .response_timing_metrics
-        .iter()
-        .map(|(name, value)| {
-            let number = serde_json::Number::from_f64(*value).map_or(Json::Null, Json::Number);
-            (name.clone(), number)
-        })
-        .collect();
-    Json::Object(timing)
-}
-
 fn dependencies_outcome() -> String {
     let state = build(LoggingInit {
         litellm_params: params(&[("api_base", text("http://proxy"))]),
@@ -133,24 +115,15 @@ fn dependencies_outcome() -> String {
             "standard_built_in_tools_params",
             Json::Object(state.standard_built_in_tools_params.clone()),
         ),
-        (
-            "request_logging",
-            object(&[
-                (
-                    "log_raw_request_response",
-                    Json::Bool(state.request_logging.log_raw_request_response),
-                ),
-                (
-                    "raw_request_only",
-                    Json::Bool(state.request_logging.raw_request_only),
-                ),
-            ]),
-        ),
         ("custom_pricing", Json::Bool(state.cost.custom_pricing)),
-        ("completion_start_time", completion_json(&state)),
-        ("timing", timing_json(&state)),
     ]);
-    encoded(&summary)
+    format!(
+        "{}/{}/{}/{}",
+        encoded(&summary),
+        encoded(&state.request_logging),
+        encoded(&state.completion_start_time),
+        encoded(&state.response_timing_metrics)
+    )
 }
 
 fn debug_outcome() -> String {
@@ -180,28 +153,16 @@ fn timing_outcome() -> String {
         now = now.saturating_add(step);
         reading
     };
-    let mut context = CorrelationContext::default();
-    let built = LoggingState::new(
+    let state = build_clocked(
         LoggingInit {
             messages: Some(Messages::Text("hi".to_owned())),
             ..init()
         },
-        CorrelationSetup {
-            context: &mut context,
-            settings: CorrelationSettings::default(),
-        },
-        &redactor(),
-        || "generated-trace".to_owned(),
         clock,
     );
-    built.map_or_else(
-        |error| error.to_string(),
-        |state| {
-            format!(
-                "{}/{}",
-                state.message_copy_duration_ms, state.callback_duration_ms
-            )
-        },
+    format!(
+        "{}/{}",
+        state.message_copy_duration_ms, state.callback_duration_ms
     )
 }
 
@@ -286,7 +247,7 @@ fn outcome(scenario: &Scenario) -> String {
     "the litellm_session_id value must be a string"
 )]
 #[case::initial_details_keep_the_original_input(Scenario::Details, r#"{"litellm_trace_id":"trace-1","litellm_call_id":"call-1","input":null,"litellm_params":{"api_base":"http://proxy"},"applied_guardrails":["guard"],"model":"gpt-4o"}"#)]
-#[case::injected_dependencies_are_stored(Scenario::Dependencies, r#"{"litellm_params":{"api_base":"http://proxy"},"standard_callback_dynamic_params":{"langfuse_host":"h"},"trusted_callback_vars":[["dd_api_key","k"]],"standard_built_in_tools_params":{"web_search_options":null},"request_logging":{"log_raw_request_response":true,"raw_request_only":true},"custom_pricing":false,"completion_start_time":null,"timing":{}}"#)]
+#[case::injected_dependencies_are_stored(Scenario::Dependencies, r#"{"litellm_params":{"api_base":"http://proxy"},"standard_callback_dynamic_params":{"langfuse_host":"h"},"trusted_callback_vars":[["dd_api_key","k"]],"standard_built_in_tools_params":{"web_search_options":null},"custom_pricing":false}/{"log_raw_request_response":true,"raw_request_only":true}/null/{}"#)]
 #[case::debug_output_hides_credentials(Scenario::DebugOutput, "false")]
 #[case::disabled_correlation_leaves_the_context_alone(
     Scenario::Correlation(CorrelationSettings {

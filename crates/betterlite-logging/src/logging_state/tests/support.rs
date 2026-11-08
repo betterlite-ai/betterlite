@@ -79,7 +79,20 @@ pub(crate) fn build(init: LoggingInit) -> LoggingState {
     build_in(init, &mut context, CorrelationSettings::default())
 }
 
-pub(crate) fn try_build(init: LoggingInit) -> Result<LoggingState, LoggingStateError> {
+pub(crate) fn build_clocked<Clock>(init: LoggingInit, clock: Clock) -> LoggingState
+where
+    Clock: FnMut() -> Duration,
+{
+    try_build(init, clock).expect("the fixture builds")
+}
+
+pub(crate) fn try_build<Clock>(
+    init: LoggingInit,
+    clock: Clock,
+) -> Result<LoggingState, LoggingStateError>
+where
+    Clock: FnMut() -> Duration,
+{
     let mut context = CorrelationContext::default();
     LoggingState::new(
         init,
@@ -89,7 +102,7 @@ pub(crate) fn try_build(init: LoggingInit) -> Result<LoggingState, LoggingStateE
         },
         &redactor(),
         || "generated-trace".to_owned(),
-        Duration::default,
+        clock,
     )
 }
 
