@@ -8,7 +8,7 @@
         "id": "call-1",
         "model": "gpt-4o",
         "model_group": "chat-group",
-        "api_base": "https://api.openai.com/v1",
+        "api_base": "https://llm.example:8443/v1",
         "prompt_tokens": 10,
         "completion_tokens": 4,
         "total_tokens": 14,
@@ -23,7 +23,10 @@
           "max_tokens": 32,
           "frequency_penalty": 0.1,
           "presence_penalty": 0.2,
-          "stop": ["END", "STOP"],
+          "stop": [
+            "END",
+            "STOP"
+          ],
           "seed": 7,
           "tools": [
             {
@@ -34,7 +37,9 @@
                 "parameters": {
                   "type": "object",
                   "properties": {
-                    "city": { "type": "string" }
+                    "city": {
+                      "type": "string"
+                    }
                   }
                 }
               }
@@ -43,7 +48,9 @@
               "type": "function",
               "function": {
                 "name": "no_description",
-                "parameters": { "type": "object" }
+                "parameters": {
+                  "type": "object"
+                }
               }
             }
           ]
@@ -53,16 +60,27 @@
           "output_cost": 0.0005,
           "cache_read_cost": 0.0001,
           "cache_creation_cost": 0.0002,
-          "tool_usage_cost": 0.0003
+          "tool_usage_cost": 0.0003,
+          "original_cost": 0.003,
+          "discount_amount": 0.0004,
+          "discount_percent": 0.05,
+          "margin_fixed_amount": 0.0006,
+          "margin_percent": 0.1,
+          "margin_total_amount": 0.0007
         },
         "messages": [
           {
             "role": "user",
             "content": [
-              { "type": "text", "text": "hi" },
+              {
+                "type": "text",
+                "text": "hi"
+              },
               {
                 "type": "image_url",
-                "image_url": { "url": "https://example.com/x.png" }
+                "image_url": {
+                  "url": "https://example.com/x.png"
+                }
               }
             ]
           },
@@ -73,7 +91,10 @@
               {
                 "id": "t1",
                 "type": "function",
-                "function": { "name": "get_weather", "arguments": "{}" }
+                "function": {
+                  "name": "get_weather",
+                  "arguments": "{}"
+                }
               }
             ],
             "tool_call_id": "t1"
@@ -87,11 +108,24 @@
             {
               "message": {
                 "role": "assistant",
-                "content": [{ "type": "text", "text": "done" }]
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "done"
+                  }
+                ]
               },
               "finish_reason": "stop"
             }
           ]
+        },
+        "metadata": {
+          "usage_object": {
+            "cache_creation_input_tokens": 3,
+            "prompt_tokens_details": {
+              "cached_tokens": 5
+            }
+          }
         }
       },
       "capture_content": true,

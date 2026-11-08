@@ -457,4 +457,110 @@ fn genai_omits_absent_values() {
     assert!(!attributes.contains_key("server.address"));
     assert!(!attributes.contains_key("gen_ai.request.stop_sequences"));
     assert!(!attributes.contains_key("gen_ai.response.finish_reasons"));
+    assert!(!attributes.contains_key("litellm.request.tools.declared"));
+}
+
+fn attributes_of_json(payload_json: &str) -> AttributeMap {
+    let payload: Payload = serde_json::from_str(payload_json).expect("payload");
+    let call = LLMCallSpanData::from_standard_logging_payload(&payload, LLMCallOptions::default())
+        .expect("llm call");
+    genai_mapper().map(&SpanData::LLMCall(&call), &BTreeMap::new())
+}
+
+#[test]
+fn genai_failure_writes_the_error_class_as_error_type() {
+    let attributes = attributes_of_json(
+        r#"{"id": "call-1", "model": "gpt-4o", "status": "failure",
+            "error_information": {"error_class": "RateLimitError", "error_code": "429"}}"#,
+    );
+    assert_eq!(
+        attributes.get("error.type"),
+        Some(&Value::from("RateLimitError"))
+    );
+    let without_class = attributes_of_json(
+        r#"{"id": "call-1", "model": "gpt-4o", "status": "failure",
+            "error_information": {"error_message": "boom"}}"#,
+    );
+    assert!(!without_class.contains_key("error.type"));
+}
+
+#[rstest::rstest]
+#[case("original", 0.5)]
+#[case("discount_amount", 0.25)]
+#[case("discount_percent", 0.125)]
+#[case("margin_fixed_amount", 0.75)]
+#[case("margin_percent", 0.375)]
+#[case("margin_total_amount", 0.625)]
+fn genai_llm_call_writes_the_cost_breakdown_component(#[case] key: &str, #[case] expected: f64) {
+    let attributes = attributes_of_json(
+        r#"{"id": "call-1", "model": "gpt-4o", "cost_breakdown": {
+            "original_cost": 0.5, "discount_amount": 0.25, "discount_percent": 0.125,
+            "margin_fixed_amount": 0.75, "margin_percent": 0.375, "margin_total_amount": 0.625}}"#,
+    );
+    assert_eq!(
+        attributes.get(&format!("litellm.cost.{key}")),
+        Some(&Value::F64(expected))
+    );
+}
+
+#[test]
+fn genai_llm_call_writes_the_cache_token_counts() {
+    let attributes = attributes_of_json(
+        r#"{"id": "call-1", "model": "gpt-4o", "prompt_tokens": 20, "metadata": {"usage_object": {
+            "cache_creation_input_tokens": 3, "prompt_tokens_details": {"cached_tokens": 5}}}}"#,
+    );
+    assert_eq!(
+        attributes.get("gen_ai.usage.cache_creation.input_tokens"),
+        Some(&Value::I64(3))
+    );
+    assert_eq!(
+        attributes.get("gen_ai.usage.cache_read.input_tokens"),
+        Some(&Value::I64(5))
+    );
+}
+
+#[test]
+fn genai_llm_call_writes_the_output_type_of_media_calls() {
+    let image = attributes_of_json(
+        r#"{"id": "call-1", "model": "dall-e-3", "call_type": "image_generation"}"#,
+    );
+    assert_eq!(image.get("gen_ai.output.type"), Some(&Value::from("image")));
+    let speech = attributes_of_json(r#"{"id": "call-1", "model": "tts-1", "call_type": "speech"}"#);
+    assert_eq!(
+        speech.get("gen_ai.output.type"),
+        Some(&Value::from("speech"))
+    );
+    let chat =
+        attributes_of_json(r#"{"id": "call-1", "model": "gpt-4o", "call_type": "completion"}"#);
+    assert!(!chat.contains_key("gen_ai.output.type"));
+}
+
+#[test]
+fn genai_llm_call_writes_the_server_address_and_port() {
+    let attributes = attributes_of_json(
+        r#"{"id": "call-1", "model": "gpt-4o", "api_base": "https://llm.example:8443/v1"}"#,
+    );
+    assert_eq!(
+        attributes.get("server.address"),
+        Some(&Value::from("llm.example"))
+    );
+    assert_eq!(attributes.get("server.port"), Some(&Value::I64(8443)));
+}
+
+#[test]
+fn genai_mcp_tool_call_without_a_server_omits_the_rpc_system() {
+    let payload: Payload = serde_json::from_str(
+        r#"{"id": "call-1", "call_type": "call_mcp_tool", "metadata": {
+            "mcp_tool_call_metadata": {"name": "get_weather", "mcp_server_name": "weather"}}}"#,
+    )
+    .expect("payload");
+    let tool_call =
+        MCPToolCallSpanData::from_standard_logging_payload(&payload, true).expect("tool call");
+    let attributes = genai_mapper().map(&SpanData::MCPToolCall(&tool_call), &BTreeMap::new());
+    assert!(!attributes.contains_key("rpc.system"));
+    assert!(!attributes.contains_key("server.port"));
+    assert_eq!(
+        attributes.get("gen_ai.tool.name"),
+        Some(&Value::from("get_weather"))
+    );
 }
