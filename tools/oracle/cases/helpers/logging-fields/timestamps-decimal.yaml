@@ -1,0 +1,10 @@
+kind: helper
+name: logging-fields-timestamps-decimal
+call:
+  logging_fields:
+    function: cleanup_timestamps
+    start: "2024-01-01T00:00:00.000+00:00"
+    end: "2024-01-01T00:00:01.500+00:00"
+    completion_start: null
+env: {}
+compare: {ignore: []}
