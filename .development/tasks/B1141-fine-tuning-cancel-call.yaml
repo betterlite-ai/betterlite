@@ -25,7 +25,7 @@ scope:
   - crates/betterlite-config/src/api/fine_tuning_provider_config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/finetune-settings-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/fine_tuning_cancel.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/fine_tuning_cancel.py
   - tools/oracle/src/helpers/core_ops/fine_tuning_provider_config.rs

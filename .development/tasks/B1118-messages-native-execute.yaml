@@ -26,7 +26,7 @@ scope:
   - crates/betterlite-core/src/api/messages_native_execute.rs
   - crates/betterlite-core/src/api/messages_native_execute/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/messages_native_execute.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/messages_native_execute.py
   - tools/oracle/cases/sdk-http/messages-native-execute/**

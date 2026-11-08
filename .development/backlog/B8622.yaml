@@ -1,0 +1,13 @@
+id: B8622
+milestone: M9 agents and mcp
+title: Build the MCP per-user token stores, SSO assertion store and OAuth sessions
+status: todo
+depends_on: [B8620, B8621, B8610, B4293, B4290, B4299, B4656, B4657, B4659, B4660, B4662, B4663, B4664, B4667, B4711, B4712, B4713, B4715, B4718, B1600, B173]
+file: tasks/B8622-mcp-token-wiring.yaml
+covers: []
+parent: B137
+split_from: B137
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

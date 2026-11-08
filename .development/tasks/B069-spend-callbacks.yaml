@@ -37,9 +37,14 @@ description: >-
   credential maps to 503; billing request failure maps to 502; success returns the report.
   decode_capture_query(raw_query) is fuzzed and replayed. B8372 registers B1712's scheduled check
   (01:15 UTC, first run two minutes after startup); do not register it here.
-  Compose the already registered routers from B1721-B1727, B1729-B1732 and B1709 once;
-  those files enumerate their exact paths and HTTP cases. Do not register their handlers
-  again. Test capture success and billing failure through a booted HTTP oracle using a
+  Compose the routers of B1721-B1727 and B1729-B1732 and the capture rate route once, in that order,
+  into `routes(...) -> Router` in the module spend::spend_routes (crates/betterlite-server/src/spend/spend_routes.rs), taking the handles the leaf routers take as arguments;
+  B8662 merges it in app/spend.rs with those handles from state.shared. Leave B1709 out: B1100 already merges routes/callback_replay, and a second merge panics.
+  Expose the callback registration as `spend::startup::start(...)`, taking the database store, B1719's settlement port and B4083's two
+  spend callables as arguments: B8662 awaits it in app::spend::start with state.shared.db, the settlement accessor of state.shared.budget (B8481)
+  and B8660's shadow_spend pair. Build B1719's coordinator and B4083's shadow job loader from them; never build a second BudgetServices. start returns `Option<SpendProducerHandle>`, None without a database or a collector: a handle over B1708's SpendEventProducer behind a tokio Mutex with an async `drain` that calls its `close(&mut self)`. B8662 stores it in state.shared.spend_producer and B8613's stop calls drain at L1625.
+  those files enumerate their exact paths. Do not register their handlers
+  again. B8662 and B8663 prove these routes over HTTP; B8663 owns the capture rate cases, which use a
   fixed capture_billing_fixture enum (success, zero_bill, provider_failure): the Rust test server injects B173's recording
   transport, and a test-owned LiteLLM startup hook replaces only organization_costs.py's
   httpx module binding with a client using MockTransport. Validate the fixed billing URL,
@@ -55,7 +60,7 @@ scope:
     - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/{callbacks.rs,callbacks/**,capture_route.rs,capture_route/**}
     - crates/betterlite-server/src/spend/{startup.rs,startup/**}
-    - crates/betterlite-server/src/{routes.rs,state.rs}
+    - crates/betterlite-server/src/spend/{spend_routes.rs,spend_routes/**}
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/spend-callback-*
@@ -71,7 +76,6 @@ scope:
     - tools/oracle/helpers/batch_cost_status/**
     - tools/oracle/fuzz/corpus/helper_case/batch-cost-status-*
     - tools/oracle/cases/helpers/batch-cost-status/**
-    - tools/oracle/cases/spend/capture-rate/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L103-L148
@@ -95,8 +99,8 @@ references:
 dod:
   - text: Success, offload, final batch and missing-usage callbacks preserve settlement/cache/alert ordering without failing inference.
     proof: [spend-callback-tests, batch-status-tests, oracle, callback-python, callback-helper-corpus]
-  - text: Capture reporting authenticates real HTTP requests and preserves query, permission, date and billing error behavior.
-    proof: [capture-route-tests, capture-query-corpus, capture-fixture-tests, capture-fixture-python, capture-fixture-corpus, oracle]
+  - text: Capture reporting authenticates real HTTP requests and preserves query, permission, date and billing error behavior. B8663 proves it over HTTP.
+    proof: [capture-route-tests, capture-query-corpus, capture-fixture-tests, capture-fixture-python, capture-fixture-corpus]
   - text: Startup and shutdown own callback delivery, compose spend routers once and apply the capture schedule and polling setting.
     proof: [spend-startup-tests, callback-settings, callback-config-corpus]
 checks:
@@ -140,12 +144,6 @@ checks:
       run: grep -rlq 'batch_cost_status:' tools/oracle/fuzz/corpus/helper_case/batch-cost-status-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/batch-cost-status/pending-completed-no-output-and-all-failed.yaml
-  - tools/oracle/cases/spend/capture-rate/required-query-and-threshold-422.yaml
-  - tools/oracle/cases/spend/capture-rate/auth-admin-viewer-and-foreign-user.yaml
-  - tools/oracle/cases/spend/capture-rate/no-database-reversed-and-180-day-boundary.yaml
-  - tools/oracle/cases/spend/capture-rate/missing-admin-key-503.yaml
-  - tools/oracle/cases/spend/capture-rate/billing-failure-502-and-project-query.yaml
-  - tools/oracle/cases/spend/capture-rate/report-success-and-zero-provider-bill.yaml
 deviations:
   - what: No managed-batch polling hook or synthetic managed-file charge is installed; startup skips that absent hook and public provider batch-retrieve events retain their normal accounting path.
     why: The pinned open-source checkout has no enterprise implementation; managed files and batches remain an open product decision.

@@ -21,7 +21,7 @@ scope:
   - crates/betterlite-core/src/api/summary_execution.rs
   - crates/betterlite-core/src/api/summary_execution/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/summary_execution.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/summary_execution.py
   - tools/oracle/cases/sdk-http/summary-execution/**

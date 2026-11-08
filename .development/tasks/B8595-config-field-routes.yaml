@@ -2,7 +2,7 @@ id: B8595
 title: /config/field update, info and delete and /config/list routes
 description: >-
   The admin UI edits one general setting at a time through four routes. Build them in
-  crates/betterlite-server/src/config_fields.rs (declared by the skeleton) with `pub fn routes()`, error enum
+  crates/betterlite-server/src/config_fields.rs (declared by the skeleton) with `pub fn routes()` and the info and update services as pub functions B8612 calls without HTTP, error enum
   ConfigFieldError. Every refusal is 400 {"error": ...} with LiteLLM's CommonProxyErrors text unless stated.
 
 
@@ -65,7 +65,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "Mounting the routes and their HTTP oracle cases: the wave 17 config admin wiring part."
+  - "Mounting the routes and their HTTP oracle cases: B8675."
   - "Redaction and the audit log: B8594. Plugin key preservation and plugin registration: B8230. Pass-through re-serve: B8379. SSRF re-apply: B5082. Config-owned guards and saves: B8380. Settings sources: B4140."
 pitfalls:
   - Only update and delete need PROXY_ADMIN; info and list accept an admin viewer and redact for them.

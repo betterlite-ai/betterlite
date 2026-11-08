@@ -1,0 +1,99 @@
+id: B8627
+title: Mount the /v1/mcp server admin routes
+description: >-
+  B4721's ServerAdmin builds the five MCP server write routes (POST /v1/mcp/server, POST /v1/mcp/server/import, PUT
+  /v1/mcp/server, DELETE /v1/mcp/server/{server_id} and POST /v1/mcp/make_public) and stops; no B1100 entry merges
+  them. This task builds the state, writes the two ports B4721 leaves to the composition root and mounts the routes
+  through app::mcp::mount, inside the auth layers, since each route takes a key.
+
+
+  Code goes in crates/betterlite-server/src/app/mcp/server_admin.rs and app/mcp/server_admin/ (a tests.rs beside
+  each), plus one line in app::mcp::mount (crates/betterlite-server/src/app/mcp.rs).
+
+
+  ServerAdmin takes the database handle and writes (B4711, B4712), the registry and the RegistryMutator in
+  `shared.mcp_registry`, McpCore's PayloadRules and StdioPolicy (B4716), and McpState's tokens.user_caches (B4715's
+  UserTokenCaches, built by B8622). ConfigStore is `shared.proxy_config` (B8380's ProxyConfigState): get_config is its
+  snapshot and save_config is its save_config with include_env_vars false and the database. PublicServerSetting.set
+  replaces the live RegistrySettings.public_mcp_servers of the registry in `shared.mcp_registry` under its write lock,
+  so the next public read sees the new list.
+
+
+  Tests in app::mcp::server_admin:: : the router builds merged with the other MCP routers, each of the five paths
+  answers something other than 404 through tower's oneshot, PublicServerSetting.set is visible to the next registry
+  read, and ConfigStore saves without environment variables.
+
+
+  HTTP oracle cases. The cases B4721 planned through the booted proxy move here, because its routes only answer once
+  this task mounts them. Write each listed case from .development/tasks/B4721-mcp-server-admin-routes.yaml (its
+  description, DoD and case names), with the config, key and ignore rules it describes.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/mcp.rs
+    - crates/betterlite-server/src/app/mcp/server_admin.rs
+    - crates/betterlite-server/src/app/mcp/server_admin/**
+    - tools/oracle/cases/http/mcp-server-admin/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1802-L2009
+    why: POST /v1/mcp/server and /v1/mcp/server/import.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2941-L3184
+    why: PUT /v1/mcp/server and POST /v1/mcp/make_public, which reads and saves the stored config.
+dod:
+  - text: ServerAdmin's five routes are merged once inside the auth layers.
+    proof: [admin-route-tests, oracle]
+  - text: ConfigStore saves through shared.proxy_config without environment variables, and PublicServerSetting changes the live registry settings.
+    proof: [admin-route-tests]
+  - text: The moved B4721 cases match LiteLLM through the booted proxy.
+    proof: [admin-route-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: admin-route-tests
+      why: the router is not merged, a path is missing, or a port is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::server_admin::/)'
+    - id: admin-route-cases
+      why: without the case files the oracle proof compares nothing for these routes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/mcp-server-admin)"
+oracle_cases:
+  - tools/oracle/cases/http/mcp-server-admin/create-no-database-500.yaml
+  - tools/oracle/cases/http/mcp-server-admin/create-non-admin-403.yaml
+  - tools/oracle/cases/http/mcp-server-admin/create-bad-name-before-gate-400.yaml
+  - tools/oracle/cases/http/mcp-server-admin/create-reserved-id-400.yaml
+  - tools/oracle/cases/http/mcp-server-admin/create-existing-id-400.yaml
+  - tools/oracle/cases/http/mcp-server-admin/create-alias-conflict-400.yaml
+  - tools/oracle/cases/http/mcp-server-admin/create-forces-active-201.yaml
+  - tools/oracle/cases/http/mcp-server-admin/create-view-only-403.yaml
+  - tools/oracle/cases/http/mcp-server-admin/import-non-admin-403.yaml
+  - tools/oracle/cases/http/mcp-server-admin/import-mapping-form.yaml
+  - tools/oracle/cases/http/mcp-server-admin/import-list-form-missing-name.yaml
+  - tools/oracle/cases/http/mcp-server-admin/import-existing-alias-skipped.yaml
+  - tools/oracle/cases/http/mcp-server-admin/import-duplicate-in-payload-skipped.yaml
+  - tools/oracle/cases/http/mcp-server-admin/import-url-and-command-error.yaml
+  - tools/oracle/cases/http/mcp-server-admin/import-stdio-disabled-error.yaml
+  - tools/oracle/cases/http/mcp-server-admin/update-non-admin-403.yaml
+  - tools/oracle/cases/http/mcp-server-admin/update-bad-name-before-gate-400.yaml
+  - tools/oracle/cases/http/mcp-server-admin/update-unknown-server-404.yaml
+  - tools/oracle/cases/http/mcp-server-admin/update-partial-keeps-fields.yaml
+  - tools/oracle/cases/http/mcp-server-admin/update-null-clears-field.yaml
+  - tools/oracle/cases/http/mcp-server-admin/update-discovery-not-eligible-400.yaml
+  - tools/oracle/cases/http/mcp-server-admin/update-dcr-bridge-wrong-auth-400.yaml
+  - tools/oracle/cases/http/mcp-server-admin/update-alias-conflict-400.yaml
+  - tools/oracle/cases/http/mcp-server-admin/delete-non-admin-403.yaml
+  - tools/oracle/cases/http/mcp-server-admin/delete-unknown-server-404.yaml
+  - tools/oracle/cases/http/mcp-server-admin/delete-empty-202.yaml
+  - tools/oracle/cases/http/mcp-server-admin/delete-then-fetch-404.yaml
+  - tools/oracle/cases/http/mcp-server-admin/make-public-non-admin-403.yaml
+  - tools/oracle/cases/http/mcp-server-admin/make-public-unknown-server-404.yaml
+  - tools/oracle/cases/http/mcp-server-admin/make-public-saves-list.yaml
+deviations: []
+out_of_scope:
+  - "Route behavior: B4721."
+  - "The other /v1/mcp routes: B8625, B8700, B8701 and B8702."
+pitfalls:
+  - PublicServerSetting must change the live registry settings, not a copy, or make_public answers 200 and the public hub keeps the old list.
+  - ConfigStore saves with include_env_vars false; true would rewrite the environment_variables section on every make_public.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

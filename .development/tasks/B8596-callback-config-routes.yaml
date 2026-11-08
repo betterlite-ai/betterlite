@@ -10,7 +10,7 @@ description: >-
   with ", your role=<role>"; store_model_in_db not true is 500 {"error": "Set `'STORE_MODEL_IN_DB='True'` in your env
   to enable this feature."}. The name is lower-cased; a name not in litellm_settings.success_callback is 404 "Callback
   '<name>' not found in active configuration". It removes the first match, saves the config through B8380, audits the
-  before and after success_callback through B8594, calls B8381's add_deployment and answers message, removed_callback,
+  before and after success_callback through B8594, calls add_deployment through B8611's DeploymentSyncPort (an `Arc<dyn DeploymentSyncPort>` that `routes` takes as an argument) and answers message, removed_callback,
   remaining_callbacks and deleted_at (ISO local time).
 
 
@@ -62,8 +62,8 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "Mounting the routes and their HTTP oracle cases: the wave 17 config admin wiring part."
-  - "Audit log: B8594. Config read and save: B8380. add_deployment: B8381. resolve_fields and the descriptors: B4140. Sensitive callback keys: B2304."
+  - "Mounting the routes and their HTTP oracle cases: B8675."
+  - "Audit log: B8594. Config read and save: B8380. The add_deployment port: B8611 (B8613 implements it over B8381's DeploymentSync). resolve_fields and the descriptors: B4140. Sensitive callback keys: B2304."
 pitfalls:
   - The delete compares the lower-cased name against stored names without lower-casing them.
   - Configured names are alias-normalized before runtime rows are compared, so a configured opentelemetry hides a runtime otel.

@@ -125,7 +125,7 @@ out_of_scope:
   - "The generic engine (_ageneric_api_call_with_fallbacks, its helper and _dispatch_generic_call_type) is B6021; selection, retries, slots and the refusal check are B016, B017, B303 and B310. This task only plugs executors into it."
   - "The branches of _route_request_single_attempt that are not video-specific (user_config, router_settings_override, batch completion, the blocked-model check, the A2A branch) belong to B014 and B004."
   - "The SDK functions the executors call: B3338 (generation), B3339 (status, content), B3340 (remix, list), B3341 (characters) and B3342 (edit, extension). Route handlers, provider and model lookup from the video id: B3343, B3344, B3345 and B6360."
-  - "The server implementation of VideoRouteView over B016 and B302 and the construction of RouterGeneric with video_executors: the architect's wiring, see notes."
+  - "The server implementation of VideoRouteView over B016 and B302 and the construction of RouterGeneric with video_executors: B8631 builds RouterGeneric with video_executors; VideoRouteView stays with the architect, see notes."
 pitfalls:
   - "The proxy's try/except around the router call for the seven fallback kinds never catches a router failure: async_wrapper is an async def, so the call returns an unawaited coroutine and the error surfaces at the caller's await, outside the try. plan_video_route therefore returns Router with no fallback."
   - "async_wrapper takes custom_llm_provider and client as named parameters and does not pass them on, so a status call that the route set to custom_llm_provider=openai reaches the provider with the deployment's provider instead."

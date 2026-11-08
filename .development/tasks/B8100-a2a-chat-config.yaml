@@ -11,7 +11,7 @@ description: >-
 
   Registry lookup. resolve_agent_config_from_registry(agent_name, api_base, api_key, headers, optional_params) returns
   (api_base, api_key, headers). It returns the inputs untouched when agent_name is empty, or when api_base and api_key are both
-  set and headers is non-empty. Otherwise it asks an injected agent lookup for the agent. This task owns that trait in betterlite-provider, module a2a_chat: `pub trait A2aAgentLookup { fn agent_by_name(&self, name: &str) -> Option<RegisteredA2aAgent>; }`, with `RegisteredA2aAgent { agent_card_params: Object, litellm_params: Object }` holding the two agent maps this function reads. betterlite-provider cannot depend on the proxy crate, so B4776's registry does not implement it here (B8100 already depends on B4776, so the reverse edge would be a cycle). The server composition root implements `A2aAgentLookup` with a small adapter over B4776's AgentRegistry get_agent_by_name and passes it in. LiteLLM
+  set and headers is non-empty. Otherwise it asks an injected agent lookup for the agent. This task owns that trait in betterlite-provider, module a2a_chat: `pub trait A2aAgentLookup { fn agent_by_name(&self, name: &str) -> Option<RegisteredA2aAgent>; }`, with `RegisteredA2aAgent { agent_card_params: Object, litellm_params: Object }` holding the two agent maps this function reads. betterlite-provider cannot depend on the proxy crate, so B4776's registry does not implement it here (B8100 already depends on B4776, so the reverse edge would be a cycle). B8645 implements `A2aAgentLookup` with a small adapter over B4776's AgentRegistry get_agent_by_name and passes it in. LiteLLM
   swallows ImportError when the proxy registry module is missing, so with no lookup injected the function returns the inputs
   unchanged. For a found agent: api_base comes from agent_card_params url when api_base is None; api_key comes from the agent
   litellm_params when api_key is None (an Entra agent gets get_azure_ai_agent_entra_token from B549 instead, and only a string
@@ -121,7 +121,7 @@ out_of_scope:
   - "llms/a2a/chat/transformation.py _openai_message_to_a2a_message (L400-L417): no caller at the pin."
   - "llms/a2a/chat/guardrail_translation/** belongs to B6163."
   - "main.py _complete_a2a and the a2a arm of the dispatch belong to B050."
-  - "The agent registry itself (global_agent_registry.get_agent_by_name) belongs to B4776; this task owns only the A2aAgentLookup trait and takes an injected lookup. The adapter that implements it over AgentRegistry is server composition root wiring."
+  - "The agent registry itself (global_agent_registry.get_agent_by_name) belongs to B4776; this task owns only the A2aAgentLookup trait and takes an injected lookup. The adapter that implements it over AgentRegistry is B8645's."
 pitfalls:
   - The early return needs api_base AND api_key both not None AND headers truthy; an empty headers map still triggers the lookup.
   - A JSON-RPC "error" key raises with the HTTP status of the reply, which is usually 200, not 500; only the stream iterator uses 500.

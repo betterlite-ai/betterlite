@@ -1,0 +1,29 @@
+kind: helper
+name: token-formatting-tool-declarations
+call:
+  token_formatting:
+    function: format_tools
+    tools:
+      - type: gemini
+        function_declarations:
+          - name: lookup_customer
+            description: Look up a customer by id
+            parameters:
+              type: object
+              properties:
+                customer_id:
+                  type: string
+              required: [customer_id]
+        functionDeclarations:
+          - name: ignored_camel
+      - type: gemini
+        functionDeclarations:
+          - name: list_orders
+            parameters:
+              type: object
+              properties:
+                state:
+                  type: string
+          - name: ping
+env: {}
+compare: {ignore: []}

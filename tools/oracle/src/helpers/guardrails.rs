@@ -12,7 +12,7 @@ helper_group! {
     "b3794" => b3794, "b3795" => b3795, "b3808" => b3808, "b3809" => b3809, "b3810" => b3810,
     "b3812" => b3812, "b3813" => b3813, "b3814" => b3814, "b3815" => b3815, "b5470" => b5470,
     "b5471" => b5471, "b8210" => b8210, "b8211" => b8211, "b8212" => b8212, "b8213" => b8213,
-    "b8214" => b8214, "b8215" => b8215, "b8216" => b8216, "b8522" => b8522,
+    "b8214" => b8214, "b8215" => b8215, "b8216" => b8216, "b8522" => b8522, "b8773" => b8773,
     "bedrock_chunking" => bedrock_chunking, "cisco_conversation" => cisco_conversation,
     "compresr_transport" => compresr_transport,
 }

@@ -1,0 +1,13 @@
+id: B8702
+milestone: M9 agents and mcp
+title: Mount the MCP OAuth browser routes and the /v1/mcp/server/oauth routes
+status: todo
+depends_on: [B8620, B8621, B8622, B8623, B8610, B743, B855, B4655, B4663, B4675, B4713, B4718, B4719, B7532, B7971]
+file: tasks/B8702-mcp-oauth-browser-mount.yaml
+covers: []
+parent: B137
+split_from: B137
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

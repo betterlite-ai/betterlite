@@ -1,0 +1,22 @@
+kind: helper
+name: vault-auth-approle-token-cached-until-lease-ends
+env: {}
+compare: {ignore: []}
+call:
+  b4416:
+    env:
+      HCP_VAULT_APPROLE_ROLE_ID: role-id
+      HCP_VAULT_APPROLE_SECRET_ID: secret-id
+    routes:
+      - route: "POST http://127.0.0.1:8200/v1/auth/approle/login"
+        replies:
+          - {status: 200, body: '{"auth":{"client_token":"hvs.first","lease_duration":10}}'}
+          - {status: 200, body: '{"auth":{"client_token":"hvs.second","lease_duration":10}}'}
+    steps:
+      - {op: token}
+      - {op: token}
+      - {op: advance, ms: 10000}
+      - {op: token}
+      - {op: advance, ms: 1}
+      - {op: token}
+      - {op: token_blocking}

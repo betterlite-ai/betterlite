@@ -11,7 +11,7 @@ description: >-
 
   Timing. The release runs when the handler future completes, which for a streaming response is when the response head is built, not when the last body chunk is sent. LiteLLM's ASGI middleware waits until the whole response is sent. Streaming handlers always run a cost callback that claims the reservation (`callback_bound`), so the early call finds a bound reservation and does nothing. Record this in the deviations.
 
-  Module layout: `crates/betterlite-server/src/middleware/budget_release.rs` for the layer and the trait, `.../budget_release/slot.rs` for the slot, and `.../budget_release/error.rs` for the error enum. The architect's skeleton declares the module in `middleware.rs` and installs the layer in `request_stack` (B122 owns that function), directly inside the Redis batch layer (proxy_server.py L2470 adds it just before that one, and a later `add_middleware` call wraps the earlier ones). Do not edit those files.
+  Module layout: `crates/betterlite-server/src/middleware/budget_release.rs` for the layer and the trait, `.../budget_release/slot.rs` for the slot, and `.../budget_release/error.rs` for the error enum. The architect's skeleton declares the module in `middleware.rs` , and the edge part (B8680) installs the layer with the releaser from shared.budget, directly inside the Redis batch layer (proxy_server.py L2470 adds it just before that one, and a later `add_middleware` call wraps the earlier ones). Do not edit those files.
 scope:
   paths:
     - crates/betterlite-server/src/middleware/budget_release.rs
@@ -66,7 +66,7 @@ deviations:
 out_of_scope:
   - "release_unbound_budget_reservation, release_or_invalidate_budget_reservation and the callback_bound and finalized stamps: B3003."
   - "Copying the token's reservation into the slot after admission: B1225 calls ReservationSlot::set (its text says so)."
-  - "The order of layers in the stack and the app wiring: B122 and the skeleton."
+  - "The order of layers in the stack: B122. Installing this layer with its releaser: the edge part (B8680)."
   - "The realtime route's own release on socket close: B1125."
 pitfalls:
   - "The slot is written during the request and read after it, so it must be shared (an Arc around a mutex-guarded option), not stored in the request that the handler consumes."

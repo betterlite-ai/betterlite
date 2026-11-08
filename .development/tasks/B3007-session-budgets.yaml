@@ -95,7 +95,7 @@ out_of_scope:
   - B2226 owns the shared cache interface and TTL policy.
   - B3017 owns AgentRegistry.get_agent_by_id, resolve_llm_provider_for_rate_limit, and ProxyRateLimitError.
   - The Redis script registration is owned by the transport layer (currently an architectural seam per the outline).
-  - "Agent startup and global_agent_registry population: the wave 17 agents wiring part."
+  - "Agent startup and global_agent_registry population: B8590 through B8612 (config agents) and B8384 (database agents)."
 
 deviations:
   - what: "Pre-call admission extracts session_id from request metadata, falling back to litellm_metadata; post-call charging reads session_id and agent_id only from kwargs['litellm_params']['metadata'] with no litellm_metadata fallback."

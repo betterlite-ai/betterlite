@@ -1,0 +1,75 @@
+id: B8749
+title: FinOps callback names and the dynamic rate limiter hooks by name
+description: >-
+  Six callback names are accepted by B8741 but still stop startup. Four are FinOps exporters (cloudzero, focus,
+  mavvrik, vantage): their LiteLLM classes override no log event, and their export jobs are scheduled by B3066, B3067,
+  B3068 and B3071 when the logger is configured (proxy_server.py L11011-L11049). Two are proxy hooks:
+  dynamic_rate_limiter builds _PROXY_DynamicRateLimitHandler (B3050) and dynamic_rate_limiter_v3 builds
+  _PROXY_DynamicRateLimitHandlerV3 (B3051 to B3053), both in betterlite-rate-limit. This task makes all six start.
+
+
+  FinOps. Fill registry/catalog/cloudzero.rs, focus.rs, mavvrik.rs and vantage.rs in betterlite-logging with B8741's
+  BaseLogger for the name. The schedule tasks find a configured exporter by name through the callbacks list or
+  LoggerCatalog::existing; nothing else changes for them.
+
+
+  Hooks. In crates/betterlite-server/src/app/callbacks/hooks.rs fill the two hook_for arms; adapters go in hooks/
+  (rate_limit.rs, tests.rs). Each arm builds its handler once per process as the LiteLLM arm does (litellm_logging.py
+  L4905-L4940): with ProxyLogging's internal usage cache (shared.proxy_logging, B8612) and then the router through its
+  update_variables equivalent (shared.router, B8611). Wrap it in a struct that implements B8390's ProxyCallback with the
+  hooks the handler overrides (async_pre_call_hook for both, plus the v3 response header and success hooks B3053
+  builds), and return it as Ok(Some(..)). The v3 handler also accounts tokens in async_log_success_event, so its
+  adapter implements B8740's CallbackLogger too, and in crates/betterlite-server/src/state/callback_loggers.rs the
+  dynamic_rate_limiter_v3 name resolves to that same Arc as a logger instead of Ok(None). betterlite-server gains a
+  dependency on betterlite-rate-limit in its Cargo.toml; rate-limit sits below the server, so no cycle forms.
+
+
+  Tests in hooks/tests.rs with in-memory caches: each name builds once, the v3 name gives the same Arc as hook and as
+  logger, a config with dynamic_rate_limiter in callbacks starts and the pre-call hook refuses a request when the
+  handler reports no capacity. Catalog tests for the four FinOps names: each resolves to a do nothing logger with its
+  name.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/app/callbacks/hooks.rs
+    - crates/betterlite-server/src/app/callbacks/hooks/**
+    - crates/betterlite-server/src/state/callback_loggers.rs
+    - crates/betterlite-logging/src/registry/catalog/cloudzero.rs
+    - crates/betterlite-logging/src/registry/catalog/focus.rs
+    - crates/betterlite-logging/src/registry/catalog/mavvrik.rs
+    - crates/betterlite-logging/src/registry/catalog/vantage.rs
+    - crates/betterlite-logging/src/registry/catalog/cloudzero/**
+    - crates/betterlite-logging/src/registry/catalog/focus/**
+    - crates/betterlite-logging/src/registry/catalog/mavvrik/**
+    - crates/betterlite-logging/src/registry/catalog/vantage/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4905-L4940
+    why: The two dynamic rate limiter arms, built with the internal usage cache and then given the router.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4838-L4875
+    why: The cloudzero, focus, mavvrik and vantage arms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11011-L11049
+    why: The FinOps export jobs start from the configured loggers.
+dod:
+  - text: cloudzero, focus, mavvrik and vantage resolve to do nothing loggers named after the callback.
+    proof: [hook-tests]
+  - text: dynamic_rate_limiter and dynamic_rate_limiter_v3 build their handlers once with the usage cache and the router and register as proxy hooks by name, and v3 is also its own callback logger.
+    proof: [hook-tests]
+checks:
+  optional: []
+  commands:
+    - id: hook-tests
+      why: a FinOps name or a rate limiter hook still stops startup or builds twice
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::hooks::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::(cloudzero|focus|mavvrik|vantage)::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The FinOps exports and their schedules: B3060 to B3077. The rate limiter behavior: B3050 to B3053."
+  - "vector_store_pre_call_hook and compression_interception: their hook arms stay unavailable (see the notes of B8742)."
+pitfalls:
+  - Build the handler before update_variables gives it the router; LiteLLM's arm does it in that order, and a pre-call before the router is set must answer as the handler does with no router.
+  - The FinOps names are loggers only in name; never give them events, or exports would count calls twice.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

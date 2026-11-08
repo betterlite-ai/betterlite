@@ -1,0 +1,110 @@
+id: B8773
+title: Build the content filter guardrail class and its apply_guardrail
+description: >-
+  LiteLLM's built-in content filter is one class, ContentFilterGuardrail in
+  litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py. Its pieces are planned: B3692
+  loads categories and the blocked words file, B3693 compiles and matches patterns, B3694 matches category keywords,
+  B3695 filters one text, B3698 counts and logs detections, B3699 scans images and tool arguments and applies the
+  competitor intent policy, and B3700 filters streams. Nobody builds the class itself: the constructor (L210-L321),
+  `_init_competitor_intent_checker` (L323-L338), `apply_guardrail` (L1874-L1955) and the two class hooks at the end
+  (`get_config_model` L2154-L2160, `get_supported_event_hooks` L2162-L2171). B8219 stops at the argument struct and
+  B8666 needs a class to build from it. This task builds that class.
+
+
+  Where. A new module `content_filter_guard` in betterlite-guardrails (crates/betterlite-guardrails/src/content_filter_guard.rs
+  and content_filter_guard/: build.rs, apply.rs, error.rs, tests.rs; the skeleton declares it in lib.rs). Read the
+  modules of the tasks above and call their functions as they are; do not write a second matcher, loader or logger.
+
+
+  Constructor. `ContentFilterGuardrail::new(args: ContentFilterArgs, router: Option<R>) -> Result<Self, ContentFilterBuildError>`,
+  where ContentFilterArgs is B8219's struct and R is whatever router handle B3699's image path takes (read its signature;
+  LiteLLM keeps `llm_router` only for image descriptions). In LiteLLM's order: the base guardrail fields through B5471
+  (name, the supported hooks below, event_hook defaulting to `pre_call` when absent, default_on, and the extra keyword
+  values end_session_after_n_fails, on_violation and realtime_violation_message that LiteLLM passes on as **kwargs);
+  guardrail_provider is the literal `litellm_content_filter`; keep guardrail_id and policy_template as the config id and
+  policy template; pattern_redaction_format is `[{pattern_name}_REDACTED]` and keyword_redaction_tag is
+  `[KEYWORD_REDACTED]`, since the initializer never passes either; severity_threshold, router and image_model as given.
+  Then the competitor intent checker when competitor_intent_config is a map: `competitor_intent_type` defaults to
+  `airline`; `generic` builds the base checker from the content_filter module on main, anything else the airline
+  checker; a build error is logged at warning "ContentFilterGuardrail: failed to init competitor intent checker: %s"
+  and leaves no checker, never an error. Then categories through B3692 when the list is non-empty; then patterns and
+  blocked words, normalized and compiled through B3693; then the during_call warning: when the event hook is
+  during_call and any compiled pattern's action is MASK, log at warning the text at L285-L288 with the guardrail name.
+  Blocked words go into a map keyed by the lowercased keyword holding (action, description), the last duplicate wins.
+  Then the blocked words file through B3692 when one is set. A file or category error is the only constructor error.
+
+
+  apply_guardrail(inputs, request_data, input_type, logging) takes the generic guardrail inputs type B5471 uses for
+  apply_guardrail, the request data map, `request` or `response`, and the optional logging handle, and returns the
+  inputs. Order: start time; process images through B3699 (detections appended); for each text, when a competitor
+  checker exists and the text is not empty, run it and, when its intent is not `other`, apply B3699's competitor
+  intent policy; then filter the text through B3695 and collect the result; write the texts back into inputs; scan
+  tool call arguments; when input_type is `request`, scan MCP tool call arguments; count masked entities. Status is
+  `success`, `guardrail_intervened` when a block raised the guardrail's HTTP error (it is returned unchanged), or
+  `guardrail_failed_to_respond` with the error text for any other error (also returned). Whatever the outcome, call
+  B3698's log_guardrail_information once with the request data, detections, status, start time, masked entity counts
+  and exception text, as LiteLLM's finally block does.
+
+
+  Hooks. `supported_event_hooks()` returns pre_call, post_call, during_call, realtime_input_transcription,
+  pre_mcp_call and post_mcp_call in that order. `config_model()` names the content filter config record B3690 built.
+
+
+  Tests in content_filter_guard::tests: the defaults (pre_call, both redaction strings, provider name), the competitor
+  type switch and the failed-init warning, the during_call MASK warning firing only for MASK, the lowercased blocked
+  word map with a duplicate, apply_guardrail order on a request and on a response (MCP scan only for the request),
+  a block that logs once with guardrail_intervened, and an internal failure that logs guardrail_failed_to_respond.
+  Helper oracle cases (helper b8773, pure functions over LiteLLM's real class with no proxy) in
+  tools/oracle/cases/helpers/content-filter-guard/: build with defaults and read back the stored fields, build with a
+  generic and an airline competitor config, apply a MASK pattern to two texts, apply a BLOCK keyword (the 400 body),
+  apply on a response with tool calls, and the supported hooks list.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/content_filter_guard.rs
+    - crates/betterlite-guardrails/src/content_filter_guard/**
+    - tools/oracle/cases/helpers/content-filter-guard/**
+    - tools/oracle/helpers/b8773.py
+    - tools/oracle/helpers/b8773/**
+    - tools/oracle/src/helpers/guardrails/b8773.rs
+    - tools/oracle/src/helpers/guardrails/b8773/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L193-L338
+    why: The class constants, the constructor order and the competitor intent checker switch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1874-L1955
+    why: apply_guardrail, its status values and the finally-block logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L2154-L2171
+    why: The config model and the six supported event hooks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/__init__.py
+    why: What the initializer passes, so the two redaction values always take their defaults.
+dod:
+  - text: The constructor builds the class in LiteLLM's order with its defaults, the competitor switch and the during_call warning.
+    proof: [content-filter-guard-tests, oracle]
+  - text: apply_guardrail runs images, competitor intent, text filtering, tool and MCP scans in order and logs once with the right status.
+    proof: [content-filter-guard-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: content-filter-guard-tests
+      why: the class is missing, a constructor step or default differs, or apply_guardrail runs out of order
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^content_filter_guard::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/content-filter-guard/build-defaults.yaml
+  - tools/oracle/cases/helpers/content-filter-guard/competitor-generic-and-airline.yaml
+  - tools/oracle/cases/helpers/content-filter-guard/mask-pattern-two-texts.yaml
+  - tools/oracle/cases/helpers/content-filter-guard/block-keyword.yaml
+  - tools/oracle/cases/helpers/content-filter-guard/response-tool-calls.yaml
+  - tools/oracle/cases/helpers/content-filter-guard/supported-hooks.yaml
+deviations: []
+out_of_scope:
+  - "The initializer arguments: B8219. Category and blocked words file loading: B3692. Patterns: B3693. Keyword matching: B3694. Single text filtering: B3695. Detection counts and logging: B3698. Images, tool and MCP arguments and the competitor policy: B3699. Streaming: B3700."
+  - "Building the class from a guardrail record and dispatching its hooks: B8666."
+pitfalls:
+  - "initialize_guardrail never passes pattern_redaction_format or keyword_redaction_tag, so a config value for them is ignored and the defaults always apply."
+  - "The competitor check runs only on a non-empty text and only acts when intent is not `other`, before the text filter runs."
+  - "The MCP tool argument scan runs for input_type `request` only; tool_calls in inputs are scanned for both."
+  - "The finally block logs on success, block and failure alike, so a block must not skip the log call."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
