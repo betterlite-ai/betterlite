@@ -38,60 +38,33 @@ fn tool_call(index: usize, entry: &Json) -> Result<ReplyToolCall, ReplyError> {
     let Json::Object(tool) = entry else {
         return Err(ReplyError::Field("message.tool_calls", "is not an object"));
     };
+    let id = match tool.get("id") {
+        Some(Json::Text(id)) => id.clone(),
+        Some(_) | None => return Err(ReplyError::Field("tool_calls.id", "is not a string")),
+    };
+    let kind = match tool.get("type") {
+        None | Some(Json::Null) => String::from("function"),
+        Some(Json::Text(kind)) => kind.clone(),
+        Some(_) => return Err(ReplyError::Field("tool_calls.type", "is not a string")),
+    };
+    let function = match tool.get("function") {
+        Some(Json::Object(fields)) => function(fields)?,
+        Some(_) => return Err(ReplyError::Field("tool function", "is not an object")),
+        None => return Err(ReplyError::Field("tool function", "is missing")),
+    };
     Ok(ReplyToolCall {
         index,
-        id: tool_id(tool)?,
-        kind: tool_kind(tool)?,
-        function: tool_function(tool)?,
+        id,
+        kind,
+        function,
     })
-}
-
-fn tool_id(tool: &Object) -> Result<String, ReplyError> {
-    match tool.get("id") {
-        Some(Json::Text(id)) => Ok(id.clone()),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => Err(ReplyError::Field(
-            "message.tool_calls.id",
-            "is not a string",
-        )),
-    }
-}
-
-fn tool_kind(tool: &Object) -> Result<String, ReplyError> {
-    match tool.get("type") {
-        None | Some(Json::Null) => Ok(String::from("function")),
-        Some(Json::Text(kind)) => Ok(kind.clone()),
-        Some(_) => Err(ReplyError::Field(
-            "message.tool_calls.type",
-            "is not a string",
-        )),
-    }
-}
-
-fn tool_function(tool: &Object) -> Result<ReplyFunction, ReplyError> {
-    match tool.get("function") {
-        Some(Json::Object(fields)) => function(fields),
-        Some(_) => Err(ReplyError::Field(
-            "message.tool_calls.function",
-            "is not an object",
-        )),
-        None => Err(ReplyError::Field(
-            "message.tool_calls.function",
-            "is missing",
-        )),
-    }
 }
 
 fn function(fields: &Object) -> Result<ReplyFunction, ReplyError> {
     let name = match fields.get("name") {
         None | Some(Json::Null) => None,
         Some(Json::Text(name)) => Some(name.clone()),
-        Some(_) => {
-            return Err(ReplyError::Field(
-                "message.tool_calls.function.name",
-                "is not a string",
-            ));
-        }
+        Some(_) => return Err(ReplyError::Field("tool function name", "is not a string")),
     };
     let arguments = match fields.get("parameters") {
         None | Some(Json::Null) => String::new(),
@@ -100,7 +73,7 @@ fn function(fields: &Object) -> Result<ReplyFunction, ReplyError> {
         }
         Some(_) => {
             return Err(ReplyError::Field(
-                "message.tool_calls.function.parameters",
+                "tool function parameters",
                 "is not an object",
             ));
         }
