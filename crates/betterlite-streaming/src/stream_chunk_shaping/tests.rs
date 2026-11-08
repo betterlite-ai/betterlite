@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::fmt::Debug;
-use std::iter::repeat_n;
 use std::sync::{Arc, Mutex};
 
 use rstest::rstest;

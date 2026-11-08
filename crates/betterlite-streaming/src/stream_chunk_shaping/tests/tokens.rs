@@ -1,9 +1,13 @@
 #[test]
 fn repetition_raises_at_the_limit_with_litellms_message() {
     let mut shaper = shaper("gpt-4", Some("openai"));
-    shaper
-        .chunks
-        .extend(repeat_n(chunk_with_content("c", "abc"), 4_usize));
+    shaper.chunks.push(chunk_with_content("c", "abc"));
+    raise_on_model_repetition(&mut shaper, 4).expect("below the limit so far");
+    shaper.chunks.push(chunk_with_content("c", "abc"));
+    raise_on_model_repetition(&mut shaper, 4).expect("below the limit so far");
+    shaper.chunks.push(chunk_with_content("c", "abc"));
+    raise_on_model_repetition(&mut shaper, 4).expect("below the limit so far");
+    shaper.chunks.push(chunk_with_content("c", "abc"));
     let error = raise_on_model_repetition(&mut shaper, 4).expect_err("the model repeats itself");
     assert_eq!(
         error.to_string(),
@@ -25,10 +29,12 @@ fn repetition_raises_at_the_limit_with_litellms_message() {
 #[test]
 fn repetition_below_the_limit_passes() {
     let mut shaper = shaper("gpt-4", Some("openai"));
-    shaper
-        .chunks
-        .extend(repeat_n(chunk_with_content("c", "abc"), 3_usize));
-    raise_on_model_repetition(&mut shaper, 4).expect("three chunks are below the limit");
+    shaper.chunks.push(chunk_with_content("c", "abc"));
+    raise_on_model_repetition(&mut shaper, 4).expect("below the limit");
+    shaper.chunks.push(chunk_with_content("c", "abc"));
+    raise_on_model_repetition(&mut shaper, 4).expect("below the limit");
+    shaper.chunks.push(chunk_with_content("c", "abc"));
+    raise_on_model_repetition(&mut shaper, 4).expect("below the limit");
     assert_eq!(shaper.repeated_messages_count, 3);
 }
 

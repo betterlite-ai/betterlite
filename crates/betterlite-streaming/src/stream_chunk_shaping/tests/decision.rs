@@ -310,7 +310,7 @@ fn processed_finish_branch_returns_a_non_empty_delta_unchanged() {
     let mut response =
         model_response_creator(&mut shaper, None, None).expect("no chunk cannot fail");
     let mut delta = empty_delta();
-    delta.audio = Some(JsonValue::Object(json_object(r#"{"data": "x"}"#)));
+    delta.content = Some("tail".to_owned());
     response.choices = vec![choice(delta)];
     let sent = return_processed_chunk_logic(
         &mut shaper,
@@ -323,7 +323,7 @@ fn processed_finish_branch_returns_a_non_empty_delta_unchanged() {
     .expect("the chunk is sent unchanged");
     assert_eq!(sent.choices[0].finish_reason, None);
     assert!(!shaper.progress.sent_last_chunk);
-    assert!(sent.choices[0].delta.audio.is_some());
+    assert_eq!(sent.choices[0].delta.content.as_deref(), Some("tail"));
 }
 
 #[test]
