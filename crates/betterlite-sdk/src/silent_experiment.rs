@@ -62,7 +62,6 @@ pub struct MirrorInvocation<C, M> {
 }
 
 impl SilentExperiments {
-    // B6020 starts one mirror per target and drops the handle, so the spawn is the whole entry point
     #[must_use]
     // ast-grep-ignore: no-one-line-functions
     pub fn start<C, M>(&self, invocation: MirrorInvocation<C, M>) -> TaskJoinHandle<()>
@@ -73,7 +72,6 @@ impl SilentExperiments {
         self.runtime.spawn(mirror(invocation))
     }
 
-    // the thread owns its own runtime handle, and the mirrored call is its whole body
     #[must_use]
     // ast-grep-ignore: no-padded-one-line-functions
     pub fn start_blocking<C, M>(&self, invocation: MirrorInvocation<C, M>) -> ThreadJoinHandle<()>
