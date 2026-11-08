@@ -83,13 +83,15 @@ pub fn redact_standard_logging_payload(
 }
 
 fn redact_messages(object: &mut IndexMap<String, Json>) {
-    if matches!(object.get("messages"), None | Some(Json::Null)) {
-        return;
+    if object
+        .get("messages")
+        .is_some_and(|messages| !matches!(messages, Json::Null))
+    {
+        object.insert(
+            "messages".to_owned(),
+            Json::List(vec![Json::Object(message_placeholder())]),
+        );
     }
-    object.insert(
-        "messages".to_owned(),
-        Json::List(vec![Json::Object(message_placeholder())]),
-    );
 }
 
 fn redact_response(object: &mut IndexMap<String, Json>, stamp: &ResponseStamp) {
@@ -99,20 +101,16 @@ fn redact_response(object: &mut IndexMap<String, Json>, stamp: &ResponseStamp) {
     if matches!(response, Json::Null) {
         return;
     }
-    let redacted = match response {
-        Json::Object(fields) if fields.contains_key("output") => {
-            let mut copy = fields.clone();
-            redact_output_text(&mut copy);
-            Json::Object(copy)
-        }
-        Json::Null
-        | Json::Bool(_)
-        | Json::Number(_)
-        | Json::Text(_)
-        | Json::List(_)
-        | Json::Object(_) => Json::Object(model_response_placeholder(stamp)),
+    let replacement = if let Json::Object(fields) = response
+        && fields.contains_key("output")
+    {
+        let mut copy = fields.clone();
+        redact_output_text(&mut copy);
+        Json::Object(copy)
+    } else {
+        Json::Object(model_response_placeholder(stamp))
     };
-    object.insert("response".to_owned(), redacted);
+    object.insert("response".to_owned(), replacement);
 }
 
 fn redact_output_text(fields: &mut IndexMap<String, Json>) {

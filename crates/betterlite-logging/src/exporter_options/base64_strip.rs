@@ -32,9 +32,11 @@ pub fn strip_base64_from_messages(
 fn process_messages(messages: &[Json], pattern: &Regex, max_depth: i64) -> Vec<Json> {
     messages
         .iter()
-        .filter_map(|message| match message {
-            Json::Object(fields) => Some(Json::Object(process_message(fields, pattern, max_depth))),
-            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
+        .filter_map(|message| {
+            let Json::Object(fields) = message else {
+                return None;
+            };
+            Some(Json::Object(process_message(fields, pattern, max_depth)))
         })
         .collect()
 }
@@ -67,17 +69,17 @@ fn redact_content(value: &Json, pattern: &Regex, max_depth: i64) -> Json {
     let Json::List(parts) = value else {
         return redact_value(value, 0, max_depth, pattern);
     };
-    let kept = parts.iter().filter(|part| match part {
-        Json::Object(fields) => {
-            !fields.contains_key("file")
-                && !matches!(fields.get("type"), Some(Json::Text(kind)) if kind != "text")
+    let mut kept = Vec::with_capacity(parts.len());
+    for part in parts {
+        if let Json::Object(fields) = part
+            && (fields.contains_key("file")
+                || matches!(fields.get("type"), Some(Json::Text(kind)) if kind != "text"))
+        {
+            continue;
         }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => true,
-    });
-    Json::List(
-        kept.map(|part| redact_value(part, 0, max_depth, pattern))
-            .collect(),
-    )
+        kept.push(redact_value(part, 0, max_depth, pattern));
+    }
+    Json::List(kept)
 }
 
 fn redact_value(value: &Json, depth: i64, max_depth: i64, pattern: &Regex) -> Json {
