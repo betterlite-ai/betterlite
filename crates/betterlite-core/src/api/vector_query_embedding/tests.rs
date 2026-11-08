@@ -74,16 +74,18 @@ impl VectorStoreEmbeddingExecutor for ScriptedExecutor {
         _query: &str,
         _configuration: &Params,
     ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
-        match &self.0 {
-            Some(body) => {
+        self.0.as_deref().map_or_else(
+            || {
+                Err(VectorStoreEmbeddingError::DuplicateArgument {
+                    name: "input".to_owned(),
+                })
+            },
+            |body| {
                 serde_json::from_str(body).map_err(|source| VectorStoreEmbeddingError::Embedding {
                     source: EmbeddingError::Decode { source },
                 })
-            }
-            None => Err(VectorStoreEmbeddingError::DuplicateArgument {
-                name: "input".to_owned(),
-            }),
-        }
+            },
+        )
     }
 }
 
