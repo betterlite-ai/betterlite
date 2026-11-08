@@ -4,10 +4,10 @@ use crate::secret_read_dispatch::settings::SecretManagerSettings;
 use crate::secret_types::KeyManagementSystem;
 
 use super::support::{
-    ClientKind, assert_secret, aws_kms_client, aws_kms_fake, azure_client, azure_fake, base64_of,
-    client_for, custom_client, custom_fake, custom_optional_params, cyberark_client,
-    empty_environment, environment, google_kms_client, google_kms_fake, google_secrets_client,
-    google_secrets_fake, infisical_client, infisical_fake, recorder, sync_reader_fake,
+    assert_secret, aws_kms_client, aws_kms_fake, aws_secrets_client, aws_secrets_fake,
+    azure_client, azure_fake, base64_of, custom_client, custom_fake, custom_optional_params,
+    cyberark_client, empty_environment, environment, google_kms_client, google_kms_fake,
+    google_secrets_client, google_secrets_fake, infisical_client, infisical_fake, sync_reader_fake,
     vault_client,
 };
 
@@ -138,17 +138,16 @@ fn infisical_client_exposes_the_secret_value() {
 
 #[test]
 fn every_protocol_client_fits_the_handle_and_names_itself() {
-    let recorder = recorder();
     let handles = [
-        client_for(ClientKind::Azure, &recorder),
-        client_for(ClientKind::GoogleKms, &recorder),
-        client_for(ClientKind::AwsKms, &recorder),
-        client_for(ClientKind::AwsSecretManager, &recorder),
-        client_for(ClientKind::GoogleSecretManager, &recorder),
-        client_for(ClientKind::Vault, &recorder),
-        client_for(ClientKind::CyberArk, &recorder),
-        client_for(ClientKind::Custom, &recorder),
-        client_for(ClientKind::Infisical, &recorder),
+        azure_client(&azure_fake(None)),
+        google_kms_client(&google_kms_fake("resource", None)),
+        aws_kms_client(&aws_kms_fake(None)),
+        aws_secrets_client(&aws_secrets_fake(None)),
+        google_secrets_client(&google_secrets_fake(None)),
+        vault_client(&sync_reader_fake(None)),
+        cyberark_client(&sync_reader_fake(None)),
+        custom_client(&custom_fake(None)),
+        infisical_client(&infisical_fake(None)),
         SecretManagerClient::Uninitialized,
     ];
     let names = handles

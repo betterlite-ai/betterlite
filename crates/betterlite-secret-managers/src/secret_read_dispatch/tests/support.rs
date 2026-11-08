@@ -46,6 +46,91 @@ pub(super) fn assert_no_secret(result: &Result<Option<SecretString>, SecretDispa
     assert!(matches!(result, Ok(None)));
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum ClientKind {
+    Azure,
+    GoogleKms,
+    AwsKms,
+    AwsSecretManager,
+    GoogleSecretManager,
+    Vault,
+    CyberArk,
+    Custom,
+    Infisical,
+}
+
+pub(super) fn azure_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
+where
+    Client: AzureKeyVaultClient + 'static,
+{
+    let handle: Arc<dyn AzureKeyVaultClient> = Arc::<Client>::clone(fake);
+    SecretManagerClient::AzureKeyVault(handle)
+}
+
+pub(super) fn google_kms_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
+where
+    Client: GoogleKmsClient + 'static,
+{
+    let handle: Arc<dyn GoogleKmsClient> = Arc::<Client>::clone(fake);
+    SecretManagerClient::GoogleKms(handle)
+}
+
+pub(super) fn aws_kms_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
+where
+    Client: AwsKmsClient + 'static,
+{
+    let handle: Arc<dyn AwsKmsClient> = Arc::<Client>::clone(fake);
+    SecretManagerClient::AwsKms(handle)
+}
+
+pub(super) fn aws_secrets_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
+where
+    Client: AwsSecretsManagerClient + 'static,
+{
+    let handle: Arc<dyn AwsSecretsManagerClient> = Arc::<Client>::clone(fake);
+    SecretManagerClient::AwsSecretManager(handle)
+}
+
+pub(super) fn google_secrets_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
+where
+    Client: GoogleSecretManagerClient + 'static,
+{
+    let handle: Arc<dyn GoogleSecretManagerClient> = Arc::<Client>::clone(fake);
+    SecretManagerClient::GoogleSecretManager(handle)
+}
+
+pub(super) fn vault_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
+where
+    Client: SyncSecretReader + 'static,
+{
+    let handle: Arc<dyn SyncSecretReader> = Arc::<Client>::clone(fake);
+    SecretManagerClient::Vault(handle)
+}
+
+pub(super) fn cyberark_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
+where
+    Client: SyncSecretReader + 'static,
+{
+    let handle: Arc<dyn SyncSecretReader> = Arc::<Client>::clone(fake);
+    SecretManagerClient::CyberArk(handle)
+}
+
+pub(super) fn custom_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
+where
+    Client: CustomSecretManager + 'static,
+{
+    let handle: Arc<dyn CustomSecretManager> = Arc::<Client>::clone(fake);
+    SecretManagerClient::Custom(handle)
+}
+
+pub(super) fn infisical_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
+where
+    Client: InfisicalClient + 'static,
+{
+    let handle: Arc<dyn InfisicalClient> = Arc::<Client>::clone(fake);
+    SecretManagerClient::Infisical(handle)
+}
+
 pub(super) struct AzureFake {
     value: Option<SecretString>,
     fail: bool,
@@ -58,6 +143,13 @@ impl AzureFake {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    fn record(&self, secret_name: &str) {
+        self.names
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(secret_name.to_owned());
     }
 }
 
@@ -79,10 +171,7 @@ pub(super) fn azure_failing_fake() -> Arc<AzureFake> {
 
 impl AzureKeyVaultClient for AzureFake {
     fn get_secret(&self, secret_name: &str) -> Result<AzureSecret, AzureKeyVaultError> {
-        self.names
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(secret_name.to_owned());
+        self.record(secret_name);
         if self.fail {
             return Err(AzureKeyVaultError);
         }
@@ -173,6 +262,16 @@ impl AwsSecretsFake {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    fn record(&self, secret_name: &str, primary_secret_name: Option<&str>) {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((
+                secret_name.to_owned(),
+                primary_secret_name.map(str::to_owned),
+            ));
+    }
 }
 
 pub(super) fn aws_secrets_fake(value: Option<&str>) -> Arc<AwsSecretsFake> {
@@ -197,13 +296,7 @@ impl AwsSecretsManagerClient for AwsSecretsFake {
         secret_name: &str,
         primary_secret_name: Option<&str>,
     ) -> Result<Option<SecretString>, AwsSecretsManagerError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((
-                secret_name.to_owned(),
-                primary_secret_name.map(str::to_owned),
-            ));
+        self.record(secret_name, primary_secret_name);
         if self.fail {
             return Err(AwsSecretsManagerError);
         }
@@ -294,7 +387,7 @@ impl SyncSecretReader for SyncReaderFake {
 
 pub(super) struct CustomFake {
     value: Option<SecretString>,
-    fail: bool,
+    failing_method: Option<&'static str>,
     calls: Mutex<Vec<(String, Option<CustomParams>)>>,
 }
 
@@ -305,12 +398,19 @@ impl CustomFake {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    fn record(&self, secret_name: &str, optional_params: Option<&CustomParams>) {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((secret_name.to_owned(), optional_params.cloned()));
+    }
 }
 
 pub(super) fn custom_fake(value: Option<&str>) -> Arc<CustomFake> {
     Arc::new(CustomFake {
         value: value.map(SecretString::from),
-        fail: false,
+        failing_method: None,
         calls: Mutex::new(Vec::new()),
     })
 }
@@ -318,7 +418,7 @@ pub(super) fn custom_fake(value: Option<&str>) -> Arc<CustomFake> {
 pub(super) fn custom_failing_fake() -> Arc<CustomFake> {
     Arc::new(CustomFake {
         value: None,
-        fail: true,
+        failing_method: Some("sync_read_secret"),
         calls: Mutex::new(Vec::new()),
     })
 }
@@ -341,17 +441,16 @@ impl CustomSecretManager for CustomFake {
         secret_name: &str,
         optional_params: Option<&CustomParams>,
     ) -> Result<Option<SecretString>, CustomSecretError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((secret_name.to_owned(), optional_params.cloned()));
-        if self.fail {
-            return Err(CustomSecretError::NotImplemented {
-                manager: self.secret_manager_name().to_owned(),
-                method: "sync_read_secret",
-            });
-        }
-        Ok(self.value.clone())
+        self.record(secret_name, optional_params);
+        self.failing_method.map_or_else(
+            || Ok(self.value.clone()),
+            |method| {
+                Err(CustomSecretError::NotImplemented {
+                    manager: self.secret_manager_name().to_owned(),
+                    method,
+                })
+            },
+        )
     }
 }
 
@@ -406,231 +505,11 @@ impl InfisicalClient for InfisicalFake {
             .unwrap_or_else(PoisonError::into_inner)
             .push(secret_name.to_owned());
         if self.fail {
-            return Err(InfisicalError);
+            Err(InfisicalError)
+        } else {
+            Ok(InfisicalSecret {
+                secret_value: self.value.clone(),
+            })
         }
-        Ok(InfisicalSecret {
-            secret_value: self.value.clone(),
-        })
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(super) enum ClientKind {
-    Azure,
-    GoogleKms,
-    AwsKms,
-    AwsSecretManager,
-    GoogleSecretManager,
-    Vault,
-    CyberArk,
-    Custom,
-    Infisical,
-}
-
-pub(super) fn client_for(kind: ClientKind, recorder: &Arc<Recorder>) -> SecretManagerClient {
-    match kind {
-        ClientKind::Azure => azure_client(recorder),
-        ClientKind::GoogleKms => google_kms_client(recorder),
-        ClientKind::AwsKms => aws_kms_client(recorder),
-        ClientKind::AwsSecretManager => aws_secrets_client(recorder),
-        ClientKind::GoogleSecretManager => google_secrets_client(recorder),
-        ClientKind::Vault => vault_client(recorder),
-        ClientKind::CyberArk => cyberark_client(recorder),
-        ClientKind::Custom => custom_client(recorder),
-        ClientKind::Infisical => infisical_client(recorder),
-    }
-}
-
-pub(super) fn azure_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
-where
-    Client: AzureKeyVaultClient + 'static,
-{
-    let concrete = Arc::clone(fake);
-    let handle: Arc<dyn AzureKeyVaultClient> = concrete;
-    SecretManagerClient::AzureKeyVault(handle)
-}
-
-pub(super) fn google_kms_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
-where
-    Client: GoogleKmsClient + 'static,
-{
-    let concrete = Arc::clone(fake);
-    let handle: Arc<dyn GoogleKmsClient> = concrete;
-    SecretManagerClient::GoogleKms(handle)
-}
-
-pub(super) fn aws_kms_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
-where
-    Client: AwsKmsClient + 'static,
-{
-    let concrete = Arc::clone(fake);
-    let handle: Arc<dyn AwsKmsClient> = concrete;
-    SecretManagerClient::AwsKms(handle)
-}
-
-pub(super) fn aws_secrets_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
-where
-    Client: AwsSecretsManagerClient + 'static,
-{
-    let concrete = Arc::clone(fake);
-    let handle: Arc<dyn AwsSecretsManagerClient> = concrete;
-    SecretManagerClient::AwsSecretManager(handle)
-}
-
-pub(super) fn google_secrets_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
-where
-    Client: GoogleSecretManagerClient + 'static,
-{
-    let concrete = Arc::clone(fake);
-    let handle: Arc<dyn GoogleSecretManagerClient> = concrete;
-    SecretManagerClient::GoogleSecretManager(handle)
-}
-
-pub(super) fn vault_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
-where
-    Client: SyncSecretReader + 'static,
-{
-    let concrete = Arc::clone(fake);
-    let handle: Arc<dyn SyncSecretReader> = concrete;
-    SecretManagerClient::Vault(handle)
-}
-
-pub(super) fn cyberark_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
-where
-    Client: SyncSecretReader + 'static,
-{
-    let concrete = Arc::clone(fake);
-    let handle: Arc<dyn SyncSecretReader> = concrete;
-    SecretManagerClient::CyberArk(handle)
-}
-
-pub(super) fn custom_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
-where
-    Client: CustomSecretManager + 'static,
-{
-    let concrete = Arc::clone(fake);
-    let handle: Arc<dyn CustomSecretManager> = concrete;
-    SecretManagerClient::Custom(handle)
-}
-
-pub(super) fn infisical_client<Client>(fake: &Arc<Client>) -> SecretManagerClient
-where
-    Client: InfisicalClient + 'static,
-{
-    let concrete = Arc::clone(fake);
-    let handle: Arc<dyn InfisicalClient> = concrete;
-    SecretManagerClient::Infisical(handle)
-}
-
-pub(super) struct Recorder {
-    calls: Mutex<Vec<&'static str>>,
-}
-
-impl Recorder {
-    pub(super) fn calls(&self) -> Vec<&'static str> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    fn record(&self, label: &'static str) {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(label);
-    }
-}
-
-pub(super) fn recorder() -> Arc<Recorder> {
-    Arc::new(Recorder {
-        calls: Mutex::new(Vec::new()),
-    })
-}
-
-impl AzureKeyVaultClient for Recorder {
-    fn get_secret(&self, _secret_name: &str) -> Result<AzureSecret, AzureKeyVaultError> {
-        self.record("azure");
-        Ok(AzureSecret {
-            value: Some(SecretString::from("value")),
-        })
-    }
-}
-
-impl GoogleKmsClient for Recorder {
-    fn resource_name(&self) -> &'static str {
-        "projects/project/locations/global/keyRings/ring/cryptoKeys/key"
-    }
-
-    fn decrypt(&self, _request: GoogleKmsDecryptRequest<'_>) -> Result<Vec<u8>, GoogleKmsError> {
-        self.record("google_kms");
-        Ok(b"value".to_vec())
-    }
-}
-
-impl AwsKmsClient for Recorder {
-    fn decrypt(&self, _ciphertext_blob: &[u8]) -> Result<Vec<u8>, AwsKmsError> {
-        self.record("aws_kms");
-        Ok(b"value".to_vec())
-    }
-}
-
-impl AwsSecretsManagerClient for Recorder {
-    fn sync_read_secret(
-        &self,
-        _secret_name: &str,
-        _primary_secret_name: Option<&str>,
-    ) -> Result<Option<SecretString>, AwsSecretsManagerError> {
-        self.record("aws_secrets");
-        Ok(Some(SecretString::from("value")))
-    }
-}
-
-impl GoogleSecretManagerClient for Recorder {
-    fn get_secret_from_google_secret_manager(
-        &self,
-        _secret_name: &str,
-    ) -> Result<Option<SecretString>, GoogleSecretManagerError> {
-        self.record("google_secrets");
-        Ok(Some(SecretString::from("value")))
-    }
-}
-
-impl SyncSecretReader for Recorder {
-    fn sync_read_secret(&self, _secret_name: &str) -> Option<SecretString> {
-        self.record("sync_reader");
-        Some(SecretString::from("value"))
-    }
-}
-
-impl CustomSecretManager for Recorder {
-    fn secret_manager_name(&self) -> &'static str {
-        "custom_secret_manager"
-    }
-
-    fn async_read_secret<'borrowed>(
-        &'borrowed self,
-        _secret_name: &'borrowed str,
-        _optional_params: Option<&'borrowed CustomParams>,
-    ) -> CustomSecretFuture<'borrowed, Option<SecretString>> {
-        Box::pin(ready(Ok(None)))
-    }
-
-    fn sync_read_secret(
-        &self,
-        _secret_name: &str,
-        _optional_params: Option<&CustomParams>,
-    ) -> Result<Option<SecretString>, CustomSecretError> {
-        self.record("custom");
-        Ok(Some(SecretString::from("value")))
-    }
-}
-
-impl InfisicalClient for Recorder {
-    fn get_secret(&self, _secret_name: &str) -> Result<InfisicalSecret, InfisicalError> {
-        self.record("infisical");
-        Ok(InfisicalSecret {
-            secret_value: Some(SecretString::from("value")),
-        })
     }
 }
