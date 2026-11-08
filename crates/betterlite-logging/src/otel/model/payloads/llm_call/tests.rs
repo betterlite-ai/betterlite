@@ -1,9 +1,10 @@
 #![cfg(test)]
 
 use super::*;
+use crate::otel::model::metadata::wire::decode;
 
 fn payload(text: &str) -> Payload {
-    crate::otel::model::metadata::wire::decode::<Payload>(text).expect("payload")
+    decode::<Payload>(text).expect("payload")
 }
 
 fn options(capture_content: bool) -> LLMCallOptions {
@@ -56,12 +57,22 @@ fn span_fields_match_litellm() {
     assert_eq!(span.request_model, "chat-group");
     assert_eq!(span.response_model.as_deref(), Some("gpt-4o-2024"));
     assert_eq!(span.response_id.as_deref(), Some("resp-1"));
-    assert_eq!(span.request_params.temperature, Some(0.2));
+    assert_eq!(
+        span.request_params.temperature.map(f64::to_bits),
+        Some(0.2_f64.to_bits())
+    );
     assert_eq!(span.request_params.max_tokens, Some(32));
     assert_eq!(span.usage.input_tokens, Some(10));
     assert_eq!(span.usage.output_tokens, Some(4));
     assert_eq!(span.usage.total_tokens, Some(14));
     assert_eq!(span.finish_reasons, vec!["stop".to_owned()]);
+    assert_eq!(span.call_type.as_deref(), Some("completion"));
+}
+
+#[test]
+fn span_fields_carry_the_cost_and_identity() {
+    let span = LLMCallSpanData::from_standard_logging_payload(&chat_payload(), options(false))
+        .expect("span");
     assert_eq!(span.error, None);
     assert_eq!(span.response_cost, Some(Decimal::new(15, 4)));
     assert_eq!(
@@ -80,9 +91,14 @@ fn span_fields_match_litellm() {
         Some("get_weather")
     );
     assert_eq!(span.system_fingerprint.as_deref(), Some("fp-1"));
+}
+
+#[test]
+fn span_fields_default_to_absent() {
+    let span = LLMCallSpanData::from_standard_logging_payload(&chat_payload(), options(false))
+        .expect("span");
     assert_eq!(span.time_to_first_chunk_seconds, None);
     assert_eq!(span.output_type, None);
-    assert_eq!(span.call_type.as_deref(), Some("completion"));
     assert_eq!(span.request_route, None);
     assert_eq!(span.session_id, None);
     assert_eq!(span.embedding_output, None);
@@ -195,11 +211,8 @@ fn empty_options_fall_through_to_the_payload() {
     r#"{"data":[{"embedding":"AAAA"},{"embedding":[1,2,3]}]}"#,
     Some(EmbeddingOutput { count: 2, dimensions: None })
 )]
-fn embedding_output_matches_litellm(
-    #[case] response: &str,
-    #[case] expected: Option<EmbeddingOutput>,
-) {
-    let response: MetadataMap = serde_json::from_str(response).expect("response");
+fn embedding_output_matches_litellm(#[case] raw: &str, #[case] expected: Option<EmbeddingOutput>) {
+    let response: MetadataMap = serde_json::from_str(raw).expect("response");
     assert_eq!(EmbeddingOutput::from_response(&response), expected);
 }
 

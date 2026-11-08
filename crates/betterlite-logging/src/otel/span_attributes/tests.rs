@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use opentelemetry::trace::{Span as _, Tracer as _, TracerProvider as _};
+use opentelemetry::trace::{Tracer as _, TracerProvider as _};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 
 fn exported_attributes(exporter: &InMemorySpanExporter) -> Vec<(String, Value)> {
@@ -42,7 +42,7 @@ fn safe_set_attribute_writes_primitives() {
     span.safe_set_attribute("litellm.string", &OtelModelValue::String("text".to_owned()));
     span.safe_set_attribute(
         "litellm.number",
-        &OtelModelValue::Number(serde_json::Number::from(3)),
+        &OtelModelValue::Number(serde_json::Number::from(3_i64)),
     );
     span.safe_set_attribute("litellm.flag", &OtelModelValue::Bool(true));
     span.safe_set_attribute("litellm.null", &OtelModelValue::Null(()));

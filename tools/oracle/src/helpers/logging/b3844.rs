@@ -103,7 +103,7 @@ fn llm_call(
             session_id: session_id.map(str::to_owned),
         },
     )
-    .map_err(metadata_error)?;
+    .map_err(|error| metadata_error(&error))?;
     Ok(llm_call_record(&span))
 }
 
@@ -112,17 +112,17 @@ fn tool_call(
     capture_content: bool,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
     let span = MCPToolCallSpanData::from_standard_logging_payload(payload, capture_content)
-        .map_err(metadata_error)?;
+        .map_err(|error| metadata_error(&error))?;
     Ok(tool_call_record(&span))
 }
 
 fn list_tools(payload: &Payload) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let span =
-        MCPListToolsSpanData::from_standard_logging_payload(payload).map_err(metadata_error)?;
+    let span = MCPListToolsSpanData::from_standard_logging_payload(payload)
+        .map_err(|error| metadata_error(&error))?;
     Ok(list_tools_record(&span))
 }
 
-fn metadata_error(error: MetadataError) -> Box<crate::helpers::HelperError> {
+fn metadata_error(error: &MetadataError) -> Box<crate::helpers::HelperError> {
     Box::new(crate::helpers::HelperError {
         class: "MetadataError".to_owned(),
         status: None,
@@ -139,7 +139,7 @@ fn primitive_record(value: &OtelModelValue) -> Value {
         OtelValue::I64(integer) => json!(integer),
         OtelValue::F64(float) => json!(float),
         OtelValue::String(text) => json!(text.to_string()),
-        _ => json!(""),
+        OtelValue::Array(_) | _ => json!(""),
     }
 }
 
@@ -227,8 +227,7 @@ fn identity_record(identity: &RequestIdentity) -> Value {
 }
 
 fn decimal_value(value: Option<Decimal>) -> Value {
-    match value.and_then(|amount| amount.to_f64()) {
-        Some(float) => json!(float),
-        None => Value::Null,
-    }
+    value
+        .and_then(|amount| amount.to_f64())
+        .map_or(Value::Null, |float| json!(float))
 }
