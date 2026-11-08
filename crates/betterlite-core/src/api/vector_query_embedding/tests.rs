@@ -106,12 +106,16 @@ impl VectorStoreRouter for FakeRouter {
         &self,
         _entry: EmbeddingEntry,
         model: &str,
-        _input: &[String],
-        _configuration: Params,
+        input: &[String],
+        configuration: Params,
     ) -> Result<EmbeddingResponse, BaseLlmException> {
         Err(BaseLlmException {
             status_code: 404,
-            message: format!("no deployment for {model}"),
+            message: format!(
+                "no deployment for {model} ({} inputs, {} options)",
+                input.len(),
+                configuration.len()
+            ),
             headers: BTreeMap::new(),
         })
     }
