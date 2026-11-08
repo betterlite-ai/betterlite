@@ -11,9 +11,9 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2361-L2402
   - what: >-
       A request whose user, tool and function messages would make more than 256 remote downloads is refused
-      with PrepareError::TooManyRemoteUrls. The count follows the conversion's own predicates: an http://
-      image URL always downloads, an https:// image URL downloads when force_base64 is set, and a file_data
-      value starting with http downloads for any file part. LiteLLM downloads every URL it meets.
+      with PrepareError::TooManyRemoteUrls. The count follows the conversion's own predicates: any image URL
+      starting with http downloads, except a scheme-qualified https:// URL when force_base64 is off, and a
+      file_data value starting with http downloads for any file part. LiteLLM downloads every URL it meets.
     why: >-
       Each download is a separate network call with its own size limit, so the message and part ceilings
       alone still allow hundreds of thousands of fetches; the ceiling is the MAX_REMOTE_URLS bound

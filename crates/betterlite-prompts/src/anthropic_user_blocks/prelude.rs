@@ -132,6 +132,7 @@ fn part_downloads(part: &Object, force_base64: bool) -> bool {
     }
 }
 
+// The image chunk path fetches any http prefix; an https URL is a URL source unless force_base64
 fn url_downloads(url: &Json, force_base64: bool) -> bool {
     let address = match url {
         Json::Text(text) => Some(text.as_str()),
@@ -139,7 +140,7 @@ fn url_downloads(url: &Json, force_base64: bool) -> bool {
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => None,
     };
     address.is_some_and(|text| {
-        text.starts_with("http://") || (force_base64 && text.starts_with("https://"))
+        text.starts_with("http") && (force_base64 || !text.starts_with("https://"))
     })
 }
 
