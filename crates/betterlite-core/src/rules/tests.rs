@@ -125,6 +125,17 @@ fn pre_call_carries_the_fixed_message_and_the_phase() {
 }
 
 #[test]
+fn a_missing_input_classifies_as_an_internal_server_error() {
+    let error = evaluate(RulePhase::PreCall, &Unreachable, None, "gpt-4o").unwrap_err();
+    let metadata = error.classify().metadata();
+    assert_eq!(metadata.status_code, 500);
+    assert_eq!(
+        metadata.error_type,
+        WireField::Text(String::from("internal_server_error"))
+    );
+}
+
+#[test]
 fn a_rule_rejection_classifies_as_an_api_response_validation_error() {
     let rules = [Some(RuleDecision::Boolean(false))];
     let error = evaluate(
