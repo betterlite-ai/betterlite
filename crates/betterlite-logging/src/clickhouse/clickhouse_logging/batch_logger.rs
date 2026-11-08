@@ -58,9 +58,7 @@ impl<Storage: ClickHouseStorage> ClickHouseBatchLogger<Storage> {
             // B256 drops the oldest above this cap; ClickHouse's buffer cap is only the is_full hint
             max_queue_size: usize::MAX,
         };
-        let mut batch = BatchQueue::new(batch_settings);
-        // rows enqueued while an insert runs wait for the next flush instead of being cleared
-        batch.preserve_during_flush = true;
+        let batch = BatchQueue::new(batch_settings);
         Self {
             inner: Arc::new(Inner {
                 storage,
