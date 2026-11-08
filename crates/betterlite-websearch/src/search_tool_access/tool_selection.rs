@@ -1,10 +1,12 @@
+use std::fmt;
+
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
 pub type SearchToolParams = IndexMap<String, Box<RawValue>>;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(try_from = "RawSearchToolConfig")]
 pub struct SearchToolConfig {
     pub search_tool_name: Option<String>,
@@ -12,12 +14,25 @@ pub struct SearchToolConfig {
     pub litellm_params: SearchToolParams,
 }
 
+impl fmt::Debug for SearchToolConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SearchToolConfig")
+            .field("search_tool_name", &self.search_tool_name)
+            .field("search_provider", &self.search_provider)
+            .field(
+                "litellm_params",
+                &self.litellm_params.keys().collect::<Vec<_>>(),
+            )
+            .finish()
+    }
+}
+
 #[derive(Deserialize)]
 struct RawSearchToolConfig {
     #[serde(default)]
     search_tool_name: Option<String>,
     #[serde(default)]
-    litellm_params: SearchToolParams,
+    litellm_params: Option<SearchToolParams>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -30,7 +45,7 @@ impl TryFrom<RawSearchToolConfig> for SearchToolConfig {
     type Error = SearchToolConfigError;
 
     fn try_from(raw: RawSearchToolConfig) -> Result<Self, Self::Error> {
-        let mut litellm_params = raw.litellm_params;
+        let mut litellm_params = raw.litellm_params.unwrap_or_default();
         let search_provider = litellm_params
             .shift_remove("search_provider")
             .map(|value| serde_json::from_str::<Option<String>>(value.get()))

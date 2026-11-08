@@ -90,6 +90,23 @@ fn a_null_search_provider_is_absent() {
 }
 
 #[test]
+fn a_null_litellm_params_is_an_empty_map_without_a_provider() {
+    let entry = config(r#"{"search_tool_name": "s", "litellm_params": null}"#);
+    assert!(entry.litellm_params.is_empty());
+    assert!(entry.search_provider.is_none());
+}
+
+#[test]
+fn debug_output_lists_the_param_keys_but_not_their_values() {
+    let entry = config(
+        r#"{"search_tool_name": "s", "litellm_params": {"search_provider": "tavily", "api_key": "sk-secret"}}"#,
+    );
+    let printed = format!("{entry:?}");
+    assert!(printed.contains("api_key"));
+    assert!(!printed.contains("sk-secret"));
+}
+
+#[test]
 fn rejects_a_non_string_search_provider() {
     let error = serde_json::from_str::<SearchToolConfig>(
         r#"{"search_tool_name": "s", "litellm_params": {"search_provider": 5}}"#,

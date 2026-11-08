@@ -148,16 +148,18 @@ fn kwargs_without_team() -> SearchHookKwargs {
 
 async fn authorize(
     recorder: &Recorder,
-    tool: Option<&SearchToolConfig>,
+    tool: &SearchToolConfig,
     kwargs: Option<&SearchHookKwargs>,
 ) -> Result<(), SearchToolAccessError<FakeError>> {
-    let authorizer = SearchToolAuthorizer::from(recorder.clone());
+    let authorizer = SearchToolAuthorizer {
+        grants_port: recorder.clone(),
+    };
     authorizer.authorize(tool, kwargs).await
 }
 
 async fn assert_allowed(
     recorder: &Recorder,
-    tool: Option<&SearchToolConfig>,
+    tool: &SearchToolConfig,
     kwargs: Option<&SearchHookKwargs>,
 ) {
     authorize(recorder, tool, kwargs).await.unwrap();
@@ -168,7 +170,7 @@ async fn skips_when_the_tool_has_no_name() {
     let recorder = make_recorder(None);
     let unnamed = tool("");
     let kwargs = kwargs_with_team("t1");
-    assert_allowed(&recorder, Some(&unnamed), Some(&kwargs)).await;
+    assert_allowed(&recorder, &unnamed, Some(&kwargs)).await;
     assert!(recorder.recorded().is_empty());
 }
 
@@ -176,9 +178,9 @@ async fn skips_when_the_tool_has_no_name() {
 async fn skips_when_no_caller_is_found() {
     let recorder = make_recorder(None);
     let named = tool("search");
-    assert_allowed(&recorder, Some(&named), None).await;
+    assert_allowed(&recorder, &named, None).await;
     let empty = SearchHookKwargs::default();
-    assert_allowed(&recorder, Some(&named), Some(&empty)).await;
+    assert_allowed(&recorder, &named, Some(&empty)).await;
     assert!(recorder.recorded().is_empty());
 }
 
@@ -187,7 +189,7 @@ async fn checks_the_key_then_loads_and_checks_the_team() {
     let recorder = make_recorder(None);
     let named = tool("search");
     let kwargs = kwargs_with_team("t1");
-    assert_allowed(&recorder, Some(&named), Some(&kwargs)).await;
+    assert_allowed(&recorder, &named, Some(&kwargs)).await;
     assert_eq!(
         recorder.recorded(),
         [
@@ -212,7 +214,7 @@ async fn checks_only_the_key_without_a_team_id() {
     let recorder = make_recorder(None);
     let named = tool("search");
     let kwargs = kwargs_without_team();
-    assert_allowed(&recorder, Some(&named), Some(&kwargs)).await;
+    assert_allowed(&recorder, &named, Some(&kwargs)).await;
     assert_eq!(
         recorder.recorded(),
         [Call::CheckKey {
@@ -227,7 +229,7 @@ async fn skips_the_team_steps_for_an_empty_team_id() {
     let recorder = make_recorder(None);
     let named = tool("search");
     let kwargs = kwargs_with_team("");
-    assert_allowed(&recorder, Some(&named), Some(&kwargs)).await;
+    assert_allowed(&recorder, &named, Some(&kwargs)).await;
     assert_eq!(
         recorder.recorded(),
         [Call::CheckKey {
@@ -242,7 +244,7 @@ async fn passes_the_callers_parent_span_to_the_team_lookup() {
     let recorder = make_recorder(None);
     let named = tool("search");
     let kwargs = kwargs_with_team_and_span("t1");
-    assert_allowed(&recorder, Some(&named), Some(&kwargs)).await;
+    assert_allowed(&recorder, &named, Some(&kwargs)).await;
     assert!(matches!(
         recorder.recorded().as_slice(),
         [_, Call::LoadTeam { has_span: true, .. }, _]
@@ -250,19 +252,11 @@ async fn passes_the_callers_parent_span_to_the_team_lookup() {
 }
 
 #[tokio::test]
-async fn allows_an_absent_tool() {
-    let recorder = make_recorder(None);
-    let kwargs = kwargs_with_team("t1");
-    assert_allowed(&recorder, None, Some(&kwargs)).await;
-    assert!(recorder.recorded().is_empty());
-}
-
-#[tokio::test]
 async fn returns_the_key_error_without_later_steps() {
     let recorder = make_recorder(Some(Step::Key));
     let named = tool("search");
     let kwargs = kwargs_with_team("t1");
-    let error = authorize(&recorder, Some(&named), Some(&kwargs))
+    let error = authorize(&recorder, &named, Some(&kwargs))
         .await
         .unwrap_err();
     assert!(matches!(
@@ -283,7 +277,7 @@ async fn returns_the_team_lookup_error_without_the_team_check() {
     let recorder = make_recorder(Some(Step::Team));
     let named = tool("search");
     let kwargs = kwargs_with_team("t1");
-    let error = authorize(&recorder, Some(&named), Some(&kwargs))
+    let error = authorize(&recorder, &named, Some(&kwargs))
         .await
         .unwrap_err();
     assert!(matches!(
@@ -301,7 +295,7 @@ async fn returns_the_team_check_error_after_all_three_steps() {
     let recorder = make_recorder(Some(Step::TeamCheck));
     let named = tool("search");
     let kwargs = kwargs_with_team("t1");
-    let error = authorize(&recorder, Some(&named), Some(&kwargs))
+    let error = authorize(&recorder, &named, Some(&kwargs))
         .await
         .unwrap_err();
     assert!(matches!(

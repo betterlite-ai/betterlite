@@ -37,22 +37,16 @@ where
 }
 
 pub struct SearchToolAuthorizer<Grants> {
-    grants_port: Grants,
-}
-
-impl<Grants> From<Grants> for SearchToolAuthorizer<Grants> {
-    fn from(grants_port: Grants) -> Self {
-        Self { grants_port }
-    }
+    pub grants_port: Grants,
 }
 
 impl<Grants: SearchToolGrants> SearchToolAuthorizer<Grants> {
     pub async fn authorize(
         &self,
-        search_tool: Option<&SearchToolConfig>,
+        search_tool: &SearchToolConfig,
         kwargs: Option<&SearchHookKwargs>,
     ) -> Result<(), SearchToolAccessError<Grants::Error>> {
-        let Some(name) = selected_search_tool_name(search_tool) else {
+        let Some(name) = selected_search_tool_name(Some(search_tool)) else {
             return Ok(());
         };
         let Some(caller) = caller_from_kwargs(kwargs) else {
