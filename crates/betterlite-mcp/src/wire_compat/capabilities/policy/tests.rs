@@ -42,33 +42,23 @@ fn initialize_result(protocol_version: &str) -> InitializeResult {
 }
 
 #[rstest]
-#[case::nov_2024("2024-11-05")]
-#[case::mar_2025("2025-03-26")]
-#[case::jun_2025("2025-06-18")]
-#[case::nov_2025("2025-11-25")]
-fn an_initialize_offer_keeps_a_handshake_revision(#[case] requested: &str) {
+#[case::nov_2024("2024-11-05", "2024-11-05")]
+#[case::mar_2025("2025-03-26", "2025-03-26")]
+#[case::jun_2025("2025-06-18", "2025-06-18")]
+#[case::nov_2025("2025-11-25", "2025-11-25")]
+#[case::modern("2026-07-28", LATEST_HANDSHAKE_VERSION)]
+#[case::unknown("2099-01-01", LATEST_HANDSHAKE_VERSION)]
+#[case::empty("", LATEST_HANDSHAKE_VERSION)]
+fn an_initialize_offer_negotiates_the_handshake_revision(
+    #[case] requested: &str,
+    #[case] negotiated: &str,
+) {
     let policy = policy(&HANDSHAKE_VERSIONS);
     assert_eq!(
         policy
             .negotiate(VersionRequest::Initialize { requested })
             .unwrap(),
-        requested
-    );
-}
-
-#[rstest]
-#[case::modern("2026-07-28")]
-#[case::unknown("2099-01-01")]
-#[case::empty("")]
-fn an_initialize_offer_outside_the_handshake_gets_the_latest_handshake_revision(
-    #[case] requested: &str,
-) {
-    let policy = policy(&[SpecVersion::Nov2025]);
-    assert_eq!(
-        policy
-            .negotiate(VersionRequest::Initialize { requested })
-            .unwrap(),
-        LATEST_HANDSHAKE_VERSION
+        negotiated
     );
 }
 
