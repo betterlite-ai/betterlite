@@ -21,6 +21,14 @@ impl VectorStoreConfig for ValkeyVectorStoreConfig {
         EndpointsByType::default()
     }
 
+    fn complete_url(
+        &self,
+        api_base: Option<&str>,
+        _litellm_params: &Params,
+    ) -> Result<String, Self::Error> {
+        Ok(api_base.unwrap_or_default().to_owned())
+    }
+
     fn transform_search_request(
         &self,
         _request: SearchRequest<'_>,

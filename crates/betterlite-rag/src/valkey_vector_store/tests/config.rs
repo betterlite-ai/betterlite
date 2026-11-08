@@ -40,6 +40,27 @@ fn create_response_fails_with_the_search_only_message() {
 }
 
 #[test]
+fn complete_url_keeps_an_absent_base_empty_and_create_still_fails_search_only() {
+    let config = ValkeyVectorStoreConfig;
+    let params = empty_params();
+    let base = config
+        .complete_url(None, &params)
+        .expect("the complete url without a base");
+    assert_eq!(base, "");
+    let error = config
+        .transform_create_request(&params, &base)
+        .expect_err("the create request");
+    assert!(matches!(error, ValkeyError::SearchOnly));
+    assert_eq!(error.to_string(), SEARCH_ONLY);
+    assert_eq!(
+        config
+            .complete_url(Some("https://api.example.com"), &params)
+            .expect("the complete url with a base"),
+        "https://api.example.com"
+    );
+}
+
+#[test]
 fn search_transforms_refuse_because_the_store_runs_ft_search_itself() {
     let config = ValkeyVectorStoreConfig;
     let params = empty_params();
