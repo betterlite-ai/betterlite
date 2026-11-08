@@ -3,6 +3,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 
 use super::transport::{ArgillaMethod, ArgillaRequest, Transport};
+use crate::http_analytics_loggers::delivery::DELIVERY_DEADLINE;
 
 #[derive(Clone, Debug)]
 pub struct ArgillaCredentials {
@@ -49,7 +50,7 @@ where
         ),
         api_key: credentials.api_key.clone(),
         body: None,
-        timeout: None,
+        timeout: DELIVERY_DEADLINE,
     };
     let response = transport
         .send(request)

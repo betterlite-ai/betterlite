@@ -21,7 +21,7 @@ async fn puts_the_items_envelope_and_clears_on_success() {
         calls[1].url,
         "http://localhost:6900//api/v1/datasets/ds-1/records/bulk"
     );
-    assert_eq!(calls[1].timeout, Some(ASYNC_TIMEOUT));
+    assert_eq!(calls[1].timeout, ASYNC_TIMEOUT);
     assert_eq!(
         built.transport.bodies()[0],
         Json::Object(IndexMap::from([(

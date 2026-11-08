@@ -2,6 +2,7 @@ use betterlite_models::decisions::Json;
 
 use super::support::{DATASET_BODY, Reply, ScriptedRandom, logger, valid_kwargs};
 use crate::argilla_logging::transport::ArgillaMethod;
+use crate::http_analytics_loggers::delivery::DELIVERY_DEADLINE;
 
 const BATCH_SIZE: &str = "1";
 
@@ -22,7 +23,7 @@ async fn posts_the_queue_as_a_json_array_and_clears_it() {
         "http://localhost:6900//api/v1/datasets/ds-1/records/bulk"
     );
     assert_eq!(calls[1].api_key, "argilla-key");
-    assert_eq!(calls[1].timeout, None);
+    assert_eq!(calls[1].timeout, DELIVERY_DEADLINE);
     let bodies = built.transport.bodies();
     let Json::List(records) = &bodies[0] else {
         panic!("the sync body is a JSON array");

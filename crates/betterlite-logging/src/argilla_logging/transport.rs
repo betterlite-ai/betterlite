@@ -11,8 +11,6 @@ use http::header::{HeaderMap, HeaderName, HeaderValue, InvalidHeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use url::Url;
 
-use crate::http_analytics_loggers::delivery::DELIVERY_DEADLINE;
-
 pub const API_KEY_HEADER: &str = "x-argilla-api-key";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,7 +25,7 @@ pub struct ArgillaRequest {
     pub url: String,
     pub api_key: SecretString,
     pub body: Option<Vec<u8>>,
-    pub timeout: Option<Duration>,
+    pub timeout: Duration,
 }
 
 pub struct ArgillaResponse {
@@ -100,7 +98,7 @@ impl Transport for PooledTransport {
             query: Vec::new(),
             headers,
             body: body.map_or(RequestBody::Empty, RequestBody::Json),
-            deadline: timeout.unwrap_or(DELIVERY_DEADLINE),
+            deadline: timeout,
         };
         let response = self.client.send_buffered(outbound).await?;
         Ok(ArgillaResponse {

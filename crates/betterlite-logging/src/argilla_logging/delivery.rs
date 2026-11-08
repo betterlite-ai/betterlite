@@ -5,6 +5,7 @@ use super::credentials::ArgillaCredentials;
 use super::extraction::{ArgillaItem, ArgillaPayload};
 use super::transport::{ArgillaMethod, ArgillaRequest, ArgillaResponse, Transport};
 use crate::batch::delivery::{BatchCancelled, BatchDelivery};
+use crate::http_analytics_loggers::delivery::DELIVERY_DEADLINE;
 
 // httpx reads a bare timeout number as seconds, so LiteLLM's 60000 is about sixteen hours, not sixty seconds.
 pub const ASYNC_TIMEOUT: Duration = Duration::from_mins(1_000);
@@ -19,7 +20,7 @@ fn batch_request(
     credentials: &ArgillaCredentials,
     method: ArgillaMethod,
     body: Vec<u8>,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> ArgillaRequest {
     ArgillaRequest {
         method,
@@ -70,8 +71,8 @@ impl<T: Transport> BatchDelivery<ArgillaItem> for ArgillaDelivery<'_, T> {
             });
         };
         let (method, timeout) = match self.mode {
-            BatchMode::Sync => (ArgillaMethod::Post, None),
-            BatchMode::Async => (ArgillaMethod::Put, Some(ASYNC_TIMEOUT)),
+            BatchMode::Sync => (ArgillaMethod::Post, DELIVERY_DEADLINE),
+            BatchMode::Async => (ArgillaMethod::Put, ASYNC_TIMEOUT),
         };
         let request = batch_request(self.credentials, method, body, timeout);
         match self.transport.send(request).await {

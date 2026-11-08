@@ -9,6 +9,7 @@ use betterlite_logging::argilla_logging::logger::RandomSource;
 use betterlite_logging::argilla_logging::transport::{
     ArgillaMethod, ArgillaRequest, ArgillaResponse, Transport,
 };
+use betterlite_logging::http_analytics_loggers::delivery::DELIVERY_DEADLINE;
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -35,6 +36,12 @@ pub(crate) struct ScriptedError {
 }
 
 fn call_json(request: &ArgillaRequest) -> Value {
+    // LiteLLM passes no timeout for the module-level GET and POST, so the client default applies; the helper reports that deadline as null.
+    let timeout = if request.timeout == DELIVERY_DEADLINE {
+        Value::Null
+    } else {
+        json!(request.timeout.as_secs())
+    };
     json!({
         "method": match request.method {
             ArgillaMethod::Get => "GET",
@@ -47,7 +54,7 @@ fn call_json(request: &ArgillaRequest) -> Value {
             .body
             .as_deref()
             .map(|bytes| serde_json::from_slice(bytes).unwrap_or(Value::Null)),
-        "timeout": request.timeout.map(|value| value.as_secs()),
+        "timeout": timeout,
     })
 }
 

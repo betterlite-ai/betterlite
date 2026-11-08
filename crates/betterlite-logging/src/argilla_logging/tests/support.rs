@@ -46,7 +46,7 @@ pub(crate) struct Call {
     pub url: String,
     pub api_key: String,
     pub body: Option<Vec<u8>>,
-    pub timeout: Option<Duration>,
+    pub timeout: Duration,
 }
 
 #[derive(Clone)]
