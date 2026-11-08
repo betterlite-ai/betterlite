@@ -1,0 +1,10 @@
+kind: helper
+name: mirror-kwargs-keeps-empty-metadata
+call:
+  b8440:
+    function: silent_kwargs
+    request:
+      model: gpt-4o
+      metadata: {}
+env: {}
+compare: {ignore: []}
