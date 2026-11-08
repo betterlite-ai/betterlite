@@ -12,7 +12,7 @@ description: >-
   body before checking token expiry. A versioned token supplies model/user/team/session_type; a
   legacy decrypted string is itself the provider key and routes via query model or the default
   gpt-4o-realtime-preview. Build a transcription session with nested audio.input.transcription.model,
-  otherwise a realtime session with top-level model. B1103 enriches data, B124's injected ProxyLogging
+  otherwise a realtime session with top-level model. B1103 enriches data, B8399's injected ProxyLogging
   hook service runs pre_call_hook(call_type=arealtime_calls), B014 routes and B1010 executes HTTP.
   No second model authorization or ordinary proxy-key lookup is added here.
 
@@ -102,7 +102,7 @@ deviations:
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/realtime_endpoints/endpoints.py#L410-L410
 out_of_scope:
 - B1012 owns all payload/session helpers at43-213; B1126 owns client_secrets216-359 and transcription_sessions521-658. B1125 owns the three WebSocket paths in proxy_server.py.
-- B061 owns encryption/decryption; B124 owns ProxyLogging hooks supplied as an injected service; B1010/B2456 own HTTP provider execution. This task composes no other route factories.
+- B061 owns encryption/decryption; B8399 supplies the ProxyLogging hooks as an injected service (pre_call from B8393, post_call_failure from B8395); B1010/B2456 own HTTP provider execution. This task composes no other route factories.
 pitfalls:
 - These401 responses are explicit JSONResponse-style string errors, not ProxyException envelopes.
 - An empty legacy model query is preserved, while an empty versioned model_id falls through truthy defaults.

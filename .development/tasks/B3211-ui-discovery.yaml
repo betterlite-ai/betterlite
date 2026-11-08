@@ -103,7 +103,7 @@ out_of_scope:
   - "is_mcp_stdio_blocked, warn_if_mcp_stdio_blocked and MCP_STDIO_DISABLED_MESSAGE in stdio_gate.py: B4716 builds them next to its StdioPolicy (B136 covers the file)."
   - "WorkerRegistryEntry (control_plane_endpoints.py): B4470."
   - "Every other function in proxy/utils.py: B124 and the tasks split from it."
-  - "The worker_registry config loader and its premium gate (proxy_server.py L7092-L7098): B124 umbrella, no task owns it yet."
+  - "The worker_registry config loader and its premium gate (proxy_server.py L7092-L7098): B8590, which refuses the key without a license as open-source LiteLLM does, so workers stays empty."
   - "Mounting the router into the app and the HTTP oracle cases for the two paths: B078."
   - "discovery_endpoints/README.md is documentation only and has no code."
 

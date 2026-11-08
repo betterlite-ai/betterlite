@@ -1,0 +1,83 @@
+id: B8202
+title: A2A agent card discovery and discover route
+description: >-
+  Port proxy/a2a/discovery.py and proxy/a2a/endpoints.py. fetch_well_known_card fetches an
+  upstream agent's card. Mode well_known_fallback tries /.well-known/agent-card.json,
+  /.well-known/agent.json and /agent.json in that order. Mode langgraph_platform requires
+  params.assistant_id and tries the same three paths with ?assistant_id=<id> added. The first
+  path that answers below 400 with a JSON object wins. Every URL goes through the SSRF-safe
+  fetch, and a blocked or failed path moves to the next one. When all fail, the error is
+  AgentCardDiscoveryError with the base URL, the mode and the last error. An empty base URL fails
+  at once, and a trailing slash on the base URL is dropped.
+
+  The route POST /v1/a2a/discover takes url, discovery_mode and params and answers
+  {url, agent_card}. Only a proxy admin may call it (403 with the role in the detail). A
+  discovery error is 400 and any other error is 500 with "Discovery failed: ...".
+
+scope:
+  paths:
+    - crates/betterlite-server/src/api/a2a_discover.rs
+    - crates/betterlite-server/src/api/a2a_discover/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/a2a-discover/**
+    - tools/oracle/fuzz/corpus/helper_case/a2a-discover-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/discovery.py#L1-L154
+    why: Modes, paths, the fetch loop and its errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/endpoints.py#L1-L112
+    why: Request and response models, the admin check and the error mapping.
+
+dod:
+  - text: >-
+      Both modes build the Python's path lists, and langgraph_platform without an assistant id
+      fails with the Python's message.
+    proof: [discover-tests, discover-oracle]
+  - text: >-
+      The fetch returns the first JSON object below status 400, skips blocked, failed, 4xx and
+      non-JSON paths, and fails with the last error after the final path.
+    proof: [discover-tests, discover-oracle]
+  - text: >-
+      The route answers 403 for a non-admin, 400 for a discovery error, 500 for any other error,
+      and 200 with url and agent_card on success.
+    proof: [discover-tests, discover-oracle]
+  - text: Every mutant in the discovery logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: discover-tests
+      why: A path order, fallback, status mapping or admin check differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^api::a2a_discover::/)'
+    - id: discover-oracle
+      why: Discover answers differ from LiteLLM on the same input.
+      run: >-
+        cargo run --locked -p betterlite-oracle -- --self-check
+        tools/oracle/cases/helpers/a2a-discover
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - Agent card merging (B4811).
+  - Saving an agent through POST /v1/agents.
+
+pitfalls:
+  - >-
+    The fetch must use the repository's SSRF-safe client on every redirect hop. The route is
+    admin only, but a stolen admin key must not reach internal hosts.
+  - >-
+    Pass an empty header map, not none, to the safe fetch. The Python comment explains a crash on
+    none, and a plain Rust map avoids it.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

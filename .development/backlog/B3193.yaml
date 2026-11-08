@@ -2,9 +2,11 @@ id: B3193
 milestone: M4 keys, spend and management
 title: Legacy and paginated public model hub queries
 status: todo
-depends_on: [B001, B002, B003, B052, B732, B860, B1665, B1701, B1702]
+depends_on: [B001, B002, B003, B052, B732, B860, B1665, B1701, B1702, B4445, B7640]
 file: tasks/B3193-public-model-hub.yaml
 covers:
+  - "litellm/proxy/public_endpoints/__init__.py"
+  - "litellm/proxy/public_endpoints/public_v1/__init__.py"
   - "litellm/proxy/public_endpoints/public_endpoints.py"
   - "litellm/proxy/public_endpoints/public_v1/model_hub.py"
 parent: B077

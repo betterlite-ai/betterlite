@@ -2,7 +2,7 @@ id: B1401
 title: xAI interactive authorization and loopback callback
 description: >-
   Implement the interactive half of oauth.py in betterlite-openai::xai_login, exposing a
-  login service for B151's CLI. It first returns an unexpired existing record unless force
+  login service for the CLI root in B8375. It first returns an unexpired existing record unless force
   is true, then attempts renewal of an expired record with a refresh token; only XAIOAuthError
   falls through to a new authorization. B1400 supplies discovery, token exchange and storage.
   Construct PKCE from 32 random bytes with unpadded URL-safe base64 and SHA256; inject random
@@ -86,7 +86,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - Token/discovery records and all remaining XAIOAuthAuthenticator methods in oauth.py belong to B1400.
-  - B151 installs the xai-oauth login CLI command and its browser-opening frontend; this task supplies its callable service.
+  - B8375 installs the xai-oauth login CLI command and its browser-opening frontend; this task supplies its callable service.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as xai_login_url in the openai group. Replace the stub Op in tools/oracle/src/helpers/openai/xai_login_url.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/xai_login_url.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A callback with matching state and error still receives HTTP 200 before login reports the authorization failure.

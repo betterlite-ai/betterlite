@@ -126,7 +126,7 @@ out_of_scope:
 - "Key, lookup and write methods of `Cache` are B8065."
 - "`Cache.test_connection` style health checks and the cache settings routes are B4306 to B4309."
 - "`DualCache` batch reads and deferred writes (B4294, B4295) are exposed through the same methods LiteLLM has, but their queue rules stay in Rust."
-- "`_internal_lru_cache.py` and `Readme.md` of litellm/caching belong to B125's parts."
+- "`_internal_lru_cache.py` has no caller at the pin and B8502 lists it as not built; `Readme.md` of litellm/caching is prose."
 pitfalls:
 - "`enable_cache` does nothing to an existing `betterlite.cache`, and tests must start from `None`."
 - "`Cache.__init__` appends to `input_callback` only when `\"cache\"` is missing, and the success lists use the callback manager, so a plain list append is wrong."

@@ -82,7 +82,7 @@ deviations:
 out_of_scope:
   - prompt_injection.create_execute_code_tool has no caller at the pin.
   - code_execution._parse_code_execution_arguments, CodeExecutionHandler.execute_with_code_execution, has_code_execution_tool and add_code_execution_tool have no live caller at the pin; constructor state and their private result/protocol declarations serve only this unused loop and are not implemented.
-  - B095 owns the live SkillsInjectionHook loop and B1506 owns SkillsSandboxExecutor, which that hook calls directly.
+  - B3395 owns the live SkillsInjectionHook loop and B1506 owns SkillsSandboxExecutor, which that hook calls directly.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as skill_content in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/skill_content.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/skill_content.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - endswith(SKILL.md) matches a suffix such as NOT_SKILL.md and does not require the basename to equal SKILL.md.

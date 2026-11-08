@@ -1,0 +1,11 @@
+kind: helper
+name: phoenix-config-path-ends-v1
+call:
+  b3850:
+    function: phoenix_config
+    environment:
+      PHOENIX_COLLECTOR_ENDPOINT: http://phoenix.example/v1
+env:
+  PHOENIX_COLLECTOR_ENDPOINT: http://phoenix.example/v1
+compare:
+  ignore: []

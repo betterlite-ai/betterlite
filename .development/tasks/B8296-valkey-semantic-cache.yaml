@@ -1,0 +1,132 @@
+id: B8296
+title: Valkey semantic cache
+description: >-
+  Port litellm/caching/valkey_semantic_cache.py (340 lines, class ValkeySemanticCache). It is a semantic cache on Valkey with the
+  valkey-search module. It reuses B4382's cache for the constructor checks, the embedder port, the ttl rule and the prompt and
+  response helpers (B4380), and replaces the index and query code, because valkey-search has no TEXT field and no RedisVL support.
+  Add the module `valkey_semantic_cache` to betterlite-prompts, next to `redis_semantic_cache`. It takes `build_valkey_url` and
+  `pack_vector` from B7813 (module valkey_vector_store in betterlite-rag), so add `betterlite-rag` to crates/betterlite-prompts/Cargo.toml.
+  If cargo reports a dependency cycle, stop and tell the architect.
+
+  Ports. Reuse B4382's `SemanticEmbedder`. Define `ValkeyIndex` in this module with these async methods: `ft_create(index, schema)`,
+  `ft_info(index) -> Json`, `ft_search(index, query, vec: &[u8]) -> Vec<Hit>` and `store_hash(key, fields, ttl: Option<i64>)` (HSET, then EXPIRE when
+  a ttl is given). A `Hit` has `response: String` and `distance: f64`. `ValkeyConnector::connect(url) -> Arc<dyn ValkeyIndex>` opens it.
+  The live `ValkeyIndex` sends FT.CREATE, FT.INFO, FT.SEARCH, HSET and EXPIRE through B5220's `LiveAsyncClient::query`.
+  An injected index replaces the connector: LiteLLM takes sync_client and async_client for that; here one `Option<Arc<dyn ValkeyIndex>>`.
+
+  Constructor `ValkeySemanticCache::new(options, env, embedder, connector) -> Result<Self, ValkeySemanticError>`. Order:
+  1. Missing similarity_threshold fails with "similarity_threshold must be provided, passed None".
+  2. A non-empty startup_nodes fails with exactly this text (one line, no breaks): "valkey-semantic does not support cluster-mode-enabled (multi-shard) endpoints. The async cluster client cannot route the FT.* search commands reliably. Point it at a cluster-mode-disabled endpoint instead (a primary with replicas is fine; only horizontal sharding is unsupported), or pass a single redis_url. On AWS, vector search needs ElastiCache for Valkey 8.2+ on a node-based cluster."
+  3. index_name defaults to "litellm_semantic_cache_index" (DEFAULT_VALKEY_INDEX_NAME). key_prefix is "<index_name>:".
+  4. Without an injected index: URL is redis_url, else built from host, port and password. Each falls back to the env vars VALKEY_X, then REDIS_X
+     (X is HOST, PORT or PASSWORD), where a non-empty explicit value wins and an empty string counts as missing. A missing host or port fails with
+     "Missing required Valkey configuration. Provide host and port (or VALKEY_HOST/VALKEY_PORT), or pass redis_url." The URL comes from B7813's
+     `build_valkey_url(host, port, password, ssl)`. `ValkeyEnv` is a plain struct with the six optional strings, filled by the caller.
+  5. Nothing is opened in the constructor: the connector runs on first use. embedding_model defaults to "text-embedding-ada-002". Keep
+     embedding_model, embedding_max_input_tokens and embedding_timeout as public fields for B4381, with the timeout already resolved by the caller (B4310).
+  6. The URL holds the password, so never log it.
+
+  Pure parts (all in one file each, see scope):
+  - `scope_tag(key) -> String`: lowercase hex SHA-256 of the UTF-8 bytes of the key. valkey-search TAG fields do not honour backslash escaping, so the
+    raw key cannot be matched.
+  - `index_schema(dim)`: TAG field "litellm_cache_key" (B4382's CACHE_KEY_FIELD_NAME) and VECTOR field "embedding", HNSW, TYPE FLOAT32, DIM dim, DISTANCE_METRIC COSINE.
+    The index is ON HASH with PREFIX "<key_prefix>".
+  - `doc_key(key)`: "<key_prefix><scope_tag>:<random uuid v4>". Every write makes a new document, so the same prompt stored twice gives two documents.
+  - `doc_mapping(key, prompt, value_text, embedding)`: fields "litellm_cache_key" = scope_tag, "prompt", "response" = value text, "embedding" = `pack_vector` bytes.
+  - `knn_query(key)`: the text "(@litellm_cache_key:{<scope_tag>})=>[KNN 1 @embedding $vec AS vector_distance]", return fields "response" and
+    "vector_distance", dialect 2, and the one param "vec".
+  - `extract_index_dim(info)`: walk the "attributes" array of the FT.INFO reply. For each attribute that is a list, flatten its nested lists one level; the number after
+    the item "dimensions" (text or bytes) is the dimension. No such item gives None.
+  - `assert_dim_matches(info, dim)`: if the index has a dimension and it differs, fail with "Valkey semantic-cache index '<index_name>' already exists with embedding dimension <existing>, but the configured embedding model produced dimension <dim>. Use a different valkey_semantic_cache_index_name or drop the existing index."
+  - `is_index_exists_error(error text)`: the lowercased text contains "already exists".
+  - `ensure_index(dim)`: if the remembered dim equals dim, do nothing. Else `ft_create`; on an error that is not an exists-error, return it; on an exists-error read `ft_info` and run
+    `assert_dim_matches`. Then remember dim. The remembered dim lives behind a lock inside the cache, since the cache is shared between requests.
+  - Hit handling: `similarity = 1 - distance`. No hit: write 0.0 to "semantic-similarity". A hit writes its similarity first and then, if similarity is below the threshold, is a miss.
+    Otherwise the response text goes to B4380's `decode_cached_response`; its error is a miss (the real similarity stays).
+
+  Operations (async only, like B4382; see deviations):
+  - `async_set_cache(key, value, kwargs)`: no prompt (B4380's `extract_semantic_prompt`, with messages None when empty, as B4382 does) logs and returns. Embed with the request
+    metadata, `ensure_index(len)`, `store_hash(doc_key, doc_mapping, ttl)` with B4382's ttl rule. Every error is logged at debug "Error in async Valkey semantic-cache set_cache: <error>" and swallowed.
+  - `async_get_cache(key, kwargs, metadata)`: no prompt writes 0.0 and returns None. Embed, `ensure_index`, run `knn_query` with `pack_vector(embedding)`, take the first hit, apply the hit handling above.
+    Any error is logged at debug "Error in async Valkey semantic-cache get_cache: <error>", writes 0.0 and returns None.
+  - `async_set_cache_pipeline(cache_list, kwargs)`: all pairs concurrently through `async_set_cache`, errors swallowed.
+  - `index_info()`: the FT.INFO reply of the index (B4448 reads it, as it does for the Redis cache).
+  Write native tests in `valkey_semantic_cache::tests` with fake ports and the prefixes: `options_`, `tag_`, `schema_`, `index_` (create, exists plus matching dim, exists plus mismatch, other error, dim remembered), `store_`, `lookup_` (hit, below threshold, empty result, decode failure, metadata writes, errors) and `info_`.
+  Helper oracle cases are not planned: the pure parts are small and the Python class needs a live Valkey. The architect may add some.
+
+scope:
+  paths:
+    - crates/betterlite-prompts/src/valkey_semantic_cache.rs
+    - crates/betterlite-prompts/src/valkey_semantic_cache/**
+    - crates/betterlite-prompts/Cargo.toml
+    - Cargo.lock
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/valkey_semantic_cache.py#L40-L120
+    why: Class constants, constructor checks and the URL build.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/valkey_semantic_cache.py#L120-L225
+    why: Scope tag, schema, dimension check and index creation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/valkey_semantic_cache.py#L225-L340
+    why: Document layout, KNN query, hit handling and the four cache operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/valkey/common_utils.py#L1-L18
+    why: build_valkey_url and pack_vector (B7813 owns them).
+dod:
+  - text: The constructor fails with the exact messages for a missing threshold, a startup_nodes list and missing host or port, and falls back from VALKEY_X to REDIS_X.
+    proof: [options-tests]
+  - text: The scope tag, schema, document key and fields, and the KNN query match LiteLLM.
+    proof: [tag-tests, schema-tests]
+  - text: The index is created once per dimension, an existing index with another dimension fails with the exact text, and other create errors are returned.
+    proof: [index-tests]
+  - text: Writes store a new document with the ttl and swallow every error.
+    proof: [store-tests]
+  - text: Reads record the similarity on every path, treat below-threshold hits and decode failures as misses, and turn errors into misses.
+    proof: [lookup-tests]
+  - text: index_info returns the FT.INFO reply.
+    proof: [info-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: options-tests
+      why: constructor checks, env fallbacks or the URL build are wrong
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^valkey_semantic_cache::tests::options_/)'
+    - id: tag-tests
+      why: the scope tag or the document layout is wrong
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^valkey_semantic_cache::tests::tag_/)'
+    - id: schema-tests
+      why: the index schema or the KNN query is wrong
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^valkey_semantic_cache::tests::schema_/)'
+    - id: index-tests
+      why: index creation or the dimension check is wrong
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^valkey_semantic_cache::tests::index_/)'
+    - id: store-tests
+      why: the write path, ttl or error swallowing is wrong
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^valkey_semantic_cache::tests::store_/)'
+    - id: lookup-tests
+      why: hit handling, similarity metadata or error-to-miss is wrong
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^valkey_semantic_cache::tests::lookup_/)'
+    - id: info-tests
+      why: index_info is wrong
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^valkey_semantic_cache::tests::info_/)'
+oracle_cases: []
+deviations:
+  - what: Only the async operations are built. LiteLLM's sync set_cache and get_cache are not.
+    why: Same reason as B4382, the gateway is async.
+  - what: Responses are stored as JSON text, not Python str(value).
+    why: B4380's decoder reads JSON only.
+  - what: The Valkey URL holds the password and is never logged.
+    why: LiteLLM does not log it here either, but the rule is kept explicit.
+out_of_scope:
+  - "Prompt extraction, response decoding, the ttl rule and the embedder port: B4380 and B4382. Embedding calls: B4381."
+  - "Choosing the cache type from settings. B4299 raises 'cache type valkey-semantic is not yet implemented' until the architect wires this task in (B4299 owns that change)."
+  - "build_valkey_url and pack_vector: B7813."
+  - "The live Redis client: B5220."
+pitfalls:
+  - "Do not escape the raw cache key for the TAG query. Always hash it with the scope tag."
+  - "A below-threshold hit still writes its similarity. Only the empty result writes 0.0."
+  - "Do not copy B4382's SchemaMismatch fallback chain. Valkey has one index and fails on a dimension change."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

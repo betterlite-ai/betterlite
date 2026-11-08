@@ -2,7 +2,7 @@ id: B349
 title: Validate and preview automatic-router configurations
 description: 'Implement POST /auto_router/test_routing over B379 dry-run authorization and B366 complexity
   pipeline. Accept saved or inline config with prompt or typed messages, construct an isolated immutable
-  router, and bill only classifier/embedding calls under B070/B071. Return the production decision without
+  router, and bill only classifier/embedding calls under B070 and B8481''s budget settlement. Return the production decision without
   calling the chosen main model. Implement the owned native service in crates/betterlite-server/src/auto_router_preview.rs.
   B301 registers ProbeOperation::AutoRouterPreview and its Python entry as stubs, so fill only tools/oracle/src/router_probes/auto_router_preview.rs and tools/oracle/litellm/probes/auto_router_preview.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);

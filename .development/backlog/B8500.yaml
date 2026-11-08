@@ -1,0 +1,14 @@
+id: B8500
+milestone: M8 platform
+title: Resolve secrets through get_secret, OIDC sources and the manager
+status: todo
+depends_on: [B4410, B4411, B4421]
+file: tasks/B8500-secret-lookup.yaml
+covers:
+  - "litellm/secret_managers/main.py"
+parent: B129
+split_from: B129
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

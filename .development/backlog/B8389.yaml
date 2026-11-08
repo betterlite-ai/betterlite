@@ -1,0 +1,13 @@
+id: B8389
+milestone: M8 platform
+title: Admin settings views, OTel span close and denial log
+status: todo
+depends_on: [B052, B725, B3842, B3854, B3858, B4020, B4140, B5364, B8380, B8399, B8410]
+file: tasks/B8389-admin-settings-views.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

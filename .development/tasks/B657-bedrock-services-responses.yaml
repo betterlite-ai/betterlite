@@ -42,7 +42,7 @@ description: >-
   after removing one leading chat_completions/. Otherwise instantiate this Runtime config (not Mantle); constructor
   stores sync/async fetch seams and delegates the no-op BaseResponses initializer B2202. custom_llm_provider bedrock.
   _without_chat_completions_route only removes a leading prefix once. responses_bearer_auth: Bearer selector is
-  truthy explicit api_key then B129 AWS_BEARER_TOKEN_BEDROCK. validate_environment reads GenericLiteLLMParams.api_key,
+  truthy explicit api_key then B8500 AWS_BEARER_TOKEN_BEDROCK. validate_environment reads GenericLiteLLMParams.api_key,
   returns caller headers unchanged if falsey resolved token, otherwise overrides Authorization with Bearer {token}.
   sign_request returns supplied headers,None when the same selector succeeds and does not add Authorization itself.
   responses_sigv4: Without bearer, delegate B595 _sign_request service bedrock and original parameters/model/stream/fake_stream
@@ -153,7 +153,7 @@ dod:
   - case-bedrock-responses-model-route
   - oracle
   - helper-python
-- text: 'responses_bearer_auth: Bearer selector is truthy explicit api_key then B129 AWS_BEARER_TOKEN_BEDROCK. validate_environment
+- text: 'responses_bearer_auth: Bearer selector is truthy explicit api_key then B8500 AWS_BEARER_TOKEN_BEDROCK. validate_environment
     reads GenericLiteLLMParams.api_key, returns caller headers unchanged if falsey resolved token, otherwise overrides
     Authorization with Bearer {token}. sign_request returns supplied headers,None when the same selector succeeds
     and does not add Authorization itself.'
@@ -249,7 +249,7 @@ checks:
       only removes a leading prefix once.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_bedrock_responses_model_route$/)'
   - id: case-responses-bearer-auth
-    why: Bearer selector is truthy explicit api_key then B129 AWS_BEARER_TOKEN_BEDROCK. validate_environment reads
+    why: Bearer selector is truthy explicit api_key then B8500 AWS_BEARER_TOKEN_BEDROCK. validate_environment reads
       GenericLiteLLMParams.api_key, returns caller headers unchanged if falsey resolved token, otherwise overrides
       Authorization with Bearer {token}. sign_request returns supplied headers,None when the same selector succeeds
       and does not add Authorization itself.

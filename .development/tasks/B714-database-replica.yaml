@@ -120,7 +120,7 @@ out_of_scope:
   - B710 owns DATABASE_URL_READ_REPLICA loading/assembly and B2307 its byte decoding. This task consumes
     the latest resolved value and owns the missing-at-recreation error only.
   - B713 owns individual pool generation replacement and drain; B854 owns token mint/refresh scheduling.
-    B124 owns PrismaClient construction-time replica fallback and external health-watchdog decisions.
+    B8396 owns PrismaClient construction-time replica fallback and external health-watchdog decisions.
 pitfalls:
   - Both connect failures raise before the one-sided degradation branches set their flags.
   - WriterPinnedClient chooses its db once; only routed model accessors dynamically recheck reader health.

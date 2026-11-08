@@ -1,0 +1,117 @@
+id: B8412
+title: Team and organization member request contracts
+description: >-
+  Build the team and organization request records from litellm/proxy/_types.py that the team delete, team callback, team member, organization member and organization update routes decode, with their pydantic validators. B1231 builds the main team create and update contracts and leaves these out; no route task declares them. Nothing here touches the database.
+
+  Module `member_request_contracts` in betterlite-server (crates/betterlite-server/src/member_request_contracts.rs, submodules team.rs, callbacks.rs, members.rs and organization.rs under crates/betterlite-server/src/member_request_contracts/, each with its tests). Each record has `from_value(value: &serde_json::Value) -> Result<Self, MemberContractError>`: before-validators run on the raw JSON object, then the fields decode, then after-validators run. `MemberContractError` (thiserror) has `Validation { message: String }` for a validator's text and `Decode { source: serde_json::Error }`; both are a 422 at the route. Unknown keys are ignored unless a record says otherwise.
+
+  team.rs. `DeleteTeamRequest { team_ids: Vec<String> }` requires team_ids; its field validator distinct_team_ids keeps the first occurrence of each id and drops later repeats, in input order (Python's dict.fromkeys), so a repeated id is deleted and audited once.
+
+  callbacks.rs. `AddTeamCallback { callback_name: String, callback_type: Option<CallbackType>, callback_vars: BTreeMap<String, String> }`, where CallbackType is success, failure or success_and_failure and defaults to success_and_failure (an explicit null stays null); callback_vars is required. Before-validator validate_callback_vars walks the raw callback_vars object in order: a key that is not a StandardCallbackDynamicParams name fails with "Invalid callback variable: {key}. Must be one of {valid_keys}"; each value is turned into its string form (a JSON string as is, a number as its decimal text); then the env-reference check runs with source "key/team callback metadata", the langfuse_environment value check runs for key langfuse_environment and the span-scope check for langfuse_span_scope. Use B188's code in betterlite-logging (crates/betterlite-logging/src/logging_privacy/callbacks.rs: the SUPPORTED name list, validate_environment and SpanScope) for the name list and the two langfuse checks; do not copy them. B188 has no public env-reference check, see the pitfalls. `TeamCallbackMetadata { success_callback, failure_callback, callbacks: Option<Vec<String>>, callback_vars: Option<BTreeMap<String, String>> }` with defaults [], [], [] and {}. Its before-validator drops each of those four keys whose value is null; then, when every value left in the object is null (an object with no keys left counts), the result is the four defaults; otherwise, when callback_vars is present, every key of it must be a StandardCallbackDynamicParams name, with the same error text as above. Values are not checked here.
+
+  members.rs. `OrgMember` flattens B859's MemberBase (user_id, user_email in crates/betterlite-db/src/team_rows/member.rs) and requires role, one of org_admin, internal_user and internal_user_viewer (B2314's UserRole). `MemberAddRequest { member: OneOrMany<Member> }` with B859's Member: a list of objects becomes a list of Member, a single object becomes one Member; a Member error is reported as a validation error of the whole request. `TeamMemberAddRequest` adds team_id (required), max_budget_in_team, budget_duration and allowed_models (default None). `OrgMemberAddRequest { member: OneOrMany<OrgMember> }`, and `OrganizationMemberAddRequest` adds organization_id (required) and max_budget_in_organization (default None). `TeamMemberDeleteRequest` and `OrganizationMemberDeleteRequest` reuse B2363's member identity check (Either user id or user email must be provided) and add team_id or organization_id, required. `TeamMemberUpdateRequest` extends TeamMemberDeleteRequest with max_budget_in_team, role (admin or user), tpm_limit, rpm_limit, budget_duration, allowed_models, temp_budget_increase (at least 0 and finite) and temp_budget_expiry (a datetime), all default None. After-validator validate_temp_budget: when exactly one of temp_budget_increase and temp_budget_expiry is set, fail with "temp_budget_increase and temp_budget_expiry must be set together". `OrganizationMemberUpdateRequest` extends OrganizationMemberDeleteRequest with max_budget_in_organization and role (any UserRole or null); field validator validate_role fails a role outside ROLES_WITHIN_ORG with "Invalid role. Must be one of: ['org_admin', 'internal_user', 'internal_user_viewer']". Export `ROLES_WITHIN_ORG` (org_admin, internal_user, internal_user_viewer, in that order).
+
+  organization.rs. Export `MANAGEMENT_METADATA_FIELDS`, the 19 names of LiteLLM_ManagementEndpoint_MetadataFields (L5069-L5089) in order. `OrganizationTableUpdate` flattens B2310's LiteLLMBudgetTable and adds organization_id, organization_alias, budget_id, spend, metadata, models, updated_by, object_permission (B770's LiteLLM_ObjectPermissionBase), model_tpm_limit and model_rpm_limit, all default None. Before-validator set_model_info: for each metadata field name in order whose raw value is present and not null, create metadata as {} when it is missing or null, set metadata[name] to the value and remove the name from the top level. `OrganizationUpdateRequestV2` forbids unknown keys (a 422), has organization_alias, models, metadata, tpm_limit, rpm_limit, max_budget, soft_budget, max_parallel_requests, model_max_budget, budget_duration and object_permission, all default None, and records which keys were present (`fields_set() -> &BTreeSet<String>`), because B2342 writes only present keys. `OrganizationTableWithMembers` flattens the OrganizationTable row in crates/betterlite-db/src/resource_rows/organization.rs and adds members (B2310's OrganizationMembership rows, default []), teams (B859's LiteLLMTeamTable rows, default []), litellm_budget_table (default None), created_at and updated_at (required).
+
+  Fuzz target `member_request_contracts` in crates/betterlite-server/fuzz: parse the input bytes as JSON and run every from_value on it; none may panic. Replay its corpus in the test `replays_the_member_request_contracts_corpus`.
+scope:
+  paths:
+    - crates/betterlite-server/src/member_request_contracts.rs
+    - crates/betterlite-server/src/member_request_contracts/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/member_request_contracts.rs
+    - crates/betterlite-server/fuzz/corpus/member_request_contracts/**
+    - tools/oracle/cases/helpers/member-request-contracts/**
+    - tools/oracle/helpers/b8412.py
+    - tools/oracle/helpers/b8412/**
+    - tools/oracle/src/helpers/server/b8412.rs
+    - tools/oracle/src/helpers/server/b8412/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2311-L2318
+    why: DeleteTeamRequest and distinct_team_ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2333-L2402
+    why: AddTeamCallback and TeamCallbackMetadata with both validate_callback_vars validators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L58-L90
+    why: The env-reference and langfuse value checks the callback validator calls; B188 owns them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2148-L2153
+    why: OrgMember and its three roles.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4606-L4646
+    why: MemberAddRequest and OrgMemberAddRequest with their member conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4678-L4796
+    why: Team and organization member add, delete and update requests, validate_temp_budget, ROLES_WITHIN_ORG and validate_role.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3607-L3672
+    why: LiteLLM_OrganizationTableUpdate and set_model_info, OrganizationUpdateRequestV2 and LiteLLM_OrganizationTableWithMembers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5069-L5089
+    why: The metadata field names moved into metadata.
+dod:
+  - text: DeleteTeamRequest keeps the first occurrence of each team id in input order.
+    proof: [team-tests, oracle, helper-python]
+  - text: AddTeamCallback rejects an unknown callback variable, turns values into strings and runs the env-reference and langfuse checks; TeamCallbackMetadata drops null keys, gives the four defaults when nothing else is set and checks only variable names.
+    proof: [callback-tests, oracle, helper-python]
+  - text: Member add requests take one member or a list, and the org member role accepts only the three org roles.
+    proof: [member-tests, oracle, helper-python]
+  - text: A team member update with only one of temp_budget_increase and temp_budget_expiry fails, and an organization member update with a role outside the org roles fails, both with LiteLLM's message.
+    proof: [member-tests, oracle, helper-python]
+  - text: The organization update moves every set metadata field name into metadata, the v2 patch forbids unknown keys and records present keys, and the with-members record keeps its defaults.
+    proof: [organization-tests, oracle, helper-python]
+  - text: Newly added corpus inputs replay through every decoder without a panic.
+    proof: [member-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: team-tests
+      why: the team delete request deduplication is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^member_request_contracts::team::/)'
+    - id: callback-tests
+      why: the team callback request or metadata validators are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^member_request_contracts::callbacks::/)'
+    - id: member-tests
+      why: the member add, delete or update requests or their validators are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^member_request_contracts::members::/)'
+    - id: organization-tests
+      why: the organization update records or the metadata field move are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^member_request_contracts::organization::/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8412)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8412 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8412/pyrightconfig.json
+    - id: member-corpus
+      why: the member contracts fuzz target or its fresh replay corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-server/fuzz/fuzz_targets/member_request_contracts.rs &&
+        grep -q 'name = "member_request_contracts"' crates/betterlite-server/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/member_request_contracts)" &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_member_request_contracts_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/member-request-contracts/delete-team-duplicates.yaml
+  - tools/oracle/cases/helpers/member-request-contracts/callback-invalid-variable.yaml
+  - tools/oracle/cases/helpers/member-request-contracts/callback-metadata-nulls.yaml
+  - tools/oracle/cases/helpers/member-request-contracts/member-add-one-or-many.yaml
+  - tools/oracle/cases/helpers/member-request-contracts/temp-budget-pair.yaml
+  - tools/oracle/cases/helpers/member-request-contracts/org-member-role.yaml
+  - tools/oracle/cases/helpers/member-request-contracts/organization-metadata-move.yaml
+  - tools/oracle/cases/helpers/member-request-contracts/organization-v2-unknown-key.yaml
+deviations:
+  - what: The invalid callback variable message lists the valid names sorted, where LiteLLM prints a Python set whose order changes between processes.
+    why: The set order is not stable even in LiteLLM; oracle cases compare the status and the text up to "Must be one of".
+  - what: A failing record returns a typed MemberContractError with the validator's text; the pydantic error list is not rebuilt.
+    why: The routes own the 422 body; the status and the message a user reads stay LiteLLM's.
+out_of_scope:
+  - "Member, MemberBase and LiteLLMTeamTable: B859. LiteLLMBudgetTable and OrganizationMembership: B2310. The member identity check: B2363. LiteLLM_ObjectPermissionBase: B770. UserRole: B2314. The callback name list and value checks: B188."
+  - "Team create, update and patch contracts and the bulk member records: B1231."
+  - "The routes that decode these records: B811, B057, B1210, B807, B808, B828, B827 and B2342."
+  - "NewProjectRequest.set_model_info and UpdateProjectRequest.set_model_info (L3694-L3761): the project routes ship only in litellm-enterprise, and open-source LiteLLM never builds these requests."
+pitfalls:
+  - 'TeamCallbackMetadata tests all() over the values left after dropping nulls, so {} and {"callbacks": null} both give the four defaults, while {"other": 1} does not.'
+  - AddTeamCallback reads callback_vars with a default of {}, so a body without callback_vars passes the validator and then fails as a missing required field.
+  - OrgMemberAddRequest converts a list only when every item is an object; a mixed list is decoded as it is and fails on the non-object item.
+  - validate_temp_budget is an after-validator, so a negative temp_budget_increase fails its ge=0 bound before the pairing rule runs.
+  - set_model_info moves a metadata field into metadata only when its value is not null, and it overwrites a key of the same name that the caller already put in metadata.
+  - "B188 is merged and its env-reference check (contains_environment_reference in logging_privacy/callbacks.rs) is private. Its public callback_metadata skips that check for destination fields such as langfuse_host and returns B188's own error text, so do not call it here: test the string form with value.contains(\"os.environ/\") and fail with LiteLLM's _raise_env_reference_error message for that param and source."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

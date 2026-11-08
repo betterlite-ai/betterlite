@@ -1,0 +1,18 @@
+id: B8177
+milestone: M3 providers
+title: GigaChat chat config and stream parser
+status: todo
+depends_on: [B7325, B2202, B5653, B2214, B668]
+file: tasks/B8177-gigachat-chat.yaml
+covers:
+  - "litellm/llms/gigachat/__init__.py"
+  - "litellm/llms/gigachat/utils.py"
+  - "litellm/llms/gigachat/chat/__init__.py"
+  - "litellm/llms/gigachat/chat/streaming.py"
+  - "litellm/llms/gigachat/chat/transformation.py"
+parent: B043
+split_from: B043
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

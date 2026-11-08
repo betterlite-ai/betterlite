@@ -1,0 +1,121 @@
+id: B8466
+title: Router prompt management model dispatch
+description: >-
+  Build prompt_dispatch in betterlite-router: LiteLLM's Router._is_prompt_management_model and
+  Router._prompt_management_factory. Router.acompletion (B016) asks is_prompt_model first, and for
+  a prompt management model it hands the whole call to prompt_factory instead of the scheduler or
+  the fallback loop. A prompt management model is a model group whose one deployment points at a
+  prompt store, for example model "langfuse/my-prompt" with prompt_id "greeting" in litellm_params.
+
+
+  is_prompt_model(deployments, known) is true only when the model name resolves to exactly one
+  deployment, its litellm_params.model is set and contains "/", and the text before the first "/"
+  is in known. known is LiteLLM's _known_custom_logger_compatible_callbacks: copy the names of
+  _custom_logger_compatible_callbacks_literal in litellm/__init__.py into a const slice here, in
+  the same order.
+
+
+  prompt_factory(model, messages, request, ports) follows _prompt_management_factory. Take
+  specific_deployment out of the request. Pick a deployment with ports.select_deployment (model,
+  messages, specific_deployment, the request) and apply ports.update_with_deployment to the
+  request. data is a copy of the deployment's litellm_params. The prompt identity is
+  resolve_prompt_identity(request, data): prompt_id is the request's prompt_id when set and
+  non-empty, else data's; the same rule for prompt_variables and prompt_label. When data's model
+  (the deployment's litellm_params.model, not the requested name) starts with "litellm_agent/", the
+  prompt_id check is skipped: a missing or non-string prompt_id passes on as it is. Otherwise a prompt_id that is missing or not a string
+  fails with "Prompt ID is not set or not a string. Got=None, type=<class 'NoneType'>" (the Python
+  repr of the value and its type). prompt_variables that are set but not an object fail with
+  "Prompt variables is set but not a dictionary. Got=<value>, type=<type>". ports.compile_prompt
+  (the logging object's get_chat_completion_prompt, B4058) gets data's model, the messages, the
+  request's non-default completion params (B2202's get_non_default_completion_params), the
+  identity, the request, and injected_for_every_deployment true. It returns the new model,
+  messages and optional params.
+
+
+  merge_prompt_request builds the final request: data without bitbucket_config, dotprompt_config,
+  prompt_id, prompt_variables, prompt_label and prompt_version, then the request on top, then the
+  optional params on top. It then sets model, messages, the logging handle, prompt_id,
+  prompt_variables and prompt_label. When the new model has no deployments
+  (ports.has_deployments false), original_function is removed and ports.call_direct runs it;
+  otherwise ports.call_with_fallbacks runs it. PromptPorts is a trait that B016's router
+  implements, so this module never calls B016 code directly and B016 can depend on it.
+
+
+  Helper cases cover is_prompt_model, resolve_prompt_identity with its two errors, and
+  merge_prompt_request, each with JSON request and deployment values.
+
+scope:
+  paths:
+    - crates/betterlite-router/src/prompt_dispatch.rs
+    - crates/betterlite-router/src/prompt_dispatch/**
+    - tools/oracle/cases/helpers/router-prompt-dispatch/**
+    - tools/oracle/helpers/b8466.py
+    - tools/oracle/helpers/b8466/**
+    - tools/oracle/src/helpers/router/b8466.rs
+    - tools/oracle/src/helpers/router/b8466/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4518-L4617
+    why: _is_prompt_management_model and _prompt_management_factory.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2779-L2802
+    why: The caller in Router.acompletion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L121-L180
+    why: The callback names that mark a prompt management model.
+  - url: https://docs.litellm.ai/docs/proxy/prompt_management
+    why: How a prompt management model is configured.
+
+dod:
+  - text: >-
+      is_prompt_model is true for one deployment with a known prefix and false for two
+      deployments, no "/", an unknown prefix or a missing model.
+    proof: [prompt-dispatch-tests, oracle]
+  - text: >-
+      resolve_prompt_identity prefers non-empty request values, skips the prompt_id check when the
+      deployment's model starts with "litellm_agent/" (a case with no prompt_id passes) and fails
+      with the Python's two messages.
+    proof: [prompt-dispatch-tests, oracle]
+  - text: >-
+      merge_prompt_request drops the six prompt keys from the deployment params, lets the request
+      and then the optional params win, and picks the direct call only when the new model has no
+      deployments.
+    proof: [prompt-dispatch-tests, oracle]
+  - text: Every mutant in the predicate and merge logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: prompt-dispatch-tests
+      why: The predicate, identity rule or merge order differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-router --no-tests=fail
+        -E 'test(/^prompt_dispatch::/)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/router-prompt-dispatch
+
+deviations: []
+
+out_of_scope:
+  - "Router.acompletion, _update_kwargs_with_deployment and async_function_with_fallbacks: B016, through PromptPorts."
+  - "get_chat_completion_prompt and the prompt managers: B4058 and the B117 parts."
+  - The HTTP cases for a prompt management model come with B016, which owns the chat route path through the router.
+
+pitfalls:
+  - >-
+    The request values win only when truthy: an empty prompt_id or empty prompt_variables in the
+    request falls back to the deployment's value.
+  - >-
+    The prompt keys are removed from the deployment params before the merge, but the resolved
+    prompt_id, prompt_variables and prompt_label are written back afterwards, so they still reach
+    the call.
+  - >-
+    specific_deployment is taken out of the request before selection and is not passed on to the
+    final call.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

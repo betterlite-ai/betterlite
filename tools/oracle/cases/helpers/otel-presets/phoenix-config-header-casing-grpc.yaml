@@ -1,0 +1,13 @@
+kind: helper
+name: phoenix-config-header-casing-grpc
+call:
+  b3850:
+    function: phoenix_config
+    environment:
+      PHOENIX_API_KEY: key
+      PHOENIX_COLLECTOR_ENDPOINT: grpc://phoenix-collector:4317
+env:
+  PHOENIX_API_KEY: key
+  PHOENIX_COLLECTOR_ENDPOINT: grpc://phoenix-collector:4317
+compare:
+  ignore: []

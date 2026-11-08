@@ -5,7 +5,7 @@ description: >-
   create_object_audit_log and database insertion in betterlite-server's audit module;
   put the typed AuditPayload, named callback cache and delivery path in betterlite-logging's
   audit module. Resource-label lookup remains a separate service for its actual callers.
-  Reuse B124's LiteLLM_AuditLogs-compatible record validation, including changed_by string
+  Reuse B2330's LiteLLM_AuditLogs-compatible record validation, including changed_by string
   coercion and B244 masking of key-bearing before/after values; do not bypass those model
   constructors. Caller supplied litellm_changed_by wins only when truthy and key metadata
   or team_metadata has allow_litellm_changed_by_header exactly Boolean true. Otherwise use
@@ -17,7 +17,7 @@ description: >-
   because betterlite has no paid tier. Remove the later premium-only return too.
   Reuse B189's installed callback resolver and B165's configured Python instances. Unknown
   names warn and skip. Cache only successful named resolutions, and expose reset on config
-  reload. s3_v2 with non-null s3_audit_callback_params constructs a dedicated B115 S3 sink,
+  reload. s3_v2 with non-null s3_audit_callback_params constructs a dedicated B3992 S3 sink,
   separate from the normal callback singleton; ordinary names retain the shared resolver.
   Build payload timestamps as ISO strings, table names as enum values, missing actor/key
   as empty strings, and preserve before_value/updated_values fields. Normalize dict values
@@ -115,8 +115,8 @@ deviations:
 out_of_scope:
   - "management_helpers/utils.py has no unassigned production functions: B1227 owns protocols/accessors and user/member writes at L44-L177 and L393-L500; B862 owns budget handling at L180-L390."
   - "B865 owns utils.py cache invalidators L503-L556 and management_endpoint_wrapper plus nested wrapper L755-L823; B1228 owns alerting L559-L606 and object/redaction/OTEL helpers L609-L752."
-  - B1645 owns all resource_display_names.py lookups; B115 owns actual S3 transport/batching and B165 owns execution of configured Python callbacks.
-  - B124 owns the audit row's public model contract and B244 its reusable masking algorithm; audit query HTTP routes belong to their proxy-server owner.
+  - B1645 owns all resource_display_names.py lookups; B3993 owns actual S3 transport and B3994 its batching and B165 owns execution of configured Python callbacks.
+  - B2330 owns the audit row's public model contract (LiteLLM_AuditLogs) and B244 its reusable masking algorithm; audit query HTTP routes belong to their proxy-server owner.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as audit_attribution in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/audit_attribution.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/audit_attribution.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - store_audit_logs=false must defeat LITELLM_STORE_AUDIT_LOGS=true rather than being treated as an absent setting.

@@ -2,7 +2,7 @@ id: B3628
 milestone: M5 api families
 title: Pass-through OpenAI Deepgram and Nvidia relays
 status: todo
-depends_on: [B002, B052, B129, B844, B882, B885, B1101, B1542, B2324, B3600, B3602, B3612, B3615, B3618, B7324]
+depends_on: [B002, B052, B8500, B844, B882, B885, B1101, B1542, B2324, B3600, B3602, B3612, B3615, B3618, B7324]
 file: tasks/B3628-passthrough-openai-relays.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"

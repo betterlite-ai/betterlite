@@ -14,7 +14,7 @@ description: >-
 
   groq_chat, credentials. get_openai_compatible_provider_info(api_base, api_key) returns (api_base or GROQ_API_BASE or
   "https://api.groq.com/openai/v1", api_key or GROQ_API_KEY). GROQ_API_BASE and GROQ_API_KEY arrive as plain optional
-  arguments. The key can stay None. The longer chain in main.py (litellm.api_base, litellm.groq_key) is B041's.
+  arguments. The key can stay None. The longer chain in main.py (litellm.api_base, litellm.groq_key) is B8310's.
 
 
   groq_chat, supported options. get_supported_openai_params(model) starts from B668's base list and removes
@@ -73,7 +73,7 @@ description: >-
   status is error.code, message error.message and body the error object. Then every choice's delta.reasoning is renamed to
   delta.reasoning_content, and the chunk goes to B504's stream chunk parser. A missing or non-integer error.code uses status
   500, the base parser's choice, because Rust statuses are integers. get_model_response_iterator only selects this parser
-  for B010's iterator lifecycle, so B010 and B041 wire it and no iterator is built here.
+  for B010's iterator lifecycle, so B010 and B8310 wire it and no iterator is built here.
 
 
   groq_stt. GroqSTTConfig.get_supported_openai_params_stt returns prompt, response_format, temperature, language in that
@@ -130,7 +130,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/transformation.py#L145-L169
     why: The parent mapper whose default swaps max_completion_tokens for max_tokens.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2111-L2170
-    why: Read-only context for what _complete_groq does around these transforms (B041 owns it).
+    why: Read-only context for what _complete_groq does around these transforms (B8310 owns it).
   - url: https://console.groq.com/docs/structured-outputs
     why: Which models take native json_schema and the no-tools restriction.
 dod:
@@ -199,10 +199,10 @@ deviations:
   - what: The Groq STT drop_params global is an explicit bool argument, not read from a process global.
     why: Provider modules take settings from the caller, so tests need no process state.
 out_of_scope:
-  - B041 owns _complete_groq in litellm/main.py (L2111-L2170) including litellm.api_base, litellm.groq_key and the GroqChatConfig.get_config merge, registering these modules in dispatch and the HTTP oracle cases.
+  - B8310 owns _complete_groq in litellm/main.py (L2111-L2170) including litellm.api_base, litellm.groq_key and the GroqChatConfig.get_config merge, registering these modules in dispatch and the HTTP oracle cases.
   - B668, B503, B504 and B1425 own every inherited method (base supported list, base option mapping, content transform, reply conversion, base chunk parser, OpenAI-like reply cleanup). B2202 owns _add_tools_to_optional_params.
   - B2221 owns supports_web_search, supports_reasoning and supports_response_schema. Their catalog reads are not repeated here.
-  - B010 owns iterator framing, DONE handling and close semantics. get_model_response_iterator is only a parser choice that B010 and B041 wire.
+  - B010 owns iterator framing, DONE handling and close semantics. get_model_response_iterator is only a parser choice that B010 and B8310 wire.
   - B1428 owns the OpenAI-like request execution and the fake-stream replay that reads optional_params.fake_stream.
   - litellm/llms/groq/chat/handler.py (GroqChatCompletion) is out of scope, no caller at the pin. main.py L303 builds groq_chat_completions and nothing calls it; Groq requests run through base_llm_http_handler with GroqChatConfig, and the null-stripping in its completion() is already covered by transform_messages above.
   - B5362 owns get_optional_params_transcription (utils.py L3571) that calls the STT config. B1686 and B1687 own the cost dispatch in litellm/llms/__init__.py (L74-L78) that calls groq_cost.

@@ -1,0 +1,111 @@
+id: B8218
+title: Hook initializer arguments M to Z
+description: >-
+  Port the initializer in the __init__.py of seven guardrail folders: panw_prisma_airs, pillar, rubrik, straiker,
+  typesafe, vigil_guard and xecguard. Each LiteLLM function takes the configured guardrail (`LitellmParams` plus the
+  guardrail dict), builds its callback class and adds it to `litellm.logging_callback_manager`. The classes belong to
+  other tasks and the registry is B3682's, so this task follows B3681: one argument struct and one function for each
+  initializer, no class and no registration.
+
+  Code goes in crates/betterlite-guardrails/src/third_party_init_b.rs and third_party_init_b/. Files: panw.rs, pillar.rs,
+  rubrik.rs, straiker.rs, typesafe.rs, vigil_guard.rs, xecguard.rs and error.rs. error.rs holds `ThirdPartyInitBError`, built
+  with thiserror, one variant for each refusal below, and never a secret in its text. `LitellmParams` comes from B3662
+  (betterlite-config, sections::guardrail_params); read its params.rs and base.rs for the exact field names. Secrets
+  stay `SecretString`. Every function is `initialize_<name>(params: &LitellmParams, guardrail_name: Option<&str>) ->
+  Result<XArgs, ThirdPartyInitBError>`. Every struct has event_hook (a clone of params.mode), default_on, the name and,
+  unless noted, timeout. The name is the empty string when absent unless it is said to be required. Fields copy
+  without change and an absent value stays absent, except where a default is listed.
+
+  Fields by guardrail:
+  - panw: the name is required ("PANW Prisma AIRS: guardrail_name is required"). LiteLLM passes every explicitly set
+    param (model_dump with exclude_unset) as the constructor arguments, then sets guardrail_name, event_hook and
+    default_on (false when absent). The struct holds the map of explicitly set params as `set_params` (name to value,
+    secrets stay secret strings), plus those three fields. B3662 tracks which fields were set; read how. The struct is `PanwFolderArgs`, since B3681's guardrail_initializers already has `PanwArgs`.
+  - pillar: the name is required ("Pillar guardrail name is required"). api_key, api_base, and on_flagged_action
+    (default "monitor"). async_mode, persist_session, include_scanners, include_evidence, fallback_on_error and timeout
+    come from params.optional_params when that holds a non-null value for the name, else none (the helper
+    `_get_config_value` in the file).
+  - rubrik: api_key, api_base, timeout. The mode decides which surfaces are moderated in the class (the default when
+    the mode is absent is post_call); that rule is the class's work, not this function's. This is the initializer in
+    rubrik/__init__.py. The Rubrik logger tasks (B3975 to B3978) do not build it.
+  - straiker: api_key is required ("api_key is required for straiker"). api_base is the param or
+    "https://api.prod.straiker.ai". source is the param default_app, else the param source, else "LiteLLM Gateway"
+    (only a non-empty string counts). The name defaults to "straiker" (not the empty string). The optional fields
+    timeout, max_retries, initial_backoff, max_backoff, unreachable_fallback, fail_on_error, max_payload_bytes,
+    custom_headers, metadata and verbose are kept only when the value from `_get_config_value` is not null (dict entry
+    or object field of optional_params, else the top-level param). The routing fields api_version, agent_ref, client and
+    format_hint come the same way. api_version outside "v1" and "v3" is logged at warning level ("Straiker guardrail:
+    ignoring api_version <repr>, expected 'v1', 'v3' or unset; the route follows the api_key prefix") and becomes
+    none. format_hint outside "anthropic.messages" and "openai.chat" is a start error.
+  - typesafe: api_base, api_key, model, timeout, and from optional_params relevance_threshold, min_chars_to_evaluate
+    and max_result_chars_in_state. The name is required (LiteLLM indexes guardrail["guardrail_name"]). default_on is
+    false when absent. unreachable_fallback is the param only when the config set it explicitly, else none. The mode
+    becomes the event hook like headroom's: a tagged mode stays, a list of names becomes a list of hook names, a
+    single name stays a name.
+  - vigil_guard: api_base, api_key, unreachable_fallback, timeout.
+  - xecguard: api_base, api_key, xecguard_model, policy_names, block_on_error, grounding_strictness, timeout.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/third_party_init_b.rs
+    - crates/betterlite-guardrails/src/third_party_init_b/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/__init__.py
+    why: panw initializer, which spreads the explicitly set params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/__init__.py
+    why: pillar initializer and its _get_config_value helper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/rubrik/__init__.py
+    why: rubrik initializer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/__init__.py
+    why: straiker initializer, the optional field list and the routing model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/__init__.py
+    why: typesafe initializer and the event hook coercion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/__init__.py
+    why: vigil_guard initializer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/__init__.py
+    why: xecguard initializer.
+
+dod:
+  - text: Each function copies the listed fields and applies the listed defaults.
+    proof: [init-tests]
+  - text: panw, pillar, straiker, typesafe and the other required-name cases refuse a missing name or key with the documented message.
+    proof: [init-tests]
+  - text: The pillar and straiker optional_params lookups keep only non-null values.
+    proof: [init-tests]
+  - text: Straiker drops an unknown api_version with a warning and refuses an unknown format_hint.
+    proof: [init-tests]
+  - text: The typesafe and panw functions use the explicitly set rule for unreachable_fallback and set_params.
+    proof: [init-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: init-tests
+      why: an initializer argument, default or refusal differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^third_party_init_b::/)'
+
+deviations:
+  - what: The initializers return argument structs and register nothing.
+    why: The callback classes have their own tasks and B3682 owns the registry and the registration, as with B3681.
+  - what: A refusal is a ThirdPartyInitBError, not a Python ValueError.
+    why: Same outcome with a Rust error type.
+  - what: Straiker's routing model is a plain struct with a check, not a pydantic model.
+    why: The Rust config types are not pydantic. The accepted values and the warning are the same.
+
+out_of_scope:
+  - 'The seven callback classes and their behaviour: their own hook tasks.'
+  - 'The initializer registry, the class registry and the registration with the callback manager: B3682.'
+  - 'initialize_panw_prisma_airs in guardrail_initializers.py: B3681.'
+
+pitfalls:
+  - 'Straiker''s default name is "straiker", while the other initializers here use the empty string.'
+  - 'panw sends only explicitly set params, so a param left at its default must not appear in set_params.'
+  - 'typesafe and panw read the explicitly set marker. A value copied from the default is not the same as one the user wrote.'
+  - 'A mode list is converted name by name, and a name that is not a hook is an error.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+oracle_cases: []

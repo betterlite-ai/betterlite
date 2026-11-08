@@ -1,0 +1,103 @@
+id: B8251
+title: Team-scoped Datadog and New Relic logger handlers
+description: >-
+  Build the two handlers that give a request its own Datadog or New Relic logger when the key or team carries its own
+  credentials. LiteLLM keeps them in `litellm/integrations/datadog/datadog_team_handler.py` and
+  `litellm/integrations/newrelic/newrelic_team_handler.py`; both copy the Langfuse handler (B3907). Put them in
+  betterlite-logging as the modules `datadog_team_handler` and `newrelic_team_handler`. Each handler is stateless and
+  reuses B3945/B5120's `DynamicLoggerCache`, so one credential set always gets the same logger and a new set gets a new
+  one with its own batch and flush state.
+
+  Datadog. `DatadogCredentials` holds `dd_api_key`, `dd_site`, `dd_agent_host`, `dd_agent_port`, all `Option<String>`
+  (the port is text, as in the request params). `datadog_credentials(params)` reads those four keys from the request's
+  dynamic callback params (a `BTreeMap<String, String>`, the shape B3851 uses). `datadog_credentials_passed(params)` is
+  true when `dd_api_key`, `dd_site` or `dd_agent_host` is present, even as an empty string; the port alone does not
+  count. `get_datadog_logger_for_request(params, cache, env)` looks the credentials up in the cache under the service
+  name `datadog`. On a miss it builds a logger with B3933's constructor from the four values and
+  `allow_env_credentials = dd_agent_host.is_none() && dd_site.is_none()`. So a caller who chooses the destination never
+  gets the proxy's `DD_API_KEY` sent to it, and a caller who sets only `dd_api_key` still falls back to the proxy's
+  site. It stores the new logger in the cache under the same credentials and service name, writes a debug log "Datadog:
+  Created and cached new DataDogLogger for team-scoped credentials", and returns it. On a hit it returns the cached
+  logger and builds nothing. `env` is the injected environment lookup B3933's constructor takes.
+
+  New Relic. `NewRelicCredentials` holds `newrelic_api_key` and `newrelic_region`, both `Option<String>`.
+  `newrelic_credentials_passed(params)` is true when `newrelic_api_key` is present, even empty.
+  `get_newrelic_logger_for_request(params, cache)` is the same flow under the service name `newrelic`. On a miss it
+  builds B3944's metrics logger with `newrelic_api_key` (an absent key becomes the empty string) and `newrelic_region`
+  as given, caches it and writes the debug log "New Relic: Created and cached new NewRelicMetricsLogger for team-scoped
+  credentials". It builds the metrics logger only. The trace logger for the `newrelic` callback name stays on the global
+  path and is not touched here.
+
+  Cache key. B3945's `get_cache` and `set_cache` take `&BTreeMap<String, SecretString>`. Put each present credential in
+  that map under its parameter name and leave absent ones out, so an absent value and an empty string stay different
+  keys. Wrap every value in `SecretString`: the keys are secrets.
+
+  Caches. LiteLLM shares one cache across all services and tells them apart by the service name in the key. Here each
+  handler takes its own typed cache, `&DynamicLoggerCache<Arc<DatadogLogger>>` and `&DynamicLoggerCache<Arc<NewRelicMetricsLogger>>`
+  (use the logger type names B3933 and B3944 define). The composition root builds each cache with the right stop effect
+  on eviction. Wiring into the callback selection (`dd_api_key or dd_site or dd_agent_host` decides, by truthiness, so an
+  empty string means global; `newrelic_api_key` truthy for New Relic) sits in LiteLLM's _init_custom_logger_compatible_class (litellm_logging.py L4602-L4616 and L5162-L5175), not in these handlers, and no task owns that function: the wave 17 callbacks wiring part adds those two arms and calls the get_*_logger_for_request functions from them. The newrelic trace logger re-resolve at L844 is B248's.
+scope:
+  paths:
+    - crates/betterlite-logging/src/datadog_team_handler.rs
+    - crates/betterlite-logging/src/datadog_team_handler/**
+    - crates/betterlite-logging/src/newrelic_team_handler.rs
+    - crates/betterlite-logging/src/newrelic_team_handler/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_team_handler.py#L1-L117
+    why: Credential extraction, the passed check, cache lookup and the allow_env_credentials rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic_team_handler.py#L1-L90
+    why: The New Relic version of the same handler and its empty-key rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4600-L4620
+    why: The caller that picks the team handler when a Datadog credential is truthy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5163-L5175
+    why: The caller that picks the New Relic team handler when newrelic_api_key is truthy.
+dod:
+  - text: >-
+      datadog_credentials_passed is true for dd_api_key, dd_site or dd_agent_host (an empty string counts) and false for a
+      dd_agent_port alone; newrelic_credentials_passed is true only for newrelic_api_key.
+    proof: [datadog-handler-tests, newrelic-handler-tests]
+  - text: >-
+      The same credential set returns the same cached logger and builds one; a different set builds a second logger; an
+      absent credential and an empty one are different cache keys.
+    proof: [datadog-handler-tests, newrelic-handler-tests]
+  - text: >-
+      The Datadog logger is built with allow_env_credentials false whenever dd_site or dd_agent_host is given and true
+      otherwise, and with the four values as given.
+    proof: [datadog-handler-tests]
+  - text: >-
+      The New Relic metrics logger is built with the given key (empty when absent) and region, and the trace logger is
+      never built here.
+    proof: [newrelic-handler-tests]
+checks:
+  optional: []
+  commands:
+    - id: datadog-handler-tests
+      why: fails while the Datadog credential check, cache reuse or the allow_env_credentials rule is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_team_handler::/)'
+    - id: newrelic-handler-tests
+      why: fails while the New Relic credential check, cache reuse or the empty-key rule is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_team_handler::/)'
+oracle_cases: []
+deviations:
+  - what: Each handler uses its own typed cache instead of one shared cache keyed by service name.
+    why: A typed cache needs no enum of logger kinds and each logger type keeps its own stop effect.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L52-L75
+out_of_scope:
+  - "The Datadog and New Relic logger constructors, delivery and stop(): B3933, B3944 and B3943 own them."
+  - "The cache itself, its TTL and its eviction: B3945 and B5120 own them."
+  - "Picking the team handler inside the callback selection: B189's registry calls these functions."
+pitfalls:
+  - >-
+    The two checks differ on purpose. The handler's own `credentials_passed` check tests for presence (Python `is not
+    None`), while the dispatcher in litellm_logging.py tests truthiness. Do not merge them.
+  - >-
+    allow_env_credentials ignores dd_api_key and dd_agent_port. Only a caller-chosen destination (site or agent host)
+    turns the environment key off.
+  - >-
+    Never log the credential values, not even in the debug lines. The two debug texts above are the whole log output.
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0
+review_level: security

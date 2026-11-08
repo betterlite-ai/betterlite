@@ -1,0 +1,155 @@
+id: B8465
+title: MCP upstream tool call dispatch
+description: >-
+  Build mcp::tool_call in betterlite-server: MCPServerManager.call_tool and everything it runs to
+  send one tool call to an upstream MCP server or an OpenAPI-backed server. That is
+  _resolve_mcp_server_for_tool_call, the module function _resolve_byok_mcp_auth_header,
+  _resolve_oauth2_headers_for_tool_call, resolve_openapi_upstream_auth, _call_regular_mcp_tool,
+  _obo_call_tool_with_retry, _get_call_semaphore, _limit_outbound_concurrency and
+  _gather_openapi_tool_tasks. B8198's _handle_managed_mcp_tool calls call_tool, and its
+  _execute_mcp_tool calls resolve_openapi_upstream_auth.
+
+
+  call_tool(server_name, name, arguments, auth, mcp_auth_header, server_auth_headers, hooks,
+  oauth2_headers, raw_headers, progress, logging, guardrail_context, client_ip, wire_compat) runs:
+  resolve the server; resolve the BYOK header; B8464's pre_call_check (hook arguments replace the
+  input); with hooks, B8464's during_hook_task goes first in the task list; then the stored per-user
+  OAuth headers. A spec_path server warns "pre_mcp_call hook returned extra_headers for
+  OpenAPI-backed MCP server '<name>' ..." when the hook returned extra headers (they are ignored),
+  takes B8460's resolve_openapi_tool_auth and resolve_openapi_upstream_auth with the caller's
+  original oauth2 headers, and runs B4680's OpenAPI tool handler under the concurrency limit with
+  the Authorization value, forwarded headers and resolved headers passed in. The result is the
+  second task's result when hooks ran, else the first. Any other server goes to call_regular.
+
+
+  resolve_server: look the prefixed name (B6594's add_server_prefix_to_name) up in B4731's
+  tool-name map; else take the first registry server whose alias, server_name or name normalizes
+  (normalize_server_name) to the given server name; else the bare name's mapping when the server
+  name is empty or matches it. No server fails with "Tool <name> not found"; a stdio-blocked server
+  fails 403 with MCP_STDIO_DISABLED_MESSAGE; a server found only by name must expose the tool
+  (B4731's server_exposes_tool), else "Tool <name> not found".
+
+
+  byok_header: a non-BYOK server keeps mcp_auth_header. A BYOK server without one takes B8196's
+  _get_byok_credential and fails 401 with detail error "byok_auth_required", server_id, server_name
+  (else name) and the message "No stored credential found for this BYOK server. Complete the OAuth
+  authorization flow to provide your API key.", with WWW-Authenticate from B4654's
+  get_byok_www_authenticate. With a header it runs B8196's _check_byok_credential and keeps it.
+  stored_oauth_headers is _resolve_oauth2_headers_for_tool_call: only for needs_user_oauth_token,
+  no client headers, an auth record, no B4667 spec and a non-empty user_id, it reads B8196's
+  _get_user_oauth_extra_headers_from_db; a read error logs at debug and keeps the input.
+  resolve_openapi_upstream_auth: without a spec, client oauth2 headers give (None, forwarded) and
+  otherwise the stored headers come back as the resolved ones. With a spec, token_exchange and
+  id_jag take B8460's extract_subject_token, passthrough pops Authorization from the forwarded
+  headers and prefers passthrough_token, then B8461's resolve_v2_auth and B8460's
+  materialize_auth_headers give (resolved, forwarded).
+
+
+  call_regular builds the outbound headers in this order. The per-server header beats the global
+  one. token_exchange and id_jag take a subject token. oauth2 takes no headers for client
+  credentials, else the oauth2 headers without Authorization when should_strip_caller_auth is true.
+  A client-forwarded token server uses client_forwarded_auth_headers. Then the server's
+  extra_headers names are copied from the inbound headers (Authorization skipped when stripped),
+  then B8461's static_headers with raise_on_missing true, then the hook headers. A hook
+  Authorization is dropped with the warning "MCPServerManager: dropping hook-injected
+  'Authorization' header for server '<name>' because an upstream credential already occupies the
+  Authorization slot; the existing credential is kept." when the headers already hold one, or the
+  server header is a map with Authorization, or it is a string and the auth type is not api_key.
+  An empty map becomes None. B8461's create_client builds the client. With B8460's
+  obo_retry_applies the call goes through call_with_obo_retry. Otherwise a client-forwarded server
+  calls with raise_on_error; a 401 becomes MCPUpstreamAuthError(401, its WWW-Authenticate, label)
+  and any other failure logs "Pass-through MCP tool call failed against <label> (non-auth, <type>)"
+  and returns the client's error_tool_result; other servers call without raise_on_error. All tasks
+  run under the server timeout (else LITELLM_MCP_CLIENT_TIMEOUT, 60.0); a timeout is 504 with
+  detail error "timeout" and message "MCP tool call timed out after <t>s". A guardrail rejection or
+  HTTP error logs "Guardrail blocked MCP tool call during result check: <error>" and propagates.
+  B6592's remember_instructions runs after the call. allow_input_required is wire_compat MODERN.
+
+
+  call_with_obo_retry calls with raise_on_error. A failure without an upstream auth challenge
+  (B8460's upstream_auth_failure) returns error_tool_result. With one, invalidate the cached
+  credential for the subject and spec (B4667), build a new client and call once more without
+  raise_on_error. CallLimits keeps one semaphore per server_id sized max_concurrent_requests (none
+  for unset or zero or less) and builds a new one when the size changes.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/tool_call.rs
+    - crates/betterlite-server/src/mcp/tool_call/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-tool-call/**
+    - tools/oracle/helpers/b8465.py
+    - tools/oracle/helpers/b8465/**
+    - tools/oracle/src/helpers/server/b8465.rs
+    - tools/oracle/src/helpers/server/b8465/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1269-L1303
+    why: The BYOK header resolution and its 401 detail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5979-L6049
+    why: Per-server semaphores and the OBO retry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6051-L6365
+    why: _call_regular_mcp_tool header order, the pass-through 401, the timeout and server resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6402-L6669
+    why: Stored OAuth headers, resolve_openapi_upstream_auth, the OpenAPI gather and call_tool.
+
+dod:
+  - text: >-
+      resolve_server finds the server by prefixed name, by server name and by bare name as the
+      Python does, and refuses an unknown tool, a stdio-blocked server and a name-only match that
+      does not expose the tool.
+    proof: [tool-call-tests, oracle]
+  - text: >-
+      call_regular sends the same outbound headers as the Python for each auth type, including the
+      dropped hook Authorization and the strip rule.
+    proof: [tool-call-tests, oracle]
+  - text: >-
+      A missing BYOK credential fails 401 with the Python's detail and challenge, a timeout fails
+      504, and a pass-through 401 becomes MCPUpstreamAuthError with the upstream challenge.
+    proof: [tool-call-tests]
+  - text: >-
+      An OBO call retries once after an upstream auth failure with a fresh client and returns an
+      error result for any other failure.
+    proof: [tool-call-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: tool-call-tests
+      why: A header, retry, timeout or server lookup rule differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^mcp::tool_call::/)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-tool-call
+
+deviations:
+  - what: >-
+      LiteLLM hands the OpenAPI handler its Authorization value, forwarded headers and resolved
+      headers through three ContextVars. betterlite passes them as arguments.
+    why: The rules forbid ContextVars for per-run data; the handler sees the same three values.
+
+out_of_scope:
+  - "_execute_mcp_tool, logging and post-call guardrails: B8198. _call_openapi_tool_handler: B4680."
+  - "_get_byok_credential, _check_byok_credential and _get_user_oauth_extra_headers_from_db: B8196."
+  - "pre_call_check and during_hook_task: B8464. create_client, static_headers and resolve_v2_auth: B8461."
+  - The HTTP cases for tools/call come with the MCP routes in B136; helper cases cover the header build and server resolution.
+
+pitfalls:
+  - >-
+    The OpenAPI arm hands resolve_openapi_upstream_auth the caller's original oauth2 headers, not
+    the stored ones fetched just before, so a stored token never feeds subject extraction.
+  - >-
+    The during hook task is first in the task list, so the tool result is index 1 when hooks ran
+    and index 0 otherwise.
+  - >-
+    The OBO retry call does not pass raise_on_error, so a second failure becomes an error result
+    instead of an exception.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

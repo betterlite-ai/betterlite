@@ -1,7 +1,7 @@
 id: B898
 title: Key secret-manager and legacy notification sinks
 description: >-
-  Implement secret-manager operations over B129 and legacy notification scheduling over B116.
+  Implement secret-manager operations over B4410's BaseSecretManager and legacy notification scheduling over B116.
   All secret operations require a settings record, store_virtual_keys literally True and a
   BaseSecretManager-compatible client; other values return without I/O. Do not gate these helpers
   on access_mode themselves. Name secrets by appending directly when prefix ends '/', otherwise
@@ -10,7 +10,7 @@ description: >-
   and sends the new raw secret but no creation tags/description. Rename first reads the old prefixed
   name; None warns and skips, whereas empty string is a real value and is rotated. It keeps that
   value and uses the same optional params for read and rotate. No local encryption/hash changes the
-  secret-manager payload; B129 owns transport credentials and secure storage.
+  secret-manager payload; B4415, B4417 and B4418 own the manager writes, their transport credentials and storage.
 
   Delete keys sequentially, skipping only key_alias None with a warning containing the stored token
   identifier. Empty alias is still a secret name. Cache optional params once per distinct team_id,
@@ -53,7 +53,7 @@ description: >-
   lines).
 
 
-  Runtime secret_manager_client defaults None and is installed by B129, not a second YAML client
+  Runtime secret_manager_client defaults None and is installed by proxy startup (initialize_secret_manager, B8590), not a second YAML client
   decoder. The public email binding is general_settings.alerting, default []; no top-level alerting
   override is read by these methods.
 
@@ -72,7 +72,7 @@ description: >-
 
   Config tests key_event_sinks::tests::key_management_defaults, configured_prefix_tags_description,
   store_virtual_keys_false_null_true, legacy_alerting_nested_binding and invalid_settings_rejected
-  call the B002 loader and B129 settings schema. No invalid-value fallback is invented. Tests of
+  call the B002 loader and B4410 settings schema. No invalid-value fallback is invented. Tests of
   direct helper inputs also cover Python's membership behavior for string alerting and error for
   null/noncontainer alerting, rather than silently substituting the absent-field default.
 
@@ -199,7 +199,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - Enterprise BaseEmailLogger imports and event branches are unavailable and not implemented.
-    B129 owns concrete secret-manager transport operations and configuration, B116 legacy email
+    B4410 owns the settings and B4415, B4417 and B4418 the concrete write and rotate operations, B116 legacy email
     delivery, B737 team lookup and B784 outer lifecycle handling. This task passes secrets to their
     intended secure destination and adds no stored-cipher format or local database write.
   - 'litellm/proxy/hooks/key_management_event_hooks.py: B784 owns KeyManagementEventHooks.async_key_generated_hook

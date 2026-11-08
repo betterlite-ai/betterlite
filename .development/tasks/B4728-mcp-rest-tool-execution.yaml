@@ -141,13 +141,13 @@ deviations:
 out_of_scope:
   - >-
     Manager execute_mcp_tool, complete_call_tool_result wire conversion and tool calling
-    semantics (Q2 manager leaves).
+    semantics (execute_mcp_tool is B8198's, module mcp::ops_execution; the rest are Q2 manager leaves).
   - >-
     Manager _get_tools_from_server, ID/name lookup, allowed-server resolution and IP filtering
     (Q2 manager).
   - >-
     fire_mcp_tool_call_logging, fire_mcp_tool_call_failure_logging and their logging
-    destinations (Q2 manager).
+    destinations (B8198, module mcp::ops_execution).
   - >-
     Virtual tool handlers: coerce_top_k, handle_agent_search, handle_skill_search,
     handle_mcp_tool_search, handle_mcp_tool_call (Q4 catalog/OpenAPI).

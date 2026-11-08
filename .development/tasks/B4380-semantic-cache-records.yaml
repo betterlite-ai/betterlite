@@ -35,7 +35,7 @@ description: >-
   round-trip supported response values; those writes remain in their backend
   tasks. B4382 owns Redis `_get_ttl` and its sync/async callers at
   redis_semantic_cache.py:244, 435 and 581. Qdrant has no TTL behavior. Valkey
-  overrides its read/write methods, and B128 owns those backend operations and
+  overrides its read/write methods, and B8296 owns those backend operations and
   their JSON writes. Add helper cases for declared message/Responses inputs
   and valid JSON cached values only.
 
@@ -154,14 +154,14 @@ deviations:
 out_of_scope:
   - Redis cache writes, storage, vector search, similarity and error-to-miss handling; B4382 owns those operations and calls this module.
   - Qdrant cache writes, storage, vector search, similarity and error propagation; B4383 owns those operations and calls this module.
-  - Valkey-specific read/write methods at valkey_semantic_cache.py:258-331; B128 owns those backend operations and JSON writes. Valkey inherits shared prompt extraction and response decoding from RedisSemanticCache.
+  - Valkey-specific read/write methods at valkey_semantic_cache.py:258-331; B8296 owns those backend operations and JSON writes. Valkey inherits shared prompt extraction and response decoding from RedisSemanticCache.
   - Redis TTL extraction from kwargs and Redis TTL storage; B4382 owns `_get_ttl` and its two callers. Qdrant has no per-call TTL.
   - Embedding dispatch, truncation and timeouts; B4381 owns those operations.
   - Chat message projection; B218 owns Message and get_str_from_messages.
   - Python model_dump/dict duck typing and Python literal/repr compatibility; docs/compatibility.md excludes these runtime behaviors.
 
 pitfalls:
-  - Redis, Qdrant and Valkey currently write str(value), while their decoders accept Python literal syntax. B4382, B4383 and B128 own the respective writer changes to `arguments::json::Json` serialization.
+  - Redis, Qdrant and Valkey currently write str(value), while their decoders accept Python literal syntax. B4382, B4383 and B8296 own the respective writer changes to `arguments::json::Json` serialization.
   - Qdrant currently calls get_str_from_messages directly at qdrant_semantic_cache.py:327-328 and 402-403; B4383 must use this module's shared prompt API.
   - ValkeySemanticCache inherits RedisSemanticCache, so its four cache operations consume Redis prompt extraction and decode behavior without a separate implementation.
   - Redis turns malformed cached responses into a miss inside get_cache/async_get_cache; Qdrant lets decoding failures propagate. Keep those caller policies in B4382 and B4383.

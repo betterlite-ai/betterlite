@@ -1,0 +1,13 @@
+id: B8372
+milestone: M8 platform
+title: Scheduled background job registration
+status: todo
+depends_on: [B8370, B8371, B8373, B8381, B8384, B8385, B4172, B725, B731, B1692, B1712, B1747, B2333, B3009, B3066, B3067, B3068, B3071, B3102, B3884, B4029, B779, B845, B8588]
+file: tasks/B8372-background-jobs.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

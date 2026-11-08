@@ -1,0 +1,101 @@
+id: B8351
+title: Router catalog queries and messages fallback check
+description: >-
+  Several proxy gates and router steps ask the deployment catalog one yes-or-no or list question: is this model name served here, does a team model have a sibling, which provider models answer a name, is an access group a wildcard route. B940, B6460, B3880 and the cooldown wiring already call `is_recognized_model` and friends as if they existed, but B162's list held them and no task builds them. Build them here as read-only queries over the catalog services of B302, B323, B844 and B847, plus the one Messages stream question B312 asks before it holds lifecycle frames back.
+
+
+  Put the code in the new module `crates/betterlite-router/src/catalog_queries.rs` and its folder. `CatalogQueries` borrows the catalog handles it needs (B302's catalog with `model_names`, `model_group_alias`, the pattern router and the alias lookup; B323's routing groups; B844's `get_model_list`, `get_deployment` and `has_model_id`; B847's `get_model_access_groups` and cached group info; B307's blocked-deployment filter). No copy of the catalog, no static.
+
+
+  `is_recognized_model(model)` (router.py L1598-L1611) is true when the name is in `model_names`, is a deployment id, is a key of `model_group_alias` when one is set, or names a routing group. Wildcards and default deployments are not part of it.
+
+
+  `team_model_has_alternatives(deployment_id)` (L1630-L1640) finds the deployment; none gives false. It reads `model_info.team_id` and `model_info.team_public_model_name`; when either is unset the answer is false. It takes the deployments indexed under that (team, public name) pair, drops blocked ones with B307's filter, and is true when more than one is left. B369's cooldown decision already takes this as its `has_alternatives` input.
+
+
+  `map_team_model(team_model_name, team_id)` (L11585-L11616) calls `get_model_list(model_name, team_id)`; none or empty gives none. For the first deployment whose `model_info.team_id` equals `team_id`: with a name, return that name unchanged; without one, return its `model_info.team_public_model_name`, or its `model_name` when that is unset. When no row matches, give none.
+
+
+  `resolved_litellm_models(model_name, team_id)` (L12080-L12097) gives, in list order, the `litellm_params.model` of every deployment `get_model_list` returns, skipping a missing or empty one. An empty answer is not an error.
+
+
+  `is_wildcard_access_group(group)` is `_is_model_access_group_for_wildcard_route` (L12166-L12183): read the access groups for the name; none gives false; true when any model of that group matches the pattern router.
+
+
+  `cached_model_group_info(model_group)` (L11328-L11329) returns B847's cached group info for the name unchanged.
+
+
+  `messages_order_levels(model_group, request)` (L8498-L8514) reads the team id from `metadata.user_api_key_team_id`, uses the pre-routing selection that B309 reads from the request when there is one and the group otherwise, lists the deployments for that name and team, and gives the sorted set of their order values, skipping deployments without an order. `messages_can_fall_back(model_group, request, router)` (L8516-L8546) answers whether a mid-stream error could still reach a fallback, in this order: false when B309 says fallbacks are off for the request; true when `enable_weighted_failover` is set; with more than one order level, true when any level is above the request's `_target_order` (or the first level when it has none); true when content policy fallbacks (request value first, router value second) are set and B399 finds one for the group; false when there are no `fallbacks` (request first, router second); true when B309 calls the fallbacks non-standard; otherwise resolve the fallback group with B306 for the lookup groups B309 gives and return B309's `has_unattempted_fallback_target` for it.
+
+
+  Tests are in `catalog_queries/tests.rs` with a small in-memory catalog built through the public constructors of the tasks named above; names start with `recognized_`, `team_`, `resolved_`, `access_group_`, `order_levels_` and `can_fall_back_`. There is no fuzz target.
+scope:
+  paths:
+  - crates/betterlite-router/src/catalog_queries.rs
+  - crates/betterlite-router/src/catalog_queries/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1598-L1640
+    why: is_recognized_model and the team sibling count.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8498-L8546
+    why: The Messages order levels and the fallback reachability check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11328-L11329
+    why: Cached group info forward.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11585-L11616
+    why: Team model mapping with and without a model name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12080-L12097
+    why: Provider models behind a public name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12166-L12183
+    why: Wildcard access groups.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/cooldown_handlers.py#L350-L370
+    why: The cooldown caller of the team sibling count.
+dod:
+  - text: A model name is recognized by name, deployment id, alias or routing group, and not by a wildcard alone.
+    proof: [catalog-recognized]
+  - text: The team sibling count ignores blocked deployments and needs both team fields, and the team mapping keeps the name or falls back to the public name.
+    proof: [catalog-team]
+  - text: Resolved provider models keep list order and skip empty ones, and a wildcard access group is found through the pattern router.
+    proof: [catalog-resolved, catalog-access-group]
+  - text: Order levels prefer the pre-routing selection and skip deployments without an order.
+    proof: [catalog-order-levels]
+  - text: The fallback reachability check follows LiteLLM's order of tests and prefers request values over router values.
+    proof: [catalog-can-fall-back]
+  - text: "`messages_can_fall_back` reads B8440's `config.sections.weighted_failover.enabled` and answers true when it is set, right after the fallbacks-off test."
+    proof: [catalog-can-fall-back]
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: catalog-recognized
+    why: An alias or a deployment id is refused, or a wildcard counts.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^catalog_queries::tests::recognized_/)'
+  - id: catalog-team
+    why: A blocked sibling keeps a team model out of cooldown, or the public name is lost.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^catalog_queries::tests::team_/)'
+  - id: catalog-resolved
+    why: An empty provider model is returned or the order changes.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^catalog_queries::tests::resolved_/)'
+  - id: catalog-access-group
+    why: A wildcard access group is missed.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^catalog_queries::tests::access_group_/)'
+  - id: catalog-order-levels
+    why: The order levels read the wrong group.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^catalog_queries::tests::order_levels_/)'
+  - id: catalog-can-fall-back
+    why: Frames are held back when no fallback can run, or released when one can.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^catalog_queries::tests::can_fall_back_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B302 owns the catalog and aliases, B323 routing groups, B844 the model list and deployment lookup, B847 access groups and cached group info, B307 the blocked filter, B309 the fallback request helpers, B306 the fallback group lookup and B399 the content policy check."
+  - "The callers wire these queries in: B312 (Messages stream fallback), B363 (routing plugins), B940, B6460 and B3880 (proxy gates) and the cooldown wiring for B369."
+  - "Router.routing_group_has_alternatives is not in this task; its owner is named in B016's inventory."
+pitfalls:
+  - "`team_model_has_alternatives` counts siblings after the blocked filter, so two deployments with one paused give false."
+  - "`map_team_model` with no model name returns the deployment's public name, not the internal `model_name`, when both are set."
+  - "`messages_can_fall_back` reads `fallbacks` from the request before the router, so a request that sends an empty `fallbacks` list hides the router's list and gets false."
+  - "The order level skip starts at the first level when `_target_order` is absent, so a request with two levels and no target can still fall back."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

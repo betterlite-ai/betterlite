@@ -6,7 +6,7 @@ description: >-
   include_in_schema=False; keep it out of the schema too). It is the only path; there is no /v1 or other alias.
   The route reads the LiteLLM_SpendLogs table and answers `CacheActivityResponse`. The route is not scoped to the caller:
   every admitted caller sees all rows, as in LiteLLM (B867 decides which roles may reach the path). This task adds no
-  role check. Expose one public function that returns the axum route; B074 composes it into the app and this task adds
+  role check. Expose one public function that returns the axum route; B8482 composes it into the app and this task adds
   no registration of its own.
 
   Query parameters. `start_date` and `end_date` are required strings. `key_aliases` and `models` are optional and can
@@ -92,7 +92,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L880-L893
     why: internal_user_routes includes this path, so internal users can call it (B867 owns the table).
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19981
-    why: analytics_router is included in the app; B074 owns the registration.
+    why: analytics_router is included in the app; B8482 owns the registration.
   - url: https://docs.python.org/3.12/library/datetime.html#strftime-and-strptime-format-codes
     why: The %Y, %m and %d rules the date parser has to match.
 dod:
@@ -155,7 +155,7 @@ deviations:
   - what: A database error in a statement answers with the server's generic internal error body, not Python's exception text.
     why: The wording of an internal error cannot match Python's exception strings; the 500 status is the same.
 out_of_scope:
-  - "B074 composes this route into the app, like the analytics_router include at proxy_server.py L19981; this task exposes only the route function."
+  - "B8482 composes this route into the app, like the analytics_router include at proxy_server.py L19981; this task exposes only the route function."
   - "B867 owns the internal_user_routes entry for this path and B868 owns info_routes; this task reads INFO_ROUTES and adds no role check."
   - "_SupportsQueryRaw, _SupportsRawQueryDb and the Pydantic TypeAdapters (L76-L86, L195-L206) are Python typing helpers with no Rust counterpart."
   - "UNKNOWN_CALL_TYPE (cache_activity.py L72) has no caller at the pin; the SQL spells 'Unknown' itself, so it is not built."

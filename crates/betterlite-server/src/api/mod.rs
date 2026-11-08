@@ -1,3 +1,4 @@
+pub mod a2a_discover;
 pub mod agents;
 pub mod anthropic_messages_routes;
 pub mod assistant_dispatch;

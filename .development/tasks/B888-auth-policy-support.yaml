@@ -102,8 +102,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/auth_policy_support.rs
     - crates/betterlite-server/src/state/auth_policy_support/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-policy-support/**
     - crates/betterlite-server/src/auth/auth_policy_support.rs
     - crates/betterlite-server/src/auth/auth_policy_support/**
@@ -204,9 +202,9 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-policy-support/organization-inheritance.yaml
 deviations: []
 out_of_scope:
-  - B104 owns the remaining guardrail_helpers functions, base translation utils except anthropic_tool_names,
+  - B3663 owns the remaining guardrail_helpers functions and base translation utils except anthropic_tool_names, B3667 to B3678 the translation handlers,
     and every translation-handler method except
-    the three extraction leaves explicitly moved here. It installs runtime guardrail execution later;
+    the three extraction leaves explicitly moved here. B3680 installs runtime guardrail execution later;
     tool allowlists already use this task's concrete built-in name extractors. B1217 owns outage setting loading and tests.
     B860 Postgres fixtures select POSTGRES_TEST_URL first, then testcontainers.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),

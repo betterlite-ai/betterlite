@@ -59,8 +59,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/model_block.rs
     - crates/betterlite-server/src/routes/model_block/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/model-block/**
     - tools/oracle/helpers/b1214.py
     - tools/oracle/helpers/b1214/**

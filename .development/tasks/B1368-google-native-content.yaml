@@ -83,7 +83,7 @@ deviations: []
 out_of_scope:
   - B1391 owns the guardrail_translation subpackage under the Studio google_genai covers glob.
   - B1331 owns Studio validate_environment and _get_google_ai_studio_api_key at L146-L176; every other method in both native transformation files belongs here.
-  - B098 owns generic native GenAI API contracts and public routes; B034/B035 expose the provider preparation and response hooks for that caller.
+  - B3480 owns generic native GenAI API contracts and B3506 the public routes; B034/B035 expose the provider preparation and response hooks for that caller.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as google_native_content in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/google_native_content.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/google_native_content.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Vertex's native option map preserves unsupported keys while Studio filters them.

@@ -1,0 +1,73 @@
+id: B8254
+title: MCP JWT signer guardrail initializer
+description: >-
+  Build `initialize_guardrail` of `litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/__init__.py` in
+  betterlite-guardrails as the module `mcp_jwt_signer_init`. It turns one configured guardrail entry into the signer that
+  B3816 builds, checks the mode, and registers the signer as a callback.
+
+  `initialize_mcp_jwt_signer(params, guardrail_name, registry, slot) -> Result<Arc<McpJwtSigner>, GuardrailInitError>`. Use the
+  signer type and `SignerSettings` of B3816 and the guardrail params type of B3662. `guardrail_name` is the entry's name
+  and may be absent. Rules in order:
+  1. A missing or empty `guardrail_name` fails with "MCPJWTSigner guardrail requires a guardrail_name".
+  2. A mode other than `pre_mcp_call` fails with "MCPJWTSigner guardrail '<name>' has mode='<mode>' but must use
+     mode='pre_mcp_call'. JWT injection only fires for MCP tool calls." The mode is the params `mode`.
+  3. Each signer option is read from the params `optional_params` first and from the params top level second. The
+     optional_params value wins when it is set (not null); a null there falls to the top level; null in both stays unset.
+     The options are: issuer, audience, ttl_seconds, access_token_discovery_uri, token_introspection_endpoint,
+     verify_issuer, verify_audience, end_user_claim_sources, add_claims, set_claims, remove_claims,
+     channel_token_audience, channel_token_ttl, required_claims, optional_claims, debug_headers (unset means false) and
+     allowed_scopes. Build `SignerSettings` from them and let B3816 apply its own defaults and checks.
+  4. The signer also gets the guardrail name, the event hook (the mode), `default_on` and the params `timeout`.
+  5. Add the signer to the callback registry that B189 owns (the `add_litellm_callback` step), store it in the slot, and return it.
+
+  Also expose the two registry entries for the wire name `mcp_jwt_signer`: the initializer and the signer type name.
+  B3682's `GuardrailFactories::build` has no `mcp_jwt_signer` arm yet; this task gives it the function to call but does
+  not edit that match.
+
+  The lookup. LiteLLM's `get_mcp_jwt_signer()` returns a module global that the signer's constructor sets, and discoverable_endpoints.py (openid_configuration, jwks_json) and mcp_server_manager.py (_get_tools_from_server) call it. Rust has no global, so this module also defines `JwtSignerSlot`: a struct holding `RwLock<Option<Arc<McpJwtSigner>>>`, with `new()` (empty), `get(&self) -> Option<Arc<McpJwtSigner>>` (the Rust get_mcp_jwt_signer) and `set(&self, signer: Arc<McpJwtSigner>)`. The fourth argument of `initialize_mcp_jwt_signer` is `slot: &JwtSignerSlot`; the function stores the signer it builds there before it returns, and a later signer replaces the earlier one, as LiteLLM's constructor replaces its global. The wave 17 guardrails wiring part makes one slot and hands it to B7321's discovery routes and to B8461's UpstreamClients.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/mcp_jwt_signer_init.rs
+    - crates/betterlite-guardrails/src/mcp_jwt_signer_init/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/__init__.py#L1-L81
+    why: The whole initializer, its option lookup and the registries.
+dod:
+  - text: >-
+      A missing guardrail name or a mode other than pre_mcp_call fails with the exact messages above.
+    proof: [init-tests]
+  - text: >-
+      Each option comes from optional_params when set there, else from the top level, else stays unset; debug_headers
+      defaults to false.
+    proof: [init-tests]
+  - text: >-
+      The built signer is registered once as a callback and returned.
+    proof: [init-tests]
+  - text: >-
+      JwtSignerSlot::get is None until a signer is stored and then returns the last one stored, and initialize_mcp_jwt_signer stores the signer it returns.
+    proof: [init-tests]
+checks:
+  optional: []
+  commands:
+    - id: init-tests
+      why: fails while a validation, the option precedence or the callback registration is missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^mcp_jwt_signer_init::/)'
+oracle_cases: []
+deviations:
+  - what: Option lookup reads typed fields, not attributes by name.
+    why: Python uses getattr with a key string; Rust reads the typed params fields and the typed optional_params fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/__init__.py#L27-L33
+out_of_scope:
+  - "The signer itself, its keys and its pre-call flow: B3816 and B3817 own them."
+  - "Adding the mcp_jwt_signer arm to GuardrailFactories::build: B3682 owns that match."
+  - "The readers of the slot: B7321's openid_configuration and jwks_json, and B8462's tools/list JWT gate through B8461's UpstreamClients."
+pitfalls:
+  - >-
+    An optional_params value of false or 0 is set, so it wins. Only null falls through to the top level.
+  - >-
+    Check the name before the mode; a missing name must not reach the mode message.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: security

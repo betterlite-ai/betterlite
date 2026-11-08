@@ -1,0 +1,15 @@
+id: B8276
+milestone: M5 api families
+title: Serve the decisions and SystemOne routes
+status: todo
+depends_on: [B001, B003, B004, B014, B756, B1103, B3510, B3515, B8393, B8395]
+file: tasks/B8276-decisions-routes.yaml
+covers:
+  - "litellm/proxy/decisions_endpoints/__init__.py"
+  - "litellm/proxy/decisions_endpoints/endpoints.py"
+parent: B099
+split_from: B099
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

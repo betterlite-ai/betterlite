@@ -10,7 +10,7 @@ description: >-
   Inherit from CustomBatchLogger (B256) and implement async callback hooks for
   success and failure events. Resolve API key and URL from litellm.pointfive_params
   (with Mapping fallback), then POINTFIVE_API_KEY/POINTFIVE_API_URL environment,
-  then DEFAULT_API_URL constant, using B129's get_secret_str for secret resolution.
+  then DEFAULT_API_URL constant, using B8500's get_secret_str for secret resolution.
   Apply redaction via B189's redact_standard_logging_payload_from_model_call_details,
   B188's should_redact_message_logging check, and B190's redacted_standard_logging_payload
   structure. Upload via B3073's PointFiveUploadClient and PointFiveUploadError, serialize
@@ -152,7 +152,7 @@ out_of_scope:
   - "Serialization and encoding: chunk_lines, serialize_records, encode_lines (B3073)."
   - "IntegrationHealthCheckStatus type and callback/health check registration contracts (B189)."
   - "PointFiveInitParams, PointFiveUploadTarget, PointFiveUploadFailure types (B3073)."
-  - "get_secret_str secret resolution function (B129)."
+  - "get_secret_str secret resolution function (B8500)."
   - "Configuration storage and retrieval (B3075 owns finops config persistence)."
   - "Callback registry and dispatcher (B189 owns callback registration and routing)."
   - "Server startup registration and lifecycle (owned by server initialization layer)."
