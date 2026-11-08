@@ -1,0 +1,19 @@
+kind: helper
+name: get-attached-policies-filter-scope
+call:
+  b3241:
+    policy_memory_matching_attachment:
+      action: attached_policies
+      attachments:
+        - policy: healthcare-policy
+          teams: [healthcare-team]
+        - policy: global-policy
+          scope: "*"
+        - policy: dev-policy
+          keys: [dev-key-*]
+      context:
+        team_alias: finance-team
+        key_alias: dev-key-123
+        model: gpt-4
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: gcs-mock-post-mocked-storage-url-returns-factory-response
+call:
+  b3996:
+    environment: {GCS_MOCK: "true"}
+    original: {status: 418, body: "original-response"}
+    requests:
+      - method: post
+        url: https://storage.googleapis.com/upload/storage/v1/b/mock-bucket/o?uploadType=media&name=mock-object
+        data: '{"kind":"storage#object"}'
+        headers: {authorization: "Bearer mock-gcs-token"}
+env: {}
+compare: {ignore: []}

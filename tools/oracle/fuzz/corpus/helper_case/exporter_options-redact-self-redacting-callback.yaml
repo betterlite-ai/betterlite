@@ -1,0 +1,21 @@
+kind: helper
+name: exporter-options-redact-self-redacting-callback
+call:
+  b3931:
+    operation: redact
+    turn_off_message_logging: true
+    excluded_fields: []
+    redacts_messages_itself: true
+    stamp: {id: chatcmpl-stamp, created: 1704067200}
+    details:
+      standard_logging_object:
+        id: slp-1
+        messages: [{role: user, content: secret}]
+        response: {choices: [{message: {role: assistant, content: hi}}]}
+        classifier_input: {prompt: classify}
+      proxy_server_request:
+        url: http://example.test/chat
+        classifier_input: {c: 3}
+        originating_request_masked: {d: 4}
+env: {}
+compare: {ignore: []}

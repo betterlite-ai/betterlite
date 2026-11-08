@@ -1,0 +1,8 @@
+task: B799
+deviations:
+  - what: The login page shows betterlite in place of LiteLLM in the title, the logo, the subtitle and the default-credentials hint.
+    why: The MIT form is retained and rebranded, so betterlite never presents itself as LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/ui_login.py#L54
+  - what: The form action and the new-login link are HTML-escaped, so a configured PROXY_BASE_URL or SERVER_ROOT_PATH holding a quote or an angle bracket cannot inject markup.
+    why: Configuration enters an attribute context, and LiteLLM interpolates the raw string into its f-string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/ui_login.py#L249
