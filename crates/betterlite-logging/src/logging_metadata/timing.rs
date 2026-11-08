@@ -8,12 +8,13 @@ pub fn get_response_time(
     completion_start_time: Decimal,
     stream: bool,
 ) -> Result<Decimal, TimestampError> {
-    let difference = if stream {
-        completion_start_time.checked_sub(start_time)
+    let end = if stream {
+        completion_start_time
     } else {
-        end_time.checked_sub(start_time)
+        end_time
     };
-    difference.ok_or(TimestampError::ResponseTimeOverflow)
+    end.checked_sub(start_time)
+        .ok_or(TimestampError::ResponseTimeOverflow)
 }
 
 mod tests;

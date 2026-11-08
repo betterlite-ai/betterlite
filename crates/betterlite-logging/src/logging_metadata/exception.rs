@@ -1,5 +1,4 @@
 use betterlite_error::normalize::class::Class;
-use betterlite_error::rate_limit::RateLimitDimension;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -23,57 +22,39 @@ const PROVIDER_REQUEST_ID_HEADERS: [&str; 7] = [
 pub struct ExceptionFacts {
     #[serde(default)]
     pub class_name: String,
-    #[serde(default)]
     pub class: Option<Class>,
-    #[serde(default)]
     pub message: Option<String>,
-    #[serde(default)]
     pub code: Option<String>,
-    #[serde(default)]
     pub status_code: Option<u16>,
-    #[serde(default)]
     pub response_status_code: Option<u16>,
-    #[serde(default)]
     pub llm_provider: Option<String>,
-    #[serde(default)]
     pub category: Option<String>,
-    #[serde(default)]
     pub rate_limit_type: Option<String>,
-    #[serde(default)]
     pub budget_entity_type: Option<String>,
-    #[serde(default)]
     pub budget_entity_id: Option<String>,
     #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
     pub budget_limit: Option<Decimal>,
     #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
     pub budget_spend: Option<Decimal>,
-    #[serde(default)]
     pub proxy_type: Option<String>,
-    #[serde(default)]
     pub headers: Option<IndexMap<String, String>>,
-    #[serde(default)]
     pub response_headers: Option<IndexMap<String, String>>,
-    #[serde(default)]
     pub litellm_response_headers: Option<IndexMap<String, String>>,
     #[serde(default)]
     pub traceback_lines: Vec<String>,
 }
 
 pub(crate) fn exception_code(exception: &ExceptionFacts) -> String {
-    if let Some(code) = exception
+    exception
         .code
         .as_deref()
         .filter(|code| !code.is_empty() && *code != "None")
-    {
-        return code.to_owned();
-    }
-    if let Some(status) = exception.status_code {
-        return status.to_string();
-    }
-    if let Some(status) = exception.response_status_code {
-        return status.to_string();
-    }
-    String::new()
+        .map(str::to_owned)
+        .or_else(|| {
+            let status = exception.status_code.or(exception.response_status_code);
+            status.map(|code| code.to_string())
+        })
+        .unwrap_or_default()
 }
 
 pub(crate) fn budget_fields(
@@ -101,17 +82,14 @@ pub(crate) fn provider_request_id(exception: &ExceptionFacts) -> Option<String> 
         exception.response_headers.as_ref(),
         exception.litellm_response_headers.as_ref(),
     ];
-    for expected in PROVIDER_REQUEST_ID_HEADERS {
-        let found = sources.iter().flatten().find_map(|headers| {
-            headers
+    PROVIDER_REQUEST_ID_HEADERS.iter().find_map(|expected| {
+        sources.iter().flatten().find_map(|headers| {
+            let named = headers
                 .iter()
-                .find(|(name, value)| name.eq_ignore_ascii_case(expected) && !value.is_empty())
-        });
-        if let Some((_name, value)) = found {
-            return Some(value.clone());
-        }
-    }
-    None
+                .find(|(name, value)| name.eq_ignore_ascii_case(expected) && !value.is_empty());
+            named.map(|(_name, value)| value.clone())
+        })
+    })
 }
 
 const RATE_LIMIT_CATEGORIES: [&str; 4] = [
@@ -121,14 +99,6 @@ const RATE_LIMIT_CATEGORIES: [&str; 4] = [
     "litellm_batch_rate_limit",
 ];
 
-const RATE_LIMIT_TYPES: [&str; 5] = [
-    "requests",
-    "tokens",
-    "concurrent_requests",
-    "budget",
-    "max_iterations",
-];
-
 pub(crate) fn validated_category(raw: Option<&str>) -> Option<String> {
     let value = raw?;
     RATE_LIMIT_CATEGORIES
@@ -136,28 +106,9 @@ pub(crate) fn validated_category(raw: Option<&str>) -> Option<String> {
         .then_some(value.to_owned())
 }
 
-pub(crate) fn validated_type(raw: Option<&str>) -> Option<String> {
-    let value = raw?;
-    RATE_LIMIT_TYPES
-        .contains(&value)
-        .then_some(value.to_owned())
-}
-
-pub(crate) fn validated_dimension(raw: Option<&str>) -> Option<RateLimitDimension> {
-    match raw? {
-        "requests" => Some(RateLimitDimension::Requests),
-        "tokens" => Some(RateLimitDimension::Tokens),
-        "concurrent_requests" => Some(RateLimitDimension::ConcurrentRequests),
-        "budget" => Some(RateLimitDimension::Budget),
-        "max_iterations" => Some(RateLimitDimension::MaxIterations),
-        _ => None,
-    }
-}
-
 pub(crate) fn semantic_class(exception: &ExceptionFacts) -> Class {
-    if let Some(class) = exception.class {
-        return class;
-    }
-    let deserializer = StrDeserializer::<serde_json::Error>::new(&exception.class_name);
-    Class::deserialize(deserializer).unwrap_or(Class::Other)
+    exception.class.unwrap_or_else(|| {
+        let deserializer = StrDeserializer::<serde_json::Error>::new(&exception.class_name);
+        Class::deserialize(deserializer).unwrap_or(Class::Other)
+    })
 }

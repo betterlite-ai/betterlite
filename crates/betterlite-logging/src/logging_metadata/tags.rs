@@ -22,38 +22,30 @@ pub enum TagError {
 pub fn get_user_agent_tags(
     headers: Option<&ProxyHeaders>,
     disable_add_user_agent: bool,
-) -> Option<Vec<Json>> {
+) -> Vec<Json> {
+    let Some(user_agent) = headers.and_then(|present| present.get("user-agent")) else {
+        return Vec::new();
+    };
     if disable_add_user_agent {
-        return None;
+        return Vec::new();
     }
-    let user_agent = headers?.get("user-agent")?;
-    let mut tags = Vec::with_capacity(2);
-    if let Some((part, _rest)) = user_agent.split_once('/') {
-        tags.push(Json::Text(format!("User-Agent: {part}")));
-    }
-    tags.push(Json::Text(format!("User-Agent: {user_agent}")));
-    Some(tags)
+    let prefix = user_agent.split_once('/').map(|(part, _rest)| part);
+    prefix
+        .into_iter()
+        .chain([user_agent.as_str()])
+        .map(|part| Json::Text(format!("User-Agent: {part}")))
+        .collect()
 }
 
 #[must_use]
-pub fn get_extra_header_tags(
-    headers: Option<&ProxyHeaders>,
-    extra_spend_tag_headers: &[String],
-) -> Option<Vec<Json>> {
-    if extra_spend_tag_headers.is_empty() {
-        return None;
-    }
-    let present = headers?;
-    let mut tags = Vec::new();
-    for name in extra_spend_tag_headers {
-        if let Some(value) = present.get(name) {
-            tags.push(Json::Text(format!("{name}: {value}")));
-        }
-    }
-    if tags.is_empty() {
-        return None;
-    }
-    Some(tags)
+pub fn get_extra_header_tags(headers: Option<&ProxyHeaders>, names: &[String]) -> Vec<Json> {
+    let Some(present) = headers else {
+        return Vec::new();
+    };
+    names
+        .iter()
+        .filter_map(|name| Some(Json::Text(format!("{name}: {}", present.get(name)?))))
+        .collect()
 }
 
 pub fn get_request_tags(
@@ -67,12 +59,14 @@ pub fn get_request_tags(
             declared_tags(params.litellm_metadata.as_ref(), "litellm_metadata")?.unwrap_or_default()
         }
     };
-    if let Some(user_agent_tags) = get_user_agent_tags(headers, settings.disable_user_agent_tags) {
-        tags.extend(user_agent_tags);
-    }
-    if let Some(header_tags) = get_extra_header_tags(headers, settings.extra_spend_tag_headers) {
-        tags.extend(header_tags);
-    }
+    tags.extend(get_user_agent_tags(
+        headers,
+        settings.disable_user_agent_tags,
+    ));
+    tags.extend(get_extra_header_tags(
+        headers,
+        settings.extra_spend_tag_headers,
+    ));
     Ok(tags)
 }
 

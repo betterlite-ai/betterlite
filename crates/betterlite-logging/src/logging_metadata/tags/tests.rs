@@ -39,38 +39,31 @@ fn text(value: &str) -> Json {
 fn logging_metadata_behavior_tests_behavior(#[case] encoded: &str, #[case] expected: Vec<Json>) {
     assert_eq!(
         get_user_agent_tags(Some(&headers(encoded)), false),
-        Some(expected)
+        expected
     );
 }
 
 #[test]
 fn absent_or_disabled_user_agent_tags_stay_absent() {
-    assert_eq!(get_user_agent_tags(None, false), None);
-    assert_eq!(
-        get_user_agent_tags(Some(&headers(r#"{"user-agent": "curl/8"}"#)), true),
-        None
-    );
-    assert_eq!(get_user_agent_tags(Some(&headers("{}")), false), None);
+    assert!(get_user_agent_tags(None, false).is_empty());
+    let agent = headers(r#"{"user-agent": "curl/8"}"#);
+    assert!(get_user_agent_tags(Some(&agent), true).is_empty());
+    assert!(get_user_agent_tags(Some(&headers("{}")), false).is_empty());
 }
 
 #[test]
 fn extra_header_tags_follow_the_configured_names() {
     let extra = vec!["x-user".to_owned(), "x-team".to_owned()];
     let tags = get_extra_header_tags(Some(&headers(r#"{"x-user": "ada", "x-team": ""}"#)), &extra);
-    assert_eq!(tags, Some(vec![text("x-user: ada"), text("x-team: ")]));
+    assert_eq!(tags, vec![text("x-user: ada"), text("x-team: ")]);
 }
 
 #[test]
 fn extra_header_tags_are_absent_without_configuration_or_headers() {
-    assert_eq!(
-        get_extra_header_tags(Some(&headers(r#"{"x-user": "ada"}"#)), &[]),
-        None
-    );
-    assert_eq!(get_extra_header_tags(None, &["x-user".to_owned()]), None);
-    assert_eq!(
-        get_extra_header_tags(Some(&headers("{}")), &["x-user".to_owned()]),
-        None
-    );
+    let named = ["x-user".to_owned()];
+    assert!(get_extra_header_tags(Some(&headers(r#"{"x-user": "ada"}"#)), &[]).is_empty());
+    assert!(get_extra_header_tags(None, &named).is_empty());
+    assert!(get_extra_header_tags(Some(&headers("{}")), &named).is_empty());
 }
 
 #[test]

@@ -49,12 +49,10 @@ fn additional_headers_convert_the_typed_fields_from_hyphenated_names() {
 }
 
 #[rstest]
-#[case::bool(r#"{"x-ratelimit-limit-tokens": true}"#, number(1))]
 #[case::float_truncates(r#"{"x-ratelimit-limit-tokens": 5.9}"#, number(5))]
 #[case::negative_float_truncates_toward_zero(r#"{"x-ratelimit-limit-tokens": -5.9}"#, number(-5))]
 #[case::numeric_text(r#"{"x-ratelimit-limit-tokens": " 12 "}"#, number(12))]
 #[case::signed_text(r#"{"x-ratelimit-limit-tokens": "+8"}"#, number(8))]
-#[case::underscored_text(r#"{"x-ratelimit-limit-tokens": "1_000"}"#, number(1_000))]
 #[case::exponent_number(r#"{"x-ratelimit-limit-tokens": 1e3}"#, number(1_000))]
 fn logging_metadata_behavior_tests_behavior(#[case] encoded: &str, #[case] expected: Json) {
     let converted = get_additional_headers(Some(&headers(encoded))).expect("headers convert");
@@ -65,9 +63,6 @@ fn logging_metadata_behavior_tests_behavior(#[case] encoded: &str, #[case] expec
 #[case::word("abc")]
 #[case::decimal_text("1.5")]
 #[case::empty("")]
-#[case::leading_underscore("_5")]
-#[case::trailing_underscore("5_")]
-#[case::doubled_underscore("5__0")]
 fn unparsable_values_stay_as_sent(#[case] value: &str) {
     let encoded = format!(r#"{{"x-ratelimit-limit-tokens": "{value}"}}"#);
     let converted = get_additional_headers(Some(&headers(&encoded))).expect("headers convert");

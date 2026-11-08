@@ -11,13 +11,9 @@ pub struct CallState {
 }
 
 pub fn surface_response_headers(state: &mut CallState, response_hidden: Option<&Json>) {
-    if state.response_headers.is_some() {
-        return;
+    if state.response_headers.is_none() {
+        state.response_headers = provider_response_headers(response_hidden);
     }
-    let Some(headers) = provider_response_headers(response_hidden) else {
-        return;
-    };
-    state.response_headers = Some(headers);
 }
 
 pub fn merge_response_hidden_params(state: &mut CallState, response_hidden: Option<&Json>) {
@@ -50,14 +46,13 @@ fn provider_response_headers(hidden: Option<&Json>) -> Option<IndexMap<String, S
     let Some(Json::Object(entries)) = fields.get("headers") else {
         return None;
     };
-    let mut headers = IndexMap::with_capacity(entries.len());
-    for (name, value) in entries {
-        let Json::Text(text) = value else {
-            return None;
-        };
-        headers.insert(name.clone(), text.clone());
-    }
-    Some(headers)
+    entries
+        .iter()
+        .map(|(name, value)| match value {
+            Json::Text(text) => Some((name.clone(), text.clone())),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+        })
+        .collect()
 }
 
 mod tests;

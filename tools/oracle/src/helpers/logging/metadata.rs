@@ -35,42 +35,27 @@ pub(crate) enum Input {
 }
 
 #[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct MergeInput {
     litellm_params: LitellmParams,
 }
 
 #[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct StandardMetadataInput {
-    #[serde(default)]
     metadata: Option<MetadataMap>,
-    #[serde(default)]
     litellm_params: Option<LitellmParams>,
-    #[serde(default)]
     prompt_integration: Option<String>,
-    #[serde(default)]
     applied_guardrails: Option<Vec<String>>,
-    #[serde(default)]
     mcp_tool_call_metadata: Option<Json>,
-    #[serde(default)]
     vector_store_request_metadata: Option<Vec<Json>>,
-    #[serde(default)]
     usage_object: Option<Json>,
-    #[serde(default)]
     custom_llm_provider: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct ErrorInformationInput {
-    #[serde(default)]
     exception: Option<ExceptionFacts>,
-    #[serde(default)]
     traceback: Option<String>,
-    #[serde(default)]
     error_str: Option<String>,
-    #[serde(default)]
     metadata: Option<MetadataMap>,
     #[serde(default)]
     policy: ErrorPolicy,
@@ -79,10 +64,8 @@ pub(crate) struct ErrorInformationInput {
 }
 
 #[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct RequestTagsInput {
     litellm_params: LitellmParams,
-    #[serde(default)]
     headers: Option<IndexMap<String, String>>,
     #[serde(default)]
     extra_spend_tag_headers: Vec<String>,
@@ -91,7 +74,6 @@ pub(crate) struct RequestTagsInput {
 }
 
 #[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct TraceSessionInput {
     litellm_params: LitellmParams,
     #[serde(default)]
@@ -99,23 +81,19 @@ pub(crate) struct TraceSessionInput {
     fallback_trace_id: String,
     fallback_session_id: String,
     call_id: String,
-    #[serde(default)]
     cached_trace_id: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct TruncateBase64Input {
     messages: Json,
     max_base64_length: usize,
 }
 
-#[derive(Clone, Copy, Default, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Default, serde::Deserialize)]
+#[serde(default)]
 struct ErrorPolicy {
-    #[serde(default)]
     log_client_error_tracebacks: bool,
-    #[serde(default)]
     expected_client_error: bool,
 }
 
@@ -148,15 +126,6 @@ where
     })
 }
 
-fn optional_redactor(enabled: bool) -> Result<Option<Redactor>, Box<crate::helpers::HelperError>> {
-    if !enabled {
-        return Ok(None);
-    }
-    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
-        .map(Some)
-        .map_err(invalid)
-}
-
 fn merge(input: &MergeInput) -> serde_json::Value {
     let merged = merge_litellm_metadata(&input.litellm_params);
     let scrubbed = scrub_sensitive_metadata(input.litellm_params.clone());
@@ -181,7 +150,11 @@ fn standard_metadata(input: &StandardMetadataInput) -> crate::helpers::HelperRes
 
 fn error_information(input: &ErrorInformationInput) -> crate::helpers::HelperResult {
     let normalizer = Normalizer::new().map_err(invalid)?;
-    let redactor = optional_redactor(input.redact)?;
+    let redactor = input
+        .redact
+        .then(|| Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH))
+        .transpose()
+        .map_err(invalid)?;
     let metadata = input.metadata.clone().unwrap_or_default();
     let context = ExceptionLogging {
         exception: input.exception.as_ref(),
@@ -220,23 +193,11 @@ fn trace_session(input: &TraceSessionInput) -> serde_json::Value {
     if let Some(cached) = input.cached_trace_id.as_ref() {
         cache.record(&input.call_id, TraceService::Langfuse, cached.clone());
     }
-    let trace_id = logging_payload_trace_id(
-        &input.litellm_params,
-        &input.fallback_trace_id,
-        input.correlation,
-    );
-    let session_id = logging_payload_session_id(
-        &input.litellm_params,
-        &input.fallback_session_id,
-        input.correlation,
-    );
-    let cached = cache
-        .logged_trace_id(&input.call_id, TraceService::Langfuse)
-        .map(str::to_owned);
+    let params = &input.litellm_params;
     json!({
-        "trace_id": trace_id,
-        "session_id": session_id,
-        "cached_trace_id": cached,
+        "trace_id": logging_payload_trace_id(params, &input.fallback_trace_id, input.correlation),
+        "session_id": logging_payload_session_id(params, &input.fallback_session_id, input.correlation),
+        "cached_trace_id": cache.logged_trace_id(&input.call_id, TraceService::Langfuse),
     })
 }
 

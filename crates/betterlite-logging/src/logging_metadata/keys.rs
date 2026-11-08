@@ -36,9 +36,6 @@ pub const STANDARD_METADATA_KEYS: [&str; 35] = [
     "used_client_oauth_token",
 ];
 
-// the source of used_client_oauth_token is resolved from litellm_metadata instead of copied
-pub const RESOLVED_METADATA_KEYS: [&str; 1] = ["used_client_oauth_token"];
-
 pub const HIDDEN_PARAM_KEYS: [&str; 11] = [
     "model_id",
     "cache_key",

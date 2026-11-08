@@ -3,13 +3,15 @@ use betterlite_error::normalize::Normalizer;
 use betterlite_error::rate_limit::RateLimitDimension;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
+use serde::Deserialize as _;
+use serde::de::value::StrDeserializer;
 use thiserror::Error;
 
 use crate::fields::payload::records::ErrorInformation;
 use crate::logging_metadata::decode::{DecodeError, decode};
 use crate::logging_metadata::exception::{
     ExceptionFacts, budget_fields, exception_code, provider_request_id, semantic_class,
-    validated_category, validated_dimension, validated_type,
+    validated_category,
 };
 use crate::logging_metadata::params::MetadataMap;
 
@@ -46,34 +48,41 @@ pub fn get_error_information(
     context: &ExceptionLogging<'_>,
     traceback: Option<&str>,
 ) -> ErrorInformation {
-    let Some(exception) = context.exception else {
-        return empty_information(context, traceback);
-    };
+    let absent = ExceptionFacts::default();
+    let exception = context.exception.unwrap_or(&absent);
     let error_code = exception_code(exception);
     let message = exception.message.clone().unwrap_or_default();
-    let dimension = validated_dimension(exception.rate_limit_type.as_deref());
+    let dimension = exception.rate_limit_type.as_deref().and_then(|raw| {
+        RateLimitDimension::deserialize(StrDeserializer::<serde_json::Error>::new(raw)).ok()
+    });
+    let logged = traceback_text(context, exception, traceback);
     let (entity_type, entity_id, limit, spend) = budget_fields(exception);
     ErrorInformation {
         error_code: Some(Some(error_code.clone())),
         error_class: Some(Some(exception.class_name.clone())),
         llm_provider: Some(Some(exception.llm_provider.clone().unwrap_or_default())),
-        traceback: Some(Some(redact(
-            context.redactor,
-            &traceback_text(context, exception, traceback),
+        traceback: Some(Some(context.redactor.map_or_else(
+            || logged.clone(),
+            |redactor| redactor.redact_string(&logged),
         ))),
-        error_message: Some(Some(redact(context.redactor, &message))),
+        error_message: Some(Some(context.redactor.map_or_else(
+            || message.clone(),
+            |redactor| redactor.redact_string(&message),
+        ))),
         error_provider_request_id: Some(provider_request_id(exception)),
         error_rate_limit_category: Some(validated_category(exception.category.as_deref())),
-        error_rate_limit_type: Some(validated_type(exception.rate_limit_type.as_deref())),
+        error_rate_limit_type: Some(dimension.and_then(|_| exception.rate_limit_type.clone())),
         error_budget_entity_type: Some(entity_type),
         error_budget_entity_id: Some(entity_id),
-        normalized_error: Some(normalized_error(
-            &message,
-            &error_code,
-            exception,
-            dimension,
-            context.normalizer,
-        )),
+        normalized_error: Some(context.exception.and_then(|_| {
+            normalized_error(
+                &message,
+                &error_code,
+                exception,
+                dimension,
+                context.normalizer,
+            )
+        })),
         error_budget_limit: Some(limit),
         error_budget_spend: Some(spend),
     }
@@ -82,37 +91,15 @@ pub fn get_error_information(
 pub fn payload_error_information(
     request: &PayloadErrorRequest<'_>,
 ) -> Result<(ErrorInformation, Option<String>), ErrorInformationError> {
-    let information = get_error_information(request.context, None);
     if !client_disconnected(request.metadata)? {
+        let information = get_error_information(request.context, None);
         return Ok((information, request.error_str.clone()));
     }
-    let disconnected = client_disconnect_information(request.metadata)?;
     let error_str = request
         .error_str
         .clone()
         .or_else(|| Some(CLIENT_DISCONNECTED_MESSAGE.to_owned()));
-    Ok((disconnected, error_str))
-}
-
-fn empty_information(context: &ExceptionLogging<'_>, traceback: Option<&str>) -> ErrorInformation {
-    ErrorInformation {
-        error_code: Some(Some(String::new())),
-        error_class: Some(Some(String::new())),
-        llm_provider: Some(Some(String::new())),
-        traceback: Some(Some(redact(
-            context.redactor,
-            traceback.unwrap_or_default(),
-        ))),
-        error_message: Some(Some(redact(context.redactor, ""))),
-        error_provider_request_id: Some(None),
-        error_rate_limit_category: Some(None),
-        error_rate_limit_type: Some(None),
-        error_budget_entity_type: Some(None),
-        error_budget_entity_id: Some(None),
-        normalized_error: Some(None),
-        error_budget_limit: Some(None),
-        error_budget_spend: Some(None),
-    }
+    Ok((client_disconnect_information(request.metadata)?, error_str))
 }
 
 fn traceback_text(
@@ -121,15 +108,12 @@ fn traceback_text(
     traceback: Option<&str>,
 ) -> String {
     let mut text = traceback.unwrap_or_default().to_owned();
-    if !context.log_client_error_tracebacks && context.expected_client_error {
-        return text;
-    }
-    for line in exception
-        .traceback_lines
-        .iter()
-        .take(MAXIMUM_TRACEBACK_LINES_TO_LOG)
-    {
-        text.push_str(line);
+    if context.log_client_error_tracebacks || !context.expected_client_error {
+        let lines = exception
+            .traceback_lines
+            .iter()
+            .take(MAXIMUM_TRACEBACK_LINES_TO_LOG);
+        text.extend(lines.map(String::as_str));
     }
     text
 }
@@ -180,13 +164,6 @@ fn client_disconnect_information(
         });
     };
     Ok(decode("error_information", fields.clone())?)
-}
-
-fn redact(policy: Option<&Redactor>, text: &str) -> String {
-    let Some(redactor) = policy else {
-        return text.to_owned();
-    };
-    redactor.redact_string(text)
 }
 
 mod tests;

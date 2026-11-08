@@ -42,27 +42,21 @@ pub fn logging_payload_trace_id(
     fallback_trace_id: &str,
     request_correlation_in_logs: bool,
 ) -> String {
-    let metadata_trace_id = metadata_text(params, "trace_id");
-    let metadata_session_id = metadata_text(params, "session_id");
-    let candidates: [Option<&str>; 4] = if request_correlation_in_logs {
-        [
-            params.litellm_trace_id.as_deref(),
-            params.litellm_session_id.as_deref(),
-            metadata_trace_id.as_deref(),
-            metadata_session_id.as_deref(),
-        ]
+    let own_trace = params.litellm_trace_id.as_deref();
+    let own_session = params.litellm_session_id.as_deref();
+    let meta_trace = metadata_text(params, "trace_id");
+    let meta_session = metadata_text(params, "session_id");
+    let candidates = if request_correlation_in_logs {
+        [own_trace, own_session, meta_trace, meta_session]
     } else {
-        [
-            params.litellm_session_id.as_deref(),
-            params.litellm_trace_id.as_deref(),
-            metadata_session_id.as_deref(),
-            metadata_trace_id.as_deref(),
-        ]
+        [own_session, own_trace, meta_session, meta_trace]
     };
-    let Some(candidate) = candidates.into_iter().flatten().next() else {
-        return fallback_trace_id.to_owned();
-    };
-    candidate.to_owned()
+    candidates
+        .into_iter()
+        .flatten()
+        .next()
+        .unwrap_or(fallback_trace_id)
+        .to_owned()
 }
 
 #[must_use]
@@ -74,18 +68,17 @@ pub fn logging_payload_session_id(
     if !request_correlation_in_logs {
         return String::new();
     }
-    if let Some(session_id) = params.litellm_session_id.as_deref() {
-        return session_id.to_owned();
-    }
-    if let Some(session_id) = metadata_text(params, "session_id") {
-        return session_id;
-    }
-    fallback_session_id.to_owned()
+    params
+        .litellm_session_id
+        .as_deref()
+        .or_else(|| metadata_text(params, "session_id"))
+        .unwrap_or(fallback_session_id)
+        .to_owned()
 }
 
-fn metadata_text(params: &LitellmParams, key: &str) -> Option<String> {
+fn metadata_text<'params>(params: &'params LitellmParams, key: &str) -> Option<&'params str> {
     match params.metadata.as_ref()?.get(key)? {
-        Json::Text(text) => Some(text.clone()),
+        Json::Text(text) => Some(text),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
