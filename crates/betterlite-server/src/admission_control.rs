@@ -205,8 +205,11 @@ fn scalar_route_path<'path>(request: &'path Request<Body>, scalar_root: &str) ->
     if request.extensions().get::<RequestRootPath>().is_some() {
         return path;
     }
-    // every exempt path starts with a slash, so a partial segment match such as /proxyhealth stays non-exempt
-    path.strip_prefix(scalar_root).unwrap_or(path)
+    // a root that stops inside a segment (/ before metrics, /proxy before health) leaves the path whole; an exact match leaves nothing
+    match path.strip_prefix(scalar_root) {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => rest,
+        _ => path,
+    }
 }
 
 async fn admit_request(

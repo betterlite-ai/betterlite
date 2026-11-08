@@ -44,6 +44,7 @@ enum Boundary {
     UpgradeBypassesSaturation,
     ContentLengthSurvivesTheStack,
     MatchedRootPathSkipsTheScalarRoot,
+    ScalarRootExemption(&'static str, &'static str, bool),
 }
 
 #[rstest]
@@ -70,6 +71,20 @@ enum Boundary {
 #[case::upgrade_bypasses_saturation(Boundary::UpgradeBypassesSaturation)]
 #[case::content_length_survives_the_stack(Boundary::ContentLengthSurvivesTheStack)]
 #[case::matched_root_path_skips_the_scalar_root(Boundary::MatchedRootPathSkipsTheScalarRoot)]
+#[case::slash_root_keeps_metrics_exempt(Boundary::ScalarRootExemption("/", "/metrics", true))]
+#[case::slash_root_keeps_health_exempt(Boundary::ScalarRootExemption(
+    "/",
+    "/health/liveliness",
+    true
+))]
+#[case::slash_root_still_limits_other_paths(Boundary::ScalarRootExemption("/", "/other", false))]
+#[case::exact_root_is_not_exempt(Boundary::ScalarRootExemption("/metrics", "/metrics", false))]
+#[case::root_then_slash_is_exempt(Boundary::ScalarRootExemption("/proxy", "/proxy/metrics", true))]
+#[case::partial_segment_is_not_exempt(Boundary::ScalarRootExemption(
+    "/proxy",
+    "/proxyhealth/liveliness",
+    false
+))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn admission_control_boundaries(#[case] boundary: Boundary) {
     match boundary {
@@ -90,7 +105,29 @@ async fn admission_control_boundaries(#[case] boundary: Boundary) {
         Boundary::MatchedRootPathSkipsTheScalarRoot => {
             matched_root_path_skips_the_scalar_root().await;
         }
+        Boundary::ScalarRootExemption(root, path, exempt) => {
+            scalar_root_exemption(root, path, exempt).await;
+        }
     }
+}
+
+async fn scalar_root_exemption(root: &str, path: &str, exempt: bool) {
+    let source = format!(
+        "general_settings:\n  SERVER_ROOT_PATH: {root}\n  max_in_flight_requests_per_worker: 1\n  max_queued_requests_per_worker: 0"
+    );
+    let harness = harness(&source, "", gates(&[("/hold", Behavior::Hold)]));
+    let mut requests = Requests::default();
+    requests.start(&harness.router, "/hold");
+    await_started(&harness.gates, "/hold").await;
+    requests.start(&harness.router, path);
+    let expected = if exempt {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    assert_eq!(requests.complete(path).await.0, expected);
+    harness.gates.get("/hold").unwrap().release.notify_one();
+    assert_eq!(requests.complete("/hold").await.0, StatusCode::OK);
 }
 
 async fn matched_root_path_skips_the_scalar_root() {
