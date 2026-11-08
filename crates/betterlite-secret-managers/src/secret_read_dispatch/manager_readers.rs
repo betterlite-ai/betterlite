@@ -20,6 +20,11 @@ use crate::vault::transport::{
 
 const READ_TIMEOUT: Duration = Duration::from_secs(600);
 
+struct PreparedVaultRead {
+    request: VaultRequest,
+    data_key: String,
+}
+
 pub struct VaultManagerReader<T: VaultTransport> {
     manager: HashicorpSecretManager<Arc<T>>,
     transport: Arc<T>,
@@ -49,6 +54,58 @@ impl<T: VaultTransport> VaultManagerReader<T> {
             VaultAuth::AppRole { .. } | VaultAuth::Token(_) => None,
         }
     }
+
+    fn prepare(&self, secret_name: &str) -> Option<PreparedVaultRead> {
+        let target = match self.manager.build_secret_target(secret_name, None) {
+            Ok(target) => target,
+            Err(error) => {
+                tracing::error!("Error reading secret from Hashicorp Vault: {error}");
+                return None;
+            }
+        };
+        let token = match self.manager.request_token_blocking() {
+            Ok(token) => token,
+            Err(error) => {
+                tracing::error!("Error reading secret from Hashicorp Vault: {error}");
+                return None;
+            }
+        };
+        // the target URL already carries the namespace as a path segment
+        let request = VaultRequest {
+            method: VaultMethod::Get,
+            url: target.url,
+            token: Some(token),
+            namespace: None,
+            body: None,
+            client_certificate: self.certificate(),
+            timeout: READ_TIMEOUT,
+            follow_redirects: true,
+            max_response_bytes: MAX_RESPONSE_BYTES,
+        };
+        Some(PreparedVaultRead {
+            request,
+            data_key: target.data_key,
+        })
+    }
+
+    fn fetch(&self, prepared: PreparedVaultRead) -> Option<SecretString> {
+        let PreparedVaultRead { request, data_key } = prepared;
+        let response = match self.transport.send_blocking(request) {
+            Ok(response) => response,
+            Err(error) => {
+                tracing::error!("Error reading secret from Hashicorp Vault: {error}");
+                return None;
+            }
+        };
+        if !(200..300).contains(&response.status) {
+            tracing::error!(
+                "Error reading secret from Hashicorp Vault: Vault answered with status {}",
+                response.status
+            );
+            return None;
+        }
+        secret_value(response.body.expose_secret().as_bytes(), &data_key)
+    }
 }
 
 // The manager owns the transport it was built with; this clone lets the reader send its own read
@@ -69,26 +126,8 @@ impl<T: VaultTransport> VaultTransport for Arc<T> {
 
 impl<T: VaultTransport> SyncSecretReader for VaultManagerReader<T> {
     fn sync_read_secret(&self, secret_name: &str) -> Option<SecretString> {
-        let target = self.manager.build_secret_target(secret_name, None).ok()?;
-        let token = self.manager.request_token_blocking().ok()?;
-        let response = self
-            .transport
-            .send_blocking(VaultRequest {
-                method: VaultMethod::Get,
-                url: target.url,
-                token: Some(token),
-                namespace: self.manager.vault_secret_namespace().map(str::to_owned),
-                body: None,
-                client_certificate: self.certificate(),
-                timeout: READ_TIMEOUT,
-                follow_redirects: true,
-                max_response_bytes: MAX_RESPONSE_BYTES,
-            })
-            .ok()?;
-        if !(200..300).contains(&response.status) {
-            return None;
-        }
-        secret_value(response.body.expose_secret().as_bytes(), &target.data_key)
+        let prepared = self.prepare(secret_name)?;
+        self.fetch(prepared)
     }
 }
 

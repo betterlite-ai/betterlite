@@ -74,5 +74,5 @@ pub(super) fn header<'request>(
         .headers
         .iter()
         .find(|(header, _)| *header == name)
-        .map(|(_, value)| value.as_str())
+        .map(|(_, value)| value.expose())
 }

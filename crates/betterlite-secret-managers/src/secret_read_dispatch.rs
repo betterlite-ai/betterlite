@@ -27,6 +27,7 @@ mod infisical;
 mod local;
 pub mod manager_readers;
 pub mod protocols;
+pub mod reqwest_exchange;
 pub mod settings;
 mod vault;
 pub mod vault_http;

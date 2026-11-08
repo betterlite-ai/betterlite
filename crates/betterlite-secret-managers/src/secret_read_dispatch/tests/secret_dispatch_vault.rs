@@ -3,6 +3,7 @@ use crate::secret_types::KeyManagementSystem;
 
 mod http;
 mod reader;
+mod socket;
 
 use super::support::{assert_secret, empty_environment, sync_reader_fake, vault_client};
 

@@ -1,39 +1,41 @@
 use std::sync::Arc;
 
-use secrecy::ExposeSecret as _;
-
 use super::http_transport::{
-    HttpError, HttpExchange, HttpMethod, HttpRequest, HttpResponse, into_reply,
+    HttpError, HttpExchange, HttpMethod, HttpRequest, HttpResponse, RequestHeader, into_reply,
 };
 use crate::vault::transport::{VaultMethod, VaultRequest, VaultResponse, VaultTransport};
 
 pub struct VaultHttpTransport {
     pub exchange: Arc<dyn HttpExchange>,
+    pub verify_tls: bool,
 }
 
 impl VaultHttpTransport {
-    fn call(request: &VaultRequest) -> HttpRequest {
+    fn call(&self, request: &VaultRequest) -> HttpRequest {
         let mut headers = Vec::with_capacity(3);
         if let Some(token) = request.token.as_ref() {
-            headers.push(("x-vault-token", token.expose_secret().to_owned()));
+            headers.push(("x-vault-token", RequestHeader::Secret(token.clone())));
         }
         if let Some(namespace) = request.namespace.as_deref() {
-            headers.push(("x-vault-namespace", namespace.to_owned()));
+            headers.push((
+                "x-vault-namespace",
+                RequestHeader::Plain(namespace.to_owned()),
+            ));
         }
         if request.body.is_some() {
-            headers.push(("content-type", "application/json".to_owned()));
+            headers.push((
+                "content-type",
+                RequestHeader::Plain("application/json".to_owned()),
+            ));
         }
         HttpRequest {
             method: method(request.method),
             url: request.url.clone(),
             headers,
-            body: request
-                .body
-                .as_ref()
-                .map(|body| body.expose_secret().to_owned()),
+            body: request.body.clone(),
             timeout: request.timeout,
             follow_redirects: request.follow_redirects,
-            verify_tls: true,
+            verify_tls: self.verify_tls,
             certificate: request.client_certificate.clone(),
             max_response_bytes: request.max_response_bytes,
         }
@@ -61,17 +63,13 @@ impl VaultTransport for VaultHttpTransport {
 
     async fn send(&self, request: VaultRequest) -> Result<VaultResponse, HttpError> {
         let limit = request.max_response_bytes;
-        let response = self.exchange.send(Self::call(&request)).await?;
-        let answer = into_reply(response, limit)?;
-        Ok(VaultResponse {
-            status: answer.status,
-            body: answer.body,
-        })
+        let response = self.exchange.send(self.call(&request)).await?;
+        vault_response(response, limit)
     }
 
     fn send_blocking(&self, request: VaultRequest) -> Result<VaultResponse, HttpError> {
         let limit = request.max_response_bytes;
-        let response = self.exchange.send_blocking(Self::call(&request))?;
+        let response = self.exchange.send_blocking(self.call(&request))?;
         vault_response(response, limit)
     }
 }

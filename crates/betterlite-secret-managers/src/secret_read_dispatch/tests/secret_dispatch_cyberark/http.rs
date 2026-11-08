@@ -1,4 +1,4 @@
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::cyberark::transport::{ConjurRequest, ConjurTransport as _, HttpMethod as ConjurMethod};
 use crate::secret_read_dispatch::conjur_http::ConjurHttpTransport;
@@ -66,7 +66,10 @@ async fn conjur_http_transport_posts_the_body_and_content_type() {
     assert_eq!(response.status, 200);
     let requests = recorder.requests();
     assert_eq!(requests[0].method, HttpMethod::Post);
-    assert_eq!(requests[0].body.as_deref(), Some("secret-api-key"));
+    assert_eq!(
+        requests[0].body.as_ref().map(ExposeSecret::expose_secret),
+        Some("secret-api-key")
+    );
     assert_eq!(
         header(&requests[0], "content-type"),
         Some("application/x-yaml")
