@@ -519,8 +519,10 @@ async fn the_signing_log_names_the_claims_and_never_the_token() {
     let data = data(Some("weather"), None, None);
     let sink = LogSink::default();
     let writer = sink.clone();
+    // ANSI styling puts escape codes between a field name and its '=', so the assertions below need plain text
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
+        .with_ansi(false)
         .with_writer(move || writer.clone())
         .finish();
     let guard = set_default(subscriber);
