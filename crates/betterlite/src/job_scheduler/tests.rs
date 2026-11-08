@@ -234,3 +234,30 @@ async fn apply_scheduled_job_stagger_shifts_a_cron_job_through_modify_job() {
     let view = scheduler.get_job(MONTHLY_SPEND_REPORT_JOB_ID).unwrap();
     assert_eq!(view.scheduled_for, Some(start + TimeDelta::seconds(120)));
 }
+
+#[tokio::test(start_paused = true)]
+async fn an_offset_on_an_interval_job_leaves_its_next_fire_unshifted() {
+    let start = origin();
+    let mut scheduler = ProxyScheduler::new(defaults(), Arc::new(TokioClock::new(start)));
+    scheduler
+        .add_job(interval_spec("interval_job", 60))
+        .unwrap();
+    let mut offsets = BTreeMap::new();
+    offsets.insert("interval_job".to_owned(), 120_i64);
+    let settings = Settings {
+        enabled: true,
+        window_seconds: 300,
+        identity: None,
+        offsets,
+    };
+    let applied = apply_scheduled_job_stagger(
+        &mut scheduler,
+        &settings,
+        Some("test"),
+        &BTreeMap::new(),
+        &SystemIdentityEnvironment,
+    );
+    assert_eq!(applied.get("interval_job"), Some(&120));
+    let view = scheduler.get_job("interval_job").unwrap();
+    assert_eq!(view.scheduled_for, Some(start + TimeDelta::seconds(60)));
+}
