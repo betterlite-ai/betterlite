@@ -1,0 +1,8 @@
+task: B8410
+deviations:
+- what: Header values are typed strings, so LiteLLM's step that turns non-string header values into str is not built.
+  why: A Rust caller cannot pass a non-string header value; what reaches the wire is the same.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4350-L4353
+- what: The object-kind mappings take closed enums and always return a value, where LiteLLM returns None for an unknown kind.
+  why: LiteLLM's callers only pass the declared literals; an unknown kind cannot be built in Rust.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4494-L4529
