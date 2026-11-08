@@ -19,6 +19,11 @@ call:
           - id: ""
             type: function
             function: {name: "", arguments: ""}
+          - id: call_3
+            function:
+              name: null_arguments
+              arguments: null
       - {role: tool, content: "18 degrees", tool_call_id: call_1}
+      - {}
 env: {}
 compare: {ignore: []}

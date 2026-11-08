@@ -8,7 +8,9 @@ call:
         total_tokens: 30
         output_tokens: 20
         input_tokens: 10
+        completion_tokens_details: {}
         output_tokens_details: {reasoning_tokens: 5}
+        prompt_tokens_details: {}
         input_tokens_details: {cached_tokens: 3, audio_tokens: 2}
 env: {}
 compare: {ignore: []}

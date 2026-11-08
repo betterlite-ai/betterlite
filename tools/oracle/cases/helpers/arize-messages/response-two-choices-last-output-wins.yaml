@@ -6,6 +6,12 @@ call:
     response:
       choices:
         - message: {role: assistant, content: first}
-        - message: {role: assistant, content: second}
+        - message:
+            role: assistant
+            content: second
+            tool_calls:
+              - id: call_9
+                type: function
+                function: {name: lookup, arguments: "{}"}
 env: {}
 compare: {ignore: []}

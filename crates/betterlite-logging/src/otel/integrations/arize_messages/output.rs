@@ -150,11 +150,19 @@ where
 }
 
 fn vector_value(fields: &MetadataMap) -> Option<String> {
-    fields
-        .get("embedding")
-        .and_then(OtelModelValue::as_array)
-        .filter(|values| !values.is_empty())
-        .map(vector_text)
+    match fields.get("embedding") {
+        Some(OtelModelValue::String(text)) if !text.is_empty() => Some(text.clone()),
+        Some(OtelModelValue::Array(values)) if !values.is_empty() => Some(vector_text(values)),
+        Some(
+            OtelModelValue::Null(())
+            | OtelModelValue::Bool(_)
+            | OtelModelValue::Number(_)
+            | OtelModelValue::Array(_)
+            | OtelModelValue::Object(_)
+            | OtelModelValue::String(_),
+        )
+        | None => None,
+    }
 }
 
 fn vector_text(values: &[OtelModelValue]) -> String {

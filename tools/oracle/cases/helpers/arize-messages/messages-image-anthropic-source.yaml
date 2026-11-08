@@ -10,5 +10,11 @@ call:
             source: {type: base64, media_type: image/png, data: QUJD}
           - type: image
             source: {type: base64, data: REVG}
+          - type: image
+            image_url: {url: ""}
+            source: {type: base64, media_type: image/png, data: R0hJ}
+          - type: image
+            source: {type: base64, media_type: image/png, data: SktM}
+            url: "https://example.com/part.png"
 env: {}
 compare: {ignore: []}

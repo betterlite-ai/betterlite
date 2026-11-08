@@ -4,6 +4,7 @@ call:
   b3860:
     function: set_messages
     messages:
+      - {role: user, content: hello, name: "", tool_call_id: ""}
       - role: tool
         content: sunny
         name: get_weather

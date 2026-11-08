@@ -4,6 +4,8 @@ call:
   b3860:
     function: set_response
     response:
+      choices:
+        - message: {role: assistant, content: choice text}
       output:
         - type: reasoning
           summary:

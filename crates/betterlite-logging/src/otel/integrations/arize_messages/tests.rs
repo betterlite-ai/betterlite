@@ -113,6 +113,28 @@ fn input_messages_name_and_tool_call_id_are_written() {
 }
 
 #[test]
+fn input_messages_empty_name_and_tool_call_id_are_skipped() {
+    let attributes =
+        message_attributes(r#"[{"role":"user","content":"hi","name":"","tool_call_id":""}]"#);
+    assert!(!attributes.contains_key("llm.input_messages.0.message.name"));
+    assert!(!attributes.contains_key("llm.input_messages.0.message.tool_call_id"));
+}
+
+#[test]
+fn input_messages_missing_role_and_content_write_empty_strings() {
+    let attributes = message_attributes("[{}]");
+    assert_eq!(attributes.get("input.value"), Some(&Value::from("")));
+    assert_eq!(
+        attributes.get("llm.input_messages.0.message.role"),
+        Some(&Value::from(""))
+    );
+    assert_eq!(
+        attributes.get("llm.input_messages.0.message.content"),
+        Some(&Value::from(""))
+    );
+}
+
+#[test]
 fn input_messages_skip_non_object_entries() {
     let attributes = message_attributes(r#"[{"role":"user","content":"hi"},7]"#);
     assert_eq!(attributes.get("input.value"), Some(&Value::from("")));
@@ -211,6 +233,39 @@ fn multimodal_source_without_data_uses_part_url() {
 }
 
 #[test]
+fn multimodal_image_url_wins_over_source_data() {
+    let attributes = message_attributes(
+        r#"[{"role":"user","content":[{"type":"image","image_url":{"url":"https://example.com/win.png"},"source":{"type":"base64","data":"QUJD"}}]}]"#,
+    );
+    assert_eq!(
+        attributes.get("llm.input_messages.0.message.contents.0.message_content.image.image.url"),
+        Some(&Value::from("https://example.com/win.png"))
+    );
+}
+
+#[test]
+fn multimodal_empty_image_url_falls_back_to_source() {
+    let attributes = message_attributes(
+        r#"[{"role":"user","content":[{"type":"image","image_url":{"url":""},"source":{"type":"base64","media_type":"image/png","data":"QUJD"}}]}]"#,
+    );
+    assert_eq!(
+        attributes.get("llm.input_messages.0.message.contents.0.message_content.image.image.url"),
+        Some(&Value::from("data:image/png;base64,QUJD"))
+    );
+}
+
+#[test]
+fn multimodal_source_data_wins_over_part_url() {
+    let attributes = message_attributes(
+        r#"[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"REVG"},"url":"https://example.com/loser.png"}]}]"#,
+    );
+    assert_eq!(
+        attributes.get("llm.input_messages.0.message.contents.0.message_content.image.image.url"),
+        Some(&Value::from("data:image/png;base64,REVG"))
+    );
+}
+
+#[test]
 fn multimodal_non_object_part_keeps_index() {
     let attributes = message_attributes(
         r#"[{"role":"user","content":["plain text",{"type":"text","text":"hi"}]}]"#,
@@ -254,6 +309,34 @@ fn tool_calls_summary_skips_non_objects() {
         summarize_tool_calls(&[json(r#"{"id":"call_2"}"#)]),
         r#"{"tool_calls":[{"id":"call_2","type":"function","function":{"name":null,"arguments":null}}]}"#
     );
+}
+
+#[test]
+fn tool_calls_summary_keeps_null_arguments() {
+    let calls = [json(
+        r#"{"id":"call_1","function":{"name":"lookup","arguments":null}}"#,
+    )];
+    assert_eq!(
+        summarize_tool_calls(&calls),
+        r#"{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":null}}]}"#
+    );
+}
+
+#[test]
+fn tool_calls_null_arguments_are_skipped() {
+    let attributes = message_attributes(
+        r#"[{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","function":{"name":"lookup","arguments":null}}]}]"#,
+    );
+    let prefix = "llm.input_messages.0.message.tool_calls.0.tool_call";
+    assert_eq!(
+        attributes.get(&format!("{prefix}.id")),
+        Some(&Value::from("call_1"))
+    );
+    assert_eq!(
+        attributes.get(&format!("{prefix}.function.name")),
+        Some(&Value::from("lookup"))
+    );
+    assert!(!attributes.contains_key(&format!("{prefix}.function.arguments")));
 }
 
 #[test]
@@ -326,6 +409,26 @@ fn choices_tool_only_message_writes_summary_as_output_value() {
 }
 
 #[test]
+fn choices_text_with_tool_calls_keeps_text_output_value() {
+    let attributes = response_attributes(
+        r#"{"choices":[{"message":{"role":"assistant","content":"answer","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]}}]}"#,
+    );
+    assert_eq!(attributes.get("output.value"), Some(&Value::from("answer")));
+    assert_eq!(
+        attributes.get("llm.output_messages.0.message.tool_calls.0.tool_call.id"),
+        Some(&Value::from("call_1"))
+    );
+}
+
+#[test]
+fn choices_empty_tool_calls_do_not_summarize() {
+    let attributes = response_attributes(
+        r#"{"choices":[{"message":{"role":"assistant","content":"","tool_calls":[]}}]}"#,
+    );
+    assert_eq!(attributes.get("output.value"), Some(&Value::from("")));
+}
+
+#[test]
 fn choices_last_choice_keeps_output_value() {
     let attributes = response_attributes(
         r#"{"choices":[{"message":{"role":"assistant","content":"one"}},{"message":{"role":"assistant","content":"two"}}]}"#,
@@ -348,6 +451,36 @@ fn choices_missing_message_writes_empty_role_and_content() {
     assert_eq!(
         attributes.get("llm.output_messages.0.message.content"),
         Some(&Value::from(""))
+    );
+}
+
+#[test]
+fn choices_structured_message_output_overwrites_choice_text() {
+    let attributes = response_attributes(
+        r#"{"choices":[{"message":{"role":"assistant","content":"choice text"}}],"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"output text"}]}]}"#,
+    );
+    assert_eq!(
+        attributes.get("output.value"),
+        Some(&Value::from("output text"))
+    );
+    assert_eq!(
+        attributes.get("llm.output_messages.0.message.content"),
+        Some(&Value::from("output text"))
+    );
+}
+
+#[test]
+fn media_audio_output_overwrites_image_output() {
+    let attributes = response_attributes(
+        r#"{"data":[{"url":"https://example.com/image.png"}],"audio":[{"url":"https://example.com/sound.wav"}]}"#,
+    );
+    assert_eq!(
+        attributes.get("output.value"),
+        Some(&Value::from("https://example.com/sound.wav"))
+    );
+    assert_eq!(
+        attributes.get("image.url.0"),
+        Some(&Value::from("https://example.com/image.png"))
     );
 }
 
@@ -445,6 +578,20 @@ fn embedding_vector_is_written_as_python_list_text() {
 }
 
 #[test]
+fn embedding_string_is_written_as_is() {
+    let attributes = response_attributes(r#"{"data":[{"embedding":"QUJD","text":"first"}]}"#);
+    assert_eq!(attributes.get("output.value"), Some(&Value::from("QUJD")));
+    assert_eq!(
+        attributes.get("embedding.vector.0"),
+        Some(&Value::from("QUJD"))
+    );
+    assert_eq!(
+        attributes.get("embedding.text.0"),
+        Some(&Value::from("first"))
+    );
+}
+
+#[test]
 fn embedding_text_is_written_per_index() {
     let attributes = response_attributes(
         r#"{"data":[{"embedding":[1],"text":"first"},{"embedding":[2],"text":"second"}]}"#,
@@ -489,6 +636,12 @@ fn structured_message_without_role_defaults_to_assistant() {
         Some(&Value::from("assistant"))
     );
     assert_eq!(attributes.get("output.value"), Some(&Value::from("hi")));
+}
+
+#[test]
+fn structured_message_without_content_writes_nothing() {
+    let attributes = response_attributes(r#"{"output":[{"type":"message","role":"assistant"}]}"#);
+    assert!(attributes.is_empty());
 }
 
 #[test]
@@ -553,6 +706,25 @@ fn usage_cache_read_and_write() {
             ("llm.token_count.prompt_details.cache_read", Value::I64(7)),
             ("llm.token_count.prompt_details.cache_write", Value::I64(4)),
         ])
+    );
+}
+
+#[test]
+fn usage_empty_details_fall_back_to_secondary_objects() {
+    let attributes = response_attributes(
+        r#"{"usage":{"total_tokens":30,"output_tokens":20,"input_tokens":10,"completion_tokens_details":{},"output_tokens_details":{"reasoning_tokens":5},"prompt_tokens_details":{},"input_tokens_details":{"cached_tokens":3,"audio_tokens":2}}}"#,
+    );
+    assert_eq!(
+        attributes.get("llm.token_count.completion_details.reasoning"),
+        Some(&Value::I64(5))
+    );
+    assert_eq!(
+        attributes.get("llm.token_count.prompt_details.cache_read"),
+        Some(&Value::I64(3))
+    );
+    assert_eq!(
+        attributes.get("llm.token_count.prompt_details.audio"),
+        Some(&Value::I64(2))
     );
 }
 

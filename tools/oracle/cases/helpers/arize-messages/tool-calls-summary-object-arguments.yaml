@@ -15,5 +15,7 @@ call:
           arguments: [1, 2]
       - id: call_3
         function: {name: no_arguments}
+      - id: call_4
+        function: {name: null_arguments, arguments: null}
 env: {}
 compare: {ignore: []}

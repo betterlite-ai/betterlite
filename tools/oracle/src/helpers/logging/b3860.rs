@@ -34,11 +34,14 @@ impl crate::helpers::Helper for Op {
                     kwargs.insert("messages".to_owned(), messages.clone());
                     ArizeOtelAttributes::set_messages(span, &kwargs);
                 })?;
-                drop_array_contents(record, messages)
+                normalize_value(drop_array_contents(record, messages), "")
             }
-            Input::SetResponse { response } => Json::Object(span_attributes(|span| {
-                set_response_attributes(span, response);
-            })?),
+            Input::SetResponse { response } => normalize_value(
+                Json::Object(span_attributes(|span| {
+                    set_response_attributes(span, response);
+                })?),
+                "",
+            ),
             Input::CoerceText { value: raw } => json!(coerce_text(raw)),
             Input::SummarizeToolCalls { tool_calls } => {
                 let summary = summarize_tool_calls(tool_calls);
