@@ -40,8 +40,8 @@ pub fn handle_azure_text_chunk(
     chunk: &ProviderChunk,
     decoded: &mut DecodedChunk,
 ) -> Result<(), ProviderChunkError> {
-    let fields = object_of(chunk).ok();
-    fill_text_choice(fields, decoded)
+    fill_text_choice(object_of(chunk).ok(), decoded)?;
+    Ok(())
 }
 
 fn fill_text_choice(
