@@ -26,7 +26,7 @@ async fn async_mget_returns_values_in_input_order_with_nil_for_a_miss() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sync_mget_returns_values_in_input_order_with_nil_for_a_miss() {
     let server = FakeServer::start().await;
     server.script(
@@ -109,7 +109,7 @@ async fn empty_keys_return_an_empty_list_and_send_nothing() {
     assert_eq!(server.connections(), 0);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sync_mget_returns_values_in_input_order_across_two_cluster_nodes() {
     let (first, second) = cluster_pair().await;
     first.script(

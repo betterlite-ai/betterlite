@@ -15,7 +15,7 @@ fn ping(transport: &RedisTransport) -> String {
         .expect("a ping reply")
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_connection_is_reused_across_calls() {
     let server = FakeServer::start().await;
     let store = store();
@@ -27,7 +27,7 @@ async fn the_connection_is_reused_across_calls() {
     assert_eq!(server.connections(), 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_dropped_connection_is_reopened_with_a_fresh_credential() {
     let server = FakeServer::start().await;
     server.close_after("GET");
@@ -71,7 +71,7 @@ async fn a_dropped_connection_is_reopened_with_a_fresh_credential() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_silent_server_fails_at_the_response_timeout() {
     let server = FakeServer::start().await;
     server.silence("GET");
