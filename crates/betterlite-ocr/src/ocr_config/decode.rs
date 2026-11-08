@@ -22,28 +22,31 @@ where
         serde_json::to_string(value).map_err(|_source| OcrError::Params(OcrParamsError::Body))?;
     serde_json::from_str(&text).map_err(|_source| OcrError::Params(OcrParamsError::Body))
 }
-pub fn decode_request_value<T>(value: &Json, prefix: &str) -> Result<T, OcrError>
-where
-    T: DeserializeOwned,
-{
-    let text = serde_json::to_string(value).map_err(|_source| OcrError::RequestField {
-        path: prefix.to_owned(),
-    })?;
-    let mut deserializer = serde_json::Deserializer::from_str(&text);
-    serde_path_to_error::deserialize(&mut deserializer).map_err(|source| OcrError::RequestField {
-        path: format!("{prefix}.{}", source.path()),
-    })
+#[derive(Clone, Copy)]
+pub enum OcrFieldKind {
+    Request,
+    Response,
 }
-pub fn decode_response_value<T>(value: &Json, prefix: &str) -> Result<T, OcrError>
+pub fn decode_value<T>(value: &Json, prefix: &str, kind: OcrFieldKind) -> Result<T, OcrError>
 where
     T: DeserializeOwned,
 {
-    let text = serde_json::to_string(value).map_err(|_source| OcrError::ResponseField {
-        path: prefix.to_owned(),
+    let text = serde_json::to_string(value).map_err(|_source| match kind {
+        OcrFieldKind::Request => OcrError::RequestField {
+            path: prefix.to_owned(),
+        },
+        OcrFieldKind::Response => OcrError::ResponseField {
+            path: prefix.to_owned(),
+        },
     })?;
     let mut deserializer = serde_json::Deserializer::from_str(&text);
-    serde_path_to_error::deserialize(&mut deserializer).map_err(|source| OcrError::ResponseField {
-        path: format!("{prefix}.{}", source.path()),
+    serde_path_to_error::deserialize(&mut deserializer).map_err(|source| match kind {
+        OcrFieldKind::Request => OcrError::RequestField {
+            path: format!("{prefix}.{}", source.path()),
+        },
+        OcrFieldKind::Response => OcrError::ResponseField {
+            path: format!("{prefix}.{}", source.path()),
+        },
     })
 }
 pub fn decode_response<T>(bytes: &[u8], native: bool) -> Result<DecodedOcrResponse<T>, OcrError>

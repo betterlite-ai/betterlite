@@ -10,7 +10,7 @@ use crate::ocr_config::connection::{
     OcrConnection, OcrCredentialInputs, OcrInputSource, OcrSourced, OcrTransportConfig,
     ResolvedOcrCredentials,
 };
-use crate::ocr_config::decode::{compose_body, decode_request_value, decode_response};
+use crate::ocr_config::decode::{OcrFieldKind, compose_body, decode_response, decode_value};
 use crate::ocr_config::{
     DecodedOcrResponse, OCR_RESPONSE_MAX_BYTES, OcrProviderConfig as _, OcrRequestContext,
     OcrTransform, Secrets,
@@ -179,13 +179,20 @@ fn decode_response_keeps_the_native_slot_only_when_native() {
 }
 
 #[test]
-fn decode_request_value_names_the_failing_field() {
+fn decode_value_names_the_failing_field() {
     let value = Json::Object(object(&[("pages", Json::Text("not a list".to_owned()))]));
-    let error = decode_request_value::<TestPayload>(&value, "guardrail.document")
+    let error = decode_value::<TestPayload>(&value, "guardrail.document", OcrFieldKind::Request)
         .expect_err("a mistyped field fails");
     assert!(matches!(
         error,
         OcrError::RequestField { path } if path.starts_with("guardrail.document.")
+    ));
+    let response_error =
+        decode_value::<TestPayload>(&value, "body.document", OcrFieldKind::Response)
+            .expect_err("a mistyped response field fails");
+    assert!(matches!(
+        response_error,
+        OcrError::ResponseField { path } if path.starts_with("body.document.")
     ));
 }
 

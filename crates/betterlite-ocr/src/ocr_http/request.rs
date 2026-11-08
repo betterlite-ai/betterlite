@@ -1,5 +1,4 @@
-use crate::ocr_auth::AwsSigningRequest;
-use crate::ocr_config::{OcrEnvironment, PreparedOcrRequest};
+use crate::ocr_config::PreparedOcrRequest;
 use crate::ocr_error::{OcrError, OcrHeaderError, OcrTransportError};
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
@@ -25,30 +24,6 @@ pub(super) fn outbound(
         body: RequestBody::Json(body),
         deadline: request.connection.timeout,
     })
-}
-pub(super) async fn signed_headers(
-    environment: &dyn OcrEnvironment,
-    request: &PreparedOcrRequest,
-    url: &str,
-    headers: &[(String, String)],
-    body: &[u8],
-) -> Result<Vec<(String, String)>, OcrError> {
-    let Some(signing) = environment.signer() else {
-        return Ok(Vec::new());
-    };
-    signing
-        .signer
-        .sign(&AwsSigningRequest {
-            method: "POST",
-            url,
-            headers,
-            body,
-            service: signing.service,
-            region: signing.region,
-            optional_params: &request.optional_params,
-            secrets: &request.connection.secrets,
-        })
-        .await
 }
 pub(super) fn header_pairs(headers: &HeaderMap) -> Vec<(String, String)> {
     headers

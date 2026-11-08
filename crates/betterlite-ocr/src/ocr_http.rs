@@ -1,9 +1,9 @@
 mod body;
 mod request;
 use crate::json::Json;
-use crate::ocr_auth::{AwsRequestSigner, AzureTokenSource, VertexTokenSource};
+use crate::ocr_auth::{AwsRequestSigner, AwsSigningRequest, AzureTokenSource, VertexTokenSource};
 use crate::ocr_config::decode::{
-    compose_body, decode_request_value, decode_response, response_format, to_json,
+    OcrFieldKind, compose_body, decode_response, decode_value, response_format, to_json,
 };
 use crate::ocr_config::{
     DecodedOcrResponse, OcrEnvironment, OcrProviderConfig, OcrResponseContext, PreparedOcrRequest,
@@ -137,6 +137,39 @@ where
     C: OcrProviderConfig,
     B: Serialize,
 {
+    let (changed, wire_headers) = hooked_wire(config, request, url, context, body).await?;
+    let bytes =
+        serde_json::to_vec(&changed).map_err(|_source| OcrError::Params(OcrParamsError::Body))?;
+    let mut headers = request::with_content_type(wire_headers);
+    if let Some(signing) = context.environment.signer() {
+        let signature = signing
+            .signer
+            .sign(&AwsSigningRequest {
+                method: "POST",
+                url,
+                headers: &headers,
+                body: &bytes,
+                service: signing.service,
+                region: signing.region,
+                optional_params: &request.optional_params,
+                secrets: &request.connection.secrets,
+            })
+            .await?;
+        headers.extend(signature);
+    }
+    request::outbound(request, url, headers, bytes)
+}
+async fn hooked_wire<C, B>(
+    config: &C,
+    request: &PreparedOcrRequest,
+    url: &str,
+    context: OcrCallContext<'_>,
+    body: B,
+) -> Result<(Json, Vec<(String, String)>), OcrError>
+where
+    C: OcrProviderConfig,
+    B: Serialize,
+{
     let composed = compose_body(
         &request.optional_params,
         &body,
@@ -157,13 +190,7 @@ where
         });
     };
     config.validate_request_body(&changed.body)?;
-    let bytes = serde_json::to_vec(&changed.body)
-        .map_err(|_source| OcrError::Params(OcrParamsError::Body))?;
-    let mut headers = request::with_content_type(changed.headers);
-    let signature =
-        request::signed_headers(context.environment, request, url, &headers, &bytes).await?;
-    headers.extend(signature);
-    request::outbound(request, url, headers, bytes)
+    Ok((changed.body, changed.headers))
 }
 pub fn build_http_request<B>(
     request: &PreparedOcrRequest,
@@ -194,7 +221,7 @@ pub async fn guardrail_document(
             body,
         })
         .await?;
-    let document = decode_request_value(&changed.body, "guardrail.document")?;
+    let document = decode_value(&changed.body, "guardrail.document", OcrFieldKind::Request)?;
     Ok((document, changed.headers))
 }
 pub fn body_document(body: &Json) -> Result<OcrDocument, OcrError> {
@@ -213,6 +240,10 @@ pub fn body_document(body: &Json) -> Result<OcrDocument, OcrError> {
         .filter(|(name, _)| matches!(name.as_str(), "type" | "image_url" | "document_url"))
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect();
-    decode_request_value(&Json::Object(source), "body.document")
+    decode_value(
+        &Json::Object(source),
+        "body.document",
+        OcrFieldKind::Request,
+    )
 }
 pub(crate) mod tests;
