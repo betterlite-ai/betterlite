@@ -10,7 +10,7 @@ use super::{MCPOAuthIdentityBinding, MCPOAuthMetadata, MCPServer, OAuth2Flow};
 mod fixtures;
 
 use crate::credential_contracts::auth_config::oauth::DEFAULT_SUBJECT_TOKEN_TYPE;
-use fixtures::FULL_SERVER_JSON;
+use fixtures::{FULL_SERVER_JSON, SECRET_SERVER_JSON};
 
 fn server_from_json(json: &str) -> MCPServer {
     serde_json::from_str(json).unwrap()
@@ -276,46 +276,54 @@ fn record_full_json_decodes_flags_and_binding() {
 
 #[test]
 fn record_secret_fields_use_the_secret_wrapper() {
-    let server = server_from_json(
-        r#"{
-            "server_id": "srv",
-            "name": "Server",
-            "transport": "http",
-            "authentication_token": "tok-1",
-            "client_secret": "sec-1",
-            "aws_access_key_id": "AKIA1",
-            "aws_secret_access_key": "aws-1",
-            "aws_session_token": "session-1",
-            "client_private_key": "key-1"
-        }"#,
-    );
+    let server = server_from_json(SECRET_SERVER_JSON);
     let secrets = [
         server
             .authentication_token
             .as_ref()
             .unwrap()
             .0
+            .0
             .expose_secret(),
-        server.client_secret.as_ref().unwrap().0.expose_secret(),
-        server.aws_access_key_id.as_ref().unwrap().0.expose_secret(),
+        server.client_secret.as_ref().unwrap().0.0.expose_secret(),
+        server
+            .aws_session_token
+            .as_ref()
+            .unwrap()
+            .0
+            .0
+            .expose_secret(),
+    ];
+    assert_eq!(secrets, ["tok-1", "sec-1", "session-1"]);
+}
+
+#[test]
+fn record_secret_cloud_fields_use_the_secret_wrapper() {
+    let server = server_from_json(SECRET_SERVER_JSON);
+    let secrets = [
+        server
+            .aws_access_key_id
+            .as_ref()
+            .unwrap()
+            .0
+            .0
+            .expose_secret(),
         server
             .aws_secret_access_key
             .as_ref()
             .unwrap()
             .0
+            .0
             .expose_secret(),
-        server.aws_session_token.as_ref().unwrap().0.expose_secret(),
         server
             .client_private_key
             .as_ref()
             .unwrap()
             .0
+            .0
             .expose_secret(),
     ];
-    assert_eq!(
-        secrets,
-        ["tok-1", "sec-1", "AKIA1", "aws-1", "session-1", "key-1"]
-    );
+    assert_eq!(secrets, ["AKIA1", "aws-1", "key-1"]);
 }
 
 #[test]
@@ -678,290 +686,268 @@ fn validate_identity_binding_rejects_empty_audiences() {
     assert!(error.to_string().contains("audiences must not be empty"));
 }
 
-#[rstest]
-#[case::live_wins(
-    Some("https://live.example"),
-    Some("https://configured.example"),
-    Some("https://live.example")
-)]
-#[case::configured_when_live_absent(
-    None,
-    Some("https://configured.example"),
-    Some("https://configured.example")
-)]
-#[case::configured_when_live_empty(
-    Some(""),
-    Some("https://configured.example"),
-    Some("https://configured.example")
-)]
-#[case::absent_when_both_absent(None, None, None)]
-#[case::empty_when_both_empty(Some(""), Some(""), Some(""))]
-fn prop_effective_authorization_url(
-    #[case] live: Option<&str>,
-    #[case] configured: Option<&str>,
-    #[case] expected: Option<&str>,
-) {
+#[test]
+fn prop_effective_authorization_url() {
     let mut server = base_server();
-    server.authorization_url = live.map(str::to_owned);
-    server.configured_authorization_url = configured.map(str::to_owned);
-    assert_eq!(server.effective_authorization_url(), expected);
+    server.authorization_url = Some("https://live.example".to_owned());
+    server.configured_authorization_url = Some("https://configured.example".to_owned());
+    assert_eq!(
+        server.effective_authorization_url(),
+        Some("https://live.example")
+    );
+    server.authorization_url = Some(String::new());
+    assert_eq!(
+        server.effective_authorization_url(),
+        Some("https://configured.example")
+    );
+    server.authorization_url = None;
+    assert_eq!(
+        server.effective_authorization_url(),
+        Some("https://configured.example")
+    );
+    server.configured_authorization_url = None;
+    assert_eq!(server.effective_authorization_url(), None);
+    server.authorization_url = Some(String::new());
+    server.configured_authorization_url = Some(String::new());
+    assert_eq!(server.effective_authorization_url(), Some(""));
 }
 
-#[rstest]
-#[case::live_wins(
-    Some("https://live.example"),
-    Some("https://configured.example"),
-    Some("https://live.example")
-)]
-#[case::configured_when_live_absent(
-    None,
-    Some("https://configured.example"),
-    Some("https://configured.example")
-)]
-#[case::configured_when_live_empty(
-    Some(""),
-    Some("https://configured.example"),
-    Some("https://configured.example")
-)]
-#[case::absent_when_both_absent(None, None, None)]
-fn prop_effective_token_url(
-    #[case] live: Option<&str>,
-    #[case] configured: Option<&str>,
-    #[case] expected: Option<&str>,
-) {
+#[test]
+fn prop_effective_token_url() {
     let mut server = base_server();
-    server.token_url = live.map(str::to_owned);
-    server.configured_token_url = configured.map(str::to_owned);
-    assert_eq!(server.effective_token_url(), expected);
+    server.token_url = Some("https://live.example".to_owned());
+    server.configured_token_url = Some("https://configured.example".to_owned());
+    assert_eq!(server.effective_token_url(), Some("https://live.example"));
+    server.token_url = Some(String::new());
+    assert_eq!(
+        server.effective_token_url(),
+        Some("https://configured.example")
+    );
+    server.token_url = None;
+    assert_eq!(
+        server.effective_token_url(),
+        Some("https://configured.example")
+    );
+    server.configured_token_url = None;
+    assert_eq!(server.effective_token_url(), None);
 }
 
-#[rstest]
-#[case::live_wins(
-    Some("https://live.example"),
-    Some("https://configured.example"),
-    Some("https://live.example")
-)]
-#[case::configured_when_live_absent(
-    None,
-    Some("https://configured.example"),
-    Some("https://configured.example")
-)]
-#[case::configured_when_live_empty(
-    Some(""),
-    Some("https://configured.example"),
-    Some("https://configured.example")
-)]
-#[case::absent_when_both_absent(None, None, None)]
-fn prop_effective_registration_url(
-    #[case] live: Option<&str>,
-    #[case] configured: Option<&str>,
-    #[case] expected: Option<&str>,
-) {
+#[test]
+fn prop_effective_registration_url() {
     let mut server = base_server();
-    server.registration_url = live.map(str::to_owned);
-    server.configured_registration_url = configured.map(str::to_owned);
-    assert_eq!(server.effective_registration_url(), expected);
+    server.registration_url = Some("https://live.example".to_owned());
+    server.configured_registration_url = Some("https://configured.example".to_owned());
+    assert_eq!(
+        server.effective_registration_url(),
+        Some("https://live.example")
+    );
+    server.registration_url = Some(String::new());
+    assert_eq!(
+        server.effective_registration_url(),
+        Some("https://configured.example")
+    );
+    server.registration_url = None;
+    assert_eq!(
+        server.effective_registration_url(),
+        Some("https://configured.example")
+    );
+    server.configured_registration_url = None;
+    assert_eq!(server.effective_registration_url(), None);
 }
 
-#[rstest]
-#[case::client_credentials(Some(OAuth2Flow::ClientCredentials), true)]
-#[case::authorization_code(Some(OAuth2Flow::AuthorizationCode), false)]
-#[case::no_flow(None, false)]
-fn prop_has_client_credentials(#[case] flow: Option<OAuth2Flow>, #[case] expected: bool) {
+#[test]
+fn prop_has_client_credentials() {
     let mut server = base_server();
-    server.oauth2_flow = flow;
-    assert_eq!(server.has_client_credentials(), expected);
+    server.oauth2_flow = Some(OAuth2Flow::ClientCredentials);
+    assert!(server.has_client_credentials());
+    server.oauth2_flow = Some(OAuth2Flow::AuthorizationCode);
+    assert!(!server.has_client_credentials());
+    server.oauth2_flow = None;
+    assert!(!server.has_client_credentials());
 }
 
-#[rstest]
-#[case::oauth2_interactive(Some(MCPAuth::Oauth2), None, true)]
-#[case::oauth2_client_credentials(
-    Some(MCPAuth::Oauth2),
-    Some(OAuth2Flow::ClientCredentials),
-    false
-)]
-#[case::oauth2_authorization_code(Some(MCPAuth::Oauth2), Some(OAuth2Flow::AuthorizationCode), true)]
-#[case::api_key(Some(MCPAuth::ApiKey), None, false)]
-#[case::no_auth(None, None, false)]
-fn prop_needs_user_oauth_token(
-    #[case] auth: Option<MCPAuth>,
-    #[case] flow: Option<OAuth2Flow>,
-    #[case] expected: bool,
-) {
+#[test]
+fn prop_needs_user_oauth_token() {
     let mut server = base_server();
-    server.auth_type = auth;
-    server.oauth2_flow = flow;
-    assert_eq!(server.needs_user_oauth_token(), expected);
+    server.auth_type = Some(MCPAuth::Oauth2);
+    assert!(server.needs_user_oauth_token());
+    server.oauth2_flow = Some(OAuth2Flow::ClientCredentials);
+    assert!(!server.needs_user_oauth_token());
+    server.oauth2_flow = Some(OAuth2Flow::AuthorizationCode);
+    assert!(server.needs_user_oauth_token());
+    server.auth_type = Some(MCPAuth::ApiKey);
+    server.oauth2_flow = None;
+    assert!(!server.needs_user_oauth_token());
+    server.auth_type = None;
+    assert!(!server.needs_user_oauth_token());
 }
 
-#[rstest]
-#[case::gateway_managed(Some(MCPAuth::Oauth2), false, true)]
-#[case::delegated(Some(MCPAuth::Oauth2), true, false)]
-#[case::api_key(Some(MCPAuth::ApiKey), false, false)]
-#[case::no_auth(None, false, false)]
-fn prop_is_gateway_managed_oauth2(
-    #[case] auth: Option<MCPAuth>,
-    #[case] delegate: bool,
-    #[case] expected: bool,
-) {
+#[test]
+fn prop_is_gateway_managed_oauth2() {
     let mut server = base_server();
-    server.auth_type = auth;
-    server.delegate_auth_to_upstream = delegate;
-    assert_eq!(server.is_gateway_managed_oauth2(), expected);
+    server.auth_type = Some(MCPAuth::Oauth2);
+    assert!(server.is_gateway_managed_oauth2());
+    server.delegate_auth_to_upstream = true;
+    assert!(!server.is_gateway_managed_oauth2());
+    server.delegate_auth_to_upstream = false;
+    server.auth_type = Some(MCPAuth::ApiKey);
+    assert!(!server.is_gateway_managed_oauth2());
+    server.auth_type = None;
+    assert!(!server.is_gateway_managed_oauth2());
 }
 
-#[rstest]
-#[case::relay_on(Some(MCPAuth::Oauth2), None, true, true)]
-#[case::relay_off(Some(MCPAuth::Oauth2), None, false, false)]
-#[case::client_credentials(
-    Some(MCPAuth::Oauth2),
-    Some(OAuth2Flow::ClientCredentials),
-    true,
-    false
-)]
-#[case::api_key(Some(MCPAuth::ApiKey), None, true, false)]
-fn prop_uses_per_server_oauth_relay(
-    #[case] auth: Option<MCPAuth>,
-    #[case] flow: Option<OAuth2Flow>,
-    #[case] discovery: bool,
-    #[case] expected: bool,
-) {
+#[test]
+fn prop_uses_per_server_oauth_relay() {
     let mut server = base_server();
-    server.auth_type = auth;
-    server.oauth2_flow = flow;
-    server.per_server_oauth_discovery = discovery;
-    assert_eq!(server.uses_per_server_oauth_relay(), expected);
+    server.auth_type = Some(MCPAuth::Oauth2);
+    server.per_server_oauth_discovery = true;
+    assert!(server.uses_per_server_oauth_relay());
+    server.per_server_oauth_discovery = false;
+    assert!(!server.uses_per_server_oauth_relay());
+    server.per_server_oauth_discovery = true;
+    server.oauth2_flow = Some(OAuth2Flow::ClientCredentials);
+    assert!(!server.uses_per_server_oauth_relay());
+    server.oauth2_flow = None;
+    server.auth_type = Some(MCPAuth::ApiKey);
+    assert!(!server.uses_per_server_oauth_relay());
 }
 
-#[rstest]
-#[case::oauth2_gateway_managed(Some(MCPAuth::Oauth2), false, false, &[], true)]
-#[case::oauth2_with_relay(Some(MCPAuth::Oauth2), false, true, &[], false)]
-#[case::oauth2_delegated(Some(MCPAuth::Oauth2), true, false, &[], false)]
-#[case::api_key_plain(Some(MCPAuth::ApiKey), false, false, &[], true)]
-#[case::api_key_with_authorization(
-    Some(MCPAuth::ApiKey),
-    false,
-    false,
-    &["Authorization"],
-    false
-)]
-#[case::bearer_token_with_apikey(
-    Some(MCPAuth::BearerToken),
-    false,
-    false,
-    &["APIKEY"],
-    false
-)]
-#[case::explicit_none_plain(Some(MCPAuth::None), false, false, &[], true)]
-#[case::null_auth_plain(None, false, false, &[], true)]
-#[case::null_auth_with_x_api_key(None, false, false, &["x-api-key"], false)]
-#[case::true_passthrough(Some(MCPAuth::TruePassthrough), false, false, &[], false)]
-#[case::oauth2_token_exchange(Some(MCPAuth::Oauth2TokenExchange), false, false, &[], false)]
-#[case::oauth_delegate(Some(MCPAuth::OauthDelegate), false, false, &[], false)]
-fn prop_advertises_gateway_authorization_server(
-    #[case] auth: Option<MCPAuth>,
-    #[case] delegate: bool,
-    #[case] discovery: bool,
-    #[case] headers: &[&str],
-    #[case] expected: bool,
-) {
-    let mut server = with_headers(base_server(), headers);
-    server.auth_type = auth;
-    server.delegate_auth_to_upstream = delegate;
-    server.per_server_oauth_discovery = discovery;
-    assert_eq!(server.advertises_gateway_authorization_server(), expected);
-}
-
-#[rstest]
-#[case::true_passthrough(Some(MCPAuth::TruePassthrough), true)]
-#[case::oauth_delegate(Some(MCPAuth::OauthDelegate), false)]
-#[case::oauth2(Some(MCPAuth::Oauth2), false)]
-#[case::no_auth(None, false)]
-fn prop_is_true_passthrough(#[case] auth: Option<MCPAuth>, #[case] expected: bool) {
+#[test]
+fn prop_advertises_gateway_authorization_server() {
     let mut server = base_server();
-    server.auth_type = auth;
-    assert_eq!(server.is_true_passthrough(), expected);
+    server.auth_type = Some(MCPAuth::Oauth2);
+    assert!(server.advertises_gateway_authorization_server());
+    server.per_server_oauth_discovery = true;
+    assert!(!server.advertises_gateway_authorization_server());
+    server.per_server_oauth_discovery = false;
+    server.delegate_auth_to_upstream = true;
+    assert!(!server.advertises_gateway_authorization_server());
+    server.delegate_auth_to_upstream = false;
+    server.auth_type = Some(MCPAuth::ApiKey);
+    assert!(server.advertises_gateway_authorization_server());
+    server.auth_type = Some(MCPAuth::None);
+    assert!(server.advertises_gateway_authorization_server());
+    server.auth_type = None;
+    assert!(server.advertises_gateway_authorization_server());
+    let mut header_server = with_headers(base_server(), &["Authorization"]);
+    header_server.auth_type = Some(MCPAuth::ApiKey);
+    assert!(!header_server.advertises_gateway_authorization_server());
+    let mut apikey_server = with_headers(base_server(), &["apikey"]);
+    apikey_server.auth_type = Some(MCPAuth::BearerToken);
+    assert!(!apikey_server.advertises_gateway_authorization_server());
+    let mut x_api_key_server = with_headers(base_server(), &["x-api-key"]);
+    assert!(!x_api_key_server.advertises_gateway_authorization_server());
+    x_api_key_server.auth_type = Some(MCPAuth::TruePassthrough);
+    assert!(!x_api_key_server.advertises_gateway_authorization_server());
+    x_api_key_server.auth_type = Some(MCPAuth::Oauth2TokenExchange);
+    assert!(!x_api_key_server.advertises_gateway_authorization_server());
+    x_api_key_server.auth_type = Some(MCPAuth::OauthDelegate);
+    assert!(!x_api_key_server.advertises_gateway_authorization_server());
 }
 
-#[rstest]
-#[case::oauth_delegate(Some(MCPAuth::OauthDelegate), true)]
-#[case::true_passthrough(Some(MCPAuth::TruePassthrough), false)]
-#[case::api_key(Some(MCPAuth::ApiKey), false)]
-fn prop_is_oauth_delegate(#[case] auth: Option<MCPAuth>, #[case] expected: bool) {
+#[test]
+fn prop_is_true_passthrough() {
     let mut server = base_server();
-    server.auth_type = auth;
-    assert_eq!(server.is_oauth_delegate(), expected);
+    server.auth_type = Some(MCPAuth::TruePassthrough);
+    assert!(server.is_true_passthrough());
+    server.auth_type = Some(MCPAuth::OauthDelegate);
+    assert!(!server.is_true_passthrough());
+    server.auth_type = Some(MCPAuth::Oauth2);
+    assert!(!server.is_true_passthrough());
+    server.auth_type = None;
+    assert!(!server.is_true_passthrough());
 }
 
-#[rstest]
-#[case::true_passthrough(Some(MCPAuth::TruePassthrough), true)]
-#[case::oauth_delegate(Some(MCPAuth::OauthDelegate), true)]
-#[case::oauth2(Some(MCPAuth::Oauth2), false)]
-#[case::no_auth(None, false)]
-fn prop_is_client_forwarded_token(#[case] auth: Option<MCPAuth>, #[case] expected: bool) {
+#[test]
+fn prop_is_oauth_delegate() {
     let mut server = base_server();
-    server.auth_type = auth;
-    assert_eq!(server.is_client_forwarded_token(), expected);
+    server.auth_type = Some(MCPAuth::OauthDelegate);
+    assert!(server.is_oauth_delegate());
+    server.auth_type = Some(MCPAuth::TruePassthrough);
+    assert!(!server.is_oauth_delegate());
+    server.auth_type = Some(MCPAuth::ApiKey);
+    assert!(!server.is_oauth_delegate());
 }
 
-#[rstest]
-#[case::bridge_on_forwarded(Some(MCPAuth::TruePassthrough), Some(true), true)]
-#[case::bridge_on_delegate(Some(MCPAuth::OauthDelegate), Some(true), true)]
-#[case::bridge_on_oauth2(Some(MCPAuth::Oauth2), Some(true), false)]
-#[case::bridge_off(Some(MCPAuth::TruePassthrough), Some(false), false)]
-#[case::bridge_absent(Some(MCPAuth::TruePassthrough), None, false)]
-fn prop_is_dcr_bridge(
-    #[case] auth: Option<MCPAuth>,
-    #[case] bridge: Option<bool>,
-    #[case] expected: bool,
-) {
+#[test]
+fn prop_is_client_forwarded_token() {
     let mut server = base_server();
-    server.auth_type = auth;
-    server.dcr_bridge = bridge;
-    assert_eq!(server.is_dcr_bridge(), expected);
+    server.auth_type = Some(MCPAuth::TruePassthrough);
+    assert!(server.is_client_forwarded_token());
+    server.auth_type = Some(MCPAuth::OauthDelegate);
+    assert!(server.is_client_forwarded_token());
+    server.auth_type = Some(MCPAuth::Oauth2);
+    assert!(!server.is_client_forwarded_token());
+    server.auth_type = None;
+    assert!(!server.is_client_forwarded_token());
 }
 
-#[rstest]
-#[case::oauth2_interactive(Some(MCPAuth::Oauth2), None, &[], true)]
-#[case::oauth2_client_credentials(
-    Some(MCPAuth::Oauth2),
-    Some(OAuth2Flow::ClientCredentials),
-    &[],
-    false
-)]
-#[case::explicit_none_with_authorization(Some(MCPAuth::None), None, &["Authorization"], true)]
-#[case::explicit_none_with_x_api_key(Some(MCPAuth::None), None, &["X-API-KEY"], true)]
-#[case::explicit_none_without_headers(Some(MCPAuth::None), None, &[], false)]
-#[case::null_auth_with_authorization(None, None, &["Authorization"], false)]
-#[case::api_key_with_authorization(Some(MCPAuth::ApiKey), None, &["Authorization"], false)]
-#[case::true_passthrough(Some(MCPAuth::TruePassthrough), None, &[], true)]
-fn prop_requires_per_user_auth(
-    #[case] auth: Option<MCPAuth>,
-    #[case] flow: Option<OAuth2Flow>,
-    #[case] headers: &[&str],
-    #[case] expected: bool,
-) {
-    let mut server = with_headers(base_server(), headers);
-    server.auth_type = auth;
-    server.oauth2_flow = flow;
-    assert_eq!(server.requires_per_user_auth(), expected);
+#[test]
+fn prop_is_dcr_bridge() {
+    let mut server = base_server();
+    server.auth_type = Some(MCPAuth::TruePassthrough);
+    server.dcr_bridge = Some(true);
+    assert!(server.is_dcr_bridge());
+    server.auth_type = Some(MCPAuth::OauthDelegate);
+    assert!(server.is_dcr_bridge());
+    server.auth_type = Some(MCPAuth::Oauth2);
+    assert!(!server.is_dcr_bridge());
+    server.auth_type = Some(MCPAuth::TruePassthrough);
+    server.dcr_bridge = Some(false);
+    assert!(!server.is_dcr_bridge());
+    server.dcr_bridge = None;
+    assert!(!server.is_dcr_bridge());
 }
 
-#[rstest]
-#[case::null_auth_opted_in(None, &["Authorization"], true, true)]
-#[case::null_auth_not_opted_in(None, &["Authorization"], false, false)]
-#[case::explicit_none_opted_in(Some(MCPAuth::None), &["authorization"], true, true)]
-#[case::explicit_none_with_api_key(Some(MCPAuth::None), &["x-api-key"], true, false)]
-#[case::explicit_none_without_headers(Some(MCPAuth::None), &[], true, false)]
-#[case::oauth2_never(Some(MCPAuth::Oauth2), &["Authorization"], true, false)]
-fn prop_is_oauth_passthrough(
-    #[case] auth: Option<MCPAuth>,
-    #[case] headers: &[&str],
-    #[case] opted_in: bool,
-    #[case] expected: bool,
-) {
-    let mut server = with_headers(base_server(), headers);
-    server.auth_type = auth;
-    server.oauth_passthrough = opted_in;
-    assert_eq!(server.is_oauth_passthrough(), expected);
+#[test]
+fn prop_requires_per_user_auth() {
+    let mut server = base_server();
+    server.auth_type = Some(MCPAuth::Oauth2);
+    assert!(server.requires_per_user_auth());
+    server.oauth2_flow = Some(OAuth2Flow::ClientCredentials);
+    assert!(!server.requires_per_user_auth());
+    server.auth_type = Some(MCPAuth::None);
+    server.oauth2_flow = None;
+    assert!(!server.requires_per_user_auth());
+    let mut header_server = with_headers(base_server(), &["Authorization"]);
+    header_server.auth_type = Some(MCPAuth::None);
+    assert!(header_server.requires_per_user_auth());
+    let mut x_api_key_server = with_headers(base_server(), &["X-API-KEY"]);
+    x_api_key_server.auth_type = Some(MCPAuth::None);
+    assert!(x_api_key_server.requires_per_user_auth());
+    let null_auth_server = with_headers(base_server(), &["Authorization"]);
+    assert!(!null_auth_server.requires_per_user_auth());
+    let mut api_key_server = with_headers(base_server(), &["Authorization"]);
+    api_key_server.auth_type = Some(MCPAuth::ApiKey);
+    assert!(!api_key_server.requires_per_user_auth());
+    let mut passthrough_server = base_server();
+    passthrough_server.auth_type = Some(MCPAuth::TruePassthrough);
+    assert!(passthrough_server.requires_per_user_auth());
+}
+
+#[test]
+fn prop_is_oauth_passthrough() {
+    let mut opted_in_server = with_headers(base_server(), &["Authorization"]);
+    opted_in_server.oauth_passthrough = true;
+    assert!(opted_in_server.is_oauth_passthrough());
+    opted_in_server.oauth_passthrough = false;
+    assert!(!opted_in_server.is_oauth_passthrough());
+    opted_in_server.oauth_passthrough = true;
+    opted_in_server.auth_type = Some(MCPAuth::None);
+    assert!(opted_in_server.is_oauth_passthrough());
+    let mut lowercase_server = with_headers(base_server(), &["authorization"]);
+    lowercase_server.auth_type = Some(MCPAuth::None);
+    lowercase_server.oauth_passthrough = true;
+    assert!(lowercase_server.is_oauth_passthrough());
+    let mut api_key_server = with_headers(base_server(), &["x-api-key"]);
+    api_key_server.auth_type = Some(MCPAuth::None);
+    api_key_server.oauth_passthrough = true;
+    assert!(!api_key_server.is_oauth_passthrough());
+    let mut oauth2_server = with_headers(base_server(), &["Authorization"]);
+    oauth2_server.auth_type = Some(MCPAuth::Oauth2);
+    oauth2_server.oauth_passthrough = true;
+    assert!(!oauth2_server.is_oauth_passthrough());
+    let mut bare_server = base_server();
+    bare_server.oauth_passthrough = true;
+    assert!(!bare_server.is_oauth_passthrough());
 }

@@ -1,5 +1,4 @@
 pub mod binding;
-mod equality;
 mod methods;
 mod raw;
 mod tests;
@@ -14,10 +13,21 @@ use betterlite_db::mcp_stored_contracts::{
     PinnedMCPTool,
 };
 use chrono::{DateTime, Utc};
+use secrecy::ExposeSecret as _;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::credential_contracts::errors::CredError;
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct SecretCredential(pub StoredSecret);
+
+impl PartialEq for SecretCredential {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.0.expose_secret() == other.0.0.expose_secret()
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MCPOAuthMetadata {
@@ -49,7 +59,7 @@ pub enum OAuth2Flow {
     AuthorizationCode,
 }
 
-#[derive(Clone, Deserialize, Serialize, derive_more::Display)]
+#[derive(Clone, Deserialize, PartialEq, Serialize, derive_more::Display)]
 #[serde(try_from = "raw::RawMCPServer")]
 #[display(
     "MCPServer(server_id={server_id:?}, name={name:?}, transport={transport:?}, auth_type={auth_type:?})"
@@ -68,7 +78,7 @@ pub struct MCPServer {
     pub protocol_version: Option<MCPUpstreamProtocol>,
     pub spec_path: Option<String>,
     pub auth_type: Option<MCPAuth>,
-    pub authentication_token: Option<StoredSecret>,
+    pub authentication_token: Option<SecretCredential>,
     pub instructions: Option<String>,
     pub mcp_info: Option<MCPInfo>,
     pub extra_headers: Option<Vec<String>>,
@@ -81,7 +91,7 @@ pub struct MCPServer {
     pub static_headers: Option<BTreeMap<String, String>>,
     pub env_vars: Option<Vec<JsonValue>>,
     pub client_id: Option<String>,
-    pub client_secret: Option<StoredSecret>,
+    pub client_secret: Option<SecretCredential>,
     pub issuer: Option<String>,
     pub issuer_is_anchored: bool,
     pub scopes: Option<Vec<String>>,
@@ -95,9 +105,9 @@ pub struct MCPServer {
     pub token_endpoint_auth_method: Option<MCPTokenEndpointAuthMethod>,
     pub upstream_resource: Option<String>,
     pub upstream_token_header: Option<String>,
-    pub aws_access_key_id: Option<StoredSecret>,
-    pub aws_secret_access_key: Option<StoredSecret>,
-    pub aws_session_token: Option<StoredSecret>,
+    pub aws_access_key_id: Option<SecretCredential>,
+    pub aws_secret_access_key: Option<SecretCredential>,
+    pub aws_session_token: Option<SecretCredential>,
     pub aws_region_name: Option<String>,
     pub aws_service_name: Option<String>,
     pub aws_role_name: Option<String>,
@@ -107,7 +117,7 @@ pub struct MCPServer {
     pub subject_token_type: String,
     pub id_jag_resource_token_endpoint: Option<String>,
     pub id_jag_resource: Option<String>,
-    pub client_private_key: Option<StoredSecret>,
+    pub client_private_key: Option<SecretCredential>,
     pub client_private_key_id: Option<String>,
     pub client_assertion_signing_alg: String,
     pub token_exchange_profile: String,

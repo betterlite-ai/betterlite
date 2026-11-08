@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use betterlite_db::mcp_stored_contracts::pinned::MCPInfo;
-use betterlite_db::mcp_stored_contracts::secret::StoredSecret;
 use betterlite_db::mcp_stored_contracts::{
     JsonValue, MCPAuth, MCPTokenEndpointAuthMethod, MCPTransport, MCPUpstreamProtocol,
     PinnedMCPTool,
@@ -9,7 +8,7 @@ use betterlite_db::mcp_stored_contracts::{
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
-use super::{MCPOAuthIdentityBinding, MCPServer, OAuth2Flow, ServerRecordError};
+use super::{MCPOAuthIdentityBinding, MCPServer, OAuth2Flow, SecretCredential, ServerRecordError};
 use crate::credential_contracts::auth_config::oauth::DEFAULT_SUBJECT_TOKEN_TYPE;
 
 #[derive(Deserialize)]
@@ -23,7 +22,7 @@ pub(super) struct RawMCPServer {
     pub(super) protocol_version: Option<MCPUpstreamProtocol>,
     pub(super) spec_path: Option<String>,
     pub(super) auth_type: Option<MCPAuth>,
-    pub(super) authentication_token: Option<StoredSecret>,
+    pub(super) authentication_token: Option<SecretCredential>,
     pub(super) instructions: Option<String>,
     pub(super) mcp_info: Option<MCPInfo>,
     pub(super) extra_headers: Option<Vec<String>>,
@@ -36,7 +35,7 @@ pub(super) struct RawMCPServer {
     pub(super) static_headers: Option<BTreeMap<String, String>>,
     pub(super) env_vars: Option<Vec<JsonValue>>,
     pub(super) client_id: Option<String>,
-    pub(super) client_secret: Option<StoredSecret>,
+    pub(super) client_secret: Option<SecretCredential>,
     pub(super) issuer: Option<String>,
     pub(super) issuer_is_anchored: Option<bool>,
     pub(super) scopes: Option<Vec<String>>,
@@ -50,9 +49,9 @@ pub(super) struct RawMCPServer {
     pub(super) token_endpoint_auth_method: Option<MCPTokenEndpointAuthMethod>,
     pub(super) upstream_resource: Option<String>,
     pub(super) upstream_token_header: Option<String>,
-    pub(super) aws_access_key_id: Option<StoredSecret>,
-    pub(super) aws_secret_access_key: Option<StoredSecret>,
-    pub(super) aws_session_token: Option<StoredSecret>,
+    pub(super) aws_access_key_id: Option<SecretCredential>,
+    pub(super) aws_secret_access_key: Option<SecretCredential>,
+    pub(super) aws_session_token: Option<SecretCredential>,
     pub(super) aws_region_name: Option<String>,
     pub(super) aws_service_name: Option<String>,
     pub(super) aws_role_name: Option<String>,
@@ -63,7 +62,7 @@ pub(super) struct RawMCPServer {
     pub(super) subject_token_type: String,
     pub(super) id_jag_resource_token_endpoint: Option<String>,
     pub(super) id_jag_resource: Option<String>,
-    pub(super) client_private_key: Option<StoredSecret>,
+    pub(super) client_private_key: Option<SecretCredential>,
     pub(super) client_private_key_id: Option<String>,
     #[serde(default = "default_signing_alg")]
     pub(super) client_assertion_signing_alg: String,

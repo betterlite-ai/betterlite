@@ -82,3 +82,15 @@ pub(super) const FULL_SERVER_JSON: &str = r#"{
     "allow_sampling": true,
     "allow_elicitation": true
 }"#;
+
+pub(super) const SECRET_SERVER_JSON: &str = r#"{
+    "server_id": "srv",
+    "name": "Server",
+    "transport": "http",
+    "authentication_token": "tok-1",
+    "client_secret": "sec-1",
+    "aws_access_key_id": "AKIA1",
+    "aws_secret_access_key": "aws-1",
+    "aws_session_token": "session-1",
+    "client_private_key": "key-1"
+}"#;
