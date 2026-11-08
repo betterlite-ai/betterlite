@@ -3,7 +3,7 @@ name: condition-invalid-regex-literal
 call:
   b3240:
     function: evaluate_condition
-    condition: {model: "x)|(.*"}
-    context: {model: gpt-4}
+    condition: {model: "[unclosed"}
+    context: {model: "[unclosed"}
 env: {}
 compare: {ignore: []}
