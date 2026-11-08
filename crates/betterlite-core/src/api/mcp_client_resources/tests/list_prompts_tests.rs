@@ -4,7 +4,8 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_mcp::client::sessions::error::SessionError;
+use betterlite_mcp::client::cleanup::failure::ErrorContext;
+use betterlite_mcp::client::sessions::error::{McpFailure, SessionError};
 use betterlite_mcp::client::sessions::stream::StreamFailure;
 use serde_json::Map;
 
@@ -160,12 +161,32 @@ async fn a_broken_stream_is_swallowed_and_reported_without_raising() {
 #[tokio::test]
 async fn raising_on_error_returns_the_failure_without_an_error_line() {
     let (captured, _guard) = capture();
-    let script = script_with(vec![Step::Plain("session lost")]);
+    let script = script_with(vec![Step::Protocol(protocol(-32_603, "internal"))]);
     let runtime = FakeRuntime::<ScriptedFailure>::new(script);
     let mut client = session_client(runtime, Duration::from_secs(60));
     let error = client.list_prompts(&settings(), true).await.unwrap_err();
-    assert!(matches!(error, SessionError::Runtime(_)));
-    assert!(!captured.text().contains("list_prompts failed"));
+    assert!(matches!(error, SessionError::Protocol(_)));
+    let text = captured.text();
+    assert!(!text.contains("list_prompts failed"));
+    assert!(text.contains("run_with_session failed"));
+    assert!(text.contains("WARN"));
+    assert!(text.contains("https://mcp.example.com/mcp"));
+}
+
+#[tokio::test]
+async fn an_sdk_read_timeout_on_a_page_is_normalized_by_the_session_runner() {
+    let (captured, _guard) = capture();
+    let timeout_failure = McpFailure {
+        code: -32_001,
+        message: "read timed out".to_owned(),
+        context: Some(ErrorContext::Timeout),
+    };
+    let script = script_with(vec![Step::Protocol(timeout_failure)]);
+    let runtime = FakeRuntime::<ScriptedFailure>::new(script);
+    let mut client = session_client(runtime, Duration::from_secs(60));
+    let error = client.list_prompts(&settings(), true).await.unwrap_err();
+    assert!(matches!(error, SessionError::ReadTimeout(_)));
+    assert!(captured.text().contains("timed out after"));
 }
 
 #[tokio::test]

@@ -127,21 +127,13 @@ where
     RuntimeSession<Runtime>: ResourceSession<Error = Runtime::Error>,
     Kind: ListKind<RuntimeSession<Runtime>>,
 {
+    let deadline = client.auth.timeout.max(settings.listing_timeout);
     let server = server_name(client);
-    let client_timeout = client.auth.timeout;
-    let listing_timeout = settings.listing_timeout;
     let operation = async |session: &mut RuntimeSession<Runtime>| {
-        Ok(list_from_session::<_, Kind>(
-            session,
-            client_timeout,
-            listing_timeout,
-            raise_on_error,
-            &server,
-        )
-        .await)
+        optional_list::<_, Kind>(session, deadline, &server).await
     };
     match run_with_session(client, operation, false).await {
-        Ok(outcome) => outcome,
+        Ok(items) => Ok(items),
         Err(error) => finish_failure(
             error,
             FailureMode::List { raise_on_error },
