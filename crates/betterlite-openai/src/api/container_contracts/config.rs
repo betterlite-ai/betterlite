@@ -18,7 +18,8 @@ pub struct ContainerListQuery<'request> {
     pub after: Option<&'request str>,
     pub limit: Option<i64>,
     pub order: Option<&'request str>,
-    pub extra_query: Option<&'request BTreeMap<String, String>>,
+    // LiteLLM merges this mapping into the query params unchanged, so values stay untyped JSON
+    pub extra_query: Option<&'request Map<String, Value>>,
 }
 
 // LiteLLM's BaseContainerConfig, with the logging object and httpx.Response replaced by the raw body

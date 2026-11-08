@@ -39,8 +39,8 @@ impl BaseContainerConfig for FixtureConfig {
     }
 
     fn transform_container_list_request(
-        &self, _base: &str, _context: ContainerRequestContext<'_>, _query: &ContainerListQuery<'_>,
-    ) -> Prepared { (String::new(), Map::new()) }
+        &self, _base: &str, _context: ContainerRequestContext<'_>, query: &ContainerListQuery<'_>,
+    ) -> Prepared { (String::new(), query.extra_query.cloned().unwrap_or_default()) }
 
     fn transform_container_list_response(&self, _raw: &[u8]) -> Reply<ContainerListResponse> {
         Err(ContainerError::ApiBaseRequired)
@@ -93,6 +93,7 @@ fn container_body() -> Value {
             "expires_after": {"anchor": "last_active_at", "minutes": 30},
             "last_active_at": 1735689700,
             "name": "my-container",
+            "hidden_params": {"a": 1},
             "unknown_key": {"nested": true}
         }"#,
     )
@@ -106,7 +107,8 @@ fn file_body(literal: &str) -> Value {
         "bytes": 12,
         "created_at": 1735689600,
         "path": "/mnt/data/report.csv",
-        "source": "assistant"
+        "source": "assistant",
+        "hidden_params": {"a": 1}
     }"#;
     parse(&text.replace("container.file", literal))
 }
@@ -175,6 +177,18 @@ fn record_container_object_rejects_invalid_bodies(#[case] body: &str) {
 fn record_container_list_response_requires_has_more() {
     serde_json::from_value::<ContainerListResponse>(parse(r#"{"object": "list", "data": []}"#))
         .unwrap_err();
+}
+
+#[test]
+fn record_container_list_response_rejects_wrong_object_literal() {
+    serde_json::from_value::<ContainerListResponse>(parse(
+        r#"{"object": "other", "data": [], "has_more": false}"#,
+    ))
+    .unwrap_err();
+}
+
+#[test]
+fn record_container_list_response_decodes_containers_and_ignores_unknown_keys() {
     let response: ContainerListResponse = serde_json::from_value(parse(
         r#"{
             "object": "list",
@@ -195,6 +209,16 @@ fn record_container_list_response_requires_has_more() {
     assert_eq!(response.data.len(), 1);
     assert_eq!(response.first_id.as_deref(), Some("container_abc"));
     assert!(!response.has_more);
+}
+
+#[test]
+fn record_container_list_response_defaults_absent_ids_to_none() {
+    let response: ContainerListResponse = serde_json::from_value(parse(
+        r#"{"object": "list", "data": [], "has_more": false}"#,
+    ))
+    .unwrap();
+    assert_eq!(response.first_id, None);
+    assert_eq!(response.last_id, None);
 }
 
 #[test]
@@ -299,6 +323,13 @@ fn record_file_list_response_decodes_file_objects() {
 }
 
 #[rstest]
+#[case::wrong_object_literal(r#"{"object": "other", "data": [], "has_more": false}"#)]
+#[case::missing_has_more(r#"{"object": "list", "data": []}"#)]
+fn record_file_list_response_rejects_invalid_bodies(#[case] body: &str) {
+    serde_json::from_value::<ContainerFileListResponse>(parse(body)).unwrap_err();
+}
+
+#[rstest]
 #[case::dotted("container.file.deleted", DeletedContainerFileLiteral::Dotted)]
 #[case::underscore("container_file.deleted", DeletedContainerFileLiteral::Underscore)]
 fn record_delete_file_response_accepts_both_object_literals(
@@ -312,12 +343,11 @@ fn record_delete_file_response_accepts_both_object_literals(
     assert_eq!(serde_json::to_value(&deleted).unwrap()["object"], literal);
 }
 
-#[test]
-fn record_delete_file_response_rejects_other_object_literals() {
-    serde_json::from_value::<DeleteContainerFileResponse>(parse(
-        r#"{"id": "file_abc", "object": "container.file", "deleted": true}"#,
-    ))
-    .unwrap_err();
+#[rstest]
+#[case::other_object_literal(r#"{"id": "file_abc", "object": "container.file", "deleted": true}"#)]
+#[case::missing_deleted(r#"{"id": "file_abc", "object": "container.file.deleted"}"#)]
+fn record_delete_file_response_rejects_invalid_bodies(#[case] body: &str) {
+    serde_json::from_value::<DeleteContainerFileResponse>(parse(body)).unwrap_err();
 }
 
 #[test]
@@ -334,16 +364,62 @@ fn record_field_returns_encoded_values_and_none_for_unknown_names() {
     assert_eq!(object.field("hidden_params"), None);
     assert_eq!(object.field("_hidden_params"), None);
     assert_eq!(object.field("unknown"), None);
-    let deleted = DeleteContainerFileResponse {
-        id: "file_abc".to_owned(),
-        object: DeletedContainerFileLiteral::Dotted,
-        deleted: true,
-    };
+}
+
+#[test]
+fn record_field_reads_file_fields_and_null_bytes() {
+    let file: ContainerFileObject = serde_json::from_value(file_body("container.file")).unwrap();
     assert_eq!(
-        deleted.field("object"),
+        file.field("container_id"),
+        Some(parse(r#""container_abc""#))
+    );
+    assert_eq!(file.field("bytes"), Some(parse("12")));
+    assert_eq!(file.field("missing"), None);
+    let without_bytes: ContainerFileObject = serde_json::from_value(parse(
+        r#"{"id": "f", "object": "container.file", "container_id": "c", "created_at": 1, "path": "/a", "source": "user"}"#,
+    ))
+    .unwrap();
+    assert_eq!(without_bytes.field("bytes"), Some(Value::Null));
+    assert_eq!(without_bytes.field("missing"), None);
+}
+
+#[test]
+fn record_field_reads_list_fields_and_null_ids() {
+    let lists: ContainerListResponse = serde_json::from_value(parse(
+        r#"{"object": "list", "data": [], "has_more": false}"#,
+    ))
+    .unwrap();
+    assert_eq!(lists.field("object"), Some(parse(r#""list""#)));
+    assert_eq!(lists.field("has_more"), Some(parse("false")));
+    assert_eq!(lists.field("first_id"), Some(Value::Null));
+    assert_eq!(lists.field("missing"), None);
+    let files: ContainerFileListResponse = serde_json::from_value(parse(
+        r#"{"object": "list", "data": [], "last_id": "file_abc", "has_more": true}"#,
+    ))
+    .unwrap();
+    assert_eq!(files.field("last_id"), Some(parse(r#""file_abc""#)));
+    assert_eq!(files.field("first_id"), Some(Value::Null));
+    assert_eq!(files.field("missing"), None);
+}
+
+#[test]
+fn record_field_reads_delete_fields_and_none_for_unknown_names() {
+    let deleted: DeleteContainerResult = serde_json::from_value(parse(
+        r#"{"id": "container_abc", "object": "container.deleted", "deleted": true}"#,
+    ))
+    .unwrap();
+    assert_eq!(deleted.field("deleted"), Some(parse("true")));
+    assert_eq!(deleted.field("missing"), None);
+    let deleted_file: DeleteContainerFileResponse = serde_json::from_value(parse(
+        r#"{"id": "file_abc", "object": "container.file.deleted", "deleted": false}"#,
+    ))
+    .unwrap();
+    assert_eq!(
+        deleted_file.field("object"),
         Some(parse(r#""container.file.deleted""#))
     );
-    assert_eq!(deleted.field("missing"), None);
+    assert_eq!(deleted_file.field("deleted"), Some(parse("false")));
+    assert_eq!(deleted_file.field("missing"), None);
 }
 
 #[test]
@@ -383,7 +459,15 @@ fn params_create_optional_keeps_declared_key_names() {
 
 #[test]
 fn params_create_request_skips_none_fields_and_keeps_name() {
-    let params = ContainerCreateRequestParams {
+    let empty = ContainerCreateRequestParams {
+        expires_after: None,
+        file_ids: None,
+        extra_headers: None,
+        extra_body: None,
+        name: None,
+    };
+    assert_eq!(serde_json::to_value(&empty).unwrap(), parse("{}"));
+    let named = ContainerCreateRequestParams {
         expires_after: None,
         file_ids: None,
         extra_headers: None,
@@ -391,16 +475,42 @@ fn params_create_request_skips_none_fields_and_keeps_name() {
         name: Some("my-container".to_owned()),
     };
     assert_eq!(
-        serde_json::to_value(&params).unwrap(),
+        serde_json::to_value(&named).unwrap(),
         parse(r#"{"name": "my-container"}"#)
     );
-    let decoded: ContainerCreateRequestParams = serde_json::from_value(parse(
-        r#"{"name": "my-container", "file_ids": ["file_abc"]}"#,
-    ))
-    .unwrap();
+}
+
+#[test]
+fn params_create_request_keeps_every_declared_key() {
+    let params = ContainerCreateRequestParams {
+        expires_after: Some(Map::from_iter([(
+            "anchor".to_owned(),
+            Value::String("last_active_at".to_owned()),
+        )])),
+        file_ids: Some(vec!["file_abc".to_owned()]),
+        extra_headers: Some(BTreeMap::from([("X-Test".to_owned(), "one".to_owned())])),
+        extra_body: Some(BTreeMap::from([("metadata".to_owned(), "{}".to_owned())])),
+        name: Some("my-container".to_owned()),
+    };
+    let encoded = serde_json::to_value(&params).unwrap();
+    assert_eq!(
+        encoded,
+        parse(
+            r#"{
+                "expires_after": {"anchor": "last_active_at"},
+                "file_ids": ["file_abc"],
+                "extra_headers": {"X-Test": "one"},
+                "extra_body": {"metadata": "{}"},
+                "name": "my-container"
+            }"#
+        )
+    );
+    let decoded: ContainerCreateRequestParams = serde_json::from_value(encoded).unwrap();
     assert_eq!(decoded.name.as_deref(), Some("my-container"));
-    assert_eq!(decoded.file_ids, Some(vec!["file_abc".to_owned()]));
-    assert_eq!(decoded.expires_after, None);
+    assert_eq!(decoded.file_ids, params.file_ids);
+    assert_eq!(decoded.expires_after, params.expires_after);
+    assert_eq!(decoded.extra_headers, params.extra_headers);
+    assert_eq!(decoded.extra_body, params.extra_body);
 }
 
 #[test]
@@ -639,4 +749,29 @@ fn config_default_trait_is_object_safe() {
         config.get_complete_url(None, &Map::new()),
         Err(ContainerError::ApiBaseRequired)
     ));
+}
+
+#[test]
+fn config_list_query_carries_non_string_extra_query_values() {
+    let extra_query = Map::from_iter([
+        ("limit".to_owned(), Value::from(5_i64)),
+        ("include".to_owned(), parse(r#"["a", "b"]"#)),
+    ]);
+    let litellm_params = Map::new();
+    let headers = BTreeMap::new();
+    let query = ContainerListQuery {
+        after: None,
+        limit: None,
+        order: None,
+        extra_query: Some(&extra_query),
+    };
+    let (_, params) = FixtureConfig.transform_container_list_request(
+        "https://api.example.test/v1",
+        ContainerRequestContext {
+            litellm_params: &litellm_params,
+            headers: &headers,
+        },
+        &query,
+    );
+    assert_eq!(params, extra_query);
 }
