@@ -54,8 +54,10 @@ pub struct StreamChunk {
     pub object: String,
     pub created: i64,
     pub model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub system_fingerprint: Option<String>,
     pub choices: Vec<StreamChoice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<Usage>,
     pub provider_specific_fields: Option<JsonObject>,
     pub hidden_params: JsonObject,
@@ -103,9 +105,13 @@ pub struct StreamDelta {
     pub function_call: Option<JsonValue>,
     pub tool_calls: Option<JsonValue>,
     pub audio: Option<JsonValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<JsonValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub annotations: Option<JsonValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking_blocks: Option<JsonValue>,
     pub provider_specific_fields: Option<JsonObject>,
     #[serde(flatten)]

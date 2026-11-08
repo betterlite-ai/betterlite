@@ -1,5 +1,5 @@
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import TypeAlias, cast
 
@@ -7,32 +7,13 @@ import litellm
 from litellm.litellm_core_utils import streaming_handler as shaping
 from litellm.litellm_core_utils.redact_messages import LiteLLMLoggingObject
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
-from litellm.types.utils import (
-    BaseModel,
-    Delta,
-    ModelResponse,
-    ModelResponseStream,
-    StreamingChoices,
-    Usage,
-)
+from litellm.types.utils import BaseModel, ModelResponse, ModelResponseStream, Usage
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Step: TypeAlias = dict[str, Json]
 
-DELTA_FIELDS = [
-    "content", "role", "function_call", "tool_calls", "audio", "images", "annotations",
-    "reasoning_content", "thinking_blocks", "provider_specific_fields",
-]
 DETAIL_FIELDS = [
     "cached_tokens", "cache_write_tokens", "cache_creation_tokens", "cache_creation_token_details",
-]
-CHOICE_TYPED = ["index", "delta", "finish_reason", "logprobs"]
-CHUNK_TYPED = [
-    "id", "object", "created", "model", "choices", "usage", "provider_specific_fields",
-]
-USAGE_TYPED = [
-    "prompt_tokens", "completion_tokens", "total_tokens", "cost", "prompt_tokens_details",
-    "completion_tokens_details",
 ]
 
 
@@ -80,49 +61,16 @@ def _dump(value: BaseModel) -> dict[str, Json]:
     return cast("dict[str, Json]", value.model_dump())
 
 
-def _typed(value: BaseModel, fields: Sequence[str]) -> dict[str, Json]:
-    return {key: _raw(_attr(value, key)) for key in fields}
-
-
-def _extras(value: BaseModel, fields: Sequence[str], *, skip_none: bool) -> dict[str, Json]:
-    return {
-        key: _raw(item)
-        for key, item in _dump(value).items()
-        if key not in fields and (item is not None or not skip_none)
-    }
-
-
-def _delta(delta: Delta) -> dict[str, Json]:
-    return {**_typed(delta, DELTA_FIELDS), **_extras(delta, DELTA_FIELDS, skip_none=False)}
-
-
 def _details(details: BaseModel) -> dict[str, Json]:
-    return {**_typed(details, DETAIL_FIELDS), **_extras(details, DETAIL_FIELDS, skip_none=True)}
+    return {key: _raw(item) for key, item in _dump(details).items() if item is not None}
 
 
 def _usage(usage: Usage) -> dict[str, Json]:
     prompt = usage.prompt_tokens_details
     completion = usage.completion_tokens_details
-    dumped: dict[str, Json] = {
-        "prompt_tokens": usage.prompt_tokens,
-        "completion_tokens": usage.completion_tokens,
-        "total_tokens": usage.total_tokens,
-        "cost": _raw(_attr(usage, "cost")),
-        "prompt_tokens_details": None if prompt is None else _details(prompt),
-        "completion_tokens_details": None if completion is None else _details(completion),
-    }
-    dumped.update(_extras(usage, USAGE_TYPED, skip_none=True))
-    return dumped
-
-
-def _choice(choice: StreamingChoices) -> dict[str, Json]:
-    dumped: dict[str, Json] = {
-        "index": choice.index,
-        "delta": _delta(choice.delta),
-        "finish_reason": _raw(_attr(choice, "finish_reason")),
-        "logprobs": _raw(_attr(choice, "logprobs")),
-    }
-    dumped.update(_extras(choice, CHOICE_TYPED, skip_none=False))
+    dumped = _dump(usage)
+    dumped["prompt_tokens_details"] = None if prompt is None else _details(prompt)
+    dumped["completion_tokens_details"] = None if completion is None else _details(completion)
     return dumped
 
 
@@ -130,18 +78,10 @@ def _chunk(value: ModelResponseStream) -> dict[str, Json]:
     usage: object = getattr(value, "usage", None)
     if isinstance(usage, dict):
         usage = Usage(**cast("dict[str, object]", usage))  # pyright: ignore[reportArgumentType]
-    dumped: dict[str, Json] = {
-        "id": value.id,
-        "object": value.object,
-        "created": value.created,
-        "model": value.model,
-        "system_fingerprint": _raw(_attr(value, "system_fingerprint")),
-        "choices": [_choice(choice) for choice in value.choices],
-        "usage": None if not isinstance(usage, Usage) else _usage(usage),
-        "provider_specific_fields": _raw(_attr(value, "provider_specific_fields")),
-        "hidden_params": _raw(_attr(value, "_hidden_params")),
-    }
-    dumped.update(_extras(value, CHUNK_TYPED, skip_none=False))
+    dumped = _dump(value)
+    if isinstance(usage, Usage):
+        dumped["usage"] = _usage(usage)
+    dumped["hidden_params"] = _raw(_attr(value, "_hidden_params"))
     return dumped
 
 
