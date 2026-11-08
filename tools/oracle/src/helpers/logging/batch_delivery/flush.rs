@@ -14,8 +14,6 @@ use serde_json::{Value, json};
 pub(super) struct FlushScenario {
     #[serde(default)]
     settings: SettingsInput,
-    #[serde(default, rename = "preserve_events_added_during_flush")]
-    preserve_during_flush: bool,
     steps: Vec<FlushStep>,
 }
 
@@ -152,8 +150,7 @@ async fn flush_once(
 
 pub(super) async fn flush_outcome(scenario: &FlushScenario) -> Value {
     let settings = scenario.settings.resolve();
-    let mut queue = BatchQueue::new(settings);
-    queue.preserve_during_flush = scenario.preserve_during_flush;
+    let queue = BatchQueue::new(settings);
     let mut flushes = Vec::new();
     let mut delivered = Vec::new();
     let mut warnings = 0_usize;

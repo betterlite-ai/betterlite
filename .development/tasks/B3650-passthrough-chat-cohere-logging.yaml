@@ -1,0 +1,111 @@
+id: B3650
+title: Shared passthrough chat and Cohere embedding logging
+description: >-
+  Build the two pass-through handlers that turn a relayed Cohere reply into a priced, attributed response for spend logging, plus the shared chat handler they sit on.
+  They live in betterlite-server under src/pass_through_logging, in two modules the skeleton declares: base_passthrough_logging (base_passthrough_logging_handler.py) and cohere_passthrough_logging (cohere_passthrough_logging_handler.py).
+  B3606 (the route success handler) calls the Cohere handler, and B3637 (the OpenAI handler) calls the shared chat handler, so the names below are fixed.
+  Nothing here holds module-level state. LiteLLM's abstract class becomes a trait, its two subclasses' shared methods become one struct that holds an Arc of that trait, and every collaborator comes in through a constructor.
+  Read the merged code of B3630, B3605, B247, B1414, B1416, B1418, B5652, B5653 and B2227 for the exact types before you write a call; this task names what it uses and does not copy their signatures.
+
+
+  base_passthrough_logging. The trait `PassthroughProvider: Send + Sync` has three methods and no default bodies. `provider_name(&self) -> LlmProvider` is LiteLLM's llm_provider_name. `transform_chat_response(&self, model: &str, upstream: &UpstreamChatReply<'_>) -> Result<ModelResponse, PassthroughLoggingError>` is get_provider_config(model).transform_response, called with no messages, no optional params, an empty api key, empty request data, json_mode false and empty litellm params. `build_complete_streaming_response(&self, all_chunks: &[String], model: &str) -> Result<Option<StreamedResponse>, PassthroughLoggingError>` is the abstract _build_complete_streaming_response. `UpstreamChatReply<'a>` is a plain struct of the upstream status code (u16) and the body bytes (&'a [u8]).
+  The struct `PassthroughChatLogger` is built with `PassthroughChatLogger::new(provider: Arc<dyn PassthroughProvider>, payload: <B3630's response_payload collaborator>)`. If B3630 merged create_response_logging_payload as a free function, store a function pointer or a small trait object for it so tests can fake it; if it merged a struct, hold that.
+  `passthrough_chat_handler(&self, input: PassthroughChatInput<'_>) -> Result<PassthroughOutcome, PassthroughLoggingError>`. PassthroughChatInput carries the upstream reply (UpstreamChatReply), response_body (the parsed object, `&serde_json::Map<String, serde_json::Value>`), the call log handle B247 defines, url_route, start_time, end_time, request_body (a Map) and the kwargs (B3630's ResponseLoggingKwargs). The model is request_body["model"] when the key is present, else response_body["model"], else the empty string. Call transform_chat_response with it, then B3630's create_response_logging_payload with the transformed response, the model, the kwargs, both times and the call log, and return `PassthroughOutcome { result: Option<B3605's response object enum>, kwargs }` with the transformed response as the result. A transform error comes back as the typed error; LiteLLM has no try around it. result (the string), cache_hit and url_route are accepted by LiteLLM and never read, so the input keeps url_route only because B3606's adapter has it and leaves the rest out.
+  `end_user_from_request_body` is B3630's. This task adds no copy of it.
+  `log_collected_chunks(&self, input: CollectedChunksInput<'_>) -> Result<PassthroughOutcome, PassthroughLoggingError>`. CollectedChunksInput carries the call log, request_body, start_time, end_time and all_chunks (&[String]). The model is request_body["model"] or the empty string. Call build_complete_streaming_response. When it gives None, log at error level "Unable to build complete streaming response for Anthropic passthrough endpoint, not logging..." (the text says Anthropic in every provider; keep it) and return result None with empty kwargs. Otherwise call create_response_logging_payload with an empty kwargs and return the built response as the result. A builder error comes back as the typed error. The url_route, endpoint_type and passthrough_success_handler_obj arguments of LiteLLM's method are never read, so they are not parameters.
+  `PassthroughLoggingError` is this module's error enum: Transform, StreamBuild and Payload variants, each wrapping the source error with `#[from]`-style `source` fields (raise with context, no stringly errors).
+
+
+  cohere_passthrough_logging. `CoherePassthroughLogger::new(chat: PassthroughChatLogger, embedding: Arc<dyn CohereEmbeddingTools>)` is the public entry. `CohereEmbeddingTools` is a trait with the calls the embed branch needs so tests can fake them: `decode_embedding(&self, upstream_body: &[u8], request_body: &Map, model: &str, input: &[Value], call_log: &CallLog) -> Result<EmbeddingResponse, PassthroughLoggingError>` (B1418's decode_cohere_legacy_embedding: parses the reply, logs post_call once, fills the response), `embedding_cost(&self, response: &EmbeddingResponse, model: &str) -> Result<f64, PassthroughLoggingError>` (B068's completion_cost with custom_llm_provider "cohere" and call type aembedding) and `standard_logging_object(&self, kwargs: &ResponseLoggingKwargs, response: &EmbeddingResponse, start_time, end_time, call_log) -> Result<(), PassthroughLoggingError>` (B190's get_standard_logging_object_payload with status "success"). The production implementation of the trait is a small struct in this module that forwards to those three tasks.
+  `cohere_passthrough_handler(&self, input: PassthroughChatInput<'_>) -> Result<PassthroughOutcome, PassthroughLoggingError>` takes the same input as the chat handler, so B3606's adapter builds one struct for every shape. The embed branch runs when url_route contains "/v1/embed" and does not contain "/v1/embeddings". Every other route goes straight to PassthroughChatLogger::passthrough_chat_handler with the Cohere provider.
+  Embed branch, in this order, all inside one catch: model as in the chat handler; input texts are request_body["texts"], and when that is missing, null, or an empty array, request_body["input"] (default empty array); decode the embedding reply; cost; store the cost in the response's hidden params under "response_cost" so nothing recomputes it; kwargs response_cost, model and custom_llm_provider "cohere"; when the kwargs carry a passthrough request body, find the end user with B3630's end_user_from_request_body and, when found, set only the "proxy_server_request" key of litellm_params to {"body": {"user": user}} (other litellm_params keys stay); build the standard logging object and drop it (the embed branch does not store it in the kwargs); then write model, custom_llm_provider "cohere" and response_cost to the call log. Return the embedding response as the result with the kwargs.
+  Any error in that branch (bad JSON, missing "embeddings", cost failure, logging failure) is swallowed and the request runs through the chat handler instead, with the kwargs as they stand. Whatever the failed branch already wrote into the kwargs (response_cost, model, custom_llm_provider, possibly proxy_server_request) is still there for the chat path; the call log writes of a failed branch stay too. If the chat path then fails as well, that error comes back to the caller.
+  Streaming. `CohereProvider` implements PassthroughProvider: provider_name is Cohere; transform_chat_response decodes with B1416's decode_cohere_chat_v2 (CohereV2ChatConfig for every model, whatever the route); build_complete_streaming_response walks all_chunks in order, decodes each string chunk with B1414's V1 line decoder (LiteLLM uses the V1 CohereModelResponseIterator, not the V2 one), shapes it with B5653's chunk_creator over a fresh B5652 ChunkShaper for provider "cohere", keeps the non-None chunks, stops at the first end-of-stream signal, and passes the collected chunks to B2227's stream_chunk_builder. Any other decode or shaping error comes back as the typed error. An empty chunk list gives whatever stream_chunk_builder gives for no chunks.
+
+
+  Tests are native: module tests under pass_through_logging::base_passthrough_logging::tests (test names start with chat_ or chunks_) and pass_through_logging::cohere_passthrough_logging::tests (names start with cohere_embed_, cohere_route_ or cohere_stream_). Fakes stand in for the provider, the payload collaborator, the embedding tools and the call log. No route reaches this code yet (B3606 and B103 wire it), and the handlers need a live logging object, so there are no helper cases; B103 adds the HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_logging/base_passthrough_logging.rs
+    - crates/betterlite-server/src/pass_through_logging/base_passthrough_logging/**
+    - crates/betterlite-server/src/pass_through_logging/cohere_passthrough_logging.rs
+    - crates/betterlite-server/src/pass_through_logging/cohere_passthrough_logging/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py#L31-L85
+    why: The abstract class, the model choice in passthrough_chat_handler and the transform_response arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py#L159-L219
+    why: The abstract stream builder and _handle_logging_llm_collected_chunks, with the None branch and its log text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cohere_passthrough_logging_handler.py#L32-L66
+    why: Cohere provider name, the V2 chat config for every model and the stream builder over the V1 iterator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/cohere_passthrough_logging_handler.py#L68-L184
+    why: Route test, embed branch step order, the catch-all fallback and the two chat-handler calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/embed/v1_transformation.py#L99-L125
+    why: What _transform_response does around the parse (one post_call), which B1418 owns and this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/common_utils.py#L117-L193
+    why: The V1 iterator and convert_str_chunk_to_generic_chunk that the Cohere stream builder uses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L218-L234
+    why: The only caller of cohere_passthrough_handler, which shows the arguments and that a list response body becomes an empty object.
+dod:
+  - text: passthrough_chat_handler picks the model from the request body, then the response body, then the empty string, transforms the reply through the provider, runs create_response_logging_payload and returns the transformed response with the kwargs; a transform error is returned.
+    proof: [chat-tests]
+  - text: log_collected_chunks builds the response from the chunks and returns it with the payload kwargs; a None build logs the error text and returns no result and empty kwargs.
+    proof: [chunks-tests]
+  - text: The Cohere handler sends only routes containing "/v1/embed" and not "/v1/embeddings" to the embed branch and every other route to the chat handler.
+    proof: [cohere-route-tests]
+  - text: The embed branch runs its steps in order, takes texts before input, stores the cost in the hidden params, replaces only proxy_server_request, drops the standard logging object and writes the three call log values.
+    proof: [cohere-embed-tests]
+  - text: An error in the embed branch falls back to the chat handler with the kwargs the branch had already written, and a chat error after that is returned.
+    proof: [cohere-fallback-tests]
+  - text: The Cohere stream builder uses the V1 decoder, skips None chunks, stops at end of stream and returns other decode errors.
+    proof: [cohere-stream-tests]
+checks:
+  optional: []
+  commands:
+    - id: chat-tests
+      why: the shared chat handler tests fail, or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::base_passthrough_logging::tests::chat_/)'
+    - id: chunks-tests
+      why: the collected chunks tests fail, or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::base_passthrough_logging::tests::chunks_/)'
+    - id: cohere-route-tests
+      why: the Cohere route choice tests fail, or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::cohere_passthrough_logging::tests::cohere_route_/)'
+    - id: cohere-embed-tests
+      why: the embed branch tests fail, or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::cohere_passthrough_logging::tests::cohere_embed_/)'
+    - id: cohere-fallback-tests
+      why: the fallback to the chat handler has no tests, or they fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::cohere_passthrough_logging::tests::cohere_fallback_/)'
+    - id: cohere-stream-tests
+      why: the Cohere stream builder tests fail, or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::cohere_passthrough_logging::tests::cohere_stream_/)'
+oracle_cases: []
+deviations:
+  - what: LiteLLM's abstract class and subclass become a trait plus two structs, and the handlers take a typed input struct instead of **kwargs.
+    why: Rust has no keyword spreading; B3606's adapter builds the struct from the same values.
+  - what: A failed embed branch is caught as a typed error. LiteLLM's blanket `except Exception` also catches Python bugs such as a missing attribute.
+    why: Rust has no runtime attribute errors, and the no-panics rule leaves typed errors as the only case.
+  - what: The standard logging object is not pretty printed to the debug log here; B3630 does that for the chat path.
+    why: The embed branch in LiteLLM never logs it either, so there is nothing to port.
+out_of_scope:
+  - "create_response_logging_payload, end_user_from_request_body and the ResponseLoggingKwargs type: B3630 owns them; this task calls them."
+  - "The Anthropic, Vertex and Gemini handlers and their stream builders: B3631, B3634, B3638, B3639 and B3640 own them."
+  - "The OpenAI override of _get_user_from_metadata and the two calls the OpenAI handler makes into passthrough_chat_handler: B3637 owns the OpenAI handler and calls this task's PassthroughChatLogger."
+  - "CohereV2ChatConfig transform_response (B1416), the Cohere embedding parse and usage (B1417, B1418), the Cohere stream iterators (B1414), chunk_creator (B5653), ChunkShaper (B5652) and stream_chunk_builder (B2227)."
+  - "The route predicate is_cohere_route and the success handler's dispatch: B3605 and B3606 own them."
+  - "_get_user_from_metadata of the base class is the same code as B3630's end_user_from_request_body, so no second copy is built here."
+pitfalls:
+  - The Cohere stream builder uses the V1 CohereModelResponseIterator even for /v2/chat, and each chunk is a str, so a line that still starts with "data:" fails the JSON decode and the error escapes; only StopIteration and StopAsyncIteration are caught.
+  - The embed route test needs "/v1/embed" present and "/v1/embeddings" absent, so "/v1/embed/xyz" is an embed route and "/v1/embeddings" is not.
+  - request_body["texts"] wins only when it is truthy; an empty list or null falls to request_body["input"], which defaults to an empty list.
+  - The embed branch calls get_standard_logging_object_payload and throws the result away, unlike the chat path that stores it in kwargs["standard_logging_object"] and rewrites the response id and model.
+  - The embed branch sets only litellm_params["proxy_server_request"] (setdefault then update), so other litellm_params keys survive, where B3630's chat payload step writes the same key through its own rule.
+  - A failed embed branch leaves kwargs["response_cost"], ["model"] and ["custom_llm_provider"] set, and the chat fallback receives them as its kwargs.
+  - The embed branch writes cost to the response's _hidden_params["response_cost"] (creating the dict when missing) so later cost code does not price the response again.
+  - log_collected_chunks logs "Anthropic passthrough endpoint" for every provider, and it has no caller at the pin (the base class method is never reached); the method is built because B3630 and B3606 name it, but no case can reach it.
+  - A list response body reaches the Cohere handler as an empty object (success_handler passes {} for non-dicts), so model falls to request_body or the empty string.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,84 @@
+id: B7760
+title: Terraform provider Go source kept verbatim and checked offline
+description: >-
+  LiteLLM ships a Terraform provider written in Go (terraform/provider/ at the pin). betterlite keeps that provider
+  as it is, the same way it keeps the admin dashboard, and proves it with the provider's own Go checks. Nothing here is
+  rewritten in Rust. This task puts the Go module in packaging/terraform-provider/ and makes its checks run offline.
+  Copy these from the LiteLLM checkout without editing a byte: main.go, go.mod, go.sum and every file in litellm/
+  (provider.go, client.go, types.go, utils.go, the resource_*.go and data_source_*.go files
+  and their *_test.go files). The module path stays github.com/BerriAI/terraform-provider-litellm
+  and go.mod keeps go 1.25.0, so the copy stays identical to the upstream mirror.
+  Provider() in litellm/provider.go takes three settings: api_base (env LITELLM_API_BASE), api_key (env LITELLM_API_KEY)
+  and insecure_skip_verify (env LITELLM_INSECURE_SKIP_VERIFY, default false). A betterlite user sets the same three
+  and nothing else changes. The unit tests build an httptest server and a schema.ResourceData; they never reach a real proxy
+  so go test passes with no proxy, no database and no network once the module cache is filled.
+  Acceptance tests (resource.Test with testAccPreCheck) skip when TF_ACC is unset; do not change that.
+  The only work beyond the copy is making the checks below pass. Do not add a Rust
+  crate, a Cargo.toml entry or a Rust test for this task. Do not copy tools/ (the endpoint audit is the next task, B7761),
+  docs, examples or the release files (B155).
+scope:
+  paths:
+    - packaging/terraform-provider/main.go
+    - packaging/terraform-provider/go.mod
+    - packaging/terraform-provider/go.sum
+    - packaging/terraform-provider/litellm/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/litellm/provider.go#L1-L108
+    why: Provider() registers 25 resources and 33 data sources and reads api_base, api_key and insecure_skip_verify from the three env vars.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/litellm/client.go#L1-L140
+    why: Client, apiError and the key calls show the paths and the nested info response the provider relies on.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/main.go#L1-L14
+    why: The plugin entry point that terraform starts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/go.mod
+    why: Module path, go 1.25.0 and terraform-plugin-sdk/v2 v2.40.0 that the copy must keep.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/.github/workflows/test-terraform-provider.yml#L24-L55
+    why: LiteLLM's own gofmt, go vet, go build and go test steps, which the checks here repeat.
+dod:
+  - text: The Go module is present at packaging/terraform-provider with main.go, go.mod, go.sum and the litellm package, and the module path is unchanged.
+    proof: [module-files]
+  - text: Provider() registers the 58 resource and data source names LiteLLM registers (25 resources, 33 data sources).
+    proof: [registration-count]
+  - text: Every Go file is gofmt clean and go vet and go build pass for the whole module.
+    proof: [go-format, go-vet-build]
+  - text: The provider's own Go tests pass offline with a 120 second timeout, including TestProvider, which runs InternalValidate on the schema.
+    proof: [go-tests]
+checks:
+  optional: []
+  commands:
+    - id: module-files
+      why: the vendored module is missing or its module path was changed
+      run: test -f packaging/terraform-provider/main.go && test -f packaging/terraform-provider/go.sum && test -f packaging/terraform-provider/litellm/provider.go && test -f packaging/terraform-provider/litellm/client.go && /usr/bin/grep -a -q '^module github.com/BerriAI/terraform-provider-litellm$' packaging/terraform-provider/go.mod && /usr/bin/grep -a -q '^go 1.25.0$' packaging/terraform-provider/go.mod
+    - id: registration-count
+      why: Provider() lost or gained a registration compared with LiteLLM
+      run: cd packaging/terraform-provider && test "$(/usr/bin/grep -a -c -E '^[[:space:]]+"litellm_[a-z_]+":' litellm/provider.go)" = 58
+    - id: go-format
+      why: a Go file is not gofmt clean
+      run: cd packaging/terraform-provider && test -z "$(gofmt -l .)"
+    - id: go-vet-build
+      why: the module does not vet or build
+      run: cd packaging/terraform-provider && go vet ./... && go build ./...
+    - id: go-tests
+      why: the provider's own unit tests fail, time out or need the network
+      run: cd packaging/terraform-provider && go test -timeout 120s -count=1 ./...
+oracle_cases: []
+deviations:
+  - what: The module lives at packaging/terraform-provider/ and not terraform/provider/.
+    why: betterlite keeps distribution files under packaging/; the Go code, module path and go.mod are unchanged, so the upstream mirror layout still applies.
+out_of_scope:
+  - "B7761 owns tools/ (endpointaudit) and the check of every endpoint the provider calls against betterlite's OpenAPI document."
+  - "B155 owns docs, examples, README, RELEASING, CHANGELOG, LICENSE, .goreleaser.yml, Makefile, .gitignore and the registry manifest, and the cross-build and terraform schema checks."
+  - "terraform/provider/tools/dump_openapi.py imports LiteLLM's Python app and has no use in betterlite, so nobody copies it."
+  - "Acceptance tests that need a running proxy (TF_ACC=1) are not part of the gate; a real terraform apply needs a proxy with a database."
+  - "terraform/litellm/ (AWS and GCP deployment modules) is B154."
+pitfalls:
+  - go.mod says go 1.25.0, so an older local go downloads a toolchain over the network; a gate run with GOFLAGS=-mod=mod and no proxy access fails there, which is an environment blocker to report with the go version, not a reason to edit go.mod.
+  - Editing any copied file breaks the "identical to upstream" promise, so a failing vendored test is reported as a blocker with its output instead of being patched.
+  - provider_test.go calls testAccPreCheck only from acceptance tests that are skipped without TF_ACC; setting TF_ACC in a check would make go test need a live proxy.
+  - The registration check counts quoted litellm_ keys at the start of a line in provider.go, so a worker who reformats the file changes the count.
+  - go.sum has to be copied with go.mod; running go mod tidy rewrites both and is not allowed.
+  - Go is not in checks.yaml's tools list at the time of writing; the checks here call plain go and gofmt from PATH.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

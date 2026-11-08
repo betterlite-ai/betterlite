@@ -2,8 +2,8 @@ id: B4720
 milestone: M9 agents and mcp
 title: MCP server catalog and health views
 status: todo
-depends_on: [B4711, B4717, B737, B817, B818, B726, B743, B858, B732]
-file: null
+depends_on: [B4711, B4717, B737, B817, B818, B743, B858, B732, B4231, B4672, B4731, B6591, B6592, B4654, B6594, B2314]
+file: tasks/B4720-mcp-catalog-health-views.yaml
 covers:
   - "litellm/proxy/management_endpoints/mcp_management_endpoints.py"
 parent: B139

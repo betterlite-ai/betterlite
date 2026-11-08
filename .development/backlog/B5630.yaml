@@ -1,0 +1,13 @@
+id: B5630
+milestone: M8 platform
+title: Wire RedisCache to the breaker, service logging and config
+status: todo
+depends_on: [B012, B393, B4324, B4325, B5220, B5640]
+file: tasks/B5630-redis-cache-wiring.yaml
+covers: []
+parent: B126
+split_from: B126
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

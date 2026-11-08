@@ -9,6 +9,7 @@ use betterlite_http::error::HttpError;
 use betterlite_openai::chat::RequestError;
 use betterlite_openai::chat::deployment::DeploymentError;
 use betterlite_openai::chat::execution::ChatError;
+use betterlite_provider::api::vector_store_contracts::error::VectorStoreEmbeddingError;
 
 use thiserror::Error;
 
@@ -62,6 +63,11 @@ pub enum SdkHttpError {
     ChatParse(#[source] Box<RequestError>),
     #[error("the native service failed outside a provider answer: {0}")]
     Chat(#[source] Box<ChatError>),
+    #[error("the vector store embedding executor failed: {source}")]
+    Embedding {
+        #[source]
+        source: Box<VectorStoreEmbeddingError>,
+    },
     #[error("the provider error body is not UTF-8: {0}")]
     ErrorBodyUtf8(#[source] FromUtf8Error),
     #[error("the provider error body does not decode: {0}")]

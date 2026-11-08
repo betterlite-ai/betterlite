@@ -1,0 +1,403 @@
+id: B5640
+title: Build the RedisCache facade over the Redis operation modules
+description: >-
+  B4325 to B4329 each built one slice of LiteLLM's `RedisCache` in betterlite-redis.
+  This task adds the module `redis_cache` there. It joins the slices into one
+  `RedisCache` value and builds what no slice owns: the constructor, six guarded
+  async methods and the guarded script run. B4293, B4294, B360, B4330 and B126
+  reach Redis through this type.
+
+  The module reads no config key and no env var of its own, and it knows nothing
+  about betterlite-router or betterlite-logging. The breaker and the service logger
+  arrive as `Arc<dyn BreakerGate>` and `Arc<dyn ServiceHooks>` from
+  `redis_client_reuse`. B5630 fills them with the real ones. Tests here use a
+  recording gate and hook in `redis_cache/tests/support.rs`. No new dependency is
+  needed.
+
+  Type. `RedisCache` has only public fields, and callers go through them:
+  `cache.values.async_set_cache(..)`, `cache.counters.async_set_max(..)`,
+  `cache.admin.ping(..)`, `cache.lists.async_rpush(..)`. Write no method that only
+  forwards to a slice, because the rules forbid one-line wrappers. The fields are
+  `transport: Arc<RedisTransport>`, `values: RedisCacheValues`, `counters:
+  RedisCounters`, `admin: Arc<RedisCacheAdmin>`, `lists` (B4329's list type),
+  `namespace: Option<String>`, `default_ttl: i64`, `redis_major_version: u32`,
+  `hooks: Arc<dyn ServiceHooks>` and `gate: Arc<dyn BreakerGate>`.
+
+  Constructor. `RedisCacheOptions` has the public fields `overrides: RedisOverrides`,
+  `family: RedisCacheFamily`, `namespace: Option<String>`, `default_ttl: i64`,
+  `redis_flush_size: Option<usize>`, `default_major_version: u32`, `factory:
+  Arc<LiveClientFactory>`, `store: Arc<RedisClientStore>`, `hooks` and `gate`.
+  `async fn connect<E: EnvironmentLookup>(options: RedisCacheOptions, env: &E) ->
+  Result<RedisCache, RedisCacheError>` follows `__init__` (L607-L674) in this order.
+  First, `with_default_socket_timeout(overrides)` sets `socket_timeout` to
+  `Scalar::Value(5.0)` when it is `None`, and a given value stays. Second,
+  `resolve_redis_kwargs(overrides, ClientKind::Async, env)` gives the settings,
+  `resolve_target` reads the target from them, and `build_connection_pool(&settings,
+  target, env)` gives the pool. `RedisTransport::new` takes one settings record, so
+  resolve once with the kind every request uses. Third, build `RedisTransport`,
+  `RedisCacheValues` (with `namespace`, `default_ttl: Some(default_ttl)` and
+  `redis_flush_size`), `RedisCounters` and `RedisCacheAdmin`, all sharing the same
+  transport, hooks and gate. Fourth, read the version: run `admin.info()` in
+  `tokio::task::spawn_blocking`, await it, and take `redis_version` from the map.
+  `InfoValue::Text`, `Int` and `Float` become `RedisVersionValue::Text`, `Integer`
+  and `Float`. A failed `info`, a missing field or any other `InfoValue` kind leaves
+  `RedisVersionValue::Text("Unknown")`, writes a `tracing::debug!` line, and
+  `connect` carries on. `parse_major_version(&value, default_major_version)` gives
+  `redis_major_version`. Fifth, build B4329's list type with the transport, the
+  namespace, the hooks, the gate and that major version. B4329 names neither the type
+  nor its constructor, so use what merged. If it asks for the raw `RedisVersionValue`
+  and the default, pass those. Last, call `admin.setup_health_pings().await`.
+  Passing `RedisCacheFamily::Cluster` is allowed, because B126's cluster constructor
+  comes through here. `connect` does not choose the family.
+
+  Guard rule, used by every method below. Start with `gate.enter(name)`, where `name`
+  is the method's name, and an open breaker returns `RedisCacheError::Breaker` with
+  nothing sent. A body that returns `Err` goes to `gate.record_failure(&error)`, the
+  error is returned, and `exit` is not called. A body that returns `Ok` calls
+  `gate.exit(admission)` once. A failure the body swallows goes to
+  `gate.swallowed(&admission, &error)` before that `exit`. Each hook gets a
+  `ServiceEvent` with the method's name as `call_type` and the time since the body
+  began as `duration`, measured with `std::time::Instant`.
+
+  `async fn async_increment(&self, key: &str, value: f64, ttl: Option<i64>,
+  refresh_ttl: bool) -> Result<f64, RedisCacheError>` (L1419-L1476). Call
+  `transport.async_client()` first and let its error return with no hook, as LiteLLM's
+  lookup outside the try does. `incr_by_float_with_ttl` then finds the same client in
+  the store. Use `ttl.unwrap_or(self.default_ttl)`, namespace the key, and call
+  `counters.incr_by_float_with_ttl(&key, value, Some(used_ttl), refresh_ttl)`.
+  Success fires `hooks.success` with `key: None`. Failure fires `hooks.failure` with
+  `key: None`, writes the `tracing::error!` line "LiteLLM Redis Caching: async
+  async_increment() - Got exception from REDIS" with the error text, and returns the
+  error.
+
+  `async fn async_increment_pipeline(&self, increment_list: &[IncrementOperation]) ->
+  Result<Option<Vec<f64>>, RedisCacheError>` (L1954-L2017). An empty list returns
+  `Ok(None)` and sends nothing. Otherwise look up the client as above, then call
+  `counters.pipeline_increment(increment_list)`. Success fires `hooks.success` with
+  `key: None` and returns `Ok(Some(floats))`. Failure fires `hooks.failure`, writes the
+  `tracing::error!` line "LiteLLM Redis Caching: async increment_pipeline() - Got
+  exception from REDIS" and returns the error.
+
+  `async fn async_get_cache(&self, key: &str) -> Result<Option<CachedValue>,
+  RedisCacheError>` (L1648-L1693). The client lookup comes first and its error
+  returns with no hook. Namespace the key, send `GET` through
+  `LiveAsyncClient::query`, decode with `decode_cached_value`, then fire
+  `hooks.success` with `key: Some(namespaced_key)`. A GET or decode error fires
+  `hooks.failure` with the same key, writes a `tracing::debug!` line "async get() - Got
+  exception from REDIS" with the error text, goes to `gate.swallowed`, and returns
+  `Ok(None)`.
+
+  `async fn async_batch_get_cache(&self, key_list: &[Option<&str>]) ->
+  Result<HashMap<String, Option<CachedValue>>, RedisCacheError>` (L1696-L1768), the
+  same signature shape as B4327's sync `batch_get_cache`. Everything sits inside the
+  swallow, the client lookup too. `batch_keys` drops `None` keys and namespaces the
+  rest, `transport.async_mget` reads them (empty keys send nothing), and
+  `hooks.success` fires with `key: None` before decoding. Convert each `redis::Value`
+  with `FromRedisValue` into `Option<Vec<u8>>` and pass the list to `decoded_batch`.
+  Any error fires `hooks.failure`, writes the `tracing::error!` line "Error occurred
+  in async batch get cache", goes to `gate.swallowed` and returns an empty map.
+
+  `async fn async_get_ttl(&self, key: &str) -> Result<Option<i64>, RedisCacheError>`
+  (L2020-L2042). Client lookup, namespacing and `TTL` all sit inside the swallow, and
+  no hook fires. `remaining_ttl(reply)` turns the reply into the answer. An error
+  writes the `tracing::debug!` line "Redis TTL Error: {error}", goes to
+  `gate.swallowed`, and returns `Ok(None)`.
+
+  `async fn async_refresh_ttl(&self, key: &str, ttl: Option<i64>) -> Result<bool,
+  RedisCacheError>` (L2045-L2050). Send `EXPIRE namespaced_key used_ttl` with
+  `ttl.unwrap_or(self.default_ttl)`, and a reply of 1 is `true`, 0 is `false`. Nothing
+  is swallowed and no hook fires. LiteLLM's `False` for a `None` TTL has no branch
+  here, because `default_ttl` is a plain `i64`.
+
+  `async fn run_script(&self, script: &RegisteredScript, keys: &[String], args:
+  &[RedisScalar]) -> Result<redis::Value, RedisCacheError>` (L1030-L1044) is
+  `RegisteredScript::run` under the guard with the name `run_script`. No hook fires.
+  Callers register with `cache.counters.async_register_script(..)`.
+
+  Pure functions, public so the oracle adapter can call them.
+  `redis_cache/batch_read.rs` has `pub struct BatchKey { pub original: String, pub
+  namespaced: String }`, `pub fn batch_keys(key_list: &[Option<&str>], namespace:
+  Option<&str>) -> Vec<BatchKey>`, and `pub fn decoded_batch(keys: &[BatchKey],
+  replies: &[Option<Vec<u8>>]) -> Result<HashMap<String, Option<CachedValue>>,
+  DecodeError>`, mapping each original key to its decoded value with `None` for a miss
+  and the last value for a duplicate key. `redis_cache/ttl.rs` has `pub fn
+  remaining_ttl(reply: i64) -> Option<i64>`, with `None` for a reply of -1 or lower.
+
+  `RedisCacheError` is a `thiserror` enum owned by this module, with `#[from]`
+  variants for `BreakerOpen` (named `Breaker`), `ClientReuseError`, `LiveClientError`,
+  `RedisCountersError`, `RedisSettingsError`, `FactoryError`, `DecodeError` and
+  `tokio::task::JoinError`. Split the code by job: `redis_cache/connect.rs`,
+  `increment.rs`, `reads.rs`, `ttl.rs`, `script.rs`, `batch_read.rs` and `error.rs`.
+
+  Tests reuse the fake server at `crate::redis_live_client::tests::fake_server`, with
+  one file per group under `redis_cache/tests/`. The oracle helper op `b5640` has two
+  functions and reaches only the pure functions, because `tools/oracle` has no fake
+  Redis server. `batch_read` takes `namespace`, `keys` (strings or null) and `replies`
+  (strings or null, one per kept key). Its Rust side calls `batch_keys` and
+  `decoded_batch`. Its Python side makes a `RedisCache` with `object.__new__`, sets
+  `namespace`, `_circuit_breaker` to a closed `RedisCircuitBreaker` and
+  `service_logger_obj` to a no-op stub, replaces `_async_run_redis_mget_operation` with
+  a stub that records the keys and answers `replies`, runs `async_batch_get_cache` under
+  `asyncio.run`, and returns `{keys_sent, values}`. `ttl_reply` takes `namespace`,
+  `key` and `reply`. Its Rust side calls `check_and_fix_namespace` and `remaining_ttl`.
+  Its Python side replaces `_async_commands` with a stub whose `ttl` records the key
+  and answers `reply`, runs `async_get_ttl`, and returns `{key_sent, ttl}`. Write a
+  `CachedValue` to JSON the way the `b4327` adapter does. Each case file is `kind:
+  helper` with `call: {b5640: {function: ..., ...}}`.
+
+scope:
+  paths:
+    - crates/betterlite-redis/src/redis_cache.rs
+    - crates/betterlite-redis/src/redis_cache/**
+    - tools/oracle/cases/helpers/redis-cache/**
+    - "tools/oracle/fuzz/corpus/helper_case/redis_cache-*"
+    - tools/oracle/helpers/b5640.py
+    - tools/oracle/helpers/b5640/**
+    - tools/oracle/src/helpers/redis/b5640.rs
+    - tools/oracle/src/helpers/redis/b5640/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L607-L674
+    why: The constructor, its 5.0 socket timeout, the swallowed version read and the order of its steps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L801-L828
+    why: How the version text becomes the major version that picks the LPOP path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1030-L1044
+    why: The guard around a registered script, under the name run_script.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1418-L1476
+    why: async_increment, with the client lookup outside the try and a raised failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1647-L1693
+    why: async_get_cache, with the success hook after decoding and a swallowed failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1695-L1768
+    why: async_batch_get_cache, with the success hook before decoding and the map of original keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1953-L2017
+    why: async_increment_pipeline and its empty list return.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L2019-L2050
+    why: async_get_ttl swallows and async_refresh_ttl does not.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L26-L33
+    why: get_ttl, where a None TTL means the default TTL.
+
+dod:
+  - text: >-
+      `connect` builds every slice over one transport, so a write through `values`, a
+      counter through `counters`, a delete through `admin` and a push through `lists`
+      all reach the fake server with the namespaced key, and `values` uses the given
+      `default_ttl` as its `EX`.
+    proof: [parts-tests]
+  - text: >-
+      A missing `socket_timeout` becomes 5.0 and a given one stays.
+    proof: [socket-timeout-tests]
+  - text: >-
+      `connect` fills `redis_major_version` from an `INFO` reply of text, integer and
+      float, and uses `default_major_version` when `INFO` fails or has no
+      `redis_version`, and `connect` still returns `Ok` in those cases.
+    proof: [version-tests]
+  - text: >-
+      `connect` starts the health pings, so the fake server sees `PING` once `connect`
+      returns.
+    proof: [health-ping-tests]
+  - text: >-
+      `async_increment` sends the namespaced key with the given TTL or `default_ttl`,
+      honors `refresh_ttl`, fires the success hook, returns a client error with no hook,
+      and fires the failure hook and returns the error on a command failure.
+    proof: [increment-tests]
+  - text: >-
+      `async_increment_pipeline` returns `None` and sends nothing for an empty list,
+      returns only the float replies otherwise, returns a client error with no hook, and
+      fires the failure hook and returns the error on a pipeline failure.
+    proof: [increment-pipeline-tests]
+  - text: >-
+      `async_get_cache` decodes JSON and Python literal replies, returns `None` for a
+      miss, puts the namespaced key on both hook events, returns a client error, and
+      swallows a GET or decode error.
+    proof: [get-tests]
+  - text: >-
+      `async_batch_get_cache` drops `None` keys, sends namespaced keys in one `MGET`,
+      maps original keys to decoded values with `None` for a miss, and swallows every
+      error into an empty map, a client error included. A bad cached value fires both
+      hooks.
+    proof: [batch-get-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      `async_get_ttl` returns the seconds left, `None` for replies -1 and -2, and swallows
+      every error into `None` with no hook.
+    proof: [ttl-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      `async_refresh_ttl` sends `EXPIRE` with the namespaced key, answers `true` or
+      `false` from the reply, and returns an error.
+    proof: [refresh-ttl-tests]
+  - text: >-
+      `run_script` runs the script under the name `run_script`, and a failing script
+      reaches `gate.record_failure` and is returned.
+    proof: [script-tests]
+  - text: >-
+      An open breaker returns `RedisCacheError::Breaker` from all seven guarded methods
+      with the fake server recording no command. A success exits the gate once, a
+      returned error skips `exit`, and a swallowed failure reaches `gate.swallowed`
+      before `exit`.
+    proof: [gate-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: parts-tests
+      why: A slice is missing from RedisCache or does not get the namespace and TTL
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache::tests::parts::/)'
+    - id: socket-timeout-tests
+      why: The 5.0 second default is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache::tests::socket_timeout::/)'
+    - id: version-tests
+      why: The version read or its swallowed failure is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache::tests::version::/)'
+    - id: health-ping-tests
+      why: connect does not start the health pings
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache::tests::health_pings::/)'
+    - id: increment-tests
+      why: async_increment or its hooks are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache::tests::increment::/)'
+    - id: increment-pipeline-tests
+      why: async_increment_pipeline or its empty list return is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache::tests::increment_pipeline::/)'
+    - id: get-tests
+      why: async_get_cache or its swallow rule is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache::tests::get::/)'
+    - id: batch-get-tests
+      why: async_batch_get_cache or its key mapping is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache::tests::batch_get::/)'
+    - id: ttl-tests
+      why: async_get_ttl or its reply mapping is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache::tests::ttl::/)'
+    - id: refresh-ttl-tests
+      why: async_refresh_ttl is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache::tests::refresh_ttl::/)'
+    - id: script-tests
+      why: The guarded script run is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache::tests::script::/)'
+    - id: gate-tests
+      why: The guard order around the seven methods is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache::tests::gate::/)'
+    - id: helper-python
+      why: The Python side of batch_read or ttl_reply has a lint or type error
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5640)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5640 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5640/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new facade cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/redis_cache-*")" &&
+        grep -lE '^[[:space:]]+b5640:' tools/oracle/fuzz/corpus/helper_case/redis_cache-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/redis-cache/batch-read-skips-null-keys.yaml
+  - tools/oracle/cases/helpers/redis-cache/batch-read-maps-original-keys.yaml
+  - tools/oracle/cases/helpers/redis-cache/batch-read-miss-is-null.yaml
+  - tools/oracle/cases/helpers/redis-cache/batch-read-python-literal.yaml
+  - tools/oracle/cases/helpers/redis-cache/batch-read-duplicate-key-keeps-last.yaml
+  - tools/oracle/cases/helpers/redis-cache/ttl-reply-minus-one-is-null.yaml
+  - tools/oracle/cases/helpers/redis-cache/ttl-reply-minus-two-is-null.yaml
+  - tools/oracle/cases/helpers/redis-cache/ttl-reply-zero-stays-zero.yaml
+  - tools/oracle/cases/helpers/redis-cache/ttl-reply-namespaced-key.yaml
+
+deviations:
+  - what: >-
+      The methods take no `parent_otel_span`, the hooks get no `caller` text and no
+      start or end time, and the hooks run inline. LiteLLM sends them through
+      `asyncio.create_task` with a span, a stack string and two timestamps.
+    why: B4325's `ServiceEvent` holds the call type, the duration and the key. Rust has no frame names to walk, and the hook implementer spawns when it has to.
+  - what: >-
+      `async_batch_get_cache` returns an empty map when decoding fails. LiteLLM returns
+      the raw, undecoded values it had mapped so far.
+    why: A raw bytes value has no place in the typed result, and B4327's sync read makes the same choice.
+  - what: >-
+      A failure writes a plain `tracing::error!` line. LiteLLM's `log_redis_failure`
+      throttles timeout lines.
+    why: The throttle sits in betterlite-router, out of this crate's reach, and B5630's gate carries the failure there.
+  - what: >-
+      `ttl` is `Option<i64>`. LiteLLM's `get_ttl` also takes text and floats, cuts with
+      `int()`, and falls back to the default on text it can't read.
+    why: Callers here are typed Rust, so no such value reaches the method.
+  - what: >-
+      A `socket_timeout` set to null in config gets the 5.0 default. LiteLLM skips the key
+      for an explicit `None`, and the client then has no timeout.
+    why: "`RedisOverrides` can't tell null from a missing key, and a client with no timeout can hang a request forever."
+
+out_of_scope:
+  - "`RedisCircuitBreaker`, `_redis_circuit_breaker_guard`, `_redis_circuit_breaker_guard_sync`, `_enter_circuit_breaker`, `_exit_circuit_breaker`, `_run_under_circuit_breaker`, `_run_under_circuit_breaker_sync`, `log_redis_failure`, `_record_swallowed_redis_failure`, `_breaker_metrics`, `_explicit_causes`, `_redis_health_error_types` and `_redis_timeout_error_types`; B393 owns them and B5630 implements `BreakerGate` over them."
+  - "`ServiceLogging` in `litellm/_service_logger.py`; B012 owns it and B5630 implements `ServiceHooks` over it."
+  - "Reading `litellm.default_redis_ttl` and `redis_flush_size` from config; B5630 reads them and passes them in."
+  - "`RedisClusterCache`, `GcpTokenFetcher`, `AzureTokenFetcher`, `AwsCredentialsResolver` and the choice of the cluster family; B126 owns them."
+  - "`get_redis_client`, `get_redis_connection_pool` and `_get_redis_client_logic`; B4323 owns them, and `connect` calls its Rust counterparts."
+  - "`init_async_client`, `init_pubsub_client`, `_cluster_node_pubsub_client`, `_async_commands`, `_get_async_client_cache_key`, `_opaque_kwarg_key` and the MGET operations; B4325 owns them."
+  - "`_setup_health_pings`, `ping`, `sync_ping`, `_handle_async_ping_error`, `_handle_sync_ping_error`, `disconnect`, `test_connection`, `delete_cache_keys`, `async_delete_cache`, `delete_cache`, `client_list`, `info`, `flush_cache` and `flushall`; B4326 owns them."
+  - "`set_cache`, `get_cache`, `batch_get_cache`, `async_set_cache`, `async_set_cache_pipeline`, `async_set_cache_pipeline_with_ttls`, `async_set_cache_sadd`, `_pipeline_helper`, `_set_cache_sadd_helper`, `batch_cache_write` and `flush_cache_buffer`; B4327 owns them."
+  - "`increment_cache`, `increment_with_floor`, `async_increment_with_floor`, `batch_get_counts`, `async_batch_get_counts`, `async_scan_iter`, `async_set_max`, `async_register_script`, `_register_script_for_current_loop`, `_incrbyfloat_with_ttl` and `_pipeline_increment_helper`; B4328 owns them."
+  - "`async_rpush`, `async_rpush_and_trim`, `async_rpush_pipeline`, `_pipeline_rpush_helper`, `async_lpop`, `async_lpop_pipeline`, `_pipeline_lpop_helper` and `handle_lpop_count_for_older_redis_versions`; B4329 owns them."
+  - "`check_and_fix_namespace`, `_get_cache_logic`, `_parse_redis_major_version`, `_decoded_counts` and `_get_call_stack_info`; B4324 owns them. The code here calls the first three."
+  - "`BaseCache.get_ttl`; B4290 owns it. The `unwrap_or` here is the same rule."
+  - "Running a script inside a pipeline through `run_script`'s `client` argument; B4330 owns it and reads `RegisteredScript::sha1`."
+
+pitfalls:
+  - >-
+      `async_increment`, `async_increment_pipeline` and `async_get_cache` return a client
+      error with no hook, while `async_batch_get_cache` and `async_get_ttl` swallow the
+      same error. Don't make the five alike.
+  - >-
+      `async_get_cache` fires the success hook after decoding and
+      `async_batch_get_cache` before it, so a bad cached value fires only the failure hook
+      in the first and both hooks in the second.
+  - >-
+      A `None` TTL in `async_increment` means `default_ttl`. Passing `None` on to
+      `incr_by_float_with_ttl` would leave the key with no expiry.
+  - >-
+      `incr_by_float_with_ttl` wants an already namespaced key, while
+      `pipeline_increment` and `RegisteredScript::run` namespace their own keys, so give
+      those two the keys as the caller wrote them.
+  - >-
+      `async_increment_pipeline` calls `gate.enter` before it looks at the list, so an
+      empty list with an open breaker returns `Breaker` and not `Ok(None)`.
+  - "`remaining_ttl` keeps a reply of 0 as `Some(0)`. Only -1 and lower mean `None`."
+  - >-
+      `admin.info()` blocks on the sync client. Called straight from `connect` it stalls
+      a runtime thread for up to `socket_timeout`.
+  - >-
+      A Redis that is down at startup must still give a `RedisCache`, because LiteLLM's
+      version read swallows every error and the breaker deals with the outage later.
+  - >-
+      `parse_info` turns `redis_version:7.2` into a float and `redis_version:7` into an
+      integer. Only a three part version such as `7.2.4` arrives as text.
+  - >-
+      Set the Python stub's breaker and logger on the instance. `object.__new__` runs no
+      `__init__`, so `_circuit_breaker` is otherwise missing and the guard raises
+      `AttributeError`.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

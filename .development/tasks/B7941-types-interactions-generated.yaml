@@ -1,0 +1,59 @@
+id: B7941
+title: Python types for Google Interactions (types/interactions/generated.py, 102 classes)
+description: >-
+  `litellm.types.interactions` exposes the Google Interactions API as pydantic models. They live in `generated.py`, written by
+  datamodel-codegen from Google's OpenAPI file, and the package `__init__.py` re-exports about 100 names. This task ports
+  `generated.py` by hand into the package `crates/betterlite-python/python/betterlite/types/interactions/` (split into modules of under 300 lines), since the wheel has no
+  codegen step. It is Python only. The umbrella B167 writes `interactions/__init__.py` with the same export list.
+
+
+  The file has 102 classes. Most are `BaseModel` classes for content blocks (`DocumentContent`, `FunctionCallContent`,
+  `CodeExecutionResultContent`), tool arguments, annotations, events and request params (`CreateModelInteractionParams`,
+  `CreateAgentInteractionParams`). Some are `RootModel[str]` option types (`ModelOption` at L346, `AgentOption`,
+  `ImageMimeTypeOption`, `AudioMimeTypeOption`). `Language` is an Enum. The last four classes at L1057-L1140 are LiteLLM's own and derive from
+  `BaseLiteLLMOpenAIResponseObject` (B7929): `InteractionsAPIResponse` (L1057), `InteractionsAPIStreamingResponse` (L1085),
+  `DeleteInteractionResult` (L1123) and `CancelInteractionResult` (L1132). The Rust task B7845 returns these four.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/interactions/**
+  - crates/betterlite-python/tests/test_types_interactions_generated.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py#L1-L560
+  why: Annotations, content blocks and option types.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py#L561-L1056
+  why: Tools, events, request params.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py#L1057-L1140
+  why: The four LiteLLM response classes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/__init__.py#L1-L139
+  why: The export list the umbrella reproduces.
+out_of_scope:
+- >-
+  The Rust handling of Interactions is B7845. This task adds only Python classes.
+pitfalls:
+- >-
+  `ResponseObject` (B5657) has no `RootModel`. A `RootModel[str]` option type must behave like a string wrapper: construct from a str, dump to that str. Name the gap in the notes if it needs a new base.
+- >-
+  `generated.py` uses `AwareDatetime` and `Base64Str` from pydantic. Use the ones B5657 builds, with the same field types and no deviation.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_interactions_generated.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,99 @@
+id: B050
+title: Agent platform providers dispatch and umbrella
+description: >-
+  Last part of the agent platform provider group. Parts B8100 (A2A chat config), B8101 (LangFlow), B8102 and B8103 (LangGraph),
+  B8104 (Manus Responses) and B8105 (Manus files) own their provider files, and B2210 owns the A2A text extraction. This task owns
+  what is left in main.py: the dispatch functions _complete_a2a, _complete_langgraph and _complete_langflow and the three arms that
+  call them. Put them in the module agent_platform_dispatch of betterlite-provider. The manus provider has no dispatch function in
+  main.py: it is reached through the Responses and Files routes, so nothing is added for it here.
+
+
+  _complete_a2a. Take the context fields (acompletion, api_base, api_key, client from the dispatch client helper, custom_llm_provider,
+  headers, litellm_params, logging, messages, model, model_response, optional_params, provider_config, shared_session, stream, timeout).
+  Call B8100's resolve_agent_config_from_registry with agent_name = model (the prefix is already stripped, so a2a/my-agent arrives as
+  my-agent), api_base, api_key, headers and optional_params, and use its three results. Then api_base = api_base, else the global
+  api_base, else A2A_API_BASE. With no api_base fail with "api_base is required for A2A provider. Either provide api_base parameter,
+  set A2A_API_BASE environment variable, or register the agent in the proxy with model='a2a/<agent-name>'." Then headers = headers,
+  else the global headers. Call the shared HTTP completion handler with the context fields and provider_config.
+
+
+  _complete_langgraph and _complete_langflow. Both call their config's provider info (B8102 for LangGraph, B8101 for LangFlow) with
+  api_base = api_base or the global api_base and api_key = api_key or the global api_key, and use the returned pair. Then headers =
+  headers or the global headers. Then call the shared HTTP completion handler with the context fields but WITHOUT provider_config
+  (the handler selects the config from the provider name, through B2230's selection, which must return B8102's and B8101's configs
+  for the langgraph and langflow providers). Neither function logs post_call or catches errors.
+
+
+  Wiring. Register the arms for custom_llm_provider a2a (main.py L5907-L5910), langgraph (L6065-L6067) and langflow (L6069-L6071) with
+  the dispatch table through B2230's selection, in the same way B049 does for ragflow. Unknown providers still fail as before.
+
+
+  HTTP oracle cases prove the parts end to end through the booted proxy (POST /v1/chat/completions with models a2a/<name>, langgraph/<id>
+  and langflow/<flow_id> and api_base set to the mock upstream), since this is the first place the parts are reachable from a route.
+scope:
+  paths:
+    - crates/betterlite-provider/src/agent_platform_dispatch.rs
+    - crates/betterlite-provider/src/agent_platform_dispatch/**
+    - tools/oracle/cases/agent-platforms/**
+    - tools/oracle/helpers/b050.py
+    - tools/oracle/helpers/b050/**
+    - tools/oracle/src/helpers/provider/b050.rs
+    - tools/oracle/src/helpers/provider/b050/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2219-L2279
+    why: The _complete_a2a body, registry resolution, A2A_API_BASE fallback and error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5045-L5091
+    why: The _complete_langgraph body; it passes no provider_config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5094-L5140
+    why: The _complete_langflow body; it passes no provider_config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5907-L5910
+    why: The a2a arm of the provider dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6065-L6071
+    why: The langgraph and langflow arms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8612-L8620
+    why: Provider config selection for langgraph and langflow.
+dod:
+  - text: _complete_a2a resolves the registry agent, falls back to A2A_API_BASE, fails with the api_base text and passes provider_config.
+    proof: [agent-dispatch-tests]
+  - text: _complete_langgraph and _complete_langflow pass the provider info pair and the headers fallback and no provider_config.
+    proof: [agent-dispatch-tests]
+  - text: The a2a, langgraph and langflow arms reach these functions through the dispatch table.
+    proof: [agent-dispatch-tests]
+  - text: A non-streaming a2a, langgraph and langflow call through the proxy returns the same reply as LiteLLM.
+    proof: [oracle]
+  - text: A streaming langgraph call returns the same chunks as LiteLLM.
+    proof: [oracle]
+  - text: A langflow call without a message and an upstream 500 give the same client error as LiteLLM.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: agent-dispatch-tests
+      why: the agent_platform_dispatch behavior tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^agent_platform_dispatch::/)'
+oracle_cases:
+  - tools/oracle/cases/agent-platforms/a2a-send.yaml
+  - tools/oracle/cases/agent-platforms/a2a-no-api-base.yaml
+  - tools/oracle/cases/agent-platforms/langgraph-wait.yaml
+  - tools/oracle/cases/agent-platforms/langgraph-stream.yaml
+  - tools/oracle/cases/agent-platforms/langflow-run.yaml
+  - tools/oracle/cases/agent-platforms/langflow-no-message.yaml
+  - tools/oracle/cases/agent-platforms/langflow-upstream-500.yaml
+deviations:
+  - what: Reply ids that LiteLLM generates (chatcmpl- plus a uuid) and token usage estimates are compared as present, not equal, in the oracle cases.
+    why: The ids are random and usage comes from each side's tokenizer.
+out_of_scope:
+  - "The Manus Responses and Files configs are B8104 and B8105. Their selection (utils.py L9201 and L9429) and the manus branch of get_llm_provider (get_llm_provider_logic.py L922-L925) are not in any entry; B2464 depends on this entry for the files config and has no Manus Responses counterpart, see the notes."
+  - "No HTTP oracle case for the manus provider is here, because its routes (Responses, Files) do not select it until that wiring exists."
+  - "The langgraph provider default in get_llm_provider (get_llm_provider_logic.py L918-L921) is owned by the provider resolution tasks."
+pitfalls:
+  - _complete_langgraph and _complete_langflow do not pass provider_config; passing it changes nothing only if the selection returns the same config, so add a test that the handler gets None.
+  - _complete_a2a passes the registry-merged optional_params to the handler, so the fake_stream pair set by the registry reaches the handler.
+  - The A2A_API_BASE check happens after the registry lookup, so a registered agent never reaches the error.
+  - The headers fallback uses the global headers only when headers is None or empty.
+  - Do not log post_call or wrap errors here; unlike ragflow, these three functions let handler errors through unchanged.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

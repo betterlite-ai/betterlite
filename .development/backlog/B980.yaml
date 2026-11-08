@@ -2,7 +2,7 @@ id: B980
 milestone: M5 api families
 title: Messages stream restamp
 status: todo
-depends_on: [B4296, B4297, B4302, B171, B978, B1087, B002]
+depends_on: [B4296, B4297, B4302, B171, B978, B1087, B002, B4304]
 file: tasks/B980-messages-stream-restamp.yaml
 covers:
   - "litellm/proxy/anthropic_endpoints/streaming_model_restamp.py"

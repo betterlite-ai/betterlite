@@ -33,12 +33,22 @@ pub(crate) fn load_probe_cases(paths: &[PathBuf]) -> Result<Vec<ProbeCase>, Orac
 }
 
 fn decode_sdk_case(path: &Path, text: &str) -> Result<SdkHttpCase, OracleError> {
-    decode_sdk_http_case(text.as_bytes(), &SdkHttpLimits::default()).map_err(|source| {
-        OracleError::SdkHttpCase {
+    let case =
+        decode_sdk_http_case(text.as_bytes(), &SdkHttpLimits::default()).map_err(|source| {
+            OracleError::SdkHttpCase {
+                path: path.to_owned(),
+                source,
+            }
+        })?;
+    if case.compare.contracts.is_some() {
+        return Err(OracleError::CaseInvalid {
             path: path.to_owned(),
-            source,
-        }
-    })
+            message:
+                "compare.numeric and compare.expected_difference are not applied to sdk_http cases"
+                    .to_owned(),
+        });
+    }
+    Ok(case)
 }
 
 fn decode_probe_case(path: &Path, text: &str) -> Result<ProbeCase, OracleError> {

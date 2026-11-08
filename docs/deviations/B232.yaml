@@ -1,0 +1,17 @@
+task: B232
+deviations:
+  - what: >-
+      infer_protocol_value answers bool_value for a boolean; in LiteLLM the isinstance(value, int) check
+      matches a bool first, so the bool branch below it never runs and a bool is number_value.
+    why: >-
+      The declared return literal names bool_value for a bool, and this function has no caller in
+      LiteLLM 1.105.1, so no working setup can observe the shadowed branch. Copying the shadowing would
+      port a Python runtime accident, which docs/compatibility.md excludes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1124-L1128
+  - what: >-
+      An assistant turn with more than 1024 tool calls is refused with a typed error before any part is
+      built; LiteLLM converts every entry of the list.
+    why: >-
+      Bounded conversion: the cap is the 1024 tool calls per message the message history already allows,
+      and it keeps the parts vector from growing with an unbounded request list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1294-L1295

@@ -1,0 +1,14 @@
+id: B7938
+milestone: M12 python
+title: Python types for Prometheus part two, PrometheusMetricLabels, label values and settings (L411-L1162)
+status: todo
+depends_on: [B5657, B7937]
+file: tasks/B7938-types-prometheus-labels-b.yaml
+covers:
+  - "litellm/types/integrations/prometheus.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

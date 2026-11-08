@@ -1,15 +1,25 @@
 use std::io;
 use std::time::{Duration, Instant};
 
+use betterlite_config::sections::mock_response::MockResponse;
+use betterlite_config::sections::mock_response::failure::MockError;
+use betterlite_config::sections::mock_response::selection::resolve_mock;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::{JsonPost, UpstreamResponse};
+use http::HeaderMap;
+use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::chat::client_mock;
 use crate::chat::deployment::{ChatDeployment, DeploymentError, Provider};
 use crate::chat::execution::ChatExecutor;
+use crate::chat::mock_model;
+
+// LiteLLM's raise_if_mock_testing_params_disallowed rejects these before a request is routed
+const GATED_MOCK_PARAMS: [&str; 2] = ["mock_delay", "mock_timeout"];
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
@@ -32,7 +42,7 @@ pub struct EmbeddingRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
     #[serde(flatten)]
-    pub passthrough: serde_json::Map<String, Value>,
+    pub passthrough: IndexMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -97,6 +107,8 @@ pub enum EmbeddingError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("betterlite does not support the {name} request parameter yet")]
+    Unsupported { name: String },
     #[error("the request could not be written as JSON: {source}")]
     Encode {
         #[source]
@@ -125,6 +137,11 @@ pub enum EmbeddingError {
     UnsupportedProvider { model: String },
     #[error("no API key is set for this deployment, in litellm_settings or in OPENAI_API_KEY")]
     MissingApiKey,
+    #[error("the mock embedding answer failed: {source}")]
+    Mock {
+        #[from]
+        source: MockError,
+    },
 }
 
 pub struct EmbeddingOutcome {
@@ -135,10 +152,16 @@ pub struct EmbeddingOutcome {
 
 impl EmbeddingRequest {
     pub fn parse(bytes: &[u8]) -> Result<Self, EmbeddingError> {
-        match serde_json::from_slice(bytes) {
-            Ok(request) => Ok(request),
-            Err(source) => Err(EmbeddingError::Body { source }),
+        let request: Self =
+            serde_json::from_slice(bytes).map_err(|source| EmbeddingError::Body { source })?;
+        if let Some(name) = request
+            .passthrough
+            .keys()
+            .find(|name| GATED_MOCK_PARAMS.contains(&name.as_str()))
+        {
+            return Err(EmbeddingError::Unsupported { name: name.clone() });
         }
+        Ok(request)
     }
 }
 
@@ -156,6 +179,19 @@ pub async fn send(
     deployment: &ChatDeployment,
     request: &EmbeddingRequest,
 ) -> Result<EmbeddingOutcome, EmbeddingError> {
+    let (client_response, client_tool_calls) =
+        client_mock(&request.passthrough, executor.mock.permission)
+            .map_err(|source| EmbeddingError::Body { source })?;
+    let mock = resolve_mock(
+        executor.mock.responses.get(&deployment.model_id),
+        client_response.as_ref(),
+        client_tool_calls.as_deref(),
+        None,
+    );
+    // LiteLLM mocks an embedding only when mock_response itself is set, unlike the chat path
+    if let Some(response) = mock.and_then(|plan| plan.response) {
+        return mocked_embedding(executor, deployment, request, response);
+    }
     let (model, api_key) = servable(deployment)?;
     let post = post(deployment, request, model, api_key)?;
     let started = Instant::now();
@@ -180,6 +216,24 @@ pub async fn send(
     })
 }
 
+fn mocked_embedding(
+    executor: &ChatExecutor,
+    deployment: &ChatDeployment,
+    request: &EmbeddingRequest,
+    response: &MockResponse,
+) -> Result<EmbeddingOutcome, EmbeddingError> {
+    let answer = (executor.mock_embedding)(Some(response), mock_model(&deployment.litellm_model))?;
+    Ok(EmbeddingOutcome {
+        response: answer.for_client(request.model.as_deref()),
+        upstream: UpstreamResponse {
+            status: 200,
+            headers: HeaderMap::new(),
+            body: Vec::new(),
+        },
+        upstream_time: Duration::ZERO,
+    })
+}
+
 fn post<'key>(
     deployment: &'key ChatDeployment,
     request: &EmbeddingRequest,
@@ -196,6 +250,9 @@ fn post<'key>(
         });
     };
     object.insert(String::from("model"), Value::String(model.to_owned()));
+    // the mock control fields are read before the call and never reach the provider
+    object.remove("mock_response");
+    object.remove("mock_tool_calls");
     let url = deployment
         .endpoint_for("embeddings")
         .map_err(|source| EmbeddingError::Endpoint { source })?;

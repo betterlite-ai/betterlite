@@ -1,0 +1,14 @@
+id: B5364
+milestone: M12 python
+title: Environment validation, key checks and retry timing
+status: todo
+depends_on: [B171, B174, B5361]
+file: tasks/B5364-environment-validation.yaml
+covers:
+  - "litellm/utils.py"
+parent: B157
+split_from: B157
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

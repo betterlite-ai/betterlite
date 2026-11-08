@@ -1,0 +1,182 @@
+id: B5367
+title: Call setup, dynamic callbacks, guardrail lists and deployment hooks
+description: >-
+  Every SDK call passes through `function_setup` before the provider sees it. It registers callbacks named in the request,
+  builds the logging object, runs pre-call rules and cleans the messages. Build that step and the small functions around it
+  in `crates/betterlite-sdk/src/call_setup.rs`, with submodules under `call_setup/`. B5368 calls all of it.
+
+
+  `function_setup` (L981-L1344) takes the function name, a `Rules` value from B200, a start time and the request as a
+  `serde_json::Map`, and returns the logging state from B247 with the changed request. A `callbacks` entry in the request is
+  registered in the input, success, failure and async lists without duplicates. Async callables move to the async lists,
+  and dynamodb and openmeter count as async. The dynamic success and failure callback entries are popped from the request.
+  `logger_fn` is kept, the first message text comes from a match on the call type, pre-call rules run, thought signatures
+  are removed for a non-Gemini target through B5366, and `turn_off_message_logging` is honored. The lists live in a
+  `CallbackLists` struct the caller passes in, using the callback types B247 and B248 define.
+
+
+  Callback bookkeeping: `custom_llm_setup` (L572-L581) adds each custom provider name to the provider list and the custom
+  provider list when it is missing.
+  `_add_custom_logger_callback_to_specific_event` (L584-L621), `_custom_logger_class_exists_in_success_callbacks`
+  (L624-L639), `_custom_logger_class_exists_in_failure_callbacks` (L642-L657) and `_is_same_registered_custom_logger`
+  (L660-L668) keep one logger per class and callback name. `get_dynamic_callbacks` (L722-L728) returns a copy of the global list with the request's entries added.
+
+
+  Guardrails and credentials: `get_request_guardrails` (L671-L678) reads `metadata.requester_metadata.guardrails`.
+  `get_applied_guardrails` (L681-L696) lists each named guardrail callback that is on by default or requested. `load_credentials_from_list`
+  (L699-L719) finds `litellm_credential_name` through a `CredentialLookup` trait, copies the values into the request
+  without replacing what the caller set, and returns a warning when no credential matches. B1601 supplies the real lookup.
+  Credential values are `SecretString`.
+
+
+  Deployment hooks (L1475-L1584) run over a `DeploymentHook` trait with three methods and a guardrail marker. An unknown
+  call type becomes `None`. The pre-call hook passes a request copy through each callback and takes any non-empty result,
+  and an error goes to the caller. The success hook does the same with the response, but logs an error and moves to the next
+  callback unless that callback is a guardrail, and a guardrail's error goes to the caller. The failure hook drops
+  `attempted_targets` from the request data, reads an integer `fallback_depth` from it, and logs every callback error.
+  `_run_success_deployment_hook_on_converted_chat_stream` (L883-L906) runs the success hook on a converted stream.
+
+
+  Correlation and request flags: a `CallOutcome` enum separates a finished response, a chat stream and a Responses API
+  stream, so `_is_streaming_response_for_correlation` (L841-L873) and `_is_converted_stream_result` (L876-L880) are matches.
+  `_restore_correlation_context_if_supported` (L826-L838) becomes a plain trait call since Rust has no stand-in objects.
+  `_is_async_request` (L2318-L2348) tests acompletion, aembedding, aimg_generation, amoderation, atext_completion,
+  atranscription, arerank, _arealtime, acreate_batch, acreate_fine_tuning_job, aresponses and is_pass_through.
+  `_is_streaming_request` is L2361-L2373.
+
+
+  Text helpers: `_ocr_document_summary` (L954-L971) reduces a document to a short log text. A data URL becomes
+  "header (N chars)", other locations stay, a file gives its kind with a name or a byte count, and a non-mapping gives
+  "default-message-value". The file input is a closed `OcrFile` enum. `get_logging_id` (L7952-L7957) gives
+  "time-" plus `%H-%M-%S-%f` plus "_" plus the response id, or `None`. `print_args_passed_to_litellm` (L7909-L7949) returns
+  the debug text as `Option<String>`, skips the inner call of an async pair, and runs B244's
+  `redact_credentials_in_payload` on the request first.
+
+
+  The oracle operation is `b5367`. Its Python adapter sets `litellm.callbacks` and the callback lists to fixture stubs,
+  calls the `litellm.utils` function and reports the changed request and the lists by name.
+scope:
+  paths:
+  - crates/betterlite-sdk/Cargo.toml
+  - crates/betterlite-sdk/src/call_setup.rs
+  - crates/betterlite-sdk/src/call_setup/**
+  - tools/oracle/cases/helpers/call-setup/**
+  - "tools/oracle/fuzz/corpus/helper_case/call_setup-*"
+  - tools/oracle/helpers/b5367.py
+  - tools/oracle/helpers/b5367/**
+  - tools/oracle/src/helpers/sdk/b5367.rs
+  - tools/oracle/src/helpers/sdk/b5367/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L572-L728
+  why: Provider setup, logger bookkeeping, guardrail lists and credential loading.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L826-L906
+  why: Correlation helpers and the converted stream hook.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L954-L1344
+  why: OCR summary and function_setup.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1475-L1584
+  why: The three deployment hooks and their different error rules.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2318-L2373
+  why: Async and streaming request flags.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7909-L7957
+  why: Debug text and the logging id.
+dod:
+- text: >-
+    A `callbacks` entry lands in the same lists as in LiteLLM with no duplicates, and two loggers of one class with
+    different callback names both stay.
+  proof: [callback-lists, oracle, helper-python]
+- text: >-
+    `function_setup` leaves the same request and lists as LiteLLM for a chat call, a text call, an embedding call and a call
+    with dynamic success and failure callbacks.
+  proof: [function-setup, oracle, helper-python]
+- text: A failing pre-call rule stops the call with LiteLLM's error, before any provider call.
+  proof: [function-setup, oracle, helper-python]
+- text: >-
+    Guardrail lists match LiteLLM for default-on and requested guardrails, and a guardrail not listed anywhere is left out.
+  proof: [guardrail-lists, oracle, helper-python]
+- text: >-
+    `load_credentials_from_list` copies values only where the request has none, warns on an unknown name, and the Debug
+    text of the result shows no credential value.
+  proof: [credential-list, oracle, helper-python]
+- text: >-
+    The pre-call hook surfaces a callback error, the success hook surfaces only a guardrail's error, and the failure hook
+    surfaces none and never gives a callback `attempted_targets` or a way to change the caller's error.
+  proof: [deployment-hooks]
+- text: Async and streaming flags match LiteLLM for every listed key.
+  proof: [request-flags, oracle, helper-python]
+- text: >-
+    The OCR summary, logging id and debug text match the source, and the debug text never holds an API key from the request.
+  proof: [text-helpers]
+- text: New helper corpus seeds call `b5367` and replay through the shared parser.
+  proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+  - id: callback-lists
+    why: A callback is lost, doubled or put in the wrong list.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_setup::.*callback/)'
+  - id: function-setup
+    why: The setup order or the changed request differs.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_setup::.*function_setup/)'
+  - id: guardrail-lists
+    why: A guardrail runs that nobody asked for, or one is skipped.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_setup::.*guardrail_list/)'
+  - id: credential-list
+    why: Credentials overwrite caller values or show up in text.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_setup::.*credential/)'
+  - id: deployment-hooks
+    why: A hook's error rule is swapped with another's.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_setup::.*deployment_hook/)'
+  - id: request-flags
+    why: A call is treated as sync or non-streaming by mistake.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_setup::.*request_flag/)'
+  - id: text-helpers
+    why: Log text changes or a key slips through.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_setup::.*(ocr_summary|logging_id|debug_text)/)'
+  - id: helper-python
+    why: This proves a real b5367 adapter exists and type checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5367)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers/b5367 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5367/pyrightconfig.json
+  - id: helper-case-corpus
+    why: Parsing seeds for b5367 have to replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/call_setup-*")"
+      && grep -lE '^[[:space:]]+b5367:' tools/oracle/fuzz/corpus/helper_case/call_setup-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/call-setup/callback-lists.yaml
+- tools/oracle/cases/helpers/call-setup/function-setup-chat.yaml
+- tools/oracle/cases/helpers/call-setup/function-setup-other-types.yaml
+- tools/oracle/cases/helpers/call-setup/pre-call-rule-failure.yaml
+- tools/oracle/cases/helpers/call-setup/guardrail-lists.yaml
+- tools/oracle/cases/helpers/call-setup/credential-list.yaml
+- tools/oracle/cases/helpers/call-setup/request-flags.yaml
+deviations:
+- what: >-
+    `_snapshot_exception_for_hook` L129-L151 and `_accepts_fallback_depth_kwarg_for_class` L117-L126 are not built. A failure
+    callback gets a shared reference to the error, and the trait method always takes `fallback_depth`.
+  why: A shared reference can't change the caller's error, and a Rust trait has one signature, so neither Python workaround applies.
+- what: The debug text shows request values as JSON, where LiteLLM uses Python `repr`.
+  why: It's a debug line. Nothing parses it.
+- what: Callback lists, the credential lookup and the debug flag come in as arguments.
+  why: The inject-dependencies rule bars the module-level lists LiteLLM reads.
+out_of_scope:
+- >-
+  The wrapper that calls this code is B5368. `check_coroutine` L1470-L1472 is not built, because Rust's async is in the type.
+- The real credential store is B1601, and the Python names for these functions arrive with B158 and B166.
+- Owners for the rest of litellm/utils.py are in the B157 inventory.
+pitfalls:
+- >-
+  The three deployment hooks have three error rules on purpose. Don't share one loop between them: a broken logger must
+  not fail a finished request, and a guardrail's block must.
+- >-
+  `attempted_targets` is shared across every fallback hop. If a failure callback could record on it, the router would skip
+  a deployment it never tried.
+- >-
+  Sync calls never stamp correlation ids (`supports_correlation_logging=False`), and only the async wrapper asks whether
+  a result is a stream. A plain thread is reused across requests, so a sync stamp would land on a later request's logs.
+- '`_is_same_registered_custom_logger` compares the exact class, so a subclass is a different logger.'
+- Redact before formatting in the debug text. A value formatted first can't be taken back out.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

@@ -2,8 +2,8 @@ id: B3360
 milestone: M5 api families
 title: Container contracts and endpoint catalog
 status: todo
-depends_on: [B522, B547]
-file: null
+depends_on: []
+file: tasks/B3360-container-contracts.yaml
 covers:
   - "litellm/types/containers/**"
   - "litellm/llms/base_llm/containers/**"

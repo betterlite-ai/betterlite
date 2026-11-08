@@ -1,0 +1,292 @@
+id: B3670
+title: Native request provenance and tool rewrite identity
+description: >-
+  Build the pure helpers that the Responses and Anthropic guardrail handlers share
+  for two jobs: telling a tool call before a guardrail from the same call after it,
+  and finding which raw Responses input item each chat message came from. The
+  handler tasks (B3671 to B3676) call these helpers and never reimplement them.
+  Nothing here talks to a guardrail, a provider or the network.
+
+  Tool call identity goes in crates/betterlite-server/src/guardrails/tool_call_identity.rs.
+  `ToolCallShape { name: Option<String>, arguments: String }` derives Clone, Debug,
+  PartialEq and Eq, because the handlers decide "was this call rewritten" by comparing
+  the shape before the guardrail with the shape after it. `tool_call_shapes(tool_calls:
+  &[serde_json::Value]) -> Vec<ToolCallShape>` reads `function.name` (a string, else
+  None) and `function.arguments` (a string, else empty) from each call and never fails.
+  A call that is not an object, or has no `function` object, becomes
+  `ToolCallShape { name: None, arguments: "" }`. The Responses and Anthropic handlers
+  both have a private `_tool_call_shapes`; they are one function here.
+  `post_guardrail_tool_call_shapes(returned: Option<&[serde_json::Value]>, pre:
+  &[ToolCallShape], guardrail_name: Option<&str>) -> Vec<ToolCallShape>` returns `pre`
+  unchanged when `pre` is empty (no warning). Otherwise it returns `pre` and logs one
+  warn-level event when `returned` is `None` or has a different length, and again when
+  any returned call fails validation. A returned call is valid when it is an object
+  with a `function` object whose `name` is a string or null (or missing) and whose
+  `arguments` is a string (or missing, which means empty). Other keys are ignored. One
+  invalid call drops the whole returned list back to `pre`, so `"arguments": null`
+  counts as invalid. `tool_call_rewrite(before, after) -> ToolCallShape` keeps `after`'s
+  name only when it differs from `before`'s name, else None, and always keeps `after`'s
+  arguments. `undeliverable_tool_call_rewrite_reason(call_ids: &[String],
+  tool_call_item_count: usize, post_guardrail_tool_call_count: usize,
+  unresolved_argument_event: bool, rewritten_call_ids: &BTreeSet<String>,
+  event_call_ids: &BTreeSet<String>) -> Option<UndeliverableRewriteReason>` is a typed
+  enum with a Display text. It checks in this order and returns the first hit: some
+  tool call items have no call_id; a call_id repeats; the guardrail returned a
+  different number of calls than there are call ids; a tool call argument event names an
+  item_id that no output_item event introduced; a rewritten call_id appears in no stream
+  event (the text lists the missing ids sorted and joined by ", "). The enum is this
+  module's error type and lives in its own file with `thiserror`.
+
+  Request provenance goes in
+  crates/betterlite-server/src/guardrails/responses_translation/input_provenance.rs.
+  It answers: for a Responses `input` list and the chat messages converted from it,
+  which message came from which item, and which messages cannot be traced to one item.
+  `input_item_provenance(raw_input: &[serde_json::Value], expected_messages:
+  &[ChatMessage]) -> Result<Option<InputProvenance>, InputProvenanceError>` where
+  `ChatMessage` is the message type B909's converter returns, and
+  `InputProvenance { item_for_message: BTreeMap<usize, usize>, tainted: BTreeSet<usize> }`.
+  It returns `Ok(None)` when any item is not a JSON object. Otherwise it converts every
+  item alone with B909's input-to-messages function (its tests call it `message_inputs`;
+  pass an empty request, so no instructions, and replay_reasoning false), and converts
+  the whole list. If the whole conversion is not equal to `expected_messages` (typed
+  equality, message by message), it returns `Ok(None)`. Then it groups items into units
+  with `provenance_unit_bounds`: item 0 starts a unit, and so does any later item
+  unless it is a `function_call` or `custom_tool_call` item and the last known message
+  role before it is "assistant". The last known role is the role of the last message of
+  the nearest earlier item that produced any message, so an item that produces no
+  message passes the earlier role along. A tool call that follows assistant output joins
+  that assistant message, so its unit has more than one item. A one-item unit uses its
+  alone conversion; a longer unit is converted as a slice of `raw_input`. If the unit
+  messages joined together are not equal to the whole conversion, return `Ok(None)`.
+  The result maps every message of a one-item unit to that item's index in
+  `item_for_message`, and puts every message of a longer unit in `tainted`. Conversion
+  failures from B909 propagate as `InputProvenanceError::Conversion` with `#[source]`;
+  they are never turned into `Ok(None)`.
+
+  The same file holds the per-item predicates and the item patch.
+  `item_rewrite_field(item: &serde_json::Map<String, Value>) -> Option<&'static str>`:
+  an item with no `type` (or `type: null`) rewrites "content" if the key `content` is
+  present, else nothing; a `type` that is not a string rewrites nothing; `function_call_output`
+  and `custom_tool_call_output` rewrite "output"; `message` rewrites "content"; every
+  other type rewrites nothing. `rewritten_input_item(item, rewritten: &Value) ->
+  Result<Option<Map<String, Value>>, InputProvenanceError>` returns `Ok(None)` when the
+  item has no rewrite field or `rewritten` is not an object. If the item's field and
+  `rewritten.content` are both strings it returns a copy of the item with that field set
+  to the new string. Otherwise it converts `[rewritten]` back to Responses input items
+  with B917's chat-to-Responses conversion, requires exactly one resulting object,
+  takes that object's value for the same field, and returns a copy of the original item
+  with the field replaced. A missing or null converted value gives `Ok(None)`.
+  `is_tool_call_item(item)` is true for an object whose `type` is `function_call` or
+  `custom_tool_call`. `tool_call_output_item_mapping(item) -> Option<&Map>` and
+  `is_tool_call_output_item(item)` accept the same two types. The constants
+  `TOOL_CALL_ITEM_TYPES` and `PATCHABLE_ITEM_FIELDS` (`function_call_output` to
+  "output", `custom_tool_call_output` to "output", `message` to "content") are
+  `pub(super)` here, and the streaming task reads `TOOL_CALL_ITEM_TYPES` from this
+  file. `last_message_role(messages) -> Option<&str>` returns the last message's role
+  when it is a string.
+
+  The Anthropic request types go in
+  crates/betterlite-server/src/guardrails/anthropic_translation/scan_targets.rs. They
+  say where a scanned piece of text or a scanned tool call sits in the request, so a
+  rewrite can be written back to the same place. `MessageTextTarget` is an enum:
+  `MessageContent { msg_idx }`, `ContentBlockText { msg_idx, content_idx }`,
+  `ToolResultString { msg_idx, content_idx }`, `ToolResultBlockText { msg_idx,
+  content_idx, block_idx }`. `InputWriteBackTarget` is `SystemString`,
+  `SystemBlockText { block_idx }` or `Message(MessageTextTarget)`. `ToolUseInputTarget
+  { msg_idx, content_idx }`. `ScannedText { text: String, target: InputWriteBackTarget }`,
+  `ScannedToolCall { tool_call: serde_json::Value, target: ToolUseInputTarget }` and
+  `ExtractedInput { scanned: Vec<ScannedText>, images: Vec<String>, tool_calls:
+  Vec<ScannedToolCall> }` with `ExtractedInput::empty()` for LiteLLM's
+  `EMPTY_EXTRACTED_INPUT`. All derive Clone, Debug, PartialEq, Eq (Eq only where the
+  fields allow it). `is_client_tool_use(block: &Map<String, Value>) -> bool` is true
+  when `type` is "tool_use", `id` and `name` are strings and `input` is an object.
+  A tool_use block without an object `input` is not scanned.
+
+  Raw Responses items and guardrail-returned rows are JSON that betterlite does not
+  model, so `serde_json::Value` is allowed at those boundaries only, one `#[expect]`
+  per module with its reason (the budget below allows three). Tool call chunks and
+  guardrail rows are read through `stream_item_field` from B3663 where LiteLLM does.
+
+  Tests live in `tests.rs` of each module. Name them so the filters below match:
+  `provenance_*`, `rewrite_field_*`, `rewritten_item_*`, `item_predicate_*` in
+  input_provenance; `shape_*`, `post_guardrail_*`, `rewrite_*`, `undeliverable_*` in
+  tool_call_identity; `target_*`, `extracted_input_*`, `client_tool_use_*` in scan_targets.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/tool_call_identity.rs
+    - crates/betterlite-server/src/guardrails/tool_call_identity/**
+    - crates/betterlite-server/src/guardrails/responses_translation/input_provenance.rs
+    - crates/betterlite-server/src/guardrails/responses_translation/input_provenance/**
+    - crates/betterlite-server/src/guardrails/anthropic_translation/scan_targets.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/scan_targets/**
+    - tools/oracle/cases/helpers/guardrail-request-provenance/**
+    - tools/oracle/helpers/b3670.py
+    - tools/oracle/helpers/b3670/**
+    - tools/oracle/src/helpers/server/b3670.rs
+    - tools/oracle/src/helpers/server/b3670/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L108-L199
+    why: Responses ToolCallShape, the pydantic validation of returned calls, the count and validity fallbacks, and the rewrite shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L174-L199
+    why: The order of the undeliverable-rewrite checks and their wording.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L229-L293
+    why: Tool call item types, patchable item fields, the item rewrite field and the patched item.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L296-L372
+    why: Last-role carry, unit bounds and the item-for-message and tainted maps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L396-L440
+    why: How the provenance maps are consumed (tainted or untraceable body changes abandon the patch), which B3671 owns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L848-L873
+    why: Call site that compares shapes before and after the guardrail on the completed output.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1161-L1262
+    why: Call site that keys rewrites by call_id and decides a rewrite is undeliverable.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L84-L193
+    why: Anthropic write-back targets, scanned text and tool call records, and the client tool_use test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L269-L279
+    why: Anthropic shape reader that accepts objects or dicts from the guardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1094-L1118
+    why: Anthropic call site that compares shapes and rejects a rewrite it cannot write back.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L486-L532
+    why: The converter that provenance runs once per item and once for the whole list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L360-L487
+    why: The chat-to-Responses converter that rewritten_input_item uses for non-string content.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L129-L132
+    why: stream_item_field, the object-or-dict field read the Anthropic shape reader uses.
+dod:
+  - text: >-
+      input_item_provenance maps each message from a one-item unit to its item index, puts
+      messages of a multi-item unit in tainted, and returns None when an item is not an
+      object or when the whole conversion differs from the expected messages.
+    proof: [provenance-tests, oracle]
+  - text: >-
+      A function_call or custom_tool_call item that follows assistant output starts no
+      new unit (its message is tainted), and one that follows a tool message or a user
+      message does start one. An item that produces no message passes the earlier role on.
+    proof: [provenance-unit-tests, oracle]
+  - text: >-
+      A conversion error from the Responses converter propagates as a typed error and is
+      never reported as an untraceable input.
+    proof: [provenance-error-tests]
+  - text: >-
+      item_rewrite_field returns content for an untyped item with a content key, output
+      for the two tool output types, content for message, and nothing for any other or
+      non-string type.
+    proof: [rewrite-field-tests, oracle]
+  - text: >-
+      rewritten_input_item swaps a string field for a string, converts other rewritten rows
+      through the chat-to-Responses converter, and returns None for a non-object rewrite, a
+      type with no rewrite field, a conversion with other than one item, or a null value.
+    proof: [rewritten-item-tests, oracle]
+  - text: >-
+      is_tool_call_item, tool_call_output_item_mapping and is_tool_call_output_item accept
+      exactly function_call and custom_tool_call objects, and last_message_role returns
+      only a string role of the last message.
+    proof: [item-predicate-tests]
+  - text: >-
+      tool_call_shapes reads name and arguments from objects, with a non-string name as None
+      and a non-string or missing arguments as empty, and never fails on a non-object call.
+    proof: [shape-tests, oracle]
+  - text: >-
+      post_guardrail_tool_call_shapes returns the pre-guardrail shapes, with a warning,
+      for a missing or different-length returned list and for any invalid returned call,
+      and returns the validated shapes otherwise. An empty pre list returns early with no
+      warning.
+    proof: [post-guardrail-tests, oracle]
+  - text: >-
+      tool_call_rewrite keeps the new name only when it changed and always keeps the new
+      arguments.
+    proof: [rewrite-tests, oracle]
+  - text: >-
+      undeliverable_tool_call_rewrite_reason returns the first of its five checks in
+      LiteLLM's order, lists missing call ids sorted, and returns None when all pass.
+    proof: [undeliverable-tests, oracle]
+  - text: >-
+      The Anthropic target, scanned text, scanned tool call and extracted input types
+      exist with LiteLLM's fields, ExtractedInput::empty has no entries, and
+      is_client_tool_use requires tool_use, a string id, a string name and an object input.
+    proof: [scan-target-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: provenance-tests
+      why: provenance maps, the null results or the typed equality check are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::input_provenance::tests::provenance_(maps|null)/)'
+    - id: provenance-unit-tests
+      why: unit bounds for tool call items, or the carried role, are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::input_provenance::tests::provenance_unit/)'
+    - id: provenance-error-tests
+      why: a converter error is swallowed as an untraceable input
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::input_provenance::tests::provenance_error/)'
+    - id: rewrite-field-tests
+      why: the rewrite field choice by item type is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::input_provenance::tests::rewrite_field_/)'
+    - id: rewritten-item-tests
+      why: the patched item for string and converted content is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::input_provenance::tests::rewritten_item_/)'
+    - id: item-predicate-tests
+      why: the tool call item predicates or the last role read are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::input_provenance::tests::item_predicate_/)'
+    - id: shape-tests
+      why: tool_call_shapes tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::tool_call_identity::tests::shape_/)'
+    - id: post-guardrail-tests
+      why: the returned-call validation and fallback tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::tool_call_identity::tests::post_guardrail_/)'
+    - id: rewrite-tests
+      why: the name-only-when-changed rewrite tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::tool_call_identity::tests::rewrite_/)'
+    - id: undeliverable-tests
+      why: the order of the five undeliverable checks is not tested
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::tool_call_identity::tests::undeliverable_/)'
+    - id: scan-target-tests
+      why: the Anthropic target types or the client tool_use test are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::scan_targets::tests::/)'
+    - id: helper-cases-added
+      why: the helper cases for this task were not added on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/guardrail-request-provenance)"
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-request-provenance/provenance-plain-items.yaml
+  - tools/oracle/cases/helpers/guardrail-request-provenance/provenance-tool-call-joins-assistant.yaml
+  - tools/oracle/cases/helpers/guardrail-request-provenance/provenance-tool-call-after-user.yaml
+  - tools/oracle/cases/helpers/guardrail-request-provenance/provenance-conversion-mismatch.yaml
+  - tools/oracle/cases/helpers/guardrail-request-provenance/provenance-non-object-item.yaml
+  - tools/oracle/cases/helpers/guardrail-request-provenance/rewrite-field-by-item-type.yaml
+  - tools/oracle/cases/helpers/guardrail-request-provenance/rewritten-item-string-content.yaml
+  - tools/oracle/cases/helpers/guardrail-request-provenance/rewritten-item-converted-content.yaml
+  - tools/oracle/cases/helpers/guardrail-request-provenance/tool-call-shapes-lenient.yaml
+  - tools/oracle/cases/helpers/guardrail-request-provenance/post-guardrail-shapes-count-mismatch.yaml
+  - tools/oracle/cases/helpers/guardrail-request-provenance/post-guardrail-shapes-null-arguments.yaml
+  - tools/oracle/cases/helpers/guardrail-request-provenance/tool-call-rewrite-name-only-when-changed.yaml
+  - tools/oracle/cases/helpers/guardrail-request-provenance/undeliverable-reason-order.yaml
+  - tools/oracle/cases/helpers/guardrail-request-provenance/anthropic-client-tool-use.yaml
+deviations:
+  - what: The Responses and Anthropic shape readers are one function over JSON values, and the Responses side reads a non-string name or arguments the way the Anthropic side does (None and empty).
+    why: LiteLLM declares the Responses chunk as a TypedDict with a string name and arguments, so a declared input reads the same on both sides, and docs/compatibility.md leaves the undeclared inputs to Python.
+  - what: Conversion errors from the Responses converters propagate as a typed error instead of a raw Python exception.
+    why: Each fallible module owns a thiserror enum (rule typed-errors); the HTTP result of a failing request is decided by the handler tasks that call these helpers.
+out_of_scope:
+  - "B3671 owns the Responses process_input_messages, _apply_guardrailed_texts, _extract_guardrail_inputs, _written_back_request_fields, _patched_request_fields, _patch_or_convert_request_fields, _RequestFields, _ExtractedInputs, scannable_instructions, _input_item_role, extract_request_tool_names, get_structured_messages, _apply_guardrailed_tools_to_data, _extract_input_text_and_images, _apply_guardrail_responses_to_input, process_output_response, _write_tool_call_rewrites_to_output and the output extraction and write-back helpers. They call this task's provenance and shape helpers."
+  - "B3672 owns the Responses process_output_streaming_response, _deliver_ended_stream_tool_call_rewrites, _tool_call_ids_by_item_id, _tool_call_event_call_id, _write_tool_call_item, _write_event_field, the stream event sync and spread helpers, the scan key, the ended-stream check and the tool call payload and event type constants. They call this task's tool_call_rewrite and undeliverable reason."
+  - "B3673 owns the Responses block events, the blocked payload types, the open item state helpers, _next_stream_sequence_number, ResponseOutputEnvelope and ResponsesStreamChunk, and the Anthropic block continuation and SSE event helpers."
+  - "B3674 owns the Anthropic write-back helpers (_write_back_system_block, _write_back_message_text, _rewritten_tool_use_input, _write_back_tool_use, _apply_guardrail_responses_to_input, _apply_guardrail_tool_calls_to_input, _write_back_structured_messages and the system hoisting and folding helpers). They use this task's targets and shapes."
+  - "B3675 owns the Anthropic process_input_messages, the text, image and tool_result extractors, extract_request_tool_names, process_output_response and the output extraction helpers. B3676 owns the Anthropic streaming and SSE rewrite helpers (_SSEFieldRewrite and its rewriters)."
+  - "The Anthropic typing helpers _as_str_mapping, _content_block_at, _ModelDumpBlock, _TextAttrBlock, _WritableMessage and _as_writable only narrow Python types and have no Rust counterpart."
+  - "The model_dump and getattr branches of _tool_call_output_item_mapping, _last_message_role and _returned_tool_call_shape read Python objects beyond the declared JSON shapes; docs/compatibility.md leaves them out."
+  - "B909 owns transform_responses_api_input_to_messages and B917 owns convert_chat_completion_messages_to_responses_api; this task only calls them."
+  - "B3663 owns stream_item_field, stream_item_fingerprint and stream_item_items."
+pitfalls:
+  - A function_call that follows assistant text or another function_call joins that assistant message, so provenance marks its message tainted and a guardrail edit to it cannot be written back to one item.
+  - The role carried into the next item is the last role seen, so an item that converts to zero messages (for example an empty-content item) does not reset it.
+  - Provenance converts with an empty request, so `instructions` never contribute a message here; B3671 passes the messages without the instruction row and offsets by one itself.
+  - "`item_rewrite_field` treats `type: null` like a missing type, because LiteLLM reads it with `.get`, and a typed item with an unknown string type has no rewrite field."
+  - "`rewritten_input_item` takes only the one field from the converted item, so a guardrail that changes a row's role does not change the item's `type` or `call_id`."
+  - 'A returned tool call with `"arguments": null` fails validation, since the field is a string with an empty default and null is not a string. The whole returned list is then ignored, not just that call.'
+  - "`post_guardrail_tool_call_shapes` returns early with no warning when nothing was scanned, so a guardrail that adds calls to an empty scan is ignored silently."
+  - "`tool_call_rewrite` stores None for an unchanged name on purpose: the writer then leaves the item's `name` alone and only replaces `arguments` (or `input` for `custom_tool_call`)."
+  - "The undeliverable reason text must name the missing call ids sorted and joined by a comma and a space, because the pipeline executor puts the text in its log."
+  - "The Anthropic reader accepts a missing name or arguments as None and empty without a warning, unlike the Responses reader, which warns and falls back; keep the two call sites on their own behavior."
+  - "`is_client_tool_use` requires an object `input`; a tool_use block whose input is a string or null is skipped by the scan and so is never rewritten."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 3

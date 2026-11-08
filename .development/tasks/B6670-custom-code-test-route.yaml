@@ -1,0 +1,129 @@
+id: B6670
+title: Bounded custom-code guardrail test route
+description: >-
+  Build `POST /guardrails/test_custom_code` in betterlite-server: an admin sends guardrail source and a test input, the proxy compiles the source in the custom-code sandbox, runs `apply_guardrail` once with a 5 second budget and reports what happened. Nothing is stored and no guardrail is created. Everything goes in crates/betterlite-server/src/guardrails/custom_code_test.rs and custom_code_test/. Expose `pub fn routes()` the way the sibling modules in crates/betterlite-server/src/guardrails/ do; the architect's skeleton mounts it, so do not touch app.rs. Team submissions are B3686 and the apply route is B3687; neither lives here.
+
+  The sandbox is B3802's: `compile_sandboxed`, `build_sandbox_globals`, `call_off_loop_with_timeout`, `await_with_timeout` and `ExecutionTimeoutError` (betterlite-guardrails, custom_code_execution). Read B3802's stubs for the exact signatures and call them as they are; this task adds no sandbox code. The primitives that custom code calls (`allow`, `block`, `modify`, `regex_match` and the rest) come through `build_sandbox_globals`.
+
+  Files, each below 300 lines: `error.rs` (`TestRouteError`, a thiserror enum), `body.rs`, `report.rs`, `run.rs`, `route.rs`, `tests.rs`.
+
+  `body.rs` holds `TestCustomCodeRequest` with `custom_code: String` (required), `test_input: BTreeMap<String, GuardrailValue>` (required), `input_type: String` (default `request`, any text is accepted and passed on unchanged) and `request_data: Option<BTreeMap<String, GuardrailValue>>`. `GuardrailValue` is B3660's. Unknown body keys are ignored. The byte decoder is `decode_test_request(body: &[u8]) -> Result<TestCustomCodeRequest, TestRouteError>` through `serde_path_to_error` over `serde_json::Deserializer::from_slice`, and it is the only place the route reads body bytes. A body that does not decode answers the same 422 validation body the other server routes give for a bad JSON body, and it does so before the admin check, because FastAPI validates the body first.
+
+  `report.rs` holds `TestCustomCodeResponse { success: bool, result: Option<BTreeMap<String, GuardrailValue>>, error: Option<String>, error_type: Option<ErrorType> }` and `ErrorType` (`compilation`, `execution`). The body always has all four keys, with null for the unset ones, and the status is always 200 once the caller is an admin. Two constructors only: `failure(error, error_type)` and `success(result)`.
+
+  `route.rs` checks the caller first. Any valid key passes the normal key check, then the caller's role must be exactly `proxy_admin` (B732's role predicate). `proxy_admin_viewer` and every other role get 403 with detail "Admin access required to test custom code guardrails". This route has no database and no team lookup.
+
+  `run.rs` holds `run_test(request: TestCustomCodeRequest, sandbox: &dyn CodeSandbox) -> TestCustomCodeResponse`, following test_custom_code L2038-L2222 step by step. `CodeSandbox` is a trait in this module with the calls the route needs (compile and load, then call), implemented over B3802 in `route.rs` and by a fake in tests. The budget `EXECUTION_TIMEOUT_SECONDS` is 5.
+  1. Build the globals with `build_sandbox_globals`, then compile and load the source with `compile_sandboxed` and run the module body, both inside one `call_off_loop_with_timeout(.., 5, label "test:load")`. A syntax error (a source the sandbox refuses counts too: import, exec, dunder names) gives `failure("Syntax error in custom code: {error}", compilation)`. A timeout gives the timeout failure below. Any other error gives `failure("Failed to compile custom code: {error}", compilation)`.
+  2. No `apply_guardrail` name in the globals gives `failure("Custom code must define an 'apply_guardrail' function. Expected signature: apply_guardrail(inputs, request_data, input_type)", compilation)`. A name that is not callable gives `failure("'apply_guardrail' must be a callable function", compilation)`.
+  3. `test_input` gets `texts: []` when it has no `texts` key. The request data given to the function has exactly five keys: `model` (the given value, "test-model" only when the key is absent), `user_id`, `team_id`, `end_user_id` (each null when absent) and `metadata` (`{}` when absent). Nothing else from `request_data` is passed on.
+  4. Call `apply_guardrail(test_input, request_data, input_type)` with `call_off_loop_with_timeout(.., 5, label "test")`. When the call returns an awaitable (an `async def` guardrail), await it with `await_with_timeout` for the time that is left of the same 5 seconds (never below zero), so the whole run shares one deadline. A timeout gives the timeout failure. Any other error gives `failure("Execution error: {error}", execution)`.
+  5. A result that is an object gives `success(result)` as it is. Any other result gives `success({"action": "allow", "warning": "Expected dict result, got {type}. Treating as allow."})` with `{type}` the Python type name of the value (`NoneType`, `bool`, `int`, `float`, `str`, `list`). For a list the warning reads exactly "Expected dict result, got list. Treating as allow.".
+  6. An error that none of the steps caught gives `failure("Unexpected error: {error}", execution)` and logs "Error testing custom code guardrail: {error}" at error level.
+  The timeout failure is `failure("Execution timeout: code took longer than 5 seconds", execution)`; LiteLLM formats the number with `{:g}`, so 5 prints as "5".
+
+  Oracle: HTTP cases boot LiteLLM and betterlite with the master key (a proxy admin) and no database, which is all this route needs. Error text from the sandbox is betterlite's own, so cases for compile and run errors ignore the `error` string and compare `success` and `error_type`. A non-admin 403 needs a virtual key, which no oracle case here can have, so named Rust tests with a fake sandbox cover the role check.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/custom_code_test.rs
+    - crates/betterlite-server/src/guardrails/custom_code_test/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/custom_code_test_body.rs
+    - crates/betterlite-server/fuzz/corpus/custom_code_test_body/**
+    - tools/oracle/cases/guardrails/custom-code-test/**
+    - tools/oracle/helpers/b6670.py
+    - tools/oracle/helpers/b6670/**
+    - tools/oracle/src/helpers/server/b6670.rs
+    - tools/oracle/src/helpers/server/b6670/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2006-L2036
+    why: The request and response models, with their defaults and error_type values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2038-L2222
+    why: The route from its decorator, the admin check, the five steps and the outer error path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2224-L2239
+    why: The timeout text and the shared deadline for an async guardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/bounded_execution.py#L163-L231
+    why: What call_off_loop_with_timeout and await_with_timeout do and raise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L103-L157
+    why: build_sandbox_globals and compile_sandboxed, which the route calls.
+  - url: https://docs.litellm.ai/docs/proxy/guardrails/custom_code_guardrail
+    why: The custom code guardrail contract the test route exercises.
+dod:
+  - text: Only a caller whose role is exactly proxy_admin reaches the sandbox; proxy_admin_viewer and other roles get 403 with the exact text, and a request without a valid key gets the usual 401 body.
+    proof: [test-route-access-tests, oracle]
+  - text: The request body decodes with its defaults (`input_type` request, no request_data), ignores unknown keys, and a body missing `custom_code` or `test_input` answers 422 before the role check.
+    proof: [test-route-body-tests, oracle]
+  - text: A source with a syntax error or a refused construct, a source that fails while loading, a missing `apply_guardrail` and a non-callable one each give success false with error_type compilation and LiteLLM's text prefix.
+    proof: [test-route-compile-tests, oracle]
+  - text: A passing run returns the function's object result as it is, for allow, block and modify results, with success true and null error fields, for both a plain and an `async def` function.
+    proof: [test-route-run-tests, oracle]
+  - text: The request data given to the function has exactly the five keys with their defaults, `texts` is added to a test input that lacks it, and a runtime error gives success false with error_type execution and the prefix "Execution error".
+    proof: [test-route-run-tests, oracle]
+  - text: A non-object result becomes allow with the warning text and the Python type name, and a run past 5 seconds, including a source that loops while loading, gives the exact timeout text with error_type execution.
+    proof: [test-route-result-tests, oracle]
+  - text: The body decoder survives arbitrary bytes and its seed corpus replays.
+    proof: [test-route-corpus]
+checks:
+  optional: []
+  commands:
+    - id: test-route-access-tests
+      why: the role check lets a non-admin through or answers with another text
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::custom_code_test::tests::access_/)'
+    - id: test-route-body-tests
+      why: the body defaults, the unknown-key rule or the 422 order are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::custom_code_test::tests::body_/)'
+    - id: test-route-compile-tests
+      why: a compile or load failure gives another message prefix or error_type
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::custom_code_test::tests::compile_/)'
+    - id: test-route-run-tests
+      why: the call arguments, an async function or a runtime error are handled differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::custom_code_test::tests::run_/)'
+    - id: test-route-result-tests
+      why: a non-object result or a timeout is reported differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::custom_code_test::tests::result_/)'
+    - id: test-route-corpus
+      why: the fuzz target, its seeds or the replay test are missing
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/custom_code_test_body)"
+        && test -f crates/betterlite-server/fuzz/fuzz_targets/custom_code_test_body.rs
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_custom_code_test_body_corpus)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/custom-code-test/allow-result.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/block-result.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/modify-result.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/async-function.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/syntax-error.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/import-refused.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/missing-function.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/not-callable.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/runtime-error.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/non-dict-result.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/request-data-keys.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/texts-default.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/timeout-in-loop.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/body-missing-code.yaml
+  - tools/oracle/cases/guardrails/custom-code-test/auth-required.yaml
+deviations:
+  - what: The text after "Syntax error in custom code:", "Failed to compile custom code:", "Execution error:" and "Unexpected error:" is the sandbox's own message, not Python's.
+    why: The sandbox has no CPython traceback or exception repr to quote; the prefixes, success and error_type are the contract (docs/compatibility.md says messages are betterlite's own).
+  - what: The Python type name in the non-object warning is derived from the JSON kind of the result (`NoneType`, `bool`, `int`, `float`, `str`, `list`).
+    why: Results reach the route as JSON values, so `tuple`, `set` and other Python-only types cannot appear.
+out_of_scope:
+  - "The sandbox, the primitives and the deadline code: B3802 and B3801."
+  - "CustomCodeGuardrail (the live guardrail that compiles stored code and processes allow, block, flag and modify results): B3803."
+  - "Team submissions, approval and rejection (L647-L1126): B3686."
+  - "apply_guardrail and its logging helpers `_resolve_guardrail_input_type`, `_GuardrailLoggingObj`, `_GuardrailProxyLogging`, `_patch_logging_obj_for_guardrail` and `_emit_guardrail_success_logs` (L2241-L2457): B3687, whose route is the only caller."
+pitfalls:
+  - "The admin check compares the role with proxy_admin exactly, so a proxy_admin_viewer key gets 403 here even though it can read every list route."
+  - "Compiling and running the module body share the first 5 second budget, so `while True: pass` at module level times out in step 1 with the timeout text, not a compile error."
+  - "`\"apply_guardrail\" not in exec_globals` is a name check on the globals that hold the primitives, so source that only defines a helper such as `def check(...)` gets the missing function text."
+  - "`test_inputs[\"texts\"] = []` is set on the caller's own dict before the call, so the function sees `texts` even when the request did not send it."
+  - "`mock_request_data.get(\"model\", \"test-model\")` only defaults when the key is absent, so `{\"model\": null}` stays null and `metadata: null` stays null."
+  - "An `async def` function is detected by its result being a coroutine, so the awaited part gets only the time that is left of the 5 seconds."
+  - "The response is HTTP 200 for every failure after the role check; only the 403 and the 422 are errors at the HTTP level."
+  - "`input_type` is not checked against `request` and `response`; the function receives whatever text was sent."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

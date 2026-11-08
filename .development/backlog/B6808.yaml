@@ -1,0 +1,14 @@
+id: B6808
+milestone: M5 api families
+title: OCR provider selection and per-call execution
+status: todo
+depends_on: [B6800, B6801, B6802, B6803, B6804, B6805, B6806, B6807]
+file: tasks/B6808-ocr-provider-dispatch.yaml
+covers:
+  - "litellm/ocr/**"
+parent: B092
+split_from: B092
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
