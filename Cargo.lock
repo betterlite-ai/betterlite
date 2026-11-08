@@ -1802,6 +1802,7 @@ dependencies = [
  "hex",
  "http 1.5.0",
  "pem",
+ "regex",
  "rstest",
  "rustix",
  "scrypt",

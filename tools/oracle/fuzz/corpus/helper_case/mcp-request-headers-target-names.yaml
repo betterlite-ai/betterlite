@@ -1,0 +1,5 @@
+kind: helper
+name: "mcp-request-headers-target-names-seed"
+call: {"b4654":{"function":"target_names","paths":["/mcp/a,b/tools","/foo/mcp"]}}
+env: {}
+compare: {"ignore":[]}
