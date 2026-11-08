@@ -1,0 +1,12 @@
+kind: helper
+name: stream-chunk-shaping-non-empty-seed
+call:
+  b5652:
+    state: {model: gpt-4, provider: openai}
+    repeated_chunk_limit: 100
+    steps:
+      - op: is_chunk_non_empty
+        completion: {content: hello}
+        chunk: {id: c, created: 1, choices: [{index: 0, delta: {}}]}
+env: {}
+compare: {ignore: []}
