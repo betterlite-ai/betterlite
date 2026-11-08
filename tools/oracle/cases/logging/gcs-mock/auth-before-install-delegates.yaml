@@ -1,0 +1,7 @@
+kind: helper
+name: gcs-mock-auth-before-install-delegates
+call:
+  b3996:
+    auth: {installs: 0}
+env: {}
+compare: {ignore: []}

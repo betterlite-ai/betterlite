@@ -1,0 +1,9 @@
+kind: helper
+name: messages-null-content
+call:
+  b3860:
+    function: set_messages
+    messages:
+      - {role: user, content: null}
+env: {}
+compare: {ignore: []}

@@ -3,6 +3,7 @@ import sys
 
 from openai_chat import ChatCall, run_chat
 from pydantic import BaseModel, ConfigDict
+from vector_query_embedding import QueryEmbeddingCall, run_query
 from vector_store_embedding_executor import EmbeddingCall, run_embedding
 
 MAX_REQUEST_BYTES = 1048576
@@ -25,10 +26,16 @@ class VectorStoreEmbeddingExecutorCall(BaseModel):
     vector_store_embedding_executor: EmbeddingCall
 
 
+class VectorQueryEmbeddingCall(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    vector_query_embedding: QueryEmbeddingCall
+
+
 class Request(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    call: OpenaiChatCall | VectorStoreEmbeddingExecutorCall
+    call: OpenaiChatCall | VectorStoreEmbeddingExecutorCall | VectorQueryEmbeddingCall
     api_base: str
 
 
@@ -41,6 +48,8 @@ def main() -> None:
         outcome: BaseModel
         if isinstance(request.call, OpenaiChatCall):
             outcome = run_chat(request.call.openai_chat, request.api_base)
+        elif isinstance(request.call, VectorQueryEmbeddingCall):
+            outcome = run_query(request.call.vector_query_embedding, request.api_base)
         else:
             outcome = run_embedding(
                 request.call.vector_store_embedding_executor, request.api_base

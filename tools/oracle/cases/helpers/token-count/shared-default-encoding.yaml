@@ -1,0 +1,8 @@
+kind: helper
+name: token-count-shared-default-encoding
+call:
+  token_count:
+    function: default_encoding
+    text: hello world
+env: {}
+compare: {ignore: []}
