@@ -345,8 +345,8 @@ async fn modifying_a_job_wakes_a_sleeping_scheduler() {
     scheduler.shutdown();
 }
 
-#[test]
-fn next_wait_sleeps_until_the_earliest_fire_and_short_circuits_a_due_one() {
+#[tokio::test(start_paused = true)]
+async fn next_wait_sleeps_until_the_earliest_fire_and_short_circuits_a_due_one() {
     let now = origin();
     let scheduler = scheduler_with(defaults());
     let mut inner = scheduler
@@ -367,6 +367,10 @@ fn next_wait_sleeps_until_the_earliest_fire_and_short_circuits_a_due_one() {
     );
     let clock = TokioClock::new(now);
     assert_eq!(inner.next_wait(&clock), Some(Duration::from_secs(3600)));
+    if let Some(job) = inner.jobs.get_mut("later_job") {
+        job.next_fire = Some(now);
+    }
+    assert_eq!(inner.next_wait(&clock), Some(Duration::from_millis(1)));
     if let Some(job) = inner.jobs.get_mut("later_job") {
         job.next_fire = Some(now - TimeDelta::seconds(5));
     }
