@@ -1,0 +1,11 @@
+task: B4421
+deviations:
+  - what: AWS KMS returns None when the encrypted value is missing from the environment instead of raising.
+    why: LiteLLM raises an Exception there and get_secret then falls back to os.getenv, which is None for the same name, so a working setup sees the same None without the logged error. The dispatch probe is stored with the None rules for this manager type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/secret_manager_handler.py#L140-L142
+  - what: The Infisical client is the default when no key manager is known; the closed manager enum spells that unknown case as None.
+    why: LiteLLM's else branch sends every key manager string it does not recognize to the Infisical client. betterlite rejects an unknown system at config load and keeps the final fallback for a dispatch call that names no system.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/secret_manager_handler.py#L226-L230
+  - what: A client of the wrong manager type raises a typed error that names the required client protocol, and the Custom dispatcher names the actual client kind where LiteLLM names the Python class.
+    why: LiteLLM calls the method on whatever object it was handed and lets AttributeError escape, and its Custom error text comes from type(client).__name__. betterlite's handle is a typed enum, so the same misconfiguration raises an error of its own words that names the protocol it needed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/secret_manager_handler.py#L206-L221
