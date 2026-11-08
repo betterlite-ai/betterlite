@@ -134,10 +134,9 @@ async fn posts_json_with_a_bearer_key_and_bounded_answer(
     let address = listener.local_addr().unwrap();
     let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
     let client = ProxiedClient::outbound(&policy).unwrap();
-    let key = SecretString::from("sk-test");
     let post = JsonPost {
         url: Url::parse(&format!("http://{address}/v1/chat/completions")).unwrap(),
-        bearer: &key,
+        authorization: SecretString::from("Bearer sk-test"),
         headers: vec![("OpenAI-Organization", "org-1".to_owned())],
         body: b"{}".to_vec(),
         timeout: Duration::from_millis(300),
@@ -163,14 +162,31 @@ async fn posts_json_with_a_bearer_key_and_bounded_answer(
     assert_eq!(observed, expected);
 }
 
+#[test]
+fn the_authorization_value_is_marked_sensitive() {
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    let client = ProxiedClient::outbound(&policy).unwrap();
+    let post = JsonPost {
+        url: Url::parse(CLOSED).unwrap(),
+        authorization: SecretString::from("Basic dXNlcjpwYXNz"),
+        headers: Vec::new(),
+        body: Vec::new(),
+        timeout: Duration::from_secs(5),
+        body_limit: 1,
+    };
+    let request = client.json_request(post, "application/json").unwrap();
+    let value = request.headers().get("authorization").unwrap();
+    assert_eq!(value.to_str().unwrap(), "Basic dXNlcjpwYXNz");
+    assert!(value.is_sensitive());
+}
+
 #[tokio::test]
 async fn reports_a_refused_connection_as_a_failed_request() {
     let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
     let client = ProxiedClient::outbound(&policy).unwrap();
-    let key = SecretString::from("sk-test");
     let post = JsonPost {
         url: Url::parse(CLOSED).unwrap(),
-        bearer: &key,
+        authorization: SecretString::from("Bearer sk-test"),
         headers: Vec::new(),
         body: Vec::new(),
         timeout: Duration::from_secs(5),

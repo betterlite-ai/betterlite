@@ -1,0 +1,19 @@
+kind: helper
+name: exporter-options-redact-excluded-fields
+call:
+  b3931:
+    operation: redact
+    turn_off_message_logging: false
+    excluded_fields: [messages, error_str]
+    redacts_messages_itself: false
+    stamp: {id: chatcmpl-stamp, created: 1704067200}
+    details:
+      standard_logging_object:
+        id: slp-1
+        messages: [{role: user, content: secret}]
+        response: {choices: []}
+        error_str: boom
+        classifier_input: {prompt: classify}
+      proxy_server_request: {url: http://example.test/chat, classifier_input: {c: 3}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,43 @@
+task: B3996
+deviations:
+  - what: >-
+      GCS mock mode is an injected wrapper around the caller's HTTP client and Vertex auth
+      provider instead of a module-level patch of AsyncHTTPHandler.get, AsyncHTTPHandler.delete,
+      AsyncHTTPHandler.post and the VertexBase auth methods. The wrapper installs once on the
+      instance the caller builds, and GCS_MOCK is read from the environment map the caller passes
+      rather than from os.environ inside the mock module.
+    why: >-
+      betterlite has no global mutable handler or class patching: dependencies enter through
+      constructors, and the environment is read only by the config layer. The wrapper keeps the
+      same observable behavior, mocking storage.googleapis.com URLs and returning the fixed auth
+      literals, while a test can hand it a recording transport instead of relying on process-wide
+      state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_mock_client.py#L146-L235
+  - what: >-
+      create_mock_gcs_client returns a client that mocks only when GCS_MOCK resolves to true;
+      LiteLLM's create_mock_gcs_client patches the handlers on every call and leaves the
+      should_use_gcs_mock check to GCSBucketBase.__init__.
+    why: >-
+      Keeping the check inside the constructor makes an injected client self-consistent: a
+      caller that passes the disabled setting gets passthrough rather than a client that mocks
+      storage URLs anyway. The GCS bucket logger calls both functions in the same order LiteLLM
+      does, so its behavior is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_mock_client.py#L146-L182
+  - what: >-
+      The mock request carries headers, data, json, params, timeout, stream, content and
+      follow_redirects on fallthrough, but not the Python-only files and logging_obj arguments of
+      AsyncHTTPHandler.post.
+    why: >-
+      files and logging_obj are httpx handler objects with no typed equivalent in betterlite's
+      transport contract, and the GCS client never passes them; the parameters the GCS upload,
+      download and delete paths send are all preserved.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mock_client_factory.py#L127-L170
+  - what: >-
+      A negative GCS_MOCK_LATENCY_MS is rejected with a load error naming the variable, while
+      LiteLLM divides the negative float by 1000, asyncio.sleep returns immediately and the mock
+      response reports a negative elapsed time.
+    why: >-
+      A negative simulated round trip breaks every caller that treats elapsed as a duration, so
+      no working setup configures one; betterlite rejects it where the value enters, as the
+      compatibility policy does for env values of the wrong type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_mock_client.py#L38-L42

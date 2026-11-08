@@ -1,0 +1,8 @@
+kind: helper
+name: gcs-mock-auth-mocks-return-fixed-literals
+call:
+  b3996:
+    environment: {GCS_MOCK: "true"}
+    auth: {installs: 1}
+env: {}
+compare: {ignore: []}

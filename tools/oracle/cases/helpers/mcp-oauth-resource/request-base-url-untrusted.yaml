@@ -1,0 +1,5 @@
+kind: helper
+name: "request-base-url-untrusted"
+call: {"b4654":{"function":"request_base_url","proxy_base_url":"","base_url":"http://llm.example.com:8000/root/","x_forwarded_proto":"https","x_forwarded_host":"api.example.com","x_forwarded_port":"8080","from_trusted_proxy":false}}
+env: {}
+compare: {"ignore":[]}

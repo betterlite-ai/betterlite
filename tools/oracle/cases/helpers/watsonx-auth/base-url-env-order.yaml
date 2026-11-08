@@ -1,0 +1,23 @@
+kind: helper
+name: watsonx-auth-base-url-env-order
+env: {}
+compare: {ignore: []}
+call:
+  b5970:
+    env:
+      WATSONX_URL: https://url-env
+      WX_URL: https://wx-env
+      WML_URL: https://wml-env
+      WATSONX_APIKEY: key-env
+      WX_API_KEY: wx-key-env
+    routes: []
+    steps:
+      - {op: base_url, api_base: null}
+      - {op: base_url, api_base: https://argument}
+      - {op: base_url, api_base: ""}
+      - {op: api_version, url: https://x/ml/v1/text/chat, api_version: null}
+      - {op: api_version, url: https://x/ml/v1/text/chat, api_version: "2024-05-01"}
+      - {op: api_version, url: https://x/ml/v1/text/chat, api_version: ""}
+      - {op: api_version, url: "https://x/p?q=1", api_version: null}
+      - {op: credentials, params: {}, api_key: null, api_base: null}
+      - {op: iam_url}

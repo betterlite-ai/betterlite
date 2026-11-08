@@ -1,10 +1,38 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::checks::{Outcome, Selection};
 use crate::error::GateError;
-use crate::git::git;
+use crate::facts::{Facts, Tree};
+
+#[derive(Serialize, Deserialize)]
+struct Record {
+    head: String,
+    base: String,
+    #[serde(default)]
+    clean: bool,
+    only: Vec<String>,
+    skip: Vec<String>,
+    checks: Vec<CheckRecord>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CheckRecord {
+    id: String,
+    seconds: u64,
+    outcome: State,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum State {
+    Pass,
+    Skip,
+    Fail,
+}
 
 pub(super) fn start(log_dir: &Path) -> Result<PathBuf, GateError> {
     let runs = log_dir.join("runs");
@@ -22,31 +50,70 @@ pub(super) fn start(log_dir: &Path) -> Result<PathBuf, GateError> {
 pub(super) fn save(
     root: &Path,
     log_dir: &Path,
-    base: &str,
+    facts: &Facts,
     selection: &Selection,
     outcomes: &[(String, u64, Outcome)],
 ) -> Result<(), GateError> {
-    let checks: Vec<_> = outcomes
+    let finished = Tree::read(root)?;
+    let checks = outcomes
         .iter()
-        .map(|(id, seconds, outcome)| {
-            let state = match outcome {
-                Outcome::Pass => "pass",
-                Outcome::Skip(_) => "skip",
-                Outcome::Fail { .. } => "fail",
-            };
-            serde_json::json!({"id": id, "seconds": seconds, "outcome": state})
+        .map(|(id, seconds, outcome)| CheckRecord {
+            id: id.clone(),
+            seconds: *seconds,
+            outcome: match outcome {
+                Outcome::Pass | Outcome::Reused(_) => State::Pass,
+                Outcome::Skip(_) => State::Skip,
+                Outcome::Fail { .. } => State::Fail,
+            },
         })
         .collect();
-    let value = serde_json::json!({
-        "head": git(root, &["rev-parse", "HEAD"])?.trim(), "base": base,
-        "only": selection.only, "skip": selection.skip, "checks": checks,
-    });
+    let record = Record {
+        clean: facts.tree.clean && finished.clean && facts.tree.head == finished.head,
+        head: finished.head,
+        base: facts.base.clone(),
+        only: selection.only.clone(),
+        skip: selection.skip.clone(),
+        checks,
+    };
     let path = log_dir.join("result.json");
-    let text = serde_json::to_vec_pretty(&value).map_err(|source| GateError::Json {
+    let text = serde_json::to_vec_pretty(&record).map_err(|source| GateError::Json {
         what: "gate history".to_owned(),
         source,
     })?;
     fs::write(&path, text).map_err(|source| GateError::Write { path, source })
+}
+
+pub(crate) fn passed(log_dir: &Path, facts: &Facts) -> Result<BTreeMap<String, String>, GateError> {
+    let mut found = BTreeMap::new();
+    if !facts.tree.clean {
+        return Ok(found);
+    }
+    for run in runs(log_dir)? {
+        let path = run.join("result.json");
+        if !path.exists() {
+            continue;
+        }
+        let text = fs::read(&path).map_err(|source| GateError::Read {
+            path: path.clone(),
+            source,
+        })?;
+        let record: Record = serde_json::from_slice(&text).map_err(|source| GateError::Json {
+            what: format!("gate history {}", path.display()),
+            source,
+        })?;
+        if !record.clean || record.head != facts.tree.head || record.base != facts.base {
+            continue;
+        }
+        let name = run
+            .file_name()
+            .map_or_else(String::new, |name| name.display().to_string());
+        for check in record.checks {
+            if check.outcome == State::Pass {
+                found.insert(check.id, name.clone());
+            }
+        }
+    }
+    Ok(found)
 }
 
 pub(crate) fn runs(log_dir: &Path) -> Result<BTreeSet<PathBuf>, GateError> {

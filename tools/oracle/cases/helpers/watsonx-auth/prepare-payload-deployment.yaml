@@ -1,0 +1,24 @@
+kind: helper
+name: watsonx-auth-prepare-payload-deployment
+env: {}
+compare: {ignore: []}
+call:
+  b5970:
+    env: {}
+    routes: []
+    steps:
+      - op: payload
+        model: deployment/abc
+        api_params: {project_id: project, space_id: space, region_name: region}
+      - op: payload
+        model: granite-13b
+        api_params: {project_id: project, space_id: space, region_name: null}
+      - op: payload
+        model: granite-13b
+        api_params: {project_id: null, space_id: space, region_name: null}
+      - op: payload
+        model: granite-13b
+        api_params: {project_id: null, space_id: null, region_name: null}
+      - op: payload
+        model: deployment/a/b
+        api_params: {project_id: project, space_id: null, region_name: null}

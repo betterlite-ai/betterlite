@@ -1,0 +1,5 @@
+kind: helper
+name: "proxy-base-url-invalid"
+call: {"b4654":{"function":"proxy_base_url","raw":"ftp://proxy.example.com/x"}}
+env: {"PROXY_BASE_URL":"ftp://proxy.example.com/x"}
+compare: {"ignore":[]}
