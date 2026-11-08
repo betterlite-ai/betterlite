@@ -96,7 +96,8 @@ list_kind!(
 
 pub async fn list_from_session<Session, Kind>(
     session: &mut Session,
-    deadline: Duration,
+    client_timeout: Duration,
+    listing_timeout: Duration,
     raise_on_error: bool,
     server: &str,
 ) -> Result<Vec<Kind::Item>, SessionError<Session::Error>>
@@ -104,6 +105,7 @@ where
     Session: ResourceSession,
     Kind: ListKind<Session>,
 {
+    let deadline = client_timeout.max(listing_timeout);
     match optional_list::<Session, Kind>(session, deadline, server).await {
         Ok(items) => Ok(items),
         Err(error) => finish_failure(
@@ -125,13 +127,21 @@ where
     RuntimeSession<Runtime>: ResourceSession<Error = Runtime::Error>,
     Kind: ListKind<RuntimeSession<Runtime>>,
 {
-    let deadline = client.auth.timeout.max(settings.listing_timeout);
     let server = server_name(client);
+    let client_timeout = client.auth.timeout;
+    let listing_timeout = settings.listing_timeout;
     let operation = async |session: &mut RuntimeSession<Runtime>| {
-        optional_list::<_, Kind>(session, deadline, &server).await
+        Ok(list_from_session::<_, Kind>(
+            session,
+            client_timeout,
+            listing_timeout,
+            raise_on_error,
+            &server,
+        )
+        .await)
     };
     match run_with_session(client, operation, false).await {
-        Ok(items) => Ok(items),
+        Ok(outcome) => outcome,
         Err(error) => finish_failure(
             error,
             FailureMode::List { raise_on_error },

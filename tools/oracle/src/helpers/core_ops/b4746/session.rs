@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::future::{Future, ready};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_core::api::mcp_client_resources::session::ResourceSession;
@@ -31,22 +32,13 @@ impl ScriptedFailure {
     }
 }
 
-pub(crate) enum Step<Value> {
-    Value {
-        value: Value,
-        delay: Duration,
-    },
-    Failure {
-        failure: McpFailure,
-        delay: Duration,
-    },
-}
+pub(crate) type ResultStep<Value> = Result<Value, McpFailure>;
 
 pub(crate) struct Script {
     pub(crate) capabilities: Option<ServerCapabilities>,
     pub(crate) pages: VecDeque<PageInput>,
-    pub(crate) prompt_result: Option<Step<GetPromptResult>>,
-    pub(crate) resource_result: Option<Step<ReadResourceResult>>,
+    pub(crate) prompt_result: Option<ResultStep<GetPromptResult>>,
+    pub(crate) resource_result: Option<ResultStep<ReadResourceResult>>,
     pub(crate) cursors: Vec<Option<String>>,
     pub(crate) prompt_params: Vec<GetPromptRequestParams>,
     pub(crate) resource_uris: Vec<Url>,
@@ -66,16 +58,6 @@ impl Script {
     }
 }
 
-pub(crate) trait Locked<T> {
-    fn locked(&self) -> MutexGuard<'_, T>;
-}
-
-impl<T> Locked<T> for Mutex<T> {
-    fn locked(&self) -> MutexGuard<'_, T> {
-        self.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-}
-
 pub(crate) struct FakeSession {
     pub(crate) script: Arc<Mutex<Script>>,
 }
@@ -83,7 +65,7 @@ pub(crate) struct FakeSession {
 impl FakeSession {
     async fn next_page(&self, cursor: Option<String>) -> Result<PageInput, ScriptedFailure> {
         let page = {
-            let mut script = self.script.locked();
+            let mut script = self.script.lock().unwrap_or_else(PoisonError::into_inner);
             script.cursors.push(cursor);
             script.pages.pop_front().ok_or_else(|| {
                 ScriptedFailure::Plain("the case scripted no page for this call".to_owned())
@@ -98,19 +80,6 @@ impl FakeSession {
             }));
         }
         Ok(page)
-    }
-}
-
-async fn resolve<Value>(step: Step<Value>) -> Result<Value, ScriptedFailure> {
-    match step {
-        Step::Value { value, delay } => {
-            sleep(delay).await;
-            Ok(value)
-        }
-        Step::Failure { failure, delay } => {
-            sleep(delay).await;
-            Err(ScriptedFailure::Protocol(failure))
-        }
     }
 }
 
@@ -139,15 +108,22 @@ macro_rules! page_method {
 
 macro_rules! result_method {
     ($method:ident, $queue:ident, $record:ident, $request:ty, $output:ty) => {
-        async fn $method(&mut self, request: $request) -> Result<$output, ScriptedFailure> {
+        fn $method(
+            &mut self,
+            request: $request,
+        ) -> impl Future<Output = Result<$output, ScriptedFailure>> + Send {
             let scripted = {
-                let mut script = self.script.locked();
+                let mut script = self.script.lock().unwrap_or_else(PoisonError::into_inner);
                 script.$record.push(request);
                 script.$queue.take().ok_or_else(|| {
                     ScriptedFailure::Plain("the case scripted no result for this call".to_owned())
                 })
             };
-            resolve(scripted?).await
+            ready(match scripted {
+                Ok(Ok(value)) => Ok(value),
+                Ok(Err(failure)) => Err(ScriptedFailure::Protocol(failure)),
+                Err(error) => Err(error),
+            })
         }
     };
 }
@@ -156,7 +132,11 @@ impl ResourceSession for FakeSession {
     type Error = ScriptedFailure;
 
     fn server_capabilities(&self) -> Option<ServerCapabilities> {
-        self.script.locked().capabilities.clone()
+        self.script
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .capabilities
+            .clone()
     }
 
     page_method!(list_prompts, PromptPage, prompts);

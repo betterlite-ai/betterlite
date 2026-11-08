@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_mcp::client::sessions::error::SessionError;
+use serde_json::Map;
 
 use super::fixture::{
     BrokenResourceError, FakeRuntime, Script, ScriptedFailure, Step, capture, lock, session_client,
@@ -30,6 +31,7 @@ fn page(names: &[&str], next: Option<&str>) -> ResourcePage {
                 name: (*name).to_owned(),
                 description: None,
                 mime_type: None,
+                extra: Map::new(),
             })
             .collect(),
         next_cursor: next.map(str::to_owned),

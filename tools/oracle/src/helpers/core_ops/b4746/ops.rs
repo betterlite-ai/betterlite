@@ -1,10 +1,12 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use betterlite_core::api::mcp_client_resources::detail::{
+    get_prompt_from_session, read_resource_from_session,
+};
 use betterlite_core::api::mcp_client_resources::list::{
     Prompts, Resources, Templates, list_from_session,
 };
-use betterlite_core::api::mcp_client_resources::session::ResourceSession as _;
 use betterlite_core::api::mcp_client_resources::types::GetPromptRequestParams;
 use betterlite_mcp::client::sessions::error::McpFailure;
 use serde_json::json;
@@ -13,7 +15,7 @@ use url::Url;
 use crate::helpers::{HelperError, HelperResult};
 
 use super::input::{ErrorInput, Input, Operation};
-use super::session::{FakeSession, Locked as _, Script, Step};
+use super::session::{FakeSession, ResultStep, Script};
 
 const SERVER: &str = "https://mcp.example.com/mcp";
 
@@ -45,14 +47,20 @@ async fn execute(input: &Input) -> HelperResult {
     let mut session = FakeSession {
         script: Arc::clone(&script),
     };
-    let deadline = Duration::from_millis(input.client_timeout_ms.max(input.listing_timeout_ms));
+    let client_timeout = Duration::from_millis(input.client_timeout_ms);
+    let listing_timeout = Duration::from_millis(input.listing_timeout_ms);
     macro_rules! listed {
         ($kind:ty) => {{
-            let items =
-                list_from_session::<_, $kind>(&mut session, deadline, input.raise_on_error, SERVER)
-                    .await
-                    .map_err(failure)?;
-            let cursors = script.locked().cursors.clone();
+            let items = list_from_session::<_, $kind>(
+                &mut session,
+                client_timeout,
+                listing_timeout,
+                input.raise_on_error,
+                SERVER,
+            )
+            .await
+            .map_err(failure)?;
+            let cursors = script.lock().unwrap_or_else(PoisonError::into_inner).cursors.clone();
             return Ok(json!({
                 "items": serde_json::to_value(items).map_err(failure)?,
                 "cursors": cursors
@@ -77,14 +85,18 @@ fn script_for(input: &Input) -> Result<Script, Box<HelperError>> {
                 .prompt
                 .as_ref()
                 .ok_or_else(|| failure("the case has no prompt input"))?;
-            script.prompt_result = Some(step(prompt.error.as_ref(), prompt.result.as_ref())?);
+            script.prompt_result =
+                Some(result_step(prompt.error.as_ref(), prompt.result.as_ref())?);
         }
         Operation::ReadResource => {
             let resource = input
                 .resource
                 .as_ref()
                 .ok_or_else(|| failure("the case has no resource input"))?;
-            script.resource_result = Some(step(resource.error.as_ref(), resource.result.as_ref())?);
+            script.resource_result = Some(result_step(
+                resource.error.as_ref(),
+                resource.result.as_ref(),
+            )?);
         }
         Operation::ListPrompts | Operation::ListResources | Operation::ListResourceTemplates => {}
     }
@@ -92,15 +104,19 @@ fn script_for(input: &Input) -> Result<Script, Box<HelperError>> {
 }
 
 macro_rules! detail_operation {
-    ($method:ident, $call:ident, $request:expr, $record:ident, $key:literal) => {
+    ($method:ident, $from_session:ident, $request:expr, $record:ident, $key:literal) => {
         async fn $method(
             session: &mut FakeSession,
             input: &Input,
             script: &Arc<Mutex<Script>>,
         ) -> HelperResult {
             let request = $request(input)?;
-            let result = session.$call(request).await.map_err(failure)?;
-            let recorded = script.locked().$record.clone();
+            let result = $from_session(session, request).await.map_err(failure)?;
+            let recorded = script
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .$record
+                .clone();
             Ok(json!({"result": result, $key: recorded}))
         }
     };
@@ -108,7 +124,7 @@ macro_rules! detail_operation {
 
 detail_operation!(
     prompt,
-    get_prompt,
+    get_prompt_from_session,
     |input: &Input| -> Result<GetPromptRequestParams, Box<HelperError>> {
         let prompt = input
             .prompt
@@ -124,7 +140,7 @@ detail_operation!(
 );
 detail_operation!(
     resource,
-    read_resource,
+    read_resource_from_session,
     |input: &Input| -> Result<Url, Box<HelperError>> {
         let resource = input
             .resource
@@ -136,26 +152,20 @@ detail_operation!(
     "uris"
 );
 
-fn step<Value>(
+fn result_step<Value>(
     scripted_error: Option<&ErrorInput>,
     result: Option<&Value>,
-) -> Result<Step<Value>, Box<HelperError>>
+) -> Result<ResultStep<Value>, Box<HelperError>>
 where
     Value: Clone,
 {
     if let Some(error) = scripted_error {
-        return Ok(Step::Failure {
-            failure: protocol_failure(error),
-            delay: Duration::ZERO,
-        });
+        return Ok(Err(protocol_failure(error)));
     }
-    let value = result
+    result
         .cloned()
-        .ok_or_else(|| failure("the case has no result"))?;
-    Ok(Step::Value {
-        value,
-        delay: Duration::ZERO,
-    })
+        .map(Ok)
+        .ok_or_else(|| failure("the case has no result"))
 }
 
 fn protocol_failure(error: &ErrorInput) -> McpFailure {

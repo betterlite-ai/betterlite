@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_mcp::client::sessions::error::SessionError;
+use serde_json::Map;
 use url::Url;
 
 use super::fixture::{
@@ -23,7 +24,9 @@ fn contents() -> ReadResourceResult {
             mime_type: Some("text/plain".to_owned()),
             text: Some("hello".to_owned()),
             blob: None,
+            extra: Map::new(),
         }],
+        extra: Map::new(),
     }
 }
 

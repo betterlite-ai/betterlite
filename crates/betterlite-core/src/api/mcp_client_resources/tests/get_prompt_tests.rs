@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_mcp::client::sessions::error::SessionError;
+use serde_json::Map;
 
 use super::fixture::{
     BrokenResourceError, FakeRuntime, Script, ScriptedFailure, Step, capture, lock, session_client,
@@ -19,6 +20,7 @@ fn result() -> GetPromptResult {
             serde_json::from_str(r#"{"role":"user","content":{"type":"text","text":"hello"}}"#)
                 .unwrap(),
         ],
+        extra: Map::new(),
     }
 }
 

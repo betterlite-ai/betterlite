@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use betterlite_mcp::client::sessions::error::SessionError;
 use betterlite_mcp::client::sessions::stream::StreamFailure;
+use serde_json::Map;
 
 use super::fixture::{
     BrokenResourceError, FakeRuntime, Script, ScriptedFailure, Step, capture, lock, protocol,
@@ -31,6 +32,7 @@ fn page(names: &[&str], next: Option<&str>) -> PromptPage {
                 name: (*name).to_owned(),
                 description: None,
                 arguments: None,
+                extra: Map::new(),
             })
             .collect(),
         next_cursor: next.map(str::to_owned),
@@ -163,8 +165,22 @@ async fn raising_on_error_returns_the_failure_without_an_error_line() {
     let mut client = session_client(runtime, Duration::from_secs(60));
     let error = client.list_prompts(&settings(), true).await.unwrap_err();
     assert!(matches!(error, SessionError::Runtime(_)));
+    assert!(!captured.text().contains("list_prompts failed"));
+}
+
+#[tokio::test]
+async fn a_transport_failure_logs_a_warning_from_the_session_runner() {
+    let (captured, _guard) = capture();
+    let mut script = Script::with_capabilities(Some(ServerCapabilities {
+        prompts: Some(Capability::default()),
+        resources: None,
+    }));
+    script.transport_fails = true;
+    let runtime = FakeRuntime::<ScriptedFailure>::new(script);
+    let mut client = session_client(runtime, Duration::from_secs(60));
+    let error = client.list_prompts(&settings(), true).await.unwrap_err();
+    assert!(matches!(error, SessionError::Runtime(_)));
     let text = captured.text();
-    assert!(!text.contains("list_prompts failed"));
     assert!(text.contains("WARN"));
     assert!(text.contains("https://mcp.example.com/mcp"));
 }

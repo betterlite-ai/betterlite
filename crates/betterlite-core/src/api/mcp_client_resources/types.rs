@@ -23,6 +23,8 @@ pub struct Prompt {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arguments: Option<Vec<PromptArgument>>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -32,6 +34,8 @@ pub struct PromptArgument {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub required: Option<bool>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
@@ -50,6 +54,8 @@ pub struct Resource {
     pub description: Option<String>,
     #[serde(rename = "mimeType", default, skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
@@ -69,6 +75,8 @@ pub struct ResourceTemplate {
     pub description: Option<String>,
     #[serde(rename = "mimeType", default, skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
@@ -91,6 +99,8 @@ pub struct GetPromptResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub messages: Vec<PromptMessage>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -110,6 +120,8 @@ pub enum PromptRole {
 pub struct ReadResourceResult {
     #[serde(default)]
     pub contents: Vec<ResourceContents>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -121,6 +133,8 @@ pub struct ResourceContents {
     pub text: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blob: Option<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 pub trait PageCursor {

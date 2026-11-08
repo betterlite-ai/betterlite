@@ -112,6 +112,47 @@ fn an_empty_cursor_ends_the_walk() {
 }
 
 #[test]
+fn a_single_page_within_the_client_timeout_succeeds() {
+    let outcome = run(&input(
+        "list_prompts",
+        &json!({
+            "capabilities": {"prompts": {}},
+            "pages": [{"delay_ms": 45_000_u64, "next_cursor": null, "items": [{"name": "slow"}], "error": null}]
+        }),
+    ));
+    assert_eq!(
+        outcome,
+        json!({"items": [{"name": "slow"}], "cursors": [null]})
+    );
+}
+
+#[test]
+fn list_items_keep_the_sdk_metadata_fields() {
+    let outcome = run(&input(
+        "list_resources",
+        &json!({
+            "capabilities": {"resources": {}},
+            "pages": [{
+                "delay_ms": 0_u64,
+                "next_cursor": null,
+                "items": [{
+                    "uri": "test://rich",
+                    "name": "rich",
+                    "title": "Rich resource",
+                    "size": 12_i64,
+                    "annotations": {"audience": ["user"], "priority": 0.5_f64},
+                    "_meta": {"trace": "abc"}
+                }],
+                "error": null
+            }]
+        }),
+    ));
+    assert_eq!(outcome["items"][0]["title"], "Rich resource");
+    assert_eq!(outcome["items"][0]["size"], 12_i64);
+    assert_eq!(outcome["items"][0]["_meta"]["trace"], "abc");
+}
+
+#[test]
 fn a_page_past_the_deadline_returns_the_items_collected_so_far() {
     let outcome = run(&input(
         "list_prompts",

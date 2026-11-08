@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use betterlite_config::sections::mcp_tool_helpers::Settings as McpToolHelperSettings;
 use betterlite_mcp::client::sessions::error::SessionError;
+use serde_json::Map;
 
 use super::fixture::{
     FakeRuntime, Script, ScriptedFailure, Step, capture, protocol, resolve_session_step,
@@ -25,6 +26,7 @@ fn page(names: &[&str], next: Option<&str>) -> PromptPage {
                 name: (*name).to_owned(),
                 description: None,
                 arguments: None,
+                extra: Map::new(),
             })
             .collect(),
         next_cursor: next.map(str::to_owned),
@@ -105,6 +107,7 @@ async fn the_page_limit_returns_every_page_it_collected() {
                 name: format!("item-{count}"),
                 description: None,
                 arguments: None,
+                extra: Map::new(),
             }],
             next_cursor: Some(format!("cursor-{count}")),
         })

@@ -103,6 +103,7 @@ pub(crate) struct Script {
     pub(crate) cursors: Vec<Option<String>>,
     pub(crate) prompt_params: Vec<GetPromptRequestParams>,
     pub(crate) resource_uris: Vec<Url>,
+    pub(crate) transport_fails: bool,
 }
 
 impl Script {
@@ -117,6 +118,7 @@ impl Script {
             cursors: Vec::new(),
             prompt_params: Vec::new(),
             resource_uris: Vec::new(),
+            transport_fails: false,
         }
     }
 }
@@ -140,6 +142,7 @@ pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 pub(crate) struct FakeTransport<Source> {
+    script: Arc<Mutex<Script>>,
     marker: PhantomData<Source>,
 }
 
@@ -151,7 +154,14 @@ where
     type Error = Source;
 
     fn enter(&mut self) -> impl Future<Output = Result<(), Source>> + Send {
-        ready(Ok(()))
+        let fails = lock(&self.script).transport_fails;
+        async move {
+            if fails {
+                Err(Source::plain("the scripted transport failed"))
+            } else {
+                Ok(())
+            }
+        }
     }
 
     fn exit(self) -> impl Future<Output = Result<(), ExitFailure<Source>>> + Send + 'static {
@@ -377,12 +387,14 @@ where
 
     fn stdio_client(&self, _parameters: StdioServerParameters) -> FakeTransport<Source> {
         FakeTransport {
+            script: Arc::clone(&self.script),
             marker: PhantomData,
         }
     }
 
     fn sse_client(&self, _request: SseRequest) -> FakeTransport<Source> {
         FakeTransport {
+            script: Arc::clone(&self.script),
             marker: PhantomData,
         }
     }
@@ -393,6 +405,7 @@ where
         _client: Arc<FakeHttpClient<Source>>,
     ) -> FakeTransport<Source> {
         FakeTransport {
+            script: Arc::clone(&self.script),
             marker: PhantomData,
         }
     }

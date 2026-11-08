@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_mcp::client::sessions::error::SessionError;
+use serde_json::Map;
 
 use super::fixture::{FakeRuntime, Script, ScriptedFailure, Step, capture, lock, session_client};
 use crate::api::mcp_client_resources::operations::McpResourceOperations as _;
@@ -28,6 +29,7 @@ fn page(names: &[&str], next: Option<&str>) -> ResourceTemplatePage {
                 name: (*name).to_owned(),
                 description: None,
                 mime_type: None,
+                extra: Map::new(),
             })
             .collect(),
         next_cursor: next.map(str::to_owned),

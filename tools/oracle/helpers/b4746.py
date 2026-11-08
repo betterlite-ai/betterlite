@@ -12,7 +12,6 @@ from litellm.experimental_mcp_client import client as mcp_client
 from litellm.types.mcp import MCPTransport
 from mcp import ClientSession, MCPError
 from mcp.types import (
-    BlobResourceContents,
     GetPromptRequestParams,
     GetPromptResult,
     PaginatedRequestParams,
@@ -22,7 +21,6 @@ from mcp.types import (
     Resource,
     ResourceTemplate,
     ServerCapabilities,
-    TextResourceContents,
 )
 from pydantic import AnyUrl, BaseModel, ConfigDict, Field
 
@@ -169,7 +167,10 @@ class ScriptedSession:
         prompt = self.input.prompt
         if prompt is None:
             raise ValueError("the case has no prompt input")
-        self.prompt_params.append(prompt_params_json(name, arguments))
+        parameters: dict[str, Json] = {"name": name}
+        if arguments is not None:
+            parameters["arguments"] = cast(Json, arguments)
+        self.prompt_params.append(parameters)
         if prompt.error is not None:
             raise MCPError(code=prompt.error.code, message=prompt.error.message)
         if prompt.result is None:
@@ -214,13 +215,6 @@ def item_json(item: Item) -> dict[str, Json]:
     return cast(dict[str, Json], dumped)
 
 
-def prompt_params_json(name: str, arguments: dict[str, str] | None) -> dict[str, Json]:
-    value: dict[str, Json] = {"name": name}
-    if arguments is not None:
-        value["arguments"] = cast(Json, arguments)
-    return value
-
-
 def message_json(message: PromptMessage) -> dict[str, Json]:
     content = message.content.model_dump(mode="json", by_alias=True, exclude_none=True)
     return {"role": message.role, "content": cast(Json, content)}
@@ -230,17 +224,6 @@ def prompt_result_json(result: GetPromptResult) -> dict[str, Json]:
     value: dict[str, Json] = {"messages": [message_json(message) for message in result.messages]}
     if result.description is not None:
         value["description"] = result.description
-    return value
-
-
-def contents_json(contents: TextResourceContents | BlobResourceContents) -> dict[str, Json]:
-    value: dict[str, Json] = {"uri": contents.uri}
-    if contents.mime_type is not None:
-        value["mimeType"] = contents.mime_type
-    if isinstance(contents, TextResourceContents):
-        value["text"] = contents.text
-    if isinstance(contents, BlobResourceContents):
-        value["blob"] = contents.blob
     return value
 
 
@@ -277,8 +260,12 @@ async def dispatch(input_value: Input, client: ScriptedClient, session: Scripted
     if resource is None:
         raise ValueError("the case has no resource input")
     result = await client.read_resource(AnyUrl(resource.uri))
+    contents = [
+        cast(Json, item.model_dump(mode="json", by_alias=True, exclude_none=True))
+        for item in result.contents
+    ]
     return {
-        "result": {"contents": [contents_json(contents) for contents in result.contents]},
+        "result": {"contents": contents},
         "uris": cast(Json, session.resource_uris),
     }
 
