@@ -98,6 +98,9 @@ fn run_policy(fields: &PolicyFields) -> HelperResult {
         }
     };
     match policy.negotiate(request) {
+        Ok(_) if fields.method != "initialize" => {
+            return Ok(json!({ "result": { "called": true } }));
+        }
         Ok(_) => {}
         Err(VersionRejection::Unsupported(rejection)) => {
             return Ok(json!({
@@ -108,12 +111,9 @@ fn run_policy(fields: &PolicyFields) -> HelperResult {
                 }
             }));
         }
-        Err(invalid @ VersionRejection::InvalidParams(_)) => {
-            return Err(failure("InvalidParams", invalid.to_string()));
+        Err(VersionRejection::InvalidParams(message)) => {
+            return Err(failure("InvalidParams", message));
         }
-    }
-    if fields.method != "initialize" {
-        return Ok(json!({ "result": { "called": true } }));
     }
     let initialized = serde_json::from_value::<InitializeResult>(json!(fields.initialized))
         .map_err(|error| failure("InvalidInitializeResult", error.to_string()))?;

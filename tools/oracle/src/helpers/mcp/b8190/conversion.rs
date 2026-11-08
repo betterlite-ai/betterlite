@@ -92,10 +92,7 @@ fn run_parse_body(body: &str) -> HelperResult {
             "original_text": parsed.original_text,
         })),
         ToolOutcome::Complete(_) | ToolOutcome::InputRequired(_) | ToolOutcome::Failure(_) => {
-            Err(failure(
-                "UnexpectedOutcome",
-                "an HTTP body parses to text or JSON".to_owned(),
-            ))
+            Err(failure("UnexpectedOutcome", String::new()))
         }
     }
 }

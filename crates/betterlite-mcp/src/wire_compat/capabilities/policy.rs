@@ -64,17 +64,77 @@ pub struct InitializeParams {
     pub capabilities: ClientCapabilities,
     pub client_info: ClientInfo,
     #[serde(rename = "_meta")]
-    pub meta: Option<Object>,
+    pub meta: Option<RequestMeta>,
 }
 
 #[derive(Deserialize)]
 pub struct ClientCapabilities {
     pub experimental: Option<HashMap<String, Object>>,
     pub extensions: Option<HashMap<String, Object>>,
-    pub sampling: Option<Object>,
-    pub elicitation: Option<Object>,
-    pub roots: Option<Object>,
-    pub tasks: Option<Object>,
+    pub sampling: Option<SamplingCapability>,
+    pub elicitation: Option<ElicitationCapability>,
+    pub roots: Option<RootsCapability>,
+    pub tasks: Option<TasksCapability>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestMeta {
+    #[serde(default)]
+    pub progress_token: ProgressToken,
+}
+
+// an absent token is fine and a null one is not, so the absent case is a variant rather than an Option
+#[derive(Default, Deserialize)]
+#[serde(untagged)]
+pub enum ProgressToken {
+    #[default]
+    #[serde(skip_deserializing)]
+    Absent,
+    Text(String),
+    Number(i64),
+}
+
+#[derive(Deserialize)]
+pub struct SamplingCapability {
+    pub context: Option<Object>,
+    pub tools: Option<Object>,
+}
+
+#[derive(Deserialize)]
+pub struct ElicitationCapability {
+    pub form: Option<Object>,
+    pub url: Option<Object>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RootsCapability {
+    pub list_changed: Option<bool>,
+}
+
+#[derive(Deserialize)]
+pub struct TasksCapability {
+    pub list: Option<Object>,
+    pub cancel: Option<Object>,
+    pub requests: Option<TaskRequests>,
+}
+
+#[derive(Deserialize)]
+pub struct TaskRequests {
+    pub sampling: Option<TaskSampling>,
+    pub elicitation: Option<TaskElicitation>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskSampling {
+    pub create_message: Option<Object>,
+}
+
+#[derive(Deserialize)]
+pub struct TaskElicitation {
+    pub create: Option<Object>,
 }
 
 #[derive(Deserialize)]

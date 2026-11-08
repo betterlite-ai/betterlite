@@ -102,6 +102,51 @@ fn an_initialize_offer_negotiates_the_handshake_revision(
 #[case::meta_not_an_object(
     r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"},"_meta":"x"}"#
 )]
+#[case::roots_list_changed_not_a_bool(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{"roots":{"listChanged":"x"}},"clientInfo":{"name":"c","version":"1"}}"#
+)]
+#[case::sampling_tools_not_an_object(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{"sampling":{"tools":true}},"clientInfo":{"name":"c","version":"1"}}"#
+)]
+#[case::sampling_context_not_an_object(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{"sampling":{"context":1}},"clientInfo":{"name":"c","version":"1"}}"#
+)]
+#[case::elicitation_form_not_an_object(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"form":1}},"clientInfo":{"name":"c","version":"1"}}"#
+)]
+#[case::elicitation_url_not_an_object(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{"elicitation":{"url":"x"}},"clientInfo":{"name":"c","version":"1"}}"#
+)]
+#[case::tasks_list_not_an_object(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{"tasks":{"list":1}},"clientInfo":{"name":"c","version":"1"}}"#
+)]
+#[case::tasks_cancel_not_an_object(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{"tasks":{"cancel":"x"}},"clientInfo":{"name":"c","version":"1"}}"#
+)]
+#[case::tasks_requests_not_an_object(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{"tasks":{"requests":1}},"clientInfo":{"name":"c","version":"1"}}"#
+)]
+#[case::tasks_requests_sampling_not_an_object(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{"tasks":{"requests":{"sampling":1}}},"clientInfo":{"name":"c","version":"1"}}"#
+)]
+#[case::tasks_requests_create_message_not_an_object(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{"tasks":{"requests":{"sampling":{"createMessage":1}}}},"clientInfo":{"name":"c","version":"1"}}"#
+)]
+#[case::tasks_requests_elicitation_create_not_an_object(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{"tasks":{"requests":{"elicitation":{"create":1}}}},"clientInfo":{"name":"c","version":"1"}}"#
+)]
+#[case::progress_token_null(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"},"_meta":{"progressToken":null}}"#
+)]
+#[case::progress_token_list(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"},"_meta":{"progressToken":[]}}"#
+)]
+#[case::progress_token_object(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"},"_meta":{"progressToken":{}}}"#
+)]
+#[case::progress_token_fraction(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"},"_meta":{"progressToken":1.5}}"#
+)]
 fn an_initialize_with_invalid_params_is_rejected_with_the_invalid_params_code(#[case] raw: &str) {
     let policy = policy(&HANDSHAKE_VERSIONS);
     let params: Object = serde_json::from_str(raw).unwrap();
@@ -115,7 +160,7 @@ fn an_initialize_with_invalid_params_is_rejected_with_the_invalid_params_code(#[
 
 #[rstest]
 fn an_initialize_with_declared_optional_members_and_unknown_keys_is_accepted() {
-    let raw = r#"{"protocolVersion":"2025-11-25","capabilities":{"experimental":{"a":{}},"sampling":{"tools":{}},"roots":{"listChanged":true},"extra":1},"clientInfo":{"name":"c","version":"1","title":"C","websiteUrl":"https://c.test","icons":[{"src":"https://c.test/i.png","theme":"dark"}],"other":2},"_meta":{"k":1},"unknown":3}"#;
+    let raw = r#"{"protocolVersion":"2025-11-25","capabilities":{"experimental":{"a":{}},"sampling":{"context":{},"tools":{},"x":1},"elicitation":{"form":{},"url":{}},"roots":{"listChanged":true},"tasks":{"list":{},"cancel":{},"requests":{"sampling":{"createMessage":{}},"elicitation":{"create":{}}}},"extra":1},"clientInfo":{"name":"c","version":"1","title":"C","websiteUrl":"https://c.test","icons":[{"src":"https://c.test/i.png","theme":"dark"}],"other":2},"_meta":{"progressToken":"t","k":1},"unknown":3}"#;
     let policy = policy(&HANDSHAKE_VERSIONS);
     let params: Object = serde_json::from_str(raw).unwrap();
     let negotiated = policy.negotiate(VersionRequest::Initialize { params: &params });

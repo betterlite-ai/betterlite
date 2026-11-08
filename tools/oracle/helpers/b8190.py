@@ -227,30 +227,6 @@ def _convert(input_value: ConvertInput) -> Json:
     return {"complete": _wire(converted)}
 
 
-def _parse_body(body: str) -> Json:
-    parsed = result_conversion.parse_http_body(body)
-    if isinstance(parsed, JsonResult):
-        return {"kind": "json", "value": parsed.value, "original_text": parsed.original_text}
-    return {"kind": "text", "text": parsed.text}
-
-
-def _upstream_auth(input_value: UpstreamAuthInput) -> Json:
-    error = exceptions.MCPUpstreamAuthError(
-        input_value["status_code"],
-        input_value.get("www_authenticate"),
-        input_value["server_name"],
-    )
-    http_error = error.to_http_exception(
-        input_value.get("base_url"), input_value.get("request_path")
-    )
-    return {
-        "message": str(error),
-        "status_code": http_error.status_code,
-        "detail": cast(Json, http_error.detail),
-        "headers": cast(Json, dict(http_error.headers or {})),
-    }
-
-
 def _capabilities(input_value: CapabilityInput) -> Json:
     match input_value["function"]:
         case "discovery":
@@ -266,7 +242,10 @@ def _conversion(input_value: ConversionInput) -> Json:
         case "wire_compat_for":
             return result_conversion.wire_compat_for(input_value["protocol_version"]).value
         case "parse_http_body":
-            return _parse_body(input_value["body"])
+            out = result_conversion.parse_http_body(input_value["body"])
+            if isinstance(out, JsonResult):
+                return {"kind": "json", "value": out.value, "original_text": out.original_text}
+            return {"kind": "text", "text": out.text}
         case "to_call_tool_result" | "complete_call_tool_result":
             return _convert(input_value)
         case "to_gateway_tool":
@@ -284,7 +263,20 @@ def _errors(input_value: ErrorInput) -> Json:
                 "headers": cast(Json, dict(url_error.headers or {})),
             }
         case "upstream_auth":
-            return _upstream_auth(input_value)
+            auth_error = exceptions.MCPUpstreamAuthError(
+                input_value["status_code"],
+                input_value.get("www_authenticate"),
+                input_value["server_name"],
+            )
+            http_error = auth_error.to_http_exception(
+                input_value.get("base_url"), input_value.get("request_path")
+            )
+            return {
+                "message": str(auth_error),
+                "status_code": http_error.status_code,
+                "detail": cast(Json, http_error.detail),
+                "headers": cast(Json, dict(http_error.headers or {})),
+            }
         case "openapi_upstream":
             openapi_error = exceptions.MCPOpenApiUpstreamError(
                 input_value["status_code"], input_value["server_name"]

@@ -16,9 +16,8 @@ pub fn to_call_tool_result(outcome: ToolOutcome, compat: WireCompat) -> ToolCall
     match outcome {
         ToolOutcome::Text(result) => ToolCallResult::Complete(text_result(result.text, None)),
         ToolOutcome::Json(result) => {
-            let keep_structured =
-                compat == WireCompat::Modern || matches!(&result.value, Json::Object(_));
-            let structured = keep_structured.then_some(result.value);
+            let keeps = compat == WireCompat::Modern || matches!(&result.value, Json::Object(_));
+            let structured = keeps.then_some(result.value);
             ToolCallResult::Complete(text_result(result.original_text, structured))
         }
         ToolOutcome::Complete(result) => ToolCallResult::Complete(match compat {

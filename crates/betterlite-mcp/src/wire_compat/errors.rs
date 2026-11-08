@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::credential_contracts::errors::CredError;
 
 pub const URL_CREDENTIALS_STATUS: u16 = 500;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct HttpException {
     pub status_code: u16,
     pub detail: String,
@@ -71,20 +72,20 @@ impl UpstreamAuthError {
     }
 }
 
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, Error, PartialEq)]
 #[error("upstream returned HTTP {status_code}")]
 pub struct OpenApiUpstreamError {
     pub status_code: u16,
     pub server_name: String,
 }
 
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, Error, PartialEq)]
 #[error("{message}")]
 pub struct ToolResultError {
     pub message: String,
 }
 
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, Error, PartialEq)]
 #[error("Listing tools from MCP server '{server_name}' failed")]
 pub struct ServerListError<Fault: Debug> {
     pub fault: Fault,
