@@ -80,8 +80,10 @@ fn anthropic_invokes_behavior_tests_behavior_non_object_tool_calls_are_skipped()
 }
 
 #[rstest::rstest]
-#[case::missing(r#"{"id":"c1","type":"function","function":{}}"#)]
-#[case::null(r#"{"id":"c1","type":"function","function":{"name":null,"arguments":null}}"#)]
+#[case::empty_function(r#"{"id":"c1","type":"function","function":{}}"#)]
+#[case::null_fields(r#"{"id":"c1","type":"function","function":{"name":null,"arguments":null}}"#)]
+#[case::no_function(r#"{"id":"c1","type":"function"}"#)]
+#[case::null_function(r#"{"id":"c1","type":"function","function":null}"#)]
 fn anthropic_invokes_behavior_tests_behavior_a_missing_name_is_null_and_arguments_are_empty(
     #[case] tool: &str,
 ) {

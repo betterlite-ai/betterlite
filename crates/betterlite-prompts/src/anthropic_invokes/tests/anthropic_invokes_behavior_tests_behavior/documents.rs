@@ -281,6 +281,38 @@ async fn anthropic_invokes_behavior_tests_behavior_an_empty_file_data_is_not_a_f
     ));
 }
 
+#[tokio::test]
+async fn anthropic_invokes_behavior_tests_behavior_a_null_format_is_inferred() {
+    let data_urls = maps(&[]);
+    let source = MapSource {
+        data_urls: &data_urls,
+    };
+    let message =
+        object(r#"{"type":"file","file":{"file_id":"https://host/file.pdf","format":null}}"#);
+    assert_eq!(
+        process_openai_file_message(&message, &source)
+            .await
+            .unwrap(),
+        object(r#"{"type":"document","source":{"type":"url","url":"https://host/file.pdf"}}"#)
+    );
+}
+
+#[tokio::test]
+async fn anthropic_invokes_behavior_tests_behavior_a_null_file_data_falls_through_to_the_file_id() {
+    let data_urls = maps(&[]);
+    let source = MapSource {
+        data_urls: &data_urls,
+    };
+    let message =
+        object(r#"{"type":"file","file":{"file_data":null,"file_id":"https://host/file.pdf"}}"#);
+    assert_eq!(
+        process_openai_file_message(&message, &source)
+            .await
+            .unwrap(),
+        object(r#"{"type":"document","source":{"type":"url","url":"https://host/file.pdf"}}"#)
+    );
+}
+
 #[rstest::rstest]
 #[case::missing(r#"{"type":"file"}"#)]
 #[case::null(r#"{"type":"file","file":null}"#)]
@@ -322,15 +354,19 @@ async fn anthropic_invokes_behavior_tests_behavior_a_wrong_typed_file_field_is_n
     ));
 }
 
+#[rstest::rstest]
+#[case::neither_key(r#"{"type":"file","file":{"filename":"x"}}"#)]
+#[case::null_sources(r#"{"type":"file","file":{"file_data":null,"file_id":null}}"#)]
 #[tokio::test]
-async fn anthropic_invokes_behavior_tests_behavior_a_file_message_without_a_source_is_refused() {
+async fn anthropic_invokes_behavior_tests_behavior_a_file_message_without_a_source_is_refused(
+    #[case] raw: &str,
+) {
     let data_urls = maps(&[]);
     let source = MapSource {
         data_urls: &data_urls,
     };
-    let message = object(r#"{"type":"file","file":{"filename":"x"}}"#);
     assert!(matches!(
-        process_openai_file_message(&message, &source)
+        process_openai_file_message(&object(raw), &source)
             .await
             .unwrap_err(),
         FileMessageError::MissingSource
