@@ -1,0 +1,9 @@
+kind: helper
+name: completion-text-rewritten
+call:
+  b5240:
+    function: "output_choices"
+    response: {"choices": [{"text": "hi", "index": 0, "logprobs": null, "finish_reason": "length"}]}
+env: {}
+compare:
+  ignore: []

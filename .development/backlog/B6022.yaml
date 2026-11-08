@@ -2,7 +2,7 @@ id: B6022
 milestone: M12 python
 title: Native router calls in the Python crate
 status: todo
-depends_on: [B158, B302, B016, B5369, B5659, B6020, B6021]
+depends_on: [B158, B302, B016, B5369, B5659, B6020, B6021, B6460]
 file: tasks/B6022-native-router-calls.yaml
 covers:
   - "litellm/router.py"

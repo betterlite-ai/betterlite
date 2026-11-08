@@ -1,0 +1,22 @@
+kind: helper
+name: opensandbox-create-endpoint-wait
+call:
+  b3518:
+    operation: create
+    api_base: http://sandbox.example
+    api_key: test-key
+    poll_interval: 0.01
+    responses:
+      - status: 200
+        body: '{"id":"sbx_1","status":{"state":"Pending"}}'
+      - status: 200
+        body: '{"id":"sbx_1","status":{"state":"Pending"}}'
+      - status: 200
+        body: '{"id":"sbx_1","status":{"state":"Running"}}'
+      - status: 404
+        body: '{"code":404,"message":"endpoint not ready"}'
+      - status: 200
+        body: '{"endpoint":"http://execd.example","headers":{"X-Execd-Token":"abc"}}'
+env: {}
+compare:
+  ignore: []

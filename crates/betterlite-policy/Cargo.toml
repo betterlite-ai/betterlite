@@ -17,5 +17,8 @@ tracing.workspace = true
 rstest = "=0.27.0"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry"] }
 
+[features]
+fixtures = []
+
 [lints]
 workspace = true

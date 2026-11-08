@@ -13,16 +13,16 @@ description: >-
   up front. An entry is a request variant and a result variant in operation.rs, a module
   crates/betterlite-core/src/operation/<module>.rs with its request and result types, and a module
   crates/betterlite-core/src/dispatch/<module>.rs whose execute function the dispatch.rs arm calls. Chat and
-  embedding are the real entries. The other six are stubs: each execute answers DispatchError::NotBuilt naming its
+  embedding are the real entries. The other fifteen are stubs: each execute answers DispatchError::NotBuilt naming its
   entry, and each stub module has an adjacent tests.rs whose call_dispatch_tests_behavior case asserts that error.
   TextStream carries the text_completion request type, so B202's route can send a requested stream before B203
   lands. Every match on the request or result enum has one arm per entry that only calls into that entry's module,
-  with no wildcard arm. B202, B015, B080 and B082 then replace only their own stubs and stub tests; B203 also adds
+  with no wildcard arm. B202, B015, B080, B082, B3343, B3344, B3345 and B6360 then replace only their own stubs and stub tests; B203 also adds
   the bridge selection to dispatch/chat.rs and dispatch/text_completion.rs. None of them edits dispatch.rs or
   operation.rs. Keep the pipeline in betterlite-core above B198 leaf context/AWS types. Write the behavior rstest
   functions call_dispatch_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
   in the DoD; corpus replay tests have separate names. Budget 300 dispatch, 280 tests and 100 server wiring (680
-  total); the six stubs, their tests and their registry lines add about 250 lines outside it.
+  total); the fifteen stubs, their tests and their registry lines add about 620 lines outside it.
 scope:
   paths:
   - Cargo.toml
@@ -72,7 +72,7 @@ dod:
   - call-dispatch-tests
 - text: >-
     Every entry in the core-stubs list has its request and result variants, an operation module and a dispatch
-    module, and each of the six stubs answers DispatchError::NotBuilt in its own call_dispatch_tests_behavior case.
+    module, and each of the fifteen stubs answers DispatchError::NotBuilt in its own call_dispatch_tests_behavior case.
   proof:
   - core-stubs
   - call-dispatch-tests
@@ -99,6 +99,15 @@ checks:
       Responses responses
       ImageGeneration image_generation
       ImageEdit image_edit
+      VideoGeneration video_generation
+      VideoList video_list
+      VideoStatus video_status
+      VideoContent video_content
+      VideoRemix video_remix
+      VideoCreateCharacter video_create_character
+      VideoGetCharacter video_get_character
+      VideoEdit video_edit
+      VideoExtension video_extension
       EOF
 oracle_cases:
 - tools/oracle/cases/chat/openai-basic.yaml
@@ -117,11 +126,11 @@ pitfalls:
 - The provider framework must remain below core so adapters do not call back into the orchestration layer.
 - A route table match is metadata, not proof the server installed that route.
 - Do not reintroduce two independent logging/error pipelines when moving existing handlers into core.
-- The 680-line budget covers dispatch, tests and server wiring but not the six stubs, their tests and their registry lines.
+- The 680-line budget covers dispatch, tests and server wiring but not the fifteen stubs, their tests and their registry lines.
 - >-
   A stub execute is not an async fn, since an async fn without an await fails clippy::unused_async; it returns
   std::future::ready(Err(...)) so its owner can make it async later without touching the dispatch.rs arm.
 review_level: standard
 budget:
-  max_changed_lines: 1750
+  max_changed_lines: 2150
   max_new_expects: 0

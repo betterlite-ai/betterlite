@@ -80,7 +80,7 @@ deviations:
   - what: betterlite parses and validates IP literals the same way LiteLLM does but names the restrictions clearly in tests rather than relying on socket layer behavior.
     why: The socket layer's implicit handling of decimal/hex/mapped IPv6 addresses is implicit; explicit tests guard against misunderstandings.
 out_of_scope:
-  - "Content text utilities (is_all_text_parts, merge_rewritten_text_parts, content_to_text): B3663 owns these functions. _replace_text_in_content calls them but does not reimplement them."
+  - "Content text utilities (is_all_text_parts, merge_rewritten_text_parts, content_to_text): B3663 owns these functions in crates/betterlite-guardrails/src/content_text.rs. _replace_text_in_content calls them but does not reimplement them."
   - "Recovery store, retrieval planning, and tool injection: B3764 owns the recovery store; B3765 owns tool injection and message writeback."
   - "Initialization of the guardrail, configuration loading, and registration in the callback pipeline: B3765 owns initialization."
   - "The apply_guardrail body and lifecycle hook registration: B107 owns those higher-level orchestration points."

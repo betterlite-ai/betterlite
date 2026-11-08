@@ -1,0 +1,178 @@
+id: B5073
+title: Arbitrary-user container image and hardened Compose overlay
+description: >-
+  Write the rootless container image and the Compose overlay that tests it, both in packaging/docker/. LiteLLM ships them as docker/Dockerfile.non_root and docker-compose.hardened.yml. The image is meant for clusters that enforce runAsNonRoot and for OpenShift restricted-v2, which ignores the image USER and starts the process as a random uid in group 0. The overlay runs it with a read-only root file system, no capabilities, and all outbound traffic sent through a Squid proxy.
+  The repo has no Python, uv, Prisma or Node in the server, so the LiteLLM recipe is rebuilt around two Rust binaries. Do not copy its venv, prisma, npm or enterprise lines.
+
+
+  packaging/docker/Dockerfile.non_root has these stages, in this order.
+  (1) pgbouncer-builder, the same stage as LiteLLM's lines 15-29: base image cgr.dev/chainguard/wolfi-base@sha256:1d95114038f76513a9ace6fca107d5582b08c65981f81f61cb56bf7fd2ef216d (ARG LITELLM_BUILD_IMAGE, also used for ARG LITELLM_RUNTIME_IMAGE), ARG PGBOUNCER_VERSION=1.26.0 and ARG PGBOUNCER_SHA256=afd25dd61ee6775d37b40629b87ce08736b3e6955f3057bb212e410fbf21c71d, download, sha256sum -c, build, install to /usr/local/bin/pgbouncer.
+  (2) builder, FROM rust:1.98.0-bookworm (the version in rust-toolchain.toml). It copies Cargo.toml, Cargo.lock, rust-toolchain.toml, crates/ and tools/ from the build context, then runs "cargo build --release --locked -p betterlite -p betterlite-db-admin" (B003 owns the first binary, B1232 the second). Install a system package here only if that locked build needs it. In the same stage copy packaging/docker/prod_entrypoint.sh, entrypoint.sh and component_entrypoint.sh to /app/docker/, strip CRLF with sed -i 's/\r$//' and chmod +x each (the same step as LiteLLM line 120-121). Create /var/lib/litellm/ui and /var/lib/litellm/assets as empty folders here (no tasks supply admin UI files yet, see notes).
+  (3) runtime, FROM the wolfi base. As root: apk upgrade, then apk add bash openssl tzdata libevent (bash is for entrypoint.sh, libevent for pgbouncer), each in LiteLLM's three-try loop. Copy /usr/local/bin/pgbouncer from stage 1, target/release/betterlite and target/release/betterlite-db-admin to /usr/local/bin/, /app/docker from the builder, and the two /var/lib/litellm folders. Set ENV HOME=/app and LITELLM_NON_ROOT=true. LITELLM_NON_ROOT=true makes the server default the UI folder to /var/lib/litellm/ui and the assets folder to /var/lib/litellm/assets; LITELLM_UI_PATH and LITELLM_ASSETS_PATH override them. Leave XDG_CACHE_HOME unset so it falls back to $HOME/.cache.
+
+
+  Arbitrary-user rules for the runtime stage. One RUN creates /nonexistent, /app/.cache, /var/lib/litellm/ui and /var/lib/litellm/assets, chowns /app, /nonexistent and those two folders to nobody:nogroup, then makes every folder the server writes (/app/.cache and the two /var/lib/litellm folders) usable by any uid in group 0: chgrp -R 0, chmod -R g=u, chmod -R g+w and chmod -R g+rX. Binaries and /app/docker stay read-only for the arbitrary uid but readable and executable by all (chmod -R a+rX). The last user line is "USER 65534", a number and never "nobody", because the kubelet checks runAsNonRoot by parsing USER as an integer. Then EXPOSE 4000/tcp, ENTRYPOINT ["/app/docker/prod_entrypoint.sh"] and CMD ["--port", "4000"]. The file has no prisma, python, uv, npm, nodejs, venv or enterprise text anywhere, comments included.
+
+
+  packaging/docker/docker-compose.hardened.yml is an overlay for packaging/docker/docker-compose.yml (B5072), run as "docker compose -f docker-compose.yml -f docker-compose.hardened.yml up -d" from packaging/docker/. It has the same two services as LiteLLM's file.
+  Service litellm: build.context ../.. (compose resolves paths against the first -f file's folder, and the Dockerfile needs the repo root), build.dockerfile packaging/docker/Dockerfile.non_root, build.target runtime; depends_on [squid]; user "101:101"; group_add ["2345"]; read_only true; cap_drop [ALL]; security_opt ["no-new-privileges:true"]; tmpfs /app/cache:rw,noexec,nosuid,nodev,size=128m,uid=101,gid=101,mode=1777 and /app/migrations:rw,noexec,nosuid,nodev,size=64m,uid=101,gid=101,mode=1777; volumes ./proxy_server_config.yaml:/app/config.yaml:ro; environment LITELLM_NON_ROOT "true", PRISMA_BINARY_CACHE_DIR /app/cache/prisma-python/binaries, XDG_CACHE_HOME /app/cache, LITELLM_MIGRATION_DIR /app/migrations, HTTP_PROXY http://squid:3128, HTTPS_PROXY http://squid:3128, NO_PROXY "localhost,127.0.0.1,db"; command ["--port", "4000", "--config", "/app/config.yaml"].
+  Service squid: image sameersbn/squid:3.5.27-2, restart unless-stopped, ports "3128:3128", tmpfs /var/spool/squid:rw,noexec,nosuid,nodev,size=64m and /var/log/squid:rw,noexec,nosuid,nodev,size=16m.
+  PRISMA_BINARY_CACHE_DIR and LITELLM_MIGRATION_DIR stay in the overlay on purpose: existing LiteLLM users have them set, and B051 reads both as ignored inputs and warns once. The overlay is not the only egress control; the shared proxy_server_config.yaml (B5072) stays unmodified.
+
+
+  Tests live in packaging/docker/tests/non_root_image.sh, a bash script with no framework and no docker calls (the worker sandbox has no docker socket). It reads the Dockerfile and the overlay with grep and awk, exits non-zero on the first failed assertion with a message naming it, and prints only a final "ok" line on success. It ports LiteLLM's tests/unit/test_dockerfile_non_root.py: the last USER line must be digits only and not 0. It also makes every assertion listed in the dod below.
+scope:
+  paths:
+    - packaging/docker/Dockerfile.non_root
+    - packaging/docker/docker-compose.hardened.yml
+    - packaging/docker/tests/non_root_image.sh
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/Dockerfile.non_root#L1-L202
+    why: The whole recipe; lines 15-29 are the pgbouncer stage kept as is, 120-121 the entrypoint chmod step, 177-195 the ownership and group-0 permissions, 197-202 USER, EXPOSE, ENTRYPOINT and CMD.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker-compose.hardened.yml#L1-L44
+    why: The whole overlay, copied field by field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/test_dockerfile_non_root.py#L14-L54
+    why: The numeric, non-zero final USER rule and its reason (kubelet runAsNonRoot admission).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/proxy_migration_tests/test_offline_image_migration.py#L20-L28
+    why: NON_ROOT_UID 12345:0 is the arbitrary uid in group 0 that OpenShift restricted-v2 assigns; this is the user the image must work for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2235-L2244
+    why: LITELLM_NON_ROOT=true picks /var/lib/litellm/ui as the UI folder, with LITELLM_UI_PATH overriding it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17613-L17621
+    why: LITELLM_NON_ROOT=true picks /var/lib/litellm/assets as the assets folder, with LITELLM_ASSETS_PATH overriding it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/README.md#L72-L96
+    why: Describes what the hardened overlay is for and how it is started.
+dod:
+  - text: The three files exist, and the test script passes bash -n.
+    proof: [files-exist, script-syntax]
+  - text: The last USER line of Dockerfile.non_root is a number other than 0, and the image exposes 4000/tcp with ENTRYPOINT /app/docker/prod_entrypoint.sh and CMD --port 4000.
+    proof: [final-user-numeric, entrypoint-cmd]
+  - text: The runtime stage makes /app/.cache, /var/lib/litellm/ui and /var/lib/litellm/assets writable for any uid in group 0 (chgrp -R 0 and chmod -R g=u), and sets HOME=/app and LITELLM_NON_ROOT=true.
+    proof: [group-zero-writable, runtime-env]
+  - text: The image builds betterlite and betterlite-db-admin with cargo build --release --locked, copies both into /usr/local/bin, copies the three entrypoint scripts from packaging/docker/, and bundles pgbouncer at the pinned version and checksum.
+    proof: [native-binaries, pgbouncer-pinned]
+  - text: Dockerfile.non_root contains no python, prisma, uv, npm, nodejs, venv or enterprise text.
+    proof: [no-python-stack]
+  - text: The overlay builds from packaging/docker/Dockerfile.non_root with context ../.. and target runtime, and mounts ./proxy_server_config.yaml read-only at /app/config.yaml.
+    proof: [overlay-build]
+  - text: The overlay runs litellm as user 101:101 with group 2345, a read-only root, ALL capabilities dropped, no-new-privileges, and the two noexec tmpfs mounts owned by uid and gid 101.
+    proof: [overlay-hardening]
+  - text: The overlay sets the proxy variables to http://squid:3128, keeps NO_PROXY, and defines the squid service with image sameersbn/squid:3.5.27-2.
+    proof: [overlay-egress]
+  - text: The test script runs every assertion above and prints ok.
+    proof: [static-script]
+checks:
+  optional: []
+  commands:
+    - id: files-exist
+      why: Dockerfile.non_root, the overlay or the test script is missing.
+      run: >-
+        test -f packaging/docker/Dockerfile.non_root &&
+        test -f packaging/docker/docker-compose.hardened.yml &&
+        test -f packaging/docker/tests/non_root_image.sh
+    - id: script-syntax
+      why: The test script has a shell syntax error or is missing.
+      run: bash -n packaging/docker/tests/non_root_image.sh
+    - id: final-user-numeric
+      why: The last USER line is missing, a name such as nobody, or 0.
+      run: >-
+        awk '/^USER[[:space:]]/ {u=$2} END {exit !(u ~ /^[0-9]+$/ && u != 0)}' packaging/docker/Dockerfile.non_root
+    - id: entrypoint-cmd
+      why: EXPOSE, ENTRYPOINT or CMD is missing or differs from the task.
+      run: >-
+        grep -qx 'EXPOSE 4000/tcp' packaging/docker/Dockerfile.non_root &&
+        grep -qxF 'ENTRYPOINT ["/app/docker/prod_entrypoint.sh"]' packaging/docker/Dockerfile.non_root &&
+        grep -qxF 'CMD ["--port", "4000"]' packaging/docker/Dockerfile.non_root
+    - id: group-zero-writable
+      why: The writable folders are not opened to group 0, so an arbitrary uid cannot write to them.
+      run: >-
+        grep -q 'chgrp -R 0 ' packaging/docker/Dockerfile.non_root &&
+        grep -q 'chmod -R g=u ' packaging/docker/Dockerfile.non_root &&
+        grep -q '/app/.cache' packaging/docker/Dockerfile.non_root &&
+        grep -q '/var/lib/litellm/ui' packaging/docker/Dockerfile.non_root &&
+        grep -q '/var/lib/litellm/assets' packaging/docker/Dockerfile.non_root
+    - id: runtime-env
+      why: HOME or LITELLM_NON_ROOT is not set in the image.
+      run: >-
+        grep -q 'HOME=/app' packaging/docker/Dockerfile.non_root &&
+        grep -q 'LITELLM_NON_ROOT=true' packaging/docker/Dockerfile.non_root
+    - id: native-binaries
+      why: The image does not build or install both native binaries, or does not copy the entrypoint scripts from packaging/docker.
+      run: >-
+        grep -q 'cargo build --release --locked -p betterlite -p betterlite-db-admin' packaging/docker/Dockerfile.non_root &&
+        grep -q '/usr/local/bin/betterlite-db-admin' packaging/docker/Dockerfile.non_root &&
+        grep -q 'packaging/docker/prod_entrypoint.sh' packaging/docker/Dockerfile.non_root &&
+        grep -q 'packaging/docker/entrypoint.sh' packaging/docker/Dockerfile.non_root &&
+        grep -q 'packaging/docker/component_entrypoint.sh' packaging/docker/Dockerfile.non_root
+    - id: pgbouncer-pinned
+      why: The pgbouncer version or checksum is not the pinned one.
+      run: >-
+        grep -q 'PGBOUNCER_VERSION=1.26.0' packaging/docker/Dockerfile.non_root &&
+        grep -q 'PGBOUNCER_SHA256=afd25dd61ee6775d37b40629b87ce08736b3e6955f3057bb212e410fbf21c71d' packaging/docker/Dockerfile.non_root
+    - id: no-python-stack
+      why: The Dockerfile still carries a Python, Prisma, uv, Node, venv or enterprise line from LiteLLM.
+      run: "! grep -Eqi '[p]ython|prisma|uv sync|npm|nodejs|venv|enterprise' packaging/docker/Dockerfile.non_root"
+    - id: overlay-build
+      why: The overlay build block, Dockerfile path or config mount differs from the task.
+      run: >-
+        grep -q 'context: \.\./\.\.' packaging/docker/docker-compose.hardened.yml &&
+        grep -q 'dockerfile: packaging/docker/Dockerfile.non_root' packaging/docker/docker-compose.hardened.yml &&
+        grep -q 'target: runtime' packaging/docker/docker-compose.hardened.yml &&
+        grep -qF './proxy_server_config.yaml:/app/config.yaml:ro' packaging/docker/docker-compose.hardened.yml
+    - id: overlay-hardening
+      why: The user, groups, read-only root, capabilities, no-new-privileges or tmpfs mounts of the overlay differ from the task.
+      run: >-
+        grep -qF 'user: "101:101"' packaging/docker/docker-compose.hardened.yml &&
+        grep -qF '"2345"' packaging/docker/docker-compose.hardened.yml &&
+        grep -q 'read_only: true' packaging/docker/docker-compose.hardened.yml &&
+        grep -q -- '- ALL' packaging/docker/docker-compose.hardened.yml &&
+        grep -qF 'no-new-privileges:true' packaging/docker/docker-compose.hardened.yml &&
+        grep -qF '/app/cache:rw,noexec,nosuid,nodev,size=128m,uid=101,gid=101,mode=1777' packaging/docker/docker-compose.hardened.yml &&
+        grep -qF '/app/migrations:rw,noexec,nosuid,nodev,size=64m,uid=101,gid=101,mode=1777' packaging/docker/docker-compose.hardened.yml
+    - id: overlay-egress
+      why: The proxy variables or the squid service differ from the task.
+      run: >-
+        grep -qF 'HTTP_PROXY: "http://squid:3128"' packaging/docker/docker-compose.hardened.yml &&
+        grep -qF 'HTTPS_PROXY: "http://squid:3128"' packaging/docker/docker-compose.hardened.yml &&
+        grep -qF 'NO_PROXY: "localhost,127.0.0.1,db"' packaging/docker/docker-compose.hardened.yml &&
+        grep -q 'image: sameersbn/squid:3.5.27-2' packaging/docker/docker-compose.hardened.yml
+    - id: static-script
+      why: The test script is missing, fails an assertion or does not print ok.
+      run: bash packaging/docker/tests/non_root_image.sh | grep -qx ok
+oracle_cases: []
+deviations:
+  - what: The image is built from the Rust workspace with cargo and has no venv, Python, uv, Prisma binaries or Node; it installs betterlite and betterlite-db-admin into /usr/local/bin.
+    why: The native server and betterlite-db-admin (B1232) replace the Python proxy and prisma_migration.py, and B1232 records that no client generation or subprocess runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/Dockerfile.non_root#L45-L122
+  - what: The image has no /opt/prisma folder and sets no PRISMA_* variables; the overlay still sets PRISMA_BINARY_CACHE_DIR and LITELLM_MIGRATION_DIR.
+    why: B051 accepts both as ignored inputs with one startup warning, so a compose file written for LiteLLM keeps working.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker-compose.hardened.yml#L23-L27
+  - what: The files are packaging/docker/Dockerfile.non_root and packaging/docker/docker-compose.hardened.yml, and the overlay's build context is ../.. instead of ".".
+    why: B5070 and B5072 put the scripts and the base Compose file in packaging/docker/, and compose resolves paths against the first -f file's folder.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker-compose.hardened.yml#L5-L8
+  - what: The enterprise and litellm-proxy-extras COPY lines and the Bedrock realtime uv extra are dropped.
+    why: Enterprise code is not built, and the extra is a Python package option with no native counterpart.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/Dockerfile.non_root#L147-L148
+out_of_scope:
+  - B5071 owns the root Dockerfile and Dockerfile.database; B5074 owns the PyPI image; B5075 the tracing stack.
+  - B5072 owns docker-compose.yml, proxy_server_config.yaml and the other shared stack files; the overlay only references them.
+  - B5070 owns the entrypoint scripts this image copies; B1232 owns betterlite-db-admin and B003 owns the betterlite binary.
+  - B151 owns docker/README.md (its hardened section), docker/tests/nonroot.yaml and the container-structure checks of the final image.
+  - The docker-based tests (tests/proxy_migration_tests/test_offline_image_migration.py, test_component_image_serves_offline.py) and the image-scan workflow need a docker daemon, a built image and Postgres. They have no caller in the gate and are not ported here.
+  - tests/unit/test_dockerfile_bedrock_realtime_extra.py checks uv sync lines, which this image does not have.
+  - The admin UI files that LiteLLM copies into /var/lib/litellm/ui; no task supplies a native UI bundle yet (see notes).
+pitfalls:
+  - OpenShift restricted-v2 ignores USER and runs a random uid such as 12345 in group 0, so owner nobody alone is not enough; every folder the server writes needs group 0 with g=u, and the uid also has no /etc/passwd entry, so HOME=/app must be set explicitly.
+  - USER must be the number 65534 because the kubelet rejects a name with CreateContainerConfigError; a "USER nobody" line fails the final-user-numeric check.
+  - The tmpfs lines carry uid=101,gid=101 to match user "101:101"; if they differ the read-only container cannot write /app/cache, and uid 101 is not the image's USER 65534 on purpose.
+  - Both tmpfs mounts are noexec, so nothing the server must execute may be placed or unpacked there; binaries live only in /usr/local/bin.
+  - Under read_only true the server may write only to /app/cache, /app/migrations, /var/lib/litellm/* (not mounted in the overlay, so read-only there) and the squid tmpfs; do not add mounts to hide a write the server should not make.
+  - In the overlay, depends_on lists only squid, not the db service, because the base file from B5072 does not wait on the db either; do not add a service_healthy condition.
+  - YAML list items under cap_drop, security_opt, tmpfs and group_add must be quoted exactly as the grep checks expect ("2345", "no-new-privileges:true"); an unquoted 2345 becomes a number and compose rejects it.
+  - The grep for python, prisma and the others covers comments as well, so do not write a comment that mentions them.
+  - Copy only Cargo.toml, Cargo.lock, rust-toolchain.toml, crates/ and tools/ into the builder, not the whole context, so a developer's target/ or .git folder never lands in an image layer.
+  - The CMD ["--port", "4000"] has no --config, and B003 requires --config, so running the image with no command exits with a usage error; only the overlay (and any caller passing --config) starts the server.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
