@@ -1,0 +1,74 @@
+id: B154
+title: "Terraform deployment modules for AWS and GCP: overview and parity check"
+description: >-
+  B154 was split into eight parts. B8140 to B8143 build the AWS module in packaging/terraform/aws/ and B8144 to B8147 build the GCP module in packaging/terraform/gcp/. This last part adds the overview README at
+  packaging/terraform/README.md and one check that keeps the two modules in step. Write nothing inside the aws or gcp folders.
+
+  packaging/terraform/README.md has these sections in this order: Modules (one paragraph each for aws and gcp with a link to the folder README), What both build (one betterlite service on port 4000, PostgreSQL, Redis, a proxy config bucket, secrets, an HTTPS load balancer),
+  Choosing a module (a table of AWS service against GCP service: ECS Fargate and Cloud Run, Aurora and Cloud SQL, ElastiCache and Memorystore, ALB and the global external load balancer, S3 and Cloud Storage, Secrets Manager and Secret Manager), Shared input names (the names
+  both modules take: tenant, env, image, litellm_master_key, litellm_license, ui_password, extra_secrets, proxy_config, extra_env, connection_pool_enabled, pool_max_db_connections, pool_max_client_conn, otel_endpoint), Differences (database authentication: IAM tokens on AWS, a
+  generated password on GCP; migration runner: aws CLI on AWS, gcloud on GCP; Redis TLS default), Tools (Terraform 1.13 or newer, the aws or gcloud CLI for the migration step) and Not built compared with LiteLLM (the collector and metrics sidecars, billing metrics, separate
+  backend and ui services). It links the two folder READMEs and the pinned LiteLLM source folder. It names no secret and no account id.
+
+  The parity check compares the two variables files for the shared input names and fails when one module lacks a name the other has with the same meaning. Keep the list of shared names in the check command, not in a script file.
+
+scope:
+  paths:
+    - packaging/terraform/README.md
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm
+    why: The LiteLLM module root and its top-level README, the shape the overview follows.
+
+dod:
+  - text: The overview README has the listed sections and links both module READMEs.
+    proof: [tf-overview-sections, tf-overview-links]
+  - text: Both modules declare every shared input name.
+    proof: [tf-shared-inputs]
+  - text: Both modules format and validate together, using one init per module.
+    proof: [tf-modules-validate]
+
+checks:
+  optional: []
+  commands:
+    - id: tf-overview-sections
+      why: An overview section is missing.
+      run: >-
+        for s in 'Modules' 'What both build' 'Choosing a module' 'Shared input names' 'Differences' 'Tools' 'Not built'; do grep -q "^## .*$s" packaging/terraform/README.md || { echo "missing section $s"; exit 1; }; done
+    - id: tf-overview-links
+      why: The overview does not link both module READMEs.
+      run: >-
+        grep -q '(aws/README.md)' packaging/terraform/README.md && grep -q '(gcp/README.md)' packaging/terraform/README.md
+    - id: tf-shared-inputs
+      why: A shared input name is missing from the AWS or the GCP module.
+      run: >-
+        for n in tenant env image litellm_master_key litellm_license ui_password extra_secrets proxy_config extra_env connection_pool_enabled pool_max_db_connections pool_max_client_conn otel_endpoint; do for m in aws gcp; do cat packaging/terraform/$m/variables*.tf | grep -q "^variable \"$n\"" || { echo "$m lacks $n"; exit 1; }; done; done
+    - id: tf-modules-validate
+      why: One of the modules fails fmt or validate.
+      run: >-
+        export TF_IN_AUTOMATION=1 && for m in aws gcp; do TF_DATA_DIR="$PWD/target/terraform/$m" terraform -chdir=packaging/terraform/$m fmt -check -recursive -diff &&
+        TF_DATA_DIR="$PWD/target/terraform/$m" terraform -chdir=packaging/terraform/$m init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        TF_DATA_DIR="$PWD/target/terraform/$m" terraform -chdir=packaging/terraform/$m validate || exit 1; done
+
+oracle_cases: []
+
+deviations:
+  - what: Two single-service modules replace LiteLLM's three-service modules, and the AWS and GCP modules differ in database authentication.
+    why: betterlite is one binary on port 4000. The AWS module uses IAM tokens (B1232 and the gateway support them) and the GCP module uses a generated password.
+    link: https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm
+
+out_of_scope:
+  - "Anything inside packaging/terraform/aws or packaging/terraform/gcp. Owned by B8140 to B8147."
+  - "A GitHub Actions workflow for the Terraform checks. LiteLLM has test-terraform-modules.yml; the gate runs the checks here, and a workflow is not planned."
+  - "Publishing the modules to the Terraform Registry."
+
+pitfalls:
+  - "The overview must say the modules need Terraform 1.13 or newer, the same as versions.tf in each module."
+  - "The shared-names check reads variables*.tf, so it needs both modules finished; that is why B154 depends on B8143 and B8147."
+  - "Do not describe a feature the module READMEs list under Not built."
+
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0

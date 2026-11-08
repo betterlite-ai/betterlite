@@ -1,0 +1,105 @@
+id: B8041
+title: JSON values, callable handles and Python errors for the embedded interpreter
+description: >-
+  Hooks in config.yaml are Python functions and objects, and the Rust side talks to them in JSON. This task adds the
+  crossing in `crates/betterlite-pyhost`: turning `serde_json::Value` into Python objects and back, a handle to a Python
+  callable that Rust can call from sync or async code, and one error type for what Python raises. It is Rust only and
+  builds on B8040's `PythonHost` and `WorkTracker`. LiteLLM has no counterpart, since it calls its hooks directly, so the
+  task owns no LiteLLM lines. B054 (custom auth), B1220 and B1224 (key hooks), B363 (routing plugins) and B44 (custom
+  providers) call through this.
+
+
+  Three modules. `json_values`: `to_python(py, &Value) -> PyResult<Bound<PyAny>>` builds None, bool, int, float, str, list
+  and dict; an integer outside i64 and u64 range cannot occur in `Value`, and a float that is NaN or infinite is refused
+  with `ValueError::NonFinite`. `from_python(obj) -> Result<Value, ValueError>` is the strict reverse: dict keys must be
+  `str`, tuples read as lists, `bytes` and every other type give `ValueError::Unsupported { type_name }` and never a guess,
+  and nesting deeper than 64 levels gives `ValueError::TooDeep`. `from_python` reads data that comes out of
+  user code, so it gets a property test: round trip of generated `Value`s through both functions equals the
+  input.
+
+
+  `callable_handle`: `CallableHandle` owns a `Py<PyAny>` plus a flag set once at construction: `is_async` is true when
+  `inspect.iscoroutinefunction(obj)` is true, or when the object is not a function and its `__call__` is. A sync callable
+  is run through B8040's `WorkTracker::run`. An async one is run on a private asyncio event loop that lives on one named
+  thread (`betterlite-py-loop`), started on first use and shared by every handle of the same `PythonHost`. The loop thread
+  runs `loop.run_forever()`. `call(&self, host, tracker, deadline, args: Vec<Value>, kwargs: Map<String, Value>) ->
+  Result<Value, CallError>` converts the arguments, calls, awaits a returned coroutine on the loop with
+  `asyncio.run_coroutine_threadsafe(...).result(timeout)`, and converts the result. When the deadline passes for a
+  coroutine, the future is cancelled and `CallError::TimedOut` is returned, so unlike a sync job an async hook stops. A
+  sync callable that returns an awaitable (a plain function returning a coroutine object) is awaited the same way. `call_raw`
+  does the same with already-built Python arguments, for B8043 and for hooks that need class instances, and returns
+  `Py<PyAny>`. `attr(name)` returns a handle to an attribute and `name()` returns `__qualname__` for log lines.
+
+
+  `call_error`: `CallError` is `TimedOut { after }`, `Python(PythonError)`, `Value(ValueError)`, `Work(WorkError)`.
+  `PythonError { type_name, module, message, traceback }` is built from the raised exception: `type_name` from
+  `type(e).__name__`, `module` from `type(e).__module__`, `message` from `str(e)`, and `traceback` from
+  `traceback.format_exception` joined as text. `is_instance_of(&self, host, "pkg.Class")` lets a caller test for a class
+  by dotted name, which is how B054 recognizes `ProxyException`. A BaseException that is not an Exception (`SystemExit`,
+  `KeyboardInterrupt`) raised by user code is returned as `PythonError` too and never ends the process.
+scope:
+  paths:
+  - crates/betterlite-pyhost/src/json_values.rs
+  - crates/betterlite-pyhost/src/json_values/**
+  - crates/betterlite-pyhost/src/callable_handle.rs
+  - crates/betterlite-pyhost/src/callable_handle/**
+  - crates/betterlite-pyhost/src/call_error.rs
+  - crates/betterlite-pyhost/src/call_error/**
+  - crates/betterlite-pyhost/Cargo.toml
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://docs.python.org/3/library/asyncio-task.html#asyncio.run_coroutine_threadsafe
+  why: The call that runs a coroutine on the loop thread and hands back a future.
+- url: https://docs.python.org/3/library/inspect.html#inspect.iscoroutinefunction
+  why: How the async flag is decided.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6771-L6811
+  why: The hook slots (custom_auth, custom_key_generate and the rest) whose callables this crossing serves.
+dod:
+- text: to_python and from_python round trip every JSON value, reject NaN, non-str dict keys, bytes and nesting over 64 levels.
+  proof: [values-tests]
+- text: A sync callable and an async callable both return their result through CallableHandle.call, with positional and keyword arguments.
+  proof: [handle-tests]
+- text: A plain function that returns a coroutine object is awaited like an async function.
+  proof: [handle-tests]
+- text: An async callable that passes the deadline is cancelled and gives TimedOut, and the loop still serves the next call.
+  proof: [handle-tests]
+- text: A raised Exception gives PythonError with type name, module, message and traceback, and SystemExit raised by user code does not stop the process.
+  proof: [error-tests]
+- text: is_instance_of matches a dotted class name against the raised exception and its bases.
+  proof: [error-tests]
+- text: This task adds the crates it uses (serde_json and any other) to crates/betterlite-pyhost/Cargo.toml, and no unused one.
+  proof: [values-tests]
+checks:
+  optional: []
+  commands:
+  - id: values-tests
+    why: The JSON crossing tests are missing or a type is guessed instead of refused.
+    run: cargo nextest run --locked -p betterlite-pyhost --no-tests=fail -E 'test(/^json_values::/)'
+  - id: handle-tests
+    why: Sync, async, coroutine-returning or deadline tests are missing.
+    run: cargo nextest run --locked -p betterlite-pyhost --no-tests=fail -E 'test(/^callable_handle::/)'
+  - id: error-tests
+    why: Error text, traceback or class-name tests are missing.
+    run: cargo nextest run --locked -p betterlite-pyhost --no-tests=fail -E 'test(/^call_error::/)'
+oracle_cases: []
+deviations:
+- what: Hook arguments and results cross as JSON values. A hook that returns a custom object, bytes or a tuple key gets a typed error where LiteLLM passes the object on.
+  why: The Rust side has no use for an opaque Python object, and a typed error names the field. Callers that need a class instance use call_raw.
+- what: An async hook runs on one shared event loop thread, not on the proxy's own loop.
+  why: The proxy loop is Tokio. Hooks that rely on a particular running loop (contextvars set by the server) do not see them.
+out_of_scope:
+- The interpreter host, the pool and temporary files are B8040.
+- Loading a hook from a dotted path or file is B8042. Method-level adapters for logger, router and provider objects are B8043.
+- What each config key means and when its hook runs belongs to the task that owns the key (B054, B1220, B1224, B363).
+pitfalls:
+- Hold the GIL only inside `attach`. Blocking on `.result(timeout)` while holding it stalls the loop thread that must run the coroutine, so release it with `py.detach` around the wait.
+- '`bool` is a subclass of `int` in Python. Check bool first in `from_python`, or true becomes 1.'
+- A dict key that is an int is valid Python and invalid here. Refuse it with `ValueError::Unsupported` and do not stringify it.
+- Create the event loop with `asyncio.new_event_loop()` and set it on the loop thread only. Never call `asyncio.run`, which closes its loop after one call.
+- '`SystemExit` is not an `Exception`. Catch `PyErr` as a whole and not by downcasting to `Exception`.'
+- Do not log argument values at any level, since hooks receive API keys and prompts. Log the callable's `name()` and the error type.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

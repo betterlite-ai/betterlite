@@ -1,0 +1,16 @@
+id: B7942
+milestone: M12 python
+title: Python types for agents, decisions and access groups (types/agents.py, decisions.py, access_group.py)
+status: todo
+depends_on: [B5657, B7929]
+file: tasks/B7942-types-agents-decisions-access.yaml
+covers:
+  - "litellm/types/agents.py"
+  - "litellm/types/decisions.py"
+  - "litellm/types/access_group.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

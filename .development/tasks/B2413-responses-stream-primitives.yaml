@@ -35,6 +35,10 @@ scope:
   - tools/oracle/helpers/responses_stream_primitives/**
   - tools/oracle/fuzz/corpus/helper_case/responses_stream_primitives-*
   - tools/oracle/cases/helpers/responses-stream-primitives/**
+  - tools/oracle/helpers/b2413.py
+  - tools/oracle/helpers/b2413/**
+  - tools/oracle/src/helpers/core_ops/b2413.rs
+  - tools/oracle/src/helpers/core_ops/b2413/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L73-L361
@@ -48,7 +52,7 @@ dod:
     cache_hit null; persist_before_logging true; generated text/arguments empty; pending
     tasks empty. Null/falsy request_data becomes {}. Capture creation wall time and use
     logging.start_time when present, otherwise now. Hidden fields are model_id from a
-    dict metadata.model_info.id only when string,api_base from B004,custom_llm_provider,
+    dict metadata.model_info.id only when string,api_base from B7320 get_api_base,custom_llm_provider,
     and B206 processed additional_headers; snapshot raw headers separately by value.
     metadata model_info={id:""} keeps "",numeric id becomes null.
   proof: [primitive-tests, oracle, primitive-adapter]

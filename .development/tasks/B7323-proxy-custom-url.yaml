@@ -1,0 +1,93 @@
+id: B7323
+title: Build the proxy's public URL from PROXY_BASE_URL and the root path
+description: >-
+  Build LiteLLM's `get_custom_url` (proxy/utils.py L8310-L8339) and the two helpers only it uses, `join_paths` (L8287-L8307) and `get_proxy_base_url` (L8342-L8346). The proxy uses the result for the public URLs it hands out: SSO callbacks, login redirects, and the agent card url B4785 builds. Everything is a pure function over values passed in. Nothing here reads the environment outside the config crate, and nothing keeps global or per-request state.
+
+  Config section, in crates/betterlite-config/src/sections/proxy_base_url.rs. `Settings { proxy_base_url: Option<String> }`. The value is the environment variable PROXY_BASE_URL, read through the same `EnvironmentLookup` the neighbouring section `request_root_paths` uses. Unset gives None. A variable that is set but empty gives Some("") and is not turned into None, because LiteLLM tests `is not None` and an empty value then replaces the request base URL with an empty string. The text is kept exactly as written: no trimming, no validation, no trailing slash change. (B4654's `normalize_proxy_base_url` is a different, stricter reader used for MCP URLs; do not call it here.) The key has no general_settings spelling in LiteLLM, so this section reads the environment only. Register the section the way `request_root_paths` is registered; the skeleton creates the stub and the sections.rs lines.
+
+  Module `custom_url` in betterlite-server (crates/betterlite-server/src/custom_url.rs). Public functions:
+
+  1. `join_paths(base_path: &str, route: &str) -> String`. Trim every trailing "/" from base_path and every leading "/" from route. Empty base_path: return "/" followed by route, or just "/" when route is empty too. Empty route: return the trimmed base_path. When the trimmed base_path already ends with "/" followed by the trimmed route, return base_path unchanged (the tail is not appended twice). Otherwise return base_path, "/", route.
+
+  2. `get_custom_url(proxy_base_url: Option<&str>, request_base_url: &str, request_root_path: &str, route: Option<&str>) -> String`. base_url is proxy_base_url when it is Some (an empty string included), else request_base_url. When route is Some: if request_root_path is not empty, join_paths(join_paths(base_url, request_root_path), route); if it is empty, join_paths(base_url, route). When route is None: join_paths(base_url, request_root_path). `request_root_path` is the request's effective root path: the matched SERVER_ROOT_PATHS prefix, or the SERVER_ROOT_PATH scalar when no prefix matched. The server obtains it from B4200's `get_request_root_path(extensions, scalar_root)` (crates/betterlite-server/src/middleware/request_root_paths.rs); this task does not call that function, so it takes no dependency on the middleware.
+
+  3. `CustomUrls`, a small value built once from the config section: `CustomUrls::new(proxy_base_url: Option<String>)` and `CustomUrls::custom_url(&self, request_base_url: &str, request_root_path: &str) -> String`, which is get_custom_url with route None, and `CustomUrls::custom_route_url(&self, request_base_url: &str, request_root_path: &str, route: &str) -> String` for the route form. They only forward to get_custom_url. This is the public name that B4785's `ProxyUrls` port (`custom_url(&self, request_base_url: &str) -> String`) is wired to. The port has no root path argument, so the server wiring (B074) implements `ProxyUrls` for a small per-request value that holds a `CustomUrls` reference and the request's root path, and calls `CustomUrls::custom_url`. That wiring is not built here.
+
+  The functions cannot fail, so the module has no error enum. Python's runtime accident of raising AttributeError on a None argument is not copied: request_base_url is a str.
+
+  Tests under `custom_url::tests` cover join_paths (empty base, empty route, both empty, slashes on both sides, tail already present, nested route), get_custom_url (PROXY_BASE_URL wins over the request base, empty PROXY_BASE_URL still wins, request base used when None, root path then route, root path only, no root path, request base already ending in the root path so nothing is doubled, root path "/" adds nothing) and CustomUrls forwarding. Config tests under `sections::proxy_base_url::` cover unset, set, and set but empty.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/custom_url.rs
+    - crates/betterlite-server/src/custom_url/**
+    - crates/betterlite-config/src/sections/proxy_base_url.rs
+    - crates/betterlite-config/src/sections/proxy_base_url/**
+    - tools/oracle/cases/helpers/custom-url/**
+    - tools/oracle/helpers/b7323.py
+    - tools/oracle/helpers/b7323/**
+    - tools/oracle/src/helpers/server/b7323.rs
+    - tools/oracle/src/helpers/server/b7323/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8287-L8346
+    why: join_paths, get_custom_url and get_proxy_base_url, the whole owned code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/per_request_root_path_middleware.py#L36-L53
+    why: get_request_root_path, the source of the root path get_custom_url joins. B4200 owns it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/utils/helpers/test_url_helpers.py#L222-L400
+    why: LiteLLM's own expectations for the proxy base, request base, root path and per-request prefix cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py
+    why: The caller B4785 ports, which reaches this function through the ProxyUrls port.
+
+dod:
+  - text: join_paths trims slashes, handles an empty base or route, and does not append a route the base already ends with.
+    proof: [url-tests, oracle]
+  - text: get_custom_url prefers PROXY_BASE_URL (an empty value too) over the request base URL, then joins the request root path and the optional route.
+    proof: [url-tests, oracle]
+  - text: A request base URL that already ends in the request root path is not doubled, and a root path of "/" adds nothing.
+    proof: [url-tests, oracle]
+  - text: The proxy_base_url section reads PROXY_BASE_URL, with None when unset and Some("") when set but empty.
+    proof: [config-tests]
+  - text: CustomUrls is built from the section value and forwards to get_custom_url with and without a route.
+    proof: [url-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: url-tests
+      why: join_paths, get_custom_url or CustomUrls behavior is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^custom_url::/)'
+    - id: config-tests
+      why: the PROXY_BASE_URL section is missing or does not keep an empty value
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::proxy_base_url::/)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/custom-url/join-paths.yaml
+  - tools/oracle/cases/helpers/custom-url/proxy-base-with-root-and-route.yaml
+  - tools/oracle/cases/helpers/custom-url/request-base-no-env.yaml
+  - tools/oracle/cases/helpers/custom-url/root-path-without-route.yaml
+  - tools/oracle/cases/helpers/custom-url/per-request-prefix-not-doubled.yaml
+
+deviations:
+  - what: get_custom_url takes the proxy base URL and the request root path as arguments instead of reading PROXY_BASE_URL and a ContextVar.
+    why: betterlite keeps no globals and reads the environment only in the config crate. LiteLLM reads os.getenv and the per-request ContextVar inside the function.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8310-L8339
+
+out_of_scope:
+  - "get_server_root_path, normalize_route_for_root_path and the middleware with get_request_root_path: B4200 (get_server_root_path is the scalar fallback it already owns)."
+  - "Every other function in proxy/utils.py: B124 and the tasks split from it."
+  - "The ProxyUrls port, the agent card url and the request base URL taken from the Host header: B4785."
+  - "normalize_proxy_base_url and get_request_base_url, the stricter PROXY_BASE_URL reader for MCP and forwarded headers: B4654."
+  - "Implementing ProxyUrls for a request and composing it into the app: server wiring (B074)."
+
+pitfalls:
+  - join_paths only skips the append when the base ends with a slash plus the whole route, so a route "v1" is not appended to a base ending in "/v1" but is appended to one ending in "/xv1".
+  - An empty PROXY_BASE_URL still counts as set, so the result is built from "" and starts with "/", not from the request base URL.
+  - The root path is joined before the route, and a request base URL that already ends in the root path stays single because of the tail check in join_paths, so do not strip the root path from the base yourself.
+  - With route None and an empty root path the result is the base URL with its trailing slashes removed, so "https://host/" becomes "https://host".
+  - The scalar SERVER_ROOT_PATH is not read here; a caller that ran no SERVER_ROOT_PATHS middleware passes the scalar as request_root_path.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,17 @@
+id: B7951
+milestone: M12 python
+title: Python types for vector stores, vector store files, RAG and search tools
+status: todo
+depends_on: [B5657]
+file: tasks/B7951-types-vector-rag-search.yaml
+covers:
+  - "litellm/types/vector_stores.py"
+  - "litellm/types/vector_store_files.py"
+  - "litellm/types/rag.py"
+  - "litellm/types/search.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

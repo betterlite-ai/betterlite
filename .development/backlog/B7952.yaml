@@ -1,0 +1,21 @@
+id: B7952
+milestone: M12 python
+title: Python types for files, rerank, embedding, fine tuning, containers, google_genai, images and realtime
+status: todo
+depends_on: [B5657, B7921]
+file: tasks/B7952-types-request-option-types.yaml
+covers:
+  - "litellm/types/files.py"
+  - "litellm/types/rerank.py"
+  - "litellm/types/embedding.py"
+  - "litellm/types/fine_tuning.py"
+  - "litellm/types/containers/**"
+  - "litellm/types/google_genai/**"
+  - "litellm/types/images/**"
+  - "litellm/types/realtime.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
