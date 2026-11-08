@@ -343,3 +343,27 @@ async fn prompt_templates_fetch_the_separate_chat_template_file() {
     .unwrap();
     assert_eq!(prompt.as_deref(), Some("jinja:user"));
 }
+
+#[tokio::test]
+async fn prompt_templates_fetch_a_template_when_the_cache_is_full() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let factory = http_factory(listener.local_addr().unwrap());
+    factory
+        .cache
+        .lock()
+        .unwrap()
+        .extend((0..1024_u32).map(|index| (format!("filler-{index}"), TokenizerConfig::Failure)));
+    let prompt = exchange(
+        listener,
+        vec![r#"{"chat_template":"fetched"}"#],
+        apply_prompt_template(
+            &factory,
+            "watsonx/openai/gpt-oss-120b",
+            &messages(r#"[{"role":"user","content":"hi"}]"#),
+            now(),
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(prompt.as_deref(), Some("fetched"));
+}

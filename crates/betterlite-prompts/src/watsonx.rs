@@ -1,14 +1,11 @@
 use std::collections::BTreeMap;
-use std::sync::PoisonError;
 
 use chrono::{DateTime, Utc};
 
 use crate::builtin::{self, Message};
 use crate::error::FactoryError;
+use crate::factory::PromptFactory;
 use crate::factory::custom::{CustomPromptTemplate, RoleTemplate, custom_prompt};
-use crate::factory::hub::{ChatTemplate, TokenizerConfig};
-use crate::factory::{Output, PromptFactory, prompt_factory};
-use crate::jinja::{self, LocalTemplate};
 
 mod tests;
 
@@ -113,55 +110,14 @@ fn hugging_face_model(model: &str) -> &str {
     model
 }
 
-// B215's fetch is private in factory.rs, so a cache miss asks the public generic prompt_factory to fetch it
+// B215's fetch, selection and render for the model, mapped onto LiteLLM's swallow-every-error branch
 async fn hugging_face_template(
     factory: &PromptFactory,
     model: &str,
     messages: &[Message],
     now: DateTime<Utc>,
 ) -> Option<String> {
-    if let Some(template) = cached_template(factory, model) {
-        return render_template(&template, model, messages, now);
-    }
-    let fallback = builtin::default_pt(messages).ok();
-    let rendered = prompt_factory(factory, model, messages, None, now).await;
-    if let Some(template) = cached_template(factory, model) {
-        return render_template(&template, model, messages, now);
-    }
-    // a stored config means the same fetch ran, so prompt_factory's text is the chat_template.jinja render
-    if matches!(
-        cached_config(factory, model),
-        Some(TokenizerConfig::Success(_) | TokenizerConfig::Failure)
-    ) {
-        let Ok(Output::Text(text)) = rendered else {
-            return None;
-        };
-        if text.is_empty() || fallback.is_some_and(|default| default == text) {
-            tracing::debug!(
-                "Failed to apply HuggingFace template for model {model}: no template was fetched"
-            );
-            return None;
-        }
-        return Some(text);
-    }
-    // nothing was stored for this model: a generic family answered or the transport failed before caching
-    if let Err(error) = rendered {
-        tracing::debug!("Failed to apply HuggingFace template for model {model}: {error}");
-    } else {
-        tracing::debug!(
-            "Failed to apply HuggingFace template for model {model}: no template was fetched"
-        );
-    }
-    None
-}
-
-fn render_template(
-    template: &LocalTemplate,
-    model: &str,
-    messages: &[Message],
-    now: DateTime<Utc>,
-) -> Option<String> {
-    match jinja::hf_chat_template(template, messages, now) {
+    match factory.hf_chat_template(model, messages, now).await {
         Ok(rendered) if !rendered.is_empty() => Some(rendered),
         Ok(_) => None,
         Err(error) => {
@@ -169,27 +125,4 @@ fn render_template(
             None
         }
     }
-}
-
-fn cached_config(factory: &PromptFactory, model: &str) -> Option<TokenizerConfig> {
-    factory
-        .cache
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .get(model)
-        .cloned()
-}
-
-fn cached_template(factory: &PromptFactory, model: &str) -> Option<LocalTemplate> {
-    let Some(TokenizerConfig::Success(Some(document))) = cached_config(factory, model) else {
-        return None;
-    };
-    let ChatTemplate::Text(chat_template) = document.chat_template else {
-        return None;
-    };
-    Some(LocalTemplate {
-        chat_template,
-        bos_token: document.bos_token,
-        eos_token: document.eos_token,
-    })
 }
