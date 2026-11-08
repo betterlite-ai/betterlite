@@ -1,0 +1,45 @@
+task: B225
+deviations:
+  - what: >-
+      A prepared message list over 1024 messages, or with a content list over 256 parts, is refused with
+      PrepareError::TooManyMessages or PrepareError::TooManyParts before any sanitizing or conversion;
+      LiteLLM's anthropic_messages_pt walks whatever list it is given.
+    why: >-
+      The bounded-inputs rule forbids work proportional to untrusted input without a cap. The ceilings are
+      the ones B224's sanitize_messages already puts on history and B222's tool result conversion puts on a
+      message's parts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2361-L2402
+  - what: >-
+      A request whose user, tool and function messages would make more than 256 remote downloads is refused
+      with PrepareError::TooManyRemoteUrls. The count follows the conversion's own predicates: any image URL
+      starting with http downloads, except a scheme-qualified https:// URL when force_base64 is off, and a
+      file_data value starting with http downloads for any file part. LiteLLM downloads every URL it meets.
+    why: >-
+      Each download is a separate network call with its own size limit, so the message and part ceilings
+      alone still allow hundreds of thousands of fetches; the ceiling is the MAX_REMOTE_URLS bound
+      media/inline.rs already puts on one request's media.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2397-L2502
+  - what: >-
+      A message that is not an object, a message without a string role, a content block that is not an
+      object, or a text or image block without its required string field is refused with a typed
+      UserBlocksError that names the index or field; LiteLLM raises an unhandled AttributeError, KeyError or
+      TypeError that surfaces as a 500.
+    why: >-
+      These are values outside the types LiteLLM declares, so a 4xx that names the field belongs and no
+      working setup sends them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2403-L2502
+  - what: >-
+      get_system_prompt refuses a list over 1024 messages with SystemPromptError::TooManyMessages before it
+      allocates or clones anything; LiteLLM scans whatever list it is given.
+    why: >-
+      The bounded-inputs rule forbids work proportional to untrusted input without a cap, and the ceiling is
+      the MAX_HISTORY_MESSAGES one B224's sanitize_messages already applies to history.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2856-L2866
+  - what: >-
+      get_system_prompt refuses a system message whose content is not a string with
+      SystemPromptError::ContentNotText; LiteLLM's `system_prompt += message["content"]` raises TypeError for a
+      list and KeyError for a missing key.
+    why: >-
+      The content of a system message is client input, so a 4xx that names the message index belongs;
+      LiteLLM's 500 hides which message was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2856-L2866

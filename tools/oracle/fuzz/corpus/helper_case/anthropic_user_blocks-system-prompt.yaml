@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-user-blocks-corpus-system-prompt
+call: {anthropic_user_blocks: {function: system_prompt, messages: [{role: system, content: seed}, {role: user, content: hi}]}}
+env: {}
+compare: {ignore: []}
