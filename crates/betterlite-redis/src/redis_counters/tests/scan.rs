@@ -89,6 +89,21 @@ async fn async_scan_iter_namespaces_the_pattern_then_appends_a_glob(
 }
 
 #[tokio::test]
+async fn async_scan_iter_with_a_zero_count_sends_nothing() {
+    let server = FakeServer::start().await;
+    let (counters, _hooks, _gate) = counters(
+        transport(direct_settings(&server), RedisCacheFamily::Standalone),
+        None,
+    );
+    let keys = counters
+        .async_scan_iter("prefix", 0)
+        .await
+        .expect("the keys");
+    assert!(keys.is_empty());
+    assert!(server.commands().is_empty());
+}
+
+#[tokio::test]
 async fn async_scan_iter_reports_a_failure_hook_and_the_error() {
     let server = FakeServer::start().await;
     server.script("SCAN", Reply::Error("ERR scan failed".to_owned()));
