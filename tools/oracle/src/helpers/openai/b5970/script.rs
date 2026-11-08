@@ -57,7 +57,12 @@ impl Script {
                 "method": request.method.as_str(),
                 "url": request.url.to_string(),
                 "headers": header_json(&request.headers),
-                "body": body_text(&request.body),
+                "body": match &request.body {
+                    RequestBody::Empty | RequestBody::Multipart { .. } => String::new(),
+                    RequestBody::Json(data) | RequestBody::Bytes { data, .. } => {
+                        String::from_utf8(data.clone()).unwrap_or_default()
+                    }
+                },
             }));
         let reply = self
             .replies
@@ -128,15 +133,6 @@ pub(super) fn header_json(headers: &HeaderMap) -> BTreeMap<String, String> {
             )
         })
         .collect()
-}
-
-fn body_text(body: &RequestBody) -> String {
-    match body {
-        RequestBody::Empty | RequestBody::Multipart { .. } => String::new(),
-        RequestBody::Json(data) | RequestBody::Bytes { data, .. } => {
-            String::from_utf8(data.clone()).unwrap_or_default()
-        }
-    }
 }
 
 pub(super) fn error_value(error: &WatsonxError) -> Value {

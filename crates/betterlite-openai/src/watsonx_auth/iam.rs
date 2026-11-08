@@ -31,9 +31,7 @@ pub struct IamTokenResponse {
 
 #[derive(Deserialize)]
 struct RawIamTokenReply {
-    #[serde(default)]
     access_token: Option<SecretString>,
-    #[serde(default)]
     expires_in: Option<f64>,
 }
 

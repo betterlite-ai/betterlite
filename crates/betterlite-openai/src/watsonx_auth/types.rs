@@ -22,22 +22,16 @@ pub struct WatsonxCredentials {
     pub token: Option<SecretString>,
 }
 
+#[serde_with::skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WatsonxAudioRequestFields {
     pub model: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub space_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_format: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp_granularities: Option<Vec<String>>,
 }
 
