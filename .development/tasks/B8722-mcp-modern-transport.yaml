@@ -1,0 +1,48 @@
+id: B8722
+title: MCP single exchange transport for modern revisions
+description: >-
+  mcp 2.3.0's StreamableHTTPSessionManager sends a request whose MCP-Protocol-Version is outside HANDSHAKE_PROTOCOL_VERSIONS down a separate single exchange path with no session and no initialize. LiteLLM's ASGI entry refuses every version outside configured_versions() first (unsupported_protocol_version, B8724), so a request reaches this path only for a configured revision that is not a handshake revision. B8190's REVISION_SUPPORT says such revisions exist and may return input_required results. This task ports that path. Code goes in betterlite-server, module mcp::modern_transport (crates/betterlite-server/src/mcp/modern_transport.rs) with a tests.rs beside it.
+
+
+  Source to port: tools/oracle/litellm/.venv/lib/python3.13/site-packages/mcp/server/_streamable_http_modern.py and the branch of streamable_http_manager.py that sends a request there. Copy every status code, header and error text from that source.
+
+  1. takes_modern_path(headers) -> bool is the manager's routing test, read from its code: the header values it reads and the case where the header is missing.
+
+  2. ModernTransport::handle<H: rmcp::ServerHandler>(&self, request, handler: H) -> http::Response<axum::body::Body> serves one exchange: decode the body with B8721's decode_message, run the handler for that one message with rmcp's serve_directly, and answer the way the SDK does for a request, a notification and a response. Reuse B8721's sse_event framing for any SSE answer. An input_required result (B8190's InputRequiredResult shape) passes through unchanged.
+
+  3. No session id is created, read or answered, so nothing here touches B8723's maps.
+
+
+  Tests use a fake rmcp handler and tower's oneshot over a tiny axum Router.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/modern_transport.rs
+    - crates/betterlite-server/src/mcp/modern_transport/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L127-L143
+    why: unsupported_protocol_version, the refusal that runs before this path and explains why SDK 2 needs it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/capabilities.py#L30-L64
+    why: REVISION_SUPPORT and configured_versions, which decide whether a modern revision can be configured.
+dod:
+  - text: takes_modern_path picks the single exchange path for exactly the header values the SDK's manager sends there.
+    proof: [modern-tests]
+  - text: A request, a notification and a response on the single exchange path get the SDK's status, headers and body, and an input_required result passes through.
+    proof: [modern-tests]
+checks:
+  optional: []
+  commands:
+    - id: modern-tests
+      why: the routing test or the single exchange answers differ from the SDK
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::modern_transport::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The handshake transports: B8721. Choosing between this path and B8721 for a request: B8727, which calls takes_modern_path first."
+pitfalls:
+  - "No mcp-session-id header goes out on this path, even when the request carried one."
+  - "A version that is configured but not a handshake revision never gets an initialize; the handler must answer without one."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

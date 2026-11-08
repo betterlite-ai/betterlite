@@ -164,7 +164,7 @@ out_of_scope:
   - "AnthropicMessagesStreamCacheWriter and the cached-stream iterator in response_cache.py: B980. It calls CacheWriteTracker::spawn from this task."
   - "_assemble_complete_response_from_streaming_chunks and stream_chunk_builder use: B252."
   - "Cache hit reads, replay and callbacks (_async_get_cache, _sync_get_cache, _convert_cached_result_to_model_response): B4305, B4302, B4301."
-  - "The sleep-free shutdown hook that fires the token: the runtime wiring task for cache lifecycle; this task only exposes wait_idle."
+  - "The sleep-free shutdown hook that fires the token: B8374 fires it and awaits wait_idle in its shutdown order, before it disconnects the response cache; this task only exposes wait_idle."
 pitfalls:
   - The streaming path assembles on the final chunk only; a chunk with `finish_reason` null just grows the buffer, so an early write would store a partial response.
   - "`async_set_cache` copies the kwargs before merging positional arguments, so the caller's request kwargs must stay unchanged after the call."

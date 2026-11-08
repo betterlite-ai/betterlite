@@ -1,0 +1,29 @@
+task: B503
+deviations:
+  - what: >-
+      Request file/PDF URLs are never fetched: a file content part whose file_id starts with https://,
+      http:// or www. fails the request with ImageFetchError status 400 at the injected download seam,
+      before any provider transport. Inline file_data and provider-forwardable image_url descriptors
+      continue unchanged.
+    why: >-
+      The URL-download product decision is open. Betterlite builds no downloader and opens no request-path
+      file, so a caller whose LiteLLM setup relies on fetching a PDF URL gets this 400 until the decision
+      lands.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L240-L248
+  - what: >-
+      A file content part whose "file" field is present but not an object raises the same typed
+      missing-file 400 error instead of crashing, and a non-string file_id is treated as not a URL
+      instead of crashing in startswith.
+    why: >-
+      LiteLLM calls file_obj.items() and file_id.startswith without checking their types, so no working
+      setup relies on the crash; betterlite reports the declared-shape error it already uses for a
+      missing "file" field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L233-L296
+  - what: >-
+      A non-object entry in optional_params.tools passes through unchanged during cache_control removal
+      instead of crashing.
+    why: >-
+      LiteLLM's filter_value_from_dict iterates every tool entry as a dict, so a non-dict entry is an
+      AttributeError; no working setup relies on that crash, and the tool sanitizer already keeps such
+      entries unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L384-L406

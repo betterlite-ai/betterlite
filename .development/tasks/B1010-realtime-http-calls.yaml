@@ -30,7 +30,7 @@ scope:
   - crates/betterlite-config/src/api/realtime_http_calls/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/realtime-http-calls-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/realtime_http_calls.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/realtime_http_calls.py
   - tools/oracle/cases/sdk-http/realtime-http-calls/**

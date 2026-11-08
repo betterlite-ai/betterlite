@@ -1,0 +1,52 @@
+id: B8805
+title: Production hook ports for the shared pre-call step
+description: >-
+  B8801's pre-call step calls five ports that sit on ProxyLogging, the guardrails and the budget checks. This task backs them with the code their owners build. B8802 puts them into the production step next to its request and router ports. Code goes in crates/betterlite-server/src/app/inference/pre_call_hooks.rs and app/inference/pre_call_hooks/ (adapters.rs, tests.rs). Every name stays at 30 characters or fewer.
+
+  `pre_call_hook_ports(state: &Arc<ServerState>) -> PreCallHookPorts` returns one `Arc<dyn ...>` per port below; B8802 calls it once inside pre_call_step.
+  `PreCallHooks` over `shared.proxy_logging` (B8399): B8393's PreCallHook run with mode `SkipGuardrails` when skip_guardrails is true and `Full` otherwise, the route type text as call type, and no endpoint type. A ProxyException maps to `Proxy`, B3030's ProxyRateLimitError to `RateLimited`, and an HTTPException to `Http`, each as raised.
+  `GuardrailMerge` over B8391's merge_model_level_guardrails with trust_client_model_info false and `shared.router` (B8611).
+  `CompressionArming` over B3546's arm_pre_call with `shared.router`.
+  `TagBudgets` over B750's request_skips_budget_checks with the router, and B752's tag_max_budget_check_for_tags with `shared.db`, the auth key cache and `shared.proxy_logging`. A BudgetExceeded answer maps to `Proxy` with type budget_exceeded, no param and its status.
+  `RetrievalPipelines` over B3269's attach_post_call_pipelines_to_retrieval with the router.
+
+  Tests in app/inference/pre_call_hooks/tests.rs (`app::inference::pre_call_hooks::tests::`) build a ServerState from a config.yaml with a `generic_guardrail_api` pre_call guardrail against a local mock, a model-level guardrail on one deployment, and a tag with max_budget 0. The pre_call guardrail blocks and the skip flag bypasses it. A local rate limit comes back as RateLimited. The model-level guardrail joins the data with and without an alias. A tag added by a guardrail over its budget fails with budget_exceeded. aget_responses data gets the retrieval pipelines.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference/pre_call_hooks.rs
+    - crates/betterlite-server/src/app/inference/pre_call_hooks/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2181-L2234
+    why: The guardrail merge, the compression arming, pre_call_hook, the tag budget check and the retrieval attach, with their arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L705-L735
+    why: _enforce_guardrail_added_tag_budgets and the budget_exceeded mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8013
+    why: _check_and_merge_model_level_guardrails, which GuardrailMerge forwards to.
+dod:
+  - text: pre_call_hook_ports builds the five hook ports from the server state.
+    proof: [hook-tests]
+  - text: The pre-call hook blocks on a pre_call guardrail, skips guardrails on request, and returns a local rate limit as RateLimited.
+    proof: [hook-tests]
+  - text: The guardrail merge, the compression arming, the tag budget check and the retrieval attach reach their owners with the router and the database.
+    proof: [hook-tests]
+checks:
+  optional: []
+  commands:
+    - id: hook-tests
+      why: a hook port is backed by the wrong owner, maps an error to the wrong kind or misses the router
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::pre_call_hooks::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The request and router ports and the assembly of the step: B8802. The step: B8801."
+  - "The functions behind each adapter: B8393, B8399, B8391, B3546, B750, B752, B3269 and B3030."
+  - "The vector_store_pre_call_hook and compression_interception callbacks: these adapters call arm_pre_call and attach_post_call_pipelines_to_retrieval and build neither callback."
+pitfalls:
+  - "PreCallHook takes a mode enum instead of LiteLLM's two flags; the pre-call step only ever sets skip_guardrails, never guardrails_only."
+  - "A rate-limit error from the hooks must come back as RateLimited, or B8801's fallback loop never runs."
+  - "request_skips_budget_checks gets the request model as a string, a string list or nothing, from B8800's request_model."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

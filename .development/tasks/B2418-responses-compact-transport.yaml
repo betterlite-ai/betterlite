@@ -26,7 +26,7 @@ scope:
   - crates/betterlite-core/src/api/responses_compact_http.rs
   - crates/betterlite-core/src/api/responses_compact_http/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/responses_compact_transport.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/responses_compact_transport.py
   - tools/oracle/cases/sdk-http/responses-compact-transport/**

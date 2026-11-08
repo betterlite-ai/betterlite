@@ -50,6 +50,8 @@ scope:
     - tools/oracle/helpers/b3971/**
     - tools/oracle/src/helpers/logging/b3971.rs
     - tools/oracle/src/helpers/logging/b3971/**
+    - crates/betterlite-logging/src/registry/catalog/posthog.rs
+    - crates/betterlite-logging/src/registry/catalog/posthog/**
   lint_tables: false
 
 references:
@@ -99,6 +101,8 @@ references:
     why: "PostHogEventPayload, POSTHOG_MAX_BATCH_SIZE constant and helper TypedDicts."
 
 dod:
+  - text: "PostHogLogger implements betterlite_logging::callback_logger::CallbackLogger for its sync and async success and failure events, and registry/catalog/posthog.rs builds the one process logger from POSTHOG_API_KEY read through CatalogInputs.env (tests named callback_logger_* in posthog_logging, plus registry/catalog/posthog/tests.rs)."
+    proof: [callback-logger]
   - text: "PostHogLogger initializes with POSTHOG_API_KEY from B002, HTTP clients for sync/async, atexit handler for shutdown flush and batch size 100."
     proof: [posthog-init-test, posthog-init-oracle]
 
@@ -138,6 +142,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: callback-logger
+      why: the posthog catalog module still returns Unavailable or PostHogLogger lacks the trait
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::posthog::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^posthog_logging::(.*::)?callback_logger_/)'
     - id: posthog-init-test
       why: Initialization tests missing or failing
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^posthog_logging::.*init($|::)/) - test(replays_the_helper_case_corpus)'

@@ -154,7 +154,7 @@ out_of_scope:
   - >-
     MCPRequestHandler header extraction methods (part of B4726).
   - >-
-    common_processing_pre_call_logic, MCPRequestContext.resolve_guardrail_context, pre-call/
+    common_processing_pre_call_logic (B8801's shared PreCall step, route type call_mcp_tool; take `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state constructor; the part that mounts these routes passes B8802's pre_call_step(state)), MCPRequestContext.resolve_guardrail_context, pre-call/
     guardrail ordering (Q7 shared pre-call service).
   - >-
     acting_user_auth, reject_disallowed_mcp_client, build_effective_auth_contexts,

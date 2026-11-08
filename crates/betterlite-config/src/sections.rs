@@ -2,6 +2,7 @@ pub mod access_windows;
 pub mod adaptive_classification;
 pub mod admission_control;
 pub mod agent_host_settings;
+pub mod agent_routes;
 pub mod agent_search;
 pub mod aim_inspection;
 pub mod aiohttp_transport_toggle;
@@ -247,6 +248,7 @@ pub mod key_policy_fields;
 pub mod key_rotation;
 pub mod key_rotation_write;
 pub mod langfuse_settings;
+pub mod langsmith_settings;
 pub mod lar1_routing;
 pub mod lasso_classification;
 pub mod latency_observations;
@@ -268,6 +270,7 @@ pub mod mcp_bearer_credentials;
 pub mod mcp_client_side_auth;
 pub mod mcp_discovery;
 pub mod mcp_env_values;
+pub mod mcp_gateway_env;
 pub mod mcp_registry;
 pub mod mcp_required_fields;
 pub mod mcp_sso_assertion_cache;
@@ -319,6 +322,7 @@ pub mod passthrough_websocket;
 pub mod password_login;
 pub mod password_policy;
 pub mod payload_exclusions;
+pub mod pre_call;
 pub mod pre_routing_registry;
 pub mod prometheus_bounded_series;
 pub mod prometheus_budget_refresh;
@@ -326,6 +330,7 @@ pub mod prometheus_exporter;
 pub mod prompt_affinity;
 pub mod prompt_cache_accounting;
 pub mod prompt_injection;
+pub mod prompt_repositories;
 pub mod prompts;
 pub mod provider_resolution;
 pub mod provider_url_destination;
@@ -387,7 +392,9 @@ pub mod settings;
 pub mod smtp_transport;
 pub mod speech_call;
 pub mod spend_reseed;
+pub mod sso_presence;
 pub mod static_eligibility;
+pub mod streaming_logging;
 pub mod studio_identity;
 pub mod summary_model_access;
 pub mod tag_matchers;
@@ -511,7 +518,7 @@ macro_rules! sections {
 }
 
 sections! {
-    access_windows, adaptive_classification, admission_control, agent_host_settings, agent_search,
+    access_windows, adaptive_classification, admission_control, agent_host_settings, agent_routes, agent_search,
     aim_inspection, aiohttp_transport_toggle, akto_mirroring, alert_settings,
     alice_conduct_decisions, anthropic_beta_config, anthropic_capability_catalog,
     anthropic_completion, anthropic_count_tokens, anthropic_credentials, anthropic_headers,
@@ -566,11 +573,11 @@ sections! {
     jwt_provisioning, jwt_role_claims, jwt_settings, jwt_team_authorization, jwt_team_selection,
     jwt_verification, key_access, key_context, key_create, key_event_sinks, key_limit_policy,
     key_management_settings, key_persistence, key_policy_fields, key_rotation, key_rotation_write,
-    langfuse_settings, lar1_routing, lasso_classification, latency_observations, latency_routing, least_busy, legacy_guardrails,
+    langfuse_settings, langsmith_settings, lar1_routing, lasso_classification, latency_observations, latency_routing, least_busy, legacy_guardrails,
     lemonade_model_metadata, llm_classifier, local_ttl_cache, logging_privacy, login_form,
     login_return, login_routes, login_throttle, management_rbac, mcp_access_requirements,
     mcp_allow_all_scope, mcp_bearer_credentials, mcp_client_side_auth, mcp_env_values,
-    mcp_registry, mcp_required_fields, mcp_sso_assertion_cache, mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
+    mcp_gateway_env, mcp_registry, mcp_required_fields, mcp_sso_assertion_cache, mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
     messages_native_call, messages_native_stream, messages_response_call,
     messages_responses_output, messages_thinking, migration_drift, migration_ledger,
     migration_recovery, mistral_credentials, mistral_options, mistral_resources, mock_response,
@@ -580,8 +587,8 @@ sections! {
     openai_credentials, openai_like_settings, openai_mock_transport, openai_provider,
     openai_realtime, openai_workload_identity, otel_settings, panw_prisma_airs,
     pass_through_registry, passthrough_request_policies, passthrough_websocket, password_login, password_policy, payload_exclusions,
-    pre_routing_registry, prometheus_bounded_series, prometheus_budget_refresh,
-    prometheus_exporter, prompt_affinity, prompt_cache_accounting, prompt_injection, provider_resolution,
+    pre_call, pre_routing_registry, prometheus_bounded_series, prometheus_budget_refresh,
+    prometheus_exporter, prompt_affinity, prompt_cache_accounting, prompt_injection, prompt_repositories, provider_resolution,
     provider_url_destination, proxy_base_url, proxy_custom_dispatch, proxy_provider_options, public_router_presets,
     quality_router, rag_records_and_chunking, rate_limit_usage, rate_limiter_settings,
     rds_credentials, redis_cache, redis_cache_primitives, redis_credentials, redis_failure_policy,
@@ -594,7 +601,7 @@ sections! {
     routing_timeouts, s3_response_cache, sandbox_dispatch, scheduled_job_stagger,
     security_headers, semantic_embedding_inputs, semantic_router, sensitive_data_routing, service_callback,
     session_iteration_limits, session_token_codec, settings, speech_call, spend_reseed,
-    static_eligibility, studio_identity, summary_model_access, tag_matchers, tag_routing,
+    sso_presence, static_eligibility, streaming_logging, studio_identity, summary_model_access, tag_matchers, tag_routing,
     team_admin_fields, team_create, team_fields, team_limits, team_state, tier_artifact_predictor,
     tier_definitions, tinyfish_route, token_counting, tokenizer_engines, transcription_call, trusted_network,
     two_solver_classifier, ui_discovery, ui_session_cleanup, usage_routing, usage_routing_v2,

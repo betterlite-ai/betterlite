@@ -22,6 +22,10 @@ scope:
   - crates/betterlite-logging/src/legacy_s3/**
   - crates/betterlite-logging/src/legacy_dynamodb.rs
   - crates/betterlite-logging/src/legacy_dynamodb/**
+  - crates/betterlite-logging/src/registry/catalog/s3.rs
+  - crates/betterlite-logging/src/registry/catalog/s3/**
+  - crates/betterlite-logging/src/registry/catalog/dynamodb.rs
+  - crates/betterlite-logging/src/registry/catalog/dynamodb/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L151-L223
@@ -33,6 +37,8 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3570-L3620
   why: StandardLoggingPayload TypedDict structure for type safety of logged events.
 dod:
+- text: "The legacy S3 and DynamoDB loggers each implement CallbackLogger for the events the s3 and dynamodb string branches of LiteLLM send, and registry/catalog/s3.rs and registry/catalog/dynamodb.rs build them (tests named callback_logger_* in legacy_s3 and legacy_dynamodb, plus both catalog test folders)."
+  proof: [callback-logger]
 - text: >-
     S3Logger initialization loads credentials, bucket name, region, encryption settings from litellm.s3_callback_params
     and resolves SSE parameters through B3990; team prefix is applied only when litellm.enable_preview_features is true
@@ -65,6 +71,9 @@ dod:
 checks:
   optional: []
   commands:
+  - id: callback-logger
+    why: the s3 or dynamodb name still fails at startup or its logger ignores the event
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::(s3|dynamodb)::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^legacy_(s3|dynamodb)::(.*::)?callback_logger_/)'
   - id: legacy-storage-tests
     why: legacy storage tests fail or do not exist
     run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(legacy_s3|legacy_dynamodb)::/) - test(/replays_the_/)'

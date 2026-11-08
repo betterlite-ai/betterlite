@@ -7,10 +7,10 @@ description: >-
   Every route needs a valid key (the user_api_key_auth dependency) and is wrapped by B865's management completion wrapper, like @management_endpoint_wrapper. Read B865 for its Rust names.
 
 
-  Layout. crates/betterlite-server/src/mcp/submission_review.rs holds SubmissionReview (a struct whose fields are the ports the routes need, built by the composition root with a struct literal), the ReviewError enum (thiserror, one variant per failure, a status mapping used by the routes), the RejectMcpServerRequest type and `routes()` which returns the axum router with the six routes.
+  Layout. crates/betterlite-server/src/mcp/submission_review.rs holds SubmissionReview (a struct whose fields are the ports the routes need, built by B8625 with a struct literal), the ReviewError enum (thiserror, one variant per failure, a status mapping used by the routes), the RejectMcpServerRequest type and `routes()` which returns the axum router with the six routes.
   The files beside it, each with a tests.rs: submissions.rs (route 1), pinning.rs (routes 2 and 3 and the shared store step) and review.rs (routes 4 and 5).
   No global state. The LiteLLM globals become fields: the database port, the registry, the registry mutator, the BYOM cache invalidator and the catalog fetcher.
-  Ports (traits defined in submission_review.rs, implemented by the composition root over the crates named in brackets):
+  Ports (traits defined in submission_review.rs, implemented by B8625 over the crates named in brackets):
   a DbReads and writes port with get_mcp_server(server_id), get_mcp_submissions(), approve_mcp_server(server_id, touched_by), reject_mcp_server(server_id, touched_by, review_notes) and set_mcp_server_pinned_tools(server_id, pinned_tools: Option<BTreeMap<String, PinnedMCPTool>>, touched_by) [B4711, the Rust names are B4711's];
   a RegistryView port with server_by_id(server_id) that passes no client ip [B4731];
   a RegistryReload port with update(record) and reload() [B6765, update_server and reload_servers_from_database];
@@ -53,7 +53,6 @@ scope:
   paths:
     - crates/betterlite-server/src/mcp/submission_review.rs
     - crates/betterlite-server/src/mcp/submission_review/**
-    - tools/oracle/cases/http/mcp-review/**
     - tools/oracle/helpers/b4722.py
     - tools/oracle/helpers/b4722/**
     - tools/oracle/src/helpers/server/b4722.rs
@@ -87,33 +86,35 @@ references:
     why: invalidate_byom_submitted_servers_cache, the call route 4 makes (B6591 owns the code).
 
 dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports; B8625 mounts the routes and proves the items below over HTTP with the cases that moved there.
+    proof: [review-tests]
   - text: >-
       GET /v1/mcp/server/submissions rejects every role except the two admin roles with the 403 text, answers the 500 database text before reading, returns the summary with counts and redacted items,
       and additionally sanitizes the items for the view-only admin without recomputing the counts.
-    proof: [submissions-tests, oracle]
+    proof: [submissions-tests]
   - text: >-
       POST /v1/mcp/server/{server_id}/pin admits only PROXY_ADMIN, answers 404 when the row or the registry record is missing, 400 when the fetched catalog is empty,
       and otherwise stores the catalog, calls the registry update then reload in that order and returns the pinned map.
-    proof: [pinning-tests, oracle]
+    proof: [pinning-tests]
   - text: >-
       DELETE /v1/mcp/server/{server_id}/pin admits only PROXY_ADMIN, answers 404 when the row is missing, stores None through the same step as pin, and returns {"server_id", "status": "unpinned"}.
       The store step answers 404 when the write finds no row.
-    proof: [pinning-tests, oracle]
+    proof: [pinning-tests]
   - text: >-
       PUT /v1/mcp/server/{server_id}/approve admits only PROXY_ADMIN, answers 404 for a missing row and 400 for an already active one, approves any other status,
       invalidates the submitter cache for submitted_by, reloads the registry and returns the redacted row.
-    proof: [review-tests, oracle]
+    proof: [review-tests]
   - text: >-
       PUT /v1/mcp/server/{server_id}/reject admits only PROXY_ADMIN, validates its body before the role check (422), answers 404 for a missing row and 400 for an already rejected one,
       passes review_notes through, reloads the registry only when the row was active and returns the redacted row.
-    proof: [review-tests, oracle]
+    proof: [review-tests]
   - text: >-
       POST /v1/mcp/server/register answers 403 for a proxy admin, 400 for a key without a team and for a stdio transport, creates the row as pending_review with submitted_by and submitted_at set, returns 201 with the redacted row
       and does not touch the live registry.
-    proof: [submissions-tests, oracle]
+    proof: [submissions-tests]
   - text: >-
       Every route answers the 500 database text on a proxy without a database, after the role check and before any lookup.
-    proof: [oracle, review-tests]
+    proof: [review-tests]
   - text: The module is registered through routes() with the six method and path pairs and no other route, so axum has no duplicate.
     proof: [module-tests]
 
@@ -133,15 +134,7 @@ checks:
       why: the approve route, the reject route or their database check is missing or wrong
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::submission_review::review::/)'
 
-oracle_cases:
-  - tools/oracle/cases/http/mcp-review/submissions-no-key-401.yaml
-  - tools/oracle/cases/http/mcp-review/submissions-no-database-500.yaml
-  - tools/oracle/cases/http/mcp-review/pin-no-database-500.yaml
-  - tools/oracle/cases/http/mcp-review/unpin-no-database-500.yaml
-  - tools/oracle/cases/http/mcp-review/approve-no-database-500.yaml
-  - tools/oracle/cases/http/mcp-review/reject-no-database-500.yaml
-  - tools/oracle/cases/http/mcp-review/reject-null-notes-no-database-500.yaml
-  - tools/oracle/cases/http/mcp-review/reject-notes-wrong-type-422.yaml
+oracle_cases: []
 
 deviations:
   - what: The catalog fetch, the registry update and reload, and the submitter cache invalidation are reached through ports, not through a global manager and module imports.

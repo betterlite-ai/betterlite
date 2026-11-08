@@ -34,7 +34,7 @@ description: >-
   one `user` message with all texts joined by `\n`), else one `user` message with the text `Hello`. When `request_data` is non-empty, its keys are merged into the body's `metadata` object, creating
   it when absent. Send the body to the chat completion path as an in-process call with the same authenticated principal as the route, through an injected trait `AgentChat` with one async
   method taking B004's typed chat request and the principal and returning the typed chat response or a proxy error. The route state takes a `Box<dyn AgentChat>` or a generic for it (the
-  architect wires the production one to the chat handler; see the task notes). Use B004's request type for the body and put `metadata` in its passthrough field. Do not build a fake HTTP
+  B8790 builds the production one in its agent_chat.rs over B8630's router completion; see the task notes). Use B004's request type for the body and put `metadata` in its passthrough field. Do not build a fake HTTP
   request as LiteLLM does with `_request_with_json_body`. The answer is stored as `agent_response`: the chat response as JSON with fields the provider never set left out
   (`model_dump(exclude_unset=True)`). A failure of the chat call is not caught here and fails the whole route (see error mapping).
 
@@ -46,7 +46,7 @@ description: >-
   "detection_info": {...}}`, so a refusal such as "I can't help with that" gives the message `Response indicates the model rejected the user request.`.
 
   The route (endpoints.py L280-L380) is POST `/utils/test_policies_and_guardrails`, tag `utils`, in the standard authenticated group (B732 owns the principal; the auth
-  group is mounted by the skeleton), wrapped by B865's management completion wrapper as `@management_endpoint_wrapper` does. The path is in no role list, so route access follows the shared route checks for an
+  group is mounted by B8790 inside the auth layers), wrapped by B865's management completion wrapper as `@management_endpoint_wrapper` does. The path is in no role list, so route access follows the shared route checks for an
   unlisted path; do not special-case it. The route loops over `inputs_list` in order and, for each input, runs `apply_policies`, copies `inputs` and `guardrail_errors` into the item, adds
   `agent_response` and the response-rejection step when `agent_id` is set, and appends the item. The answer is 200 `{"results": [item, ...]}`. An empty or missing `inputs_list` gives `{"results":
   []}` and runs nothing, and no check requires `inputs`. Any error that escapes (the chat call, the guardrail registry) is turned into the OpenAI-style proxy error by B2400's
@@ -68,7 +68,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/compliance_request.rs
     - crates/betterlite-server/fuzz/corpus/compliance_request/**
-    - tools/oracle/cases/policies/compliance/**
     - tools/oracle/helpers/b3251.py
     - tools/oracle/helpers/b3251/**
     - tools/oracle/src/helpers/server/b3251.rs
@@ -103,7 +102,7 @@ dod:
   - text: >-
       apply_policies unions guardrail_names with the guardrails its policy names resolve to, sorts and de-duplicates them, and returns the inputs untouched with no errors
       when the set is empty or the policy registry is not initialized and no guardrail name was given.
-    proof: [apply-tests, oracle]
+    proof: [apply-tests]
   - text: >-
       apply_policies skips a name with no live callback and a callback with no apply_guardrail of its own, runs the others in sorted order with each result feeding the next,
       and records a failing guardrail as an error entry while keeping the inputs from before it and still running the rest.
@@ -115,7 +114,7 @@ dod:
   - text: >-
       With agent_id set, each item carries agent_response (the chat answer without unset fields), and an answer that matches a rejection phrase adds a response_rejection error entry with
       the guardrail's reason, after the apply_policies entries.
-    proof: [agent-tests, oracle]
+    proof: [agent-tests]
   - text: >-
       A failure while reading the answer back or in the rejection pass becomes a response_rejection error entry (detail.error when the detail is an object with that key, else the detail text,
       else the failure text), and a failure of the chat call fails the whole request through the proxy error mapping.
@@ -123,7 +122,7 @@ dod:
   - text: >-
       POST /utils/test_policies_and_guardrails returns 200 with one result per input in order, `{"results": []}` for an empty or missing inputs_list, 422 for a wrong body type or an input_type
       outside request and response, and 401 without a key.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: >-
       The route runs inside B865's management completion wrapper and builds the response-rejection guardrail once per request.
     proof: [route-tests]
@@ -131,6 +130,8 @@ dod:
       The body decoder rejects malformed bytes and wrong shapes without panicking, ignores unknown fields, and has committed corpus inputs.
     proof: [request-corpus, route-tests]
 
+  - text: The handlers are tested with tower's oneshot over the module's own Router and fake ports. B8790 mounts the routes and owns their HTTP oracle cases, so write no HTTP case here.
+    proof: [route-tests]
 checks:
   optional: []
   commands:
@@ -146,19 +147,7 @@ checks:
     - id: request-corpus
       why: the request decoder has no committed malformed-input regressions or no replay test
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/compliance_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_compliance_request_corpus)'
-oracle_cases:
-  - tools/oracle/cases/policies/compliance/empty-inputs-list.yaml
-  - tools/oracle/cases/policies/compliance/missing-inputs-list.yaml
-  - tools/oracle/cases/policies/compliance/no-auth-401.yaml
-  - tools/oracle/cases/policies/compliance/bad-input-type-422.yaml
-  - tools/oracle/cases/policies/compliance/inputs-list-wrong-type-422.yaml
-  - tools/oracle/cases/policies/compliance/unknown-guardrail-skipped.yaml
-  - tools/oracle/cases/policies/compliance/policy-not-initialized.yaml
-  - tools/oracle/cases/policies/compliance/two-inputs-keep-order.yaml
-  - tools/oracle/cases/policies/compliance/agent-answer-returned.yaml
-  - tools/oracle/cases/policies/compliance/agent-answer-rejected.yaml
-  - tools/oracle/cases/policies/compliance/agent-uses-structured-messages.yaml
-  - tools/oracle/cases/policies/compliance/agent-unknown-model-error.yaml
+oracle_cases: []
 
 deviations:
   - what: The 422 body for a bad request body uses the server's shared validation response and wording, not FastAPI's `loc` and `msg` strings.
@@ -180,8 +169,8 @@ out_of_scope:
   - "B3240 owns resolve_policy_guardrails. B3241 owns the policy and attachment registries. B3682 owns the guardrail registry and get_initialized_guardrail_callback. B5471 owns GuardrailContract, GuardrailApiInputs and GuardrailFailure."
   - "B3803 owns CustomCodeGuardrail, its block and result handling and the response-rejection program. B3668 owns process_output_response for completed chat responses."
   - "B865 owns the management completion wrapper. B2400 owns handle_exception_on_proxy. B004 owns the chat completion path and its request type."
-  - "The production AgentChat implementation and the production ComplianceGuardrails implementation that reach the chat handler and each guardrail class: the architect's skeleton wires them (see notes). This task writes the traits and fakes."
-  - "The mount of this route into the app and the list of route modules: the umbrella (B079) and the skeleton."
+  - "The production AgentChat implementation and the production ComplianceGuardrails implementation that reach the chat handler and each guardrail class: B8666 implements ComplianceGuardrails and B8790 implements AgentChat. This task writes the traits and fakes."
+  - "The mount of this route into the app and the list of route modules: B8790."
   - "The imports of sse_keepalive and CustomGuardrail's other paths in endpoints.py: used only by other routes in the file."
 
 pitfalls:
