@@ -809,7 +809,7 @@ fn foundry_rejecting_tools_with_effort_none_stays_on_chat() {
         .with(Fact::FoundryChatRejectsTools)
         .accepting("gpt-5.6")
         .at(None)
-        .for_effort("medium");
+        .for_effort("none");
     let tools = [function_tool()];
     let effort = ReasoningEffort::Text("none".to_owned());
     let mut request = bridge_request("gpt-5.6", "azure_ai");
