@@ -6,6 +6,7 @@ use super::fixtures::pubsub_server::PubSubServer;
 use super::fixtures::{direct_settings, store, transport};
 use crate::redis_client_reuse::error::ClientReuseError;
 use crate::redis_client_reuse::transport::RedisCacheFamily;
+use crate::redis_live_client::LiveClientError;
 use crate::redis_live_client::tests::fake_server::FakeServer;
 
 #[tokio::test]
@@ -98,4 +99,38 @@ async fn a_connect_that_never_answers_times_out() {
         .expect("the muted server never confirms");
     assert!(matches!(error, ClientReuseError::Timeout(_)));
     assert!(started.elapsed() < Duration::from_secs(3));
+}
+
+#[tokio::test]
+async fn next_message_fails_when_the_connection_closes() {
+    let server = PubSubServer::start().await;
+    let store = store();
+    let settings = direct_settings(&server.host(), server.port());
+    let transport = transport(settings, RedisCacheFamily::Standalone, &store, None);
+    let publisher = transport.pubsub_client().await.expect("a publisher");
+    let subscriber = transport.pubsub_client().await.expect("a subscriber");
+    let mut subscription = subscriber
+        .subscribe(&["channel".to_owned()])
+        .await
+        .expect("a subscription");
+    server.close_after_next_write();
+    publisher
+        .publish("channel", "final")
+        .await
+        .expect("a publish");
+    let message = subscription
+        .next_message(Duration::from_secs(2))
+        .await
+        .expect("the final message before the close")
+        .expect("a published message");
+    assert_eq!(message.payload, b"final");
+    let error = subscription
+        .next_message(Duration::from_secs(2))
+        .await
+        .err()
+        .expect("a closed connection fails instead of waiting");
+    assert!(matches!(
+        error,
+        ClientReuseError::Live(LiveClientError::Redis(_))
+    ));
 }

@@ -63,13 +63,7 @@ impl RedisTransport {
     pub async fn async_client(&self) -> Result<LiveAsyncClient, ClientReuseError> {
         match self.family {
             RedisCacheFamily::Standalone => {
-                self.store
-                    .get_or_open(
-                        &self.cache_key,
-                        &self.factory,
-                        &self.async_record,
-                        self.pool.as_ref(),
-                    )
+                self.stored_client(&self.cache_key, &self.async_record)
                     .await
             }
             RedisCacheFamily::Cluster => {
@@ -83,10 +77,7 @@ impl RedisTransport {
                 if !matches!(&opened, LiveAsyncClient::Cluster(_)) {
                     return Ok(opened);
                 }
-                let held = self
-                    .cluster_client
-                    .get_or_try_init(|| async { Ok::<LiveAsyncClient, ClientReuseError>(opened) })
-                    .await?;
+                let held = self.cluster_client.get_or_init(|| async { opened }).await;
                 Ok(held.clone())
             }
         }
@@ -109,30 +100,40 @@ impl RedisTransport {
 
     pub async fn pubsub_client(&self) -> Result<LivePubSubClient, ClientReuseError> {
         let client = self.async_client().await?;
-        let cluster = match (&client, &self.async_record) {
+        let record = match (&client, &self.async_record) {
             (LiveAsyncClient::Cluster(_), RedisClient::Cluster(cluster_record)) => {
-                Some(cluster_record)
+                RedisClient::Direct(cluster_node_connection(cluster_record)?)
             }
-            _ => None,
+            (LiveAsyncClient::Standalone(_) | LiveAsyncClient::Sentinel(_), _)
+            | (
+                // open_async builds a Cluster client only from a Cluster record, so this arm is unreachable
+                LiveAsyncClient::Cluster(_),
+                RedisClient::Direct(_) | RedisClient::Url(_) | RedisClient::Sentinel(_),
+            ) => {
+                return Ok(LivePubSubClient {
+                    client,
+                    record: self.async_record.clone(),
+                    factory: Arc::clone(&self.factory),
+                });
+            }
         };
-        let Some(cluster_record) = cluster else {
-            return Ok(LivePubSubClient {
-                client,
-                record: self.async_record.clone(),
-                factory: Arc::clone(&self.factory),
-            });
-        };
-        let record = RedisClient::Direct(cluster_node_connection(cluster_record)?);
         let key = format!("{}-pubsub", self.cache_key);
-        let opened = self
-            .store
-            .get_or_open(&key, &self.factory, &record, self.pool.as_ref())
-            .await?;
+        let opened = self.stored_client(&key, &record).await?;
         Ok(LivePubSubClient {
             client: opened,
             record,
             factory: Arc::clone(&self.factory),
         })
+    }
+
+    async fn stored_client(
+        &self,
+        key: &str,
+        record: &RedisClient,
+    ) -> Result<LiveAsyncClient, ClientReuseError> {
+        self.store
+            .get_or_open(key, &self.factory, record, self.pool.as_ref())
+            .await
     }
 
     pub async fn close_pubsub_client(&self) {

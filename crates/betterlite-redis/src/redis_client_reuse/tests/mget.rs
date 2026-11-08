@@ -108,3 +108,35 @@ async fn empty_keys_return_an_empty_list_and_send_nothing() {
     assert!(server.commands_named("MGET").is_empty());
     assert_eq!(server.connections(), 0);
 }
+
+#[tokio::test]
+async fn sync_mget_returns_values_in_input_order_across_two_cluster_nodes() {
+    let (first, second) = cluster_pair().await;
+    first.script(
+        "MGET",
+        Reply::Array(vec![Reply::Bulk("first-value".to_owned()), Reply::Nil]),
+    );
+    second.script(
+        "MGET",
+        Reply::Array(vec![Reply::Bulk("second-value".to_owned())]),
+    );
+    let store = store();
+    let settings = cluster_settings(&[(first.host(), first.port())]);
+    let transport = transport(settings, RedisCacheFamily::Cluster, &store, None);
+    let low = key_in_slot_range(0, 8191).to_owned();
+    let missing = format!("{{{low}}}missing");
+    let high = key_in_slot_range(8192, 16383).to_owned();
+    let values = transport
+        .mget(&[low, high, missing])
+        .expect("the sync cross-slot mget");
+    assert_eq!(
+        values,
+        vec![
+            Value::BulkString(b"first-value".to_vec()),
+            Value::BulkString(b"second-value".to_vec()),
+            Value::Nil
+        ]
+    );
+    assert_eq!(first.commands_named("MGET").len(), 1);
+    assert_eq!(second.commands_named("MGET").len(), 1);
+}

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::io;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tokio::io::{
@@ -26,6 +26,7 @@ struct State {
     commands: Mutex<Vec<Recorded>>,
     connections: AtomicUsize,
     slots: Mutex<Option<ClusterSlots>>,
+    close_after_write: AtomicBool,
 }
 
 pub(crate) struct PubSubServer {
@@ -85,6 +86,10 @@ impl PubSubServer {
     pub(crate) fn connections(&self) -> usize {
         self.state.connections.load(Ordering::Relaxed)
     }
+
+    pub(crate) fn close_after_next_write(&self) {
+        self.state.close_after_write.store(true, Ordering::SeqCst);
+    }
 }
 
 async fn accept_loop(listener: TcpListener, state: Arc<State>) {
@@ -105,17 +110,24 @@ async fn serve_connection(socket: TcpStream, state: Arc<State>) {
     let mut reader = BufReader::new(read_half);
     let (sender, receiver) = mpsc::channel(64);
     let mut tasks = JoinSet::new();
-    tasks.spawn(write_loop(write_half, receiver));
+    tasks.spawn(write_loop(write_half, receiver, Arc::clone(&state)));
     read_loop(&mut reader, &state, &sender).await;
     tasks.abort_all();
 }
 
-async fn write_loop<W>(mut write_half: W, mut receiver: mpsc::Receiver<Vec<u8>>)
+async fn write_loop<W>(mut write_half: W, mut receiver: mpsc::Receiver<Vec<u8>>, state: Arc<State>)
 where
     W: AsyncWrite + Unpin,
 {
     while let Some(frame) = receiver.recv().await {
         if write_half.write_all(&frame).await.is_err() {
+            return;
+        }
+        // only a pushed message closes its subscriber, never the publisher's own reply
+        if frame.starts_with(b"*3\r\n$7\r\nmessage\r\n")
+            && state.close_after_write.swap(false, Ordering::SeqCst)
+        {
+            let _closed = write_half.shutdown().await;
             return;
         }
     }

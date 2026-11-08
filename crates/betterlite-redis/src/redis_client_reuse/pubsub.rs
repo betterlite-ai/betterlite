@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt as _;
 use redis::aio::PubSub;
-use redis::cmd;
+use redis::{ErrorKind, RedisError, cmd};
 use tokio::runtime::Handle;
 use tokio::time;
 
@@ -72,7 +72,11 @@ impl LiveSubscription {
                 channel: message.get_channel_name().to_owned(),
                 payload: message.get_payload_bytes().to_vec(),
             })),
-            Ok(None) | Err(_) => Ok(None),
+            // a closed stream is a dead connection the caller must rebuild, not an empty wait
+            Ok(None) => Err(ClientReuseError::Live(LiveClientError::Redis(
+                RedisError::from((ErrorKind::Io, "the pub/sub connection closed")),
+            ))),
+            Err(_) => Ok(None),
         }
     }
 }
