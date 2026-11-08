@@ -2303,6 +2303,7 @@ dependencies = [
 name = "betterlite-router"
 version = "0.1.0"
 dependencies = [
+ "betterlite-context",
  "betterlite-error",
  "betterlite-redis",
  "indexmap 2.14.2",

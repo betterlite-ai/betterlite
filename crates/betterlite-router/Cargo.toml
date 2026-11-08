@@ -9,6 +9,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+betterlite-context = { path = "../betterlite-context" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-redis = { path = "../betterlite-redis" }
 indexmap = { version = "2.14.2", features = ["serde"] }

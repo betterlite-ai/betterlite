@@ -1,0 +1,57 @@
+kind: probe
+name: typed-store-expiry
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_value_store:
+        settings:
+          max_size_in_memory: null
+          default_ttl_seconds: null
+          max_size_per_item: null
+        steps:
+          - {kind: set, now: 0.0, key: "global_router:dep-a:model-x:tpm:00-00", value: {counter: 0}, ttl: 10.0}
+          - {kind: get, now: 0.0, key: "global_router:dep-a:model-x:tpm:00-00"}
+          - {kind: get, now: 10.0, key: "global_router:dep-a:model-x:tpm:00-00"}
+          - {kind: get, now: 10.5, key: "global_router:dep-a:model-x:tpm:00-00"}
+          - {kind: set, now: 20.0, key: "spend:team-a", value: {spend: "0.25"}, ttl: 30.0}
+          - {kind: get, now: 20.0, key: "spend:team-a"}
+          - {kind: increment, now: 20.0, key: "spend:team-a", by: {spend: "0.5"}, ttl: 30.0}
+          - {kind: get, now: 20.0, key: "spend:team-a"}
+          - {kind: set, now: 20.0, key: "affinity:user-a", value: {pin: {model_id: "deployment-1"}}, ttl: 30.0}
+          - {kind: set, now: 20.0, key: "scheduler:queue:model-x", value: {scheduler_tuple: {priority: 3, request_id: "req-1"}}, ttl: 30.0}
+          - {kind: get, now: 20.0, key: "affinity:user-a"}
+          - {kind: get, now: 20.0, key: "scheduler:queue:model-x"}
+          - {kind: set_add, now: 20.0, key: "dynamic_rate:00-00:model-x", values: ["team-a", "team-b"], ttl: 30.0}
+          - {kind: set_add, now: 20.0, key: "dynamic_rate:00-00:model-x", values: ["team-b", "team-c"], ttl: 30.0}
+          - {kind: get, now: 20.0, key: "dynamic_rate:00-00:model-x"}
+          - kind: set_pipeline
+            now: 20.0
+            ttl: 30.0
+            entries:
+              - {key: "pipeline:one", value: {counter: 1}}
+              - {key: "pipeline:two", value: {counter: 2}}
+          - {kind: batch_get, now: 20.0, keys: ["pipeline:one", "pipeline:two", "pipeline:absent"]}
+          - {kind: compare_and_set, now: 20.0, key: "pin-claim:model-x", value: {pin: {model_id: "first"}}, ttl: 30.0}
+          - {kind: compare_and_set, now: 20.0, key: "pin-claim:model-x", expected: {pin: {model_id: "other"}}, value: {pin: {model_id: "second"}}, ttl: 30.0}
+          - {kind: compare_and_set, now: 20.0, key: "pin-claim:model-x", expected: {pin: {model_id: "first"}}, value: {pin: {model_id: "third"}}, ttl: 30.0}
+          - {kind: set, now: 30.0, key: "kept", value: {counter: 1}, ttl: 10.0}
+          - {kind: set, now: 35.0, key: "kept", value: {counter: 2}, ttl: 100.0}
+          - {kind: get, now: 40.0, key: "kept"}
+          - {kind: get, now: 40.5, key: "kept"}
+          - {kind: set, now: 41.0, key: "defaulted", value: {counter: 5}}
+          - {kind: get, now: 641.0, key: "defaulted"}
+          - {kind: get, now: 641.5, key: "defaulted"}
+          - {kind: set, now: 642.0, key: "zero-ttl", value: {counter: 7}, ttl: 0.0}
+          - {kind: get, now: 642.0, key: "zero-ttl"}
+          - {kind: get, now: 642.5, key: "zero-ttl"}
+          - {kind: set, now: 643.0, key: "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk", value: {counter: 11}, ttl: 30.0}
+          - {kind: get, now: 643.0, key: "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"}
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /steps/31/value
+      reference: {counter: 11}
+      rust: null
+      why: the 1024-byte route key cap refuses a key Python accepts, so the value never lands in betterlite's store
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L158-L177

@@ -1,0 +1,24 @@
+kind: probe
+name: parser-byte-bound
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_value_store:
+        settings:
+          max_size_in_memory: null
+          default_ttl_seconds: null
+          max_size_per_item: null
+        steps:
+          - {kind: parse, payload: {kind: text, text: '{"pin": {"model_id": "dep-1"}}'}}
+          - {kind: parse, payload: {kind: pin, model_id_bytes: 12}}
+          - {kind: parse, payload: {kind: pin, model_id_bytes: 1048553}}
+          - {kind: parse, payload: {kind: pin, model_id_bytes: 1048577}}
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /steps/3/result
+      reference: {kind: valid, value: {kind: pin, model_id_bytes: 1048577}}
+      rust: {kind: invalid, bytes: 1048600, limit: 1048576}
+      why: the typed route value parser refuses stored bytes past 1 MiB before decoding, while LiteLLM's JSON decode has no byte bound
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L211-L221

@@ -1,0 +1,26 @@
+kind: probe
+name: ordered-batch-missing-values
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_value_store:
+        settings:
+          max_size_in_memory: null
+          default_ttl_seconds: null
+          max_size_per_item: null
+        steps:
+          - {kind: set, now: 0.0, key: "a", value: {counter: 1}, ttl: 600.0}
+          - {kind: set, now: 0.0, key: "b", value: {counter: 2}, ttl: 5.0}
+          - {kind: set, now: 0.0, key: "c", value: {spend: "1.5"}, ttl: 600.0}
+          - {kind: batch_get, now: 0.0, keys: ["a", "b", "c"]}
+          - {kind: batch_get, now: 5.0, keys: ["a", "b", "c"]}
+          - {kind: batch_get, now: 6.0, keys: ["c", "missing", "a", "b"]}
+          - {kind: batch_get, now: 6.0, keys: []}
+          - {kind: batch_get, now: 6.0, keys: ["a", "a", "missing", "missing"]}
+          - {kind: get, now: 6.0, key: "b"}
+          - {kind: get, now: 6.0, key: "c"}
+          - {kind: increment, now: 6.0, key: "missing-counter", by: {counter: 4}}
+          - {kind: batch_get, now: 6.0, keys: ["missing-counter", "b"]}
+compare:
+  ignore: []
