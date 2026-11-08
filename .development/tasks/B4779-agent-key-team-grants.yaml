@@ -1,9 +1,18 @@
 id: B4779
 title: Resolve key and team agent grants
 description: >-
-  Build crates/betterlite-auth/src/agent_permission_handler with the key and team grant resolution layer. A key or team can declare agent permissions directly (through object_permission) or through access groups (unified or declared). `get_allowed_agents_for_key` returns the set of agents a key is permitted to invoke; `_get_allowed_agents_for_team` returns the same for a team. Both check native permissions first (object_permission.agents), then declared access groups (object_permission.agent_access_groups), then unified access groups (key/team.access_group_ids). A key or team that declares agents or groups is restricted even when those declarations resolve to nothing, so an emptied access group denies rather than opening the key/team. Lookup failures propagate to the caller in strict mode (raising 503) and warn and allow in non-strict mode.
+  Build crates/betterlite-auth/src/agent_permission_handler with the key and team grant resolution layer. A key or team can declare agent permissions directly (through object_permission) or through access groups (unified or declared). `get_allowed_agents_for_key` returns the set of agents a key is permitted to invoke; `_get_allowed_agents_for_team` returns the same for a team. Both check native permissions first (object_permission.agents), then declared access groups (object_permission.agent_access_groups), then unified access groups (key/team.access_group_ids). A key or team that declares agents or groups is restricted even when those declarations resolve to nothing, so an emptied access group denies rather than opening the key/team. Lookup failures propagate to the caller in strict mode (a typed GrantError::PolicyUnavailable, status 503) and warn and allow in non-strict mode.
 
-  `resolve_key_team_agent_access` combines both sources with intersection, while `agent_caller_access` gets team-only access for a caller. `_agent_access_group_ceiling` narrows an agent's own ceiling to the intersection of its access group and the caller's allowed agents. Access group helpers split the lookup: config agents match agent_access_groups names in the registry, DB agents match with the agents table's hasSome filter, and unified groups delegate to B747's `_get_agent_ids_from_access_groups`.
+  Interface (module agent_permission_handler, one public async method per LiteLLM function it owns, on `AgentGrants`, built once by a constructor that takes the ports it reads through: B4778's `AgentAccessGroups` for the ceiling and stable ids, B737's team loader, B747's unified group lookup and the agent registry; no statics, no trait objects). Every method returns `Result<_, GrantError>` and takes `auth: Option<&UserApiKeyAuth>` and `strict: bool` so that the server's `GrantSources` implementation (B4780) calls them directly. `AgentAccess` is B4778's type.
+  - `get_allowed_agents_for_key(&self, auth: Option<&UserApiKeyAuth>, strict: bool) -> Result<AgentAccess, GrantError>`.
+  - `get_allowed_agents_for_team(&self, auth: Option<&UserApiKeyAuth>, strict: bool) -> Result<AgentAccess, GrantError>` (LiteLLM's _get_allowed_agents_for_team).
+  - `resolve_key_team_agent_access(&self, auth: Option<&UserApiKeyAuth>, strict: bool) -> Result<AgentAccess, GrantError>` calls the two above and intersects them with B4778's intersect_agent_access.
+  - `agent_caller_access(&self, auth: Option<&UserApiKeyAuth>, strict: bool) -> Result<AgentAccess, GrantError>` returns Unrestricted without a caller, else the team access of the caller auth.
+  - `agent_access_group_ceiling(&self, auth: Option<&UserApiKeyAuth>, strict: bool) -> Result<Option<BTreeSet<String>>, GrantError>` (LiteLLM's _agent_access_group_ceiling, ids already stable; the non-strict resolver is the constructor's `AgentAccessGroups`).
+  - `agent_ids_for_groups(&self, groups: &[String], check_db_only: bool) -> Result<BTreeSet<String>, GrantError>` (LiteLLM's _get_agents_from_access_groups), built from the private config and DB lookups and B747's unified lookup.
+  `GrantError` (agent_permission_handler/error.rs, thiserror) has `PolicyUnavailable` (status 503, message "Agent invocation policy is unavailable") and `Lookup(String)` for a failed read. In strict mode a failed lookup in the key, team or key-and-team methods becomes `PolicyUnavailable`; in non-strict mode it is logged as a warning and the method returns Unrestricted, as LiteLLM does. A missing team in strict mode returns Restricted(empty). B4780's `GrantSources` wraps these: key_team_access is resolve_key_team_agent_access, caller_access is agent_caller_access, key_access_strict is get_allowed_agents_for_key with strict true, access_group_ceiling is agent_access_group_ceiling, and managed_ceilings is B4778's resolve_managed_agent_ceilings, not this task's.
+
+  Behavior notes: `resolve_key_team_agent_access` combines both sources with intersection, while `agent_caller_access` gets team-only access for a caller. `agent_access_group_ceiling` narrows an agent's own ceiling to the intersection of its access group and the caller's allowed agents. Access group helpers split the lookup: config agents match agent_access_groups names in the registry, DB agents match with the agents table's hasSome filter, and unified groups delegate to B747's `_get_agent_ids_from_access_groups`.
 
   Preserve declared-but-empty restrictions, strict 503 failures versus non-strict warnings, agent visibility changes based on group membership, and config-before-DB ordering.
 scope:
@@ -42,13 +51,13 @@ dod:
     proof: [unified-delegation]
   - text: _agent_access_group_ceiling returns None when user_api_key_auth is None or has no agent_id.
     proof: [ceiling-guard]
-  - text: _agent_access_group_ceiling dispatches to resolve_agent_access_group_ceiling with check_db_only=true in strict mode, or uses the injected resolver in non-strict mode.
+  - text: agent_access_group_ceiling dispatches to resolve_agent_access_group_ceiling with check_db_only=true in strict mode, or uses the injected resolver in non-strict mode.
     proof: [ceiling-dispatch]
   - text: _agent_access_group_ceiling returns None when the resolved ceiling is None.
     proof: [ceiling-null-propagation]
   - text: _agent_access_group_ceiling converts the resolved ceiling's agent IDs to stable IDs before returning.
     proof: [ceiling-stable-ids]
-  - text: Strict mode raises HTTPException(503) on lookup failures; non-strict mode logs warnings (skipping noisy ones for the UI team) and allows access.
+  - text: Strict mode returns GrantError::PolicyUnavailable (status 503) on lookup failures; non-strict mode logs warnings (skipping noisy ones for the UI team) and allows access.
     proof: [error-handling]
   - text: Every function's logic, error cases and team-specific behavior match the pinned LiteLLM.
     proof: [oracle-cases]
@@ -105,7 +114,7 @@ oracle_cases:
 deviations:
   - what: Declared-but-empty access groups deny access (RestrictedAgentAccess with empty set), not open access.
     why: LiteLLM treats an declared group as a restriction boundary. An emptied or deleted group must deny rather than silently fall through.
-  - what: Strict mode propagates lookup errors as HTTP 503 "Agent invocation policy is unavailable"; non-strict logs and allows.
+  - what: Strict mode returns lookup errors as GrantError::PolicyUnavailable (status 503, "Agent invocation policy is unavailable"); non-strict logs and allows.
     why: Failing open on transient errors is preferable to blocking all access, but strict mode ensures policy enforcement is never silently violated.
   - what: Non-strict mode skips warning logs for the UI team (litellm-dashboard) since it never has agent declarations.
     why: LiteLLM's dashboard team produces spurious warning logs that are not actionable for operators.
@@ -127,13 +136,13 @@ pitfalls:
   - >-
     Access groups come from three sources: object_permission.agents (direct), object_permission.agent_access_groups (declared groups), and key/team.access_group_ids (unified groups). All three go into one union before returning.
   - >-
-    Config agents use getattr for agent_access_groups to be defensive; DB agents use the Prisma hasSome filter. Both return empty sets on no match, not errors.
+    Config agents read the typed agent_access_groups field of the registry record, and a missing list is empty; DB agents use the Prisma hasSome filter. Both return empty sets on no match, not errors.
   - >-
     Empty result when all sources are defined but resolve to nothing is RestrictedAgentAccess(empty set), not UnrestrictedAgentAccess. That signals "restricted to nothing" vs. "no restrictions".
   - >-
     UI_TEAM_ID is the literal string "litellm-dashboard" and is checked by identity, not by a function; use string equality.
   - >-
-    HTTPException(503, ...) is raised in strict mode; json.HTTPException import and raised status must match LiteLLM.
+    Strict mode returns GrantError::PolicyUnavailable with status 503 and the message "Agent invocation policy is unavailable", the same status and detail LiteLLM sends.
   - >-
     _get_allowed_agents_for_team uses get_team_object from auth_checks (B737) with check_db_only set to strict, not check_cache_only or other parameters.
   - >-

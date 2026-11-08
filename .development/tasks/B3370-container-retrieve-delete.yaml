@@ -1,0 +1,152 @@
+id: B3370
+title: Container retrieve and delete operations
+description: >-
+  Build the four top-level container operations retrieve_container, aretrieve_container, delete_container and
+  adelete_container in betterlite-core, as module api::container_resource_ops (files crates/betterlite-core/src/api/container_resource_ops.rs
+  and a folder of the same name for the tests). They are the entry points a caller uses; the HTTP work is B3365's container_retrieve_handler, acontainer_retrieve_handler, container_delete_handler and
+  acontainer_delete_handler, and this task calls them. Nothing here sends a request itself. The module owns its error enum, ContainerOpError, with
+  variants for a mock body that is not valid JSON or does not decode, an unknown provider name, a provider with no container config
+  (message "Container provider config not found for provider: <name>"), and a wrapped handler error. Every failure leaves the
+  operation through the exception dispatch of B185, called with model "" and the resolved provider name, as LiteLLM does.
+
+  Inputs for retrieve and delete are the same: container_id, timeout (default 600 seconds), api_key, api_base, api_version,
+  custom_llm_provider (default "openai"; "openai", "azure" and "azure_text" are the ones that have a container config),
+  extra_headers, extra_query, extra_body, the logging object, the call id, the async flag, an optional mock_response and the
+  optional litellm_metadata. Put them in one request struct per operation and let the logging object come in through the
+  constructor of the operations struct with the other collaborators (handler, decoder, config lookup), not through module state.
+  extra_body is accepted and then ignored: it is never sent to the handler and it is passed to the response encoder as None.
+
+  Steps, in LiteLLM's order for both operations. (1) Mock: when mock_response is set, parse it (a string is JSON-decoded first)
+  into ContainerObject for retrieve or DeleteContainerResult for delete and return it at once. No provider lookup, no decoding of
+  the id, no logging update and no id encoding happen on this path. (2) Build the litellm params from api_key, api_base and
+  api_version plus the other request fields, using whatever params type B3361 and the router types give. (3) Call B3361's
+  decode_managed_container_id_for_request with the container_id, the provider and the params; it returns the original id, the
+  resolved provider and updated params. was_encoded is true when the original id differs from the input id. (4) Look up the
+  container config for the resolved provider with B3361's provider config manager. An unparsable provider name is an error
+  (LiteLLM's litellm.LlmProviders(...) raises ValueError) and a provider without a config is the "not found" error above.
+  (5) Update the logging object from the request with model "", empty optional params, litellm_params holding only
+  litellm_call_id, and the resolved provider, using B247's update. (6) Set the logging call type to "retrieve_container" or
+  "delete_container". (7) Call B3365's container_retrieve_handler or container_delete_handler (the acontainer_ forms when async) with the decoded original id (never the input id), the config,
+  the params, the logging object, extra_headers, extra_query, the timeout (0 or missing becomes the default request timeout, REQUEST_TIMEOUT, 6000 seconds by default: the route passes betterlite_config::env_integer::timeout::RequestTimeout, field seconds, owned by B198, and the operations take it as a parameter, with no second copy of the value) and the
+  async flag. (8) Re-encode the id of the result, see the next paragraph.
+
+  Id re-encoding (retrieve and delete only, step 8). It happens only when the handler's result is the already finished record
+  (ContainerObject or DeleteContainerResult). In LiteLLM the isinstance test is false when the handler returned a coroutine, so
+  an async call is never re-encoded and returns the provider's raw id. In Rust the sync operation re-encodes and the async
+  operation does not; keep that split and say so in a test. When it runs: take litellm_metadata (empty map when absent); when
+  was_encoded is true and the decoded params carry a model_id, write that model_id to litellm_metadata.model_info.id (creating
+  model_info when absent) and keep the map for the caller, as LiteLLM mutates the kwargs dict in place; then call B3361's
+  encode_container_id_in_response with the resolved provider, the metadata and extra_body None. So a caller with no
+  model_info.id in its metadata and a plain id gets the raw id back; a managed id in gets a managed id out.
+
+  Async variants. aretrieve_container and adelete_container take the same inputs minus api_key, api_base and api_version as
+  named arguments (they travel in the extra fields, as in LiteLLM), force the async flag on, run the same steps, and await the
+  async handler. LiteLLM runs the sync function on an executor thread with a copied contextvars context; the Rust version is a
+  plain async fn and needs neither. If the mock path is taken the finished record is returned directly. On any error the async
+  wrapper also goes through the exception dispatch, using the provider name as the caller gave it (not the decoded one), because
+  the wrapper has no decoded value; the sync body uses the decoded one.
+
+  Out of the box, nothing registers a route: the HTTP routes belong to the umbrella B094 and its parts. Tests therefore drive the
+  operations with a fake handler, a fake config lookup and a recording logging object, all injected by the constructor.
+
+  Budget from the owned LiteLLM lines (about 260 non-blank lines of containers/main.py L490-L918 minus overloads and docstrings):
+  about 300 production lines, 350 test lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/container_resource_ops.rs
+    - crates/betterlite-core/src/api/container_resource_ops/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L489-L553
+    why: "@client aretrieve_container: forces async_call, runs retrieve_container, awaits a coroutine result, maps errors with the caller's provider."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L586-L702
+    why: retrieve_container body, from the mock short circuit to the isinstance guarded id re-encoding. Overloads at L554-L584 only add typing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L704-L768
+    why: "@client adelete_container, the same wrapper shape as the retrieve one."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L801-L918
+    why: delete_container body with DeleteContainerResult mock, call type delete_container and the same re-encoding. Overloads at L769-L799.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L98-L160
+    why: encode_container_id_in_response, to see which inputs make it a no-op (B3361 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L9139-L9475
+    why: The retrieve and delete handlers that these operations call (B3365 owns them); read for the argument list only.
+dod:
+  - text: A mock_response (object or JSON string) returns the decoded record with no provider lookup, no logging update, no handler call and no id encoding, for both retrieve and delete, and a bad mock body is an error.
+    proof: [mock-tests]
+  - text: The container id is decoded first and the handler receives the decoded original id and the resolved provider's config; an unknown provider name and a provider without a config each fail with their own message.
+    proof: [provider-tests]
+  - text: The logging object is updated with model "", empty optional params, only litellm_call_id in litellm_params and the resolved provider, and gets call type retrieve_container or delete_container before the handler runs.
+    proof: [logging-tests]
+  - text: The handler receives extra_headers, extra_query, the async flag and the timeout, where 0 or missing becomes the default request timeout, and extra_body is never forwarded.
+    proof: [handler-args-tests]
+  - text: The sync operations re-encode the result id with the resolved provider and the metadata, copy a decoded model_id into litellm_metadata.model_info.id only when the input id was managed, and return the raw id when no routing metadata exists.
+    proof: [encode-tests]
+  - text: The async operations return the provider's raw id without re-encoding, and map errors through the dispatch using the caller's provider name.
+    proof: [async-tests]
+  - text: Every error from decoding, lookup, logging or the handler leaves through B185's exception dispatch with model "".
+    proof: [error-tests]
+checks:
+  optional: []
+  commands:
+    - id: mock-tests
+      why: the mock short circuit or its bad-body error is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^api::container_resource_ops::(.*::)?mock_/)'
+    - id: provider-tests
+      why: id decoding, provider lookup or the two provider errors are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^api::container_resource_ops::(.*::)?provider_/)'
+    - id: logging-tests
+      why: the logging update or the call type is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^api::container_resource_ops::(.*::)?logging_/)'
+    - id: handler-args-tests
+      why: the handler arguments, the timeout default or the dropped extra_body differ
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^api::container_resource_ops::(.*::)?handler_args_/)'
+    - id: encode-tests
+      why: sync id re-encoding or the model_info.id write is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^api::container_resource_ops::(.*::)?encode_/)'
+    - id: async-tests
+      why: the async operations or their no-encoding rule is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^api::container_resource_ops::(.*::)?async_/)'
+    - id: error-tests
+      why: errors are not routed through the exception dispatch
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^api::container_resource_ops::(.*::)?error_/)'
+oracle_cases: []
+deviations:
+  - what: The async operations are plain async functions and do not run the sync function on an executor thread with a copied context.
+    why: Rust has no contextvars and no event loop to hop off; the observable result is the same.
+  - what: The mock_response and request inputs are typed structs and a mock body that does not decode is ContainerOpError, not a pydantic error.
+    why: Rust has no pydantic; accept and reject outcomes match B3360's record decoding.
+out_of_scope:
+  - "litellm/containers/main.py create, list, list files and upload operations: B3369, B3366 and B3367."
+  - "The @client decorator (retry, caching, call id and litellm_logging_obj creation) in litellm/utils.py: the task that owns that file builds the logging object and call id; this task takes them as inputs."
+  - "Container record types, the provider trait and endpoints.json: B3360."
+  - "decode_managed_container_id_for_request, encode_container_id_in_response and ProviderConfigManager.get_provider_container_config: B3361."
+  - "The retrieve and delete HTTP handlers, client choice and transport errors: B3365."
+  - "Provider request and response transforms: B522 and B547."
+  - "Logging update_from_kwargs: B247. Exception dispatch exception_type: B185."
+  - "Generated file operations and the package exports in litellm/containers/__init__.py and endpoint_factory.py: B3368."
+pitfalls:
+  - The mock path returns before the id is decoded, so a managed id with a mock_response is returned as the mock holds it, never re-encoded.
+  - The handler gets the decoded original id; passing the input id to it breaks every managed id.
+  - Only the sync path re-encodes, because LiteLLM checks isinstance on a result that is a coroutine when the async flag is set; an async call returns the raw provider id even for a managed input.
+  - was_encoded is original id not equal to input id, so a managed id that decodes to the same text counts as plain; copy model_id into model_info.id only when was_encoded is true and the decoded params have a model_id.
+  - litellm_metadata is changed in place (model_info is created if missing), so the caller's map shows the new model_info.id after the call.
+  - extra_body is read by the signature and passed to the encoder as None, never to the handler; target_model_names in it therefore never triggers encoding here.
+  - timeout 0 is falsy in Python and becomes the default request timeout, the same as None.
+  - The async wrapper's error path names the provider the caller gave; the sync body names the decoded one, so an encoded azure id on an openai default call reports azure from sync and openai from async.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

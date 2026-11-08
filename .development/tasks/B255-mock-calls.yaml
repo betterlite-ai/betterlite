@@ -42,6 +42,7 @@ scope:
   - crates/betterlite-server/src/routes/embeddings.rs
   - crates/betterlite-server/src/routes/embeddings/tests.rs
   - crates/betterlite-server/src/server/chat_setup.rs
+  - tools/oracle/src/sdk_http/native.rs
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L774-L1057

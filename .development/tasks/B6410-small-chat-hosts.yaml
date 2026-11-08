@@ -1,0 +1,177 @@
+id: B6410
+title: Maritalk, Meta Llama, Moonshot, Morph, Nadir, Nebius, Novita, Nscale, v0, Wandb and Z.ai chat configs
+description: >-
+  Build the chat configs of eleven small OpenAI-shaped hosts. Each one calls the OpenAI chat config (B668, B503, B504)
+  and changes only what is listed below. All of it is pure transforms: nothing sends a request, reads the environment or
+  registers a route. B039 wires the configs into dispatch. The identity defaults (_get_openai_compatible_provider_info
+  and the nscale static getters) belong to B210 and B211, and the class selection to B2230, so none of that is built here.
+
+  Modules. In betterlite-openai, a folder small_chat_hosts with one file per host (maritalk, meta_llama, moonshot, morph,
+  nadir, nebius, novita, nscale, v0, wandb, zai) and a tests.rs. Each host has a config type named after its LiteLLM class
+  and exposes the same method names as the OpenAI chat config it replaces (get_supported_openai_params,
+  map_openai_params, transform_request, validate_environment, get_error_class). Where a host changes nothing for a method,
+  the method is not redefined. Credentials arrive as plain arguments.
+
+  maritalk (llms/maritalk.py). MaritalkError carries message, status_code and headers (built on B2202's
+  BaseLLMException projection). get_error_class returns it. Supported params are exactly, in this order:
+  frequency_penalty, presence_penalty, top_p, top_k, temperature, max_tokens, n, stop, stream, stream_options, tools,
+  tool_choice. The Python __init__ stores its non-None arguments on the class, and B668's per-config snapshot owns that
+  mechanism, so here the config takes no constructor arguments.
+
+  meta_llama (LlamaAPIConfig). Supported params are the OpenAI list unchanged. map_openai_params runs the parent and then
+  removes response_format unless its "type" is exactly "json_schema". A response_format with no "type" is removed too.
+
+  moonshot (MoonshotChatConfig). Messages: when no message has a list content with a non-text part, every list content is
+  flattened to a string through B2214's handle_messages_with_content_list_to_str_conversion; if any part has a type other
+  than "text", nothing is flattened. Then the parent B503 transform runs, for the sync and the async call alike. Complete
+  URL: no api_base gives "https://api.moonshot.ai/v1"; the result is that base plus "/chat/completions" unless it already
+  ends with "/chat/completions". The base is not trimmed. Supported params: the OpenAI list without "functions", and also
+  without "tools" and "tool_choice" when the model name contains "kimi-thinking-preview"; "reasoning_effort" is appended
+  when B2221's supports_reasoning is true for the model under provider moonshot. map_openai_params walks
+  non_default_params in order: max_completion_tokens sets max_tokens, a param outside the supported list is skipped (no
+  error, drop_params is ignored), reasoning_effort keeps the bare string (an object with an "effort" string keeps that
+  string, a non-string effort is skipped) and everything else is copied. After the loop, a reasoning model has
+  temperature removed. Any other model has temperature capped at 1, and if the capped value is below 0.3 and n is above 1
+  (n absent counts as 1), temperature becomes 0.3. transform_request: when optional_params tool_choice equals "required",
+  the key is removed from optional_params and a user message "Please select a tool to handle the current issue." is
+  appended after the existing messages. Then, for a reasoning model, every assistant message with non-empty tool_calls and
+  a falsy reasoning_content gets one: the non-empty provider_specific_fields.reasoning_content moves up (and is removed
+  from a copy of provider_specific_fields), otherwise a single space " " is used and a warning is logged with the exact
+  text from the source. Other messages are passed through untouched. Then the parent transform_request runs.
+
+  morph (MorphChatConfig) and v0 (V0ChatConfig). Only get_supported_openai_params differs from B1425's OpenAI-like config.
+  Morph returns messages, model, stream. v0 returns messages, model, stream, tools, tool_choice. custom_llm_provider is
+  "morph" and "v0".
+
+  nadir (NadirConfig). Supported params, in order: extra_headers, frequency_penalty, max_retries, max_tokens,
+  presence_penalty, response_format, stream, temperature, top_p. transform_response runs the parent and then records a
+  cost through B1717's set_response_cost_in_hidden_params. The cost reader is nadir_reported_cost over the raw body bytes
+  and returns the number at nadir_metadata.cost.total_cost_usd. It returns none for undecodable bytes, a missing key, a
+  path that crosses a non-object, a boolean, a non-number, a non-finite value and a negative value. An integer counts and
+  becomes a float. When the parent fails, the error is returned and the cost is not read. The decoder is fuzzed.
+
+  nebius and wandb. map_openai_params maps max_completion_tokens to max_tokens, copies every other param that is in the
+  supported list and skips the rest without an error. It does not call the parent, and the walk is in input order, so with
+  both max_tokens and max_completion_tokens present the later one wins. Wandb's supported params are the OpenAI list plus
+  "reasoning_effort" when B2221's supports_reasoning is true for the model under provider wandb. Nebius keeps the OpenAI list.
+
+  novita. validate_environment: a None api_key is an error with the message "Missing Novita AI API Key - A call is being
+  made to novita but no key is set either in the environment variables or via params" (an empty string passes). Otherwise
+  it sets, on the given headers, Authorization "Bearer <key>", Content-Type "application/json" and X-Novita-Source
+  "litellm", in that order, and returns them.
+
+  nscale. Supported params, in order: max_tokens, n, temperature, top_p, stream, logprobs, top_logprobs,
+  frequency_penalty, presence_penalty, response_format, stop, logit_bias. custom_llm_provider is "nscale".
+
+  zai (ZAIChatConfig). custom_llm_provider is "zai". Supported params, in order: max_tokens, stream, stream_options,
+  temperature, top_p, stop, tools, tool_choice, then "thinking" when B2221's supports_reasoning is true for the model
+  under provider zai. A failure inside that capability lookup means no "thinking" and is not an error.
+  remove_cache_control_flag_from_messages_and_tools returns the messages and tools unchanged, so cache_control is kept.
+
+  Helper b6410 calls these functions with typed inputs (no network, no environment) and compares the pinned LiteLLM
+  classes. Source size is about 490 nonblank, noncomment lines. Plan about 560 production lines, 450 test lines, 220
+  adapter lines and 50 fuzz and wiring lines.
+scope:
+  paths:
+    - crates/betterlite-openai/src/small_chat_hosts.rs
+    - crates/betterlite-openai/src/small_chat_hosts/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/nadir_cost_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/nadir_cost_reply/**
+    - tools/oracle/cases/helpers/small-chat-hosts/**
+    - "tools/oracle/fuzz/corpus/helper_case/small_chat_hosts-*"
+    - tools/oracle/helpers/b6410.py
+    - tools/oracle/helpers/b6410/**
+    - tools/oracle/src/helpers/openai/b6410.rs
+    - tools/oracle/src/helpers/openai/b6410/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/maritalk.py#L1-L61
+    why: The error type, the twelve supported params and the class-level __init__ settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/meta_llama/chat/transformation.py#L1-L46
+    why: response_format is dropped unless its type is json_schema.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/moonshot/chat/transformation.py#L19-L116
+    why: Reasoning effort unwrapping, list flattening, complete URL and the supported param list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/moonshot/chat/transformation.py#L118-L254
+    why: Param mapping with the temperature rules, reasoning_content fill and the tool_choice required rewrite.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/morph/chat/transformation.py#L1-L38
+    why: Morph supported params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nadir/chat/transformation.py#L1-L68
+    why: Nadir supported params and the cost read from nadir_metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nebius/chat/transformation.py#L1-L29
+    why: max_completion_tokens mapping that skips the parent.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/novita/chat/transformation.py#L1-L31
+    why: Missing-key error and the three headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nscale/chat/transformation.py#L1-L50
+    why: Nscale supported params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/v0/chat/transformation.py#L1-L42
+    why: v0 supported params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/wandb/chat/transformation.py#L1-L36
+    why: Reasoning effort by capability and the same mapping as Nebius.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/zai/chat/transformation.py#L1-L56
+    why: Thinking by capability and the cache_control override.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L762-L772
+    why: How a reported cost lands in hidden params, owned by B1717.
+dod:
+  - text: Maritalk, Meta Llama, Morph, v0, Nscale and Nebius expose the same supported params and the same mapping and response_format rules as LiteLLM.
+    proof: [small-hosts-tests, helper-python, helper-case-corpus]
+  - text: Moonshot flattens text lists, builds the URL, lists and maps params, rewrites tool_choice required and fills reasoning_content like LiteLLM.
+    proof: [small-hosts-tests, helper-python, helper-case-corpus]
+  - text: Nadir records the reported cost from the reply bytes only when it is a finite non-negative number, and no byte input makes the reader fail.
+    proof: [small-hosts-tests, nadir-cost-corpus, helper-python, helper-case-corpus]
+  - text: Novita, Wandb and Z.ai match LiteLLM on the missing-key error, the headers, capability-gated params and cache_control handling.
+    proof: [small-hosts-tests, helper-python, helper-case-corpus]
+  - text: The new helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: small-hosts-tests
+      why: The small host configs are missing or fail their tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^small_chat_hosts::/) - test(replays_the_nadir_cost_reply_corpus)'
+    - id: nadir-cost-corpus
+      why: The Nadir cost fuzz target or its fresh replay corpus is missing
+      run: >-
+        test -f crates/betterlite-openai/fuzz/fuzz_targets/nadir_cost_reply.rs &&
+        grep -q 'name = "nadir_cost_reply"' crates/betterlite-openai/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/nadir_cost_reply)" &&
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_nadir_cost_reply_corpus)'
+    - id: helper-python
+      why: The strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6410.py)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added small host helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/small_chat_hosts-*")" &&
+        grep -lE '^[[:space:]]+b6410:' tools/oracle/fuzz/corpus/helper_case/small_chat_hosts-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/small-chat-hosts/supported-params.yaml
+  - tools/oracle/cases/helpers/small-chat-hosts/map-params-and-response-format.yaml
+  - tools/oracle/cases/helpers/small-chat-hosts/moonshot-messages-and-url.yaml
+  - tools/oracle/cases/helpers/small-chat-hosts/moonshot-params-and-temperature.yaml
+  - tools/oracle/cases/helpers/small-chat-hosts/moonshot-request-rewrites.yaml
+  - tools/oracle/cases/helpers/small-chat-hosts/nadir-reported-cost.yaml
+  - tools/oracle/cases/helpers/small-chat-hosts/novita-headers.yaml
+deviations:
+  - what: Novita's missing-key failure is a typed error that carries the LiteLLM message, not a Python ValueError.
+    why: There is no ValueError in Rust. The message and the failure stay the same, and B184 decides how the proxy reports it.
+out_of_scope:
+  - B210 and B211 own _get_openai_compatible_provider_info for Morph, Moonshot, Nadir, Nebius, Novita, Nscale, v0, Wandb and Z.ai, including Nscale's two static getters and the NADIR_DEFAULT_API_BASE constant. B2230 owns choosing each config for its provider.
+  - B668 owns the OpenAI parent methods and the per-config snapshot that replaces the class-level __init__ settings of Maritalk. B503 and B504 own the parent request and response transforms.
+  - B039 owns _complete_maritalk and _complete_nadir in litellm/main.py, the reading of environment variables and the HTTP oracle cases through the booted proxy.
+  - B1717 owns set_response_cost_in_hidden_params. B2221 owns supports_reasoning. B2214 owns the content list flattening helper.
+pitfalls:
+  - Nebius and Wandb do not call the parent map_openai_params, so the parent's handling of other params does not apply there.
+  - Moonshot removes temperature for a reasoning model and caps it for any other, so the same input gives two different bodies.
+  - The tool_choice required rewrite removes the key from optional_params, which the caller sees after the call.
+  - Moonshot never flattens when any part is not a text part, even in a different message from the list being flattened.
+  - Nadir's cost reader must treat true and false as no cost, since a boolean is an int in Python.
+  - Z.ai's thinking param depends on a capability lookup that can fail, and the failure is silent.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

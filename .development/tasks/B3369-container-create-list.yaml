@@ -1,0 +1,125 @@
+id: B3369
+title: Container create and list operations
+description: >-
+  Build the public create and list container operations of litellm/containers/main.py in betterlite-core, as module
+  api::container_create_list (crates/betterlite-core/src/api/container_create_list.rs, with tests in
+  container_create_list/tests.rs). Retrieve, delete and the file operations are other tasks; this one owns
+  create_container, acreate_container, list_containers, alist_containers and the helper _encode_created_container_id.
+  The module does no HTTP itself. It prepares the call and hands it to B3364's container_create_handler, acontainer_create_handler, container_list_handler and acontainer_list_handler.
+
+  Shape. Define ContainerCreateCall (name, expires_after as an optional JSON map, file_ids as an optional list of strings,
+  timeout, api_key, api_base, api_version, custom_llm_provider, extra_headers, extra_query, extra_body, mock_response,
+  litellm_metadata, litellm_call_id and an extra map for the remaining keyword arguments) and ContainerListCall (after,
+  limit, order and the same shared fields). custom_llm_provider defaults to "openai". timeout defaults to 600 seconds.
+  Each function also takes the per-call logging state (B247) and a default request timeout in seconds. No config constant
+  is read here: the route passes betterlite_config::env_integer::timeout::RequestTimeout (field seconds, REQUEST_TIMEOUT, 6000 by default, owned by B198) resolved once at startup. create_container and list_containers use container_create_handler and container_list_handler and acreate_container and
+  alist_containers use acontainer_create_handler and acontainer_list_handler; the two variants share one private preparation step, so the logic is written once.
+  The Python _is_async flag and the run_in_executor wrapper have no Rust form: the async functions are plain async fns.
+  ContainerOpError is this module's error enum and it carries every failure to B185's exception mapping (model "",
+  the call's custom_llm_provider).
+
+  Create, in order. (1) If mock_response is set, parse it (a string is parsed as JSON first) into a ContainerObject with B3360's
+  decoder and return it at once: no provider lookup, no HTTP, no id encoding. A body that fails to decode is an error. (2) Build
+  GenericLiteLLMParams from api_key, api_base, api_version and the extra map (B010 owns that type). (3) Parse custom_llm_provider
+  into a provider id; an unknown name is an error. (4) Call B3361's provider-config lookup; None gives the error text
+  "container operations are not supported for <provider>". (5) Take the create optional params from B3361
+  (get_requested_container_create_optional_param over name, expires_after, file_ids, extra_headers, extra_body and the extra map),
+  then B3361's get_optional_params_container_create for the provider. (6) Pre-call logging through B247 update_from_kwargs with
+  model "", optional_params equal to the create request params, and litellm_params holding litellm_call_id plus those same
+  params, then set the logging call type to "create_container". (7) Call B3364's container_create_handler (acontainer_create_handler when async) with name, the request params, the
+  config, the litellm params, the logging object, extra_headers and the timeout, where a timeout of zero or none means the default
+  request timeout. extra_query is accepted but never sent on create. (8) Pass the returned ContainerObject through B3361's
+  encode_container_id_in_response with the provider, litellm_metadata and extra_body. For the async variant this is the Python
+  _encode_created_container_id: await first, then encode.
+
+  List follows the same steps with these differences. The mock body decodes as ContainerListResponse. The no-config error text is
+  "Container provider config not found for provider: <provider>". The optional params come from B3361's
+  get_requested_container_list_optional_param (after, limit, order, extra_headers, extra_query) and are not mapped through the
+  provider. Logging uses those params and the call type "list_containers". B3364's container_list_handler (acontainer_list_handler when async) receives after, limit, order,
+  extra_headers, extra_query and the timeout. The result is returned as is: list responses never get ids encoded and extra_body
+  is ignored.
+
+  Tests (tests.rs) use stub handlers behind the B3364 and B3361 seams. Name the tests create_*, list_*, mock_* and async_* so
+  each check below can filter on its prefix.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/container_create_list.rs
+    - crates/betterlite-core/src/api/container_create_list/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L49-L123
+    why: _encode_created_container_id and the async acreate_container wrapper (executor, context copy, await when a coroutine comes back, exception_type on error).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L126-L284
+    why: create_container overloads and body, from the mock short circuit to the encode step.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L288-L353
+    why: Async alist_containers wrapper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L356-L486
+    why: list_containers overloads and body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/utils.py#L97-L158
+    why: encode_container_id_in_response, the only post-processing create applies (owned by B3361, read for the call).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L574-L577
+    why: Call type strings create_container, acreate_container, list_containers, alist_containers.
+dod:
+  - text: create_container returns a mock_response (JSON string or object) as a ContainerObject before provider lookup, HTTP and id encoding; a body that does not decode is an error.
+    proof: [mock-tests]
+  - text: >-
+      list_containers returns a mock_response as a ContainerListResponse the same way, with no id encoding.
+    proof: [mock-tests]
+  - text: >-
+      create_container fails with "container operations are not supported for <provider>" when no provider config exists, and list_containers fails with "Container provider config not found for provider: <provider>".
+    proof: [create-tests, list-tests]
+  - text: create_container extracts and maps the create params, logs them with call type "create_container" and litellm_call_id, calls the B3364 create handler with the name, params, headers and timeout, and never sends extra_query.
+    proof: [create-tests]
+  - text: create_container encodes the returned container id through B3361 using litellm_metadata and extra_body, and leaves a direct call without routing hints unchanged.
+    proof: [create-tests]
+  - text: list_containers extracts after, limit, order, extra_headers and extra_query, logs with call type "list_containers", calls the B3364 list handler with them and the timeout, and returns the result with its ids untouched.
+    proof: [list-tests]
+  - text: A timeout of zero or none falls back to the default request timeout on both operations, and the default call timeout is 600 seconds.
+    proof: [create-tests, list-tests]
+  - text: acreate_container and alist_containers produce the same results as the blocking variants through the async handlers, and acreate_container encodes the id after the handler finishes.
+    proof: [async-tests]
+  - text: Every failure on both operations reaches B185's exception mapping with model "" and the call's custom_llm_provider.
+    proof: [create-tests, list-tests, async-tests]
+checks:
+  optional: []
+  commands:
+    - id: create-tests
+      why: create_container tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_create_list::(.*::)?create_/)'
+    - id: list-tests
+      why: list_containers tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_create_list::(.*::)?list_/)'
+    - id: mock-tests
+      why: mock_response short circuit tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_create_list::(.*::)?mock_/)'
+    - id: async-tests
+      why: async operation tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_create_list::(.*::)?async_/)'
+oracle_cases: []
+deviations:
+  - what: There is no _is_async flag, run_in_executor wrapper or coroutine-or-value return type. The blocking and async operations are separate Rust functions.
+    why: Rust has no Union return type, and a worker thread plus context copy adds nothing to an async fn.
+  - what: The @client decorator work (litellm_logging_obj creation, callbacks, caching) is not done here. The caller passes the logging state in.
+    why: B012 owns the decorator; this task only uses the object it produces.
+out_of_scope:
+  - "retrieve_container, delete_container and their async forms: B3370 owns them."
+  - "list_container_files, upload_container_file and the endpoint-factory file operations: B3366, B3367 and B3368 own them."
+  - "create and list HTTP execution (container_create_handler, container_list_handler): B3364 owns them."
+  - "decode_managed_container_id_for_request, the optional-param helpers, encode_container_id_in_response and get_provider_container_config: B3361 owns them; this task calls them."
+  - "ContainerObject, ContainerListResponse and the optional-param record types: B3360 owns them."
+  - "GenericLiteLLMParams: B010 owns it. The @client decorator: B012 owns it."
+  - "Proxy routes for /v1/containers: B094 and its proxy parts register them. No route reaches this code yet, so there are no HTTP oracle cases."
+pitfalls:
+  - >-
+    The two no-config errors differ in wording ("container operations are not supported for X" on create, "Container provider config not found for provider: X" on list); keep each text exact.
+  - >-
+    mock_response is read with kwargs.get, not popped, so it still reaches GenericLiteLLMParams and logging on the non-mock path of other calls; here the mock branch simply returns first.
+  - create ignores extra_query and list ignores extra_body; do not wire either through.
+  - The create handler gets the id-encoded result only after the handler returns; list never encodes, so a routed list returns raw provider ids.
+  - The expression timeout or DEFAULT_REQUEST_TIMEOUT treats 0 like none, so a zero timeout becomes the REQUEST_TIMEOUT default (6000 seconds), not an immediate timeout.
+  - The provider name is parsed into an LlmProviders value before the config lookup, so an unknown name fails there and a known non-container provider (anthropic) fails with the no-config text.
+  - Create passes the request params to logging as both optional_params and inside litellm_params next to litellm_call_id; list does the same with its own params. Do not log the mapped params for list.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

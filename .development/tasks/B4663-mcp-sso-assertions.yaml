@@ -1,0 +1,286 @@
+id: B4663
+title: "MCP SSO assertions and IdP subject-token admission"
+description: >-
+  Two LiteLLM modules land here. sso_assertion_store.py keeps a user's IdP id_token after an SSO login so an MCP server with auth_type oauth2_id_jag can later spend it as an RFC 8693 subject_token (LiteLLM calls this EMA egress). idp_token_exchange.py admits a native client's IdP JWT at POST /token: the gateway's JWT auth proves the token, and the answer is the user it names or an OAuth refusal. No route reaches either module yet, so this task builds typed functions and ports, and later tasks wire them in.
+
+  Layout. betterlite-mcp gets the modules sso_assertions (submodules assertion, cache, store and rotation) and idp_token_exchange, because B4667 in that crate and the server's SSO callback tasks both need these types. betterlite-db gets sso_assertion_rows, the only place that holds SQL. betterlite-config gets the section mcp_sso_assertion_cache. Add betterlite-auth and betterlite-db as path dependencies in crates/betterlite-mcp/Cargo.toml; neither depends on betterlite-mcp, so there is no cycle. Names stop at 30 characters, so the long LiteLLM names change: fetch_sso_identity_assertion is DbSsoAssertionStore::fetch, persist_sso_identity_assertion is persist, ema_assertion_retention_enabled is retention_enabled, retain_sso_identity_assertion_for_ema is retain, and rotate_sso_identity_assertions_master_key is rotation::rotate_assertions. B1617, B1623 and B1700 use the LiteLLM names in their text.
+
+  sso_assertions::assertion. SsoIdentityAssertion holds id_token: SecretString, refresh_token: Option<SecretString>, issuer: Option<String> and expires_at: Option<DateTime<Utc>>. assertion_from_sso_login(id_token: Option<&serde_json::Value>, refresh_token: Option<&serde_json::Value>) -> Option<SsoIdentityAssertion> takes the fields straight from the provider's untyped token response, since this is the one place they get validated. A missing, non-string or empty id_token returns None with no log line. A missing, non-string or empty refresh_token is dropped and the assertion still stands. Claims are read with no signature check, as LiteLLM does, through B760's betterlite_auth::jwt_claims::decode_unverified_claims. PyJWT's unverified decode also refuses a token whose header segment is not base64url text of a JSON object, whose third segment is not base64url, or whose payload is not a JSON object, so check here whatever B760's decoder leaves out. exp is a JSON number and iss a string; absent and null both mean no value. Any failure logs the warning "SSO id_token could not be decoded or its claims were unusable; not retaining it for EMA egress." and returns None, because a bad token must never fail a login.
+
+  assertion_expired(assertion, now: DateTime<Utc>) -> bool is a match on expires_at: no expiry is false, otherwise expires_at <= now. B4664 passes a future now to ask whether the assertion is about to expire. encode_payload and decode_payload in the same file own the stored JSON: id_token always, and refresh_token, issuer and expires_at only when present. expires_at is ISO 8601 text with an offset. Text with no offset reads as UTC, and that replaces the naive branch in LiteLLM's assertion_expired. A row LiteLLM wrote opens here and a row written here opens in LiteLLM.
+
+  sso_assertions::cache. SsoAssertionCache has the shape of ByokCredentialCache in credential_contracts::byok_cache: pub fields ttl, max_size, clock: Box<dyn Clock> (that file's trait) and a Mutex over the entries and one u64 epoch. Callers build it with a struct literal and share one Arc. get clones a live entry; an expired one is removed and reads as a miss. set_if_unchanged(user_id, assertion, seen_epoch) writes only if the epoch still equals seen_epoch. invalidate(user_id) adds one to the epoch and then removes the entry. InMemoryCache's limits carry over: a write first drops expired entries, then drops the entries with the earliest expiry until the cache is below max_size, max_size 0 stores nothing, and rewriting a live key replaces the value and keeps the first expiry.
+
+  sso_assertion_rows in betterlite-db. AssertionRow { user_id, assertion_b64 } and the trait AssertionRows (native async fn, type Error: std::error::Error + Send + Sync + 'static) with find(user_id), find_all(), upsert(user_id, assertion_b64), update(user_id, assertion_b64) and id_jag_server_exists(). PostgresAssertionRows implements it over PostgresStore::session() with plain SQL on "LiteLLM_SSOIdentityAssertion" and "LiteLLM_MCPServerTable"; sync_store.rs shows the form. upsert is one INSERT with ON CONFLICT (user_id) DO UPDATE. id_jag_server_exists asks for any row with auth_type 'oauth2_id_jag', with no status or approval filter. update on a row that has gone is not an error.
+
+  sso_assertions::store. The port is trait SsoAssertionStore with async fn fetch(&self, user_id: &str) -> Result<Option<SsoIdentityAssertion>, AssertionStoreUnavailable>. AssertionStoreUnavailable keeps its cause as #[source] Box<dyn Error + Send + Sync>. DbSsoAssertionStore<R: AssertionRows> has pub fields rows: Option<R>, cipher: DbCipher, cache: Arc<SsoAssertionCache> and config_declares_id_jag: bool. rows None stands for LiteLLM's prisma_client None. The composition root sets config_declares_id_jag from the config file's mcp_servers.
+
+  fetch returns a cache hit, otherwise reads the epoch, calls fetch_uncached and caches a found assertion with set_if_unchanged. fetch_uncached never touches the cache: no rows or no row is None, the row is decrypted with field name sso_identity_assertion and DecryptPolicy { log: FailureLog::Debug, value: FailureValue::Nothing }, a failed decrypt is None, and a payload that won't parse logs the warning "Stored SSO identity assertion for user_id=%s could not be parsed; treating as absent." and is None. A row read failure is AssertionStoreUnavailable. Neither method judges expiry. persist(user_id, assertion) with no rows returns Ok and does nothing else; otherwise it encodes, encrypts under the current key, upserts and then invalidates the cache. retention_enabled is true when config_declares_id_jag is true (no query), false with no rows, otherwise id_jag_server_exists. retain(user_id, assertion: Option<&SsoIdentityAssertion>) returns unit: None does nothing, a false gate does nothing, and a failure in the gate or in persist logs the warning "Failed to persist the SSO identity assertion for EMA egress (user_id=%s): %s" and is swallowed, because the login must not fail on this write.
+
+  sso_assertions::rotation. rotate_assertions(rows: &R, cipher: &DbCipher, new_master_key: &SecretString) reads find_all and then works one row at a time, so the table's plaintext is never held at once. A row that won't decrypt under the current key logs the warning "rotate_sso_identity_assertions_master_key: could not decrypt assertion for user_id=%s, skipping" and the loop goes on. Otherwise it calls cipher.encrypt_value with Some(new_master_key) and update. The last step logs at info "rotate_sso_identity_assertions_master_key: rotated %d row(s), skipped %d". An encrypt or update failure returns the error at once; B1700 owns the warn-and-continue around this call.
+
+  idp_token_exchange. Constants: EXCHANGE_ROUTE "/token", and the descriptions "subject_token was rejected by the gateway's JWT auth", "the gateway could not verify subject_token because its identity provider or database is unavailable; retry" and "the gateway could not verify subject_token because its database reported a fault that is not a transient outage; retrying will not help until the gateway deployment is repaired". GatewayOutage is the enum Retryable, Faulted. TokenExchangePrerequisites { jwt_auth_enabled, has_database, maps_jwts_to_virtual_keys } has refusal() -> Option<SubjectTokenRefusal>, testing in that order and answering unsupported_grant_type with "JWT auth is not enabled on this gateway, so it cannot exchange IdP tokens", "this gateway has no database, so it cannot exchange IdP tokens" or "this gateway maps IdP tokens to virtual keys, which the exchange does not serve". LiteLLM's available property and token_exchange_available are refusal().is_none() where they are called, because the two agree once the license term is gone, and that value feeds B4674's supported_grant_types.
+
+  Ports. trait TokenExchangeInputs has fn prerequisites(&self) -> TokenExchangePrerequisites, read on every exchange because LiteLLM reads its globals on every exchange. trait AuthorizeSubjectToken has type Context and async fn authorize(&self, subject_token: &str, context: &Self::Context) -> Result<AuthorizedSubject, SubjectTokenDenial>. AuthorizedSubject { user_id, team_id, agent_id }, each Option<String>, is the part of JWTAuthBuilderResult this code reads. SubjectTokenDenial { source: DenialSource, reason: String, database_cause: Option<DbError> } uses betterlite_db::database_faults::DbError, and DenialSource::Http { status: u16 }, Proxy { code: String } and Plain stand for LiteLLM's HTTPException, ProxyException and any other exception. IdpTokenExchange<I, A> { inputs: I, authorizer: A } implements B4674's ExchangeSubjectToken with A::Context as its request context, through identity_from_subject_token.
+
+  identity_from_subject_token runs in this order: the prerequisites' refusal; betterlite_auth::resolved_key::credential::is_jwt false gives invalid_request "subject_token is not a JWT"; authorize, with a denial going to refusal_for; agent_id present gives invalid_request "Agent tokens require direct JWT authentication; this exchange supports users only"; user_id None gives invalid_request "subject_token names no user the gateway knows"; otherwise SubjectIdentity { user_id, team_id }, team_id None included. refusal_for first runs B1217's chain finder (LiteLLM's find_database_service_unavailable_error_in_chain, in betterlite_db::database_availability; read its Rust name there) on database_cause. A fault it finds is Faulted when is_permanent_database_fault is true and Retryable otherwise. With no fault, Http status 500 or more and a Proxy code of digits only with a value of 500 or more are Retryable. No outage logs the warning "token exchange refused a subject_token: %s" and answers invalid_request with the rejected text. An outage logs at error "token exchange could not verify a subject_token, %s: %s" with retryable or faulted and answers temporarily_unavailable with the matching text.
+
+  Config. The section mcp_sso_assertion_cache reads two env vars with betterlite_env::number and no YAML key: MCP_SSO_ASSERTION_CACHE_TTL_SECONDS (default 60) and MCP_OAUTH2_TOKEN_CACHE_MAX_SIZE (default 200). Settings has ttl_seconds: u64 and max_size: usize. Its tests are sections::mcp_sso_assertion_cache::tests::uses_litellm_defaults, reads_both_env_vars and rejects_a_non_number.
+
+  Fuzz. The id_token comes from the IdP and the payload text from a database row. The cargo-fuzz target sso_assertion_decode feeds arbitrary bytes, read as lossy UTF-8, to assertion_from_sso_login as the id_token and to decode_payload. sso_assertions::assertion::tests::replays_the_sso_assertion_corpus replays crates/betterlite-mcp/fuzz/corpus/sso_assertion_decode through the same two functions.
+
+  Oracle. These are helper cases on the b4663 operation, and the HTTP cases come with the route. The Python adapter sets LITELLM_SALT_KEY to a fixed value and runs the pinned functions with a small in-memory prisma double, patching litellm.proxy.proxy_server.prisma_client and global_mcp_server_manager the way LiteLLM's test_sso_assertion_store.py does. The Rust side runs the same steps on an in-memory AssertionRows fake. A store case is a list of steps (fetch, fetch_uncached, persist, retain, rotate) and the output is each step's decrypted fields plus how many reads and writes the double saw, never ciphertext, because the nonce differs per run. For the exchange cases the input names the authorizer's result or failure: the adapter raises the matching HTTPException, ProxyException, plain Exception or database error, and the Rust side builds the matching SubjectTokenDenial. The adapter always passes licensed=True. exp values in cases are whole seconds. Cache expiry stays in native tests, since LiteLLM's cache takes no clock here.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/sso_assertions.rs
+    - crates/betterlite-mcp/src/sso_assertions/**
+    - crates/betterlite-mcp/src/idp_token_exchange.rs
+    - crates/betterlite-mcp/src/idp_token_exchange/**
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/fuzz/Cargo.toml
+    - crates/betterlite-mcp/fuzz/fuzz_targets/sso_assertion_decode.rs
+    - crates/betterlite-mcp/fuzz/corpus/sso_assertion_decode/**
+    - crates/betterlite-db/src/sso_assertion_rows.rs
+    - crates/betterlite-db/src/sso_assertion_rows/**
+    - crates/betterlite-config/src/sections/mcp_sso_assertion_cache.rs
+    - crates/betterlite-config/src/sections/mcp_sso_assertion_cache/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/mcp-sso-assertions/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-sso-assertions-*
+    - tools/oracle/helpers/b4663.py
+    - tools/oracle/helpers/b4663/**
+    - tools/oracle/src/helpers/mcp/b4663.rs
+    - tools/oracle/src/helpers/mcp/b4663/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L70-L131
+    why: Owned. The assertion model, SSOAssertionCache with its epoch, and the two pydantic shapes for claims and the stored payload.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L134-L175
+    why: Owned. assertion_from_sso_login and assertion_expired.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L178-L223
+    why: Owned. The retention gate and the persist step with its payload keys and write order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L226-L314
+    why: Owned. The row read, the cached fetch, AssertionStoreUnavailable, the store protocol and DbSSOAssertionStore.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L317-L370
+    why: Owned. Master-key rotation and the retain hook the SSO callback calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/idp_token_exchange.py#L21-L99
+    why: Owned. Constants, the prerequisites and their refusal order, and how LiteLLM reads them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/idp_token_exchange.py#L102-L181
+    why: Owned. The authorize protocol, the auth_builder arguments the production authorizer must pass, and the order inside identity_from_subject_token.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/idp_token_exchange.py#L184-L221
+    why: Owned. How a denial becomes invalid_request or temporarily_unavailable.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L106-L177
+    why: The eviction and expiry rules the assertion cache keeps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L180-L182
+    why: The two env vars and their defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L478-L483
+    why: The table. updated_at is @updatedAt, so Prisma writes it and no database trigger does.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5143-L5158
+    why: JWTAuthBuilderResult, the fields AuthorizedSubject keeps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L276-L280
+    why: The three-segment is_jwt test that B2314 already built.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L393-L403
+    why: The chain finder B1217 builds; it picks the first permanent fault, else the first outage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1633-L1647
+    why: Call sites. Both pass untyped token response fields, so the arguments can be absent or any type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5325-L5331
+    why: Call site. The rotation failure is caught and warned about here, in B1700's code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py#L461-L470
+    why: Call site. The refresher reads through fetch_uncached, so that method stays public.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2073
+    why: Call site. /token passes exchange_idp_subject_token into the grant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/_experimental/mcp_server/outbound_credentials/test_sso_assertion_store.py#L57-L70
+    why: LiteLLM's own prisma double, a model for the helper adapter's.
+  - url: https://www.rfc-editor.org/rfc/rfc8693.html#section-2.2.2
+    why: The token exchange error response; invalid_request is the code for an unacceptable subject token.
+dod:
+  - text: assertion_from_sso_login returns the id_token, refresh token, issuer and expiry of a decodable token, with issuer and expiry None when the claims are absent or null.
+    proof: [assertion-tests, oracle, helper-python]
+  - text: A missing, empty or non-string id_token returns None with no log line, and a missing, empty or non-string refresh_token is dropped while the assertion stands.
+    proof: [assertion-tests, oracle, helper-python]
+  - text: A token that fails decoding, a wrong-typed exp or iss, and an exp outside the years 1 to 9999 each log the fixed warning and return None.
+    proof: [assertion-tests, oracle, helper-python]
+  - text: assertion_expired is false with no expiry, false before it, true at the exact expiry and after it, and true for a future now past the expiry.
+    proof: [assertion-tests, oracle, helper-python]
+  - text: A stored payload keeps every field through encode and decode, leaves unset fields out of the JSON, and reads expires_at text with no offset as UTC.
+    proof: [assertion-tests, oracle, helper-python]
+  - text: A row LiteLLM encrypted opens to the same fields here.
+    proof: [oracle, helper-python]
+  - text: The token and refresh token text appear in no Debug output, log line or error text.
+    proof: [assertion-tests, store-tests]
+  - text: The two decoders never panic on arbitrary bytes, and the added corpus replays through them.
+    proof: [assertion-corpus]
+  - text: get returns a live entry and reads an expired one as a miss, and rewriting a live key keeps its first expiry.
+    proof: [cache-tests]
+  - text: set_if_unchanged writes nothing after an invalidate for this user or any other user, and writes when the epoch is unchanged.
+    proof: [cache-tests]
+  - text: A full cache drops expired entries first and then the earliest expiry, and max_size 0 stores nothing.
+    proof: [cache-tests]
+  - text: fetch skips the row read on a hit, caches a found assertion, reads the row again after an absent result, and returns an expired assertion unjudged.
+    proof: [store-tests, oracle, helper-python]
+  - text: An invalidate that lands during a fetch's row read stops that fetch from caching the old assertion.
+    proof: [store-tests, oracle, helper-python]
+  - text: fetch_uncached reads the row every time and leaves the cache as it was.
+    proof: [store-tests, oracle, helper-python]
+  - text: A row that won't decrypt reads as absent, and a payload that won't parse logs the fixed warning and reads as absent; neither reaches the caller as an error.
+    proof: [store-tests, oracle, helper-python]
+  - text: A row read failure is AssertionStoreUnavailable from fetch and fetch_uncached, and no database at all reads as absent.
+    proof: [store-tests, oracle, helper-python]
+  - text: persist upserts the encrypted payload and then invalidates the cache, leaves the cache alone when the upsert fails, and does nothing with no database.
+    proof: [store-tests, oracle, helper-python]
+  - text: retention_enabled is true from the config flag without a query, false with no database, and otherwise follows the row lookup.
+    proof: [store-tests, oracle, helper-python]
+  - text: retain does nothing for None or a false gate, and logs the fixed warning and returns normally when the gate or the write fails.
+    proof: [store-tests, oracle, helper-python]
+  - text: rotate_assertions moves every readable row to the new key and logs the counts, and a row that won't decrypt is skipped with the fixed warning and stays as it was.
+    proof: [rotation-tests, oracle, helper-python]
+  - text: An update failure during rotation stops at that row and returns the error, with earlier rows left rotated.
+    proof: [rotation-tests]
+  - text: On real Postgres, upsert creates and replaces a row, upsert and update both move updated_at, find and find_all return the stored text, update on a missing row is not an error, and id_jag_server_exists ignores every column but auth_type.
+    proof: [rows-tests]
+  - text: refusal gives the three unsupported_grant_type descriptions in LiteLLM's order and None when all prerequisites hold.
+    proof: [exchange-tests, oracle, helper-python]
+  - text: A subject token runs through the prerequisites, the JWT shape test, authorize, the agent check and the user check in that order, and the first failure wins.
+    proof: [exchange-tests, oracle, helper-python]
+  - text: A token with a user returns SubjectIdentity with its team_id or None, and an agent token or a token with no user is invalid_request with its own description.
+    proof: [exchange-tests, oracle, helper-python]
+  - text: A plain denial, a 4xx HTTP denial and a Proxy denial with a low or non-numeric code answer invalid_request with the rejected text.
+    proof: [exchange-tests, oracle, helper-python]
+  - text: A 5xx HTTP denial and a Proxy denial with a digits-only code of 500 or more answer temporarily_unavailable with the retry text.
+    proof: [exchange-tests, oracle, helper-python]
+  - text: A database cause wins over the status, so a 401 with a transient fault gets the retry text and one with a permanent fault gets the faulted text.
+    proof: [exchange-tests, oracle, helper-python]
+  - text: The denial reason reaches the warning or error log and never the refusal description.
+    proof: [exchange-tests]
+  - text: IdpTokenExchange reads the prerequisites on every call and answers through B4674's ExchangeSubjectToken.
+    proof: [exchange-tests]
+  - text: The section gives 60 and 200 with no env vars, reads both env vars, and fails the load naming the variable for a value that isn't a number.
+    proof: [settings-tests]
+  - text: The b4663 adapter passes the strict Python checks and a new helper seed names the operation.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: assertion-tests
+      why: The login capture, expiry or stored payload tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^sso_assertions::assertion::tests::/) - test(/replays_the_/)'
+    - id: assertion-corpus
+      why: The sso_assertion_decode fuzz target, its added corpus or its replay test is missing or fails.
+      run: >-
+        test -f crates/betterlite-mcp/fuzz/fuzz_targets/sso_assertion_decode.rs &&
+        grep -q sso_assertion_decode crates/betterlite-mcp/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-mcp/fuzz/corpus/sso_assertion_decode)" &&
+        cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(replays_the_sso_assertion_corpus)'
+    - id: cache-tests
+      why: The epoch, expiry or eviction tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^sso_assertions::cache::tests::/)'
+    - id: store-tests
+      why: The fetch, persist, retention or retain tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^sso_assertions::store::tests::/)'
+    - id: rotation-tests
+      why: The master-key rotation tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^sso_assertions::rotation::tests::/)'
+    - id: rows-tests
+      why: The Postgres row tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^sso_assertion_rows::tests::/)'
+    - id: exchange-tests
+      why: The prerequisite, order or denial classification tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^idp_token_exchange::tests::/)'
+    - id: settings-tests
+      why: The env var tests for the cache section are missing or fail.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_sso_assertion_cache::tests::/)'
+    - id: helper-python
+      why: The b4663 adapter is missing or fails the strict Python checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4663.py tools/oracle/helpers/b4663)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b4663 seed reaches the shared helper case parser.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/mcp-sso-assertions-*")" &&
+        grep -lE 'b4663"?:' tools/oracle/fuzz/corpus/helper_case/mcp-sso-assertions-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-sso-assertions/login-full-claims.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/login-no-claims.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/login-absent-and-non-string.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/login-undecodable.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/login-exp-out-of-range.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/expired-boundaries.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/persist-then-read.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/read-optional-fields.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/read-naive-expiry.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/read-litellm-ciphertext.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/read-undecryptable-row.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/read-unparseable-payload.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/fetch-cache-hit.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/fetch-absence-not-cached.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/fetch-epoch-guard.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/fetch-uncached-skips-cache.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/fetch-store-outage.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/persist-invalidates-cache.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/no-database.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/retention-gate.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/retain-swallows-failure.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/rotate-rows.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/rotate-skips-undecryptable.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/prerequisites-refusal-order.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/exchange-identity.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/exchange-not-a-jwt.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/exchange-agent-and-no-user.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/exchange-rejected.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/exchange-gateway-outage.yaml
+  - tools/oracle/cases/helpers/mcp-sso-assertions/exchange-database-fault.yaml
+deviations:
+  - what: The license gate is not built. TokenExchangePrerequisites has no licensed field, so a gateway with JWT auth and a database exchanges tokens and advertises the grant, where LiteLLM without a license answers unsupported_grant_type with "JWT auth is an enterprise only feature; no license is set".
+    why: betterlite has no paid tier and every feature is on. B053 records the same difference for JWT auth itself.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/idp_token_exchange.py#L52-L73
+  - what: An id_token over 1048576 bytes or with JSON nested deeper than 64 is treated as undecodable, so it is not retained and the fixed warning is logged. LiteLLM has no such limit.
+    why: Every decoder of outside bytes is bounded, and B760's decoder sets these two limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L146-L152
+  - what: The cache is one instance the composition root builds and shares, not the module global _ASSERTION_CACHE, so the epoch lives on that instance.
+    why: betterlite keeps no module state. A reader sees the same behavior as long as every store shares the one Arc.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_store.py#L119
+  - what: A negative MCP_SSO_ASSERTION_CACHE_TTL_SECONDS or MCP_OAUTH2_TOKEN_CACHE_MAX_SIZE fails the config load naming the variable. LiteLLM's int() takes it, a negative TTL then expires entries at once, and a negative size makes eviction pop an empty heap.
+    why: Neither value has a meaning below zero, so the mistake surfaces at startup instead of in a login.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L180-L182
+out_of_scope:
+  - "SSOAssertionCache.flush: no caller at the pin; only LiteLLM's tests call it."
+  - "_assertion_table, _mcp_server_table, _SSOAssertionTable and _MCPServerTable: Prisma typing shims that AssertionRows replaces, so nothing is left to port."
+  - "The production AuthorizeSubjectToken over JWTAuthManager.auth_builder (B053) with route EXCHANGE_ROUTE, method POST and empty request data, the production TokenExchangeInputs over general_settings.enable_jwt_auth, the database handle and is_virtual_key_mapping_configured (B869), and the value of config_declares_id_jag from global_mcp_server_manager: the composition that wires POST /token, B136 for discoverable_endpoints.py. These are LiteLLM's read_token_exchange_prerequisites, _maps_jwts_to_virtual_keys and the closure in exchange_idp_subject_token."
+  - "The /token grant that consumes SubjectIdentity and SubjectTokenRefusal: B4676. The types themselves, the refusing default and supported_grant_types: B4674."
+  - "Capturing the token in the SSO callbacks and calling retain: B1615, B1617, B1623 and B1624."
+  - "Reading through SsoAssertionStore in the id_jag credential path: B4667. Renewing a stale assertion: B4664."
+  - "The warn-and-continue around rotation in the key rotation endpoint: B1700. The table's entry in the ciphertext migration list: B730."
+  - "encrypt_value_helper and decrypt_value_helper (the StoredCipher): B1600. is_jwt: B2314. The unverified claims decoder: B760. The database chain finder: B1217. is_permanent_database_fault: B872."
+  - "The table and its migration: B707."
+  - "The HTTP cases for POST /token: the task that wires the route, since no route reaches this code yet."
+pitfalls:
+  - "The migration gives updated_at a DEFAULT and no trigger, so upsert's DO UPDATE arm and update must set updated_at = CURRENT_TIMESTAMP themselves or the column freezes at the first login."
+  - "The epoch is one counter for the whole cache, so a login by user A also stops user B's in-flight fetch from caching; that lost write is LiteLLM's behavior, so don't key the epoch by user."
+  - "fetch reads seen_epoch after the cache miss and before the row read; reading it after the row read lets a login slip between the two and the old assertion comes back for a full TTL."
+  - "Only a found assertion is cached, so a user who has no row yet gets a row read on every fetch and their first login takes effect at once."
+  - "persist invalidates only after the upsert returns; invalidating first opens a gap for a reader to cache the old row."
+  - "invalidate bumps the epoch before removing the entry, so a concurrent reader can't see a gap where the entry is gone and the old epoch still holds."
+  - "datetime.fromtimestamp raises for a year outside 1 to 9999, so exp 253402300800 returns None here too, even though chrono could hold that date."
+  - "exp may be fractional (1700000000.5 is a valid NumericDate); std::time::Duration::try_from_secs_f64 turns it into a Duration with no as cast."
+  - "expires_at equal to now counts as expired because the test is <=; a < here hands the IdP a token that dies in the same second."
+  - "The cache keeps assertions past their exp, and fetch returns them; B4667 and B4664 judge expiry, so a filter here would silently stop the refresher from seeing a stale token."
+  - "retention_enabled must ask the database row and never the in-memory server registry, because that registry can be stale in both directions across pods."
+  - "id_jag_server_exists must not filter on status or approval_status: LiteLLM's find_first looks at auth_type alone, so a pending server still turns retention on."
+  - "retain is the only swallow: fetch and persist return their errors, and rotation stops on a failed update, so a shared catch-all would break B1700's warning."
+  - "An undecryptable row in rotation is skipped and left under the old key, and the rotated count only goes up after the update, so skipped plus rotated equals the rows read."
+  - "Rotation doesn't touch the cache, since a cached entry holds decrypted fields that stay valid under the new key."
+  - "The rotation loop has no transaction, so a failed update leaves earlier rows under the new key; don't wrap it in one."
+  - "The denial reason can name the JWKS URL or quote the IdP, so a test must assert the reason's text is absent from the refusal description."
+  - "The database chain check runs before the status check, so an HTTP 401 with a transient fault in database_cause is temporarily_unavailable, not invalid_request."
+  - "A Proxy code such as \"abc\" or \"429\" is no outage, and only digits count, so \"5xx\" is invalid_request; don't parse with a fallback to 500."
+  - "The agent check runs before the user check, so a token with both agent_id and user_id set is refused."
+  - "A prerequisites refusal comes before the shape test, so a gateway without JWT auth answers unsupported_grant_type even for the subject token \"garbage\"."
+  - "MCP_SSO_ASSERTION_CACHE_TTL_SECONDS=0 expires entries at once here; LiteLLM's default_ttl or 600 turns it into ten minutes, and docs/compatibility.md says an explicit 0 is used as given."
+  - "MCP_OAUTH2_TOKEN_CACHE_MAX_SIZE is shared with LiteLLM's OAuth token caches; read the env var, and don't add a new name for this cache."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

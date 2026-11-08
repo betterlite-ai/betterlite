@@ -6,8 +6,9 @@ description: >-
   between Redis >= 7.0 (LPOP with count parameter) and Redis < 7.0 (single LPOP loop through
   pipelines), including the regrouping of flat results back to per-key lists. Handle byte-to-string
   decoding with a fallback when decoding fails, and propagate command errors without retrying
-  an ambiguously applied push or pop. Inject circuit breaker guards and service success/failure
-  hooks; operate on namespaced keys and parse the Redis version from cache state.
+  an ambiguously applied push or pop. Take `hooks: Arc<dyn ServiceHooks>` and `gate: Arc<dyn BreakerGate>`
+  from B4325's module `redis_client_reuse` by constructor, and declare no trait of their own.
+  Operate on namespaced keys and parse the Redis version from cache state.
 
 
   Configuration boundary keys consumed: LITELLM_REDIS_MAJOR_VERSION (integer, default from
@@ -27,13 +28,14 @@ description: >-
   - `:2363-2420` async_lpop_pipeline with per-operation results and error propagation
 
 
-  Direct dependencies: B393 `_redis_circuit_breaker_guard` and `log_redis_failure` wrap and
-  log failures; B4324 `check_and_fix_namespace`, `_parse_redis_major_version` and
-  `_get_call_stack_info` supply namespace, version and diagnostic projections; B4325
-  `_async_commands` supplies the reusable Redis transport; B012 supplies `service_logger_obj` injected
-  service hooks. B4290 must cover the RedisPipelineRpushOperation and RedisPipelineLpopOperation
-  record contracts (key, values; key, count). No async task, queue or timeout for list operations
-  is owned here; timeouts come from the Redis client and the circuit breaker.
+  Direct dependencies: B4325 supplies the reusable Redis transport and declares `ServiceHooks`,
+  `ServiceEvent`, `BreakerGate`, `BreakerAdmission` and `BreakerOpen`. B5630 implements the
+  gate over B393's `_redis_circuit_breaker_guard` and `log_redis_failure`, and the hooks over
+  B012's `service_logger_obj`. B4324 `check_and_fix_namespace`, `_parse_redis_major_version` and
+  `_get_call_stack_info` supply namespace, version and diagnostic projections. B4290 must cover
+  the RedisPipelineRpushOperation and RedisPipelineLpopOperation record contracts (key, values;
+  key, count). No async task, queue or timeout for list operations is owned here; timeouts come
+  from the Redis client and the circuit breaker.
 
 
   Valkey is wire-compatible transport plus numeric version parsing here, not a separate semantic
@@ -103,9 +105,6 @@ checks:
     - id: list-operations-behaviors
       why: the list operations behavior test is missing or fails
       run: cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(/::list_operations_behaviors(::|$)/) - test(/replays_the_.*_corpus/)'
-    - id: layering
-      why: deny.toml does not keep betterlite-redis behind betterlite
-      run: grep -qE 'crate = "betterlite-redis", wrappers = \["betterlite"\]' deny.toml
 oracle_cases:
   - tools/oracle/cases/caching/list-operations/rpush-list-append.yaml
   - tools/oracle/cases/caching/list-operations/rpush-and-trim-keep-newest.yaml
@@ -125,12 +124,12 @@ deviations:
       essential for the pipeline method signatures. betterlite must define them locally or
       through B4329's scope until B4290 materializes.
   - what: >-
-      Service logging hooks (async_service_success_hook, async_service_failure_hook) are
-      supplied by B012. This task assumes B012's logging_pipeline integration is available
-      and that service_logger_obj is injected into RedisCache at construction.
+      Service logging hooks (async_service_success_hook, async_service_failure_hook) reach
+      this task as B4325's sync `ServiceHooks` trait, and the breaker as `BreakerGate`.
+      B5630 implements both over B012 and B393.
     why: >-
-      B012 owns the complete service event dispatch and hook registry. This task integrates with
-      that existing infrastructure and does not reimplement service logging.
+      B012 owns the complete service event dispatch and hook registry. This task calls the
+      trait and does not reimplement service logging.
   - what: >-
       In the older Redis < 7 path, handle_lpop_count_for_older_redis_versions loops LPOP commands
       through a single pipeline with one execute() per iteration. A more efficient design would
@@ -141,11 +140,11 @@ deviations:
   - what: Pipeline RPUSH and LPOP operations raise on the first error without attempting recovery. No retry or partial success is available; the entire pipeline fails.
     why: LiteLLM does not retry failed list operations. A partial success would require splitting the caller's operation semantics by position, which is not specified.
 out_of_scope:
-  - B393 owns the circuit breaker guard and failure logging that wraps these operations.
+  - B393 owns the circuit breaker guard and failure logging. B5630 implements B4325's `BreakerGate` over it.
   - B4324 owns the namespace fix, version parsing and call stack extraction.
   - B4325 owns the _async_commands transport and client reuse contract.
   - B4290 owns the RedisPipelineRpushOperation and RedisPipelineLpopOperation type contracts (not yet materialized).
-  - B012 owns the ServiceLogging hook injection and async emission.
+  - B012 owns the ServiceLogging hook injection and async emission. B5630 implements B4325's `ServiceHooks` over it.
   - Spend queue buffering and flushing belongs to the callers, not list operations themselves.
 pitfalls:
   - >-
@@ -157,7 +156,7 @@ pitfalls:
   - "Redis < 7.0 has no count parameter on LPOP: the handle_lpop_count_for_older_redis_versions loop must execute the pipeline after each LPOP command, not batch all commands and execute once, to preserve positional order."
   - "The _pipeline_lpop_helper regrouping for Redis < 7 must filter None values per-key and collect them back into a list. A None at the end of a list signals an empty slot, not the end of results."
   - "Byte-to-string decoding must not panic on decode failure. The code catches UnicodeDecodeError and returns the original bytes, matching LiteLLM's fallback."
-  - "Service hooks fire after the operation completes, not before. They are asyncio.create_task calls, so the main request does not wait for them; the logger must be prepared for concurrent hook firings."
+  - "Service hooks fire after the operation completes, not before. B4325's `ServiceHooks` is sync, so a call must not block, and the hook implementer must handle concurrent calls."
   - "RPUSH and LPOP errors propagate directly without retry. Do not add exponential backoff or retry loops; the circuit breaker handles repeated failures at a higher level."
 budget:
   max_changed_lines: 1500

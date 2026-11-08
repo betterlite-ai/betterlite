@@ -1,0 +1,154 @@
+id: B3637
+title: OpenAI passthrough response and stream logging
+description: >-
+  Build the OpenAI leaf of pass-through response logging in betterlite-server, in the module openai_passthrough_logging (crates/betterlite-server/src/pass_through_logging/openai_passthrough_logging.rs and its folder; the skeleton declares it).
+  It turns a relayed OpenAI or Azure OpenAI reply, whole or streamed, into the response object and the kwargs that the success logger prices and writes as spend. It covers five endpoints: chat completions, embeddings, image generation, image editing and the Responses API.
+  A wrong cost or a lost end user here means wrong spend for the key, so the order of steps and the fallbacks below are exact.
+  Nothing here holds module-level state. The struct takes its collaborators in its constructor. This task writes glue and the order of calls; the work itself is done by tasks already merged, so call them and do not copy their logic.
+
+
+  Collaborators, called and not defined here. B3635 (betterlite-core): the route predicates for chat completions, embeddings, image generation, image editing and Responses, the image cost helpers, the embedding cost helper (zero on failure) and the Responses builder that returns a response with its cost. B3636 (betterlite-core): the relayed stream assembly that turns raw chunk strings into one chat response, or none. B508: OpenAIResponsesAPIConfig.parse_terminal_response_from_stream_chunks. B668: OpenAIConfig.transform_response (betterlite-openai). B004: convert_to_model_response_object for the embedding shape. B1035: the EmbeddingResponse and ImageResponse types. B068: completion_cost. B190: get_standard_logging_object_payload. B247: CallLog, the per-call log (LiteLLM's logging object with model_call_details, call_type and litellm_call_id). B3605: the response-object enum. B3608: CollectedChunksHandler, CollectedChunksCall, HandlerOutcome and HandlerError. B3630: ResponseLoggingKwargs. B3650: PassthroughProvider, PassthroughChatLogger, PassthroughChatInput, CollectedChunksInput, PassthroughOutcome and PassthroughLoggingError. Read the merged code for the exact Rust names and signatures and use them; the names above are the roles. If a function you need is not there, say so in the report notes and stop.
+
+
+  Constructor and public surface, pinned. B3606 (the provider dispatcher) and B102 (the wiring) call these, so names and argument lists do not change.
+  `pub struct OpenAiPassthroughLogger` with `OpenAiPassthroughLogger::new(tools: Arc<dyn OpenAiLoggingTools>, payload: <the payload collaborator type that PassthroughChatLogger::new takes>) -> OpenAiPassthroughLogger`. The constructor builds its own PassthroughChatLogger from an OpenAiProvider (below) and that payload, and keeps it for the fallback path.
+  `OpenAiLoggingTools` is a trait so tests can fake the calls; one production struct, OpenAiLoggingToolbox, forwards each method to the task named in brackets. Methods: `chat_response` (B668 transform_response with the full argument list of the chat branch below), `embedding_response` (B004 convert_to_model_response_object, embedding shape), `embedding_cost` (B3635), `image_cost` for generation and for editing (B3635), `responses_with_cost` (B3635), `terminal_response` (B508), `stream_response` (B3636), `completion_cost` (B068, with an optional call type) and `standard_logging_object` (B190, status "success"). The trait returns this module's typed errors.
+  The handler, synchronous: `impl OpenAiPassthroughLogger { pub fn openai_passthrough_handler(&self, input: PassthroughChatInput<'_>) -> Result<PassthroughOutcome, OpenAiPassthroughError> }`. It takes B3650's PassthroughChatInput as is (upstream reply, parsed response_body, call log, url_route, times, request_body, kwargs), so B3606's adapter builds one struct for every shape. The full path is betterlite_server::pass_through_logging::openai_passthrough_logging::OpenAiPassthroughLogger.
+  The streaming entry: `impl OpenAiPassthroughLogger { pub fn openai_collected_chunks(&self, input: CollectedChunksInput<'_>, url_route: &str) -> Result<PassthroughOutcome, OpenAiPassthroughError> }` and `impl CollectedChunksHandler for OpenAiPassthroughLogger`, which B3608 calls once a stream ends and which forwards to openai_collected_chunks with call.url_route. Get the CallLog from CollectedChunksCall the way B3640's collected-chunks handlers do.
+  `OpenAiPassthroughError` is this module's thiserror enum with variants Tools (wrapping the typed error of a collaborator, with `source`), Chat (wrapping PassthroughLoggingError) and MissingLitellmParams. It converts into HandlerError. Only the fallback chat path can return it from the non-streaming handler; the streaming entry never returns Err.
+  `OpenAiProvider` implements B3650's PassthroughProvider: provider_name is OpenAi; transform_chat_response is B668's transform with no messages, empty optional params, empty api key, empty request data, json_mode false and empty litellm params (the same call the base handler makes); build_complete_streaming_response is B3636's assembly with no messages.
+
+
+  openai_passthrough_handler, in LiteLLM's order.
+  1. Classify url_route with B3635's five predicates. When none is true, return result None and the input kwargs unchanged.
+  2. model is request_body["model"] when the key is present (even when its value is null or empty), else response_body["model"] when present, else "". When model is empty (or null), log at warning level "No model found in request or response for OpenAI passthrough cost tracking" and return the result of the fallback chat handler (step 6) with the kwargs as given. This applies to every endpoint, not only chat, and an error from that call comes back as Err because nothing wraps it.
+  3. Everything from here to the return is one guarded block. custom_llm_provider is the kwargs value when set, else "openai". The branches are exclusive and tested in this order: chat completions, embeddings, image generation, image editing, Responses.
+  Chat completions: B668's transform_response over the upstream reply with model, messages = request_body["messages"] (empty list when missing), optional_params = request_body["optional_params"] (empty map when missing), empty api key, request_data = the whole request body, json_mode true only when request_body["response_format"]["type"] is "json_object" (a missing response_format counts as no json mode), and litellm_params = the kwargs litellm_params (empty when missing or null). Then response_cost = completion_cost(response, model, custom_llm_provider) with no call type.
+  Embeddings: the embedding response built from response_body with B004; response_cost = B3635's embedding cost (0.0 and a warning on any failure); store the cost in the response's hidden params under "response_cost".
+  Image generation: response_cost = B3635's image generation cost from model, response_body and request_body. Set the call log's call_type to "passthrough-image-generation". The response is an ImageResponse with data = response_body["data"] (empty list when missing) and the model; store the cost in its hidden params.
+  Image editing: the same as image generation but with B3635's image editing cost. It also sets call_type to "passthrough-image-generation" (the image generation value, as LiteLLM does).
+  Responses: B3635's responses builder gives the response and its cost from the upstream reply, the model and the provider.
+  Then set kwargs response_cost, model and custom_llm_provider.
+  4. End user. When the kwargs carry a passthrough logging payload that is not empty, take the user with OpenAI's rule: when the payload's request_body is present and not empty, its "user" value as is, else none. Do not call B3630's end_user_from_request_body here; that function reads more keys and OpenAI's override does not. When the user is a non-empty string, write it at kwargs litellm_params.proxy_server_request.body.user, creating proxy_server_request and body when missing and keeping every other key already in them (LiteLLM's setdefault chain). This differs from the Anthropic and base payload steps, which replace proxy_server_request whole. A missing litellm_params at this point is the error case of step 6 (LiteLLM raises KeyError here).
+  5. Build B190's standard logging object from the kwargs and the response with status "success" and drop it: the non-streaming path does not store it in the kwargs. Write model, custom_llm_provider and response_cost to the call log. Log at debug level "OpenAI passthrough cost tracking - Endpoint: {endpoint}, Model: {model}, Cost: ${cost:.6f}" with the endpoint named chat_completions, embeddings, image_generation, image_editing or responses. Return the response as the result with the kwargs.
+  6. On any error in step 3 to 5, log at error level "Error in OpenAI passthrough cost tracking: {error}". For every endpoint except chat completions return result None with the kwargs as they stand (whatever the failed steps already wrote into kwargs and the call log stays). For chat completions run the fallback: B3650's PassthroughChatLogger.passthrough_chat_handler with the same input, the kwargs as they stand, and the OpenAI provider. A fallback error comes back as Err.
+
+
+  The fallback and OpenAI's end-user rule. LiteLLM's base payload step calls the overridable _get_user_from_metadata, and OpenAI overrides it with `request_body["user"]` as is, so the fallback must use OpenAI's rule too. B3630's create_response_logging_payload calls end_user_from_request_body inside. If the merged function takes the lookup as an argument or a trait, pass OpenAI's rule from step 4 and write no copy. If it does not, write one private function in this module that repeats B3630's steps in the same order (cost, kwargs, call log response_cost, user, standard logging object stored in kwargs, debug log, response id, model, call log model, the same error log text) with only the user rule changed, wire it as the payload collaborator the constructor passes to PassthroughChatLogger, and say so in the report notes.
+
+
+  openai_collected_chunks, the streaming entry. Every error in it is swallowed; the entry never returns Err.
+  1. model = request_body["model"] when the key is present, else "gpt-4o". is_responses = B3635's Responses predicate on url_route. The kwargs start empty.
+  2. complete response: for a Responses route B508's terminal-response parse of all_chunks, otherwise B3636's assembly of all_chunks with that model and no messages.
+  3. When it gives none, log at warning level "Failed to build complete response from OpenAI streaming chunks" and return result None with empty kwargs.
+  4. custom_llm_provider = the call log's value, else "openai". response_cost = completion_cost(response, model, custom_llm_provider), with call type "responses" on a Responses route and no call type otherwise.
+  5. kwargs: response_cost, model, custom_llm_provider, call_type (the call log's call_type), messages (the call log's "messages" entry, none when missing) and litellm_params, a copy of the call log's litellm_params (empty when missing or null).
+  6. End user: the same rule and write as step 4 above, reading the passthrough logging payload from the call log's "passthrough_logging_payload" entry and writing into the kwargs litellm_params copy.
+  7. Build B190's standard logging object (status "success") and, when it is not none, store it in kwargs["standard_logging_object"]. This is stored here, unlike the non-streaming path, so the success handler adopts it and keeps the prompt/completion token split of a Responses reply.
+  8. Write model, custom_llm_provider and response_cost to the call log. Log at debug level "OpenAI streaming passthrough cost tracking - Model: {model}, Cost: ${cost:.6f}". Return the response with the kwargs.
+  Any error in steps 2 to 8 logs at error level "Error in OpenAI streaming passthrough cost tracking: {error}" and returns result None with empty kwargs (not the partial kwargs).
+
+
+  Tests are native: module tests under pass_through_logging::openai_passthrough_logging::tests, every name starting with the group word the checks use (openai_route_, openai_model_, openai_chat_, openai_embed_, openai_image_, openai_responses_, openai_user_, openai_fallback_, openai_stream_). Fakes stand in for OpenAiLoggingTools and the call log; the real route predicates run. No route reaches this code until B3606 and B102 wire it, and the handler needs a live logging object, so there are no helper cases here; B3606 and B103 add the HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_logging/openai_passthrough_logging.rs
+    - crates/betterlite-server/src/pass_through_logging/openai_passthrough_logging/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L193-L201
+    why: The OpenAI override of _get_user_from_metadata, which returns request_body["user"] as is.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L326-L371
+    why: The handler signature, the route classification, the model choice and the no-model call to the base handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L372-L474
+    why: The five branches, with the chat transform arguments, the image call_type and the hidden-params cost.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L475-L550
+    why: kwargs update, user write, dropped standard logging object, call log writes, and the except branch with its chat-only fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L613-L731
+    why: _handle_logging_openai_collected_chunks, with its kwargs, stored standard logging object and swallow-all except.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py#L40-L153
+    why: The base chat handler the fallback uses, and the payload step that calls the overridable user lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L232-L252
+    why: The only non-streaming call site; a list response body arrives as an empty object.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L449-L463
+    why: The only streaming call site; it passes no model and starts with empty kwargs.
+dod:
+  - text: A route matching none of the five OpenAI predicates returns no result and the input kwargs; a route that matches picks its branch in the order chat, embeddings, image generation, image editing, Responses.
+    proof: [openai-route-tests]
+  - text: The model is the request body's model when the key is present, else the response body's, else empty, and an empty model sends every endpoint to the fallback chat handler with a warning.
+    proof: [openai-model-tests]
+  - text: The chat branch passes messages, optional_params, the request body, json_mode and the kwargs litellm_params to the transform, prices without a call type, and sets response_cost, model and custom_llm_provider on the kwargs and the call log.
+    proof: [openai-chat-tests]
+  - text: The embeddings branch stores the cost in the response's hidden params and a failed embedding cost gives 0.0 with no error.
+    proof: [openai-embed-tests]
+  - text: Image generation and editing both set call_type to the image generation value, build an ImageResponse from response_body["data"], and use their own cost helper.
+    proof: [openai-image-tests]
+  - text: The Responses branch uses B3635's builder and its cost, and a failure in it returns no result without the chat fallback.
+    proof: [openai-responses-tests]
+  - text: The end user is request_body["user"] as is, merged into proxy_server_request.body.user without dropping other keys, and B3630's end-user function is not used on the OpenAI paths.
+    proof: [openai-user-tests]
+  - text: An error in a chat branch falls back to the base chat handler with the kwargs written so far, an error in any other branch returns no result with those kwargs, and a fallback error is returned.
+    proof: [openai-fallback-tests]
+  - text: The streaming entry builds the response from Responses terminal parse or chat assembly, prices with the right call type, stores the standard logging object in the kwargs, and returns no result with empty kwargs on none or on any error.
+    proof: [openai-stream-tests]
+checks:
+  optional: []
+  commands:
+    - id: openai-route-tests
+      why: the route choice tests fail, or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::openai_passthrough_logging::tests::openai_route_/)'
+    - id: openai-model-tests
+      why: the model choice tests fail, or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::openai_passthrough_logging::tests::openai_model_/)'
+    - id: openai-chat-tests
+      why: the chat branch tests fail, or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::openai_passthrough_logging::tests::openai_chat_/)'
+    - id: openai-embed-tests
+      why: the embeddings branch tests fail, or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::openai_passthrough_logging::tests::openai_embed_/)'
+    - id: openai-image-tests
+      why: the image branch tests fail, or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::openai_passthrough_logging::tests::openai_image_/)'
+    - id: openai-responses-tests
+      why: the Responses branch tests fail, or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::openai_passthrough_logging::tests::openai_responses_/)'
+    - id: openai-user-tests
+      why: the end user rule tests fail, or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::openai_passthrough_logging::tests::openai_user_/)'
+    - id: openai-fallback-tests
+      why: the fallback tests fail, or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::openai_passthrough_logging::tests::openai_fallback_/)'
+    - id: openai-stream-tests
+      why: the collected chunks tests fail, or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::openai_passthrough_logging::tests::openai_stream_/)'
+oracle_cases: []
+deviations:
+  - what: LiteLLM's static method and **kwargs become a struct method that takes B3650's typed input, and the streaming entry takes B3650's CollectedChunksInput plus url_route.
+    why: Rust has no keyword spreading; B3606's adapter and B3608 build the structs from the same values. result, cache_hit, the unused model argument and the endpoint_type and success handler arguments are never read, so they are not parameters.
+  - what: A failed non-streaming branch is caught as a typed error. LiteLLM's blanket `except Exception` also catches Python bugs such as a missing key or attribute.
+    why: Rust has no runtime attribute errors and the no-panics rule leaves typed errors as the only case.
+  - what: The streaming entry writes the end user into the kwargs copy of litellm_params only. LiteLLM copies the call log's litellm_params one level deep, so a nested proxy_server_request dict is shared and the write also shows in the call log.
+    why: Rust holds a deep copy. The success handler reads the kwargs and the stored standard logging object, so the call log's nested copy is not read afterwards.
+out_of_scope:
+  - "OpenAI and Azure URL classification, the route predicates and the image, embedding and Responses cost helpers: B3635 owns them; this task calls them."
+  - "count_relayed_prompt_tokens and _build_complete_streaming_response: B3636 owns them. B3636 also serves Azure's collector, which calls the same assembly."
+  - "The shared base handler passthrough_chat_handler and the PassthroughProvider trait: B3650 owns them; this task calls the handler for the fallback."
+  - "create_response_logging_payload and end_user_from_request_body: B3630 owns them. This task owns only OpenAI's user rule."
+  - "OpenAIConfig.transform_response (B668), parse_terminal_response_from_stream_chunks (B508), completion_cost (B068) and get_standard_logging_object_payload (B190)."
+  - "Choosing this handler for a route (is_openai_route, _is_supported_openai_endpoint) and the adapter that builds PassthroughChatInput: B3606 owns them."
+  - "Stream routing and the call into the collected-chunks handler: B3608 owns it."
+pitfalls:
+  - The no-model branch is outside the guarded block and runs for every endpoint, so an embeddings or image request with no model goes to the chat transform and its error is returned, not swallowed.
+  - The model test is key presence on request_body, so a present but empty "model" wins over response_body["model"] and then triggers the no-model branch.
+  - Only the chat branch passes messages, optional_params, request_body and json_mode to the transform; the fallback and the trait method pass empty ones, so the same reply can transform differently on the two paths.
+  - The end user is written with setdefault chains, so existing proxy_server_request keys and body keys survive; Anthropic's and the base payload step replace the whole proxy_server_request.
+  - The non-streaming path builds the standard logging object and discards it, while the streaming path stores it in kwargs["standard_logging_object"]; do not copy one into the other.
+  - Image editing sets the same call_type, "passthrough-image-generation", as image generation; there is no separate editing value.
+  - The streaming error path returns empty kwargs, while the non-streaming non-chat error path returns the kwargs as they stand.
+  - The streaming model default is "gpt-4o" only when the key is missing; an empty string stays empty and goes to the assembler and cost as is.
+  - The Responses predicate matches any path containing "/responses", and in the stream path it alone picks the terminal-event parser and the "responses" call type; every other route uses the chat assembler.
+  - The fallback runs only for chat completions; Responses, embeddings and image errors end with no result, and that response is then not priced by this module at all.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,140 @@
+id: B6411
+title: Sail chat and Responses requests with completion windows
+description: >-
+  Build the Sail provider (llms/sail): the shared request helpers in common_utils.py, the chat config and the Responses
+  config. Sail maps the OpenAI service_tier onto a completion window sent in metadata. All of it is pure transforms:
+  nothing sends a request, reads the environment or registers a route. B039 wires the configs into dispatch, B2230 and
+  B5360 own choosing them, and B210 and B211 own the identity defaults.
+
+  Modules. In betterlite-openai: sail_common, sail_chat and sail_responses (each a file plus a folder with tests.rs).
+  Define SailSettings, a struct the caller fills, with global_drop_params (litellm.drop_params). A call is dropping when
+  its drop_params argument or global_drop_params is true.
+
+  sail_common. Provider name "sail". Window for a service tier (completion_window_for_service_tier): none gives none; a
+  string is lowercased and looked up in auto (no window), default and priority (asap), flex (flex) and balanced
+  (balanced); a lookup miss, or a value that is not a string, gives none when dropping and otherwise B184's
+  UnsupportedParamsError for provider sail and the given model, with the message "sail does not support
+  service_tier=<repr>. Supported values: auto, default, priority, flex, balanced." followed by a space and the hint "To
+  drop it, set litellm.drop_params=True or for proxy: litellm_settings: drop_params: true" (the hint wraps the two settings
+  in backticks, copy it from the source). Every error below ends with the same hint. Billed tier for a window: asap gives
+  none, balanced and standard give balanced, flex gives flex.
+
+  Metadata without the caller window: a value that is not a mapping gives an empty mapping. A mapping with a
+  completion_window key is an UnsupportedParamsError "sail does not accept <field>.completion_window. Send service_tier
+  instead." unless dropping. The result is the mapping without that key.
+
+  extra_body_for_sail(extra_body, request_metadata): a service_tier key in extra_body is an UnsupportedParamsError "sail
+  does not accept service_tier inside extra_body. Send service_tier instead." unless dropping. The caller metadata is
+  extra_body.metadata cleaned as above (field name "extra_body.metadata"), and the merged metadata is the caller metadata
+  overlaid by request_metadata when that is a mapping. The rest is extra_body without service_tier and metadata. A
+  non-empty merged metadata gives the rest plus metadata. Otherwise, when extra_body.metadata is a mapping or absent the
+  rest alone is returned, and when it is some other value that value is kept under metadata. All mappings come out as
+  plain JSON objects.
+
+  chat_request_for_sail(request): the window comes from request.service_tier. The caller metadata is request.metadata
+  cleaned (field "metadata"). Metadata is the caller metadata plus completion_window when there is a window. The result is
+  the request without service_tier, metadata and extra_body, then metadata when non-empty, then extra_body processed by
+  extra_body_for_sail with that metadata when extra_body is a mapping. A non-mapping extra_body is dropped.
+
+  responses_params_with_completion_window(params): the tier window comes from service_tier. A metadata mapping with
+  completion_window gives the caller window: a string whose lowercase is asap, balanced, standard or flex is lowercased;
+  anything else gives none when dropping and otherwise an UnsupportedParamsError "sail does not support
+  metadata.completion_window=<repr>. Supported values: asap, balanced, standard, flex." When both windows exist and their
+  billed tiers differ the error is "sail got service_tier=<repr> and metadata.completion_window=<window>, which select
+  different completion windows. Send one of them." (the quoted text is the source message). The window used is the caller
+  window, then the tier window. Wire metadata is the other metadata keys plus completion_window when a window is used. The
+  result is params without service_tier and metadata, then metadata when it is non-empty or the original metadata was not
+  null, then service_tier set to the billed tier of the window when that is not none.
+
+  sail_chat (chat/transformation.py), over B668/B503/B504. Supported params are the parent list without stop, seed,
+  frequency_penalty, presence_penalty, logit_bias, logprobs and top_logprobs, then reasoning_effort and user appended when
+  absent. map_openai_params first computes the window for non_default_params.service_tier (so a bad tier fails even though
+  the result is unused), then runs the parent. transform_request runs the parent and then chat_request_for_sail with
+  drop_params from litellm_params. transform_extra_body calls extra_body_for_sail with the request metadata.
+
+  sail_responses (responses/transformation.py), over B1426's Responses config for the sail descriptor (B1424) and
+  B506/B507/B508. map_openai_params runs the parent, then responses_params_with_completion_window. transform request runs
+  the parent and removes service_tier from the body. transform_extra_body calls extra_body_for_sail with the request
+  metadata and litellm_params.drop_params.
+
+  Helper b6411 calls these functions with typed inputs (no network, no environment) and compares the pinned LiteLLM
+  classes. Source size is about 270 nonblank, noncomment lines. Plan about 330 production lines, 300 test lines and 150
+  adapter lines.
+scope:
+  paths:
+    - crates/betterlite-openai/src/sail_common.rs
+    - crates/betterlite-openai/src/sail_common/**
+    - crates/betterlite-openai/src/sail_chat.rs
+    - crates/betterlite-openai/src/sail_chat/**
+    - crates/betterlite-openai/src/sail_responses.rs
+    - crates/betterlite-openai/src/sail_responses/**
+    - tools/oracle/cases/helpers/sail-wire/**
+    - "tools/oracle/fuzz/corpus/helper_case/sail_wire-*"
+    - tools/oracle/helpers/b6411.py
+    - tools/oracle/helpers/b6411/**
+    - tools/oracle/src/helpers/openai/b6411.rs
+    - tools/oracle/src/helpers/openai/b6411/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sail/common_utils.py#L1-L177
+    why: Tier and window tables, the unsupported-param errors and the chat, extra_body and Responses rewrites.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sail/chat/transformation.py#L1-L72
+    why: Supported params, the early service_tier check and the request and extra_body overrides.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sail/responses/transformation.py#L1-L58
+    why: Responses param mapping, the service_tier removal and the extra_body override.
+dod:
+  - text: Service tier and completion window rules, billed tiers and every unsupported-param error match LiteLLM, with and without dropping.
+    proof: [sail-common-tests, helper-python, helper-case-corpus]
+  - text: Chat supported params, the early tier check and the request and extra_body rewrites match LiteLLM.
+    proof: [sail-chat-tests, helper-python, helper-case-corpus]
+  - text: Responses param mapping, the body without service_tier and the extra_body rewrite match LiteLLM.
+    proof: [sail-responses-tests, helper-python, helper-case-corpus]
+  - text: The new helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: sail-common-tests
+      why: The shared Sail helpers are missing or fail
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sail_common::/)'
+    - id: sail-chat-tests
+      why: The Sail chat config is missing or fails
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sail_chat::/)'
+    - id: sail-responses-tests
+      why: The Sail Responses config is missing or fails
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sail_responses::/)'
+    - id: helper-python
+      why: The strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6411.py)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added Sail helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/sail_wire-*")" &&
+        grep -lE '^[[:space:]]+b6411:' tools/oracle/fuzz/corpus/helper_case/sail_wire-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sail-wire/service-tier-windows.yaml
+  - tools/oracle/cases/helpers/sail-wire/chat-request-rewrite.yaml
+  - tools/oracle/cases/helpers/sail-wire/extra-body-merge.yaml
+  - tools/oracle/cases/helpers/sail-wire/chat-supported-params.yaml
+  - tools/oracle/cases/helpers/sail-wire/responses-window-conflicts.yaml
+deviations:
+  - what: The repr in an error message is the Rust debug text of a string, and a value that is not a string is described by its JSON text.
+    why: Python repr text of arbitrary objects is not reproducible, and docs/compatibility.md leaves it out. Cases send strings, where the text is the same.
+out_of_scope:
+  - B210, B211 and B2230 own the Sail identity defaults and chat selection, and B5360 owns the Responses and media selection.
+  - B1424 owns the sail descriptor, B1426 the generated Responses config and B668, B503, B504 and B506 to B508 the parent methods.
+  - B039 owns reading litellm.drop_params into SailSettings and the HTTP oracle cases through the booted proxy.
+pitfalls:
+  - Sail map_openai_params checks the service tier and then throws the window away, so the only effect is the early error.
+  - A non-mapping extra_body in a chat request is removed and not written back.
+  - A caller completion_window in Responses metadata is allowed and wins over the tier window, while in chat it is an error.
+  - A caller completion_window of asap together with no tier leaves service_tier out of the body, since its billed tier is none.
+  - Dropping is true when either the argument or the global setting is true.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

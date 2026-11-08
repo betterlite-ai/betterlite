@@ -1,0 +1,218 @@
+id: B3052
+title: Dynamic model and priority quota admission
+description: >-
+  Build the pre-call admission of LiteLLM's saturation-aware limiter: the port of
+  `_PROXY_DynamicRateLimitHandlerV3.async_pre_call_hook` and `_check_rate_limits`. B3051 already owns the
+  priority lookup, the saturation read and the two descriptor builders. This task decides, for one request,
+  which descriptors are enforced, runs the all-or-nothing counter check, and turns an OVER_LIMIT answer into the
+  right 429. It reads no config key of its own and checks no license: the only settings it needs is
+  `saturation_threshold` (default 0.50), which B3051's section loads.
+
+  One Rust module `dynamic_admission` in betterlite-rate-limit, in these submodules. Each one that can fail owns
+  its error enum.
+
+  `limiter_port` holds `AdmissionLimiter`, an async trait that lets tests replace Redis. It has three
+  methods: `window_size() -> i64`, `atomic_check_and_increment_by_n(descriptors, increments, parent_span) ->
+  Result<RateLimitResponse, AdmissionLimiterError>` and `should_rate_limit(descriptors, parent_span, read_only)
+  -> Result<RateLimitResponse, AdmissionLimiterError>`. The production implementation is a small struct built
+  from B5660's `RateLimiterAssembly` (its window size, B3034's atomic entry point `atomic_check_and_increment_by_n`
+  and B3036's `WindowedAdmission::should_rate_limit`). `AdmissionLimiterError` has one `#[from]` variant for the
+  fail-closed `RateLimitUnverifiableError` of B3031 and one `#[from]` variant for every other owner error. These
+  two kinds are told apart later, so do not flatten them into one string.
+
+  `enforcement` holds the pure planning step. `plan_enforcement(model_wide, priority_descriptors, saturation,
+  saturation_threshold)` returns an `EnforcementPlan` with two lists. `enforced` always starts with the model-wide
+  descriptor and adds every priority descriptor only when `saturation >= saturation_threshold` (equal enforces).
+  `tracked_only` holds the priority descriptors when they are not enforced, and is empty otherwise. Each enforced
+  descriptor gets the same increment `{requests: 1, tokens: 0}`, so the list of increments has the length of
+  `enforced`. The model-wide descriptor is B3051's `model_tracking_descriptor` called with
+  `high_limit_multiplier = 1`; the priority descriptors are B3051's `priority_based_descriptors`.
+
+  `denial` holds the pure error builders. `build_over_limit_error(plan_kind, request_facts, statuses)`, the port of
+  the status loop at L493 to L560, takes the `statuses` of the atomic answer in order and the facts it needs:
+  `model`, `priority` (an `Option<String>`), `saturation`, `window_size`, the model group's `tpm` and `rpm`
+  (both `Option<i64>`), and the resolved `(model, llm_provider)` pair from B3030's `resolve_llm_provider_for_rate_limit`.
+  It skips every status whose code is not "OVER_LIMIT". For the first OVER_LIMIT status it looks at `descriptor_key`:
+  - "model_saturation_check" gives a `ProxyRateLimitError` (B3030) with detail `{"error": "Model capacity reached
+    for <model>. Priority: <priority>, Rate limit type: <rate_limit_type>, Model TPM: <tpm or not configured>, Model
+    RPM: <rpm or not configured>, Remaining: <limit_remaining>"}` and the headers `retry-after` (the window size as
+    text), `rate_limit_type` (the status's type as text) and `x-litellm-priority` (the priority, or "default" when
+    the priority is none or an empty string).
+  - "priority_model" gives a `ProxyRateLimitError` with detail `{"error": "Priority-based rate limit exceeded.
+    Model: <model>, Priority: <priority>, Rate limit type: <rate_limit_type>, Model TPM: ..., Model RPM: ...,
+    Remaining: <limit_remaining>, Model saturation: <saturation as 1 decimal percent>"}` and the same three headers
+    plus `x-litellm-saturation` (the saturation as a 2 decimal percent). It also logs at DEBUG "Enforcing priority
+    limits for <model>, saturation: <1 decimal percent>, priority: <priority>".
+  - any other descriptor key is skipped and the loop goes on to the next status.
+  In both errors `rate_limit_type` on the error is B3030's `map_v3_rate_limit_type` of the status type, and `model`
+  and `llm_provider` are the resolved pair. When the loop ends without raising (every OVER_LIMIT status had an
+  unknown key, or the list had none), the fail-closed guard runs: log at ERROR "Dynamic rate limiter: OVER_LIMIT
+  response with unknown descriptor_key(s) - refusing request. response=<the response>" and return a
+  `ProxyRateLimitError` with detail `{"error": "Rate limit exceeded", "descriptor_key": <first OVER_LIMIT status's
+  key, or "unknown">, "rate_limit_type": <its type as text, or "unknown">}`, the headers `retry-after` and
+  `x-litellm-priority` only, and `rate_limit_type` equal to `map_v3_rate_limit_type` of the status type (none when
+  there is no such status). A percent is Python's `{:.1%}`: the saturation times 100.0 printed with that many
+  decimals and a "%" sign. An absent priority is printed as the text "None" inside the detail text and as
+  "default" in the header; the Python source does both.
+
+  `admission` holds `DynamicAdmission`, built with an `AdmissionLimiter`, B3051's handler (priority lookup,
+  saturation read, descriptor builders, router handle) and a `ModelGroupResolver`-compatible provider lookup from
+  B3030. It has two methods.
+
+  `check_rate_limits(model, model_group_info, key, priority, saturation)` is the port of `_check_rate_limits`.
+  Steps, in order: read the threshold, build the plan, call `atomic_check_and_increment_by_n` with `plan.enforced`
+  and its increments and the key's parent span. Log the answer at DEBUG ("Atomic check+increment response: <json>").
+  When `overall_code` is "OVER_LIMIT", return the error of `build_over_limit_error`; the provider pair is resolved only
+  on this path, once. Otherwise, if `plan.tracked_only` is not empty, call `should_rate_limit(tracked_only, span,
+  read_only = false)`, ignore its overall code, and store in the request stash (B3031's `RequestStashSlot`,
+  `get_or_create`) a `RateLimitResponse` whose `overall_code` is the atomic answer's code and whose statuses are the
+  atomic statuses followed by the tracking statuses. In every other case store the atomic answer unchanged. The
+  tracking call increments the priority counters on purpose and its OVER_LIMIT is not an error.
+
+  `pre_call(key, data, call_type, stash)` is the port of `async_pre_call_hook`. Steps: when the request has no model,
+  return Ok at once and touch nothing. Call the stash slot's `claim_for_call_id` (B3031). Take the priority from B3051's
+  `priority_from_key_dict`. Ask the router for the model group info of the model; when there is none, log at DEBUG
+  "No model group info for <model>, allowing request" and return Ok. A router error here is not caught, as in
+  LiteLLM. Inside the guarded part: read the saturation with B3051's `_check_model_saturation`, log at DEBUG
+  "[Dynamic Rate Limiter] Model=<model>, Saturation=<1 decimal percent>, Threshold=<1 decimal percent>, Priority=<priority>",
+  and call `check_rate_limits`. The result of the guarded part is handled in three ways. A `ProxyRateLimitError` is
+  returned to the caller. A fail-closed `RateLimitUnverifiableError` (the 503 of B3031) is returned to the caller too,
+  because in LiteLLM it is an HTTPException and the hook re-raises those. Any other error is logged at ERROR "Error in
+  dynamic rate limiter: <error>, allowing request" and the hook returns Ok, so a Redis or script problem never blocks
+  a request. The hook never returns a changed request body.
+
+  Native tests live under `dynamic_admission::tests` and are grouped as `enforcement_`, `denial_`, `admission_` and
+  `hook_`, with a fake `AdmissionLimiter` that returns canned answers and records its calls.
+
+  Oracle cases are helper cases because no route on main reaches the dynamic handler yet (see notes). The helper adapter
+  for `b3052` builds LiteLLM's `_PROXY_DynamicRateLimitHandlerV3` over an empty `DualCache`, replaces its `v3_limiter`
+  with a stub that returns the case's canned atomic answer, calls `_check_rate_limits`, and reports either the stash
+  response or the raised error's status, detail and headers.
+
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/dynamic_admission.rs
+    - crates/betterlite-rate-limit/src/dynamic_admission/**
+    - tools/oracle/cases/helpers/dynamic-admission/**
+    - tools/oracle/helpers/b3052.py
+    - tools/oracle/helpers/b3052/**
+    - tools/oracle/src/helpers/rate_limit/b3052.rs
+    - tools/oracle/src/helpers/rate_limit/b3052/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L381-L441
+    why: Docstring, threshold read, the descriptor list, which descriptors are enforced, the requests 1 and tokens 0 increment and the atomic call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L443-L520
+    why: The OVER_LIMIT loop, the two error texts and headers, and the fail-closed guard for unknown descriptor keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L521-L570
+    why: Tracking-only increment through should_rate_limit and the two ways the stash response is stored.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L572-L657
+    why: async_pre_call_hook, from the missing-model return to the fail-open exception handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L165-L230
+    why: Read only. Shows the pool keys ("<model>:<priority>", "<model>:default_pool") that the priority descriptors carry; B3051 owns them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/README.dynamic_rate_limiter_v3.md
+    why: Describes the three-phase flow; the numbers in it are stale, so trust the code.
+
+dod:
+  - text: With saturation below the threshold only the model-wide descriptor is sent to the atomic check; at exactly the threshold or above, the priority descriptors are sent after it, in order, each with the increment {requests 1, tokens 0}.
+    proof: [enforcement-tests, admission-tests]
+  - text: The model-wide descriptor is built with high_limit_multiplier 1.
+    proof: [admission-tests]
+  - text: An OVER_LIMIT answer whose first OVER_LIMIT status is "model_saturation_check" gives the 429 "Model capacity reached for ..." with retry-after, rate_limit_type and x-litellm-priority headers and no saturation header.
+    proof: [denial-tests, dynamic-admission-oracle]
+  - text: An OVER_LIMIT answer whose first OVER_LIMIT status is "priority_model" gives the 429 "Priority-based rate limit exceeded. ..." with the saturation in the text (1 decimal) and in x-litellm-saturation (2 decimals).
+    proof: [denial-tests, dynamic-admission-oracle]
+  - text: The error text prints an absent priority as "None", an absent model tpm or rpm as "not configured", and the x-litellm-priority header prints "default" for a none or empty priority.
+    proof: [denial-tests, dynamic-admission-oracle]
+  - text: OVER_LIMIT statuses with an unknown descriptor key are skipped; if no known key matches, the request is refused with the "Rate limit exceeded" error that carries descriptor_key and rate_limit_type, and with no rate_limit_type header.
+    proof: [denial-tests, dynamic-admission-oracle]
+  - text: When the priority descriptors are not enforced, they are sent to should_rate_limit with read_only false, their OVER_LIMIT is ignored, and the stash holds the atomic code with the atomic statuses followed by the tracking statuses.
+    proof: [admission-tests, dynamic-admission-oracle]
+  - text: When the priority descriptors are enforced or absent, the stash holds the atomic answer unchanged and should_rate_limit is not called.
+    proof: [admission-tests, dynamic-admission-oracle]
+  - text: A request with no model returns Ok without touching the stash, the router or the limiter; a model with no group info returns Ok before any saturation read.
+    proof: [hook-tests]
+  - text: A ProxyRateLimitError and a fail-closed 503 reach the caller; any other limiter or saturation error is logged and the request is allowed.
+    proof: [hook-tests]
+  - text: Nothing in the module reads LITELLM_LICENSE or any license state.
+    proof: [no-license-gate]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: enforcement-tests
+      why: the enforcement planning tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_admission::enforcement::/)'
+    - id: denial-tests
+      why: the 429 text, headers and fail-closed guard tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_admission::denial::/)'
+    - id: admission-tests
+      why: the check_rate_limits tests (atomic call, tracking call, stash) are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_admission::admission::/)'
+    - id: hook-tests
+      why: the pre-call hook tests (no model, no group info, error handling) are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_admission::hook::/)'
+    - id: no-license-gate
+      why: the module must not look at the license
+      run: >-
+        test -f crates/betterlite-rate-limit/src/dynamic_admission.rs &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-rate-limit/src/dynamic_admission)" &&
+        ! grep -rqi 'litellm_license' crates/betterlite-rate-limit/src/dynamic_admission.rs crates/betterlite-rate-limit/src/dynamic_admission
+    - id: dynamic-admission-oracle
+      why: the helper cases for the over-limit errors and the stash are missing or differ from LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/dynamic-admission)" &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/dynamic-admission
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3052)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3052 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3052/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/helpers/dynamic-admission/model-capacity-requests.yaml
+  - tools/oracle/cases/helpers/dynamic-admission/model-capacity-tokens-not-configured.yaml
+  - tools/oracle/cases/helpers/dynamic-admission/priority-limit-saturated.yaml
+  - tools/oracle/cases/helpers/dynamic-admission/priority-none-text-and-header.yaml
+  - tools/oracle/cases/helpers/dynamic-admission/priority-empty-string-header.yaml
+  - tools/oracle/cases/helpers/dynamic-admission/unknown-descriptor-guard.yaml
+  - tools/oracle/cases/helpers/dynamic-admission/unknown-key-then-known-key.yaml
+  - tools/oracle/cases/helpers/dynamic-admission/below-threshold-tracking.yaml
+  - tools/oracle/cases/helpers/dynamic-admission/at-threshold-enforces.yaml
+  - tools/oracle/cases/helpers/dynamic-admission/no-priority-descriptors.yaml
+
+deviations:
+  - what: The module reaches the limiter through the AdmissionLimiter trait, not through a v3_limiter attribute on the handler.
+    why: The rules forbid module-level state and reflection, and tests need a fake in place of Redis. The calls and their order are the same.
+  - what: Nothing checks LITELLM_LICENSE.
+    why: The 2026-10-24 decision leaves the license check out. B3051 already does the same for the priority weight, so no path here is gated.
+  - what: Until the hook is registered by name and a server gate runs it, no HTTP request reaches this code, so its cases are helper cases.
+    why: B3055's server gate runs only the main limiter. The open question is in the architect notes.
+
+out_of_scope:
+  - Priority lookup, priority weights, normalization, pool keys, saturation reads, the two descriptor builders and the handler constructor belong to B3051.
+  - async_post_call_success_hook, async_log_success_event and the x-litellm-priority and x-litellm-rate-limiter-version response headers belong to B3053.
+  - atomic_check_and_increment_by_n and the refunds belong to B3034, should_rate_limit to B3036, the shared limiter assembly to B5660.
+  - ProxyRateLimitError, map_v3_rate_limit_type and resolve_llm_provider_for_rate_limit belong to B3030; the stash and the records belong to B3031.
+  - _PROXY_DynamicRateLimitHandlerV3.__init__, update_variables and the cache helpers are B3051's; the ones of the older dynamic_rate_limiter.py belong to B3050.
+  - Registering the callback name dynamic_rate_limiter_v3 and running this hook from a route (litellm_logging.py L4923 and custom_logger_registry.py L105) has no owner in this task.
+
+pitfalls:
+  - The enforcement test is `saturation >= saturation_threshold`, so a saturation of exactly 0.50 enforces the priority limits.
+  - The model-wide descriptor is always enforced and is first in the list; the status that names the 429 is the first OVER_LIMIT status the limiter returns, not the first descriptor.
+  - The atomic increment is requests 1 and tokens 0, so the tokens limit is only a check here; the tokens are added later by B3053's success hook.
+  - The tracking call uses should_rate_limit with read_only false and skip_tpm_check left at its default, so it increments and also reads the tokens limit; its OVER_LIMIT is dropped.
+  - The stash gets the atomic overall_code, even if the tracking statuses contain OVER_LIMIT.
+  - 'The text "Priority: None" in the detail and the value "default" in the x-litellm-priority header come from different Python expressions (an f-string of the value and priority or "default"), so an empty string gives "Priority: " in the text and "default" in the header.'
+  - Only the priority error carries `x-litellm-saturation`, and only the "Rate limit exceeded" guard error omits the `rate_limit_type` header.
+  - The `window_size` in `retry-after` comes from the limiter, not from the descriptor's own window_size.
+  - The provider pair is resolved once, before the status loop, and only when the answer is OVER_LIMIT.
+  - A router error from get_model_group_info is outside the try block in LiteLLM, so it is not turned into "allow".
+  - The HTTPException re-raise also covers the fail-closed 503, so do not let the generic error branch swallow it.
+
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

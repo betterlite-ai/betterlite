@@ -1,0 +1,197 @@
+id: B5847
+title: Replicate predictions, request, reply and polling
+description: >-
+  Add the module replicate to betterlite-provider (crates/betterlite-provider/src/replicate.rs and the folder beside it)
+  for the whole of litellm/llms/replicate: common_utils.py, chat/transformation.py and chat/handler.py. Replicate is not
+  OpenAI-shaped (a prediction is created, then polled), so it does not go in betterlite-openai. The module builds the
+  requests and reads the replies; the HTTP calls go through B173's transport, which the caller passes in through the
+  constructor together with a sleeper (a small trait with one async method that waits a given number of seconds, so tests
+  record the delays and never wait). B042 wires the module into dispatch, resolves the key and base, and owns the HTTP cases.
+  Credentials come in as plain arguments: `api_key` is a string, and the module reads no environment variable and adds no
+  config section.
+
+
+  Error. `ReplicateError` carries a status code, a message and the response headers (a header map, or none). Every failure
+  below returns it with the status and text given.
+
+
+  Settings. `ReplicatePolling` holds the four LiteLLM constants with their defaults and env names:
+  DEFAULT_REPLICATE_POLLING_RETRIES (5), DEFAULT_REPLICATE_POLLING_DELAY_SECONDS (1), REPLICATE_POLLING_DELAY_SECONDS (0.5)
+  and REPLICATE_MODEL_NAME_WITH_ID_LENGTH (64). The caller builds it with `ReplicatePolling::from_env_values`, which takes
+  the four env texts as options and parses them with betterlite-env's `number`. `ReplicateDefaults` is the typed form of
+  `ReplicateConfig(...)`: optional system_prompt, max_new_tokens, min_new_tokens, temperature, top_p, top_k,
+  stop_sequences, seed and debug. It is plain input, `Default` is all None, and nothing in betterlite sets it.
+
+
+  Parameters. The supported OpenAI list is exactly stream, temperature, max_tokens, top_p, stop, seed, tools, tool_choice,
+  functions, function_call. `map_openai_params` copies only stream, temperature, top_p, max_tokens and stop and silently
+  drops the rest (seed, tools, tool_choice, functions and function_call are advertised but never mapped; no error and no
+  drop warning). max_tokens becomes `max_length` when the model contains "vicuna" or "flan", `max_tokens` when it contains
+  "meta/codellama-13b", and `max_new_tokens` otherwise, checked in that order. stop is stored as `stop_sequences` with the
+  value unchanged (a list stays a list).
+
+
+  URL and headers. `model_to_version_id` returns the second part of the model split on ":" when the model has a colon
+  (for "a:b:c" that is "b"), else the model. `get_complete_url` ignores api_base and api_key completely: when the version
+  id contains "deployments" it removes every "deployments/" and returns
+  `https://api.replicate.com/v1/deployments/<id>/predictions`, otherwise
+  `https://api.replicate.com/v1/models/<id>/predictions`. `validate_environment` ignores the incoming headers and returns
+  exactly `Authorization: Token <api_key>` and `Content-Type: application/json`; a missing key renders as "Token None".
+
+
+  Request. `transform_request` first copies each ReplicateDefaults value that is set into optional_params unless the call
+  already has that key. It then pops `supports_system_prompt` from optional_params (absent means false). When true, it
+  removes the first message whose role is "system" from the message list and takes its text through B218's content-to-string
+  projection as `system_prompt`. The prompt comes from B177: when the model string is a key of the operator's custom prompt
+  table (the table is the one `litellm.custom_prompt_dict` holds, not the argument main.py passes to completion), use
+  B177's custom_prompt with that entry's roles, initial_prompt_value, final_prompt_value, bos_token and eos_token;
+  otherwise call B177's prompt_factory with the model and messages and no provider name. A prompt that is not a string
+  is `ReplicateError` 400 "LiteLLM Error - prompt is not a string - <prompt>" with empty headers. The body is
+  `{"input": {"prompt": ..., ["system_prompt": ...], ...optional_params}}`. The `version` key is never added in practice:
+  its guard needs a ":" inside the already-split version id, which cannot hold. Port the guard anyway as the source writes
+  it and add one case that proves no `version` key appears for "meta/llama-2-70b-chat:<64 hex chars>" (the long hash only
+  ends up in the URL). Request and message mutation is visible to the caller, as in LiteLLM: the merged optional_params and
+  the message list without its system message are what the caller keeps.
+
+
+  Reply. `get_prediction_url` reads `urls.get` from the create response; a missing or null value is `ReplicateError` 400
+  "LiteLLM Error - prediction url is None - <body>" with the response headers. `transform_response` logs the raw body
+  through the injected post-call logger, then reads JSON; any status other than "succeeded" is `ReplicateError` 422
+  "LiteLLM Error - prediction not succeeded - <body>" with the response headers. The text is the `output` list joined
+  with no separator, or a single space when the join is empty. Usage counts the prompt with B196's token count over the
+  messages and the completion with B196's response-token count over the text, both for the call's model; total is the sum.
+  The reply model is "replicate/" + model.
+
+
+  Polling, non-stream. After the create POST (JSON body, 600 second timeout, no status check on the POST), loop retry from
+  0 to the retries setting minus one: wait delay + 2 * retry seconds first, GET the prediction URL, and continue when the
+  status is 200 and the JSON status is "processing" or "starting". Anything else, including a non-200 reply, goes to
+  `transform_response`. After the last continue the call fails with `ReplicateError` 500 "No response received from
+  Replicate API after max retries" and no headers. The sync path sets `created` to the clock seconds right before the
+  create POST; the async path does not set it.
+
+
+  Polling, stream. The module returns a stream of `{output, status}` chunks. Loop until the status is succeeded, failed or
+  canceled: wait REPLICATE_POLLING_DELAY_SECONDS first (every iteration, including the first), GET the prediction URL,
+  and on 200 read `status`; when `output` is present, the new text is the joined output minus the characters already
+  sent, yielded with the status even when it is empty; status "failed" then raises `ReplicateError` 400
+  "Error: <error field or empty>" with the response headers. A non-200 reply is only logged and polling goes on, with no
+  attempt limit. The two LiteLLM paths differ and both are kept, selected by `OutputPolicy`: `Strict` (the sync path)
+  joins `output` and turns a join failure into `ReplicateError` 422 "Unable to parse response. Got=<output>" with the
+  response headers, so a null output fails; `Lenient` (the async path) skips a null output, joins a list, and renders any
+  other output with its string form. B042 chooses the policy per path. The stream chunks are read by B5653's replicate
+  chunk reader and driven by B5654; neither is built here.
+
+
+  Cases. The helper `b5847` is registered for this task. Its Python side calls the pinned ReplicateConfig and the
+  handler's polling generators with a scripted fake HTTP client (a list of status and body pairs) and a patched sleep that
+  records each delay. Each case sends the input of the declared type, and compares the URL, headers, body, error status and
+  message, the delays and the yielded chunks. Budget about 460 LiteLLM lines: 300 transform, 200 tests, 120 adapters and
+  60 wiring.
+scope:
+  paths:
+    - crates/betterlite-provider/src/replicate.rs
+    - crates/betterlite-provider/src/replicate/**
+    - tools/oracle/cases/helpers/providers/replicate/**
+    - "tools/oracle/fuzz/corpus/helper_case/b5847-*"
+    - tools/oracle/helpers/b5847.py
+    - tools/oracle/helpers/b5847/**
+    - tools/oracle/src/helpers/provider/b5847.rs
+    - tools/oracle/src/helpers/provider/b5847/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/common_utils.py#L1-L13
+    why: The error class every failure uses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/transformation.py#L30-L156
+    why: Config defaults, supported list, parameter mapping, version id and the fixed URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/transformation.py#L157-L228
+    why: Request body, system prompt split, custom prompt versus prompt_factory, and the dead version guard.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/transformation.py#L229-L313
+    why: Reply, usage, prediction URL and the headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/handler.py#L26-L123
+    why: The two streaming pollers and where their output handling differs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/handler.py#L124-L305
+    why: Create, non-stream retry loop with its delays, and the async twin.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2773-L2825
+    why: Where key, base and the custom prompt table come from (B042 wires it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L97-L98
+    why: Polling retries and delay defaults and env names.
+  - url: https://replicate.com/docs/reference/http
+    why: "Predictions API shape: urls.get, status values and output."
+dod:
+  - text: Supported list and parameter mapping match, including the dropped parameters, the max_tokens targets and stop passthrough.
+    proof: [request-tests, oracle-replicate, helper-python]
+  - text: The URL, headers and request body match for models, deployments, versioned models, a system prompt, a custom prompt and defaults, and no version key is sent.
+    proof: [request-tests, oracle-replicate, helper-python]
+  - text: Create and prediction replies give the same text, usage, model name and 400 or 422 errors.
+    proof: [reply-tests, oracle-replicate]
+  - text: Non-stream polling waits delay plus twice the retry, retries only on processing or starting, and ends in the 500 error.
+    proof: [poll-tests, oracle-replicate]
+  - text: Stream polling yields only the new text with status, ends on the three final statuses, fails on "failed" with 400, ignores non-200 replies, and applies Strict and Lenient output handling.
+    proof: [poll-tests, oracle-replicate]
+  - text: The new helper seeds select the b5847 variant.
+    proof: [seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: request-tests
+      why: A parameter, URL, header or body rule differs, or the guarded version key appears.
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^replicate::(params|request)::/)'
+    - id: reply-tests
+      why: Text joining, usage or the 400 and 422 errors differ.
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^replicate::(reply|error)::/)'
+    - id: poll-tests
+      why: Delays, retry limit, chunk slicing or the two output policies differ.
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^replicate::poll::/)'
+    - id: oracle-replicate
+      why: A request, delay or error differs from the one LiteLLM produces for the same input.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/providers/replicate)" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: helper-python
+      why: The Python side of the helper fails type checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: seeds
+      why: A seed parses as another helper and tests nothing here.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/b5847-*")" &&
+        grep -lq 'b5847' tools/oracle/fuzz/corpus/helper_case/b5847-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/providers/replicate/map-params.yaml
+  - tools/oracle/cases/helpers/providers/replicate/url-model-and-deployment.yaml
+  - tools/oracle/cases/helpers/providers/replicate/headers-ignore-input.yaml
+  - tools/oracle/cases/helpers/providers/replicate/request-system-prompt.yaml
+  - tools/oracle/cases/helpers/providers/replicate/request-no-version-key.yaml
+  - tools/oracle/cases/helpers/providers/replicate/reply-and-usage.yaml
+  - tools/oracle/cases/helpers/providers/replicate/prediction-not-succeeded.yaml
+  - tools/oracle/cases/helpers/providers/replicate/poll-nonstream-delays.yaml
+  - tools/oracle/cases/helpers/providers/replicate/poll-stream-increments.yaml
+  - tools/oracle/cases/helpers/providers/replicate/poll-stream-failed.yaml
+deviations:
+  - what: One async implementation serves the sync and async LiteLLM paths, with OutputPolicy keeping their different output handling.
+    why: Two copies would drift. The sync face is B158's, and the visible results (chunks, errors, delays) stay those of each LiteLLM path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/replicate/chat/handler.py#L26-L123
+out_of_scope:
+  - B042 owns the dispatch and operation wiring, key and base resolution (REPLICATE_API_KEY, REPLICATE_API_TOKEN, REPLICATE_API_BASE), the stream post-call log from main.py, and the HTTP cases. No dispatch.rs or operation.rs file is touched here.
+  - B5653 owns handle_replicate_chunk in streaming_handler.py and B5654 the stream driver; this task only yields the {output, status} chunks.
+  - B238 owns the Replicate branch of the exception mapper, and B1689 owns get_replicate_completion_pricing.
+  - B177 owns custom_prompt and prompt_factory, B218 the content-to-string projection and B196 the token counts; only calls into them are here.
+  - Provider resolution by model name in get_llm_provider_logic.py (the 64 character version check) is not here.
+  - The ReplicateConfig class-attribute store (get_config and the setter in __init__) is replaced by the typed ReplicateDefaults argument; nothing in betterlite or the proxy sets it.
+  - The unused completion arguments (print_verbose, logger_fn, custom_prompt_dict, version_id) have no behavior and are not built.
+pitfalls:
+  - get_complete_url never reads api_base, so REPLICATE_API_BASE and a deployment's api_base have no effect on the Replicate URL.
+  - For "owner/model:<hash>" the URL is `models/<hash>/predictions`, because model_to_version_id keeps only the part after the colon.
+  - validate_environment drops every incoming header, including an Authorization the caller set.
+  - transform_request reads the custom prompt table from `litellm.custom_prompt_dict` by the full model string, so an entry keyed by the short name is not found.
+  - prompt_factory is called with no custom_llm_provider, so only model-name families (such as llama-2) pick a template.
+  - The stream poller sleeps before its first GET, and a persistent non-200 loops forever; do not add a limit.
+  - A "failed" status yields the final output chunk first when `output` is present, then raises.
+  - An empty joined output becomes one space in transform_response, and usage counts that space.
+  - The create POST status is not checked, so an error body without `urls.get` surfaces as the 400 prediction-url error.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

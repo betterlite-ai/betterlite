@@ -1,0 +1,173 @@
+id: B4675
+title: "MCP gateway consent and native client authorization"
+description: >-
+  Build the browser half of the MCP gateway's own OAuth front door (LiteLLM's gateway_dcr_flow.py, authorize and connect-flow part) in crates/betterlite-mcp, new module gateway_authorize. It covers GET /authorize for a registered DCR client, the per-flow cookie, the connect page's flow description, POST /authorize/complete (approve, deny, manual delivery), the native-client authorize verb with its loopback rule and consent page, and the /.well-known/litellm-cli-auth document. B4674 already owns the constants, sealed models, OauthError, the port traits and the single-use guard in module gateway_dcr; import them, never copy them. B4676 (token grants) opens the auth code this task seals, so the GatewayAuthCode fields must be filled exactly as below.
+
+
+  Nothing here touches axum, a clock, a random source or a global. A route parses the request and passes plain values in. Every function returns a GatewayReply (defined in reply) and the route turns it into an HTTP response. The routes themselves (GET /authorize, GET /{mcp_server_name}/authorize, GET /authorize/mcp-session, GET /authorize/flow, POST /authorize/complete, GET /.well-known/litellm-cli-auth, and the session-cookie reading) are wired by the umbrella, so this task has helper cases only.
+
+
+  Submodules, each with a tests.rs beside it. The test modules are named in the checks.
+
+
+  reply. RequestView { base_url: String, path: String, query: Option<String>, cookies: Vec<(String, String)> }. The route computes base_url once with B4654's get_request_base_url (it is the value LiteLLM calls get_request_base_url(request) for, no trailing slash) and fills path and query from the request URL. cookies is the parsed Cookie header; when a name repeats, the last one wins (Starlette builds a dict). GatewayReply is an enum: Redirect { location: String, set_cookie: Option<FlowCookie>, delete_cookie: Option<FlowCookieDeletion> } (always status 303), Html { body: String, headers: Vec<(String, String)>, set_cookie: Option<FlowCookie> } (status 200), Json { body: serde_json::Value, headers: Vec<(String, String)> } (status 200) and Error(OauthError) from B4674. FlowCookie { name, value, max_age_seconds: i64, path, secure: bool } always means HttpOnly and SameSite=Lax. FlowCookieDeletion { name, path, secure } means Max-Age 0 and an expiry in 1970, HttpOnly, SameSite=Lax. Two traits are injected: FlowTokenSource with one method returning a fresh 24-byte url-safe token (32 characters, base64url without padding, what secrets.token_urlsafe(24) returns), used for both the flow handle and the jti, and RenderConsentPage with one method taking (client_origin, user_id, teams as a slice of (team_id, label) pairs, flow_handle, complete_url) and returning the page text. The composition root supplies a random-backed FlowTokenSource and B1612's render_native_client_consent_page behind RenderConsentPage; betterlite-server sits above this crate, so it cannot be imported here. Tests use fixed fakes.
+
+
+  url_parts. flow_cookie_name(handle) is B4674's CONNECT_FLOW_COOKIE_PREFIX plus the handle. cookie_path_and_secure(base_url) parses base_url with B4654's python_url urlparse and returns (path, or "/" when empty; secure only when the scheme is https). append_query_params(url, extra pairs) parses the URL, splits the existing query like Python's parse_qsl with keep_blank_values (split on "&" only, skip empty pieces, split each piece at the first "=", a piece with no "=" becomes a name with an empty value, then percent-decode with "+" as a space and invalid UTF-8 replaced), appends the new pairs, re-encodes everything like urlencode (quote_plus: letters, digits and "_.-~" stay, a space becomes "+", every other byte becomes %XX in upper case) and rebuilds the URL with B4654's urlunparse, keeping scheme, netloc, path, params and fragment. relative_request_url(path, query) is path when query is None or empty, else path, "?" and query. origin_only(url) is scheme, "://" and netloc when the netloc is non-empty, else "". A URL that urlparse rejects gives a typed error; the callers answer 500 server_error "the gateway could not read the redirect URI", which cannot happen for a registered or sealed URI.
+
+
+  scope. is_proxy_api_resource(base_url, resource): false for None, false when B4654's canonical_resource_uri gives None, else true when the canonical value equals canonicalize_url_identity(base_url). resolve_scoped_resource_server(registry, base_url, resource) returns Option<&MCPServer> from B6590, reading B4731's ServerRegistry (the route holds the read lock and passes the reference). Steps in order, each failure returns None: resource is None; canonical_resource_uri(resource) is None; base is canonicalize_url_identity(base_url); canonical equals base plus "/mcp", or does not start with base plus "/"; extract_target_server_names_from_path (B4654, path_targets) on the canonical text from the end of base onward does not return exactly one name; server_by_name(name, no client ip) from B4731 is None; the server is neither is_gateway_managed_oauth2 nor advertises_gateway_authorization_server (both B6590 methods). No client ip is passed on purpose: the lookup is about identity, not visibility. flow_target(registry, flow, reachability) returns a FlowTarget enum Unscoped, Interactive(server), M2m(server) or Stale. No resource_server_id is Unscoped. Otherwise server_by_id(id, no ip) from B4731 must exist, must be gateway-managed oauth2 or advertise the gateway authorization server, and the injected LookupServerReachability (B4674) must say true for (flow.user_id, server_id); anything else is Stale. A server is Interactive when it is_gateway_managed_oauth2 and B6760's `effective_oauth2_flow(server)` (an Option<OAuth2Flow>, from `betterlite_mcp::server_oauth`) is not Some(OAuth2Flow::ClientCredentials), else M2m. The reachability call is skipped when an earlier test already failed.
+
+
+  authorize. rejected_authorize_request(client_id, redirect_uri, state, code_challenge, code_challenge_method, response_type, cipher) returns Option<OauthError>, checks in this order: open_gateway_dcr_client (B4674) is None gives 400 invalid_client "unknown or malformed client_id"; redirect_uri is not one of the client's redirect_uris (exact string match) gives 400 invalid_request "redirect_uri is not registered for this client"; response_type is not exactly "code" gives 400 unsupported_response_type "response_type must be 'code'"; a missing or empty code_challenge, or code_challenge_method not exactly "S256", gives 400 invalid_request "PKCE is required: send code_challenge with code_challenge_method=S256"; a state longer than B4674's MAX_STATE_LENGTH (count code points) gives 400 invalid_request "state must be at most 1024 characters". login_redirect(base_url, path, query) is Redirect to base_url plus "/sso/key/generate?" plus urlencode of the single pair return_to = relative_request_url(...). new_connect_flow builds B4674's ConnectFlow with jti from the token source, exp = now plus CONNECT_FLOW_TTL_SECONDS, code_challenge "" when absent. set_flow_cookie seals the flow with an empty prefix (unprefixed) through B4674's seal and builds the FlowCookie: name flow_cookie_name(handle), max_age CONNECT_FLOW_TTL_SECONDS, path and secure from cookie_path_and_secure. A seal failure becomes 500 server_error "the gateway could not seal the connect flow".
+
+
+  aggregate_authorize(request view, params, session_user_id, resource, registry, cipher, tokens, now) returns a GatewayReply. Order: rejected_authorize_request first (so an anonymous caller with a bad client still gets the 400, never the login redirect); then no session_user_id gives login_redirect; then resolve_scoped_resource_server; then a fresh handle and a flow with the session user, client, redirect, state, code_challenge, resource_server_id of the scoped server and audience None; the reply is Redirect with status 303 to base_url plus "/ui/connect" with connect_flow=handle appended through append_query_params, carrying the flow cookie. The connect URL holds only the handle.
+
+
+  native_client_authorize is async and takes a generic LookupConsentTeams (B4674). It runs rejected_authorize_request, then requires is_loopback_redirect_host (B4655) on the parsed redirect_uri, else 400 invalid_request "a proxy-API grant may only redirect to a loopback address"; then no session gives login_redirect; then lookup_consent_teams(user) must return teams, and a ReloadUserFailure maps through consent_lookup_failure: unavailable is 503 temporarily_unavailable with B4674's DB_UNAVAILABLE_DESCRIPTION, faulted is 503 temporarily_unavailable with DB_FAULTED_DESCRIPTION, unresolvable is 500 server_error "the gateway is not configured to resolve users", no_active_key is 403 access_denied "the signed-in user is not active". Then a flow with resource_server_id None and audience PROXY_API_AUDIENCE, and an Html reply: body from RenderConsentPage with client_origin origin_only(redirect_uri), the user id, the teams as (team_id, team_alias or team_id), the handle, and complete_url base_url plus "/authorize/complete". Headers are B4654's TOKEN_NO_CACHE_HEADERS plus X-Frame-Options DENY and Content-Security-Policy "frame-ancestors 'none'". The flow cookie is attached. The handle appears only in the form, never in a URL.
+
+
+  connect. open_flow_for(request view, handle, session_user_id, now, cipher) returns Result<ConnectFlow, OauthError> in this order: no cookie named flow_cookie_name(handle), or a cookie that does not open as a ConnectFlow (open_sealed with the empty prefix and the gateway_connect_flow debug key), or now >= flow.exp, gives 400 invalid_request "unknown or expired connect flow"; no session gives 401 login_required "sign in to LiteLLM to finish connecting"; a session user that differs from flow.user_id gives 403 access_denied "the signed-in user does not match this connect flow". describe_opened_flow(flow, ...) returns ConnectFlowDescription { state: unscoped|interactive|m2m|stale, client_origin, server_id, server_name, connected: Option<bool> } or an OauthError. For Interactive it calls the injected LookupVendorCredential (B4674) with (user, server_id); unavailable gives 503 temporarily_unavailable with DB_UNAVAILABLE_DESCRIPTION; connected is true only for present. For the other states no vendor lookup happens: connected is Some(true) for m2m and None for unscoped and stale; server_id and server_name are None when there is no server. server_name is the first non-empty of server_name, alias, name. describe_connect_flow wraps open_flow_for and describe_opened_flow and answers Json with the description and TOKEN_NO_CACHE_HEADERS.
+
+
+  complete_connect_flow is async and takes the ports, a SingleUseGuard (B4674) and the params delivery, team_id, decision. Order: delivery other than absent, "redirect" or "manual" gives 400 invalid_request "delivery must be 'redirect' or 'manual'"; decision other than absent, "approve" or "deny" gives 400 invalid_request "decision must be 'approve' or 'deny'"; open_flow_for; for any decision except "deny", describe_opened_flow, where an error is returned as is, state stale gives 400 invalid_request "the requested MCP server is no longer available", and connected Some(false) gives 400 invalid_request "authorize the requested MCP server before finishing"; then the single-use claim on B4674's flow-used prefix plus the flow jti with ttl CONNECT_FLOW_TTL_SECONDS + CLAIM_TTL_BUFFER_SECONDS, passed through claim_refusal with the replayed error 400 invalid_request "this connect flow was already completed; restart the connection"; then the deny or approve reply, with delete_cookie set to the flow cookie for this handle (path and secure as at set time). The server checks run before the claim, so a submit made too early can be retried after the user authorizes. A deny skips the checks. Any error before the claim leaves the cookie in place. Deny is Redirect to append_query_params(redirect_uri, error=access_denied plus state when state is non-empty). Approve seals B4674's GatewayAuthCode with the GATEWAY_AUTH_CODE_PREFIX: user_id, client_id, redirect_uri and code_challenge from the flow, a fresh jti, iat now, exp now plus the ttl, resource_server_id and audience from the flow, and team_id only when the flow audience is PROXY_API_AUDIENCE and team_id is a non-empty string. The ttl is MANUAL_DELIVERY_AUTH_CODE_TTL_SECONDS (300) when delivery is "manual" and is_loopback_redirect_host holds for the redirect URI, else GATEWAY_AUTH_CODE_TTL_SECONDS (120). The callback URL is append_query_params(redirect_uri, code plus state when non-empty). Manual delivery answers Html with TOKEN_NO_CACHE_HEADERS and a page built by manual_delivery_page(callback_url): LiteLLM's exact markup with the URL passed through html.escape(quote=True) (& < > " ' escaped to &amp; &lt; &gt; &quot; &#x27;) and "5 minutes" from 300 divided by 60; copy the page text from the reference. Every other approve answers Redirect to the callback URL.
+
+
+  contract. native_client_auth_contract(base_url, token_exchange_available) returns a typed struct that serializes to the discovery document: contract_version 1 (NATIVE_CLIENT_AUTH_CONTRACT_VERSION), issuer base_url, authorization_endpoint base_url plus /authorize, token_endpoint /token, registration_endpoint /register, revocation_endpoint /revoke, resource base_url, response_types_supported ["code"], grant_types_supported from B4674's supported_grant_types, code_challenge_methods_supported ["S256"], and token_endpoint_auth_methods_supported and revocation_endpoint_auth_methods_supported both ["none"]. Keys come out in that order.
+
+
+  Helper adapter. The Python side builds a Starlette Request from a scope the case supplies, registers synthetic MCPServer objects in a fresh manager for scoped cases, patches the token source so handles and jti values are fixed, and replaces render_native_client_consent_page with a function that returns the typed arguments as JSON, so the case compares the page inputs rather than HTML owned by B1612. The Rust side maps the same case to the functions above. Sealed cookie and code values differ run to run, so the helper reports what they open to (the model fields) and never the ciphertext.
+scope:
+  paths:
+    - crates/betterlite-mcp/src/gateway_authorize.rs
+    - crates/betterlite-mcp/src/gateway_authorize/**
+    - tools/oracle/cases/helpers/mcp-gateway-authorize/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-gateway-authorize-*
+    - tools/oracle/helpers/b4675.py
+    - tools/oracle/helpers/b4675/**
+    - tools/oracle/src/helpers/mcp/b4675.rs
+    - tools/oracle/src/helpers/mcp/b4675/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L1-L36
+    why: The flow's own description of authorize, the per-flow cookie and the finish step.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L445-L465
+    why: Cookie name, cookie path and secure flag, append_query_params and relative_request_url.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L467-L503
+    why: resolve_scoped_resource_server and each reason it answers None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L505-L553
+    why: aggregate_authorize, its order and the connect URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L556-L619
+    why: native_client_authorize, the loopback rule, the consent page call and its headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L617-L666
+    why: The discovery document and is_proxy_api_resource.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L669-L733
+    why: _rejected_authorize_request, _login_redirect, _new_connect_flow and _set_flow_cookie.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L736-L852
+    why: Consent lookup failures, _origin_only, _open_flow_for, _flow_target and the flow description.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L854-L962
+    why: complete_connect_flow, the deny and approve replies and the manual delivery page.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1923-L1985
+    why: How the two authorize verbs are chosen from the resource parameter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2095-L2160
+    why: How the route feeds the vendor-credential and reachability ports and the form fields of the finish step.
+  - url: https://github.com/python/cpython/blob/v3.13.0/Lib/urllib/parse.py#L760-L850
+    why: parse_qsl, the splitting and decoding rules append_query_params must reproduce.
+  - url: https://www.rfc-editor.org/rfc/rfc6749#section-4.1.2.1
+    why: Why a bad client or redirect URI gets a direct 400 and never a redirect.
+dod:
+  - text: A bad client_id, an unregistered redirect_uri, a wrong response_type, missing or non-S256 PKCE and an over-long state each answer their own 400 and message, in LiteLLM's order, before any login redirect.
+    proof: [authorize-tests, oracle]
+  - text: A valid request without a session redirects to /sso/key/generate with the relative return_to, and with a session it redirects to /ui/connect with only the handle and sets a sealed per-flow cookie that opens as a ConnectFlow with the right fields and a 600 second life.
+    proof: [authorize-tests, oracle]
+  - text: A per-server resource narrows the flow to exactly one gateway-owned server and every other resource shape (absent, aggregate, foreign host, several servers, unknown, wrong mode) leaves it unscoped.
+    proof: [scope-tests, oracle]
+  - text: The native verb requires a loopback redirect, looks up consent teams, maps each lookup failure to its status, seals an audience-bound flow and renders the consent page with the no-store, frame-deny headers and no handle in any URL.
+    proof: [authorize-tests, oracle]
+  - text: Opening a flow refuses a missing, tampered, expired or wrong-type cookie, an anonymous caller and a different signed-in user with the listed statuses.
+    proof: [connect-tests, oracle]
+  - text: The flow description reports unscoped, interactive, m2m and stale states with the client origin, the server name fallback and the connected flag, and a vendor lookup fault answers 503.
+    proof: [connect-tests, oracle]
+  - text: Completing a flow validates delivery and decision, checks the scoped server before the single-use claim, skips those checks for a deny, rejects a replay, and clears the cookie only on success.
+    proof: [connect-tests, oracle]
+  - text: An approved flow seals an auth code with the right ids, ttl, scope, audience and team_id, redirects with code and state, and uses the manual page only for a loopback redirect.
+    proof: [connect-tests, oracle]
+  - text: The discovery document has every field, in order, and lists the token-exchange grant only when it is available.
+    proof: [contract-tests, oracle]
+  - text: append_query_params and the other URL helpers match Python for repeated keys, blank values, plus signs, percent escapes and fragments.
+    proof: [url-parts-tests, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: url-parts-tests
+      why: The URL helper tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_authorize::url_parts::tests::/)'
+    - id: scope-tests
+      why: The resource scoping or flow target tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_authorize::scope::tests::/)'
+    - id: authorize-tests
+      why: The aggregate or native authorize tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_authorize::authorize::tests::/)'
+    - id: connect-tests
+      why: The connect flow opening, description or completion tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_authorize::connect::tests::/)'
+    - id: contract-tests
+      why: The discovery document tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^gateway_authorize::contract::tests::/)'
+    - id: helper-python
+      why: The helper adapter is missing or fails strict Python checks.
+      run: test -f tools/oracle/helpers/b4675.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new b4675 operation reaches the shared helper case parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-gateway-authorize-*')" && grep -rlq b4675 tools/oracle/fuzz/corpus/helper_case/mcp-gateway-authorize-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/url-helpers.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/authorize-rejections.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/authorize-login-redirect.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/authorize-aggregate-flow.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/authorize-scoped-resource.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/authorize-native-loopback.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/authorize-native-consent.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/authorize-native-lookup-failures.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/connect-open-flow-errors.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/connect-describe-states.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/connect-complete-validation.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/connect-complete-deny.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/connect-complete-approve.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/connect-complete-manual-delivery.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/connect-complete-scoped-gates.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/connect-complete-replay.yaml
+  - tools/oracle/cases/helpers/mcp-gateway-authorize/contract-document.yaml
+deviations:
+  - what: The request base URL, the clock, the random handle and jti source, the single-use authority and the consent page renderer are passed in. LiteLLM reads request.url, datetime.now, secrets and the module-level cache inside each function.
+    why: betterlite keeps no module state and the crate sits below betterlite-server, so cases fix the clock and tokens and compare what sealed values open to.
+  - what: A redirect URI that urlparse rejects (never one that passed registration) is answered 500 server_error "the gateway could not read the redirect URI". LiteLLM lets the ValueError escape.
+    why: A typed error is the only honest answer when parsing fails; it cannot be reached with a registered client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py#L449-L457
+out_of_scope:
+  - "gateway_dcr_flow.py constants, models, OauthError, sealing, register_aggregate_client, the port traits, supported_grant_types and the single-use guard: B4674."
+  - "_pkce_verifier_matches, aggregate_token, the grant functions, revoke_refresh_token and introspect_gateway_token with their helpers: B4676."
+  - "The routes in discoverable_endpoints.py (/authorize, /{mcp_server_name}/authorize, /authorize/mcp-session, /authorize/flow, /authorize/complete, /.well-known/litellm-cli-auth), _session_cookie_user_id, _vendor_credential_state and _user_can_reach_mcp_server: the umbrella B137 and the discoverable endpoint route owners; this task has no route, so its cases are helper cases."
+  - "lookup_consent_teams (proxy_api_credentials.py): B4658, as ActiveSubjects. This task takes it as the LookupConsentTeams port."
+  - "render_native_client_consent_page: B1612, supplied through RenderConsentPage."
+  - "get_request_base_url, canonical_resource_uri, canonicalize_url_identity, extract_target_server_names_from_path, TOKEN_NO_CACHE_HEADERS and the python_url helpers: B4654. is_loopback_redirect_host: B4655."
+  - "MCPServer and its gateway-oauth methods: B6590. server_by_id and server_by_name: B4731. effective_oauth2_flow: B6760."
+pitfalls:
+  - "aggregate_authorize validates the client first and only then looks at the session, so an anonymous request with an unregistered redirect_uri gets the 400, not the sign-in redirect; native_client_authorize does the loopback test between those two."
+  - "The redirect_uri must equal one of the sealed redirect_uris by exact string compare, so a trailing slash or a different case in the host fails."
+  - "The connect URL carries only connect_flow=<handle>; the client origin, scoped server and state come from the sealed cookie, never from the query."
+  - "append_query_params re-encodes the existing query too: a=b%20c becomes a=b+c, a blank value stays, and a fragment survives untouched."
+  - "The deny redirect adds error=access_denied and state only when state is non-empty; the approve redirect adds code and the same optional state."
+  - "team_id is sealed into the code only for the proxy-API audience, and an empty team_id string counts as absent; an MCP-session flow never gets one even if the form sent it."
+  - "delivery=manual changes nothing for a non-loopback redirect: the code keeps its 120 second life and the reply is the normal 303."
+  - "The vendor and reachability checks run before the single-use claim and are skipped on deny, so a refused submit does not burn the flow and a deny always works."
+  - "A scoped M2M server reports connected true without any vendor lookup, and an unscoped flow reports connected null."
+  - "Starlette's delete_cookie needs the same path and secure flag the cookie was set with; take both from cookie_path_and_secure(base_url) again."
+  - "The flow expiry test is now >= exp, so a flow is dead at the exact second it expires; compare whole seconds."
+  - "The consent page headers are the no-cache pair plus X-Frame-Options and Content-Security-Policy; the manual page gets only the no-cache pair."
+  - "resolve_scoped_resource_server turns a resource of base_url plus /mcp into None, but base_url alone is the proxy-API resource handled by is_proxy_api_resource, not a server."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

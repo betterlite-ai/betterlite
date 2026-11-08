@@ -1,0 +1,116 @@
+id: B6413
+title: SambaNova chat and embedding configs
+description: >-
+  Build the SambaNova provider (llms/sambanova): the chat config in chat.py, the error type in common_utils.py and the
+  embedding config. SambaNova is OpenAI-shaped. All of it is pure transforms: nothing sends a request, reads the
+  environment or registers a route. B039 wires the configs into dispatch, B2230 and B5363 own choosing them, and B210
+  owns the identity defaults.
+
+  Modules. In betterlite-openai: sambanova_chat and sambanova_embedding (each a file plus a folder with tests.rs).
+  SambaNovaError carries message, status_code and headers (built on B2202's BaseLLMException projection). Credentials are
+  plain arguments: validate_environment takes the explicit api_key and an env_api_key the caller read from
+  SAMBANOVA_API_KEY.
+
+  sambanova_chat (chat.py), over B668/B503/B504. Supported params, in order: max_completion_tokens, max_tokens,
+  response_format, stop, stream, stream_options, temperature, top_p, top_k, then tools, tool_choice and
+  parallel_tool_calls when B2221's supports_function_calling is true for the model under provider sambanova.
+  map_openai_params does not call the parent: it walks non_default_params in order, max_completion_tokens sets max_tokens,
+  a param in the supported list is copied and the rest are skipped without an error. The message transform turns every
+  list content into a string through B2214's handle_messages_with_content_list_to_str_conversion for the sync and the
+  async call alike, and does not call the parent transform. The Python __init__ stores its non-None arguments on the
+  class, and B668's per-config snapshot owns that mechanism, so the config takes no constructor arguments.
+
+  sambanova_embedding (embedding/transformation.py), over B006. The URL needs an api_base: a missing base is an error with
+  the message "api_base is required for SambaNova embeddings". The base has trailing slashes removed and "/embeddings" is
+  appended unless the base already ends with it. Headers: the key is api_key, else env_api_key, and may stay missing;
+  defaults are Authorization "Bearer <key>" (a missing key gives "Bearer None"), accept "application/json" and
+  Content-Type "application/json"; a caller Authorization replaces the default one; the result is the defaults overlaid
+  by all caller headers. Supported params are none and map_openai_params copies nothing. The request body is input, model,
+  then every optional param in that order. The response: a body that is not JSON is a SambaNovaError with the body text,
+  the status and the headers. Otherwise model, data and object are copied from the body (null when absent) and usage is
+  prompt_tokens and total_tokens from body.usage, each defaulting to 0. get_error_class returns SambaNovaError. The reply
+  decoder is fuzzed.
+
+  Helper b6413 calls these functions with typed inputs (no network, no environment) and compares the pinned LiteLLM
+  classes. Source size is about 190 nonblank, noncomment lines. Plan about 230 production lines, 220 test lines, 120
+  adapter lines and 50 fuzz and wiring lines.
+scope:
+  paths:
+    - crates/betterlite-openai/src/sambanova_chat.rs
+    - crates/betterlite-openai/src/sambanova_chat/**
+    - crates/betterlite-openai/src/sambanova_embedding.rs
+    - crates/betterlite-openai/src/sambanova_embedding/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/sambanova_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/sambanova_reply/**
+    - tools/oracle/cases/helpers/sambanova-wire/**
+    - "tools/oracle/fuzz/corpus/helper_case/sambanova_wire-*"
+    - tools/oracle/helpers/b6413.py
+    - tools/oracle/helpers/b6413/**
+    - tools/oracle/src/helpers/openai/b6413.rs
+    - tools/oracle/src/helpers/openai/b6413/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sambanova/chat.py#L1-L130
+    why: Supported params, the param mapping and the content list flattening.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sambanova/embedding/transformation.py#L1-L136
+    why: URL, headers, request body and reply copy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sambanova/common_utils.py#L1-L6
+    why: The SambaNova error type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7034-L7060
+    why: The embedding call site, owned by B039.
+dod:
+  - text: Chat supported params with the function calling gate, param mapping and content flattening match LiteLLM.
+    proof: [sambanova-chat-tests, helper-python, helper-case-corpus]
+  - text: Embedding URL, headers, request body order and reply copy match LiteLLM, and no byte input makes the reply decoder fail.
+    proof: [sambanova-embedding-tests, sambanova-reply-corpus, helper-python, helper-case-corpus]
+  - text: The new helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: sambanova-chat-tests
+      why: The SambaNova chat config is missing or fails
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sambanova_chat::/)'
+    - id: sambanova-embedding-tests
+      why: The SambaNova embedding config is missing or fails
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^sambanova_embedding::/) - test(replays_the_sambanova_reply_corpus)'
+    - id: sambanova-reply-corpus
+      why: The reply fuzz target or its fresh replay corpus is missing
+      run: >-
+        test -f crates/betterlite-openai/fuzz/fuzz_targets/sambanova_reply.rs &&
+        grep -q 'name = "sambanova_reply"' crates/betterlite-openai/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/sambanova_reply)" &&
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_sambanova_reply_corpus)'
+    - id: helper-python
+      why: The strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6413.py)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added SambaNova helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/sambanova_wire-*")" &&
+        grep -lE '^[[:space:]]+b6413:' tools/oracle/fuzz/corpus/helper_case/sambanova_wire-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sambanova-wire/chat-params-and-messages.yaml
+  - tools/oracle/cases/helpers/sambanova-wire/embedding-url-headers-body.yaml
+  - tools/oracle/cases/helpers/sambanova-wire/embedding-reply.yaml
+deviations:
+  - what: A missing api_base in the embedding URL is a typed error with the LiteLLM message, not a Python ValueError.
+    why: There is no ValueError in Rust. The message stays the same, and B184 decides how the proxy reports it.
+out_of_scope:
+  - B2230 and B5363 own choosing these configs, and B210 owns the SambaNova identity defaults.
+  - B668, B503 and B504 own the OpenAI chat parent methods and the per-config snapshot, B006 the embedding contract and response type, and B2214 the content flattening helper.
+  - B039 owns the sambanova embedding() branch in litellm/main.py, reading SAMBANOVA_API_KEY and the HTTP oracle cases through the booted proxy.
+pitfalls:
+  - Chat map_openai_params skips the parent, so no OpenAI-only handling applies.
+  - The embedding header default uses the text "Bearer None" when no key exists, and the config never rejects a missing key.
+  - The flattening runs on every message, with no check for non-text parts.
+  - The embedding URL check ignores a base that already ends with /embeddings but still strips trailing slashes first.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

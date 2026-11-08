@@ -1,0 +1,163 @@
+id: B3641
+title: Vertex passthrough batch logging
+description: >-
+  Build the logging step for a batch prediction job that a client creates or reads through the Vertex pass-through route (a URL route that contains "batchPredictionJobs"). It prices nothing. It turns the relayed response into a logging record with cost 0.0 and state "JOB_STATE_PENDING", and it hands the batch to a registry so a later poll can attribute the batch cost to the creating key and tags.
+  The code lives in betterlite-server under src/pass_through_logging, in one module, vertex_batch_logging, next to B3639's vertex_predict_logging and B3640's gemini_passthrough_logging. The skeleton declares it. betterlite-vertex is a leaf that never imports core, provider or logging, so this glue stays in betterlite-server. Nothing here holds module-level state: the three collaborators come in through the constructor.
+
+
+  What it is in LiteLLM. VertexPassthroughLoggingHandler.batch_prediction_jobs_handler, _store_batch_managed_object, get_actual_model_id_from_router and extract_model_name_from_vertex_path. B3642 owns the dispatch (`"batchPredictionJobs" in url_route`, tested after the predict, search and other branches) and calls the handler below.
+
+
+  Public surface. B3642 calls it, so names and signatures are fixed. The path is betterlite_server::pass_through_logging::vertex_batch_logging.
+  `pub struct VertexBatchLogging` with `VertexBatchLogging::new(router: Option<Arc<dyn RouterModelIds>>, registry: Option<Arc<dyn ManagedBatchRegistry>>, ids: Arc<dyn ResponseIds>) -> VertexBatchLogging`. The three traits and BatchRegistration, BatchRegistrant and BatchObject are B3633's (anthropic_batch) and B587's; import them, do not redefine them. RouterModelIds::model_ids is B844's get_model_ids with exclude_team_models false. ResponseIds::new_response_id gives uuid4 text.
+  `pub fn batch_prediction_jobs_handler(&self, input: VertexBatchInput<'_>, call_log: &mut CallLog) -> VertexBatchLogged`. It never returns an error: every failure becomes a "JOB_STATE_FAILED" record, as in LiteLLM. CallLog is B247's per-call log, the same type B3633 takes.
+  `pub fn store_batch_managed_object(&self, unified_object_id: &str, batch_object: BatchObject, model_object_id: &str, request_metadata: &serde_json::Map<String, serde_json::Value>, is_batch_create: bool)`. It returns nothing and never fails.
+  `pub fn get_actual_model_id_from_router(&self, model_name: &str) -> String`.
+  `pub fn extract_model_name_from_vertex_path(vertex_model_path: &str) -> String`, a free function.
+  Types in vertex_batch_logging: VertexBatchInput { status_code: u16, body: &[u8], url_route: &str, start_time: DateTime<Utc>, request_metadata: &serde_json::Map<String, serde_json::Value> }, where request_metadata is kwargs["litellm_params"]["metadata"] with a missing or null litellm_params or metadata counted as empty. VertexBatchLogged { result: VertexBatchResponse, kwargs: VertexBatchKwargs }. VertexBatchResponse { id, model, object, created, choices: [one choice with finish_reason "stop", index 0 and a message holding role "assistant", content, tool_calls null, function_call null and provider_specific_fields] }. VertexBatchKwargs { response_cost: f64, model: String, batch_id: Option<String>, unified_object_id: Option<String>, batch_job_state: VertexBatchState, plus the request metadata passed through }. VertexBatchState is an enum serialized as "JOB_STATE_PENDING" and "JOB_STATE_FAILED". The module's error enum is VertexBatchError, in its own files.
+
+
+  batch_prediction_jobs_handler, in LiteLLM's order.
+  1. Parse the body as JSON first, whatever the status. A body that does not parse is a typed error that goes to step 7 with its text.
+  2. Success needs status_code == 200 and a JSON object body that has the key "name" (any value, an empty string too). Any other status, or a parsed body that is not an object with "name", goes to step 6.
+  3. Call B1371's transform from a Vertex batch job response to the OpenAI batch record (transform_vertex_ai_batch_response_to_openai_batch_response) on the body. Unlike the Anthropic task, the status the transform gives is stored as is; nothing is set to "validating". batch_id is the last "/" component of "name" (B1371's _get_batch_id rule: the empty string when "name" is empty). A transform error goes to step 7. model_name is the body's "model" when it is a string and "unknown" when the key is missing. A "model" that is not a string goes to step 7.
+  4. actual_model_id = get_actual_model_id_from_router(model_name). unified_id_string is the template with actual_model_id first and batch_id second, built by B3633's shared function (see Shared id template). unified_object_id is URL-safe base64 of that string with the "=" padding removed.
+  5. is_batch_create = is_collection_route(url_route, "batchPredictionJobs") (B3630; the suffix has no leading slash). Call store_batch_managed_object on every route, with is_batch_create. Then build the record: a fresh id from ResponseIds, model = model_name, object "batch_prediction_job", created = start_time as whole seconds. The single choice has content "Batch prediction job {batch_id} created and is pending. Status will be updated when the batch completes." and provider_specific_fields { batch_job_id, batch_job_state: "JOB_STATE_PENDING", unified_object_id }. kwargs get response_cost 0.0, model, batch_id, unified_object_id and batch_job_state "JOB_STATE_PENDING". The call log gets model = model_name (both the field and the "model" entry), "response_cost" = 0.0 and "batch_id" = batch_id. custom_llm_provider is not set here.
+  6. Not a success: model "vertex_ai_batch", object "batch_prediction_job", created from start_time, a fresh id, content "Batch prediction job creation failed. Status: {status_code}", provider_specific_fields { batch_job_state: "JOB_STATE_FAILED", status_code }. kwargs get response_cost 0.0, model "vertex_ai_batch" and batch_job_state "JOB_STATE_FAILED" (no batch_id, no unified_object_id). The call log is not touched.
+  7. Any error in steps 1 to 5: log at error level "Error in batch_prediction_jobs_handler: {error}" and return the step 6 shape with content "Error creating batch prediction job: {error}", provider_specific_fields { batch_job_state: "JOB_STATE_FAILED", error }, model "vertex_ai_batch". Effects already written stay (the call log is untouched before step 5 ends, and the registry write of step 5 stays).
+
+
+  store_batch_managed_object. The whole body is wrapped: any error logs at error level "Error storing batch managed object: {error}" and returns. With no registry, log at warn level "Managed files hook not available, cannot store batch object for cost tracking" and return. Otherwise build the registrant from request_metadata exactly as B3633 does (user_id = "user_api_key_user_id" with default "default-user" when the key is absent, api_key = optional_str("user_api_key"), team_id = "user_api_key_team_id", role "customer", spend 0.0, empty models, metadata, permissions, model_max_budget and model_spend, every other field none). request_tags = request_tags_from_metadata(request_metadata) (B3630). The registration carries file_purpose "batch", persist_attribution = is_batch_create and create_if_missing = is_batch_create: a poll refreshes status and the output file but never creates the row or writes the attribution, so only a create does. Spawn the registry future with tokio::spawn and attach the completion with log_batch_registration_result(finished, "Vertex AI", unified_object_id, model_object_id, is_batch_create) (B3630). When Handle::try_current() fails, treat that as the wrapped error above, as Python's create_task raises with no running loop.
+
+
+  OSS and the managed_files hook. At the pin the hook that implements store_unified_object_id exists only in LiteLLM's enterprise package. The proxy registers hooks from PROXY_HOOKS, which lists nine open-source hooks and no managed_files, and merges ENTERPRISE_PROXY_HOOKS only when `enterprise.enterprise_hooks` imports (hooks/__init__.py L18-L31 and L50-L58). get_proxy_hook on the logging object is a plain dict lookup that returns none (utils.py L1373-L1377). So in a plain deployment the registry is None and this step only logs the warning above and registers nothing. This task keeps the step, builds the real registration with a fake registry in tests, and wires no real registry. The `hasattr(..., "store_unified_object_id")` half of LiteLLM's test is the trait: a registry always has the method.
+
+
+  get_actual_model_id_from_router. First extracted = extract_model_name_from_vertex_path(model_name). With no router, log at warn level "Router not available, using constructed model name: {extracted}" and return extracted. Otherwise ask model_ids(extracted): when the list has an item, log at info "Found model ID in router: {id}" and return the first; when empty, log at warn "Model not found in router, using constructed name: {extracted}" and return extracted. These texts differ from B3633's, so do not share them.
+
+
+  extract_model_name_from_vertex_path. When the path contains "models/" and also contains "publishers/" or "projects/", return the part after the last "models/". Otherwise return the path unchanged. "publishers/google/models/gemini-2.5-flash" gives "gemini-2.5-flash"; "projects/P/locations/L/models/123" gives "123"; "gemini-2.5-flash" and "models/x" stay as they are.
+
+
+  Shared id template. B3633 owns the unified id: LiteLLM's SpecialEnums.LITELLM_MANAGED_BATCH_COMPLETE_STR, "litellm_proxy;model_id:{};llm_batch_id:{}" (types/utils.py L4417). B3633 makes it a `pub fn` in anthropic_batch that takes the model id and the batch id and returns the unified object id (the template filled, URL-safe base64, no padding), and B3641 calls that function. This task holds no copy of the template and adds no second one. B3641 depends on B3633 for the function, the three traits and BatchRegistration.
+
+
+  Tests: module tests under pass_through_logging::vertex_batch_logging::tests, each name starting with batch_. A fake router, a fake registry that records the BatchRegistration (and one that fails), a fixed ResponseIds and the real B3630 and B1371 functions run. The router-found path and the spawned registry write are Rust tests only, because the oracle has no router and no managed-files hook.
+  No route reaches this code until B3642 wires the dispatcher, so the oracle cases are helper cases: the Python adapter calls the pinned VertexPassthroughLoggingHandler.batch_prediction_jobs_handler with an httpx.Response, a stub logging object (llm_router is None there, so the "constructed model name" path runs) and a collection or id-scoped route, and replaces the random result id before comparing. B3642 and the Vertex route tasks add the HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_logging/vertex_batch_logging.rs
+    - crates/betterlite-server/src/pass_through_logging/vertex_batch_logging/**
+    - tools/oracle/cases/helpers/vertex-batch-logging/**
+    - "tools/oracle/fuzz/corpus/helper_case/vertex_batch_logging-*"
+    - tools/oracle/helpers/b3641.py
+    - tools/oracle/helpers/b3641/**
+    - tools/oracle/src/helpers/server/b3641.rs
+    - tools/oracle/src/helpers/server/b3641/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L791-L962
+    why: batch_prediction_jobs_handler, the success, non-success and exception branches and the unified object id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L964-L1040
+    why: _store_batch_managed_object, the registrant, the tags, persist_attribution and create_if_missing, and the done callback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L1042-L1066
+    why: get_actual_model_id_from_router and its three log lines.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L671-L699
+    why: extract_model_name_from_vertex_path and its two path shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L315-L326
+    why: The dispatch branch B3642 owns; it passes the route, the response, start_time and the kwargs here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/batch_attribution.py#L16-L79
+    why: The B3630 helpers this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/transformation.py#L180-L233
+    why: The batch job to OpenAI batch transform and the batch id rule, which B1371 owns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/__init__.py#L18-L58
+    why: PROXY_HOOKS has no managed_files entry; only the enterprise import adds hooks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1373-L1377
+    why: get_proxy_hook is a plain mapping lookup that returns none for an unknown name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11444-L11476
+    why: Router.get_model_ids, which B844 owns and RouterModelIds wraps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4417-L4417
+    why: LITELLM_MANAGED_BATCH_COMPLETE_STR, the unified id template B3633 owns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L665-L665
+    why: VERTEX_BATCH_PREDICTION_JOBS_ROUTE is "batchPredictionJobs".
+dod:
+  - text: A 200 response with a "name" on any route builds the JOB_STATE_PENDING record with cost 0.0, the unified object id and the call log updates, and the batch id is the last component of "name".
+    proof: [batch-tests, batch-oracle]
+  - text: The unified object id is URL-safe base64 without padding of the template filled with the router id first and the batch id second, built by B3633's shared function with no template copy in this module.
+    proof: [batch-tests, batch-oracle, template-single-owner]
+  - text: A non-200 status or a JSON body without "name" gives the failed record "vertex_ai_batch" with the status text, and a body that does not parse, a non-string model or a transform error gives the error record; neither touches the call log.
+    proof: [batch-tests, batch-oracle]
+  - text: The managed object is registered on every route, with persist_attribution and create_if_missing true only on the collection route, the registrant defaults, B3630's tags and the done-callback log; a missing registry or runtime only logs.
+    proof: [batch-tests]
+  - text: get_actual_model_id_from_router and extract_model_name_from_vertex_path return the first router id or the extracted name with the matching log line, and the path rules hold for publishers and projects paths.
+    proof: [batch-tests, batch-oracle]
+  - text: The helper adapter's Python passes the strict lint and type check.
+    proof: [helper-python]
+checks:
+  optional: []
+  commands:
+    - id: batch-tests
+      why: the batch handler, the registration, the router lookup or the model path rule are wrong, or have no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_batch_logging::tests::batch_/)'
+    - id: template-single-owner
+      why: this module keeps its own copy of the unified id template instead of calling B3633's function
+      run: >-
+        test -f crates/betterlite-server/src/pass_through_logging/vertex_batch_logging.rs &&
+        ! grep -rF 'llm_batch_id' crates/betterlite-server/src/pass_through_logging/vertex_batch_logging.rs crates/betterlite-server/src/pass_through_logging/vertex_batch_logging
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3641)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3641 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3641/pyrightconfig.json
+    - id: helper-case-corpus
+      why: new helper seeds are absent or do not replay through the shared helper-case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_logging-*')" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: batch-oracle
+      why: newly added helper cases are absent, do not use the b3641 operation or disagree with LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vertex-batch-logging)" &&
+        grep -rlE '^[[:space:]]+b3641:' tools/oracle/cases/helpers/vertex-batch-logging &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/vertex-batch-logging
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-batch-logging/create-collection-route-pending.yaml
+  - tools/oracle/cases/helpers/vertex-batch-logging/create-id-scoped-route-pending.yaml
+  - tools/oracle/cases/helpers/vertex-batch-logging/create-publisher-model-path.yaml
+  - tools/oracle/cases/helpers/vertex-batch-logging/create-project-model-path.yaml
+  - tools/oracle/cases/helpers/vertex-batch-logging/create-no-model-key-unknown.yaml
+  - tools/oracle/cases/helpers/vertex-batch-logging/create-empty-name-empty-batch-id.yaml
+  - tools/oracle/cases/helpers/vertex-batch-logging/create-non-200-failed.yaml
+  - tools/oracle/cases/helpers/vertex-batch-logging/create-200-without-name-failed.yaml
+  - tools/oracle/cases/helpers/vertex-batch-logging/create-invalid-json-error-record.yaml
+deviations:
+  - what: The managed-object write goes through an injected ManagedBatchRegistry that is None in every betterlite deployment for now, so a Vertex batch call logs the "Managed files hook not available" warning and registers nothing.
+    why: LiteLLM's managed_files hook lives in the enterprise package, so open-source LiteLLM does the same; the trait keeps the registration code and its tests ready for a later MIT store.
+  - what: The text after "Error in batch_prediction_jobs_handler:" and in the failed record's content and error field is the Rust error text (a serde_json or B1371 transform error), not Python's exception text.
+    why: Exception strings are runtime wording (docs/compatibility.md); the record shape and the failed state are the same.
+  - what: A task panic or a missing Tokio runtime is reported through the same error log lines as a Python exception or a missing event loop.
+    why: Rust has no asyncio task, and the join result carries the same facts.
+  - what: A "model" field that is not a string, or a JSON body that is an array or a scalar, goes to the failed record without a Python TypeError or AttributeError.
+    why: What Python's duck typing does beyond the declared types is not part of the contract; the declared response is an object with string fields.
+out_of_scope:
+  - "vertex_passthrough_handler and the choice of branch by route: B3642 owns it. It calls batch_prediction_jobs_handler from here when url_route contains batchPredictionJobs, and sets vertex_location on the logging object before."
+  - "success_handler's TRACKED_VERTEX_RESOURCE_ROUTES = (batchPredictionJobs,): the pass-through success path task owns it."
+  - "optional_str, is_collection_route, request_tags_from_metadata and log_batch_registration_result: B3630 owns them in batch_attribution; this task only calls them."
+  - "The unified id template, the three traits and BatchRegistration: B3633 owns them. VertexAIBatchTransformation and the batch job types: B1371. The batch record type: B587. Router.get_model_ids: B844. The per-call log and the uuid helper: B247 and B198."
+  - "The managed_files hook and its store_unified_object_id implementation: enterprise only, not built."
+  - "extract_model_from_url, the provider helpers and the other handler functions in vertex_passthrough_logging_handler.py: B3638, B3639, B3640 and B3642 own them."
+pitfalls:
+  - "The success test is status 200 and the key \"name\" in the parsed body, and the body is parsed before the status is looked at, so a 500 with a non-JSON body gives the error record (\"Error creating batch prediction job\"), not the \"creation failed. Status: 500\" record."
+  - "The Vertex handler stores the managed object on every batchPredictionJobs route, a GET poll included; only is_collection_route decides persist_attribution and create_if_missing, so a poll must not create a row."
+  - "The route suffix is \"batchPredictionJobs\" with no leading slash, and is_collection_route cuts at the first \"?\" and strips trailing slashes before the suffix test."
+  - "model_name comes from the response body's \"model\" (a publisher or project model path), not from the request body, and the router lookup uses the path cut by extract_model_name_from_vertex_path."
+  - "The unified id string puts the model id first and the batch id second, and the base64 is urlsafe with the trailing \"=\" removed; there is no \"vertex_ai/\" prefix on the id, unlike the Anthropic \"anthropic/\" rule."
+  - "The state words are \"JOB_STATE_PENDING\" and \"JOB_STATE_FAILED\" and the object is \"batch_prediction_job\", not B3633's \"in_progress\", \"failed\" and \"batch\"."
+  - "The call log is written only on the success branch (model, \"model\" entry, \"response_cost\", \"batch_id\"), and unlike the other Vertex handlers no custom_llm_provider is set."
+  - "The registry write happens before the response record is built, so a failure there is logged and the record still says JOB_STATE_PENDING."
+  - "The failed and error kwargs have no batch_id and no unified_object_id, so the Rust kwargs type keeps both optional."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

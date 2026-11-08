@@ -84,7 +84,6 @@ pub struct Enqueued {
 #[derive(Debug)]
 pub struct BatchQueue<E> {
     pub settings: BatchSettings,
-    pub preserve_during_flush: bool,
     pub queue: Arc<Mutex<VecDeque<E>>>,
     pub flush_lock: Arc<AsyncMutex<()>>,
 }
@@ -93,7 +92,6 @@ impl<E> Clone for BatchQueue<E> {
     fn clone(&self) -> Self {
         Self {
             settings: self.settings,
-            preserve_during_flush: self.preserve_during_flush,
             queue: Arc::clone(&self.queue),
             flush_lock: Arc::clone(&self.flush_lock),
         }
@@ -134,7 +132,6 @@ impl<E> BatchQueue<E> {
     pub fn new(settings: BatchSettings) -> Self {
         Self {
             settings,
-            preserve_during_flush: false,
             queue: Arc::new(Mutex::new(VecDeque::new())),
             flush_lock: Arc::new(AsyncMutex::new(())),
         }
@@ -218,10 +215,6 @@ impl<E> BatchQueue<E> {
 
     fn requeue(&self, undelivered: Vec<E>) -> (usize, usize) {
         let mut queue = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
-        // A fully delivered flush still discards events that arrived while it ran, unless the caller keeps them
-        if undelivered.is_empty() && !self.preserve_during_flush {
-            queue.clear();
-        }
         let requeued = undelivered.len();
         for event in undelivered.into_iter().rev() {
             queue.push_front(event);
