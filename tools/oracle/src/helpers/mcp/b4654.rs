@@ -47,10 +47,10 @@ impl Helper for Op {
             "litellm_key" => Ok(json!(litellm_key_value(input)?)),
             "mcp_auth_header" => Ok(json!(mcp_auth_value(input)?)),
             "server_auth" => Ok(
-                json!({"value": client_headers::server_auth_headers(&support::parse_headers(&support::pairs(input)?)?)}),
+                json!({"value": client_headers::server_auth_headers(&support::parse_headers(input)?)}),
             ),
             "oauth2" => Ok(
-                json!({"value": client_headers::oauth2_headers(&support::parse_headers(&support::pairs(input)?)?)}),
+                json!({"value": client_headers::oauth2_headers(&support::parse_headers(input)?)}),
             ),
             "list_header" => Ok(json!(list_header_value(input)?)),
             "target_names" => Ok(json!(target_values(input))),
@@ -145,29 +145,48 @@ fn token_body(input: &Value) -> Result<Value, Box<HelperError>> {
 }
 
 fn safe_header_values(input: &Value) -> Result<Value, Box<HelperError>> {
-    let headers = support::parse_headers(&support::pairs(input)?)?;
+    let headers = support::parse_headers(input)?;
+    let names: Vec<&str> = input
+        .get("lookups")
+        .and_then(Value::as_array)
+        .map_or_else(Vec::new, |values| {
+            values.iter().filter_map(Value::as_str).collect()
+        });
     let mut lookups: BTreeMap<String, Option<&str>> = BTreeMap::new();
-    for name in support::strings(input, "lookups").unwrap_or_default() {
+    for name in names {
         lookups.insert(name.to_owned(), headers.lookup(name));
     }
     Ok(json!({"items": headers.items(), "lookups": lookups}))
 }
 
 fn litellm_key_value(input: &Value) -> Result<Value, Box<HelperError>> {
-    let headers = support::parse_headers(&support::pairs(input)?)?;
+    let headers = support::parse_headers(input)?;
     let key = client_headers::get_litellm_api_key(&headers);
     Ok(json!({"value": key.value, "explicit_header_present": key.explicit_header_present}))
 }
 
 fn mcp_auth_value(input: &Value) -> Result<Value, Box<HelperError>> {
-    let header_name = config_header_name(input)?;
-    let headers = support::parse_headers(&support::pairs(input)?)?;
+    let mut lookup = BTreeMap::new();
+    if let Some(value) = support::optional(input, "env_header_name") {
+        lookup.insert(ENV_NAME.to_owned(), value.to_owned());
+    }
+    let document = support::optional(input, "general_settings").map_or_else(
+        || "{}".to_owned(),
+        |value| {
+            json!({"general_settings": {"mcp_client_side_auth_header_name": value}}).to_string()
+        },
+    );
+    let config = ConfigLoader { lookup }
+        .load(&document)
+        .map_err(|error| support::invalid("ValueError", None, error.to_string()))?;
+    let headers = support::parse_headers(input)?;
+    let header_name = config.sections.mcp_client_side_auth.header_name;
     let value = client_headers::mcp_auth_header(&headers, &header_name);
     Ok(json!({"header_name": header_name, "value": value}))
 }
 
 fn list_header_value(input: &Value) -> Result<Value, Box<HelperError>> {
-    let headers = support::parse_headers(&support::pairs(input)?)?;
+    let headers = support::parse_headers(input)?;
     if support::optional(input, "header") == Some("access_groups") {
         return Ok(json!({"value": client_headers::parse_mcp_access_groups_header(&headers)}));
     }
@@ -175,7 +194,12 @@ fn list_header_value(input: &Value) -> Result<Value, Box<HelperError>> {
 }
 
 fn target_values(input: &Value) -> Value {
-    let paths = support::strings(input, "paths").unwrap_or_default();
+    let paths: Vec<&str> = input
+        .get("paths")
+        .and_then(Value::as_array)
+        .map_or_else(Vec::new, |values| {
+            values.iter().filter_map(Value::as_str).collect()
+        });
     let values: Vec<Vec<String>> = paths
         .iter()
         .map(|path| path_targets::target_names_from_path(path))
@@ -195,27 +219,15 @@ fn target_selection(input: &Value) -> Result<Value, Box<HelperError>> {
 }
 
 fn header_servers(input: &Value) -> Option<Vec<String>> {
-    let names = support::strings(input, "header_servers")?;
+    let names: Vec<&str> = input
+        .get("header_servers")?
+        .as_array()?
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
     let mut servers = Vec::with_capacity(names.len());
     for name in names {
         servers.push(name.to_owned());
     }
     Some(servers)
-}
-
-fn config_header_name(input: &Value) -> Result<String, Box<HelperError>> {
-    let mut lookup = BTreeMap::new();
-    if let Some(value) = support::optional(input, "env_header_name") {
-        lookup.insert(ENV_NAME.to_owned(), value.to_owned());
-    }
-    let document = support::optional(input, "general_settings").map_or_else(
-        || "{}".to_owned(),
-        |value| {
-            json!({"general_settings": {"mcp_client_side_auth_header_name": value}}).to_string()
-        },
-    );
-    let config = ConfigLoader { lookup }
-        .load(&document)
-        .map_err(|error| support::invalid("ValueError", None, error.to_string()))?;
-    Ok(config.sections.mcp_client_side_auth.header_name)
 }

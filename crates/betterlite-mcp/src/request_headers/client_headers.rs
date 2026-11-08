@@ -22,10 +22,11 @@ pub struct LitellmApiKey<'origin> {
 #[must_use]
 pub fn get_litellm_api_key(headers: &RawHeaders) -> LitellmApiKey<'_> {
     let explicit = headers.lookup(LITELLM_API_KEY_HEADER);
-    let authorization = headers.lookup(AUTHORIZATION_HEADER);
-    let value = explicit
-        .filter(|value| !value.is_empty())
-        .or_else(|| authorization.filter(|value| !value.is_empty()));
+    let value = explicit.filter(|value| !value.is_empty()).or_else(|| {
+        headers
+            .lookup(AUTHORIZATION_HEADER)
+            .filter(|value| !value.is_empty())
+    });
     LitellmApiKey {
         value,
         explicit_header_present: explicit.is_some(),
@@ -102,12 +103,10 @@ pub fn parse_mcp_access_groups_header(headers: &RawHeaders) -> Option<Vec<String
 }
 
 pub(crate) fn split_list(header: &str) -> Vec<String> {
-    let mut items = Vec::new();
-    for entry in header.split(',') {
-        let item = entry.trim();
-        if !item.is_empty() {
-            items.push(item.to_owned());
-        }
-    }
-    items
+    header
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(str::to_owned)
+        .collect()
 }

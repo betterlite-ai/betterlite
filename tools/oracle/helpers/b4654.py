@@ -158,7 +158,15 @@ def _token_request(data: dict[str, Json]) -> object:
 
 def _header_probe(data: dict[str, Json]) -> object:
     headers = _headers(data)
-    if data.get("function") == "litellm_key":
+    function = data.get("function")
+    if function == "mcp_auth_header":
+        general = _optional_string(data, "general_settings")
+        settings = {} if general is None else {"mcp_client_side_auth_header_name": general}
+        with patch.object(proxy_server, "general_settings", settings):
+            header_name = MCPRequestHandler.get_mcp_client_side_auth_header_name()
+            value = MCPRequestHandler._get_mcp_auth_header_from_headers(headers)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        return {"header_name": header_name, "value": value}
+    if function == "litellm_key":
         present = headers.get(MCPRequestHandler.LITELLM_API_KEY_HEADER_NAME_PRIMARY) is not None
         value = MCPRequestHandler.get_litellm_api_key_from_headers(headers)
         return {"value": value, "explicit_header_present": present}
@@ -171,18 +179,6 @@ def _header_probe(data: dict[str, Json]) -> object:
             raise ValueError("every lookup is a string")
         lookups[entry] = headers.get(entry)
     return {"items": [[name, value] for name, value in headers.items()], "lookups": lookups}
-
-
-def _mcp_auth_header(data: dict[str, Json]) -> object:
-    general = _optional_string(data, "general_settings")
-    settings: dict[str, str] = {}
-    if general is not None:
-        settings["mcp_client_side_auth_header_name"] = general
-    headers = _headers(data)
-    with patch.object(proxy_server, "general_settings", settings):
-        header_name = MCPRequestHandler.get_mcp_client_side_auth_header_name()
-        value = MCPRequestHandler._get_mcp_auth_header_from_headers(headers)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    return {"header_name": header_name, "value": value}
 
 
 def _header_views(data: dict[str, Json]) -> object:
@@ -243,7 +239,7 @@ _HANDLERS: dict[str, Callable[[dict[str, Json]], object]] = {
     "token_request": _token_request,
     "safe_headers": _header_probe,
     "litellm_key": _header_probe,
-    "mcp_auth_header": _mcp_auth_header,
+    "mcp_auth_header": _header_probe,
     "server_auth": _header_views,
     "oauth2": _header_views,
     "list_header": _list_header,

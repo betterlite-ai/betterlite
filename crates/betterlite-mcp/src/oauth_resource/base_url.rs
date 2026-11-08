@@ -73,8 +73,8 @@ pub fn get_request_base_url(
         .x_forwarded_proto
         .filter(|value| !value.is_empty())
         .unwrap_or(parsed.scheme.as_str());
+    let port = origin.x_forwarded_port.filter(|value| !value.is_empty());
     let netloc = if let Some(host) = origin.x_forwarded_host.filter(|value| !value.is_empty()) {
-        let port = origin.x_forwarded_port.filter(|value| !value.is_empty());
         if host.contains(':') && !host.starts_with('[') {
             host.to_owned()
         } else {
@@ -85,10 +85,10 @@ pub fn get_request_base_url(
         }
     } else {
         let mut netloc = parsed.netloc.clone();
-        if let Some(port) = origin.x_forwarded_port.filter(|value| !value.is_empty())
+        if let Some(forwarded) = port
             && !netloc.contains(':')
         {
-            netloc = format!("{netloc}:{port}");
+            netloc = format!("{netloc}:{forwarded}");
         }
         netloc
     };

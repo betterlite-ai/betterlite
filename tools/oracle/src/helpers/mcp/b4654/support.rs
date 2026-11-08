@@ -82,28 +82,15 @@ pub(super) fn boolean(input: &Value, name: &str) -> Result<bool, Box<HelperError
     Ok(value)
 }
 
-pub(super) fn strings<'input>(input: &'input Value, name: &str) -> Option<Vec<&'input str>> {
-    let items = input.get(name)?.as_array()?;
-    let mut strings = Vec::with_capacity(items.len());
-    for item in items {
-        if let Some(text) = item.as_str() {
-            strings.push(text);
-        }
-    }
-    Some(strings)
-}
-
-pub(super) fn pairs(input: &Value) -> Result<Vec<(String, String)>, Box<HelperError>> {
+pub(super) fn parse_headers(input: &Value) -> Result<RawHeaders, Box<HelperError>> {
     let raw = input
         .get("raw")
         .cloned()
         .ok_or_else(|| invalid("InvalidInput", None, "raw must be a list".to_owned()))?;
-    serde_json::from_value(raw).map_err(|error| invalid("InvalidInput", None, error.to_string()))
-}
-
-pub(super) fn parse_headers(raw: &[(String, String)]) -> Result<RawHeaders, Box<HelperError>> {
-    let mut pairs: Vec<(&[u8], &[u8])> = Vec::with_capacity(raw.len());
-    for (name, value) in raw {
+    let entries: Vec<(String, String)> = serde_json::from_value(raw)
+        .map_err(|error| invalid("InvalidInput", None, error.to_string()))?;
+    let mut pairs: Vec<(&[u8], &[u8])> = Vec::with_capacity(entries.len());
+    for (name, value) in &entries {
         pairs.push((name.as_bytes(), value.as_bytes()));
     }
     Ok(RawHeaders::from_pairs(&pairs)?)

@@ -21,3 +21,6 @@ deviations:
   - what: Python's urlsplit normalizes control characters away and accepts an IPvFuture bracketed host; betterlite neither strips controls nor accepts IPvFuture.
     why: A request target cannot carry raw controls, config scalars are trimmed, and no browser or MCP client resolves an IPvFuture literal, so neither case is one a working setup relies on.
     link: https://github.com/python/cpython/blob/3.13/Lib/urllib/parse.py#L458-L501
+  - what: A URL port is parsed with Rust's u16 parser, which accepts a leading plus sign; Python's port property requires plain ASCII digits and treats a signed port as invalid.
+    why: A signed port is a malformed URL that no working setup sends, and redact_mcp_resource_url still drops it on any parse failure other than that sign.
+    link: https://docs.python.org/3/library/urllib.parse.html#urllib.parse.urlsplit

@@ -57,12 +57,8 @@ fn server_first_target(path: &str) -> Option<String> {
 }
 
 fn mcp_path_segment(path: &str) -> Option<String> {
-    let Ok(mcp_path) = Regex::new(MCP_PATH_PATTERN) else {
-        return None;
-    };
-    let captures = mcp_path.captures(path)?;
-    let segment = captures.get(1)?;
-    let text = segment.as_str();
+    let captures = Regex::new(MCP_PATH_PATTERN).ok()?.captures(path)?;
+    let text = captures.get(1)?.as_str();
     (!text.is_empty()).then(|| text.to_owned())
 }
 

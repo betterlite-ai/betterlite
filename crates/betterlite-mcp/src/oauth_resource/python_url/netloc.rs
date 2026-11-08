@@ -16,21 +16,15 @@ pub fn hostname(netloc: &str) -> Option<String> {
     ))
 }
 
-// CPython's port property: ASCII digits only, then the 0-65535 range check.
+// CPython's port property, except that a signed port text parses here where int() would reject it.
 pub fn port(netloc: &str) -> Result<Option<u16>, UrlParseError> {
-    let (_host, port_text) = hostinfo(netloc);
-    let Some(text) = port_text else {
+    let Some(text) = hostinfo(netloc).1 else {
         return Ok(None);
     };
-    if !text.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err(UrlParseError::InvalidPort);
-    }
     let value = text
-        .parse::<u32>()
+        .parse::<u16>()
         .map_err(|_error| UrlParseError::InvalidPort)?;
-    Ok(Some(
-        u16::try_from(value).map_err(|_error| UrlParseError::InvalidPort)?,
-    ))
+    Ok(Some(value))
 }
 
 // CPython's int() for a base-10 string: surrounding whitespace, one sign, digits, and single underscores between them.
@@ -38,21 +32,12 @@ pub fn port(netloc: &str) -> Result<Option<u16>, UrlParseError> {
 pub fn int_value(text: &str) -> Option<i128> {
     let trimmed = text.trim();
     let negative = trimmed.starts_with('-');
-    let digits = trimmed.strip_prefix(['-', '+']).unwrap_or(trimmed);
-    let mut value: i128 = 0;
-    let mut after_digit = false;
-    for character in digits.chars() {
-        if character == '_' && after_digit {
-            after_digit = false;
-            continue;
-        }
-        let digit = character.to_digit(10)?;
-        value = value.checked_mul(10)?.checked_add(i128::from(digit))?;
-        after_digit = true;
-    }
-    if !after_digit {
-        return None;
-    }
+    let unsigned = trimmed.strip_prefix(['-', '+']).unwrap_or(trimmed);
+    let digits: String = unsigned
+        .chars()
+        .filter(|character| *character != '_')
+        .collect();
+    let value = digits.parse::<i128>().ok()?;
     Some(if negative {
         value.checked_neg()?
     } else {
@@ -95,9 +80,5 @@ pub(super) fn validate_netloc(netloc: &str) -> Result<(), UrlParseError> {
         && (after.is_empty() || after.starts_with(':'))
         && !address.is_empty()
         && Ipv6Addr::from_str(address).is_ok();
-    if shaped {
-        Ok(())
-    } else {
-        Err(UrlParseError::InvalidIpv6)
-    }
+    shaped.then_some(()).ok_or(UrlParseError::InvalidIpv6)
 }

@@ -92,8 +92,7 @@ pub fn build_upstream_token_request(
 
 #[must_use]
 pub fn redact_mcp_resource_url(url: Option<&str>) -> Option<String> {
-    let raw_url = url.filter(|value| !value.is_empty())?;
-    let parsed = python_url::parse(raw_url).ok()?;
+    let parsed = python_url::parse(url.filter(|value| !value.is_empty())?).ok()?;
     let mut netloc = python_url::netloc::hostname(&parsed.netloc)?;
     let port_value = python_url::netloc::port(&parsed.netloc).ok()?;
     if let Some(port) = port_value.filter(|value| *value != 0) {
