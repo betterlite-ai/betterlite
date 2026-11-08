@@ -171,7 +171,7 @@ async fn tls_login_runs_on_every_call() {
     );
     assert_eq!(
         manager.request_token_blocking().unwrap().expose_secret(),
-        "hvs.first"
+        "hvs.second"
     );
     assert_eq!(transport.recorded().len(), 3);
 }
