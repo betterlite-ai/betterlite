@@ -8,13 +8,14 @@ call:
         - policy: global-baseline
           scope: "*"
         - policy: hipaa-policy
-          tags: [healthcare]
+          tags: [healthcare-*]
         - policy: team-policy
           teams: [health-team]
+        - policy: any-key
+          keys: ["*"]
       context:
         team_alias: health-team
-        key_alias: key-1
         model: gpt-4
-        tags: [healthcare]
+        tags: [healthcare-eu, healthcare-us]
 env: {}
 compare: {ignore: []}

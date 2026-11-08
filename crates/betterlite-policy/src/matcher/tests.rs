@@ -239,8 +239,8 @@ fn policies_matching_conditions_filters_in_input_order() {
         ("b", policy(None, &["y"], None)),
     ]);
     let requested = names(&["b", "missing", "a"]);
-    let matching = policies_matching_conditions(&requested, &context("claude-3"), &policies);
-    assert_eq!(matching, ["b"]);
+    let matching = policies_matching_conditions(&requested, &context("gpt-4"), &policies);
+    assert_eq!(matching, ["b", "a"]);
 }
 
 #[test]

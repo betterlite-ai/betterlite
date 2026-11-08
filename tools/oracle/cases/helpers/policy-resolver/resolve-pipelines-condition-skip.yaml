@@ -5,24 +5,28 @@ call:
     policy_memory_matching_resolver:
       action: resolve_pipelines
       policies:
-        claude-pipeline:
+        parent:
           guardrails:
-            add: [pii]
+            add: [pii-blocker]
+        child:
+          inherit: parent
+          guardrails:
+            add: [hipaa-audit]
           condition:
             model: claude.*
           pipeline:
             mode: post_call
             steps:
-              - guardrail: pii
+              - guardrail: pii-blocker
         flat-pipeline:
           guardrails:
             add: [audit]
           pipeline:
-            mode: post_call
+            mode: pre_call
             steps:
               - guardrail: audit
       attachments:
-        - policy: claude-pipeline
+        - policy: child
           scope: "*"
         - policy: flat-pipeline
           scope: "*"

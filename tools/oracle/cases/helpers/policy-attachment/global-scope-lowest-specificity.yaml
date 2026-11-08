@@ -5,16 +5,18 @@ call:
     policy_memory_matching_attachment:
       action: attached_policies
       attachments:
-        - policy: model-policy
-          models: [gpt-4]
+        - policy: zeta
+          scope: "*"
+        - policy: alpha
+          scope: "*"
         - policy: team-policy
           teams: [team-a]
-        - policy: global-policy
-          scope: "*"
         - policy: key-policy
           keys: [key-a]
         - policy: tag-policy
           tags: [prod]
+        - policy: model-policy
+          models: [gpt-4]
       context:
         team_alias: team-a
         key_alias: key-a

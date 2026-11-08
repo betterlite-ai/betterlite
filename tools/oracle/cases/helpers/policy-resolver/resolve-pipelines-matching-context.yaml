@@ -5,7 +5,7 @@ call:
     policy_memory_matching_resolver:
       action: resolve_pipelines
       policies:
-        pipeline-policy:
+        zeta-pipeline:
           guardrails:
             add: [pii]
           pipeline:
@@ -16,11 +16,20 @@ call:
                 on_pass: allow
               - guardrail: audit
                 on_fail: next
-        flat-policy:
+        alpha-pipeline:
           guardrails:
             add: [toxicity]
+          pipeline:
+            mode: post_call
+            steps:
+              - guardrail: toxicity
+        flat-policy:
+          guardrails:
+            add: [audit]
       attachments:
-        - policy: pipeline-policy
+        - policy: zeta-pipeline
+          scope: "*"
+        - policy: alpha-pipeline
           scope: "*"
         - policy: flat-policy
           scope: "*"

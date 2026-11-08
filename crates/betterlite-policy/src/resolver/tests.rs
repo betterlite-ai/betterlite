@@ -194,29 +194,82 @@ fn resolve_pipelines_returns_pipelines_for_matching_policies() {
 }
 
 #[test]
-fn resolve_pipelines_skips_a_policy_whose_condition_fails() {
+fn resolve_pipelines_skips_a_condition_failing_child_admitted_through_its_parent() {
     let registry = registry(vec![
+        ("parent", policy(None, &["pii-blocker"], None)),
         (
-            "claude-pipeline",
+            "child",
             with_pipeline(
-                policy(None, &["pii"], Some("claude.*")),
+                policy(Some("parent"), &["hipaa-audit"], Some("claude.*")),
                 PipelineMode::PostCall,
-                &["pii"],
-            ),
-        ),
-        (
-            "flat-pipeline",
-            with_pipeline(
-                policy(None, &["audit"], None),
-                PipelineMode::PostCall,
-                &["audit"],
+                &["pii-blocker"],
             ),
         ),
     ]);
-    let attachments = attachments(&["claude-pipeline", "flat-pipeline"]);
+    let attachments = attachments(&["child"]);
+    let request = context("gpt-4");
+    assert!(resolve_pipelines_for_context(&request, &registry, &attachments, None).is_empty());
+    assert_eq!(
+        resolve_guardrails_for_context(&request, &registry, &attachments, None),
+        ["pii-blocker"]
+    );
+}
+
+#[test]
+fn explicit_policy_names_still_skip_a_failing_pipeline_condition() {
+    let registry = registry(vec![
+        ("parent", policy(None, &["pii-blocker"], None)),
+        (
+            "child",
+            with_pipeline(
+                policy(Some("parent"), &["hipaa-audit"], Some("claude.*")),
+                PipelineMode::PostCall,
+                &["pii-blocker"],
+            ),
+        ),
+    ]);
+    let requested = names(&["child"]);
+    let request = context("gpt-4");
+    let attachments = AttachmentRegistry::default();
+    assert!(
+        resolve_pipelines_for_context(&request, &registry, &attachments, Some(&requested))
+            .is_empty()
+    );
+    assert_eq!(
+        resolve_guardrails_for_context(&request, &registry, &attachments, Some(&requested)),
+        ["pii-blocker"]
+    );
+}
+
+#[test]
+fn resolve_pipelines_keeps_config_order_for_equal_attachments() {
+    let registry = registry(vec![
+        (
+            "zeta-pipeline",
+            with_pipeline(
+                policy(None, &["zeta"], None),
+                PipelineMode::PreCall,
+                &["zeta"],
+            ),
+        ),
+        (
+            "alpha-pipeline",
+            with_pipeline(
+                policy(None, &["alpha"], None),
+                PipelineMode::PostCall,
+                &["alpha"],
+            ),
+        ),
+    ]);
+    let attachments = attachments(&["zeta-pipeline", "alpha-pipeline"]);
     let pipelines = resolve_pipelines_for_context(&context("gpt-4"), &registry, &attachments, None);
-    assert_eq!(pipelines.len(), 1);
-    assert_eq!(pipelines[0].0, "flat-pipeline");
+    assert_eq!(
+        pipelines
+            .iter()
+            .map(|(policy_name, _)| policy_name.as_str())
+            .collect::<Vec<_>>(),
+        ["zeta-pipeline", "alpha-pipeline"]
+    );
 }
 
 #[test]

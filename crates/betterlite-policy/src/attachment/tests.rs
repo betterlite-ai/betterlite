@@ -278,6 +278,49 @@ fn a_combined_scope_reason_joins_its_dimensions() {
 }
 
 #[test]
+fn the_first_matching_context_tag_names_the_reason() {
+    let mut attachment = attachment("tagged");
+    attachment.tags = Some(names(&["prod-*"]));
+    let registry = loaded(vec![attachment]);
+    let matches = registry.attached_policy_matches(
+        &context(None, None, None, Some(&["prod-eu", "prod-us"])),
+        None,
+    );
+    assert_eq!(matches[0].matched_via, "tag:prod-eu");
+}
+
+#[test]
+fn an_empty_scope_match_reports_the_default_reason() {
+    let mut attachment = attachment("any-key");
+    attachment.keys = Some(names(&["*"]));
+    let registry = loaded(vec![attachment]);
+    let matches = registry.attached_policy_matches(&context(None, None, None, None), None);
+    assert_eq!(matches[0].matched_via, "scope:default");
+}
+
+#[test]
+fn attachments_with_equal_sort_keys_keep_the_config_order() {
+    let mut zeta = attachment("zeta");
+    zeta.scope = Some("*".to_owned());
+    let mut alpha = attachment("alpha");
+    alpha.scope = Some("*".to_owned());
+    let registry = loaded(vec![zeta, alpha]);
+    let request = context(None, None, None, None);
+    assert_eq!(
+        registry.get_attached_policies(&request, None),
+        ["zeta", "alpha"]
+    );
+    assert_eq!(
+        registry
+            .attached_policy_matches(&request, None)
+            .iter()
+            .map(|policy_match| policy_match.policy_name.as_str())
+            .collect::<Vec<_>>(),
+        ["zeta", "alpha"]
+    );
+}
+
+#[test]
 fn a_default_reason_carries_the_prefix() {
     let mut attachment = global();
     attachment.policy = "fallback".to_owned();
