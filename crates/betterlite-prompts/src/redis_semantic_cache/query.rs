@@ -54,35 +54,11 @@ pub(crate) fn parse_search_reply(reply: &Json) -> Result<Vec<Hit>, RedisSemantic
 }
 
 fn hit_from_object(fields: &Object) -> Hit {
+    let text = |name: &str| fields.get(name).and_then(Json::as_str).map(str::to_owned);
     Hit {
-        entry_id: fields
-            .get("entry_id")
-            .and_then(Json::as_str)
-            .map(str::to_owned),
-        prompt: fields
-            .get("prompt")
-            .and_then(Json::as_str)
-            .map(str::to_owned),
-        response: fields
-            .get("response")
-            .and_then(Json::as_str)
-            .map(str::to_owned),
-        inserted_at: fields
-            .get("inserted_at")
-            .and_then(Json::as_str)
-            .map(str::to_owned),
-        updated_at: fields
-            .get("updated_at")
-            .and_then(Json::as_str)
-            .map(str::to_owned),
-        metadata: fields
-            .get("metadata")
-            .and_then(Json::as_str)
-            .map(str::to_owned),
-        litellm_cache_key: fields
-            .get(CACHE_KEY_FIELD_NAME)
-            .and_then(Json::as_str)
-            .map(str::to_owned),
+        prompt: text("prompt"),
+        response: text("response"),
+        litellm_cache_key: text(CACHE_KEY_FIELD_NAME),
         vector_distance: distance_field(fields),
     }
 }

@@ -1,4 +1,5 @@
 mod fakes;
+mod input;
 
 use std::sync::Arc;
 
@@ -15,113 +16,11 @@ use betterlite_prompts::redis_semantic_cache::{
 };
 
 use self::fakes::{ConstantEmbedder, HelperConnector, HelperIndex};
+use self::input::{
+    ConstructorEnv, ConstructorInput, HitInput, IndexFallbackInput, Input, KeyScopeInput,
+    LookupInput, StoreInput,
+};
 use crate::helpers::{Helper, HelperError, HelperResult};
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum Input {
-    Constructor(ConstructorInput),
-    KeyScope(KeyScopeInput),
-    IndexFallback(IndexFallbackInput),
-    Lookup(LookupInput),
-    Store(StoreInput),
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ConstructorInput {
-    #[serde(default)]
-    threshold: Option<f64>,
-    #[serde(default)]
-    host: Option<String>,
-    #[serde(default)]
-    port: Option<String>,
-    #[serde(default)]
-    password: Option<String>,
-    #[serde(default)]
-    redis_url: Option<String>,
-    #[serde(default)]
-    index_name: Option<String>,
-    #[serde(default)]
-    embedding_model: Option<String>,
-    #[serde(default)]
-    embedding_max_input_tokens: Option<i64>,
-    embedding_timeout: f64,
-    #[serde(default)]
-    env: ConstructorEnv,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ConstructorEnv {
-    #[serde(default)]
-    redis_host: Option<String>,
-    #[serde(default)]
-    redis_port: Option<String>,
-    #[serde(default)]
-    redis_password: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct KeyScopeInput {
-    key: String,
-    #[serde(default)]
-    litellm_cache_key: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct IndexFallbackInput {
-    index_name: String,
-    dimension: usize,
-    #[serde(default)]
-    mismatch_attempts: Vec<usize>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct LookupInput {
-    key: String,
-    #[serde(default)]
-    messages: Option<Vec<Message>>,
-    #[serde(default, rename = "input")]
-    responses_input: Option<Json>,
-    #[serde(default)]
-    metadata: Option<Json>,
-    vector: Vec<f32>,
-    #[serde(default)]
-    hits: Vec<HitInput>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct HitInput {
-    #[serde(default)]
-    prompt: Option<String>,
-    #[serde(default)]
-    response: Option<String>,
-    #[serde(default)]
-    litellm_cache_key: Option<String>,
-    #[serde(default)]
-    vector_distance: Option<f64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct StoreInput {
-    key: String,
-    #[serde(default)]
-    messages: Option<Vec<Message>>,
-    #[serde(default, rename = "input")]
-    responses_input: Option<Json>,
-    #[serde(default)]
-    metadata: Option<Json>,
-    #[serde(default)]
-    ttl: Option<i64>,
-    vector: Vec<f32>,
-    value: Json,
-}
 
 pub(crate) struct Op;
 
@@ -164,7 +63,7 @@ fn constructor(input: &ConstructorInput) -> HelperResult {
         redis_password: input.env.redis_password.clone(),
     };
     let embedder = ConstantEmbedder { vector: Vec::new() };
-    let backend: Arc<dyn SemanticRedisIndex> = Arc::new(HelperIndex::recording());
+    let backend: Arc<dyn SemanticRedisIndex> = Arc::new(HelperIndex::default());
     let cache = RedisSemanticCache::new(
         options,
         env,
@@ -184,12 +83,8 @@ fn constructor(input: &ConstructorInput) -> HelperResult {
 
 fn key_scope(input: &KeyScopeInput) -> Value {
     let candidate = Hit {
-        entry_id: None,
         prompt: None,
         response: None,
-        inserted_at: None,
-        updated_at: None,
-        metadata: None,
         litellm_cache_key: input.litellm_cache_key.clone(),
         vector_distance: None,
     };
@@ -255,7 +150,7 @@ async fn run_lookup(input: &LookupInput) -> HelperResult {
 }
 
 async fn run_store(input: &StoreInput) -> HelperResult {
-    let index = Arc::new(HelperIndex::recording());
+    let index = Arc::new(HelperIndex::default());
     let embedder = ConstantEmbedder {
         vector: input.vector.clone(),
     };
@@ -349,12 +244,8 @@ fn user_message(content: &str) -> Message {
 
 fn to_hit(input: &HitInput) -> Hit {
     Hit {
-        entry_id: None,
         prompt: input.prompt.clone(),
         response: input.response.clone(),
-        inserted_at: None,
-        updated_at: None,
-        metadata: None,
         litellm_cache_key: input.litellm_cache_key.clone(),
         vector_distance: input.vector_distance,
     }

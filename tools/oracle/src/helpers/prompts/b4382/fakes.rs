@@ -39,9 +39,13 @@ impl SemanticIndexConnector for HelperConnector {
     }
 }
 
+#[derive(Default)]
 pub(crate) enum Behavior {
+    #[default]
     Recording,
-    Scripted { mismatches: Vec<usize> },
+    Scripted {
+        mismatches: Vec<usize>,
+    },
 }
 
 enum FallbackOp {
@@ -49,6 +53,7 @@ enum FallbackOp {
     Drop(String),
 }
 
+#[derive(Default)]
 pub(crate) struct HelperIndex {
     pub(crate) hits: Vec<Hit>,
     pub(crate) dimension: usize,
@@ -60,26 +65,14 @@ pub(crate) struct HelperIndex {
 }
 
 impl HelperIndex {
-    pub(crate) fn recording() -> Self {
-        Self {
-            hits: Vec::new(),
-            dimension: 0,
-            behavior: Behavior::Recording,
-            info_calls: Mutex::new(0),
-            searches: Mutex::new(Vec::new()),
-            stores: Mutex::new(Vec::new()),
-            operations: Mutex::new(Vec::new()),
-        }
-    }
-
     pub(crate) fn with_hits(hits: Vec<Hit>) -> Self {
-        let mut index = Self::recording();
+        let mut index = Self::default();
         index.hits = hits;
         index
     }
 
     pub(crate) fn scripted(dimension: usize, mismatches: Vec<usize>) -> Self {
-        let mut index = Self::recording();
+        let mut index = Self::default();
         index.dimension = dimension;
         index.behavior = Behavior::Scripted { mismatches };
         index

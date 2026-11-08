@@ -749,13 +749,11 @@ fn lookup_parses_the_search_reply_into_hits() {
     ]);
     let hits = super::query::parse_search_reply(&reply).expect("a search reply");
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].entry_id.as_deref(), Some("e1"));
     assert_eq!(hits[0].prompt.as_deref(), Some("hi"));
     assert_eq!(hits[0].response.as_deref(), Some("{}"));
     assert_eq!(hits[0].litellm_cache_key.as_deref(), Some("scope"));
     let distance = hits[0].vector_distance.expect("a distance");
     assert!(distance.total_cmp(&0.25_f64).is_eq());
-    assert_eq!(hits[0].metadata, None);
 }
 
 #[test]

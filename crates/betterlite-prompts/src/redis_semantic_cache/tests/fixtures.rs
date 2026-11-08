@@ -282,12 +282,8 @@ pub(crate) fn kwargs_with_message(content: &str) -> SemanticCacheKwargs {
 
 pub(crate) fn hit(distance: f64, key: Option<&str>, response: &str) -> Hit {
     Hit {
-        entry_id: Some("an-entry".to_owned()),
         prompt: Some("the prompt".to_owned()),
         response: Some(response.to_owned()),
-        inserted_at: Some("1.0".to_owned()),
-        updated_at: Some("1.0".to_owned()),
-        metadata: None,
         litellm_cache_key: key.map(str::to_owned),
         vector_distance: Some(distance),
     }

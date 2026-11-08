@@ -24,12 +24,8 @@ pub trait SemanticEmbedder: Send + Sync {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Hit {
-    pub entry_id: Option<String>,
     pub prompt: Option<String>,
     pub response: Option<String>,
-    pub inserted_at: Option<String>,
-    pub updated_at: Option<String>,
-    pub metadata: Option<String>,
     pub litellm_cache_key: Option<String>,
     pub vector_distance: Option<f64>,
 }
