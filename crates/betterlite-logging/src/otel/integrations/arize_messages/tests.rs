@@ -357,6 +357,15 @@ fn choices_not_an_object_response_writes_nothing() {
 }
 
 #[test]
+fn choices_response_output_messages_is_not_overridden() {
+    let response = json(r#"{"choices":[{"message":{"content":"unused"}}]}"#);
+    let attributes = recorded(|span| {
+        ArizeOtelAttributes::set_response_output_messages(span, &response);
+    });
+    assert!(attributes.is_empty());
+}
+
+#[test]
 fn media_image_url_and_b64_json_data_url() {
     let attributes = response_attributes(
         r#"{"data":[{"url":"https://example.com/a.png"},{"b64_json":"QUJD"}]}"#,
