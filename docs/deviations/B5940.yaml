@@ -21,6 +21,6 @@ deviations:
   - what: Headers are a case-insensitive map, so an existing Content-Type or User-Agent header is kept whatever its spelling.
     why: LiteLLM keeps headers in a case-sensitive dict, so "Content-Type" is invisible to it and it adds a second lowercase content-type; HTTP header names are case-insensitive and a duplicate is malformed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L280
-  - what: "A $ref chain that would expand more than 32 links ends as {\"type\": \"object\"} at the 33rd reference."
-    why: LiteLLM recurses until Python raises RecursionError, which fails only that request, while an unbounded chain in Rust overflows the stack and aborts every request on the task; the cap returns the same object the cycle break already returns, so a legitimate schema is unaffected.
+  - what: "A schema whose walk would pass 256 levels, counting every structural nesting level and every $ref expansion, ends the over-limit subtree as {\"type\": \"object\"}."
+    why: LiteLLM recurses until Python raises RecursionError, which fails only that request, while an unbounded walk in Rust overflows the stack and aborts every request on the task; counting every level rather than only refs also bounds the nesting each definition brings, and the cap returns the same object the cycle break already returns.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L431-L448

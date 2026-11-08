@@ -4,6 +4,7 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process;
+use std::thread;
 
 use aws_lc_rs::digest::{SHA256, digest};
 use aws_lc_rs::signature::{RSA_PKCS1_2048_8192_SHA256, UnparsedPublicKey};
@@ -102,6 +103,18 @@ fn assert_signature_verifies(headers: &HeaderMap, path: &str) {
     UnparsedPublicKey::new(&RSA_PKCS1_2048_8192_SHA256, public.contents())
         .verify(signing_string.as_bytes(), &signature)
         .unwrap();
+}
+
+fn deepest_value(mut current: &Json) -> &Json {
+    while let Some(inner) = current
+        .as_object()
+        .and_then(|object| object.get("properties"))
+        .and_then(Json::as_object)
+        .and_then(|properties| properties.values().next())
+    {
+        current = inner;
+    }
+    current
 }
 
 #[test]
@@ -736,6 +749,31 @@ fn resolve_oci_schema_refs_bounds_a_long_ref_chain() {
     let schema = format!("{{\"$defs\": {{{chain}}}, \"a\": {{\"$ref\": \"#/$defs/c0\"}}}}");
     let resolved = resolve_oci_schema_refs(&parse_json(&schema));
     assert_eq!(resolved, parse_json(r#"{"a": {"type": "object"}}"#));
+}
+
+#[test]
+fn resolve_oci_schema_refs_bounds_a_nested_ref_chain() {
+    let definitions = (0_u32..33_u32)
+        .zip(1_u32..=33_u32)
+        .map(|(index, next)| {
+            let base = format!(r##"{{"$ref": "#/$defs/c{next}"}}"##);
+            let layered =
+                (0_u32..100_u32).fold(base, |value, _| format!(r#"{{"properties": {value}}}"#));
+            format!("\"c{index}\": {layered}")
+        })
+        .collect::<Vec<String>>()
+        .join(", ");
+    let schema = format!("{{\"$defs\": {{{definitions}}}, \"a\": {{\"$ref\": \"#/$defs/c0\"}}}}");
+    let worker = thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(move || resolve_oci_schema_refs(&parse_json(&schema)))
+        .unwrap();
+    let resolved = worker.join().unwrap();
+    let entry = resolved
+        .as_object()
+        .and_then(|object| object.get("a"))
+        .unwrap();
+    assert_eq!(deepest_value(entry), &parse_json(r#"{"type": "object"}"#));
 }
 
 #[rstest]

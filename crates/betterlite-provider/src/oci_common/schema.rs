@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use betterlite_prompts::arguments::json::{Json, Object};
 
-const MAX_REF_DEPTH: usize = 32;
+const MAX_SCHEMA_DEPTH: usize = 256;
 
 pub const OCI_JSON_TO_PYTHON_TYPES: [(&str, &str); 7] = [
     ("string", "str"),
@@ -34,13 +34,19 @@ fn resolve_refs(
     resolving: &mut BTreeSet<String>,
     depth: usize,
 ) -> Json {
+    if depth >= MAX_SCHEMA_DEPTH {
+        return Json::Object(Object::from([(
+            "type".to_owned(),
+            Json::Text("object".to_owned()),
+        )]));
+    }
     let fields = match value {
         Json::Object(fields) => fields,
         Json::List(items) => {
             return Json::List(
                 items
                     .iter()
-                    .map(|item| resolve_refs(item, definitions, resolving, depth))
+                    .map(|item| resolve_refs(item, definitions, resolving, depth.saturating_add(1)))
                     .collect(),
             );
         }
@@ -59,7 +65,7 @@ fn resolve_refs(
             .map(|(key, field)| {
                 (
                     key.clone(),
-                    resolve_refs(field, definitions, resolving, depth),
+                    resolve_refs(field, definitions, resolving, depth.saturating_add(1)),
                 )
             })
             .collect(),
@@ -73,12 +79,6 @@ fn resolve_reference(
     resolving: &mut BTreeSet<String>,
     depth: usize,
 ) -> Json {
-    if depth >= MAX_REF_DEPTH {
-        return Json::Object(Object::from([(
-            "type".to_owned(),
-            Json::Text("object".to_owned()),
-        )]));
-    }
     let key = reference.rsplit('/').next().unwrap_or_default().to_owned();
     if !resolving.insert(key.clone()) {
         return Json::Object(Object::from([(
