@@ -20,11 +20,17 @@ const STEP_DELTA_MESSAGE_CREATION: &str = r#"{"id":"step_1","object":"thread.run
 const STEP_DELTA_MESSAGE_CREATION_KEYLESS: &str = r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"message_creation"}}}"#;
 const STEP_DELTA_TOOL_CALLS_KEYLESS: &str = r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls"}}}"#;
 const STEP_MESSAGE_CREATION: &str = r#"{"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"message_creation","status":"completed","step_details":{"type":"message_creation","message_creation":{}}}"#;
-const MESSAGE_DELTA_PARTIAL_BLOCKS: &str = r#"{"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"text"},{"index":1,"type":"refusal"},{"index":2,"type":"text","text":{"value":"hi","annotations":[{"index":0,"type":"file_citation","file_citation":{"file_id":"f"}},{"index":1,"type":"file_path","file_path":{}}]}}]}}"#;
+const MESSAGE_DELTA_PARTIAL_BLOCKS: &str = r#"{"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"text"},{"index":1,"type":"refusal"},{"index":2,"type":"text","text":{"value":"hi","annotations":[{"index":0,"type":"file_citation","file_citation":{"file_id":"f"}},{"index":1,"type":"file_path","file_path":{}},{"index":2,"type":"weird"}]}}]}}"#;
 const THREAD_EMPTY_RESOURCES: &str = r#"{"id":"thread_a","object":"thread","created_at":1700000000,"metadata":{},"tool_resources":{"code_interpreter":{},"file_search":{}}}"#;
 const STEP_DELTA_FILE_SEARCH: &str = r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"file_search","id":"c","file_search":{"x":1}}]}}}"#;
 const STEP_FILE_SEARCH: &str = r#"{"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"file_search","id":"c","file_search":{}}]}}"#;
 const MESSAGE_DELTA_UNKNOWN_BLOCK: &str = r#"{"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"audio"}]}}"#;
+const MESSAGE_UNKNOWN_BLOCK: &str = r#"{"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"completed","content":[{"type":"audio"}]}"#;
+const STEP_DELTA_UNKNOWN: &str =
+    r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"weird"}}}"#;
+const STEP_UNKNOWN: &str = r#"{"id":"step_2","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"weird","status":"completed","step_details":{"type":"weird"}}"#;
+const STEP_DELTA_UNKNOWN_CALL: &str = r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"weird"}]}}}"#;
+const STEP_UNKNOWN_CALL: &str = r#"{"id":"step_3","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"type":"weird"}]}}"#;
 
 // A field the SDK cannot use never clears a data line recorded before it.
 pub(super) async fn stream_unusable_fields_after_data_keep_the_event() {
@@ -161,6 +167,31 @@ pub(super) async fn stream_missing_variant_keys_match_the_sdk_dump() {
     let events = missing_variant_events().await;
     assert_step_variants(&events);
     assert_content_variants(&events);
+    assert_unknown_variants(&events);
+}
+
+fn assert_unknown_variants(events: &[RunEvent]) {
+    assert!(events.len() > 17);
+    let message = parse(
+        r#"{"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"completed","content":[{"type":"audio","image_file":null}],"assistant_id":null,"attachments":null,"completed_at":null,"incomplete_at":null,"incomplete_details":null,"metadata":null,"run_id":null}"#,
+    );
+    assert_eq!(data_value(&events[13]), message);
+    let delta = parse(
+        r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"weird","message_creation":null}}}"#,
+    );
+    assert_eq!(data_value(&events[14]), delta);
+    let step = parse(
+        r#"{"id":"step_2","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"weird","status":"completed","step_details":{"type":"weird","message_creation":null},"cancelled_at":null,"completed_at":null,"expired_at":null,"failed_at":null,"last_error":null,"metadata":null,"usage":null}"#,
+    );
+    assert_eq!(data_value(&events[15]), step);
+    let delta_call = parse(
+        r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"weird","id":null,"code_interpreter":null}]}}}"#,
+    );
+    assert_eq!(data_value(&events[16]), delta_call);
+    let full_call = parse(
+        r#"{"id":"step_3","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"id":null,"code_interpreter":null,"type":"weird"}]},"cancelled_at":null,"completed_at":null,"expired_at":null,"failed_at":null,"last_error":null,"metadata":null,"usage":null}"#,
+    );
+    assert_eq!(data_value(&events[17]), full_call);
 }
 
 async fn missing_variant_events() -> Vec<RunEvent> {
@@ -178,6 +209,11 @@ async fn missing_variant_events() -> Vec<RunEvent> {
         ("thread.run.step.delta", STEP_DELTA_FILE_SEARCH),
         ("thread.run.step.completed", STEP_FILE_SEARCH),
         ("thread.message.delta", MESSAGE_DELTA_UNKNOWN_BLOCK),
+        ("thread.message.completed", MESSAGE_UNKNOWN_BLOCK),
+        ("thread.run.step.delta", STEP_DELTA_UNKNOWN),
+        ("thread.run.step.completed", STEP_UNKNOWN),
+        ("thread.run.step.delta", STEP_DELTA_UNKNOWN_CALL),
+        ("thread.run.step.completed", STEP_UNKNOWN_CALL),
     ];
     let mut body = String::new();
     for (name, data) in frames {
@@ -185,7 +221,7 @@ async fn missing_variant_events() -> Vec<RunEvent> {
     }
     body.push_str("data: [DONE]\n\n");
     let events = stream_result(&body).await.unwrap();
-    assert_eq!(events.len(), 13);
+    assert_eq!(events.len(), 18);
     events
 }
 
@@ -243,6 +279,10 @@ fn assert_content_variants(events: &[RunEvent]) {
         "/data/delta/content/2/text/annotations/1/file_path/file_id",
         "/data/delta/content/2/text/annotations/1/start_index",
         "/data/delta/content/2/text/annotations/1/text",
+        "/data/delta/content/2/text/annotations/2/end_index",
+        "/data/delta/content/2/text/annotations/2/file_citation",
+        "/data/delta/content/2/text/annotations/2/start_index",
+        "/data/delta/content/2/text/annotations/2/text",
     ] {
         assert_eq!(blocks.pointer(pointer), Some(&Value::Null), "{pointer}");
     }

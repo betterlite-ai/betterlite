@@ -118,8 +118,7 @@ fn fill_parts(content: &mut Value, delta: bool) {
         return;
     };
     for part in parts {
-        let fallback = if delta { "image_file" } else { "" };
-        add_kind(part, "text image_file image_url refusal", fallback);
+        add_kind(part, "text image_file image_url refusal", "image_file");
         fill_object(part, "text", "annotations value");
         fill_object(part, "image_file", "file_id detail");
         fill_object(part, "image_url", "url detail");
@@ -133,14 +132,14 @@ fn fill_annotations(part: &mut Value) {
         return;
     };
     for annotation in annotations {
-        add_kind(annotation, "file_citation file_path", "");
+        add_kind(annotation, "file_citation file_path", "file_citation");
         add_keys(annotation, "end_index start_index text");
         fill_object(annotation, "file_citation", "file_id quote");
         fill_object(annotation, "file_path", "file_id");
     }
 }
 fn fill_step(details: &mut Value, delta: bool) {
-    add_kind(details, "message_creation tool_calls", "");
+    add_kind(details, "message_creation tool_calls", "message_creation");
     fill_object(details, "message_creation", "message_id");
     let Value::Object(object) = details else {
         return;
@@ -155,7 +154,7 @@ fn fill_step(details: &mut Value, delta: bool) {
             Some("code_interpreter") => fill_call(call, "code_interpreter", "input outputs"),
             Some("file_search") if delta => add_keys(call, "file_search"),
             Some("file_search") => fill_call(call, "file_search", "ranking_options results"),
-            _ => {}
+            _ => add_keys(call, "code_interpreter"),
         }
     }
 }
@@ -181,10 +180,8 @@ fn add_kind(value: &mut Value, kinds: &str, fallback: &str) {
         .unwrap_or_default();
     let known = kinds.split(' ').any(|known| known == kind);
     let key = if known { kind } else { fallback };
-    if !key.is_empty() {
-        let owned = key.to_owned();
-        add_keys(value, &owned);
-    }
+    let owned = key.to_owned();
+    add_keys(value, &owned);
 }
 pub(crate) fn fill_map(object: &mut Map<String, Value>, key: &str, keys: &str) {
     if let Some(Value::Object(inner)) = object.get_mut(key) {

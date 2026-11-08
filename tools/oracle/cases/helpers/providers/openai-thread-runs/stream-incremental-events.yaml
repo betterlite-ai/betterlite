@@ -401,5 +401,39 @@ call:
                 data: [DONE]
 
 
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.message.completed
+                data: {"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"completed","content":[{"type":"audio"}]}
+
+                event: thread.message.created
+                data: {"id":"msg_2","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"in_progress","content":[]}
+
+                event: thread.message.delta
+                data: {"id":"msg_2","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"text","text":{"value":"hi","annotations":[{"index":0,"type":"weird"}]}}]}}
+
+                event: thread.run.step.created
+                data: {"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"in_progress","step_details":{"type":"tool_calls","tool_calls":[]}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"weird"}}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"weird"}]}}}
+
+                event: thread.run.step.completed
+                data: {"id":"step_2","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"weird","status":"completed","step_details":{"type":"weird"}}
+
+                event: thread.run.step.completed
+                data: {"id":"step_3","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"type":"weird"}]}}
+
+                data: [DONE]
+
+
 env: {}
 compare: {ignore: []}
