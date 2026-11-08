@@ -196,9 +196,9 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L393-L401
 
 out_of_scope:
-  - "_ACTION_SEVERITY constant (litellm/proxy/guardrails/usage_endpoints.py:45): only used by _usage_log_entry_from_row (L783), owned by B104."
-  - "_GuardrailRunInfo TypedDict (litellm/proxy/guardrails/usage_endpoints.py:217-224): only used by _usage_log_entry_from_row (L780-781), owned by B104."
-  - HTTP route handlers guardrails_usage_overview, guardrails_usage_detail, guardrails_usage_logs, policies_usage_overview (owned by B104).
+  - "_ACTION_SEVERITY constant (litellm/proxy/guardrails/usage_endpoints.py:45): only used by _usage_log_entry_from_row (L783), owned by B8772."
+  - "_GuardrailRunInfo TypedDict (litellm/proxy/guardrails/usage_endpoints.py:217-224): only used by _usage_log_entry_from_row (L780-781), owned by B8772."
+  - HTTP route handlers guardrails_usage_overview, guardrails_usage_detail, guardrails_usage_logs, policies_usage_overview (owned by B8772).
   - Database table find_many operations (owned by B726 repositories).
   - Guardrail registry IN_MEMORY_GUARDRAIL_HANDLER.list_config_guardrails (owned by B3682-B3683).
   - spend log filtering and pagination (owned by B3688 usage_tracking).

@@ -1,0 +1,29 @@
+kind: helper
+name: resource-config-vector-stores
+call:
+  b5360:
+    requests:
+      - selector: vector_stores
+        calls:
+          - {provider: openai}
+          - {provider: azure}
+          - {provider: vertex_ai}
+          - {provider: vertex_ai, api_type: rag_api}
+          - {provider: vertex_ai, api_type: search_api}
+          - {provider: vertex_ai, api_type: other_api}
+          - {provider: bedrock}
+          - {provider: pg_vector}
+          - {provider: azure_ai}
+          - {provider: milvus}
+          - {provider: gemini}
+          - {provider: ragflow}
+          - {provider: s3_vectors}
+          - {provider: valkey}
+          - {provider: mongodb}
+          - {provider: groq}
+      - selector: vector_store_files
+        calls:
+          - {provider: openai}
+          - {provider: azure}
+env: {}
+compare: {ignore: []}

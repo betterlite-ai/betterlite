@@ -1,0 +1,16 @@
+kind: helper
+name: logging-worker-failure-trace
+call:
+  worker_trace:
+    settings:
+      concurrency: 1
+    steps:
+      - op: enqueue
+        events:
+          - {name: ok-first, outcome: success, context: request-a}
+          - {name: broken, outcome: failure, context: request-b}
+          - {name: ok-second, outcome: success, context: request-c}
+      - op: flush
+env: {}
+compare:
+  ignore: []

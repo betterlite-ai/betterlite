@@ -1,0 +1,96 @@
+id: B8690
+title: Rust allm_passthrough_route SDK call
+description: >-
+  Build LiteLLM's `litellm.allm_passthrough_route` in Rust: the one SDK call that every pass-through LLM hop ends in. The router runs it for a deployment (B8691), the proxy's passthrough route type runs it when no router takes the request (B8692), and the Python package exposes it (B7890). Today nothing builds it, so the Bedrock, Azure, VLLM, GigaChat, Watsonx and NVIDIA router hops have no call to reach. Code goes in crates/betterlite-core, module `api::passthrough_call` (crates/betterlite-core/src/api/passthrough_call.rs and passthrough_call/**). Every name stays at 30 characters or fewer.
+
+  Types, all declared here.
+  `PassthroughCallArgs` holds the call's named arguments: `method: String`, `endpoint: String`, `model: String`, `custom_llm_provider: Option<String>`, `api_base: Option<String>`, `api_key: Option<SecretString>`, `request_query_params: Option<IndexMap<String, String>>`, `request_headers: Option<Vec<(String, String)>>`, `content: Option<Bytes>`, `data: Option<Map<String, Value>>`, `files: Option<Vec<PassthroughUpload>>` (field, filename, content_type, bytes), `json: Option<Value>`, `params: Option<Vec<(String, String)>>`, `cookies: Option<Vec<(String, String)>>`, `client: Option<PassthroughClient>` (a timeout and a connect timeout, both `Duration`), and `extra: Map<String, Value>` for LiteLLM's `**kwargs` (stream, stream_timeout, timeout, litellm_metadata, model_id, litellm_call_id and the deployment's own litellm_params such as aws_region_name).
+  `PassthroughReply` is `{ status: u16, headers: Vec<(String, String)>, body: PassthroughBody }`, and `PassthroughBody` is `Full(Bytes)` or `Stream(...)` holding B3572's async stream relay (read its merged type name in betterlite-core::passthrough_stream). Headers keep the upstream's order and case.
+  `PassthroughCallError` is a closed enum: `UpstreamStatus { status, headers, body: Bytes }` (LiteLLM's httpx.HTTPStatusError, body already read), `ProviderNotFound(String)` with the text "Provider {custom_llm_provider} not found", `Resolution(...)` holding B174's provider resolution error, `Mapped(...)` holding the provider error that B2402's _handle_error returns, `Transport(...)` for a send failure when no provider config exists, and `Routing { status: u16, message: String }`, which only B8691 builds from a router error.
+  `PassthroughRouterCalls` is a trait with one async method `allm_passthrough_route(&self, args: PassthroughCallArgs) -> Result<PassthroughReply, PassthroughCallError>`. It stands for `Router.allm_passthrough_route`. B8691 implements it in betterlite-sdk, because betterlite-core cannot import betterlite-sdk or betterlite-router; B8692 and B8694 take it as an injected value.
+
+  `allm_passthrough_route(args, logging, http)` replaces allm_passthrough_route and llm_passthrough_route together (passthrough/main.py L267-L601). `logging` is B247's per-call logging state for this call (the object LiteLLM's @client decorator gives as litellm_logging_obj; the caller makes it), and `http` is B173's pooled client source. Steps, in LiteLLM's order:
+  1. Put `allm_passthrough_route: true` into the kwargs, so the litellm_params built below carry it (the logging state reads it).
+  2. Resolve the provider with B174's get_llm_provider(model, custom_llm_provider, api_base, api_key). It returns the model without its provider prefix, the provider, the api key and the api base. A resolution error is returned as `Resolution`.
+  3. Pick the provider's passthrough config with B5360's passthrough selector for that provider and model. Map its tag to the provider's config, which each provider task built over B3570's `BasePassthroughConfig` trait: bedrock is B658's config, bedrock_mantle B625's, vllm and hosted_vllm B8153's, azure B548's, azure_ai B566's, gigachat B8178's, watsonx B5842's and nvidia_nim B5837's (read each merged name). No tag gives `ProviderNotFound`.
+  4. Build litellm_params with B176's get_litellm_params from the api key, the api base and the kwargs. When `extra` has `model_id`, add it to the params under `model_id` (Bedrock application inference profiles need it).
+  5. Client. With `args.client` set, use its timeout and connect timeout. Otherwise resolve the timeout with B3571's resolve_llm_passthrough_timeout(kwargs, litellm_params) and take B173's pooled async client for the pass-through endpoint provider kind with that timeout.
+  6. Logging state: update_environment_variables with the resolved model, the litellm_params, empty optional params, the endpoint, the provider and request data = `data` when it is a non-empty map, else `json`.
+  7. `get_complete_url(api_base, api_key, model, endpoint, request_query_params, litellm_params)` gives the URL and the base target URL. When the provider is "bedrock" and the endpoint contains "application-inference-profile", pass the URL through B2203's encode_bedrock_runtime_modelid_arn.
+  8. `provider_api_key = config.get_api_key(api_key)`. Auth headers come from `validate_environment` with empty headers, the model, no messages, empty optional params, the litellm_params, provider_api_key and the base target URL as api base.
+  9. Headers: B3571's forward_headers_from_request(request_headers or empty, auth headers, forward_headers false).
+  10. Signing: request data is `data` when it is a map, else `json` when it is an object, else none. `sign_request(headers, litellm_params, request data, URL, model)` returns the final headers and optional signed body bytes.
+  11. When `json` is an object with a `model` key, set that key to the resolved model (the prefix is gone).
+  12. Build the request: body = the signed bytes when present (an empty signed body counts as present), else `content`; `data` and `json` are sent only when there is neither signed body nor content; files, params, headers and cookies as given.
+  13. Streaming flag = `config.is_streaming_request(endpoint, data map, else json object, else empty map)`. Set the logging state's stream flag to it.
+  14. Logging pre_call (B249) with input = `data` when non-empty else `json`, api key provider_api_key and additional args complete_input_dict (the same input), api_base (the URL text) and headers.
+  15. Send through B3572's async passthrough request with the client, the request, the flag, the logging state and the config. A streaming answer becomes `PassthroughBody::Stream` with the upstream status and headers. A non-streaming answer is read whole; a status of 400 or more gives `UpstreamStatus`, anything else `PassthroughBody::Full`. B3572 checks a streaming answer's status before the first chunk too, so a streaming 4xx or 5xx is also `UpstreamStatus` with its body read.
+  Errors after step 2: `UpstreamStatus` is returned unchanged. Any other failure resolves the provider again and picks the config again; when either fails or no config exists, the original error is returned (a missing config gives `ProviderNotFound`, a send failure `Transport`), otherwise the failure goes through B2402's _handle_error with that config and comes back as `Mapped`.
+
+  Tests live in passthrough_call/tests.rs, module `api::passthrough_call::tests`, rstest functions against a local mock upstream (use the mock server helper that other betterlite-core api tests use; read one) and a recording fake of the logging state where B247's type allows it. Groups: `call_` for the request the upstream receives (URL, headers, body choice, model swap, signing), `stream_` for the flag and the stream reply, `error_` for the error paths, `params_` for litellm_params, model_id and the client choice. No oracle case: the call needs a live HTTP upstream and an SDK logging object, and B8640's HTTP cases cover it through the booted proxy.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/passthrough_call.rs
+    - crates/betterlite-core/src/api/passthrough_call/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L267-L389
+    why: allm_passthrough_route, the provider resolution, the config lookup and the error mapping around the awaited call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L392-L601
+    why: llm_passthrough_route, the request building order, the Bedrock ARN encoding, signing, the model swap and the streaming flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L604-L633
+    why: _async_passthrough_request, which B3572 owns and this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9344-L9397
+    why: get_provider_passthrough_config, the eight providers that have a passthrough config (B5360 selects the tag).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/timeout_utils.py
+    why: resolve_llm_passthrough_timeout, which B3571 owns and step 5 calls.
+dod:
+  - text: The upstream receives the URL from get_complete_url, the auth headers merged with the forwarded request headers, and the body chosen in the order signed body, content, then data and json, with json's model replaced by the resolved model.
+    proof: [call-tests]
+  - text: A Bedrock endpoint with application-inference-profile is sent to the ARN-encoded URL, and model_id from the kwargs reaches litellm_params.
+    proof: [call-tests, params-tests]
+  - text: The streaming flag comes from the provider config, is set on the logging state, and a streaming answer is relayed as a stream with the upstream status and headers.
+    proof: [stream-tests]
+  - text: A given client's timeouts are used, and without one the timeout comes from resolve_llm_passthrough_timeout; litellm_params carry allm_passthrough_route true.
+    proof: [params-tests]
+  - text: An upstream 4xx or 5xx comes back as UpstreamStatus with status, headers and body; an unknown passthrough provider gives "Provider <name> not found"; a send failure goes through _handle_error when a config exists.
+    proof: [error-tests]
+checks:
+  optional: []
+  commands:
+    - id: call-tests
+      why: the request sent upstream has the wrong URL, headers, body or model
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::passthrough_call::tests::call_/)'
+    - id: stream-tests
+      why: the streaming flag or the stream reply is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::passthrough_call::tests::stream_/)'
+    - id: params-tests
+      why: litellm_params, model_id or the client and timeout choice is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::passthrough_call::tests::params_/)'
+    - id: error-tests
+      why: an error path returns the wrong error or loses the upstream status
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::passthrough_call::tests::error_/)'
+oracle_cases: []
+deviations:
+  - what: Only the async call is built in Rust. The blocking llm_passthrough_route path (L566-L595) and its PassthroughStreamingResponse are not.
+    why: Every caller at the pin uses the async form; B7890 gives Python's blocking function by running the async call.
+  - what: The `provider_config` keyword override is not read.
+    why: No caller at the pin passes it.
+  - what: The logging state is passed in instead of being made by the @client decorator.
+    why: The proxy makes it in pre-call (B8694) and the router executor makes it for its hop (B8691); the call itself only updates it.
+out_of_scope:
+  - "AsyncPassthroughStreamingResponse, PassthroughStreamingResponse, _SpendCollection, _as_async_generator, _as_generator and _async_passthrough_request (passthrough/main.py L30-L265, L604-L633): B3572."
+  - "The @client decorator's success and failure logging: B014 and the logging tasks; this call only updates the state it is given."
+  - "Router.allm_passthrough_route and its executor: B8354 builds the factory branch, B8691 the executor and the router trait implementation."
+  - "get_provider_passthrough_config: B5360 selects the tag; each provider task builds its config."
+pitfalls:
+  - "The model sent upstream and swapped into json is the resolved model without its provider prefix, so `bedrock/anthropic.claude...` goes out as `anthropic.claude...`."
+  - "An empty signed body still wins over content, data and json; check for presence, not for emptiness."
+  - "Request data for logging and update_environment_variables is `data` only when it is a non-empty map; an empty map falls back to `json`."
+  - "The streaming flag reads `data` when it is a map and `json` only when `data` is not, so a request with both uses `data`."
+  - "forward_headers is false here, so request headers reach the upstream only through B3571's x-pass- prefix rule; never copy the caller's Authorization."
+  - "The error path resolves the provider a second time; a resolution error there is the one returned, as in LiteLLM."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

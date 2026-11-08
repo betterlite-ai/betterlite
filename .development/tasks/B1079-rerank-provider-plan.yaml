@@ -38,7 +38,7 @@ scope:
   - crates/betterlite-config/src/api/rerank_provider_plan/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/rerank-provider-plan-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/rerank_provider_plan.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/rerank_provider_plan.py
   - tools/oracle/cases/sdk-http/rerank-provider-plan/**

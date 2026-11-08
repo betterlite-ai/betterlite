@@ -1,0 +1,13 @@
+id: B8670
+milestone: M8 platform
+title: Mount UI discovery, invitation link, queued chat and fallback login routes
+status: todo
+depends_on: [B8610, B8611, B3211, B8599, B797, B863, B7324, B881, B799, B4200, B7323]
+file: tasks/B8670-management-route-mount.yaml
+covers: []
+parent: B078
+split_from: B078
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

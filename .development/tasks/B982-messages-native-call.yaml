@@ -25,7 +25,7 @@ description: >-
   to the B010 provider contract. anthropic_messages_handler takes the selector through its constructor, asks it
   first, and runs the native path with the config it returns. The provider arms (B1440's deepseek arm and JSON tail,
   B8580's minimax, tencent and edenai arms, the anthropic, bedrock, vertex_ai, azure_ai and github_copilot arms of
-  their provider tasks) implement it; the wave 17 wiring part chains them in the source order of
+  their provider tasks) implement it; B8634 (messages_selector_chain) chains them in the source order of
   _get_provider_anthropic_messages_config_cached. Test it as api::messages_native_call::tests::config_selection with
   a fake selector: a returned config takes the native path, None falls through to the pass-through check and the
   bridges.

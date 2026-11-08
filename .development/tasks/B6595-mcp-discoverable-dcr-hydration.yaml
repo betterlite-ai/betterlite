@@ -7,7 +7,7 @@ description: >-
   Put the code in two new modules of betterlite-mcp: oauth_metadata_cache (crates/betterlite-mcp/src/oauth_metadata_cache.rs and oauth_metadata_cache/**) and dcr_hydration (crates/betterlite-mcp/src/dcr_hydration.rs and dcr_hydration/**), each with a tests.rs beside it. The architect adds the tokio feature sync to crates/betterlite-mcp/Cargo.toml (the cache uses tokio::sync::Mutex).
 
 
-  Part 1, oauth_metadata_cache. LiteLLM keeps five module-level dicts. Betterlite keeps the same state inside one OAuthMetadataCache value, cheap to clone (an Arc around a std::sync::Mutex of the state plus the per-key async locks), created once by the composition root and passed to whoever needs it. Never use a static. A CacheKey is (server_id: String, resource_url: String). Constants: TTL_SECONDS 300, NEGATIVE_TTL_SECONDS 60, MAX_SIZE 128. A cached value is Option<serde_json::Value>: None is the negative entry that stops repeated upstream fetches. Time comes in as an argument, a tokio::time::Instant named now, so tests run on paused time.
+  Part 1, oauth_metadata_cache. LiteLLM keeps five module-level dicts. Betterlite keeps the same state inside one OAuthMetadataCache value, cheap to clone (an Arc around a std::sync::Mutex of the state plus the per-key async locks), created once by B8614 and passed to whoever needs it. Never use a static. A CacheKey is (server_id: String, resource_url: String). Constants: TTL_SECONDS 300, NEGATIVE_TTL_SECONDS 60, MAX_SIZE 128. A cached value is Option<serde_json::Value>: None is the negative entry that stops repeated upstream fetches. Time comes in as an argument, a tokio::time::Instant named now, so tests run on paused time.
 
   1. `lookup(&self, key, now) -> Option<Option<Value>>` returns the entry only while expires_at is greater than now (an entry with expires_at equal to now is expired). It does not prune.
 
@@ -21,7 +21,7 @@ description: >-
 
   Part 2, dcr_hydration. A config.yaml server has no LiteLLM_MCPServerTable row, so the DCR client minted for it lives in the server-scoped OAuth client store (table LiteLLM_MCPServerOAuthClient, keyed by server_id). After a restart the in-memory server has no client_id, and token refresh needs one. `hydrate_config_server_dcr_client` copies the stored client onto the in-memory server. The config loader (B6764) and the reload code call it for every config-declared server.
 
-  Collaborators come in through a DcrHydration constructor, following the way B6761 injects MetadataFetcher: a DcrClientStore trait with `async fn client_credentials(&self, server_id: &str) -> Result<Option<serde_json::Value>, StoreReadError>` (the raw credentials blob of the row, or None when there is no row; B4712 owns the real read, get_mcp_server_oauth_client_credentials, in betterlite-server, which this crate cannot import, so the architect writes the adapter), and the Decryptor trait of B6763 (server_build). Types:
+  Collaborators come in through a DcrHydration constructor, following the way B6761 injects MetadataFetcher: a DcrClientStore trait with `async fn client_credentials(&self, server_id: &str) -> Result<Option<serde_json::Value>, StoreReadError>` (the raw credentials blob of the row, or None when there is no row; B4712 owns the real read, get_mcp_server_oauth_client_credentials, in betterlite-server, which this crate cannot import, so B8620 writes the adapter), and the Decryptor trait of B6763 (server_build). Types:
 
   - PersistedDcrCredentials { client_id: Option<String>, client_secret: Option<String>, token_endpoint_auth_method: Option<String>, redirect_uris: Option<Vec<String>> } (`_PersistedDcrCredentials`), serde with every field optional and unknown fields ignored.
 
@@ -101,7 +101,7 @@ deviations:
   - what: The cache and its locks are one OAuthMetadataCache value passed in, not module-level dicts, and time is an argument.
     why: the repo allows no module state, and tests run on paused time.
   - what: DcrClientStore is a trait and an undecryptable value is handled by the injected Decryptor.
-    why: betterlite-mcp cannot import the database code in betterlite-server, so the architect wires the adapter.
+    why: betterlite-mcp cannot import the database code in betterlite-server, so B8620 wires the adapter.
   - what: token_endpoint_auth_method from the store is kept as text on PersistedDcrCredentials and converted with the MCPTokenEndpointAuthMethod parser when it is applied; text that does not parse leaves the field None and logs at debug.
     why: Python assigns the raw string without validation, while the Rust record holds the typed enum.
 

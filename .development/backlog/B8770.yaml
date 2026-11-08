@@ -1,0 +1,13 @@
+id: B8770
+milestone: M8 platform
+title: Mount the memory API and the SSO routes and prove the login entry and callbacks over HTTP
+status: todo
+depends_on: [B8610, B8670, B8671, B8541, B063, B1630, B1631, B860]
+file: tasks/B8770-memory-sso-mount.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

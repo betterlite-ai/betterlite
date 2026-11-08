@@ -120,7 +120,7 @@ out_of_scope:
   - "B4772 owns managed_authorization.py, including managed_agent_policy. B4670 asks for it through its own CeilingReads trait."
   - "B748 owns _check_agent_access_group_model_access and _check_agent_caller_model_access (auth_checks.py L4546-L4640), the callers of this task's loaders."
   - "agent_endpoints/auth/__init__.py is empty, so nothing is built for it."
-  - "The read-through that resyncs an agent from the database (registry_read_through._resync_agents, get_agent_with_read_through) has no owner yet. See the notes."
+  - "The read-through that resyncs an agent from the database (registry_read_through._resync_agents, get_agent_with_read_through) is B8231's; B8645 backs AccessGroupReads with it."
 pitfalls:
   - A group that is attached but failed to load keeps its id in access_group_ids and adds nothing to the three sets. Dropping the id from the list or returning None here would lift the cap, which is the one thing this module must not do.
   - The ceiling is None only when the agent lists no group ids. An agent whose only group was deleted gets a ceiling with empty sets, and B748 reads an empty `models` set as "deny every model".

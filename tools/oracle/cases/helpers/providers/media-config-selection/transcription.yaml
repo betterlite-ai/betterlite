@@ -1,0 +1,44 @@
+kind: helper
+name: media-config-transcription
+call:
+  b5360:
+    model_cost:
+      azure-speech: {audio_transcription_config: azure_speech}
+      azure/live-prefixed: {audio_transcription_config: azure_speech}
+      azure/live-other: {audio_transcription_config: other}
+      azure/live-wins: {audio_transcription_config: other}
+      dual: {audio_transcription_config: azure_speech}
+      azure/dual: {audio_transcription_config: other}
+    bundled_model_cost:
+      azure/bundled: {audio_transcription_config: azure_speech}
+      bundled-bare: {audio_transcription_config: azure_speech}
+      azure/live-wins: {audio_transcription_config: azure_speech}
+    requests:
+      - selector: transcription
+        calls:
+          - {provider: deepgram, model: nova-3}
+          - {provider: elevenlabs, model: scribe}
+          - {provider: xai, model: xai-stt}
+          - {provider: openai, model: gpt-4o-transcribe}
+          - {provider: openai, model: whisper-1}
+          - {provider: hosted_vllm, model: whisper}
+          - {provider: watsonx, model: whisper}
+          - {provider: ovhcloud, model: whisper}
+          - {provider: scaleway, model: whisper}
+          - {provider: mistral, model: voxtral}
+          - {provider: nvidia_riva, model: whisper}
+          - {provider: soniox, model: stt}
+          - {provider: vertex_ai, model: vertex_ai/gemini-1.5-transcribe}
+          - {provider: vertex_ai, model: gemini-1.5}
+          - {provider: gemini, model: gemini-transcribe}
+          - {provider: edenai, model: transcribe}
+          - {provider: azure, model: azure-speech}
+          - {provider: azure, model: live-prefixed}
+          - {provider: azure, model: bundled}
+          - {provider: azure, model: bundled-bare}
+          - {provider: azure, model: live-wins}
+          - {provider: azure, model: dual}
+          - {provider: azure, model: azure-other}
+          - {provider: groq, model: whisper-large-v3}
+env: {}
+compare: {ignore: []}

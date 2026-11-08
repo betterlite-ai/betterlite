@@ -1,0 +1,13 @@
+id: B8631
+milestone: M8 platform
+title: Router generic, single, batch and call type ports
+status: todo
+depends_on: [B8610, B8611, B8612, B4261, B8630, B6021, B8352, B8353, B8354, B312, B398, B309, B401, B399, B306, B364, B844, B303, B016, B310, B7430, B6460, B2489, B3273, B370, B8691]
+file: tasks/B8631-router-generic-ports.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
