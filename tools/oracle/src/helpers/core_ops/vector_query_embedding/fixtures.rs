@@ -188,9 +188,8 @@ impl VectorStoreConfig for QueryFixture {
         &self,
         _response: &VectorStoreResponse,
     ) -> Result<VectorStoreCreateResponse, FixtureError> {
-        Err(FixtureError::Contract(
-            VectorStoreContractError::ApiBaseRequired,
-        ))
+        let missing = FixtureError::from(VectorStoreContractError::ApiBaseRequired);
+        Err(missing)
     }
 }
 

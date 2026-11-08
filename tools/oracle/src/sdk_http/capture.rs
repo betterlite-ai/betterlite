@@ -65,27 +65,27 @@ pub(crate) fn run_until_stopped<F>(sending: F, stop: &Stop<'_>) -> Execution
 where
     F: Future<Output = Result<SdkResult, SdkHttpError>>,
 {
-    let result = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(SdkHttpError::Io)
-        .and_then(|runtime| runtime.block_on(until_stopped(sending, stop)));
+    let runtime = match Builder::new_current_thread().enable_all().build() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            return Execution {
+                result: Err(SdkHttpError::Io(error)),
+                log: Vec::new(),
+            };
+        }
+    };
+    let result = runtime.block_on(async {
+        let mut pinned = Box::pin(sending);
+        loop {
+            stop.check()?;
+            if let Ok(sent) = timeout(POLL, &mut pinned).await {
+                return sent;
+            }
+        }
+    });
     Execution {
         result,
         log: Vec::new(),
-    }
-}
-
-async fn until_stopped<F>(sending: F, stop: &Stop<'_>) -> Result<SdkResult, SdkHttpError>
-where
-    F: Future<Output = Result<SdkResult, SdkHttpError>>,
-{
-    let mut pinned = Box::pin(sending);
-    loop {
-        stop.check()?;
-        if let Ok(sent) = timeout(POLL, &mut pinned).await {
-            return sent;
-        }
     }
 }
 
