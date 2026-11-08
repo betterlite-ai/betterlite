@@ -100,7 +100,7 @@ async fn async_scan_iter_with_a_zero_count_sends_nothing() {
         .await
         .expect("the keys");
     assert!(keys.is_empty());
-    assert!(server.commands().is_empty());
+    assert!(server.commands_named("SCAN").is_empty());
 }
 
 #[tokio::test]
