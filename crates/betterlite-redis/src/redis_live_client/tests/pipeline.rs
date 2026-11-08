@@ -53,7 +53,8 @@ async fn execute_returns_the_first_error() {
     pipeline.commands.cmd("GET").arg("key");
     pipeline.commands.cmd("DEL").arg("key");
     let error = pipeline.execute().await.expect_err("a failing command");
-    assert!(error.to_string().contains("ERR first"), "{error}");
+    let text = error.to_string();
+    assert!(text.contains("first") && !text.contains("second"), "{text}");
 }
 
 #[tokio::test]
