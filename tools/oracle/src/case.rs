@@ -13,6 +13,7 @@ use serde_json::Value;
 
 use crate::multipart_oracle::error::MultipartError;
 use crate::multipart_oracle::request::request_body;
+use crate::oracle_comparison_contracts::{self, Contracts, ExpectedDifference, NumericRule};
 use serde::de::IgnoredAny;
 
 pub mod browser_flow;
@@ -48,6 +49,17 @@ pub struct Case {
 pub type HttpCase = Case;
 
 impl Case {
+    pub(crate) fn with_self_check(&self, self_check: bool) -> Self {
+        let mut owned = self.clone();
+        mark_compare_self_check(&mut owned.compare, self_check);
+        if let Some(steps) = &mut owned.steps {
+            for step in steps {
+                mark_compare_self_check(&mut step.compare, self_check);
+            }
+        }
+        owned
+    }
+
     fn common(&self) -> group::CommonFields<'_> {
         group::CommonFields {
             name: &self.name,
@@ -106,13 +118,54 @@ pub(crate) struct UpstreamAnswer {
     pub(crate) events: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(from = "CompareWire")]
 pub(crate) struct Compare {
     pub(crate) headers: Vec<String>,
     pub(crate) headers_present: Vec<String>,
     pub(crate) upstream_headers: Vec<String>,
     pub(crate) ignore: Vec<Ignore>,
+    // one pointer keeps a scenario step under the enum variant size lint
+    pub(crate) contracts: Option<Box<Contracts>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CompareWire {
+    headers: Vec<String>,
+    headers_present: Vec<String>,
+    upstream_headers: Vec<String>,
+    ignore: Vec<Ignore>,
+    #[serde(default)]
+    numeric: Vec<NumericRule>,
+    #[serde(default)]
+    expected_difference: Vec<ExpectedDifference>,
+}
+
+impl From<CompareWire> for Compare {
+    fn from(wire: CompareWire) -> Self {
+        let declared = !wire.numeric.is_empty() || !wire.expected_difference.is_empty();
+        let contracts = declared.then(|| {
+            Box::new(Contracts {
+                numeric: wire.numeric,
+                expected_difference: wire.expected_difference,
+                self_check: false,
+            })
+        });
+        Self {
+            headers: wire.headers,
+            headers_present: wire.headers_present,
+            upstream_headers: wire.upstream_headers,
+            ignore: wire.ignore,
+            contracts,
+        }
+    }
+}
+
+pub(crate) fn mark_compare_self_check(compare: &mut Compare, self_check: bool) {
+    if let Some(contracts) = compare.contracts.as_mut() {
+        contracts.self_check = self_check;
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -191,7 +244,20 @@ fn validate_request_or_steps(path: &Path, case: &Case) -> Result<(), OracleError
         return Err(invalid("request.path cannot be empty"));
     }
     request_body(&case.request.body, case.request.body_kind).map_err(OracleError::Multipart)?;
-    validate_ignores(path, &case.compare.ignore)
+    validate_ignores(path, &case.compare.ignore)?;
+    validate_contracts(path, &case.compare)
+}
+
+pub(crate) fn validate_contracts(path: &Path, compare: &Compare) -> Result<(), OracleError> {
+    let Some(contracts) = compare.contracts.as_deref() else {
+        return Ok(());
+    };
+    let outcome =
+        oracle_comparison_contracts::validate(&contracts.numeric, &contracts.expected_difference);
+    outcome.map_err(|error| OracleError::CaseInvalid {
+        path: path.to_owned(),
+        message: error.to_string(),
+    })
 }
 
 pub(crate) fn validate_ignores(path: &Path, ignores: &[Ignore]) -> Result<(), OracleError> {
