@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::local_ttl_cache::Settings;
 use betterlite_router::routing_value_store::{
-    Clock, PinValue, RouteKey, RouteValue, RoutingValueStore, StoreRead,
+    PinValue, RouteKey, RouteValue, RoutingValueStore, StoreRead,
 };
 
 use super::local_store;
@@ -19,15 +19,14 @@ fn at(clock: &TestClock, now: f64) {
     *clock.0.lock().unwrap() = now;
 }
 
-fn store(item_kib: i64, clock: &TestClock) -> RoutingValueStore {
-    let source = Arc::clone(&clock.0);
-    let clock: Clock = Arc::new(move || *source.lock().unwrap());
+fn store(item_kib: i64, test_clock: &TestClock) -> RoutingValueStore {
+    let source = Arc::clone(&test_clock.0);
     local_store(
         &Settings {
             global_max_item_kib: item_kib,
             global_ttl: None,
         },
-        clock,
+        Arc::new(move || *source.lock().unwrap()),
     )
     .unwrap()
 }
