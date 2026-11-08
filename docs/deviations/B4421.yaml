@@ -1,7 +1,7 @@
 task: B4421
 deviations:
   - what: AWS KMS returns None when the encrypted value is missing from the environment instead of raising.
-    why: LiteLLM raises an Exception there and get_secret then falls back to os.getenv, which is None for the same name, so a working setup sees the same None without the logged error. The dispatch probe is stored with the None rules for this manager type.
+    why: LiteLLM raises an Exception there, and get_secret catches it and falls back to os.getenv, which is None for the same name, so a working setup sees the same result without the logged error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/secret_manager_handler.py#L140-L142
   - what: The Infisical client is the default when no key manager is known; the closed manager enum spells that unknown case as None.
     why: LiteLLM's else branch sends every key manager string it does not recognize to the Infisical client. betterlite rejects an unknown system at config load and keeps the final fallback for a dispatch call that names no system.
