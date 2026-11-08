@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use std::future::pending;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -80,24 +80,35 @@ enum HookAnswer {
     Break(String),
 }
 
-struct FakeHook {
-    answer: HookAnswer,
+struct HookLog {
+    received: Mutex<Option<SseFailure>>,
     calls: AtomicUsize,
 }
 
+struct FakeHook {
+    answer: HookAnswer,
+    log: Arc<HookLog>,
+}
+
 impl FakeHook {
-    fn arc(answer: HookAnswer) -> Arc<dyn LateFailureHook> {
-        Arc::new(Self {
-            answer,
+    fn arc(answer: HookAnswer) -> (Arc<dyn LateFailureHook>, Arc<HookLog>) {
+        let log = Arc::new(HookLog {
+            received: Mutex::new(None),
             calls: AtomicUsize::new(0),
-        })
+        });
+        let hook = Self {
+            answer,
+            log: Arc::clone(&log),
+        };
+        (Arc::new(hook), log)
     }
 }
 
 #[async_trait]
 impl LateFailureHook for FakeHook {
-    async fn late_failure(&self, _failure: &SseFailure) -> Result<Option<SseFailure>, HookRaised> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
+    async fn late_failure(&self, failure: &SseFailure) -> Result<Option<SseFailure>, HookRaised> {
+        self.log.calls.fetch_add(1, Ordering::SeqCst);
+        *self.log.received.lock().expect("hook log") = Some(failure.clone());
         match &self.answer {
             HookAnswer::Replace(replacement) => Ok(Some(replacement.clone())),
             HookAnswer::Keep => Ok(None),
@@ -105,6 +116,14 @@ impl LateFailureHook for FakeHook {
             HookAnswer::Break(message) => Err(HookRaised::Broken(message.clone())),
         }
     }
+}
+
+fn assert_hook_saw(log: &HookLog, expected: &SseFailure) {
+    assert_eq!(
+        log.received.lock().expect("hook log").as_ref(),
+        Some(expected)
+    );
+    assert_eq!(log.calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -189,6 +208,58 @@ async fn a_result_inside_one_interval_writes_nothing_early() {
     .expect("response");
     assert_eq!(response.status(), StatusCode::CREATED);
     assert_eq!(body_bytes(response).await, Bytes::from_static(b"alpha"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_failure_inside_one_interval_is_returned_unchanged() {
+    let failure = failure(r#"{"status_code": 503, "detail": "no capacity"}"#);
+    let returned = failure.clone();
+    let result = open_sse_before_first_byte(
+        async move {
+            sleep(Duration::from_millis(500)).await;
+            Err::<ProducedResponse, SseFailure>(returned)
+        },
+        Some(PingSetting::Seconds(1.0)),
+        "text/event-stream",
+        None,
+    )
+    .await;
+    assert_eq!(result.expect_err("failure"), failure);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_plain_result_inside_one_interval_is_returned_unchanged() {
+    let response = open_sse_before_first_byte(
+        async {
+            sleep(Duration::from_millis(500)).await;
+            Ok::<ProducedResponse, SseFailure>(ProducedResponse::Plain(
+                Response::builder()
+                    .status(StatusCode::UNAVAILABLE_FOR_LEGAL_REASONS)
+                    .header("x-origin", "guardrail")
+                    .header(CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"blocked":true}"#))
+                    .expect("plain response"),
+            ))
+        },
+        Some(PingSetting::Seconds(1.0)),
+        "text/event-stream",
+        None,
+    )
+    .await
+    .expect("response");
+    assert_eq!(response.status(), StatusCode::UNAVAILABLE_FOR_LEGAL_REASONS);
+    assert_eq!(
+        response.headers().get("x-origin"),
+        Some(&HeaderValue::from_static("guardrail"))
+    );
+    assert_eq!(
+        response.headers().get(CONTENT_TYPE),
+        Some(&HeaderValue::from_static("application/json"))
+    );
+    assert_eq!(
+        body_bytes(response).await,
+        Bytes::from_static(br#"{"blocked":true}"#)
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -284,12 +355,11 @@ async fn a_late_failure_is_written_as_the_error_and_done_frames() {
 
 #[tokio::test(start_paused = true)]
 async fn a_late_failure_uses_the_replacement_the_hook_returns() {
+    let original = failure(r#"{"status_code": 500, "detail": "the original"}"#);
     let replacement = failure(r#"{"status_code": 401, "detail": "the hook's words"}"#);
-    let body = late_body(
-        Err(failure(r#"{"status_code": 500, "detail": "the original"}"#)),
-        Some(FakeHook::arc(HookAnswer::Replace(replacement))),
-    )
-    .await;
+    let (hook, log) = FakeHook::arc(HookAnswer::Replace(replacement));
+    let body = late_body(Err(original.clone()), Some(hook)).await;
+    assert_hook_saw(&log, &original);
     assert_eq!(
         body,
         Bytes::from_static(
@@ -300,12 +370,11 @@ async fn a_late_failure_uses_the_replacement_the_hook_returns() {
 
 #[tokio::test(start_paused = true)]
 async fn a_late_failure_uses_the_replacement_the_hook_raises() {
+    let original = failure(r#"{"status_code": 500, "detail": "the original"}"#);
     let replacement = failure(r#"{"status_code": 403, "detail": "raised"}"#);
-    let body = late_body(
-        Err(failure(r#"{"status_code": 500, "detail": "the original"}"#)),
-        Some(FakeHook::arc(HookAnswer::Raise(replacement))),
-    )
-    .await;
+    let (hook, log) = FakeHook::arc(HookAnswer::Raise(replacement));
+    let body = late_body(Err(original.clone()), Some(hook)).await;
+    assert_hook_saw(&log, &original);
     assert_eq!(
         body,
         Bytes::from_static(
@@ -321,11 +390,10 @@ async fn a_late_failure_uses_the_replacement_the_hook_raises() {
 async fn a_late_failure_without_a_usable_replacement_keeps_the_original(
     #[case] answer: HookAnswer,
 ) {
-    let body = late_body(
-        Err(failure(r#"{"status_code": 500, "detail": "the original"}"#)),
-        Some(FakeHook::arc(answer)),
-    )
-    .await;
+    let original = failure(r#"{"status_code": 500, "detail": "the original"}"#);
+    let (hook, log) = FakeHook::arc(answer);
+    let body = late_body(Err(original.clone()), Some(hook)).await;
+    assert_hook_saw(&log, &original);
     assert_eq!(
         body,
         Bytes::from_static(
