@@ -1,0 +1,12 @@
+kind: helper
+name: arize-dynamic-headers-space-key-wins
+call:
+  b3850:
+    function: arize_dynamic_headers
+    params:
+      arize_space_key: key
+      arize_space_id: id
+      arize_api_key: api
+env: {}
+compare:
+  ignore: []
