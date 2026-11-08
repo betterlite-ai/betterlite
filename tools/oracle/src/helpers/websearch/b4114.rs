@@ -42,6 +42,16 @@ struct SelectedTool {
     litellm_params: IndexMap<String, Box<RawValue>>,
 }
 
+impl From<&SearchToolConfig> for SelectedTool {
+    fn from(config: &SearchToolConfig) -> Self {
+        Self {
+            search_tool_name: config.search_tool_name.clone(),
+            search_provider: config.search_provider.clone(),
+            litellm_params: config.litellm_params.clone(),
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct SelectionOutput {
     tool: Option<SelectedTool>,
@@ -67,14 +77,9 @@ impl crate::helpers::Helper for Op {
 }
 
 fn select_tool(input: &Input) -> crate::helpers::HelperResult {
-    let selector = SearchToolSelector::new(input.search_tool_name.clone());
-    let tool = selector
+    let tool = SearchToolSelector::new(input.search_tool_name.clone())
         .select_from_router(input.search_tools.as_deref())
-        .map(|selected| SelectedTool {
-            search_tool_name: selected.search_tool_name.clone(),
-            search_provider: selected.search_provider.clone(),
-            litellm_params: selected.litellm_params.clone(),
-        });
+        .map(SelectedTool::from);
     serde_json::to_value(SelectionOutput { tool }).map_err(failure)
 }
 
