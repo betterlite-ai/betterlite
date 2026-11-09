@@ -54,12 +54,12 @@ pub fn should_use_cache(
     }
 }
 
-fn hashed_key<L, C>(material: &str, hooks: &VerboseHooks<L, C>) -> String
+fn hashed_key<L, C>(key_material: &str, hooks: &VerboseHooks<L, C>) -> String
 where
     L: LoggerSink,
     C: ConsoleSink,
 {
-    let hashed = hex::encode(Sha256::digest(material.as_bytes()));
+    let hashed = hex::encode(Sha256::digest(key_material.as_bytes()));
     let message = format!("hashed cache key (SHA-256): {hashed}");
     let _printed = hooks.main_print_verbose(Payload::String(message));
     hashed

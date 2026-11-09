@@ -144,12 +144,14 @@ def _semantic_scope_values() -> Json:
     cache = Cache
     tenant_fields = list(cache._SEMANTIC_CACHE_TENANT_SCOPE_FIELDS)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     end_user_field = cache._SEMANTIC_CACHE_END_USER_SCOPE_FIELD  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    excluded = sorted(cast(frozenset[str], cache._SEMANTIC_CACHE_SCOPE_EXCLUDED_PARAMS))  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     return cast(
         Json,
         {
             "scopes": [scope.value for scope in SemanticCacheScope],
             "tenant_fields": tenant_fields,
             "end_user_field": end_user_field,
+            "excluded_params": excluded,
         },
     )
 

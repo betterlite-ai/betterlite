@@ -700,6 +700,23 @@ fn floats_render_as_python_repr(#[case] value: f64, #[case] expected: &str) {
 }
 
 #[rstest]
+#[case::local(LiteLlmCacheType::Local, false)]
+#[case::redis(LiteLlmCacheType::Redis, false)]
+#[case::redis_semantic(LiteLlmCacheType::RedisSemantic, true)]
+#[case::valkey_semantic(LiteLlmCacheType::ValkeySemantic, true)]
+#[case::s3(LiteLlmCacheType::S3, false)]
+#[case::disk(LiteLlmCacheType::Disk, false)]
+#[case::qdrant_semantic(LiteLlmCacheType::QdrantSemantic, true)]
+#[case::azure_blob(LiteLlmCacheType::AzureBlob, false)]
+#[case::gcs(LiteLlmCacheType::Gcs, false)]
+fn only_semantic_cache_types_are_semantic(
+    #[case] cache_type: LiteLlmCacheType,
+    #[case] expected: bool,
+) {
+    assert_eq!(settings_for(cache_type).is_semantic_cache(), expected);
+}
+
+#[rstest]
 #[case::default_on(CacheMode::DefaultOn, "default_on")]
 #[case::default_off(CacheMode::DefaultOff, "default_off")]
 fn cache_mode_wire_values(#[case] mode: CacheMode, #[case] expected: &str) {

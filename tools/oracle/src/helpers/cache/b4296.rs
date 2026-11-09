@@ -5,7 +5,9 @@ use betterlite_cache::cache_key::derive::{get_cache_key, should_use_cache};
 use betterlite_cache::cache_key::request::{
     CacheKeyRequest, KeyParam, LiteLlmParams, RequestCacheControl,
 };
-use betterlite_cache::cache_key::scope::{END_USER_SCOPE_FIELD, TENANT_SCOPE_FIELDS};
+use betterlite_cache::cache_key::scope::{
+    END_USER_SCOPE_FIELD, SEMANTIC_EXCLUDED_PARAMS, TENANT_SCOPE_FIELDS,
+};
 use betterlite_cache::cache_key::settings::CacheKeySettings;
 use betterlite_cache::cache_key::value::KeyObject;
 use betterlite_cache::types::cache_type::{CacheMode, LiteLlmCacheType};
@@ -149,6 +151,7 @@ impl crate::helpers::Helper for Op {
                 "scopes": wire_values([SemanticCacheScope::Key, SemanticCacheScope::EndUser])?,
                 "tenant_fields": TENANT_SCOPE_FIELDS,
                 "end_user_field": END_USER_SCOPE_FIELD,
+                "excluded_params": SEMANTIC_EXCLUDED_PARAMS,
             })),
         }
     }
