@@ -1,0 +1,31 @@
+kind: helper
+name: langfuse-settings-release-resolution
+call:
+  b3900:
+    function: read
+    reading: release
+    steps:
+      - environment:
+          LANGFUSE_RELEASE: release-9
+          GITHUB_SHA: sha
+      - environment:
+          LANGFUSE_RELEASE: ""
+          GITHUB_SHA: sha
+      - environment:
+          LANGFUSE_RELEASE: "   "
+          GITHUB_SHA: sha
+      - environment:
+          DRONE_COMMIT_SHA: drone
+          GITHUB_SHA: github
+          RENDER_GIT_COMMIT: render
+      - environment:
+          RENDER_GIT_COMMIT: ""
+          GITHUB_SHA: sha
+      - environment: {}
+      - environment:
+          DRONE_COMMIT_SHA: drone
+      - environment:
+          CI_COMMIT_SHA: ci
+          GITHUB_SHA: github
+env: {}
+compare: {ignore: []}
