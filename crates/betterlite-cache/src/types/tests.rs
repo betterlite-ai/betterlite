@@ -132,6 +132,18 @@ fn cache_ping_response_round_trips(#[case] wire: &str) {
     assert_wire(&decoded, wire);
 }
 
+#[test]
+fn cache_ping_response_rejects_an_unmodelled_health_check_key() {
+    let input = concat!(
+        r#"{"status":"success","cache_type":"local","ping_response":null,"#,
+        r#""set_cache_response":null,"litellm_cache_params":null,"#,
+        r#""health_check_cache_params":{"region":"eu"}}"#
+    );
+    let error =
+        serde_json::from_str::<CachePingResponse>(input).expect_err("an unmodelled health key");
+    assert!(error.to_string().contains("region"));
+}
+
 #[rstest]
 #[case::minimal(
     r#"{"host":null,"port":null,"redis_kwargs":null,"namespace":null,"redis_version":null}"#
