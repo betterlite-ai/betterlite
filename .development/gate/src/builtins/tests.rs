@@ -27,6 +27,14 @@ fn a_double_star_crosses_directories() {
 }
 
 #[test]
+fn a_trailing_slash_covers_everything_in_the_folder() {
+    let set = glob_set(&["crates/probe/src/settings/".to_owned()]).unwrap();
+    assert!(set.is_match("crates/probe/src/settings/records.rs"));
+    assert!(set.is_match("crates/probe/src/settings/deep/tests.rs"));
+    assert!(!set.is_match("crates/probe/src/settings.rs"));
+}
+
+#[test]
 fn a_task_file_pattern_matches_only_that_task() {
     let set = glob_set(&[".development/tasks/B208-*.yaml".to_owned()]).unwrap();
     assert!(set.is_match(".development/tasks/B208-http-proxies.yaml"));
