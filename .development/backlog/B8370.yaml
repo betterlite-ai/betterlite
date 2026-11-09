@@ -1,13 +1,13 @@
 id: B8370
 milestone: M8 platform
 title: In-process job scheduler and shutdown stop
-status: todo
+status: done
 depends_on: [B003, B4172]
 file: tasks/B8370-job-scheduler.yaml
 covers: []
 parent: B124
 split_from: B124
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 944

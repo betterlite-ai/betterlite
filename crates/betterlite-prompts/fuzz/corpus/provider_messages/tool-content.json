@@ -1,0 +1,1 @@
+[{"role":"tool","tool_call_id":"c1","content":"plain text"},{"role":"tool","tool_call_id":"c2","content":"{\"ok\":true}"},{"role":"assistant","content":"text","tool_calls":[{"id":"call_1","type":"function","function":{"name":"f","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call_1","content":[{"type":"text","text":"list"}]}]
