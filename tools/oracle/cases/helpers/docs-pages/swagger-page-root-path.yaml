@@ -1,0 +1,14 @@
+kind: helper
+name: swagger_page_matches_litellm_for_empty_prefixed_and_trailing_root_paths
+call:
+  b7740:
+    op: swagger_page
+    title: LiteLLM API
+    openapi_url: /openapi.json
+    scenarios:
+      - server_root_path: ""
+      - server_root_path: /api
+      - server_root_path: /api/
+env: {}
+compare:
+  ignore: []

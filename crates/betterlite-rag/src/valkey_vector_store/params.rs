@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
 use betterlite_provider::api::vector_store_contracts::config::Params;
+use betterlite_redis::valkey::build_valkey_url;
 use secrecy::SecretString;
 
-use super::build_valkey_url;
 use super::error::ValkeyError;
 use super::query::{DEFAULT_EMBEDDING_FIELD, DEFAULT_TEXT_FIELD};
 

@@ -11,7 +11,6 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-provider = { path = "../betterlite-provider" }
 betterlite-redis = { path = "../betterlite-redis" }
-percent-encoding.workspace = true
 redis.workspace = true
 rust_decimal.workspace = true
 secrecy.workspace = true

@@ -1,0 +1,53 @@
+task: B6670
+deviations:
+  - what: >-
+      The text after "Syntax error in custom code:", "Failed to compile custom code:", "Execution error:" and
+      "Unexpected error:" is the sandbox's own message, not CPython's exception repr.
+    why: >-
+      B3802's sandbox reports a typed CompileError, LoadFailure or RuntimeFailure instead of a Python traceback, so
+      the prefix, success and error_type are the contract and the tail names the sandbox's own failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2135-L2150
+  - what: >-
+      The Python type name in the non-object warning is derived from the JSON kind of the result (NoneType, bool, int,
+      float, str, list, dict).
+    why: >-
+      Results cross the sandbox port as GuardrailValue, so tuple, set, bytes and other Python-only types cannot reach
+      the route and their names never appear.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2200-L2208
+  - what: >-
+      A guardrail that raises a BaseException-shaped exit (SystemExit, KeyboardInterrupt) while loading or during the
+      call answers HTTP 200 with error_type compilation or execution, where LiteLLM's two `except Exception` blocks do
+      not catch it and the request ends in the server's unhandled-exception 500.
+    why: >-
+      B3802 wraps a BaseException subclass in SandboxExit so it cannot stop the event loop, and the only failure the
+      route may not turn into a 200 is the 403 and the 422; reporting it as a compilation or execution failure is the
+      endpoint's own contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2135-L2150
+  - what: >-
+      A body that does not decode answers {"detail": [{"type", "loc", "msg"}]} without pydantic's echoed "input"
+      value, and it reports the first decoding failure rather than every field pydantic would collect at once.
+    why: >-
+      The decoder reads the body once with serde_path_to_error and does not keep the raw value, so it cannot echo the
+      offending input, and serde stops at the first failure; the FastAPI-style type, loc and msg are kept, and the 422
+      envelope is the one the other server routes give.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2006-L2019
+  - what: >-
+      A request with no valid key whose body is not JSON answers 401, where FastAPI reads the body before it solves
+      the user_api_key_auth dependency and answers 422.
+    why: >-
+      The handler checks the authenticated caller before it reads the body, so an unauthenticated caller never learns
+      whether its body would have decoded; with a valid caller the 422 still comes before the admin check.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2038-L2045
+  - what: >-
+      The request body is bounded by axum's 2 MiB default body limit, so a larger body answers 413 where LiteLLM
+      reads it in full.
+    why: >-
+      Every inbound body in betterlite-server has a size limit; the route sends no larger limit of its own.
+    link: ""
+  - what: >-
+      A test_input or request_data value nested deeper than 64 JSON levels answers 422 with type value_error, where
+      LiteLLM's json.loads accepts any depth its recursion limit allows.
+    why: >-
+      The decoder walks the body one level at a time with serde_json's RawValue slices, and the depth bound keeps the
+      recursion and the memory it allocates proportional to the body rather than to depth times size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2006-L2013

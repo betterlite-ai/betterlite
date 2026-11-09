@@ -1,0 +1,25 @@
+kind: helper
+name: sap-credentials-service-key-lookup
+call:
+  b5950:
+    function: credentials
+    environment:
+      vars: {}
+      files: {}
+      home: /home/sap
+    service_key:
+      credentials:
+        clientid: inner
+        clientsecret: null
+        serviceurls:
+          AI_API_URL: https://inner.example.com
+        cert_file_path: nested.crt
+        key_file_path: nested.key
+        resource_group: nested-rg
+      clientid: outer
+      clientsecret: outer-secret
+      cert_file_path: bare-cert.pem
+      key_file_path: bare-key.pem
+      resource_group: bare-rg
+env: {}
+compare: {ignore: []}
