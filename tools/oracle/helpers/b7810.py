@@ -9,7 +9,10 @@ from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.milvus.vector_stores.transformation import MilvusVectorStoreConfig
 from litellm.llms.pg_vector.vector_stores.transformation import PGVectorStoreConfig
 from litellm.types.router import GenericLiteLLMParams
-from litellm.types.vector_stores import VectorStoreSearchOptionalRequestParams
+from litellm.types.vector_stores import (
+    VectorStoreCreateOptionalRequestParams,
+    VectorStoreSearchOptionalRequestParams,
+)
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Object: TypeAlias = dict[str, Json]
@@ -159,6 +162,24 @@ def milvus_decode(call: Object) -> Json:
     return cast(Json, decoded)
 
 
+def milvus_create_request(call: Object) -> Json:
+    optional = obj(call.get("optional_params", {}), "optional_params")
+    url, body = MILVUS.transform_create_vector_store_request(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        cast(VectorStoreCreateOptionalRequestParams, optional),
+        text(call, "api_base"),
+    )
+    return {"url": url, "body": cast(Json, body)}
+
+
+def milvus_create_response(call: Object) -> Json:
+    status = integer(call.get("status_code"), "status_code")
+    response = httpx.Response(status, headers=strings(call, "headers"))
+    return cast(
+        Json,
+        MILVUS.transform_create_vector_store_response(response),  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+    )
+
+
 def pg_validate(call: Object) -> Json:
     params = GenericLiteLLMParams(api_key=optional_text(call, "api_key"))
     with mock.patch.dict(os.environ, strings(call, "env"), clear=True):
@@ -201,6 +222,8 @@ HANDLERS: dict[str, Callable[[Object], Json]] = {
     "milvus_map_params": milvus_map,
     "milvus_search_request": milvus_search,
     "milvus_decode_search": milvus_decode,
+    "milvus_create_request": milvus_create_request,
+    "milvus_create_response": milvus_create_response,
     "pg_vector_validate_environment": pg_validate,
     "pg_vector_complete_url": pg_url,
     "pg_vector_search_request": pg_search,

@@ -6,7 +6,8 @@ use betterlite_openai::milvus_vector_store::search::{
     Search, search_request as milvus_search_request,
 };
 use betterlite_openai::milvus_vector_store::{
-    MilvusEnv, MilvusParams, OptionalParams, get_auth_credentials, get_complete_url,
+    MilvusEnv, MilvusParams, OptionalParams, create_request as milvus_create_request,
+    create_response as milvus_create_response, get_auth_credentials, get_complete_url,
     map_openai_params, validate_environment,
 };
 use betterlite_openai::pg_vector_store::error::PgVectorError;
@@ -35,6 +36,8 @@ enum Call {
     MilvusMapParams(MilvusMapCall),
     MilvusSearchRequest(MilvusSearchCall),
     MilvusDecodeSearch(MilvusDecodeCall),
+    MilvusCreateRequest(MilvusCreateCall),
+    MilvusCreateResponse(MilvusCreateResponseCall),
     PgVectorValidateEnvironment(PgKeyCall),
     PgVectorCompleteUrl(PgUrlCall),
     PgVectorSearchRequest(PgSearchCall),
@@ -103,6 +106,22 @@ struct MilvusDecodeCall {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct MilvusCreateCall {
+    #[serde(default)]
+    optional_params: OptionalParams,
+    api_base: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MilvusCreateResponseCall {
+    status_code: u16,
+    #[serde(default)]
+    headers: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PgKeyCall {
     #[serde(default)]
     headers: BTreeMap<String, String>,
@@ -156,6 +175,14 @@ fn run_call(call: &Call) -> Value {
         Call::MilvusMapParams(input) => json!({"ok": true, "value": milvus_mapping(input)}),
         Call::MilvusSearchRequest(input) => outcome(milvus_search(input)),
         Call::MilvusDecodeSearch(input) => decode_outcome(input),
+        Call::MilvusCreateRequest(input) => outcome(
+            milvus_create_request(&input.optional_params, &input.api_base)
+                .map(|request| json!(request)),
+        ),
+        Call::MilvusCreateResponse(input) => outcome(
+            milvus_create_response(input.status_code, &input.headers)
+                .map(|response| json!(response)),
+        ),
         Call::PgVectorValidateEnvironment(input) => {
             let params = PgVectorParams {
                 api_key: input.api_key.as_deref().map(SecretString::from),

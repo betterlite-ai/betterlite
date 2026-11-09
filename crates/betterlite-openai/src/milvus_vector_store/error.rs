@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
-use betterlite_models::price_fields::decimal_lexeme::DecimalLexemeError;
 use thiserror::Error;
+
+use crate::api::vector_store_records::wire::VectorStoreRecordError;
 
 pub type ResponseHeaders = BTreeMap<String, String>;
 
@@ -24,6 +25,21 @@ pub enum MilvusError {
         #[source]
         source: SearchResponseError,
     },
+    #[error("Milvus returned a score outside the exact decimal range")]
+    ScoreOutOfRange(#[source] VectorStoreRecordError),
+    #[error("Milvus vector store creation is not supported")]
+    CreateUnsupported(#[source] UnsupportedCreate),
+}
+
+#[derive(Debug, Error)]
+pub enum UnsupportedCreate {
+    #[error("Milvus vector store create request is not supported")]
+    Request { api_base: String },
+    #[error("Milvus vector store create response is not supported")]
+    Response {
+        status: u16,
+        headers: ResponseHeaders,
+    },
 }
 
 #[derive(Debug, Error)]
@@ -41,10 +57,4 @@ pub enum SearchResponseError {
     Row { index: usize },
     #[error("search result {index} has a distance that is not a number")]
     Distance { index: usize },
-    #[error("search result {index} has a distance outside the supported range")]
-    DistanceValue {
-        index: usize,
-        #[source]
-        source: DecimalLexemeError,
-    },
 }

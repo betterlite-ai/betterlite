@@ -7,6 +7,7 @@ use crate::api::vector_store_records::records::score::Score;
 use crate::api::vector_store_records::records::vector::{
     VectorStoreResultContent, VectorStoreSearchResponse, VectorStoreSearchResult,
 };
+use crate::api::vector_store_records::wire::VectorStoreRecordError;
 
 use super::error::{MilvusError, ResponseHeaders, SearchResponseError};
 
@@ -71,15 +72,12 @@ fn score_at(
 ) -> Result<Option<Score>, MilvusError> {
     match fields.get("distance") {
         None => Ok(Some(Score(Decimal::new(0, 1)))),
-        Some(Value::Number(number)) => {
-            Score::try_from(number.clone()).map(Some).map_err(|source| {
-                provider_error(
-                    status,
-                    headers,
-                    SearchResponseError::DistanceValue { index, source },
-                )
-            })
-        }
+        Some(Value::Number(number)) => match Score::try_from(number.clone()) {
+            Ok(score) => Ok(Some(score)),
+            Err(source) => Err(MilvusError::ScoreOutOfRange(
+                VectorStoreRecordError::ScoreOutOfRange(source),
+            )),
+        },
         Some(Value::Null) => Ok(None),
         Some(_) => Err(provider_error(
             status,

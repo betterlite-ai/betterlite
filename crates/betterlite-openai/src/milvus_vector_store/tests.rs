@@ -9,11 +9,11 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 
 use super::decode::decode_milvus_search;
-use super::error::MilvusError;
+use super::error::{MilvusError, UnsupportedCreate};
 use super::search::{Search, SearchRequest, search_request};
 use super::{
-    MilvusEnv, MilvusParams, OptionalParams, endpoints, get_auth_credentials, get_complete_url,
-    map_openai_params, validate_environment,
+    MilvusEnv, MilvusParams, OptionalParams, create_request, create_response, endpoints,
+    get_auth_credentials, get_complete_url, map_openai_params, validate_environment,
 };
 use crate::api::vector_store_records::records::vector::VectorStoreIndexEndpoints;
 use crate::vector_stores::Headers;
@@ -411,6 +411,39 @@ fn response_errors() {
     }
 }
 
+fn response_score_out_of_range() {
+    let bodies: [&[u8]; 2] = [
+        br#"{"data":[{"text":"x","distance":1e30}]}"#,
+        br#"{"data":[{"text":"x","distance":1.5e-30}]}"#,
+    ];
+    for body in bodies {
+        let error = decode_milvus_search(200, &BTreeMap::new(), body, "q", "text")
+            .expect_err("out of range");
+        let MilvusError::ScoreOutOfRange(inner) = error else {
+            panic!("not a score error");
+        };
+        let details = inner.details();
+        assert_eq!(details.status, Some(502));
+        assert_eq!(details.error_type, Some("bad_gateway"));
+        assert_eq!(details.param, Some("score"));
+        assert_eq!(details.code, Some("decimal_out_of_range"));
+    }
+}
+
+fn create_is_unsupported() {
+    let request = create_request(&OptionalParams::new(), BASE).expect_err("create request");
+    assert!(matches!(
+        request,
+        MilvusError::CreateUnsupported(UnsupportedCreate::Request { .. })
+    ));
+    let headers = BTreeMap::from([("x-request-id".to_owned(), "req_1".to_owned())]);
+    let response = create_response(201, &headers).expect_err("create response");
+    assert!(matches!(
+        response,
+        MilvusError::CreateUnsupported(UnsupportedCreate::Response { .. })
+    ));
+}
+
 #[rstest]
 #[case::headers(headers)]
 #[case::empty_explicit_key_falls_back(empty_explicit_key_falls_back)]
@@ -429,6 +462,8 @@ fn response_errors() {
 #[case::text_field_lookup(text_field_lookup)]
 #[case::response_nulls(response_nulls)]
 #[case::response_errors(response_errors)]
+#[case::response_score_out_of_range(response_score_out_of_range)]
+#[case::create_is_unsupported(create_is_unsupported)]
 fn milvus_vector_store_cases(#[case] scenario: fn()) {
     scenario();
 }

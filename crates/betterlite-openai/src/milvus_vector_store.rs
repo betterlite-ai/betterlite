@@ -3,9 +3,11 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::Json;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::api::vector_store_records::records::vector::VectorStoreIndexEndpoints;
-use crate::vector_stores::Headers;
-use error::MilvusError;
+use crate::api::vector_store_records::records::vector::{
+    VectorStoreCreateResponse, VectorStoreIndexEndpoints,
+};
+use crate::vector_stores::{Headers, Request};
+use error::{MilvusError, ResponseHeaders, UnsupportedCreate};
 
 pub mod decode;
 pub mod error;
@@ -122,4 +124,25 @@ pub fn map_openai_params(
         }
     }
     optional_params
+}
+
+pub fn create_request(
+    _optional_params: &OptionalParams,
+    api_base: &str,
+) -> Result<Request, MilvusError> {
+    Err(MilvusError::CreateUnsupported(UnsupportedCreate::Request {
+        api_base: api_base.to_owned(),
+    }))
+}
+
+pub fn create_response(
+    status: u16,
+    headers: &ResponseHeaders,
+) -> Result<VectorStoreCreateResponse, MilvusError> {
+    Err(MilvusError::CreateUnsupported(
+        UnsupportedCreate::Response {
+            status,
+            headers: headers.clone(),
+        },
+    ))
 }
