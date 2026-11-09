@@ -9,9 +9,11 @@ publish.workspace = true
 base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
+betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-prompts = { path = "../betterlite-prompts" }
+betterlite-redact = { path = "../betterlite-redact" }
 fancy-regex = "0.19.2"
 futures-util = { version = "0.3.34", default-features = false }
 hex.workspace = true

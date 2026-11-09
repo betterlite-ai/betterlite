@@ -1,0 +1,63 @@
+kind: helper
+name: http-loopback-only
+call:
+  b7811:
+    calls:
+      - call: mongodb_complete_url
+        input: {api_base: "https://sidecar.example.test"}
+      - call: mongodb_complete_url
+        input: {api_base: "https://sidecar.example.test///"}
+      - call: mongodb_complete_url
+        input: {api_base: "HTTPS://sidecar.example.test/"}
+      - call: mongodb_complete_url
+        input: {api_base: "https://sidecar.example.test/prefix"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://127.0.0.1:8080/"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://127.0.0.1"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://[::1]:8080//"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://[::ffff:127.0.0.1]"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://127.0.0.1\t"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://evil.com\\@127.0.0.1"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://127.1"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://2130706433"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://0x7f.0.0.1"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://%31%32%37.0.0.1"}
+      - call: mongodb_complete_url
+        input: {api_base: "http:127.0.0.1:8080"}
+      - call: mongodb_complete_url
+        input: {api_base: "http:///127.0.0.1"}
+      - call: mongodb_complete_url
+        input: {api_base: "https:example.test"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://localhost:8080"}
+      - call: mongodb_complete_url
+        input: {api_base: "http://0.0.0.0"}
+      - call: mongodb_complete_url
+        input: {api_base: "https://user:pass@sidecar.example.test"}
+      - call: mongodb_complete_url
+        input: {api_base: "https://user@sidecar.example.test"}
+      - call: mongodb_complete_url
+        input: {api_base: "https://sidecar.example.test?x=1"}
+      - call: mongodb_complete_url
+        input: {api_base: "https://sidecar.example.test#fragment"}
+      - call: mongodb_complete_url
+        input: {api_base: "https://sidecar.example.test:0"}
+      - call: mongodb_complete_url
+        input: {api_base: "ftp://127.0.0.1"}
+      - call: mongodb_complete_url
+        input: {api_base: "not a url"}
+      - call: mongodb_complete_url
+        input: {api_base: null}
+      - call: mongodb_complete_url
+        input: {api_base: ""}
+env: {}
+compare: {ignore: []}

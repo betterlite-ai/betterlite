@@ -1,0 +1,5 @@
+kind: helper
+name: ollama-model-starts-serve
+call: {"b4175": {"operation": "ollama_model_starts_serve", "model": "ollama/llama3"}}
+env: {}
+compare: {ignore: []}

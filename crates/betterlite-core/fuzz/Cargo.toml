@@ -97,6 +97,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "tavily_reply"
+path = "fuzz_targets/tavily_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "firecrawl_reply"
 path = "fuzz_targets/firecrawl_reply.rs"
 test = false
@@ -106,6 +113,27 @@ bench = false
 [[bin]]
 name = "searxng_reply"
 path = "fuzz_targets/searxng_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "you_com_reply"
+path = "fuzz_targets/you_com_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "google_pse_reply"
+path = "fuzz_targets/google_pse_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "searchapi_reply"
+path = "fuzz_targets/searchapi_reply.rs"
 test = false
 doc = false
 bench = false

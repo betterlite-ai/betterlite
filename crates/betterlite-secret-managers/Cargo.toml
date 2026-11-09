@@ -19,11 +19,12 @@ regex.workspace = true
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking", "rustls"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
-serde_json = "1.0.154"
+serde_json = { version = "1.0.154", features = ["raw_value"] }
 soft-canonicalize = "0.5.6"
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
+uuid = { workspace = true }
 
 [dev-dependencies]
 aws-smithy-http-client = { version = "1.5.1", default-features = false, features = ["rustls-aws-lc"] }

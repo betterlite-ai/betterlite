@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 async-trait = "0.1.92"
 base64 = "0.23.1"
+betterlite-anthropic = { path = "../betterlite-anthropic" }
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
@@ -41,6 +42,7 @@ uuid.workspace = true
 [lints]
 workspace = true
 [dev-dependencies]
+betterlite-redact = { path = "../betterlite-redact" }
 rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng"] }
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["test-util"] }
