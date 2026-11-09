@@ -167,20 +167,29 @@ fn options_a_non_numeric_port_fails_naming_the_field() {
 }
 
 #[rstest]
-#[case::an_empty_explicit_host_loses_to_the_environment(String::new(), "envhost")]
-#[case::a_set_explicit_host_wins("explicit", "explicit")]
+#[case::an_empty_explicit_host_loses_to_the_environment("", "pw", "envhost", "pw")]
+#[case::a_set_explicit_host_wins("explicit", "pw", "explicit", "pw")]
+#[case::an_empty_explicit_password_loses_to_the_environment("explicit", "", "explicit", "valkeypw")]
+#[case::a_set_explicit_password_wins("explicit", "set", "explicit", "set")]
 fn options_explicit_values_win_and_empty_strings_count_as_missing(
-    #[case] host: String,
-    #[case] expected: &str,
+    #[case] host: &str,
+    #[case] password: &str,
+    #[case] expected_host: &str,
+    #[case] expected_password: &str,
 ) {
     let mut settings = options();
-    settings.host = Some(host);
+    settings.host = Some(host.to_owned());
+    settings.password = Some(SecretString::from(password));
     let env = ValkeyEnv {
         valkey_host: Some("envhost".to_owned()),
+        valkey_password: Some(SecretString::from("valkeypw")),
         ..empty_env()
     };
-    let cache = build(settings, env).expect("the host choice");
-    assert_eq!(url_of(&cache), format!("redis://:pw@{expected}:6379"));
+    let cache = build(settings, env).expect("the explicit choice");
+    assert_eq!(
+        url_of(&cache),
+        format!("redis://:{expected_password}@{expected_host}:6379")
+    );
 }
 
 #[test]
@@ -966,26 +975,4 @@ async fn lookup_live_index_parses_the_search_reply(
 fn schema_extract_index_dim_scans_past_attributes_without_a_dimension() {
     let info = info_with_attributes(vec![tag_attribute(), vector_attribute(768)]);
     assert_eq!(extract_index_dim(&info), Some(768));
-}
-
-#[rstest]
-#[case::explicit_wins(Some("explicit"), "explicit")]
-#[case::empty_explicit_falls_to_valkey(Some(""), "valkeypw")]
-#[case::missing_explicit_falls_to_valkey(None, "valkeypw")]
-fn options_explicit_password_wins_and_an_empty_one_counts_as_missing(
-    #[case] explicit: Option<&str>,
-    #[case] expected: &str,
-) {
-    let mut settings = options();
-    settings.password = explicit.map(SecretString::from);
-    let env = ValkeyEnv {
-        valkey_password: Some(SecretString::from("valkeypw")),
-        redis_password: Some(SecretString::from("redispw")),
-        ..empty_env()
-    };
-    let cache = build(settings, env).expect("the password choice");
-    assert_eq!(
-        url_of(&cache),
-        format!("redis://:{expected}@localhost:6379")
-    );
 }
