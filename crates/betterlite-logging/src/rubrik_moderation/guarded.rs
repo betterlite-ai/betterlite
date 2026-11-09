@@ -3,8 +3,7 @@ use std::future::Future;
 use super::error::{ModerationError, ModifyResponseException};
 use super::inputs::GuardrailInputs;
 
-// Fail-open: only an intentional policy block escapes; a malformed service payload and every
-// transient failure are logged and the caller's inputs go through unchanged.
+// Fail-open: only an intentional policy block escapes; a malformed payload or transient failure returns the inputs unchanged.
 pub async fn guarded<Operation>(
     operation: Operation,
     inputs: GuardrailInputs,

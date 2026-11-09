@@ -10,8 +10,7 @@ pub struct GuardrailInputs {
     pub tools: Option<Json>,
 }
 
-// LiteLLM's guardrail translation layer only ever passes "request" or "response"; a value outside
-// that pair is returned unchanged instead of moderated, which is the third state of this closed set.
+// LiteLLM passes only "request" or "response" here; any other value is returned unchanged instead of moderated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModerationInputType {
     Request,

@@ -8,8 +8,7 @@ use crate::rubrik::request_data::{RequestContextSource, ResponseSource, TrackedF
 
 use super::error::ModerationError;
 
-// LiteLLM shares one Logging object across the request, its success event and the failure hook;
-// a Mutex behind the Arc lets the moderation write the block flag while those paths read it.
+// One Logging object is shared by the request, its success event and the failure hook, so the block flag lives behind a Mutex in an Arc.
 #[derive(Debug)]
 pub struct LoggingObject {
     pub model_call_details: Mutex<IndexMap<String, Json>>,
@@ -22,8 +21,7 @@ pub enum LoggingObjectStash {
     Present(Option<Arc<LoggingObject>>),
 }
 
-// The request mapping LiteLLM carries as dict[str, Any]; fields stay JSON, and the stashed logging
-// object rides beside them because it is not a JSON value the caller wrote.
+// The request mapping LiteLLM carries as dict[str, Any]; the stashed logging object rides beside the JSON fields because it is not one.
 #[derive(Clone, Debug, Default)]
 pub struct RequestData {
     pub fields: IndexMap<String, Json>,
@@ -107,16 +105,18 @@ pub fn request_context_source(fields: &IndexMap<String, Json>) -> RequestContext
 }
 
 pub fn response_source(fields: &IndexMap<String, Json>) -> Result<ResponseSource, ModerationError> {
-    match fields.get("response") {
-        None | Some(Json::Null) => Ok(ResponseSource::Absent),
-        Some(Json::Object(response)) => match response.get("model") {
-            Some(model) => Ok(ResponseSource::WithModel(text_value(
-                model,
-                "response.model",
-            )?)),
-            None => Ok(ResponseSource::WithoutModel),
-        },
-        Some(_) => Err(ModerationError::FieldType { field: "response" }),
+    let Some(Json::Object(response)) = fields.get("response") else {
+        return match fields.get("response") {
+            None | Some(Json::Null) => Ok(ResponseSource::Absent),
+            Some(_) => Err(ModerationError::FieldType { field: "response" }),
+        };
+    };
+    match response.get("model") {
+        Some(model) => Ok(ResponseSource::WithModel(text_value(
+            model,
+            "response.model",
+        )?)),
+        None => Ok(ResponseSource::WithoutModel),
     }
 }
 
@@ -131,8 +131,7 @@ pub fn prompt_request(
     })
 }
 
-// The request half of the after_completion envelope: LiteLLM sends all three keys, nulls included,
-// whenever either source carries any data.
+// The after_completion envelope's request half: LiteLLM sends all three keys, nulls included, whenever either source carries any data.
 #[must_use]
 pub fn request_data_json(
     messages: Option<Json>,

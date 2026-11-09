@@ -6,8 +6,7 @@ use crate::rubrik_delivery::error::RubrikError;
 
 use super::context::RequestData;
 
-// The block LiteLLM signals by raising ModifyResponseException; the proxy turns it into a 200 with
-// the violation text, so the message, model and guardrail name travel with the request data.
+// The block LiteLLM raises as ModifyResponseException; the proxy turns it into a 200 carrying the violation text.
 #[derive(Debug, Error)]
 #[error("{message}")]
 pub struct ModifyResponseException {

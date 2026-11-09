@@ -28,10 +28,6 @@ fn json_value(value: &Value) -> Result<Json, Box<HelperError>> {
         .map_err(|error| failure(format!("the value is not JSON: {error}")))
 }
 
-fn json_of(value: &Json) -> Value {
-    serde_json::to_value(value).unwrap_or(Value::Null)
-}
-
 pub(super) fn request_data(input: Option<&Value>) -> Result<RequestData, Box<HelperError>> {
     let fields = match input {
         None | Some(Value::Null) => IndexMap::new(),
@@ -94,7 +90,7 @@ pub(super) fn logging_object(
 
 fn tool_call_view(source: &ToolCallSource) -> Value {
     match source {
-        ToolCallSource::Raw(raw) => json_of(raw),
+        ToolCallSource::Raw(raw) => serde_json::to_value(raw).unwrap_or(Value::Null),
         ToolCallSource::Normalized(call) => serde_json::to_value(call).unwrap_or(Value::Null),
         ToolCallSource::Protocol { id, kind, function } => json!({
             "id": id,
@@ -109,8 +105,15 @@ pub(super) fn inputs_view(inputs: &GuardrailInputs) -> Value {
         "model": &inputs.model,
         "texts": &inputs.texts,
         "tool_calls": inputs.tool_calls.iter().map(tool_call_view).collect::<Vec<Value>>(),
-        "structured_messages": inputs.structured_messages.iter().map(json_of).collect::<Vec<Value>>(),
-        "tools": inputs.tools.as_ref().map(json_of),
+        "structured_messages": inputs
+            .structured_messages
+            .iter()
+            .map(|message| serde_json::to_value(message).unwrap_or(Value::Null))
+            .collect::<Vec<Value>>(),
+        "tools": inputs
+            .tools
+            .as_ref()
+            .map(|tools| serde_json::to_value(tools).unwrap_or(Value::Null)),
     })
 }
 

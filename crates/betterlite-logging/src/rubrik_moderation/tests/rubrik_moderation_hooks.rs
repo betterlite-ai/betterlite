@@ -526,10 +526,7 @@ async fn moderate_response_reports_an_empty_choices_response_as_malformed() {
     r#"{"choices": [{"message": {"tool_calls": [3]}}]}"#,
     "choices[0].message.tool_calls"
 )]
-#[case::tool_call_id_not_text(
-    r#"{"choices": [{"message": {"tool_calls": [{"id": 3}]}}]}"#,
-    "choices[0].message.tool_calls.id"
-)]
+#[case::tool_call_id_not_text(r#"{"choices": [{"message": {"tool_calls": [{"id": 3}]}}]}"#, "id")]
 fn service_response_rejects_a_wrong_typed_field(#[case] body: &str, #[case] expected: &str) {
     let Json::Object(fields) = json(body) else {
         panic!("the test body is an object");

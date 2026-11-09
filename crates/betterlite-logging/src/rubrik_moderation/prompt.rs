@@ -17,8 +17,7 @@ pub async fn moderate_prompt(
     request_data: &mut RequestData,
     logging_obj: Option<&Arc<LoggingObject>>,
 ) -> Result<GuardrailInputs, ModerationError> {
-    // A text-only request (for example /v1/completions) reaches the webhook when its joined texts
-    // are non-empty; LiteLLM builds a synthetic user message only to decide whether to call it.
+    // Text-only requests reach the webhook when their joined texts are non-empty; LiteLLM builds the synthetic message only for this decision.
     if inputs.structured_messages.is_empty() && join_texts(&inputs.texts).is_empty() {
         return Ok(inputs);
     }
