@@ -1,0 +1,23 @@
+kind: helper
+name: crawl-search-providers-fastcrw-default-scrape-options
+call:
+  b8022:
+    provider: fastcrw
+    function: transform_search_request
+    query: ["rust", "web search"]
+    optional_params:
+      max_results: 5
+      search_domain_filter: ["docs.rs"]
+      max_tokens_per_page: 512
+      country: "US"
+      sources: ["web"]
+    environment:
+      CRW_API_KEY: "crw-oracle-key"
+      CRW_API_BASE: "https://crw.oracle.test/api/v1"
+    api_key: null
+    api_base: null
+env:
+  CRW_API_KEY: "crw-oracle-key"
+  CRW_API_BASE: "https://crw.oracle.test/api/v1"
+compare:
+  ignore: []
