@@ -1,7 +1,7 @@
 use std::num::ParseFloatError;
 
 use betterlite_config::sections::langfuse_settings::Settings;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 use crate::logging_privacy::CallbackMetadataError;
 use crate::logging_privacy::callbacks::validate_environment;
@@ -53,7 +53,7 @@ pub fn resolve_credentials(settings: &Settings, request: CredentialRequest<'_>) 
         .into_iter()
         .flatten()
         .find(|value| !value.is_empty())
-        .map(str::to_owned);
+        .map(SecretString::from);
     let (public_key, secret_key) = if !request.allow_env_credentials && request.host.is_some() {
         (request.public_key.map(str::to_owned), argument_secret)
     } else {
@@ -62,17 +62,14 @@ pub fn resolve_credentials(settings: &Settings, request: CredentialRequest<'_>) 
             .map(str::to_owned)
             .filter(|value| !value.is_empty())
             .or_else(|| settings.public_key.clone());
-        let resolved_secret = argument_secret.or_else(|| {
-            settings
-                .secret_key
-                .as_ref()
-                .map(|value| value.expose_secret().to_owned())
-        });
-        (resolved_public, resolved_secret)
+        (
+            resolved_public,
+            argument_secret.or_else(|| settings.secret_key.clone()),
+        )
     };
     Credentials {
         public_key,
-        secret_key: secret_key.map(SecretString::from),
+        secret_key,
         host: resolve_host(settings, request.host),
     }
 }

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::loader::{ConfigError, ConfigLoader};
+use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::langfuse_settings::Settings;
 use betterlite_logging::langfuse_settings::export::{
     check_prompt_cache_ttl, flush_at, flush_interval, max_retries, prompt_cache_ttl_seconds,
@@ -170,23 +170,12 @@ impl Helper for Op {
 }
 
 fn load_settings(environment: &BTreeMap<String, String>) -> Result<Settings, Box<HelperError>> {
-    ConfigLoader {
+    Ok(ConfigLoader {
         lookup: environment.clone(),
     }
-    .load("")
-    .map(|config| config.sections.langfuse_settings)
-    .map_err(|error| config_failure(&error))
-}
-
-fn config_failure(error: &ConfigError) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "ConfigError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
+    .load("")?
+    .sections
+    .langfuse_settings)
 }
 
 fn observed(logs: &Logs, value: Value) -> Value {
