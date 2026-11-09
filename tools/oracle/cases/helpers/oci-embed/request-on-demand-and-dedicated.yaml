@@ -1,0 +1,49 @@
+kind: helper
+name: oci-embed-request-on-demand-and-dedicated
+call:
+  b5941:
+    steps:
+      - method: request
+        model: cohere.embed-english-v3.0
+        input: hello world
+        explicit:
+          oci_user: ocid1.user.oc1..aaaa
+          oci_fingerprint: aa:bb:cc
+          oci_tenancy: ocid1.tenancy.oc1..bbbb
+          oci_key: fake-key
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+      - method: request
+        model: cohere.embed-v4.0
+        input: [first, second]
+        optional_params:
+          oci_serving_mode: DEDICATED
+          oci_endpoint_id: ocid1.generativeaiendpoint.oc1..dddd
+        explicit:
+          oci_user: ocid1.user.oc1..aaaa
+          oci_fingerprint: aa:bb:cc
+          oci_tenancy: ocid1.tenancy.oc1..bbbb
+          oci_key: fake-key
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+      - method: request
+        model: cohere.embed-v4.0
+        input: one text
+        optional_params:
+          oci_serving_mode: dedicated
+        explicit:
+          oci_user: ocid1.user.oc1..aaaa
+          oci_fingerprint: aa:bb:cc
+          oci_tenancy: ocid1.tenancy.oc1..bbbb
+          oci_key: fake-key
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+      - method: complete_url
+        explicit:
+          oci_region: eu-frankfurt-1
+        env: {}
+        api_base: null
+      - method: complete_url
+        explicit: {}
+        env:
+          oci_region: us-chicago-1
+        api_base: https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com/20231130/actions/chat/
+env: {}
+compare: {ignore: []}
