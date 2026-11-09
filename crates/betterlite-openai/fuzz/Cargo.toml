@@ -260,3 +260,17 @@ path = "fuzz_targets/ragflow_vector_store.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "nlp_cloud_reply"
+path = "fuzz_targets/nlp_cloud_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nlp_cloud_stream_lines"
+path = "fuzz_targets/nlp_cloud_stream_lines.rs"
+test = false
+doc = false
+bench = false

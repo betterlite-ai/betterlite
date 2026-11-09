@@ -1,0 +1,65 @@
+---
+source: crates/betterlite-config/tests/config_tests/mod.rs
+expression: other
+---
+Ok(
+    Config {
+        model_list: [
+            ModelDeployment {
+                model_name: "gpt-3.5-turbo",
+                litellm_params: LiteLlmParams {
+                    ssl_verify: None,
+                    model: None,
+                    api_base: None,
+                    api_key: None,
+                    api_version: None,
+                    timeout: None,
+                    stream_timeout: None,
+                    max_retries: None,
+                    rpm: None,
+                    tpm: None,
+                    weight: None,
+                },
+                model_info: ModelInfo {
+                    id: None,
+                },
+            },
+        ],
+        general_settings: GeneralSettings {
+            cipher: CipherSettings {
+                signing_key: None,
+                algorithm: XSalsa20Poly1305,
+            },
+            master_key: None,
+        },
+        router_settings: RouterSettings {
+            routing_strategy: None,
+            num_retries: None,
+            timeout: None,
+            allowed_fails: None,
+            cooldown_time: None,
+            fallbacks: [],
+        },
+        litellm_settings: LiteLlmSettings {
+            ssl_verify: None,
+            ssl_certificate: None,
+            http2: None,
+            ssl_ecdh_curve: None,
+            ssl_security_level: None,
+            num_retries: None,
+            request_timeout: None,
+            drop_params: Some(
+                true,
+            ),
+            proxy_trust: ProxyTrust {
+                aiohttp_trust_env: false,
+                disable_aiohttp_trust_env: false,
+            },
+            bedrock_metadata_fields: [],
+            modify_params: false,
+            default_max_tokens: 4096,
+        },
+        environment_variables: {},
+        sections: Sections,
+    },
+)
