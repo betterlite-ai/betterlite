@@ -49,6 +49,26 @@ fn oidc_google_requests_the_metadata_identity_endpoint() {
 }
 
 #[test]
+fn oidc_audience_keeps_an_os_environ_segment_when_the_name_does_not_start_with_it() {
+    let clock = Arc::new(ManualClock::at(1_700_000_000));
+    let (lookup, http) = scripted_lookup(vec![answer("google-token")], &clock);
+    lookup
+        .get_secret(
+            &BTreeMap::new(),
+            "oidc/google/https://host/os.environ/audience",
+            None,
+        )
+        .expect("the Google provider should succeed");
+    assert_eq!(
+        http.requests()[0].query,
+        vec![(
+            "audience".to_owned(),
+            "https://host/os.environ/audience".to_owned()
+        )]
+    );
+}
+
+#[test]
 fn oidc_google_failure_status_is_an_error() {
     let clock = Arc::new(ManualClock::at(1_700_000_000));
     let (lookup, _http) = scripted_lookup(
@@ -80,7 +100,7 @@ fn oidc_google_invalid_utf8_is_an_error() {
     let (lookup, _http) = scripted_lookup(
         vec![Reply::Answer {
             status: 200,
-            body: vec![0xff, 0xfe],
+            body: vec![0xde, 0xad, 0xbe, 0xef],
         }],
         &clock,
     );
@@ -88,6 +108,7 @@ fn oidc_google_invalid_utf8_is_an_error() {
         .get_secret(&BTreeMap::new(), "oidc/google/audience", None)
         .expect_err("invalid UTF-8 is an error");
     assert_eq!(error.to_string(), "Google OIDC token response is not UTF-8");
+    assert!(!format!("{error:?}").contains("222"));
 }
 
 #[test]
@@ -328,6 +349,7 @@ fn oidc_github_missing_value_returns_none(#[case] body: &str) {
 
 #[rstest]
 #[case::array("[]")]
+#[case::array_with_token("[\"gh-token\"]")]
 #[case::number_value("{\"value\":5}")]
 #[case::text_body("\"gh-token\"")]
 #[case::truncated("{\"value\":\"gh-tok")]

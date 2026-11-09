@@ -1,6 +1,6 @@
 use std::io;
 use std::path::PathBuf;
-use std::string::FromUtf8Error;
+use std::str::Utf8Error;
 
 use thiserror::Error;
 
@@ -50,8 +50,10 @@ pub enum SecretLookupError {
     #[error("Google OIDC token response is not UTF-8")]
     GoogleTokenUtf8 {
         #[source]
-        source: FromUtf8Error,
+        source: Utf8Error,
     },
+    #[error("Github OIDC token response is not a token document")]
+    GithubTokenNotObject,
     #[error("Github OIDC token response is not a token document")]
     GithubTokenDocument {
         #[source]

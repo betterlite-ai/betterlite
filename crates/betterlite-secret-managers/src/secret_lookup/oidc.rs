@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
+use std::str::from_utf8;
 use std::sync::PoisonError;
 use std::time::Duration;
 
@@ -41,32 +42,31 @@ fn provider_token(
     secret_name: &str,
 ) -> Result<Option<SecretString>, SecretLookupError> {
     match provider {
-        "google" => google(lookup, audience, secret_name),
+        "google" => google(lookup, audience, secret_name).map(Some),
         "github" => github(lookup, environment, audience, secret_name),
-        "azure" => azure(lookup, environment, audience),
+        "azure" => azure(lookup, environment, audience).map(Some),
         "circleci" => environment_token(
             environment,
             "CIRCLE_OIDC_TOKEN",
             SecretLookupError::CircleCiTokenMissing,
-        ),
+        )
+        .map(Some),
         "circleci_v2" => environment_token(
             environment,
             "CIRCLE_OIDC_TOKEN_V2",
             SecretLookupError::CircleCiTokenV2Missing,
-        ),
-        "file" => read_oidc_file(&resolve_oidc_file_path(audience, environment)?),
+        )
+        .map(Some),
+        "file" => read_oidc_file(&resolve_oidc_file_path(audience, environment)?).map(Some),
         "env" => environment_token(
             environment,
             audience,
             SecretLookupError::EnvironmentVariableMissing {
                 name: audience.to_owned(),
             },
-        ),
-        "env_path" => read_oidc_file(Path::new(environment.get(audience).ok_or_else(|| {
-            SecretLookupError::EnvironmentVariableMissing {
-                name: audience.to_owned(),
-            }
-        })?)),
+        )
+        .map(Some),
+        "env_path" => env_path_token(environment, audience).map(Some),
         _ => Err(SecretLookupError::UnsupportedOidcProvider),
     }
 }
@@ -75,28 +75,41 @@ fn environment_token(
     environment: &BTreeMap<String, String>,
     name: &str,
     missing: SecretLookupError,
-) -> Result<Option<SecretString>, SecretLookupError> {
+) -> Result<SecretString, SecretLookupError> {
     environment.get(name).map_or_else(
         || Err(missing),
-        |value| Ok(Some(SecretString::from(value.as_str()))),
+        |value| Ok(SecretString::from(value.as_str())),
     )
 }
 
-fn read_oidc_file(path: &Path) -> Result<Option<SecretString>, SecretLookupError> {
-    let content = fs::read_to_string(path).map_err(|source| SecretLookupError::TokenFileRead {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    Ok(Some(SecretString::from(content)))
+fn read_oidc_file(path: &Path) -> Result<SecretString, SecretLookupError> {
+    fs::read_to_string(path)
+        .map(SecretString::from)
+        .map_err(|source| SecretLookupError::TokenFileRead {
+            path: path.to_path_buf(),
+            source,
+        })
+}
+
+fn env_path_token(
+    environment: &BTreeMap<String, String>,
+    audience: &str,
+) -> Result<SecretString, SecretLookupError> {
+    let Some(path) = environment.get(audience) else {
+        return Err(SecretLookupError::EnvironmentVariableMissing {
+            name: audience.to_owned(),
+        });
+    };
+    read_oidc_file(Path::new(path))
 }
 
 fn google(
     lookup: &SecretLookup,
     audience: &str,
     secret_name: &str,
-) -> Result<Option<SecretString>, SecretLookupError> {
+) -> Result<SecretString, SecretLookupError> {
     if let Some(cached) = cached_token(lookup, secret_name) {
-        return Ok(Some(cached));
+        return Ok(cached);
     }
     let outcome = lookup.oidc_http.get(OidcRequest {
         url: GOOGLE_IDENTITY_URL.to_owned(),
@@ -108,17 +121,17 @@ fn google(
     if response.status != 200 {
         return Err(SecretLookupError::GoogleOidcFailed);
     }
-    let token = String::from_utf8(response.body)
+    let token = from_utf8(&response.body)
         .map_err(|source| SecretLookupError::GoogleTokenUtf8 { source })?;
-    let ttl = oidc_token_cache_ttl(&token, GOOGLE_MAX_TTL_SECONDS, lookup.clock.unix_seconds());
+    let ttl = oidc_token_cache_ttl(token, GOOGLE_MAX_TTL_SECONDS, lookup.clock.unix_seconds());
     if ttl > 0 {
-        store_token(lookup, secret_name, &token, ttl);
+        store_token(lookup, secret_name, token, ttl);
     } else {
         tracing::warn!(
             "Google OIDC token for {secret_name} is already expired or expires within {EXPIRY_MARGIN_SECONDS}s; not caching it"
         );
     }
-    Ok(Some(SecretString::from(token)))
+    Ok(SecretString::from(token))
 }
 
 fn github(
@@ -171,7 +184,7 @@ fn azure(
     lookup: &SecretLookup,
     environment: &BTreeMap<String, String>,
     audience: &str,
-) -> Result<Option<SecretString>, SecretLookupError> {
+) -> Result<SecretString, SecretLookupError> {
     if let Some(path) = environment.get("AZURE_FEDERATED_TOKEN_FILE") {
         return read_oidc_file(Path::new(path));
     }
@@ -182,11 +195,7 @@ fn azure(
         .azure_tokens
         .token(audience)
         .map_err(|source| SecretLookupError::AzureProvider { source })
-        .and_then(|token| {
-            token
-                .map(Some)
-                .ok_or(SecretLookupError::AzureProviderReturnedNone)
-        });
+        .and_then(|token| token.ok_or(SecretLookupError::AzureProviderReturnedNone));
     token.inspect_err(|error| tracing::error!("{error}"))
 }
 

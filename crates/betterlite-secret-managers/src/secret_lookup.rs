@@ -12,12 +12,12 @@ pub mod error;
 pub mod github_response;
 pub mod manager;
 mod oidc;
+mod os_environ;
 pub mod ports;
 mod values;
 
 mod tests;
 
-const OS_ENVIRON_PREFIX: &str = "os.environ/";
 const OIDC_PREFIX: &str = "oidc/";
 
 #[derive(Debug, Clone)]
@@ -41,7 +41,7 @@ impl SecretLookup {
         secret_name: &str,
         _default_value: Option<SecretValue>,
     ) -> Result<Option<SecretValue>, SecretLookupError> {
-        let resolved_name = secret_name.replace(OS_ENVIRON_PREFIX, "");
+        let resolved_name = os_environ::resolve(secret_name);
         if let Some(oidc_name) = resolved_name.strip_prefix(OIDC_PREFIX) {
             return oidc::read(self, env, &resolved_name, oidc_name);
         }
@@ -64,10 +64,10 @@ impl SecretLookup {
     pub fn get_secret_str(
         &self,
         environment: &BTreeMap<String, String>,
-        secret_name: &str,
+        name: &str,
         default_value: Option<SecretValue>,
     ) -> Result<Option<SecretString>, SecretLookupError> {
-        let secret = self.get_secret(environment, secret_name, default_value)?;
+        let secret = self.get_secret(environment, name, default_value)?;
         match secret {
             Some(SecretValue::Text(text)) => Ok(Some(text)),
             Some(SecretValue::Bool(_)) | None => Ok(None),
