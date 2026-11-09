@@ -226,28 +226,25 @@ fn finish_reasons(reasons: &[Option<String>]) -> crate::helpers::HelperResult {
     encoded(&normalized)
 }
 
-fn generic_stream(chunks: &[Json]) -> crate::helpers::HelperResult {
-    let mut choices = Vec::with_capacity(chunks.len());
-    for chunk in chunks {
-        choices.push(choice_json(
-            &handle_generic_stream_chunk(chunk.clone()).map_err(oci_failure)?,
-        ));
-    }
-    Ok(Value::Array(choices))
-}
-
 fn cohere_stream(calls: &[StreamCall]) -> crate::helpers::HelperResult {
-    let mut choices = Vec::with_capacity(calls.len());
-    for call in calls {
-        let choice = handle_cohere_stream_chunk(
+    stream_choices(calls, |call| {
+        handle_cohere_stream_chunk(
             &call.chunk,
             CohereEmitted {
                 tool_calls: call.prior_tool_calls_emitted,
                 text: call.prior_text_emitted,
             },
         )
-        .map_err(oci_failure)?;
-        choices.push(choice_json(&choice));
+    })
+}
+
+fn stream_choices<T, F>(items: &[T], handle: F) -> crate::helpers::HelperResult
+where
+    F: Fn(&T) -> Result<Choice, OciError>,
+{
+    let mut choices = Vec::with_capacity(items.len());
+    for item in items {
+        choices.push(choice_json(&handle(item).map_err(oci_failure)?));
     }
     Ok(Value::Array(choices))
 }
@@ -277,7 +274,9 @@ impl crate::helpers::Helper for Op {
                 status,
             } => cohere_response(body, model, *created, *status),
             Input::FinishReason { reasons } => finish_reasons(reasons),
-            Input::GenericStream { chunks } => generic_stream(chunks),
+            Input::GenericStream { chunks } => {
+                stream_choices(chunks, |chunk| handle_generic_stream_chunk(chunk.clone()))
+            }
             Input::CohereStream { calls } => cohere_stream(calls),
         }
     }
