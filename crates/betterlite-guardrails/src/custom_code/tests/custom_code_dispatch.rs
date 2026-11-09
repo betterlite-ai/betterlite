@@ -58,7 +58,8 @@ async fn an_async_function_is_awaited_on_the_event_loop() {
     let host = FakeHost::new(LoadReply::Module(pending(allow_result())));
     apply(&host, ASYNC_SOURCE).await.unwrap();
     assert_eq!(host.log.calls.load(Ordering::SeqCst), 1);
-    assert_eq!(host.log.threads.lock().unwrap().len(), 1);
+    let call_thread = host.log.threads.lock().unwrap().first().copied().unwrap();
+    assert_eq!(call_thread, thread::current().id());
 }
 
 #[tokio::test]

@@ -1,22 +1,67 @@
 use std::collections::BTreeMap;
+use std::io;
+use std::io::Write;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use reqwest::StatusCode;
+use tokio::runtime::Builder;
+use tracing::Level;
+use tracing::subscriber::with_default;
+use tracing_subscriber::fmt;
 
 use super::fake::ALLOW_SOURCE;
 use super::fake::FakeHost;
 use super::fake::LoadReply;
 use super::fake::build;
+use super::fake::build_with_clock;
+use super::fake::fixed_clock;
 use super::fake::inputs;
 use super::fake::map;
 use super::fake::object;
 use super::fake::params;
 use super::fake::text;
+use super::fake::ticking_clock;
 use super::fake::value;
 use crate::custom_code::error::CustomCodeApplyError;
 use crate::custom_code::inputs::CustomCodeInputs;
 use crate::generic_guardrail_contracts::GuardrailInputType;
+
+#[derive(Clone, Default)]
+struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("poisoned"))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn capture<T, F>(level: Level, run: F) -> (T, String)
+where
+    F: FnOnce() -> T,
+{
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = fmt()
+        .with_max_level(level)
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let result = with_default(subscriber, run);
+    let output = String::from_utf8(captured.0.lock().expect("poisoned").clone())
+        .expect("tracing output is utf8");
+    (result, output)
+}
 
 fn host_returning(result: GuardrailValue) -> Arc<FakeHost> {
     FakeHost::new(LoadReply::Module(value(result)))
@@ -33,6 +78,51 @@ async fn run(
         .apply_guardrail(inputs(&["hello"]), request_data, input_type)
         .await
         .map(|_returned| ())
+}
+
+fn apply_with_logs(
+    result: GuardrailValue,
+    input_type: GuardrailInputType,
+) -> (Result<CustomCodeInputs, CustomCodeApplyError>, String) {
+    let host = host_returning(result);
+    let guardrail = build(params(ALLOW_SOURCE), &host);
+    let runtime = Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .expect("the test runtime builds");
+    capture(Level::WARN, || {
+        let mut request_data = BTreeMap::new();
+        runtime.block_on(guardrail.apply_guardrail(
+            inputs(&["hello"]),
+            &mut request_data,
+            input_type,
+        ))
+    })
+}
+
+fn records_of(request_data: &BTreeMap<String, GuardrailValue>) -> Vec<GuardrailValue> {
+    let Some(GuardrailValue::Object(bucket)) = request_data.get("metadata") else {
+        panic!("expected the metadata bucket");
+    };
+    let Some(GuardrailValue::Array(records)) = bucket.get("standard_logging_guardrail_information")
+    else {
+        panic!("expected the flag records");
+    };
+    records.clone()
+}
+
+fn record_fields(record: &GuardrailValue) -> &BTreeMap<String, GuardrailValue> {
+    let GuardrailValue::Object(fields) = record else {
+        panic!("expected the record to be an object");
+    };
+    fields
+}
+
+fn decimal(fields: &BTreeMap<String, GuardrailValue>, key: &str) -> f64 {
+    let Some(GuardrailValue::Decimal(value)) = fields.get(key) else {
+        panic!("expected a decimal {key}");
+    };
+    *value
 }
 
 #[tokio::test]
@@ -103,9 +193,13 @@ fn flag_result() -> GuardrailValue {
     ])
 }
 
-async fn applied_flag(request_data: &mut BTreeMap<String, GuardrailValue>) -> CustomCodeInputs {
-    let host = host_returning(flag_result());
-    let guardrail = build(params(ALLOW_SOURCE), &host);
+async fn applied_flag_with_clock(
+    result: GuardrailValue,
+    request_data: &mut BTreeMap<String, GuardrailValue>,
+    clock: fn() -> Duration,
+) -> CustomCodeInputs {
+    let host = host_returning(result);
+    let guardrail = build_with_clock(params(ALLOW_SOURCE), &host, clock);
     guardrail
         .apply_guardrail(
             inputs(&["hello"]),
@@ -114,6 +208,10 @@ async fn applied_flag(request_data: &mut BTreeMap<String, GuardrailValue>) -> Cu
         )
         .await
         .unwrap()
+}
+
+async fn applied_flag(request_data: &mut BTreeMap<String, GuardrailValue>) -> CustomCodeInputs {
+    applied_flag_with_clock(flag_result(), request_data, fixed_clock).await
 }
 
 #[tokio::test]
@@ -129,32 +227,28 @@ async fn flag_leaves_the_inputs_alone() {
 }
 
 #[tokio::test]
-async fn flag_records_a_guardrail_flagged_entry() {
+async fn flag_records_a_guardrail_flagged_entry_with_the_clock_times() {
     let mut request_data = map(vec![("metadata", object(vec![]))]);
-    let _returned = applied_flag(&mut request_data).await;
-    let Some(GuardrailValue::Object(bucket)) = request_data.get("metadata") else {
-        panic!("expected the metadata bucket");
-    };
-    let Some(GuardrailValue::Array(records)) = bucket.get("standard_logging_guardrail_information")
-    else {
-        panic!("expected the flag record");
-    };
+    let _returned = applied_flag_with_clock(flag_result(), &mut request_data, ticking_clock).await;
+    let records = records_of(&request_data);
     assert_eq!(records.len(), 1);
-    let GuardrailValue::Object(record) = &records[0] else {
-        panic!("expected the record to be an object");
-    };
+    let record = record_fields(&records[0]);
     assert_eq!(record.get("guardrail_name"), Some(&text("custom_code")));
     assert_eq!(
         record.get("guardrail_status"),
         Some(&text("guardrail_flagged"))
     );
-    assert_eq!(
-        record.get("start_time"),
-        Some(&GuardrailValue::Decimal(0.005_f64))
+    let start = decimal(record, "start_time");
+    let end = decimal(record, "end_time");
+    let duration = decimal(record, "duration");
+    assert!(
+        end > start,
+        "expected the clock to advance between the reads"
     );
-    assert_eq!(
-        record.get("duration"),
-        Some(&GuardrailValue::Decimal(0.0_f64))
+    assert_ne!(
+        duration.to_bits(),
+        0.0_f64.to_bits(),
+        "a zero duration means the end time was never read"
     );
     let Some(GuardrailValue::Object(response)) = record.get("guardrail_response") else {
         panic!("expected the guardrail response");
@@ -165,6 +259,62 @@ async fn flag_records_a_guardrail_flagged_entry() {
     assert_eq!(
         response.get("metadata"),
         Some(&object(vec![("k", text("v"))]))
+    );
+}
+
+#[tokio::test]
+async fn flag_without_a_reason_uses_litellms_default_text() {
+    let result = object(vec![("action", text("flag"))]);
+    let mut request_data = map(vec![("metadata", object(vec![]))]);
+    let _returned = applied_flag_with_clock(result, &mut request_data, fixed_clock).await;
+    let records = records_of(&request_data);
+    let record = record_fields(&records[0]);
+    let Some(GuardrailValue::Object(response)) = record.get("guardrail_response") else {
+        panic!("expected the guardrail response");
+    };
+    assert_eq!(
+        response.get("reason"),
+        Some(&text("Flagged by custom code guardrail"))
+    );
+}
+
+#[tokio::test]
+async fn flag_appends_to_an_existing_record_list() {
+    let earlier = object(vec![("guardrail_name", text("earlier"))]);
+    let mut request_data = map(vec![(
+        "metadata",
+        object(vec![(
+            "standard_logging_guardrail_information",
+            GuardrailValue::Array(vec![earlier.clone()]),
+        )]),
+    )]);
+    let _returned = applied_flag(&mut request_data).await;
+    let records = records_of(&request_data);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records.first(), Some(&earlier));
+    assert_eq!(
+        record_fields(&records[1]).get("guardrail_name"),
+        Some(&text("custom_code"))
+    );
+}
+
+#[tokio::test]
+async fn flag_wraps_a_non_list_value_before_appending() {
+    let earlier = text("earlier");
+    let mut request_data = map(vec![(
+        "metadata",
+        object(vec![(
+            "standard_logging_guardrail_information",
+            earlier.clone(),
+        )]),
+    )]);
+    let _returned = applied_flag(&mut request_data).await;
+    let records = records_of(&request_data);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records.first(), Some(&earlier));
+    assert_eq!(
+        record_fields(&records[1]).get("guardrail_name"),
+        Some(&text("custom_code"))
     );
 }
 
@@ -202,27 +352,26 @@ async fn flag_replaces_a_metadata_bucket_that_is_not_an_object() {
     assert!(bucket.contains_key("standard_logging_guardrail_information"));
 }
 
-#[tokio::test]
-async fn an_unknown_action_warns_and_allows() {
-    let result = object(vec![("action", text("explode"))]);
-    let mut request_data = BTreeMap::new();
-    run(result, &mut request_data, GuardrailInputType::Request)
-        .await
-        .unwrap();
-    assert!(request_data.is_empty());
+#[test]
+fn an_unknown_action_warns_and_allows() {
+    let (returned, logs) = apply_with_logs(
+        object(vec![("action", text("explode"))]),
+        GuardrailInputType::Request,
+    );
+    assert_eq!(returned.unwrap(), inputs(&["hello"]));
+    assert!(logs.contains("custom_code"));
+    assert!(logs.contains("Unknown action 'explode'"));
 }
 
-#[tokio::test]
-async fn a_result_that_is_not_an_object_allows() {
-    let mut request_data = BTreeMap::new();
-    run(
+#[test]
+fn a_result_that_is_not_an_object_warns_and_allows() {
+    let (returned, logs) = apply_with_logs(
         GuardrailValue::Text("not a dict".to_owned()),
-        &mut request_data,
         GuardrailInputType::Request,
-    )
-    .await
-    .unwrap();
-    assert!(request_data.is_empty());
+    );
+    assert_eq!(returned.unwrap(), inputs(&["hello"]));
+    assert!(logs.contains("custom_code"));
+    assert!(logs.contains("Expected dict result, got str"));
 }
 
 #[tokio::test]

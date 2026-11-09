@@ -3,6 +3,7 @@ use std::future::pending as pending_future;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::PoisonError;
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::thread;
@@ -150,6 +151,12 @@ pub(super) fn wall_clock() -> Duration {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
+}
+
+// Advances 10 ms per read, so a record that uses one read for both times shows a zero duration.
+pub(super) fn ticking_clock() -> Duration {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    Duration::from_millis(NEXT.fetch_add(10, Ordering::SeqCst))
 }
 
 pub(super) fn as_host(host: &Arc<FakeHost>) -> Arc<dyn ModuleHost> {

@@ -141,3 +141,25 @@ async fn modify_replaces_the_named_fields_and_keeps_the_others() {
     assert_eq!(returned.extra, original.extra);
     assert_eq!(original.extra.len(), 1);
 }
+
+#[tokio::test]
+async fn modify_replaces_images_with_a_text_list() {
+    let result = object(vec![
+        ("action", text("modify")),
+        ("images", GuardrailValue::Array(vec![text("new-image")])),
+    ]);
+    let host = host_returning(result);
+    let guardrail = build(params(ALLOW_SOURCE), &host);
+    let original = CustomCodeInputs {
+        texts: None,
+        images: Some(vec!["old-image".to_owned()]),
+        tool_calls: None,
+        extra: BTreeMap::new(),
+    };
+    let mut request_data = BTreeMap::new();
+    let returned = guardrail
+        .apply_guardrail(original, &mut request_data, GuardrailInputType::Request)
+        .await
+        .unwrap();
+    assert_eq!(returned.images, Some(vec!["new-image".to_owned()]));
+}
