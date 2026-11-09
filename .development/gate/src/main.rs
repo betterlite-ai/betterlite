@@ -55,7 +55,13 @@ enum Command {
     #[command(
         about = "Print the nextest package flags for the packages a change against GATE_BASE can affect: --workspace, -p flags, or nothing; GATE_ALL_TESTS set prints --workspace"
     )]
-    Affected,
+    Affected {
+        #[arg(
+            long,
+            help = "Print only the packages the change edits, without the ones that depend on them"
+        )]
+        edited: bool,
+    },
     #[command(
         about = "Validate every spec file under .development/ and the committed JSON Schemas"
     )]
@@ -218,7 +224,7 @@ fn run_command(
     development: &Development,
 ) -> Result<(Vec<String>, bool), GateError> {
     match command {
-        Command::Affected => Ok((affected::affected(&development.root)?, true)),
+        Command::Affected { edited } => Ok((affected::affected(&development.root, edited)?, true)),
         Command::Availability => {
             dispatch::availability(development)?;
             Ok((vec!["a worker vendor is available".to_owned()], true))
