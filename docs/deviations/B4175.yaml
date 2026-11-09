@@ -45,3 +45,10 @@ deviations:
       unsupported, so a config that loads has none of them and the two counts are equal; the count
       has to follow the router once the loader reads those keys.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12041-L12078
+  - what: >-
+      The health command reads at most 1 MiB (MAX_HEALTH_BODY) of the /health body and rejects a
+      body that is not UTF-8 text, where LiteLLM reads a body of any size.
+    why: >-
+      bounded-inputs: a response from the network is untrusted, so its read is capped. LiteLLM
+      calls httpx.get(...).json() and prints whatever comes back.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L208-L211
