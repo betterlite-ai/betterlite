@@ -1015,15 +1015,21 @@ dependencies = [
  "base64 0.22.1",
  "betterlite-config",
  "betterlite-core",
+ "betterlite-cost",
  "betterlite-http",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-redact",
  "chrono",
  "futures-core",
  "futures-util",
  "hex",
  "http 1.5.0",
+ "indexmap 2.14.2",
  "lru",
  "num-traits",
  "rstest",
+ "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
@@ -1058,6 +1064,7 @@ dependencies = [
  "betterlite-prompts",
  "hex",
  "indexmap 2.14.2",
+ "num-traits",
  "rstest",
  "serde",
  "serde_json",
@@ -1331,9 +1338,12 @@ dependencies = [
 name = "betterlite-context"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-redact",
+ "betterlite-tokenizer",
  "percent-encoding",
  "regex",
  "rstest",
@@ -1342,6 +1352,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -1413,6 +1424,7 @@ name = "betterlite-cost"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "rstest",
  "rust_decimal",
  "strum",
  "thiserror",
@@ -1892,6 +1904,7 @@ dependencies = [
  "data-url",
  "http 1.5.0",
  "indexmap 2.14.2",
+ "mime",
  "mutants",
  "rstest",
  "secrecy",
@@ -1902,6 +1915,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -2322,6 +2336,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "num-traits",
  "prometheus-client",
  "py_literal",
  "rcgen",
@@ -2368,6 +2383,7 @@ name = "betterlite-roi"
 version = "0.1.0"
 dependencies = [
  "caseless",
+ "chrono",
  "indexmap 2.14.2",
  "rstest",
  "rust_decimal",
@@ -2616,12 +2632,20 @@ dependencies = [
 name = "betterlite-streaming"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.23.1",
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-redact",
+ "betterlite-tokenizer",
  "rstest",
  "rust_decimal",
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
@@ -4529,11 +4553,11 @@ dependencies = [
 
 [[package]]
 name = "hashlink"
-version = "0.11.1"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "824e001ac4f3012dd16a264bec811403a67ca9deb6c102fc5049b32c4574b35f"
+checksum = "a596f1b20ed2cc5ecac41a164aaebc7258057060f06c0cf7a2ba3991ee7990fb"
 dependencies = [
- "hashbrown 0.16.1",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -5435,9 +5459,9 @@ dependencies = [
 
 [[package]]
 name = "libsqlite3-sys"
-version = "0.37.0"
+version = "0.39.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f111c8c41e7c61a49cd34e44c7619462967221a6443b0ec299e0ac30cfb9b1"
+checksum = "14a5f01b87b92705d07b433c06f96cbc764637d81a0bffb5734ce17cf0f9a2b3"
 dependencies = [
  "cc",
  "pkg-config",
@@ -7207,18 +7231,20 @@ dependencies = [
 
 [[package]]
 name = "rmcp"
-version = "3.4.1"
+version = "3.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b6317cd8c13e3ec9033cf2aa5aa92cd743f0f4f8a93cddc42ea0ae6ce3b8898"
+checksum = "d24a7e92f4bcaa36b97fa93c4fa7ca8f3e669eced949345b3462dba333c7f909"
 dependencies = [
  "chrono",
  "futures",
  "indexmap 2.14.2",
+ "libc",
  "pastey",
  "pin-project-lite",
  "schemars 1.2.3",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
  "tokio",
  "tokio-util",
@@ -7296,9 +7322,9 @@ dependencies = [
 
 [[package]]
 name = "rusqlite"
-version = "0.39.0"
+version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0d2b0146dd9661bf67bb107c0bb2a55064d556eeb3fc314151b957f313bcd4e"
+checksum = "9c026b4444579e8d754556c6c75d040d69c4a44283cdb648ab8a8d5965c2cfa8"
 dependencies = [
  "bitflags 2.13.2",
  "fallible-iterator 0.3.0",
