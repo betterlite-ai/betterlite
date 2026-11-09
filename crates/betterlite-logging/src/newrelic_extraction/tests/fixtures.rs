@@ -1,8 +1,13 @@
 use std::collections::BTreeMap;
+use std::io::{Result as IoResult, Write};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use tracing::Level;
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing_subscriber::fmt::MakeWriter;
 use uuid::Uuid;
 
 use crate::fields::payload::StandardLoggingPayload;
@@ -103,4 +108,52 @@ pub(super) fn content_policy(environment: &dyn EnvironmentLookup) -> ContentPoli
         redact_message_logging: false,
         environment,
     }
+}
+
+#[derive(Clone, Default)]
+pub(super) struct WarningBuffer(Arc<Mutex<Vec<u8>>>);
+
+impl WarningBuffer {
+    pub(super) fn text(&self) -> String {
+        let bytes = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        String::from_utf8(bytes).expect("utf-8 log output")
+    }
+}
+
+impl Write for WarningBuffer {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for WarningBuffer {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+pub(super) fn capture_warnings() -> (WarningBuffer, DefaultGuard) {
+    let buffer = WarningBuffer::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(Level::WARN)
+        .with_writer(buffer.clone())
+        .finish();
+    let guard = set_default(subscriber);
+    (buffer, guard)
 }

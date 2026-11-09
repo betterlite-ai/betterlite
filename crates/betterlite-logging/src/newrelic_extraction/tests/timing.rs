@@ -84,8 +84,10 @@ fn newrelic_extraction_tests_behavior_duration_reads_llm_api_duration() {
     let mut kwargs = call_kwargs();
     kwargs.llm_api_duration_ms = Some(42.5_f64);
     let event_sources = sources(&kwargs, &body, None);
+    let start = Moment::Integer(1_704_067_200);
+    let end = Moment::Integer(1_704_067_202);
     assert_eq!(
-        duration(&event_sources, None, None)
+        duration(&event_sources, Some(&start), Some(&end))
             .unwrap()
             .map(f64::to_bits),
         Some(42.5_f64.to_bits())

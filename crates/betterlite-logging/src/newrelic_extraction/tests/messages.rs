@@ -52,6 +52,28 @@ fn newrelic_extraction_tests_behavior_message_content(
     assert_eq!(message_content(&message), expected);
 }
 
+fn summarize(
+    event: &MessageEvent,
+) -> (
+    usize,
+    &str,
+    Option<&str>,
+    &str,
+    &str,
+    Option<bool>,
+    Option<i64>,
+) {
+    (
+        event.sequence,
+        event.role.as_str(),
+        event.content.as_deref(),
+        event.response_model.as_str(),
+        event.vendor.as_str(),
+        event.is_response,
+        event.timestamp,
+    )
+}
+
 #[test]
 fn newrelic_extraction_tests_behavior_all_messages_projects_request_and_response() {
     let mut standard = payload();
@@ -63,20 +85,23 @@ fn newrelic_extraction_tests_behavior_all_messages_projects_request_and_response
     let policy = content_policy(&env);
     let response = r#"{"choices":[{"message":{"role":"assistant","content":"hello"}}]}"#;
     let events = events_with(Some(&standard), None, response, &policy).unwrap();
-    assert_eq!(events.len(), 3);
-    assert_eq!(events[0].sequence, 0);
-    assert_eq!(events[0].role, "user");
-    assert_eq!(events[0].content.as_deref(), Some("hi"));
-    assert_eq!(events[0].response_model, "gpt-4o");
-    assert_eq!(events[0].vendor, "openai");
-    assert_eq!(events[0].is_response, None);
-    assert_eq!(events[0].timestamp, None);
-    assert_eq!(events[1].sequence, 1);
-    assert_eq!(events[1].role, "system");
-    assert_eq!(events[2].sequence, 2);
-    assert_eq!(events[2].role, "assistant");
-    assert_eq!(events[2].content.as_deref(), Some("hello"));
-    assert_eq!(events[2].is_response, Some(true));
+    let seen: Vec<_> = events.iter().map(summarize).collect();
+    assert_eq!(
+        seen,
+        [
+            (0, "user", Some("hi"), "gpt-4o", "openai", None, None),
+            (1, "system", Some("rules"), "gpt-4o", "openai", None, None),
+            (
+                2,
+                "assistant",
+                Some("hello"),
+                "gpt-4o",
+                "openai",
+                Some(true),
+                None
+            ),
+        ]
+    );
 }
 
 #[test]
@@ -260,6 +285,26 @@ fn newrelic_extraction_tests_behavior_all_messages_stamps_payload_times() {
 }
 
 #[test]
+fn newrelic_extraction_tests_behavior_all_messages_prefers_payload_times() {
+    let mut standard = payload();
+    standard.start_time = "1704067200.5".parse().unwrap();
+    standard.end_time = "1704067201.25".parse().unwrap();
+    standard.messages = Some(json(r#"[{"role":"user","content":"hi"}]"#));
+    let env = environment(&[]);
+    let policy = content_policy(&env);
+    let messages = json(r#"[{"role":"user","content":"hi"}]"#);
+    let mut kwargs = call_kwargs();
+    kwargs.messages = Some(&messages);
+    kwargs.start_time = Some(Moment::Integer(1_000));
+    kwargs.end_time = Some(Moment::Integer(2_000));
+    let body = object(r#"{"choices":[{"message":{"content":"hello"}}]}"#);
+    let event_sources = sources(&kwargs, &body, Some(&standard));
+    let events = all_messages(&event_sources, "gpt-4o", "openai", &policy).unwrap();
+    assert_eq!(events[0].timestamp, Some(1_704_067_200_500));
+    assert_eq!(events[1].timestamp, Some(1_704_067_201_250));
+}
+
+#[test]
 fn newrelic_extraction_tests_behavior_all_messages_stamps_kwargs_times() {
     let mut standard = payload();
     zero_times(&mut standard);
@@ -298,6 +343,20 @@ fn newrelic_extraction_tests_behavior_all_messages_turn_off_removes_content() {
     standard.messages = Some(json(r#"[{"role":"user","content":"hi"}]"#));
     let env = environment(&[(RECORD_CONTENT_ENV, "false")]);
     let policy = content_policy(&env);
+    let response = r#"{"choices":[{"message":{"content":"hello"}}]}"#;
+    let events = events_with(Some(&standard), None, response, &policy).unwrap();
+    assert_eq!(events.len(), 2);
+    assert!(events.iter().all(|event| event.content.is_none()));
+}
+
+#[test]
+fn newrelic_extraction_tests_behavior_all_messages_turn_off_flag_removes_content() {
+    let mut standard = payload();
+    zero_times(&mut standard);
+    standard.messages = Some(json(r#"[{"role":"user","content":"hi"}]"#));
+    let env = environment(&[]);
+    let mut policy = content_policy(&env);
+    policy.turn_off_message_logging = true;
     let response = r#"{"choices":[{"message":{"content":"hello"}}]}"#;
     let events = events_with(Some(&standard), None, response, &policy).unwrap();
     assert_eq!(events.len(), 2);

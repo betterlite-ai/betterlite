@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use betterlite_config::loader::EnvironmentLookup;
 use rstest::rstest;
 
-use super::fixtures::{content_policy, environment};
+use super::fixtures::{capture_warnings, content_policy, environment};
 use crate::newrelic_extraction::content::{ContentPolicy, RECORD_CONTENT_ENV};
 
 struct ToggleEnv(AtomicBool);
@@ -54,6 +54,29 @@ fn newrelic_extraction_tests_behavior_record_content_defaults(#[case] raw: Optio
     let env = env_of(raw);
     let policy = content_policy(&env);
     assert!(policy.record_content());
+}
+
+#[test]
+fn newrelic_extraction_tests_behavior_unrecognized_boolean_warns() {
+    let (buffer, guard) = capture_warnings();
+    let env = environment(&[(RECORD_CONTENT_ENV, "maybe")]);
+    let policy = content_policy(&env);
+    assert!(policy.record_content());
+    drop(guard);
+    let log = buffer.text();
+    assert_eq!(log.matches(RECORD_CONTENT_ENV).count(), 1, "{log}");
+    assert!(log.contains("not a recognised boolean"), "{log}");
+}
+
+#[test]
+fn newrelic_extraction_tests_behavior_recognized_boolean_does_not_warn() {
+    let (buffer, guard) = capture_warnings();
+    let env = environment(&[(RECORD_CONTENT_ENV, "true")]);
+    let policy = content_policy(&env);
+    assert!(policy.record_content());
+    drop(guard);
+    let log = buffer.text();
+    assert!(log.is_empty(), "{log}");
 }
 
 #[test]

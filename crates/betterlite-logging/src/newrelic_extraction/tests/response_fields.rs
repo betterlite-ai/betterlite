@@ -202,6 +202,10 @@ fn newrelic_extraction_tests_behavior_usage_ignores_non_numeric_counts() {
 
 #[rstest]
 #[case::first_choice(r#"{"choices":[{"finish_reason":"stop"}]}"#, "stop")]
+#[case::first_of_several(
+    r#"{"choices":[{"finish_reason":"stop"},{"finish_reason":"length"}]}"#,
+    "stop"
+)]
 #[case::empty_reason(r#"{"choices":[{"finish_reason":""}]}"#, "unknown")]
 #[case::missing_reason(r#"{"choices":[{}]}"#, "unknown")]
 #[case::empty_choices(r#"{"choices":[]}"#, "unknown")]
