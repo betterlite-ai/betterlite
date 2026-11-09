@@ -1,19 +1,16 @@
 use std::collections::BTreeMap;
-use std::convert::Infallible;
 use std::fmt::Display;
-use std::io;
 use std::sync::Mutex;
 use std::sync::PoisonError;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use betterlite::banner::show_banner;
 use betterlite::diagnostic_commands::{
-    DiagnosticError, HealthTransport, ProcessLauncher, TransportError, config_validation_command,
-    health_command, needs_ollama, ollama_serve, test_command,
+    DiagnosticError, config_validation_command, health_command, needs_ollama, ollama_serve,
+    test_command,
 };
 use betterlite::startup_input::{
-    FALLBACK_PORT_HIGH, FALLBACK_PORT_LOW, PortProber, StartupInputError, choose_port,
-    classify_positional,
+    FALLBACK_PORT_HIGH, FALLBACK_PORT_LOW, StartupInputError, choose_port, classify_positional,
 };
 use betterlite::verbose_levels::{LogLevel, plan_verbose_levels};
 use betterlite_config::loader::ConfigLoader;
@@ -21,6 +18,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::helpers::{Helper, HelperError, HelperResult};
+
+mod fixtures;
+
+use fixtures::{CannedTransport, RecordingLauncher, RecordingProber, RecordingRng};
 
 pub(crate) struct Op;
 
@@ -97,74 +98,6 @@ impl Helper for Op {
                 litellm_log,
             } => Ok(verbose_output(worker_config, litellm_log)),
         }
-    }
-}
-
-struct CannedTransport {
-    body: String,
-    url: Mutex<Option<String>>,
-}
-
-impl HealthTransport for CannedTransport {
-    fn get(&self, url: &str) -> Result<String, TransportError> {
-        *self.url.lock().unwrap_or_else(PoisonError::into_inner) = Some(url.to_owned());
-        Ok(self.body.clone())
-    }
-}
-
-#[derive(Default)]
-struct RecordingLauncher {
-    commands: Mutex<Vec<Vec<String>>>,
-}
-
-impl ProcessLauncher for RecordingLauncher {
-    fn spawn_silent(&self, program: &str, args: &[&str]) -> Result<(), io::Error> {
-        let mut command = Vec::with_capacity(args.len().saturating_add(1));
-        command.push(program.to_owned());
-        command.extend(args.iter().map(|arg| (*arg).to_owned()));
-        self.commands
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(command);
-        Ok(())
-    }
-}
-
-struct RecordingProber {
-    busy: bool,
-    asked: Mutex<Vec<u16>>,
-}
-
-impl PortProber for RecordingProber {
-    fn in_use(&self, port: u16) -> bool {
-        self.asked
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(port);
-        self.busy
-    }
-}
-
-struct RecordingRng {
-    sample: u32,
-    draws: AtomicUsize,
-}
-
-impl rand::TryRng for RecordingRng {
-    type Error = Infallible;
-
-    fn try_next_u32(&mut self) -> Result<u32, Infallible> {
-        let _previous = self.draws.fetch_add(1, Ordering::Relaxed);
-        Ok(self.sample)
-    }
-
-    fn try_next_u64(&mut self) -> Result<u64, Infallible> {
-        self.try_next_u32().map(u64::from)
-    }
-
-    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Infallible> {
-        dst.fill(0);
-        Ok(())
     }
 }
 

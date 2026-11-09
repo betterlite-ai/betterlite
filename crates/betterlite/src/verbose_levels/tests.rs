@@ -99,44 +99,25 @@ fn detailed_debug_alone_turns_every_logger_to_debug() {
 }
 
 #[rstest]
-#[case::upper_info("INFO")]
-#[case::lower_info("info")]
-fn both_flags_false_reads_info_from_the_environment(#[case] litellm_log: &str) {
+#[case::upper_info("INFO", ROUTER_PROXY_INFO)]
+#[case::lower_info("info", ROUTER_PROXY_INFO)]
+#[case::upper_debug("DEBUG", ROUTER_PROXY_DEBUG)]
+#[case::lower_debug("debug", ROUTER_PROXY_DEBUG)]
+#[case::unset("", EMPTY_PLAN)]
+#[case::other_level("WARN", EMPTY_PLAN)]
+#[case::padded(" DEBUG ", EMPTY_PLAN)]
+fn both_flags_false_reads_only_info_or_debug(
+    #[case] litellm_log: &str,
+    #[case] expected: LevelPlan,
+) {
     let (plan, warnings) = plan_with(
         Some(r#"{"debug":false,"detailed_debug":false}"#),
         false,
         litellm_log,
     );
 
-    assert_eq!(plan, ROUTER_PROXY_INFO);
+    assert_eq!(plan, expected);
     assert!(warnings.is_empty());
-}
-
-#[rstest]
-#[case::upper_debug("DEBUG")]
-#[case::lower_debug("debug")]
-fn both_flags_false_reads_debug_from_the_environment(#[case] litellm_log: &str) {
-    let (plan, _warnings) = plan_with(
-        Some(r#"{"debug":false,"detailed_debug":false}"#),
-        false,
-        litellm_log,
-    );
-
-    assert_eq!(plan, ROUTER_PROXY_DEBUG);
-}
-
-#[rstest]
-#[case::unset("")]
-#[case::other_level("WARN")]
-#[case::padded(" DEBUG ")]
-fn both_flags_false_with_another_environment_level_plans_nothing(#[case] litellm_log: &str) {
-    let (plan, _warnings) = plan_with(
-        Some(r#"{"debug":false,"detailed_debug":false}"#),
-        false,
-        litellm_log,
-    );
-
-    assert_eq!(plan, EMPTY_PLAN);
 }
 
 #[rstest]
