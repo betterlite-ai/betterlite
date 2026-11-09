@@ -2065,6 +2065,7 @@ dependencies = [
  "indexmap 2.14.2",
  "jiff",
  "opentelemetry",
+ "opentelemetry-http",
  "opentelemetry_sdk",
  "percent-encoding",
  "quick-xml",
