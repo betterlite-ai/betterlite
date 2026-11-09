@@ -156,7 +156,6 @@ async fn callback_logger_queues_the_standard_payload_on_failure() {
     fixture.send().await;
     assert_eq!(fixture.entries().len(), 1);
 }
-
 #[tokio::test]
 async fn callback_logger_skips_an_event_type_that_is_not_listed() {
     let mut arguments = args();

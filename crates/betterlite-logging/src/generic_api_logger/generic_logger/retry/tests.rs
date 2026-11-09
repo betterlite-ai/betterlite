@@ -8,7 +8,7 @@ use rstest::rstest;
 use super::super::error::ApiError;
 use super::super::tests::{Fixture, settings};
 use super::post_with_retries;
-use crate::generic_api_logger::tests::args;
+use crate::generic_api_logger::tests::{args, capture_logs};
 
 async fn run(
     max_retries: i64,
@@ -31,9 +31,11 @@ async fn run(
 
 #[tokio::test]
 async fn retry_makes_max_retries_plus_one_attempts_and_retries_a_server_error() {
+    let (logs, _guard) = capture_logs();
     let (result, fixture) = run(1, None, &[Ok(503), Ok(200)]).await;
     result.expect("the retry succeeds");
     assert_eq!(fixture.recorder.bodies().len(), 2);
+    assert!(logs.contents().contains("retrying request to"));
     let (failed, attempts) = run(
         2,
         None,
