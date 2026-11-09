@@ -227,7 +227,7 @@ fn expected(source: &str) -> Json {
 )]
 #[case::reported_thinking_capped(
     Scenario::ReportedThinkingCapped,
-    r#"{"usage": {"input_tokens": 1, "output_tokens": 10, "output_tokens_details": {"thinking_tokens": 4}}}"#,
+    r#"{"usage": {"input_tokens": 1, "output_tokens": 10, "output_tokens_details": {"thinking_tokens": 14}}}"#,
     r#"{
         "prompt_tokens": 1,
         "completion_tokens": 10,
@@ -242,8 +242,8 @@ fn expected(source: &str) -> Json {
             "video_tokens": null
         },
         "completion_tokens_details": {
-            "reasoning_tokens": 4,
-            "text_tokens": 6,
+            "reasoning_tokens": 10,
+            "text_tokens": 0,
             "accepted_prediction_tokens": null,
             "rejected_prediction_tokens": null,
             "audio_tokens": null,
@@ -459,6 +459,29 @@ fn five_minute_one_hour_breakdown_extras() {
     );
     assert_eq!(total_only.prompt_tokens_details.text, 10);
     assert_eq!(total_only.prompt_tokens, 16);
+    creation_listed_extras();
+}
+
+fn creation_listed_extras() {
+    let listed =
+        project(r#"{"usage": {"input_tokens": 10, "output_tokens": 5, "cache_creation": [7, 1]}}"#)
+            .unwrap();
+    assert!(
+        listed
+            .prompt_tokens_details
+            .cache_creation_details
+            .is_none()
+    );
+    let iteration_listed = project(
+        r#"{"usage": {"input_tokens": 1, "output_tokens": 1, "iterations": [{"input_tokens": 2, "output_tokens": 2, "cache_creation_input_tokens": 5, "cache_creation": [7, 1]}]}}"#,
+    )
+    .unwrap();
+    assert!(
+        iteration_listed
+            .prompt_tokens_details
+            .cache_creation_details
+            .is_none()
+    );
 }
 
 fn iteration_usage_sum_extras() {
@@ -479,6 +502,12 @@ fn iteration_usage_sum_extras() {
             field: "iterations.input_tokens"
         }
     ));
+    let nonmapping = project(r#"{"usage": [10, 5, 3, 2]}"#).unwrap_err();
+    assert!(matches!(nonmapping, UsageError::Decode { .. }));
+    let listed_entry =
+        project(r#"{"usage": {"input_tokens": 1, "output_tokens": 1, "iterations": [[5, 6]]}}"#)
+            .unwrap_err();
+    assert!(matches!(listed_entry, UsageError::Decode { .. }));
 }
 
 fn partial_iteration_detail_extras() {
@@ -547,6 +576,12 @@ fn thinking_clamp_extras() {
     );
     assert_eq!(
         completion_split(
+            r#"{"usage": {"input_tokens": 1, "output_tokens": 10, "output_tokens_details": [3]}}"#
+        ),
+        (Some(0), Some(10))
+    );
+    assert_eq!(
+        completion_split(
             r#"{"usage": {"input_tokens": 1, "output_tokens": -5, "output_tokens_details": {"thinking_tokens": 3}}}"#
         ),
         (Some(-5), Some(0))
@@ -569,6 +604,24 @@ fn thinking_iteration_extras() {
 }
 
 fn estimated_thinking_local_extras(probe: &Probe) {
+    assert_eq!(
+        completion_split(
+            r#"{"usage": {"input_tokens": 1, "output_tokens": 10, "output_tokens_details": {"thinking_tokens": 4}}, "reasoning_content": "hello world", "estimate": 9}"#
+        ),
+        (Some(4), Some(6))
+    );
+    assert_eq!(
+        completion_split(
+            r#"{"usage": {"input_tokens": 1, "output_tokens": 10}, "reasoning_content": "", "completion_response": {"content": [{"type": "thinking"}]}, "estimate": 9}"#
+        ),
+        (None, None)
+    );
+    assert_eq!(
+        completion_split(
+            r#"{"usage": {"input_tokens": 1, "output_tokens": -5}, "reasoning_content": "hello world", "estimate": 2}"#
+        ),
+        (Some(0), Some(-5))
+    );
     let over = project(
         r#"{"usage": {"input_tokens": 1, "output_tokens": 10}, "reasoning_content": "hello world", "estimate": 20}"#,
     )
@@ -662,6 +715,11 @@ fn tool_search_scan_extras() {
     )
     .unwrap();
     assert_eq!(none.server_tool_use, None);
+    let listed = project(
+        r#"{"usage": {"input_tokens": 1, "output_tokens": 10, "server_tool_use": [1, 2]}}"#,
+    )
+    .unwrap();
+    assert_eq!(listed.server_tool_use, None);
 }
 
 fn speed_tier_geography_extras() {
@@ -688,7 +746,10 @@ fn speed_tier_geography_extras() {
         r#"{"input_tokens": 1}"#
     )));
     assert!(!is_anthropic_usage_object(&expected(
-        r#"{"prompt_tokens": 1, "cache_read_input_tokens": 0}"#
+        r#"{"input_tokens": 1, "prompt_tokens": 1, "cache_read_input_tokens": 0}"#
+    )));
+    assert!(!is_anthropic_usage_object(&expected(
+        r#"{"cache_read_input_tokens": 0}"#
     )));
     assert!(!is_anthropic_usage_object(&expected("[]")));
 }

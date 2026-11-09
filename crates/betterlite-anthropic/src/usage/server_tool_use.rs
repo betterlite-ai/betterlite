@@ -18,7 +18,7 @@ where
     let mut web_search = None;
     let mut tool_search = None;
     match &object.server_tool_use {
-        None => {}
+        None | Some(ServerToolUseValue::Other) => {}
         Some(ServerToolUseValue::Mapping(usage)) => {
             web_search = optional_int(
                 usage.web_search_requests.as_ref(),
@@ -28,11 +28,6 @@ where
                 usage.tool_search_requests.as_ref(),
                 "server_tool_use.tool_search_requests",
             )?;
-        }
-        Some(ServerToolUseValue::Other) => {
-            return Err(UsageError::FieldType {
-                field: "server_tool_use",
-            });
         }
     }
     if tool_search.is_none() {

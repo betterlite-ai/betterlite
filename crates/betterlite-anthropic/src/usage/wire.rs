@@ -1,6 +1,6 @@
 use betterlite_models::decisions::Json;
 use serde::Deserialize;
-use serde::de::Error as _;
+use serde::de::{DeserializeOwned, Error as _};
 use serde_json::Number;
 use serde_json::value::RawValue;
 
@@ -69,10 +69,19 @@ impl TryFrom<Json> for Iterations {
         };
         let items = entries
             .iter()
-            .map(|entry| serde_json::from_str(&serde_json::to_string(entry)?))
+            .map(iteration_from)
             .collect::<Result<Vec<UsageIteration>, serde_json::Error>>()?;
         Ok(Self { raw, items })
     }
+}
+
+fn iteration_from(entry: &Json) -> Result<UsageIteration, serde_json::Error> {
+    let Json::Object(_) = entry else {
+        return Err(serde_json::Error::custom(
+            "an iterations entry is not a JSON object",
+        ));
+    };
+    serde_json::from_str(&serde_json::to_string(entry)?)
 }
 
 impl UsageObject {
@@ -111,7 +120,7 @@ pub(super) enum CacheCreationValue {
 
 impl From<Box<RawValue>> for CacheCreationValue {
     fn from(raw: Box<RawValue>) -> Self {
-        serde_json::from_str::<CacheCreation>(raw.get()).map_or(Self::Other, Self::Mapping)
+        object_mapping(&raw).map_or(Self::Other, Self::Mapping)
     }
 }
 
@@ -131,8 +140,7 @@ pub(super) enum OutputTokensDetailsValue {
 
 impl From<Box<RawValue>> for OutputTokensDetailsValue {
     fn from(raw: Box<RawValue>) -> Self {
-        serde_json::from_str::<AnthropicOutputTokensDetails>(raw.get())
-            .map_or(Self::Other, Self::Mapping)
+        object_mapping(&raw).map_or(Self::Other, Self::Mapping)
     }
 }
 
@@ -152,11 +160,27 @@ pub(super) enum ServerToolUseValue {
 
 impl From<Box<RawValue>> for ServerToolUseValue {
     fn from(raw: Box<RawValue>) -> Self {
-        serde_json::from_str::<ServerToolUsage>(raw.get()).map_or(Self::Other, Self::Mapping)
+        object_mapping(&raw).map_or(Self::Other, Self::Mapping)
+    }
+}
+
+// serde decodes a struct from a JSON array too, so a mapping guard checks the object shape first.
+fn object_mapping<T>(raw: &RawValue) -> Option<T>
+where
+    T: DeserializeOwned,
+{
+    match serde_json::from_str::<Json>(raw.get()) {
+        Ok(Json::Object(_)) => serde_json::from_str(raw.get()).ok(),
+        Ok(_) | Err(_) => None,
     }
 }
 
 pub(super) fn decode_usage_object(usage_object: &Json) -> Result<UsageObject, serde_json::Error> {
+    let Json::Object(_) = usage_object else {
+        return Err(serde_json::Error::custom(
+            "the usage object is not a JSON object",
+        ));
+    };
     let text = serde_json::to_string(usage_object)?;
     let decoded = serde_json::from_str(&text)?;
     Ok(decoded)
