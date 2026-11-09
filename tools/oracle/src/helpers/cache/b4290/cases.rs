@@ -11,6 +11,8 @@ use std::sync::PoisonError;
 use super::{BaseContract, IncrementInput, OldestEntryInput, failure, memory, runtime};
 use crate::helpers::HelperResult;
 
+const EXPIRED_OLDEST_LIMIT: usize = 10;
+
 pub(crate) fn base_get() -> HelperResult {
     BaseContract
         .get_cache("key")
@@ -52,9 +54,13 @@ pub(crate) fn memory_ttl(
         if read_at.is_none() {
             return Ok(json!({"ttl": stored}));
         }
+        let oldest = cache
+            .async_get_oldest_n_keys(EXPIRED_OLDEST_LIMIT)
+            .await
+            .map_err(failure)?;
         let read = cache.async_get_cache(key).await.map_err(failure)?;
         let after_read = cache.async_get_ttl(key).await.map_err(failure)?;
-        Ok(json!({"before_read": stored, "read": read, "after_read": after_read}))
+        Ok(json!({"before_read": stored, "oldest": oldest, "read": read, "after_read": after_read}))
     });
     outcome
 }

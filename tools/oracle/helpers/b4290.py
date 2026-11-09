@@ -147,9 +147,13 @@ async def _expired_ttl(
     await cache.async_set_cache(key, value, ttl=ttl)  # pyright: ignore[reportUnknownMemberType]
     now[0] = read_at
     before_read = await cache.async_get_ttl(key)
+    oldest = await cache.async_get_oldest_n_keys(10)
     read = cast(Json, await cache.async_get_cache(key))  # pyright: ignore[reportUnknownMemberType]
     after_read = await cache.async_get_ttl(key)
-    return cast(Json, {"before_read": before_read, "read": read, "after_read": after_read})
+    return cast(
+        Json,
+        {"before_read": before_read, "oldest": oldest, "read": read, "after_read": after_read},
+    )
 
 
 def _memory_async_get_expired_ttl(data: dict[str, Json]) -> Json:
