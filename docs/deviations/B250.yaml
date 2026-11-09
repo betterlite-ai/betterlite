@@ -1,0 +1,11 @@
+task: B250
+deviations:
+  - what: An excluded standard logging payload field that the typed payload requires, such as model, is kept in the payload the logger receives, and a warning names it; LiteLLM removes every excluded key.
+    why: LoggerEvent carries a typed StandardLoggingPayload (B8740) whose required fields cannot be absent, so only optional fields such as messages, response and error_str can be removed. The optional fields are the ones that carry message content.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L910-L921
+  - what: A streamed chunk with no standard logging object stored for the request gets a payload built by the injected builder before its logger event; LiteLLM's log_stream_event receives model_call_details without a fresh standard_logging_object.
+    why: LoggerEvent requires a payload (B8740), and B190's builder handles a chunk response, so the event carries the payload the logger needs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3503-L3511
+  - what: Sync success callbacks for async calls run inline through success_handler instead of being submitted to a thread pool.
+    why: betterlite has no detached executor; the registry holds only CallbackLogger objects, which LiteLLM's filter removes before that path, so the call only matters for legacy callables and runs no logger.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3983-L4004
