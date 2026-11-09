@@ -45,9 +45,13 @@ pub fn create_bedrock_block(
     }
 }
 
-// LiteLLM hashes the first 64 KiB of the whitespace-free payload plus the payload's full length
+// LiteLLM hashes the first 64 KiB of the payload after Python's str.split(), whose whitespace set adds U+001C..U+001F to Rust's
 fn document_name(image_bytes: &str, image_format: &str) -> String {
-    let joined: String = image_bytes.split_whitespace().collect();
+    let joined: String = image_bytes
+        .split(|character: char| {
+            character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
+        })
+        .collect();
     let normalized = joined.as_bytes();
     let sample = normalized.get(..HASH_SAMPLE_BYTES).unwrap_or(normalized);
     let mut hasher = Sha256::new();

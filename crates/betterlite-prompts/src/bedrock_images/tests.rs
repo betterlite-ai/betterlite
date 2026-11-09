@@ -392,6 +392,12 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
                     r#"{{"document":{{"format":"pdf","source":{{"bytes":"{large_payload}"}},"name":"DocumentPDFmessages_850366edec6eebdd_pdf"}}}}"#
                 )
             );
+            let separated = create_bedrock_block("QUJD\x1cR0lG\x1f", "application/pdf", "pdf");
+            let ContentBlock::Document { document } = &separated else {
+                panic!("a document media type answers with a document block");
+            };
+            assert_eq!(document.source.bytes, "QUJD\x1cR0lG\x1f");
+            assert_eq!(document.name, "DocumentPDFmessages_025874a868cf687d_pdf");
         }
         "post_call_takes_the_header_media_type" => {
             let headers = headers_of(&[("content-type", "image/png; charset=utf-8")]);
