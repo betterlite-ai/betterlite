@@ -24,6 +24,7 @@ use self::messages::SAPToolChatMessage;
 use self::messages::SAPUserMessage;
 use self::request::OrchestrationRequest;
 use self::response_format::ResponseFormat;
+use self::response_format::ResponseFormatChoice;
 use self::response_format::ResponseFormatJSONSchema;
 
 #[derive(Debug, Error)]
@@ -141,17 +142,15 @@ fn wants_json_schema(body: &Json) -> bool {
 // LiteLLM's transform sends a json_schema type through ResponseFormatJSONSchema and every other type through ResponseFormat, which is the same split the declared-order union makes.
 pub fn validate_response_format(body: &Json) -> Result<Json, SapModelError> {
     let text = serde_json::to_string(body).map_err(SapModelError::Serialize)?;
-    if wants_json_schema(body) {
-        encode(
-            &decode::<ResponseFormatJSONSchema>(&text, "response_format")?,
+    let format = if wants_json_schema(body) {
+        ResponseFormatChoice::JsonSchema(decode::<ResponseFormatJSONSchema>(
+            &text,
             "response_format",
-        )
+        )?)
     } else {
-        encode(
-            &decode::<ResponseFormat>(&text, "response_format")?,
-            "response_format",
-        )
-    }
+        ResponseFormatChoice::Plain(decode::<ResponseFormat>(&text, "response_format")?)
+    };
+    encode(&format, "response_format")
 }
 
 pub fn validate_masking_module(body: &Json) -> Result<Json, SapModelError> {
