@@ -45,7 +45,7 @@ impl Helper for Op {
         match input.provider {
             ProviderName::GooglePse => request(
                 input,
-                GooglePseSearch {
+                &GooglePseSearch {
                     lookup: &input.environment,
                     api_key: input.api_key.clone().map(SecretString::from),
                     api_base: input.api_base.clone(),
@@ -54,7 +54,7 @@ impl Helper for Op {
             ),
             ProviderName::SearchApi => request(
                 input,
-                SearchApiSearch {
+                &SearchApiSearch {
                     lookup: &input.environment,
                     api_key: input.api_key.clone().map(SecretString::from),
                     api_base: input.api_base.clone(),
@@ -108,7 +108,7 @@ impl SearchRequest for SearchApiSearch<'_> {
     }
 }
 
-fn request<P>(input: &Input, provider: P) -> HelperResult
+fn request<P>(input: &Input, provider: &P) -> HelperResult
 where
     P: SearchRequest,
 {
