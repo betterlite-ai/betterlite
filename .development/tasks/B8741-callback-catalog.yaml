@@ -75,6 +75,12 @@ description: >-
   once; a registry with the catalog as resolver registers pagerduty as a Logger sink and lists it for Success.
 scope:
   paths:
+    - "crates/betterlite-config/tests/fixtures/unsupported/langfuse_config_yaml/litellm_settings.success_callback"
+    - "crates/betterlite-config/tests/config_tests/snapshots/config_tests__test_cases__langfuse_config_yaml.snap"
+    - "crates/betterlite-config/tests/config_tests/snapshots/config_tests__test_cases__simple_config_yaml.snap"
+    - "crates/betterlite-config/tests/config_tests/snapshots/config_tests__test_cases__azure_config_yaml.snap"
+    - "crates/betterlite-config/tests/config_tests/mod.rs"
+    - "crates/betterlite-config"
     - "tools/oracle/src/helpers/logging/callback_registry.rs"
     - crates/betterlite-config/src/sections/callback_settings.rs
     - crates/betterlite-config/src/sections/callback_settings/**
