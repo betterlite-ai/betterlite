@@ -10,8 +10,8 @@ use crate::sampling_convert::openai_wire::{
 };
 
 use super::fixtures::{
-    expected_call, many, message, single, text, text_block, text_parts_message, tool_result,
-    tool_use,
+    expected_call, many, message, object, single, text, text_block, text_parts_message,
+    tool_result, tool_use,
 };
 
 #[test]
@@ -357,4 +357,11 @@ fn a_tool_use_input_that_is_not_an_object_is_refused() {
 fn a_json_object_refuses_a_non_object_document() {
     let error = serde_json::from_str::<JsonObject>("[1]").expect_err("not an object");
     assert!(error.to_string().contains("valid dictionary"));
+}
+
+#[test]
+fn json_objects_compare_their_text() {
+    let left = object(r#"{"q": 1}"#);
+    assert_eq!(left, object(r#"{"q": 1}"#));
+    assert_ne!(left, object(r#"{"q": 2}"#));
 }
