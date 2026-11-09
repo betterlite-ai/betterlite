@@ -15,6 +15,17 @@ use crate::redis_live_client::pipeline::LivePipeline;
 use super::reply::{RedisReply, classify};
 use super::{RedisCounters, RedisCountersError};
 
+pub(crate) async fn incr_by_float_without_ttl(
+    client: &LiveAsyncClient,
+    key: &str,
+    value: f64,
+) -> Result<f64, RedisCountersError> {
+    let mut command = cmd("INCRBYFLOAT");
+    command.arg(key).arg(value);
+    let reply: Value = client.query(&command).await?;
+    float_reply(reply, "incr_by_float_with_ttl")
+}
+
 pub(crate) async fn pipeline_increment(
     counters: &RedisCounters,
     increment_list: &[IncrementOperation],

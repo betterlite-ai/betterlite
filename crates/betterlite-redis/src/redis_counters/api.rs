@@ -1,8 +1,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use redis::{Value, cmd};
-
 use crate::cache_primitives::namespace::check_and_fix_namespace;
 use crate::cache_primitives::pipeline_increment::IncrementOperation;
 use crate::redis_client_reuse::breaker_gate::BreakerGate;
@@ -105,12 +103,7 @@ impl RedisCounters {
     ) -> Result<f64> {
         let client = self.transport.async_client().await?;
         match ttl {
-            None => {
-                let mut command = cmd("INCRBYFLOAT");
-                command.arg(key).arg(value);
-                let reply: Value = client.query(&command).await?;
-                float_increment::float_reply(reply, "incr_by_float_with_ttl")
-            }
+            None => float_increment::incr_by_float_without_ttl(&client, key, value).await,
             Some(ttl_seconds) => {
                 float_increment::increment_with_followup(
                     &client,
