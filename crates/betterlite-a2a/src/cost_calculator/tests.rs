@@ -299,6 +299,26 @@ fn a_text_price_is_an_error() {
 }
 
 #[test]
+fn null_litellm_params_are_free() {
+    let details = [("litellm_params", Json::Null)];
+
+    assert_eq!(cost(&details), Ok(Decimal::ZERO));
+}
+
+#[test]
+fn a_missing_token_count_is_zero() {
+    let details = [
+        (
+            "litellm_params",
+            object(&[("input_cost_per_token", decimal_json("0.002"))]),
+        ),
+        ("usage", object(&[("prompt_tokens", number(3))])),
+    ];
+
+    assert_eq!(cost(&details), Ok(money("0.006")));
+}
+
+#[test]
 fn a_list_litellm_params_is_an_error() {
     let details = [("litellm_params", Json::List(vec![number(1)]))];
 
