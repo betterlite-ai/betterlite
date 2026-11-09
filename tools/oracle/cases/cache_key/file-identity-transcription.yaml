@@ -1,0 +1,16 @@
+kind: helper
+name: file-identity-transcription
+call:
+  b4296:
+    get_cache_key:
+      cache_type: local
+      semantic_cache_scope: key
+      params:
+        - {name: model, value: whisper-1}
+        - {name: file, value: audio.mp3}
+        - {name: language, value: en}
+      metadata:
+        file_checksum: sha256-audio-content
+env: {}
+compare:
+  ignore: []
