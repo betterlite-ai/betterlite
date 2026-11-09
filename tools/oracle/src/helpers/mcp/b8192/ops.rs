@@ -1,9 +1,5 @@
-use std::collections::BTreeMap;
-
 use betterlite_mcp::sampling_convert::messages::convert_messages;
-use betterlite_mcp::sampling_convert::model_preferences::{
-    ModelInfo, resolve_model_from_preferences,
-};
+use betterlite_mcp::sampling_convert::model_preferences::resolve_model_from_preferences;
 use betterlite_mcp::sampling_convert::response::convert_response;
 use betterlite_mcp::sampling_convert::tools::{convert_tool_choice, convert_tools};
 use serde::Serialize;
@@ -36,17 +32,12 @@ pub(crate) fn run(input: &Input) -> HelperResult {
 }
 
 fn resolve_value(scenario: &ResolveScenario) -> Value {
-    let model_info: BTreeMap<String, ModelInfo> = scenario
-        .model_info
-        .iter()
-        .map(|(name, fields)| (name.clone(), fields.model_info()))
-        .collect();
     let resolved = resolve_model_from_preferences(
         scenario.preferences.as_ref(),
         &scenario.available_models,
         scenario.default_model.as_deref(),
         scenario.fallback_model.as_deref(),
-        &model_info,
+        &scenario.model_info,
     );
     match resolved {
         Ok(model) => json!({ "outcome": "resolved", "model": model }),

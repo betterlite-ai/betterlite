@@ -46,7 +46,7 @@ fn resolve_picks_the_model_each_priority_prefers(
     let resolved = resolve_model_from_preferences(
         Some(&preferences),
         &names(&["cheap", "fast", "smart"]),
-        Some("fast"),
+        Some("default-model"),
         None,
         &scored_catalog(),
     )
@@ -55,11 +55,15 @@ fn resolve_picks_the_model_each_priority_prefers(
 }
 
 #[rstest]
-#[case::cost(Some(Decimal::ONE))]
-#[case::speed(Some(Decimal::ONE))]
-#[case::intelligence(Some(Decimal::new(5, 1)))]
-fn has_priorities_accepts_a_positive_weight(#[case] weight: Option<Decimal>) {
-    assert!(has_priorities(&with_priorities(weight, weight, weight)));
+#[case::cost(Some(Decimal::ONE), None, None)]
+#[case::speed(None, Some(Decimal::ONE), None)]
+#[case::intelligence(None, None, Some(Decimal::new(5, 1)))]
+fn has_priorities_accepts_a_positive_weight(
+    #[case] cost: Option<Decimal>,
+    #[case] speed: Option<Decimal>,
+    #[case] intelligence: Option<Decimal>,
+) {
+    assert!(has_priorities(&with_priorities(cost, speed, intelligence)));
 }
 
 #[rstest]
@@ -195,37 +199,57 @@ fn resolve_skips_a_candidate_without_model_info() {
     assert_eq!(resolved, "cheap");
 }
 
-#[test]
-fn resolve_uses_the_resolved_max_output_tokens_for_intelligence() {
+fn raw_metrics(max_output_tokens: Option<u64>, max_tokens: Option<u64>) -> ModelInfo {
+    ModelInfo {
+        input_cost_per_token: None,
+        output_cost_per_token: None,
+        max_output_tokens,
+        max_tokens,
+        output_tokens_per_second: None,
+    }
+}
+
+#[rstest]
+#[case::max_tokens_only(None, Some(4_000))]
+#[case::zero_max_output(Some(0), Some(4_000))]
+fn resolve_falls_back_to_max_tokens_for_intelligence(
+    #[case] max_output_tokens: Option<u64>,
+    #[case] max_tokens: Option<u64>,
+) {
     let catalog = BTreeMap::from([
         (
-            String::from("large"),
-            ModelInfo {
-                input_cost_per_token: Decimal::ZERO,
-                output_cost_per_token: Decimal::ZERO,
-                max_output_tokens: 4_000,
-                output_tokens_per_second: Decimal::ZERO,
-            },
+            String::from("fallback"),
+            raw_metrics(max_output_tokens, max_tokens),
         ),
-        (
-            String::from("small"),
-            ModelInfo {
-                input_cost_per_token: Decimal::ZERO,
-                output_cost_per_token: Decimal::ZERO,
-                max_output_tokens: 100,
-                output_tokens_per_second: Decimal::ZERO,
-            },
-        ),
+        (String::from("small"), raw_metrics(Some(100), None)),
     ]);
     let resolved = resolve_model_from_preferences(
         Some(&with_priorities(None, None, Some(Decimal::ONE))),
-        &names(&["small", "large"]),
+        &names(&["small", "fallback"]),
         None,
         None,
         &catalog,
     )
     .expect("resolution");
-    assert_eq!(resolved, "large");
+    assert_eq!(resolved, "fallback");
+}
+
+#[test]
+fn resolve_falls_through_when_every_score_stays_below_minus_one() {
+    let catalog = BTreeMap::from([(String::from("only"), raw_metrics(Some(500), None))]);
+    let resolved = resolve_model_from_preferences(
+        Some(&with_priorities(
+            Some(Decimal::from(-4_i32)),
+            Some(Decimal::new(1, 1)),
+            None,
+        )),
+        &names(&["only"]),
+        Some("picked"),
+        None,
+        &catalog,
+    )
+    .expect("resolution");
+    assert_eq!(resolved, "picked");
 }
 
 #[test]
@@ -237,7 +261,7 @@ fn resolve_treats_only_negative_throughputs_as_no_speed_metric() {
     let resolved = resolve_model_from_preferences(
         Some(&with_priorities(None, Some(Decimal::ONE), None)),
         &names(&["slow", "slowest"]),
-        None,
+        Some("picked"),
         None,
         &catalog,
     )

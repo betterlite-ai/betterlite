@@ -42,13 +42,19 @@ pub struct ModelHint {
     pub name: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+// the raw fields LiteLLM reads from a model catalog entry; scoring resolves their defaults
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct ModelInfo {
-    pub input_cost_per_token: Decimal,
-    pub output_cost_per_token: Decimal,
-    // resolved by the caller: max_output_tokens, else max_tokens, else zero
-    pub max_output_tokens: u64,
-    pub output_tokens_per_second: Decimal,
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub input_cost_per_token: Option<Decimal>,
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub output_cost_per_token: Option<Decimal>,
+    #[serde(default)]
+    pub max_output_tokens: Option<u64>,
+    #[serde(default)]
+    pub max_tokens: Option<u64>,
+    #[serde(default, with = "rust_decimal::serde::float_option")]
+    pub output_tokens_per_second: Option<Decimal>,
 }
 
 #[must_use]
@@ -88,10 +94,15 @@ fn scored_models(
             name: name.clone(),
             cost: info
                 .input_cost_per_token
-                .checked_add(info.output_cost_per_token)
+                .unwrap_or_default()
+                .checked_add(info.output_cost_per_token.unwrap_or_default())
                 .ok_or(SamplingConvertError::PriorityScoreOverflow)?,
-            max_output_tokens: info.max_output_tokens,
-            output_tokens_per_second: info.output_tokens_per_second,
+            max_output_tokens: info
+                .max_output_tokens
+                .filter(|value| *value != 0)
+                .or(info.max_tokens)
+                .unwrap_or(0),
+            output_tokens_per_second: info.output_tokens_per_second.unwrap_or_default(),
         });
     }
     Ok(scored)

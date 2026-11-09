@@ -46,10 +46,11 @@ pub(crate) fn with_priorities(
 
 pub(crate) fn metrics(cost: i64, max_output: u64, tps: i64) -> ModelInfo {
     ModelInfo {
-        input_cost_per_token: Decimal::new(cost, 6),
-        output_cost_per_token: Decimal::new(cost, 6),
-        max_output_tokens: max_output,
-        output_tokens_per_second: Decimal::from(tps),
+        input_cost_per_token: Some(Decimal::new(cost, 6)),
+        output_cost_per_token: Some(Decimal::new(cost, 6)),
+        max_output_tokens: Some(max_output),
+        max_tokens: None,
+        output_tokens_per_second: Some(Decimal::from(tps)),
     }
 }
 
