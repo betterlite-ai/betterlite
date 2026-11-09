@@ -6,7 +6,7 @@ use crate::sampling_convert::response::{
     StopReason, convert_response, parse_tool_arguments,
 };
 
-use super::fixtures::{choice, response, text, tool_calls, tool_use};
+use super::fixtures::{choice, response, text, tool_use};
 
 #[test]
 fn a_text_response_becomes_a_sampling_message() {
@@ -62,7 +62,7 @@ fn tool_calls_become_tool_use_content_after_the_text() {
         "gpt-4o",
         vec![choice(
             Some("calling"),
-            Some(tool_calls(&[("call-9", "lookup", r#"{"q": "x"}"#)])),
+            Some(&[("call-9", "lookup", r#"{"q": "x"}"#)]),
             Some("tool_calls"),
         )],
     );
@@ -86,7 +86,7 @@ fn tool_calls_without_text_have_only_tool_use_blocks() {
         "gpt-4o",
         vec![choice(
             None,
-            Some(tool_calls(&[("call-9", "lookup", "{}")])),
+            Some(&[("call-9", "lookup", "{}")]),
             Some("tool_calls"),
         )],
     );
@@ -107,7 +107,7 @@ fn empty_text_is_omitted_from_a_tool_call_result() {
         "gpt-4o",
         vec![choice(
             Some(""),
-            Some(tool_calls(&[("call-9", "lookup", "{}")])),
+            Some(&[("call-9", "lookup", "{}")]),
             Some("tool_calls"),
         )],
     );
@@ -126,7 +126,7 @@ fn empty_text_is_omitted_from_a_tool_call_result() {
 fn an_empty_tool_calls_list_becomes_a_text_message() {
     let response = response(
         "gpt-4o",
-        vec![choice(Some("hello"), Some(Vec::new()), Some("tool_calls"))],
+        vec![choice(Some("hello"), Some(&[]), Some("tool_calls"))],
     );
     assert_eq!(
         convert_response(&response, "gpt-4o").expect("conversion"),
@@ -145,10 +145,10 @@ fn several_tool_calls_keep_their_order() {
         "gpt-4o",
         vec![choice(
             None,
-            Some(tool_calls(&[
+            Some(&[
                 ("call-1", "first", "{}"),
                 ("call-2", "second", r#"{"n": 2}"#),
-            ])),
+            ]),
             Some("tool_calls"),
         )],
     );
@@ -224,7 +224,7 @@ fn bad_tool_arguments_fail_the_response_conversion() {
         "gpt-4o",
         vec![choice(
             None,
-            Some(tool_calls(&[("call-9", "lookup", "\"hello\"")])),
+            Some(&[("call-9", "lookup", "\"hello\"")]),
             Some("tool_calls"),
         )],
     );

@@ -123,25 +123,24 @@ pub(crate) fn expected_call(id: &str, name: &str, arguments: &str) -> OpenAiTool
     }
 }
 
-pub(crate) fn tool_calls(calls: &[(&str, &str, &str)]) -> Vec<ToolCall> {
-    calls
-        .iter()
-        .map(|(id, name, arguments)| ToolCall {
-            id: (*id).to_owned(),
-            kind: String::from("function"),
-            function: OpenAiChatFunctionCall {
-                name: (*name).to_owned(),
-                arguments: (*arguments).to_owned(),
-            },
-        })
-        .collect()
-}
-
 pub(crate) fn choice(
     content: Option<&str>,
-    tool_calls: Option<Vec<ToolCall>>,
+    calls: Option<&[(&str, &str, &str)]>,
     finish_reason: Option<&str>,
 ) -> ChatChoice {
+    let tool_calls = calls.map(|given| {
+        given
+            .iter()
+            .map(|(id, name, arguments)| ToolCall {
+                id: (*id).to_owned(),
+                kind: String::from("function"),
+                function: OpenAiChatFunctionCall {
+                    name: (*name).to_owned(),
+                    arguments: (*arguments).to_owned(),
+                },
+            })
+            .collect()
+    });
     ChatChoice {
         index: 0,
         message: AssistantMessage {
