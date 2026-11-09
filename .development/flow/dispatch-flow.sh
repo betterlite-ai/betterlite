@@ -178,6 +178,14 @@ case "$result" in
   # CI runs every check that builds tests, so a red run goes back to the worker with its gate lines and logs, three rounds at most
   *" run "*" failed"*)
     run_id=$(grep -o -E 'run [0-9]+ failed' <<< "$result" | head -1 | tr -dc 0-9)
+    # in a GitHub Actions outage the check jobs never start, or all pass and the run still fails, so the flow runs CI again instead of spending a fix round
+    lost=$(gh run view "$run_id" --json jobs -q '[.jobs[] | select(.name != "gate" and (.conclusion == "failure" or .conclusion == "cancelled"))] | length' 2>/dev/null)
+    if [ "$lost" = 0 ] && [ "${OUTAGES:-0}" -lt 6 ]; then
+      say "CI run $run_id on PR #$pr failed with no failed check, a GitHub outage; running CI again in 15 minutes"
+      sleep 900
+      gh run rerun "$run_id" > /dev/null 2>&1
+      OUTAGES=$(( ${OUTAGES:-0} + 1 )) LAND_ONLY=1 exec bash "$P/dispatch-flow.sh" "$id" "$run" ""
+    fi
     [ "${CI_ROUNDS:-0}" -lt 3 ] || { park "CI failed on PR #$pr (run $run_id) after 3 fix rounds"; exit 5; }
     rm -rf -- "$worktree/target/ci-logs"
     logs=$worktree/target/ci-logs/$run_id
