@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
+use rust_decimal::Decimal;
 use serde_json::{Map, Value};
 
 use crate::api::vector_store_records::records::score::Score;
@@ -70,7 +70,7 @@ fn score_at(
     headers: &ResponseHeaders,
 ) -> Result<Option<Score>, MilvusError> {
     match fields.get("distance") {
-        None => default_score(index, status, headers).map(Some),
+        None => Ok(Some(Score(Decimal::new(0, 1)))),
         Some(Value::Number(number)) => {
             Score::try_from(number.clone()).map(Some).map_err(|source| {
                 provider_error(
@@ -87,21 +87,6 @@ fn score_at(
             SearchResponseError::Distance { index },
         )),
     }
-}
-
-fn default_score(
-    index: usize,
-    status: u16,
-    headers: &ResponseHeaders,
-) -> Result<Score, MilvusError> {
-    let decimal = parse_decimal_lexeme("0.0").map_err(|source| {
-        provider_error(
-            status,
-            headers,
-            SearchResponseError::DistanceValue { index, source },
-        )
-    })?;
-    Ok(Score(decimal))
 }
 
 fn search_result(
