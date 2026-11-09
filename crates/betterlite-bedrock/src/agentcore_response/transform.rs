@@ -99,7 +99,7 @@ where
     }];
     response.model = String::from(model);
     if let Some(usage) = reply.usage {
-        response.usage = usage.to_chat_usage()?;
+        response.usage = usage.to_chat_usage();
     } else {
         tracing::debug!("No usage data from AgentCore - calculating tokens");
         if let Some(usage) = calculate_usage(model, messages, &reply.content, counter).await {

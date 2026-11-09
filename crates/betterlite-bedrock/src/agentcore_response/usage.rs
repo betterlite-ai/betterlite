@@ -6,9 +6,9 @@ use crate::agentcore_response::error::AgentCoreReplyError;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentCoreUsage {
-    pub input_tokens: Option<i64>,
-    pub output_tokens: Option<i64>,
-    pub total_tokens: Option<i64>,
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub total_tokens: Option<u64>,
 }
 
 impl AgentCoreUsage {
@@ -29,41 +29,35 @@ impl AgentCoreUsage {
         }))
     }
 
-    pub fn to_chat_usage(&self) -> Result<ChatUsage, AgentCoreReplyError> {
-        Ok(ChatUsage {
-            prompt_tokens: count(self.input_tokens, "inputTokens")?,
-            completion_tokens: count(self.output_tokens, "outputTokens")?,
-            total_tokens: count(self.total_tokens, "totalTokens")?,
+    #[must_use]
+    pub fn to_chat_usage(&self) -> ChatUsage {
+        ChatUsage {
+            prompt_tokens: self.input_tokens.unwrap_or(0),
+            completion_tokens: self.output_tokens.unwrap_or(0),
+            total_tokens: self.total_tokens.unwrap_or(0),
             prompt_tokens_details: None,
             completion_tokens_details: None,
-        })
+        }
     }
 }
 
 fn token(
     fields: &IndexMap<String, Json>,
     field: &'static str,
-) -> Result<Option<i64>, AgentCoreReplyError> {
+) -> Result<Option<u64>, AgentCoreReplyError> {
     match fields.get(field) {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Number(number)) => {
-            let Some(found) = number.as_i64() else {
-                return Err(AgentCoreReplyError::UsageFieldNotInteger { field });
-            };
-            Ok(Some(found))
+            if let Some(found) = number.as_u64() {
+                return Ok(Some(found));
+            }
+            if number.as_i64().is_some_and(|found| found < 0) {
+                return Err(AgentCoreReplyError::UsageFieldNegative { field });
+            }
+            Err(AgentCoreReplyError::UsageFieldNotInteger { field })
         }
         Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
             Err(AgentCoreReplyError::UsageFieldNotInteger { field })
         }
     }
-}
-
-fn count(value: Option<i64>, field: &'static str) -> Result<u64, AgentCoreReplyError> {
-    let Some(found) = value else {
-        return Ok(0);
-    };
-    let Ok(converted) = u64::try_from(found) else {
-        return Err(AgentCoreReplyError::UsageFieldNegative { field });
-    };
-    Ok(converted)
 }
