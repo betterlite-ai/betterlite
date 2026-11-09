@@ -103,7 +103,9 @@ enum MetadataCase {
 #[case::new_york_gap_takes_the_before_offset(MetadataCase::Timestamp { zone: "America/New_York", text: "2024-03-10T02:30:00.000000Z", expected: 1_710_055_800 })]
 #[case::berlin_gap(MetadataCase::Timestamp { zone: "Europe/Berlin", text: "2024-03-31T02:30:00.000000Z", expected: 1_711_848_600 })]
 #[case::berlin_fold(MetadataCase::Timestamp { zone: "Europe/Berlin", text: "2024-10-27T02:30:00.000000Z", expected: 1_729_989_000 })]
+#[case::epoch_subsecond(MetadataCase::Timestamp { zone: "UTC", text: "1970-01-01T00:00:00.999999Z", expected: 0 })]
 #[case::negative_half_truncates_toward_zero(MetadataCase::Timestamp { zone: "UTC", text: "1969-12-31T23:59:59.500000Z", expected: 0 })]
+#[case::negative_whole_second_stays_negative(MetadataCase::Timestamp { zone: "UTC", text: "1969-12-31T23:59:59.000000Z", expected: -1 })]
 #[case::negative_microsecond_truncates_toward_zero(MetadataCase::Timestamp { zone: "UTC", text: "1969-12-31T23:59:59.999999Z", expected: 0 })]
 #[case::negative_one_and_a_half(MetadataCase::Timestamp { zone: "UTC", text: "1969-12-31T23:59:58.500000Z", expected: -1 })]
 #[case::missing_zone_marker(MetadataCase::InvalidTimestamp { zone: "UTC", text: "2024-01-02T03:04:05.5" })]
@@ -184,11 +186,16 @@ fn non_utf8_timestamp_is_rejected() {
 }
 
 #[test]
-fn oversized_timestamp_is_rejected() {
+fn timestamp_byte_limit_is_exact() {
     let context = LocalTimeContext::from(TimeZone::UTC);
-    let bytes = vec![b'0'; 65];
+    let at_limit = vec![b'0'; 64];
     assert!(matches!(
-        decode_vertex_timestamp(&bytes, &context),
+        decode_vertex_timestamp(&at_limit, &context),
+        Err(VertexTimestampError::Format)
+    ));
+    let over_limit = vec![b'0'; 65];
+    assert!(matches!(
+        decode_vertex_timestamp(&over_limit, &context),
         Err(VertexTimestampError::TooLong {
             size: 65,
             limit: 64
