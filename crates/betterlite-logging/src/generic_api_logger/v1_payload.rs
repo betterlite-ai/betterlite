@@ -44,10 +44,10 @@ fn messages_form(messages: Option<&Json>) -> String {
     };
     string_form(value)
 }
-fn id_form(fields: &IndexMap<String, Json>) -> String {
+fn id_form(fields: &IndexMap<String, Json>, generated_id: &str) -> String {
     match fields.get("id") {
         Some(Json::Text(text)) => text.clone(),
-        Some(Json::Null) | None => uuid::Uuid::new_v4().to_string(),
+        Some(Json::Null) | None => generated_id.to_owned(),
         Some(other) => string_form(other),
     }
 }
@@ -56,6 +56,7 @@ pub fn v1_logging_payload(
     response: &Json,
     start_time: Decimal,
     end_time: Decimal,
+    generated_id: &str,
 ) -> Result<IndexMap<String, String>, V1PayloadError> {
     let Json::Object(fields) = response else {
         return Err(V1PayloadError::ResponseNotObject);
@@ -66,7 +67,7 @@ pub fn v1_logging_payload(
         .clone()
         .unwrap_or_else(|| "litellm.completion".to_owned());
     let entries = [
-        ("id", id_form(fields)),
+        ("id", id_form(fields, generated_id)),
         ("call_type", call_type),
         (
             "cache_hit",

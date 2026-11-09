@@ -25,10 +25,22 @@ impl ApiEventType {
         }
     }
 }
+pub type IdGenerator = fn() -> String;
+#[must_use]
+pub fn uuid_id() -> String {
+    // the v1 payload is the only place an id is invented, as LiteLLM does with uuid4
+    uuid::Uuid::new_v4().to_string()
+}
+pub struct LoggerDeps {
+    pub transport: Arc<dyn PostTransport>,
+    pub sleeper: Arc<dyn RetrySleeper>,
+    pub ids: IdGenerator,
+}
 pub struct GenericApiLogger {
     settings: GenericApiSettings,
     transport: Arc<dyn PostTransport>,
     sleeper: Arc<dyn RetrySleeper>,
+    ids: fn() -> String,
     use_v1: bool,
     batch_size: usize,
     queue: Mutex<Vec<Json>>,
@@ -37,8 +49,7 @@ pub struct GenericApiLogger {
 impl GenericApiLogger {
     pub fn new(
         settings: GenericApiSettings,
-        transport: Arc<dyn PostTransport>,
-        sleeper: Arc<dyn RetrySleeper>,
+        deps: LoggerDeps,
         use_v1: bool,
         batch_size: usize,
     ) -> Self {
@@ -51,31 +62,28 @@ impl GenericApiLogger {
         );
         Self {
             settings,
-            transport,
-            sleeper,
+            transport: deps.transport,
+            sleeper: deps.sleeper,
+            ids: deps.ids,
             use_v1,
             batch_size,
             queue: Mutex::new(Vec::new()),
             flush_lock: AsyncMutex::new(()),
         }
     }
-
     fn wants(&self, kind: ApiEventType) -> bool {
         let Some(types) = &self.settings.event_types else {
             return true;
         };
         types.iter().any(|name| name == kind.name())
     }
-
-    fn entry(&self, payload: Option<&StandardLoggingPayload>) -> Result<Json, ApiError> {
+    fn entry(&self, payload: &StandardLoggingPayload) -> Result<Json, ApiError> {
         if self.use_v1 {
-            let standard = payload.ok_or(ApiError::MissingPayload)?;
-            return delivery::v1_entry(standard);
+            return delivery::v1_entry(payload, &(self.ids)());
         }
-        payload.map_or_else(|| Ok(Json::Null), delivery::standard_entry)
+        delivery::standard_entry(payload)
     }
-
-    pub async fn record(&self, kind: ApiEventType, payload: Option<&StandardLoggingPayload>) {
+    pub async fn record(&self, kind: ApiEventType, payload: &StandardLoggingPayload) {
         if !self.wants(kind) {
             return;
         }
@@ -95,7 +103,6 @@ impl GenericApiLogger {
             self.send_batch().await;
         }
     }
-
     pub async fn send_batch(&self) {
         let _flush = self.flush_lock.lock().await;
         let batch = {
@@ -128,15 +135,13 @@ impl CallbackLogger for GenericApiLogger {
             .as_deref()
             .unwrap_or("generic_api")
     }
-
     async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        self.record(ApiEventType::Success, Some(event.payload.as_ref()))
+        self.record(ApiEventType::Success, event.payload.as_ref())
             .await;
         Ok(())
     }
-
     async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        self.record(ApiEventType::Failure, Some(event.payload.as_ref()))
+        self.record(ApiEventType::Failure, event.payload.as_ref())
             .await;
         Ok(())
     }

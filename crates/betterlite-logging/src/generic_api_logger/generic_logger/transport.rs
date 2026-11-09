@@ -6,22 +6,29 @@ use betterlite_http::proxy::transport_error::TransportError;
 use http::header::{HeaderName, HeaderValue};
 use http::{HeaderMap, Method};
 use indexmap::IndexMap;
+use std::fmt;
 use std::time::Duration;
 use url::Url;
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct PostRequest {
     pub endpoint: String,
     pub headers: IndexMap<String, String>,
     pub body: String,
     pub timeout: Duration,
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PostResponse {
-    pub status: u16,
+// an endpoint and its header values can carry a key, so Debug shows only the header names
+impl fmt::Debug for PostRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PostRequest")
+            .field("endpoint", &"<redacted>")
+            .field("header_names", &self.headers.keys().collect::<Vec<_>>())
+            .field("timeout", &self.timeout)
+            .finish_non_exhaustive()
+    }
 }
 #[async_trait]
 pub trait PostTransport: Send + Sync {
-    async fn post(&self, request: PostRequest) -> Result<PostResponse, ApiError>;
+    async fn post(&self, request: PostRequest) -> Result<u16, ApiError>;
 }
 
 // the client a logging callback gets from B173's pool, so posts share its TLS, proxy and limits
@@ -31,7 +38,7 @@ pub struct PooledPostTransport {
 }
 #[async_trait]
 impl PostTransport for PooledPostTransport {
-    async fn post(&self, request: PostRequest) -> Result<PostResponse, ApiError> {
+    async fn post(&self, request: PostRequest) -> Result<u16, ApiError> {
         let url = Url::parse(&request.endpoint).map_err(ApiError::Url)?;
         let mut headers = HeaderMap::new();
         for (name, value) in &request.headers {
@@ -63,8 +70,6 @@ impl PostTransport for PooledPostTransport {
             }
             Err(other) => return Err(ApiError::Transport(other)),
         };
-        Ok(PostResponse {
-            status: response.status,
-        })
+        Ok(response.status)
     }
 }

@@ -23,6 +23,8 @@ pub struct CallbackConfig {
 pub enum CompatError {
     #[error("generic_api_compatible_callbacks.json is not valid")]
     Json(#[source] serde_json::Error),
+    #[error("the environment placeholder pattern is not valid")]
+    Pattern(#[source] regex::Error),
 }
 #[derive(Clone, Debug, Default)]
 pub struct CompatibleCallbacks {
@@ -30,9 +32,8 @@ pub struct CompatibleCallbacks {
 }
 impl CompatibleCallbacks {
     pub fn embedded() -> Result<Self, CompatError> {
-        let configs: BTreeMap<String, CallbackConfig> =
-            serde_json::from_str(EMBEDDED).map_err(CompatError::Json)?;
-        Ok(Self { configs })
+        // the embedded file is the only source, so a broken one fails here with its parse error
+        Self::parse(EMBEDDED)
     }
     pub fn parse(text: &str) -> Result<Self, CompatError> {
         let configs: BTreeMap<String, CallbackConfig> =
@@ -41,28 +42,25 @@ impl CompatibleCallbacks {
     }
 }
 #[must_use]
-pub fn is_callback_compatible(name: &str) -> bool {
-    let Ok(callbacks) = CompatibleCallbacks::embedded() else {
-        return false;
-    };
+pub fn is_callback_compatible(callbacks: &CompatibleCallbacks, name: &str) -> bool {
+    // the caller parsed the file once, so a broken data file already failed in embedded()
     callbacks.configs.contains_key(name)
 }
 #[must_use]
-pub fn get_callback_config(name: &str) -> Option<CallbackConfig> {
-    let Ok(callbacks) = CompatibleCallbacks::embedded() else {
-        return None;
-    };
+pub fn get_callback_config(callbacks: &CompatibleCallbacks, name: &str) -> Option<CallbackConfig> {
+    // only a name the parsed map lacks gives None here
     callbacks.configs.get(name).cloned()
 }
-#[must_use]
-pub fn substitute_env_variables(value: &str, environment: &dyn EnvironmentLookup) -> String {
-    let Ok(pattern) = Regex::new(PLACEHOLDER) else {
-        return value.to_owned();
-    };
-    pattern
+pub fn substitute_env_variables(
+    value: &str,
+    environment: &dyn EnvironmentLookup,
+) -> Result<String, CompatError> {
+    let pattern = Regex::new(PLACEHOLDER).map_err(CompatError::Pattern)?;
+    let replaced = pattern
         .replace_all(value, |captures: &Captures<'_>| {
             let name = captures.get(1).map_or("", |matched| matched.as_str());
             environment.lookup(name).unwrap_or_default()
         })
-        .into_owned()
+        .into_owned();
+    Ok(replaced)
 }

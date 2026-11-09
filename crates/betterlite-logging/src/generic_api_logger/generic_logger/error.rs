@@ -22,7 +22,6 @@ pub enum ApiError {
         #[source]
         source: InvalidHeaderValue,
     },
-
     #[error("the request timed out")]
     Timeout,
     #[error("the request could not be completed")]
@@ -31,8 +30,6 @@ pub enum ApiError {
     Status { status: u16 },
     #[error(transparent)]
     V1(#[from] V1PayloadError),
-    #[error("the event carries no standard logging object")]
-    MissingPayload,
 }
 impl ApiError {
     // LiteLLM retries a timeout, an httpx transport error and a 5xx, and nothing else
@@ -55,8 +52,7 @@ impl ApiError {
             | Self::Url(_)
             | Self::HeaderName { .. }
             | Self::HeaderValue { .. }
-            | Self::V1(_)
-            | Self::MissingPayload => false,
+            | Self::V1(_) => false,
         }
     }
 }

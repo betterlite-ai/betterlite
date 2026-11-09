@@ -20,7 +20,10 @@ fn metadata_object(metadata: &StandardLoggingMetadata) -> Result<IndexMap<String
     let object = serde_json::from_value(value).map_err(ApiError::Payload)?;
     Ok(object)
 }
-pub(super) fn v1_entry(payload: &StandardLoggingPayload) -> Result<Json, ApiError> {
+pub(super) fn v1_entry(
+    payload: &StandardLoggingPayload,
+    generated_id: &str,
+) -> Result<Json, ApiError> {
     let kwargs = V1Kwargs {
         call_type: Some(payload.call_type.clone()),
         cache_hit: payload.cache_hit,
@@ -32,7 +35,13 @@ pub(super) fn v1_entry(payload: &StandardLoggingPayload) -> Result<Json, ApiErro
         cost: Some(payload.response_cost),
     };
     let response = payload.response.as_ref().unwrap_or(&Json::Null);
-    let entries = v1_logging_payload(&kwargs, response, payload.start_time, payload.end_time)?;
+    let entries = v1_logging_payload(
+        &kwargs,
+        response,
+        payload.start_time,
+        payload.end_time,
+        generated_id,
+    )?;
     Ok(Json::Object(
         entries
             .into_iter()

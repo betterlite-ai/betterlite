@@ -1,6 +1,10 @@
-use super::compat_callbacks::{CallbackConfig, get_callback_config, substitute_env_variables};
+use super::compat_callbacks::{
+    CallbackConfig, CompatError, CompatibleCallbacks, get_callback_config, substitute_env_variables,
+};
+use crate::http_analytics_loggers::delivery::DELIVERY_DEADLINE;
 use betterlite_config::loader::EnvironmentLookup;
 use indexmap::IndexMap;
+use std::fmt;
 use std::str::FromStr as _;
 use std::time::Duration;
 mod tests;
@@ -14,7 +18,7 @@ pub enum LogFormat {
     Ndjson,
     Single,
 }
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct GenericApiArgs {
     pub callback_name: Option<String>,
     pub endpoint: Option<String>,
@@ -25,7 +29,7 @@ pub struct GenericApiArgs {
     pub retry_delay: Option<f64>,
     pub timeout: Option<Duration>,
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct GenericApiSettings {
     pub callback_name: Option<String>,
     pub endpoint: String,
@@ -34,7 +38,17 @@ pub struct GenericApiSettings {
     pub log_format: LogFormat,
     pub max_retries: u32,
     pub retry_delay: f64,
-    pub timeout: Option<Duration>,
+    pub timeout: Duration,
+}
+// the endpoint and the header values can carry a key, so only the names and the flags are printed
+impl fmt::Debug for GenericApiSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GenericApiSettings")
+            .field("callback_name", &self.callback_name)
+            .field("header_names", &self.headers.keys().collect::<Vec<_>>())
+            .field("log_format", &self.log_format)
+            .finish_non_exhaustive()
+    }
 }
 #[derive(Debug, thiserror::Error)]
 pub enum GenericApiSettingsError {
@@ -44,11 +58,15 @@ pub enum GenericApiSettingsError {
     MissingEndpoint,
     #[error("Invalid log_format: {0}. Must be one of: 'json_array', 'ndjson', 'single'")]
     InvalidLogFormat(String),
+    #[error(transparent)]
+    Compat(#[from] CompatError),
 }
-fn named_config(name: &str) -> Option<CallbackConfig> {
-    let config = get_callback_config(name);
+fn named_config(callbacks: &CompatibleCallbacks, callback_name: &str) -> Option<CallbackConfig> {
+    let config = get_callback_config(callbacks, callback_name);
     if config.is_none() {
-        tracing::warn!("callback_name '{name}' not found in generic_api_compatible_callbacks.json");
+        tracing::warn!(
+            "callback_name '{callback_name}' not found in generic_api_compatible_callbacks.json"
+        );
     }
     config
 }
@@ -56,15 +74,17 @@ fn add_config_headers(
     given: &mut IndexMap<String, String>,
     config: &CallbackConfig,
     environment: &dyn EnvironmentLookup,
-) {
+) -> Result<(), CompatError> {
     let Some(headers) = &config.headers else {
-        return;
+        return Ok(());
     };
     for (key, value) in headers {
         if !given.contains_key(key) {
-            given.insert(key.clone(), substitute_env_variables(value, environment));
+            let substituted = substitute_env_variables(value, environment)?;
+            given.insert(key.clone(), substituted);
         }
     }
+    Ok(())
 }
 fn merged_headers(
     given: IndexMap<String, String>,
@@ -73,10 +93,11 @@ fn merged_headers(
 ) -> IndexMap<String, String> {
     let mut headers = IndexMap::from([("Content-Type".to_owned(), "application/json".to_owned())]);
     let env_headers = environment.lookup(HEADERS_VARIABLE).unwrap_or_default();
-    for item in env_headers.split(',').filter(|item| !item.is_empty()) {
-        if let Some((key, value)) = item.split_once('=') {
-            headers.insert(key.trim().to_owned(), value.trim().to_owned());
-        }
+    let parsed = env_headers
+        .split(',')
+        .filter_map(|item| item.split_once('='));
+    for (key, value) in parsed {
+        headers.insert(key.trim().to_owned(), value.trim().to_owned());
     }
     headers.extend(global_headers.clone());
     headers.extend(given);
@@ -93,19 +114,21 @@ pub fn resolve(
     environment: &dyn EnvironmentLookup,
     global_headers: &IndexMap<String, String>,
 ) -> Result<GenericApiSettings, GenericApiSettingsError> {
-    let named = args.callback_name.as_deref().and_then(named_config);
+    let callbacks = CompatibleCallbacks::embedded()?;
+    let named = args
+        .callback_name
+        .as_deref()
+        .and_then(|name| named_config(&callbacks, name));
     let mut endpoint = args.endpoint;
     let mut headers = args.headers.unwrap_or_default();
     let mut event_types = args.event_types;
     let mut log_format = args.log_format;
     if let Some(configured) = &named {
         if endpoint.as_deref().is_none_or(str::is_empty) {
-            endpoint = configured
-                .endpoint
-                .as_deref()
-                .map(|text| substitute_env_variables(text, environment));
+            let source = configured.endpoint.as_deref().unwrap_or_default();
+            endpoint = Some(substitute_env_variables(source, environment)?);
         }
-        add_config_headers(&mut headers, configured, environment);
+        add_config_headers(&mut headers, configured, environment)?;
         event_types = event_types.or_else(|| configured.event_types.clone());
         log_format = log_format.or_else(|| configured.log_format.clone());
     }
@@ -125,6 +148,6 @@ pub fn resolve(
         log_format: resolved_format(log_format)?,
         max_retries: u32::try_from(args.max_retries.unwrap_or(0).max(0)).unwrap_or(u32::MAX),
         retry_delay: args.retry_delay.unwrap_or(0.0_f64).max(0.0_f64),
-        timeout: args.timeout,
+        timeout: args.timeout.unwrap_or(DELIVERY_DEADLINE),
     })
 }

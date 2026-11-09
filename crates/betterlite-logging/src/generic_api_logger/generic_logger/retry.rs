@@ -1,7 +1,6 @@
 use super::GenericApiLogger;
 use super::error::ApiError;
-use super::transport::{PostRequest, PostResponse};
-use crate::http_analytics_loggers::delivery::DELIVERY_DEADLINE;
+use super::transport::PostRequest;
 use async_trait::async_trait;
 use std::ops::Mul as _;
 use std::time::Duration;
@@ -25,15 +24,13 @@ async fn post_once(logger: &GenericApiLogger, body: &str) -> Result<(), ApiError
         endpoint: logger.settings.endpoint.clone(),
         headers: logger.settings.headers.clone(),
         body: body.to_owned(),
-        timeout: logger.settings.timeout.unwrap_or(DELIVERY_DEADLINE),
+        timeout: logger.settings.timeout,
     };
-    let response: PostResponse = logger.transport.post(request).await?;
-    if (200..300).contains(&response.status) {
+    let status = logger.transport.post(request).await?;
+    if (200..300).contains(&status) {
         return Ok(());
     }
-    Err(ApiError::Status {
-        status: response.status,
-    })
+    Err(ApiError::Status { status })
 }
 
 async fn sleep_before_retry(seconds: f64, attempt: u32, clock: &dyn RetrySleeper) {

@@ -10,20 +10,15 @@ use indexmap::IndexMap;
 
 use super::error::ApiError;
 use super::retry::RetrySleeper;
-use super::transport::{PostRequest, PostResponse, PostTransport};
-use super::{ApiEventType, GenericApiLogger};
+use super::transport::{PostRequest, PostTransport};
+use super::{GenericApiLogger, LoggerDeps};
 use crate::callback_logger::CallbackLogger as _;
 use crate::callback_logger::event::LoggerEvent;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::generic_api_logger::generic_settings::{GenericApiArgs, GenericApiSettings, resolve};
-use crate::generic_api_logger::tests::{args, capture_logs};
+use crate::generic_api_logger::tests::args;
 
-const PAYLOAD: &str = r#"{"id":"chatcmpl-1","trace_id":"trace-1","session_id":"session-1","call_type":"completion","response_cost":0.5,
-"status":"success","status_fields":{"llm_api_status":"success","guardrail_status":"not_run"},"total_tokens":5,"prompt_tokens":2,
-"completion_tokens":3,"startTime":1704067200.0,"endTime":1704067201.5,"completionStartTime":1704067200.5,"response_time":1.0,
-"model_map_information":{},"model":"gpt-4o","api_base":"https://api.openai.com","metadata":{},"saved_cache_cost":0.0,
-"request_tags":["team-a"],"model_parameters":{},"hidden_params":{},"end_user":"user-1","cache_hit":false,
-"response":{"id":"chatcmpl-resp","usage":{"total_tokens":5}}}"#;
+const PAYLOAD: &str = r#"{"id":"chatcmpl-1","trace_id":"trace-1","session_id":"session-1","call_type":"completion","response_cost":0.5,"status":"success","status_fields":{"llm_api_status":"success","guardrail_status":"not_run"},"total_tokens":5,"prompt_tokens":2,"completion_tokens":3,"startTime":1704067200.0,"endTime":1704067201.5,"completionStartTime":1704067200.5,"response_time":1.0,"model_map_information":{},"model":"gpt-4o","api_base":"https://api.openai.com","metadata":{},"saved_cache_cost":0.0,"request_tags":["team-a"],"model_parameters":{},"hidden_params":{},"end_user":"user-1","cache_hit":false,"response":{"id":"chatcmpl-resp","usage":{"total_tokens":5}}}"#;
 
 #[derive(Default)]
 pub(super) struct RecordingTransport {
@@ -51,15 +46,13 @@ impl RecordingTransport {
 
 #[async_trait]
 impl PostTransport for RecordingTransport {
-    async fn post(&self, request: PostRequest) -> Result<PostResponse, ApiError> {
+    async fn post(&self, request: PostRequest) -> Result<u16, ApiError> {
         self.requests.lock().expect("the requests").push(request);
-        let reply = self
-            .replies
+        self.replies
             .lock()
             .expect("the replies")
             .pop_front()
-            .unwrap_or(Ok(200));
-        reply.map(|status| PostResponse { status })
+            .unwrap_or(Ok(200))
     }
 }
 
@@ -87,7 +80,12 @@ impl Fixture {
         let sleeper = Arc::new(RecordingSleeper::default());
         let transport: Arc<dyn PostTransport> = Arc::<RecordingTransport>::clone(&recorder);
         let clock: Arc<dyn RetrySleeper> = Arc::<RecordingSleeper>::clone(&sleeper);
-        let logger = GenericApiLogger::new(config, transport, clock, use_v1, batch_size);
+        let deps = LoggerDeps {
+            transport,
+            sleeper: clock,
+            ids: || "generated-id".to_owned(),
+        };
+        let logger = GenericApiLogger::new(config, deps, use_v1, batch_size);
         Self {
             recorder,
             sleeper,
@@ -120,10 +118,6 @@ impl Fixture {
         };
         entries.clone()
     }
-
-    pub(super) fn waits(&self) -> Vec<Duration> {
-        self.sleeper.waits.lock().expect("the waits").clone()
-    }
 }
 
 pub(super) fn settings(arguments: GenericApiArgs) -> GenericApiSettings {
@@ -143,12 +137,6 @@ fn event() -> Arc<LoggerEvent> {
     })
 }
 
-#[test]
-fn callback_logger_does_not_log_the_endpoint_or_headers() {
-    let (logs, _guard) = capture_logs();
-    let _fixture = Fixture::new(settings(args()), false, 10);
-    assert!(!logs.contents().contains("hook.test"));
-}
 #[tokio::test]
 async fn callback_logger_queues_the_standard_payload_on_success() {
     let fixture = Fixture::new(settings(args()), false, 10);
@@ -202,12 +190,4 @@ async fn callback_logger_uses_the_v1_payload_when_enabled() {
         entry.get("id"),
         Some(&Json::Text("chatcmpl-resp".to_owned()))
     );
-}
-
-#[tokio::test]
-async fn callback_logger_queues_a_null_payload_when_the_event_has_none() {
-    let fixture = Fixture::new(settings(args()), false, 10);
-    fixture.logger.record(ApiEventType::Success, None).await;
-    fixture.send().await;
-    assert_eq!(fixture.recorder.bodies()[0], Json::List(vec![Json::Null]));
 }

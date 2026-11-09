@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 
-use super::{CompatibleCallbacks, get_callback_config, substitute_env_variables};
+use super::{CompatibleCallbacks, is_callback_compatible, substitute_env_variables};
 use crate::generic_api_logger::tests::environment;
 
 #[rstest]
@@ -13,8 +13,7 @@ use crate::generic_api_logger::tests::environment;
 #[case::ramp("ramp")]
 fn embedded_configs_hold_each_named_callback(#[case] name: &str) {
     let callbacks = CompatibleCallbacks::embedded().expect("the embedded file parses");
-    assert!(callbacks.configs.contains_key(name));
-    assert!(get_callback_config(name).is_some());
+    assert!(is_callback_compatible(&callbacks, name));
 }
 
 #[test]
@@ -33,5 +32,6 @@ fn substitute_env_variables_replaces_only_upper_case_names(
     #[case] expected: &str,
 ) {
     let env = environment(&[("HOOK_URL", "https://hook.test")]);
-    assert_eq!(substitute_env_variables(value, &env), expected);
+    let substituted = substitute_env_variables(value, &env).expect("the placeholder pattern");
+    assert_eq!(substituted, expected);
 }
