@@ -1,0 +1,19 @@
+kind: helper
+name: rubrik-moderation-moderate-prompt-text-only-synthesized
+call:
+  b3978:
+    environment: {}
+    init: {api_base: "https://rubrik.test", api_key: test-key, guardrail_name: safety}
+    clock: []
+    replies:
+      - status: 200
+        body: "{}"
+    logging_obj: null
+    request_data: null
+    actions:
+      - do: apply_guardrail
+        input_type: request
+        inputs:
+          texts: [one, second]
+env: {}
+compare: {ignore: []}

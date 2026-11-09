@@ -1,0 +1,17 @@
+kind: helper
+name: rubrik-moderation-guarded-rethrows-modify-exception
+call:
+  b3978:
+    environment: {}
+    init: {api_base: "https://rubrik.test", api_key: test-key, guardrail_name: safety}
+    clock: []
+    replies: []
+    logging_obj: null
+    request_data: {litellm_call_id: call-1}
+    actions:
+      - do: guarded
+        fault: blocked
+        inputs:
+          texts: [hello]
+env: {}
+compare: {ignore: []}

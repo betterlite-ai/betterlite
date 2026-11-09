@@ -1,0 +1,17 @@
+kind: helper
+name: rubrik-moderation-guarded-logs-error-on-transient
+call:
+  b3978:
+    environment: {}
+    init: {api_base: "https://rubrik.test", api_key: test-key, guardrail_name: safety}
+    clock: []
+    replies: []
+    logging_obj: null
+    request_data: null
+    actions:
+      - do: guarded
+        fault: transient
+        inputs:
+          texts: [hello]
+env: {}
+compare: {ignore: []}
