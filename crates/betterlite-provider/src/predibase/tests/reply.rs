@@ -480,7 +480,7 @@ async fn a_null_error_is_still_an_error() {
     500
 )]
 #[case::token_entry_not_an_object(
-    r#"{"generated_text":"x","details":{"finish_reason":"stop","tokens":[null]}}"#,
+    r#"{"generated_text":"x","details":{"finish_reason":"stop","tokens":[[7]]}}"#,
     500
 )]
 #[case::string_logprob(
@@ -493,7 +493,7 @@ async fn a_null_error_is_still_an_error() {
     500
 )]
 #[case::sequence_tokens_entry_not_an_object(
-    r#"{"generated_text":"x","details":{"finish_reason":"stop","best_of_sequences":[{"generated_text":"b","finish_reason":"stop","tokens":[7]}]}}"#,
+    r#"{"generated_text":"x","details":{"finish_reason":"stop","best_of_sequences":[{"generated_text":"b","finish_reason":"stop","tokens":[[7]]}]}}"#,
     500
 )]
 #[case::float_sum_not_finite(
@@ -541,12 +541,16 @@ async fn a_wrongly_shaped_details_container_names_the_field() {
         .await
         .unwrap_err();
     assert!(details_error.message.contains("details"));
-    let tokens = reply_fixture(r#"{"generated_text":"x","details":{"tokens":[null]}}"#);
+    let tokens = reply_fixture(
+        r#"{"generated_text":"x","details":{"finish_reason":"stop","tokens":[[7]]}}"#,
+    );
     let tokens_error = transform_response(&tokens.input(), &Counting::working())
         .await
         .unwrap_err();
     assert!(tokens_error.message.contains("tokens"));
-    let sequences = reply_fixture(r#"{"generated_text":"x","details":{"best_of_sequences":[7]}}"#);
+    let sequences = reply_fixture(
+        r#"{"generated_text":"x","details":{"finish_reason":"stop","best_of_sequences":[["b","stop",[]]]}}"#,
+    );
     let sequences_error = transform_response(&sequences.input(), &Counting::working())
         .await
         .unwrap_err();
