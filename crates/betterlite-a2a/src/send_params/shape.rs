@@ -39,6 +39,11 @@ enum Record {
     Authentication,
 }
 
+struct Spec {
+    field: &'static str,
+    aliases: &'static [(&'static str, &'static str)],
+}
+
 pub(super) fn prepare(params: &AgentJson) -> Result<AgentJson, SendParamsError> {
     if !params.is_object() {
         return Err(SendParamsError::NotAnObject);
@@ -50,12 +55,11 @@ pub(super) fn prepare(params: &AgentJson) -> Result<AgentJson, SendParamsError> 
 
 // serde's derived structs also read a JSON array by position, so every record position is checked
 fn record(value: &mut AgentJson, kind: Record) -> Result<(), SendParamsError> {
+    let spec = kind.spec();
     let Some(fields) = value.as_object_mut() else {
-        return Err(SendParamsError::NotAnObjectAt {
-            field: kind.field(),
-        });
+        return Err(SendParamsError::NotAnObjectAt { field: spec.field });
     };
-    for (json, proto) in kind.aliases() {
+    for (json, proto) in spec.aliases {
         if fields.contains_key(*json) {
             fields.remove(*proto);
         }
@@ -102,7 +106,18 @@ fn children(value: &mut AgentJson, kind: Record) -> Result<(), SendParamsError> 
             descend(value, &["message"], Record::Message)?;
             descend(value, &["configuration"], Record::Configuration)
         }
-        Record::Message => descend_list(value, &["parts"], Record::Part),
+        Record::Message => {
+            let Some(parts) = child_mut(value, &["parts"]) else {
+                return Ok(());
+            };
+            let AgentJson::Array(items) = parts else {
+                return Ok(());
+            };
+            for item in items {
+                record(item, Record::Part)?;
+            }
+            Ok(())
+        }
         Record::Part => descend(value, &["file"], Record::File),
         Record::Configuration => descend(value, PUSH_CONFIG_NAMES, Record::PushConfig),
         Record::PushConfig => descend(value, &["authentication"], Record::Authentication),
@@ -111,72 +126,55 @@ fn children(value: &mut AgentJson, kind: Record) -> Result<(), SendParamsError> 
 }
 
 fn descend(value: &mut AgentJson, names: &[&str], kind: Record) -> Result<(), SendParamsError> {
-    let Some(fields) = value.as_object_mut() else {
+    let Some(child) = child_mut(value, names) else {
         return Ok(());
     };
-    let Some(name) = names
-        .iter()
-        .find(|name| fields.contains_key(**name))
-        .copied()
-    else {
-        return Ok(());
-    };
-    let Some(child) = fields.get_mut(name) else {
-        return Ok(());
-    };
-    if child.is_null() {
-        return Ok(());
-    }
     record(child, kind)
 }
 
-fn descend_list(
-    value: &mut AgentJson,
+fn child_mut<'value>(
+    value: &'value mut AgentJson,
     names: &[&str],
-    kind: Record,
-) -> Result<(), SendParamsError> {
-    let Some(fields) = value.as_object_mut() else {
-        return Ok(());
-    };
-    let Some(name) = names
+) -> Option<&'value mut AgentJson> {
+    let fields = value.as_object_mut()?;
+    let name = names
         .iter()
         .find(|name| fields.contains_key(**name))
-        .copied()
-    else {
-        return Ok(());
-    };
-    let Some(child) = fields.get_mut(name) else {
-        return Ok(());
-    };
-    let AgentJson::Array(items) = child else {
-        return Ok(());
-    };
-    for item in items {
-        record(item, kind)?;
-    }
-    Ok(())
+        .copied()?;
+    fields.get_mut(name).filter(|child| !child.is_null())
 }
 
 impl Record {
-    const fn field(self) -> &'static str {
+    const fn spec(self) -> Spec {
         match self {
-            Self::Params => "params",
-            Self::Message => "message",
-            Self::Part => "message.parts",
-            Self::File => "message.parts.file",
-            Self::Configuration => "configuration",
-            Self::PushConfig => "configuration.taskPushNotificationConfig",
-            Self::Authentication => "configuration.taskPushNotificationConfig.authentication",
-        }
-    }
-
-    const fn aliases(self) -> &'static [(&'static str, &'static str)] {
-        match self {
-            Self::Message => MESSAGE_ALIASES,
-            Self::Part => PART_ALIASES,
-            Self::File => FILE_ALIASES,
-            Self::Configuration => CONFIG_ALIASES,
-            Self::Params | Self::PushConfig | Self::Authentication => &[],
+            Self::Params => Spec {
+                field: "params",
+                aliases: &[],
+            },
+            Self::Message => Spec {
+                field: "message",
+                aliases: MESSAGE_ALIASES,
+            },
+            Self::Part => Spec {
+                field: "message.parts",
+                aliases: PART_ALIASES,
+            },
+            Self::File => Spec {
+                field: "message.parts.file",
+                aliases: FILE_ALIASES,
+            },
+            Self::Configuration => Spec {
+                field: "configuration",
+                aliases: CONFIG_ALIASES,
+            },
+            Self::PushConfig => Spec {
+                field: "configuration.taskPushNotificationConfig",
+                aliases: &[],
+            },
+            Self::Authentication => Spec {
+                field: "configuration.taskPushNotificationConfig.authentication",
+                aliases: &[],
+            },
         }
     }
 }
