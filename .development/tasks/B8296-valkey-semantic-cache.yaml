@@ -56,6 +56,8 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-rag/src/**"
+    - "crates/betterlite-redis/src/**"
     - crates/betterlite-prompts/src/valkey_semantic_cache.rs
     - crates/betterlite-prompts/src/valkey_semantic_cache/**
     - crates/betterlite-prompts/Cargo.toml
