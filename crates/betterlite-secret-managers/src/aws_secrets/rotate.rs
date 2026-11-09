@@ -1,0 +1,118 @@
+use secrecy::SecretString;
+
+use crate::aws::AwsSecretsManager;
+use crate::aws::request_signing::{AwsOptionalParams, AwsTransport, CredentialResolver};
+use crate::aws_secret_reads::AwsReadError;
+use crate::secret_contracts::RotationError;
+use crate::secret_contracts::options::{SecretRotation, SecretTimeout, SecretWrite};
+
+use super::SecretActionResponse;
+use super::put_value::async_put_secret_value;
+
+const ROTATION_DELETE_DAYS: u32 = 7;
+
+pub(super) async fn rotate<Resolver, Transport>(
+    manager: &AwsSecretsManager<Resolver, Transport>,
+    rotation: SecretRotation<'_, AwsOptionalParams>,
+) -> Result<SecretActionResponse, RotationError<AwsReadError<Resolver::Error, Transport::Error>>>
+where
+    Resolver: CredentialResolver + Sync,
+    Transport: AwsTransport,
+{
+    let mut optional_params = rotation.options.optional_params.map(super::copy_params);
+    if rotation.current_secret_name == rotation.new_secret_name {
+        return async_put_secret_value(
+            manager,
+            rotation.current_secret_name,
+            rotation.new_secret_value,
+            optional_params.as_mut(),
+            rotation.options.timeout,
+        )
+        .await
+        .map_err(|source| RotationError::Operation { source });
+    }
+    rotate_to_new_name(manager, &rotation, optional_params.as_mut()).await
+}
+
+// the steps BaseSecretManager's default rotation takes, which Rust cannot call once this type overrides it
+async fn rotate_to_new_name<Resolver, Transport>(
+    manager: &AwsSecretsManager<Resolver, Transport>,
+    rotation: &SecretRotation<'_, AwsOptionalParams>,
+    mut optional_params: Option<&mut AwsOptionalParams>,
+) -> Result<SecretActionResponse, RotationError<AwsReadError<Resolver::Error, Transport::Error>>>
+where
+    Resolver: CredentialResolver + Sync,
+    Transport: AwsTransport,
+{
+    let timeout = rotation.options.timeout;
+    let current = read_rotated(
+        manager,
+        rotation.current_secret_name,
+        optional_params.as_deref_mut(),
+        timeout,
+    )
+    .await?;
+    if current.is_none() {
+        return Err(RotationError::CurrentSecretNotFound);
+    }
+    let written = write_rotated(manager, rotation).await?;
+    let created = read_rotated(
+        manager,
+        rotation.new_secret_name,
+        optional_params.as_deref_mut(),
+        timeout,
+    )
+    .await?;
+    if created.is_none() {
+        return Err(RotationError::NewSecretNotVerified);
+    }
+    super::delete::delete(
+        manager,
+        rotation.current_secret_name,
+        ROTATION_DELETE_DAYS,
+        optional_params,
+        timeout,
+    )
+    .await
+    .map_err(|source| RotationError::Operation { source })?;
+    Ok(written)
+}
+
+async fn read_rotated<Resolver, Transport>(
+    manager: &AwsSecretsManager<Resolver, Transport>,
+    secret_name: &str,
+    optional_params: Option<&mut AwsOptionalParams>,
+    timeout: Option<SecretTimeout>,
+) -> Result<Option<SecretString>, RotationError<AwsReadError<Resolver::Error, Transport::Error>>>
+where
+    Resolver: CredentialResolver + Sync,
+    Transport: AwsTransport,
+{
+    manager
+        .async_read_secret(secret_name, optional_params, timeout, None)
+        .await
+        .map_err(|source| RotationError::Operation { source })
+}
+
+async fn write_rotated<Resolver, Transport>(
+    manager: &AwsSecretsManager<Resolver, Transport>,
+    rotation: &SecretRotation<'_, AwsOptionalParams>,
+) -> Result<SecretActionResponse, RotationError<AwsReadError<Resolver::Error, Transport::Error>>>
+where
+    Resolver: CredentialResolver + Sync,
+    Transport: AwsTransport,
+{
+    let description = format!("Rotated from {}", rotation.current_secret_name);
+    super::write::write(
+        manager,
+        SecretWrite {
+            secret_name: rotation.new_secret_name,
+            secret_value: rotation.new_secret_value,
+            description: Some(&description),
+            options: rotation.options,
+            tags: None,
+        },
+    )
+    .await
+    .map_err(|source| RotationError::Operation { source })
+}
