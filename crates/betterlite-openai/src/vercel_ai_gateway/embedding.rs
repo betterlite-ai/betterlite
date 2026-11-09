@@ -90,6 +90,11 @@ fn input_value(input: &EmbeddingInput) -> Value {
     }
 }
 
+pub fn decode_embedding_response(raw: &[u8]) -> Result<EmbeddingResponse, EmbeddingError> {
+    serde_json::from_slice::<EmbeddingResponse>(raw)
+        .map_err(|source| EmbeddingError::Decode { source })
+}
+
 pub fn transform_embedding_response(
     raw: &[u8],
     post_call: &mut dyn FnMut(&str),
@@ -97,5 +102,5 @@ pub fn transform_embedding_response(
     if let Ok(text) = str::from_utf8(raw) {
         post_call(text);
     }
-    serde_json::from_slice(raw).map_err(|source| EmbeddingError::Decode { source })
+    decode_embedding_response(raw)
 }

@@ -11,8 +11,8 @@ use serde_json::{Value, json};
 use super::VercelAiGatewayEnvironment;
 use super::chat::VercelAiGatewayConfig;
 use super::embedding::{
-    get_complete_url, map_openai_params as map_embedding_params, transform_embedding_request,
-    transform_embedding_response, validate_environment,
+    decode_embedding_response, get_complete_url, map_openai_params as map_embedding_params,
+    transform_embedding_request, transform_embedding_response, validate_environment,
 };
 use super::error::get_error_class;
 use super::models::{models_url, parse_models};
@@ -430,8 +430,7 @@ fn replays_the_vercel_ai_gateway_reply_corpus(
     #[files("fuzz/corpus/vercel_ai_gateway_reply/*")] path: PathBuf,
 ) {
     let bytes = fs::read(path).expect("corpus file");
-    let mut hook = |_text: &str| {};
-    let _reply = transform_embedding_response(&bytes, &mut hook);
+    let _reply = decode_embedding_response(&bytes);
     let _ok = parse_models(200, &bytes);
     let _failed = parse_models(503, &bytes);
 }
