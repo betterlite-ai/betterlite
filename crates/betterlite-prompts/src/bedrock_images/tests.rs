@@ -677,10 +677,10 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
                 body_bytes: TransportLimits::DEFAULT.body_bytes,
                 header_bytes: TransportLimits::DEFAULT.header_bytes,
             };
-            // the request's own 100ms timeout fires well before the 5s total deadline, exercising the body-read mapping
+            // the request's own 100ms timeout fires first, so only the body-read mapping can produce the deadline
             let mut client = remote_with(limits, &["127.0.0.1"], 50.0, true);
-            client.deadline = Duration::from_secs(5);
-            let outcome = timeout(Duration::from_secs(10), client.image_details(&url))
+            client.deadline = TRANSPORT_LIMITS.read_timeout;
+            let outcome = timeout(Duration::from_secs(5), client.image_details(&url))
                 .await
                 .expect("a fetch without any timeout would never end");
             assert!(matches!(outcome.unwrap_err(), BedrockImageError::Deadline));
