@@ -71,18 +71,17 @@ fn money(
     value: Option<&Json>,
     field: &'static str,
 ) -> Result<Option<Decimal>, CostCalculatorError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => decimal(&number.to_string())
-            .map(Some)
-            .ok_or(CostCalculatorError::ParamType { field }),
-        Some(Json::Text(text)) => decimal(text)
-            .map(Some)
-            .ok_or(CostCalculatorError::ParamType { field }),
+    let text = match value {
+        None | Some(Json::Null) => return Ok(None),
+        Some(Json::Number(number)) => number.to_string(),
+        Some(Json::Text(text)) => text.clone(),
         Some(Json::Bool(_) | Json::List(_) | Json::Object(_)) => {
-            Err(CostCalculatorError::ParamType { field })
+            return Err(CostCalculatorError::ParamType { field });
         }
-    }
+    };
+    decimal(&text)
+        .map(Some)
+        .ok_or(CostCalculatorError::ParamType { field })
 }
 
 // LiteLLM reads prices with float(), which accepts a decimal or scientific notation string
@@ -94,26 +93,28 @@ fn decimal(text: &str) -> Option<Decimal> {
 }
 
 fn usage(value: Option<&Json>) -> Result<Option<A2aUsage>, CostCalculatorError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(fields)) => Ok(Some(A2aUsage {
-            prompt_tokens: tokens(fields.get("prompt_tokens"), "usage.prompt_tokens")?,
-            completion_tokens: tokens(fields.get("completion_tokens"), "usage.completion_tokens")?,
-        })),
-        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(CostCalculatorError::UsageNotObject)
-        }
-    }
+    let Some(record) = value.filter(|item| !matches!(item, Json::Null)) else {
+        return Ok(None);
+    };
+    let Json::Object(fields) = record else {
+        return Err(CostCalculatorError::UsageNotObject);
+    };
+    let prompt_tokens = tokens(fields.get("prompt_tokens"), "usage.prompt_tokens")?;
+    let completion_tokens = tokens(fields.get("completion_tokens"), "usage.completion_tokens")?;
+    Ok(Some(A2aUsage {
+        prompt_tokens,
+        completion_tokens,
+    }))
 }
 
 fn tokens(value: Option<&Json>, field: &'static str) -> Result<u64, CostCalculatorError> {
-    match value {
-        None | Some(Json::Null) => Ok(0),
-        Some(Json::Number(number)) => number
-            .as_u64()
-            .ok_or(CostCalculatorError::UsageType { field }),
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(CostCalculatorError::UsageType { field })
-        }
-    }
+    let Some(record) = value.filter(|item| !matches!(item, Json::Null)) else {
+        return Ok(0);
+    };
+    let Json::Number(number) = record else {
+        return Err(CostCalculatorError::UsageType { field });
+    };
+    number
+        .as_u64()
+        .ok_or(CostCalculatorError::UsageType { field })
 }
