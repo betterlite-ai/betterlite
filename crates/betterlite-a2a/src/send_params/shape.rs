@@ -21,13 +21,6 @@ const CONFIG_ALIASES: &[(&str, &str)] = &[
     ),
     ("pushNotificationConfig", "push_notification_config"),
 ];
-const PUSH_CONFIG_NAMES: &[&str] = &[
-    "taskPushNotificationConfig",
-    "task_push_notification_config",
-    "pushNotificationConfig",
-    "push_notification_config",
-];
-
 #[derive(Clone, Copy)]
 enum Record {
     Params,
@@ -35,8 +28,6 @@ enum Record {
     Part,
     File,
     Configuration,
-    PushConfig,
-    Authentication,
 }
 
 struct Spec {
@@ -53,7 +44,7 @@ pub(super) fn prepare(params: &AgentJson) -> Result<AgentJson, SendParamsError> 
     Ok(prepared)
 }
 
-// serde's derived structs also read a JSON array by position, so every record position is checked
+// only params, message, each part and configuration are records on both paths, so only they are fixed up
 fn record(value: &mut AgentJson, kind: Record) -> Result<(), SendParamsError> {
     let spec = kind.spec();
     let Some(fields) = value.as_object_mut() else {
@@ -118,10 +109,16 @@ fn children(value: &mut AgentJson, kind: Record) -> Result<(), SendParamsError> 
             }
             Ok(())
         }
-        Record::Part => descend(value, &["file"], Record::File),
-        Record::Configuration => descend(value, PUSH_CONFIG_NAMES, Record::PushConfig),
-        Record::PushConfig => descend(value, &["authentication"], Record::Authentication),
-        Record::File | Record::Authentication => Ok(()),
+        Record::Part => {
+            // a non-object file only makes the 0.3 File variant fail, as the pydantic union does
+            if let Some(file) = child_mut(value, &["file"])
+                && file.is_object()
+            {
+                record(file, Record::File)?;
+            }
+            Ok(())
+        }
+        Record::Configuration | Record::File => Ok(()),
     }
 }
 
@@ -166,14 +163,6 @@ impl Record {
             Self::Configuration => Spec {
                 field: "configuration",
                 aliases: CONFIG_ALIASES,
-            },
-            Self::PushConfig => Spec {
-                field: "configuration.taskPushNotificationConfig",
-                aliases: &[],
-            },
-            Self::Authentication => Spec {
-                field: "configuration.taskPushNotificationConfig.authentication",
-                aliases: &[],
             },
         }
     }

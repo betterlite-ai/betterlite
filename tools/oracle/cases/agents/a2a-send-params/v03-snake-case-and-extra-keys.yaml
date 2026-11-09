@@ -11,6 +11,8 @@ call:
             extra: 1
           - kind: file
             file: {bytes: "aGk=", mime_type: text/plain}
+          - kind: file
+            file: {uri: "https://f", mime_type: image/png}
         context_id: c1
         task_id: t1
         reference_task_ids: [r1]

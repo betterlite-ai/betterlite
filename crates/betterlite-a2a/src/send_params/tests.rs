@@ -265,6 +265,30 @@ fn json(text: &str) -> AgentJson {
     r#"[{"messageId": "m1", "role": "user", "parts": [{"text": "hi"}]}]"#,
     None
 )]
+#[case::v03_part_with_non_object_file(
+    r#"{"message": {"messageId": "m1", "role": "user", "parts": [{"text": "hi", "file": "report.pdf"}]}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m1", "role": "user", "parts": [{"kind": "text", "text": "hi"}]}}"#
+    )
+)]
+#[case::v03_configuration_ignores_task_push_config(
+    r#"{"message": {"messageId": "m1", "role": "user", "parts": [{"text": "hi"}]}, "configuration": {"taskPushNotificationConfig": "x"}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m1", "role": "user", "parts": [{"kind": "text", "text": "hi"}]}, "configuration": {}}"#
+    )
+)]
+#[case::v10_configuration_ignores_push_config(
+    r#"{"message": {"role": "ROLE_USER", "messageId": "m1", "parts": [{"text": "hi"}]}, "configuration": {"pushNotificationConfig": "x"}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m1", "role": "user", "parts": [{"kind": "text", "text": "hi"}]}, "configuration": {"blocking": true}}"#
+    )
+)]
+#[case::v10_part_ignores_non_object_file(
+    r#"{"message": {"role": "ROLE_USER", "messageId": "m1", "parts": [{"text": "hi", "file": "x"}]}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m1", "role": "user", "parts": [{"kind": "text", "text": "hi"}]}}"#
+    )
+)]
 #[case::v03_configuration_array(
     r#"{"message": {"messageId": "m1", "role": "user", "parts": [{"text": "hi"}]}, "configuration": [["text"]]}"#,
     None
@@ -288,7 +312,8 @@ fn json(text: &str) -> AgentJson {
             "role": "user",
             "parts": [
                 {"text": "hi"},
-                {"kind": "file", "file": {"bytes": "aGk=", "mime_type": "text/plain"}}
+                {"kind": "file", "file": {"bytes": "aGk=", "mime_type": "text/plain"}},
+                {"kind": "file", "file": {"uri": "https://f", "mime_type": "image/png"}}
             ],
             "context_id": "c1",
             "task_id": "t1",
@@ -317,7 +342,8 @@ fn json(text: &str) -> AgentJson {
                 "role": "user",
                 "parts": [
                     {"kind": "text", "text": "hi"},
-                    {"kind": "file", "file": {"bytes": "aGk=", "mimeType": "text/plain"}}
+                    {"kind": "file", "file": {"bytes": "aGk=", "mimeType": "text/plain"}},
+                    {"kind": "file", "file": {"uri": "https://f", "mimeType": "image/png"}}
                 ],
                 "contextId": "c1",
                 "taskId": "t1",
