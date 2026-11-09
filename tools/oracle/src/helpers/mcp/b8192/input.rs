@@ -55,8 +55,11 @@ impl ModelInfoInput {
         ModelInfo {
             input_cost_per_token: self.input_cost_per_token.unwrap_or_default(),
             output_cost_per_token: self.output_cost_per_token.unwrap_or_default(),
-            max_output_tokens: self.max_output_tokens,
-            max_tokens: self.max_tokens,
+            max_output_tokens: self
+                .max_output_tokens
+                .filter(|value| *value != 0)
+                .or(self.max_tokens)
+                .unwrap_or(0),
             output_tokens_per_second: self.output_tokens_per_second.unwrap_or_default(),
         }
     }

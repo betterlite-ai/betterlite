@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
+use super::defaults::null_as_default;
 use super::error::SamplingConvertError;
 
 // 0.5: a metric with no spread scores every candidate the same
@@ -10,29 +11,29 @@ const NEUTRAL_SCORE: Decimal = Decimal::from_parts(5, 0, 0, false, 1);
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 pub struct ModelPreferences {
-    #[serde(default)]
-    pub hints: Option<Vec<ModelHint>>,
+    #[serde(default, deserialize_with = "null_as_default")]
+    pub hints: Vec<ModelHint>,
     #[serde(
         default,
         rename = "costPriority",
         alias = "cost_priority",
-        with = "rust_decimal::serde::float_option"
+        deserialize_with = "null_as_default"
     )]
-    pub cost_priority: Option<Decimal>,
+    pub cost_priority: Decimal,
     #[serde(
         default,
         rename = "speedPriority",
         alias = "speed_priority",
-        with = "rust_decimal::serde::float_option"
+        deserialize_with = "null_as_default"
     )]
-    pub speed_priority: Option<Decimal>,
+    pub speed_priority: Decimal,
     #[serde(
         default,
         rename = "intelligencePriority",
         alias = "intelligence_priority",
-        with = "rust_decimal::serde::float_option"
+        deserialize_with = "null_as_default"
     )]
-    pub intelligence_priority: Option<Decimal>,
+    pub intelligence_priority: Decimal,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -45,8 +46,8 @@ pub struct ModelHint {
 pub struct ModelInfo {
     pub input_cost_per_token: Decimal,
     pub output_cost_per_token: Decimal,
-    pub max_output_tokens: Option<u64>,
-    pub max_tokens: Option<u64>,
+    // resolved by the caller: max_output_tokens, else max_tokens, else zero
+    pub max_output_tokens: u64,
     pub output_tokens_per_second: Decimal,
 }
 
@@ -58,15 +59,14 @@ pub fn has_priorities(preferences: &ModelPreferences) -> bool {
         preferences.intelligence_priority,
     ]
     .into_iter()
-    .flatten()
     .any(|weight| weight > Decimal::ZERO)
 }
 
 struct ScoredModel {
     name: String,
     cost: Decimal,
-    max_output: u64,
-    output_tps: Decimal,
+    max_output_tokens: u64,
+    output_tokens_per_second: Decimal,
 }
 
 struct MetricValues {
@@ -90,12 +90,8 @@ fn scored_models(
                 .input_cost_per_token
                 .checked_add(info.output_cost_per_token)
                 .ok_or(SamplingConvertError::PriorityScoreOverflow)?,
-            max_output: info
-                .max_output_tokens
-                .filter(|value| *value != 0)
-                .or(info.max_tokens)
-                .unwrap_or(0),
-            output_tps: info.output_tokens_per_second,
+            max_output_tokens: info.max_output_tokens,
+            output_tokens_per_second: info.output_tokens_per_second,
         });
     }
     Ok(scored)
@@ -107,8 +103,8 @@ fn metric_values(scored: &[ScoredModel]) -> MetricValues {
     let mut throughputs = Vec::with_capacity(scored.len());
     for entry in scored {
         costs.push(entry.cost);
-        max_outputs.push(Decimal::from(entry.max_output));
-        throughputs.push(entry.output_tps);
+        max_outputs.push(Decimal::from(entry.max_output_tokens));
+        throughputs.push(entry.output_tokens_per_second);
     }
     MetricValues {
         costs,
@@ -168,10 +164,7 @@ fn weighted_score(
         (preferences.intelligence_priority, intelligence_score),
     ];
     let mut total = Decimal::ZERO;
-    for (given, score) in weighted {
-        let Some(weight) = given else {
-            continue;
-        };
+    for (weight, score) in weighted {
         let contribution = weight
             .checked_mul(score)
             .ok_or(SamplingConvertError::PriorityScoreOverflow)?;
@@ -189,18 +182,18 @@ pub(crate) fn normalise(
     if values.is_empty() {
         return Ok(Vec::new());
     }
-    let lo = values.iter().copied().min().unwrap_or(Decimal::ZERO);
-    let hi = values.iter().copied().max().unwrap_or(Decimal::ZERO);
-    if hi == lo {
+    let lowest = values.iter().copied().min().unwrap_or(Decimal::ZERO);
+    let highest = values.iter().copied().max().unwrap_or(Decimal::ZERO);
+    if highest == lowest {
         return Ok(vec![NEUTRAL_SCORE; values.len()]);
     }
-    let spread = hi
-        .checked_sub(lo)
+    let spread = highest
+        .checked_sub(lowest)
         .ok_or(SamplingConvertError::PriorityScoreOverflow)?;
     let mut scores = Vec::with_capacity(values.len());
     for value in values {
         let offset = value
-            .checked_sub(lo)
+            .checked_sub(lowest)
             .ok_or(SamplingConvertError::PriorityScoreOverflow)?;
         let ratio = offset
             .checked_div(spread)
@@ -247,10 +240,7 @@ pub fn resolve_model_from_preferences(
     model_info: &BTreeMap<String, ModelInfo>,
 ) -> Result<String, SamplingConvertError> {
     if let Some(given) = preferences {
-        let hinted = given
-            .hints
-            .as_deref()
-            .and_then(|hints| resolve_hint(hints, available_model_names));
+        let hinted = resolve_hint(&given.hints, available_model_names);
         if let Some(model) = hinted {
             return Ok(model);
         }

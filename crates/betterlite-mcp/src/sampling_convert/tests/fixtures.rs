@@ -37,10 +37,10 @@ pub(crate) fn with_priorities(
     intelligence: Option<Decimal>,
 ) -> ModelPreferences {
     ModelPreferences {
-        hints: None,
-        cost_priority: cost,
-        speed_priority: speed,
-        intelligence_priority: intelligence,
+        hints: Vec::new(),
+        cost_priority: cost.unwrap_or_default(),
+        speed_priority: speed.unwrap_or_default(),
+        intelligence_priority: intelligence.unwrap_or_default(),
     }
 }
 
@@ -48,8 +48,7 @@ pub(crate) fn metrics(cost: i64, max_output: u64, tps: i64) -> ModelInfo {
     ModelInfo {
         input_cost_per_token: Decimal::new(cost, 6),
         output_cost_per_token: Decimal::new(cost, 6),
-        max_output_tokens: Some(max_output),
-        max_tokens: None,
+        max_output_tokens: max_output,
         output_tokens_per_second: Decimal::from(tps),
     }
 }

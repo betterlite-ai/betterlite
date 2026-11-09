@@ -78,7 +78,7 @@ fn has_priorities_refuses_absent_zero_and_negative_weights(
 #[test]
 fn resolve_returns_the_first_hint_that_matches() {
     let mut preferences = with_priorities(None, None, None);
-    preferences.hints = Some(vec![hint(Some("fast")), hint(Some("smart"))]);
+    preferences.hints = vec![hint(Some("fast")), hint(Some("smart"))];
     let resolved = resolve_model_from_preferences(
         Some(&preferences),
         &names(&["cheap", "fast", "smart"]),
@@ -93,7 +93,7 @@ fn resolve_returns_the_first_hint_that_matches() {
 #[test]
 fn resolve_prefers_a_direct_hint_over_an_earlier_substring_match() {
     let mut preferences = with_priorities(None, None, None);
-    preferences.hints = Some(vec![hint(Some("smart"))]);
+    preferences.hints = vec![hint(Some("smart"))];
     let resolved = resolve_model_from_preferences(
         Some(&preferences),
         &names(&["cheap-smart", "smart"]),
@@ -108,7 +108,7 @@ fn resolve_prefers_a_direct_hint_over_an_earlier_substring_match() {
 #[test]
 fn resolve_matches_a_hint_as_a_case_insensitive_substring() {
     let mut preferences = with_priorities(None, None, None);
-    preferences.hints = Some(vec![hint(Some("SMART"))]);
+    preferences.hints = vec![hint(Some("SMART"))];
     let resolved = resolve_model_from_preferences(
         Some(&preferences),
         &names(&["cheap", "pricey-smart"]),
@@ -123,7 +123,7 @@ fn resolve_matches_a_hint_as_a_case_insensitive_substring() {
 #[test]
 fn resolve_skips_a_hint_without_a_name() {
     let mut preferences = with_priorities(None, None, None);
-    preferences.hints = Some(vec![hint(None), hint(Some("smart"))]);
+    preferences.hints = vec![hint(None), hint(Some("smart"))];
     let resolved = resolve_model_from_preferences(
         Some(&preferences),
         &names(&["cheap", "smart"]),
@@ -138,7 +138,7 @@ fn resolve_skips_a_hint_without_a_name() {
 #[test]
 fn resolve_skips_an_empty_hint_name() {
     let mut preferences = with_priorities(None, None, None);
-    preferences.hints = Some(vec![hint(Some("")), hint(Some("smart"))]);
+    preferences.hints = vec![hint(Some("")), hint(Some("smart"))];
     let resolved = resolve_model_from_preferences(
         Some(&preferences),
         &names(&["cheap", "smart"]),
@@ -196,15 +196,14 @@ fn resolve_skips_a_candidate_without_model_info() {
 }
 
 #[test]
-fn resolve_uses_max_tokens_when_max_output_tokens_is_zero() {
+fn resolve_uses_the_resolved_max_output_tokens_for_intelligence() {
     let catalog = BTreeMap::from([
         (
-            String::from("fallback"),
+            String::from("large"),
             ModelInfo {
                 input_cost_per_token: Decimal::ZERO,
                 output_cost_per_token: Decimal::ZERO,
-                max_output_tokens: Some(0),
-                max_tokens: Some(4_000),
+                max_output_tokens: 4_000,
                 output_tokens_per_second: Decimal::ZERO,
             },
         ),
@@ -213,21 +212,20 @@ fn resolve_uses_max_tokens_when_max_output_tokens_is_zero() {
             ModelInfo {
                 input_cost_per_token: Decimal::ZERO,
                 output_cost_per_token: Decimal::ZERO,
-                max_output_tokens: Some(100),
-                max_tokens: None,
+                max_output_tokens: 100,
                 output_tokens_per_second: Decimal::ZERO,
             },
         ),
     ]);
     let resolved = resolve_model_from_preferences(
         Some(&with_priorities(None, None, Some(Decimal::ONE))),
-        &names(&["small", "fallback"]),
+        &names(&["small", "large"]),
         None,
         None,
         &catalog,
     )
     .expect("resolution");
-    assert_eq!(resolved, "fallback");
+    assert_eq!(resolved, "large");
 }
 
 #[test]
@@ -341,9 +339,16 @@ fn model_preferences_decode_from_the_mcp_wire() {
         r#"{"hints":[{"name":"fast"}],"costPriority":0.25,"speedPriority":null}"#,
     )
     .expect("preferences");
-    assert_eq!(preferences.hints, Some(vec![hint(Some("fast"))]));
-    assert_eq!(preferences.cost_priority, Some(Decimal::new(25, 2)));
-    assert_eq!(preferences.speed_priority, None);
+    assert_eq!(preferences.hints, vec![hint(Some("fast"))]);
+    assert_eq!(preferences.cost_priority, Decimal::new(25, 2));
+    assert_eq!(preferences.speed_priority, Decimal::ZERO);
+}
+
+#[test]
+fn null_preferences_take_their_defaults() {
+    let preferences: ModelPreferences =
+        serde_json::from_str(r#"{"hints":null,"costPriority":null}"#).expect("preferences");
+    assert_eq!(preferences, with_priorities(None, None, None));
 }
 
 #[test]
