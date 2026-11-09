@@ -159,6 +159,24 @@ fn manager_write_only_access_reads_the_environment() {
 }
 
 #[test]
+fn manager_oidc_names_bypass_the_configured_manager() {
+    let manager = Arc::new(FakeManager::with(ManagerReply::Text("manager-value")));
+    let mut state = manager_state(
+        custom_client_with(&manager),
+        Some(SecretManagerSettings::default()),
+    );
+    state.hosted_keys = Some(vec!["oidc/env/TOKEN".to_owned()]);
+    let mut lookup = base_lookup();
+    lookup.manager = Some(state);
+    let variables = environment(&[("TOKEN", "env-token")]);
+    let value = lookup
+        .get_secret(&variables, "oidc/env/TOKEN", None)
+        .expect("the OIDC provider should succeed");
+    assert_eq!(text_value(value.as_ref()).as_deref(), Some("env-token"));
+    assert_eq!(manager.reads(), Vec::<String>::new());
+}
+
+#[test]
 fn manager_without_settings_reads_the_environment() {
     let mut lookup = base_lookup();
     lookup.manager = Some(manager_state(custom_client(ManagerReply::Failure), None));
