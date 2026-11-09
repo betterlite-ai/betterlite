@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::langsmith_payloads::credentials::{
-    CredentialParams, Credentials, DEFAULT_BASE_URL, DEFAULT_PROJECT, credentials_for_request,
-    get_credentials_from_env,
+    CredentialError, CredentialParams, Credentials, DEFAULT_BASE_URL, DEFAULT_PROJECT,
+    credentials_for_request, get_credentials_from_env,
 };
 use betterlite_logging::langsmith_payloads::ids::{IdSource, RunIds, ensure_required_ids};
 use betterlite_logging::langsmith_payloads::metadata::{DEFAULT_RUN_NAME, extract_metadata_fields};
@@ -12,7 +12,7 @@ use betterlite_logging::langsmith_payloads::prepare::{
     PayloadError, Prepare, RunData, prepare_log_data,
 };
 use betterlite_logging::langsmith_payloads::redaction::{build_extra_metadata, redact_metadata};
-use betterlite_logging::langsmith_payloads::sampling::sampling_rate_for_request;
+use betterlite_logging::langsmith_payloads::sampling::{SamplingError, sampling_rate_for_request};
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Duration, TimeZone as _, Utc};
 use indexmap::IndexMap;
@@ -516,6 +516,9 @@ fn sampling_rate_dynamic() {
     let dynamic = json(r#"{"langsmith_sampling_rate": 0.25}"#);
     let rate = sampling_rate_for_request(1.0, Some(&dynamic)).expect("rate");
     assert_eq!(rate.to_bits(), 0.25_f64.to_bits());
+    let wrong_type = json(r#"{"langsmith_sampling_rate": "0.25"}"#);
+    let error = sampling_rate_for_request(1.0, Some(&wrong_type)).expect_err("a non-number rate");
+    assert!(matches!(error, SamplingError::RateType));
 }
 
 #[test]
@@ -546,6 +549,15 @@ fn select_dynamic_credentials() {
     assert_eq!(selected.project, "dynamic-project");
     assert_eq!(selected.base_url, "https://dynamic.example");
     assert_eq!(selected.tenant_id.as_deref(), Some("dynamic-tenant"));
+    let wrong_type = json(r#"{"langsmith_api_key": 7}"#);
+    let error = credentials_for_request(&environment, &defaults, Some(&wrong_type))
+        .expect_err("a non-string credential");
+    assert!(matches!(
+        error,
+        CredentialError::FieldType {
+            field: "langsmith_api_key"
+        }
+    ));
 }
 
 #[test]
@@ -618,6 +630,8 @@ fn prepare_failure_run() {
     assert_eq!(run.outputs.get("output"), Some(&Json::Null));
     assert_eq!(run.id, "generated-id");
     assert_eq!(run.trace_id, "generated-id");
+    assert_eq!(run.name, DEFAULT_RUN_NAME);
+    assert_eq!(run.session_name, DEFAULT_PROJECT);
 }
 
 #[test]
