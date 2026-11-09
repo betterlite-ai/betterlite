@@ -1,11 +1,9 @@
 use betterlite_logging::langfuse_observations::identity::Timestamp;
 use betterlite_logging::langfuse_observations::span::{
-    ChildSpanStart, GenerationStart, LangfuseObservation, start_child_span, start_generation,
+    ChildSpanStart, LangfuseObservation, start_child_span,
 };
 use opentelemetry::KeyValue;
 use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceId, TraceState};
-use opentelemetry_sdk::trace::RandomIdGenerator;
-use rust_decimal::Decimal;
 use serde_json::json;
 
 use super::inputs::Step;
@@ -13,74 +11,6 @@ use super::projections::timestamp;
 use super::scripted::{ScriptedSpan, ScriptedTracer, system_nanos};
 use super::values::{invalid, key_values, pairs, parse_span, parse_trace};
 use crate::helpers::HelperError;
-
-pub(crate) fn observation_step(
-    span_id: &str,
-    public: Option<bool>,
-    seconds: Option<Decimal>,
-    datetime: Option<&str>,
-) -> Result<serde_json::Value, Box<HelperError>> {
-    let context = SpanContext::new(
-        TraceId::INVALID,
-        parse_span(span_id)?,
-        TraceFlags::SAMPLED,
-        false,
-        TraceState::NONE,
-    );
-    let mut observation = LangfuseObservation::new(
-        ScriptedSpan {
-            context,
-            parent: SpanContext::NONE,
-            name: String::new(),
-            start_time: None,
-            attributes: Vec::new(),
-            requested_trace_id: None,
-            requested_span_id: None,
-            end_time: None,
-        },
-        public,
-    );
-    if let Some(end_time) = timestamp(seconds, datetime)? {
-        observation.end(Some(end_time));
-    }
-    Ok(json!({
-        "id": observation.id,
-        "public": observation.public,
-        "end_time": observation.span.end_time.and_then(system_nanos),
-    }))
-}
-
-pub(crate) fn generation_step(step: &Step) -> Result<serde_json::Value, Box<HelperError>> {
-    let Step::StartGeneration {
-        trace_id,
-        observation_id,
-        parent_observation_id,
-        existing_trace,
-        name,
-        seconds,
-        datetime,
-        public,
-        attributes,
-        span_id,
-    } = step
-    else {
-        return Err(invalid("not a generation step"));
-    };
-    let start = GenerationStart {
-        trace_id: parse_trace(trace_id)?,
-        parent_observation_id: parent_observation_id
-            .as_deref()
-            .map(parse_span)
-            .transpose()?,
-        existing_trace: *existing_trace,
-        observation_id: observation_id.as_deref().map(parse_span).transpose()?,
-        name: name.clone(),
-        start_time: timestamp(*seconds, datetime.as_deref())?,
-        public: *public,
-        attributes: key_values(attributes),
-    };
-    Ok(generation(start, parse_span(span_id)?))
-}
 
 pub(crate) fn child_step(step: &Step) -> Result<serde_json::Value, Box<HelperError>> {
     let Step::StartChildSpan {
@@ -154,12 +84,6 @@ fn child_parameters(
             attributes,
         },
     }
-}
-
-fn generation(start: GenerationStart, span_id: SpanId) -> serde_json::Value {
-    let tracer = ScriptedTracer { span_id };
-    let observation = start_generation(&tracer, &RandomIdGenerator::default(), start);
-    recorded(&observation)
 }
 
 fn child(parameters: ChildParameters, span_id: SpanId) -> serde_json::Value {

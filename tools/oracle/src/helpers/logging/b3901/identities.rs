@@ -1,6 +1,3 @@
-use betterlite_logging::langfuse_observations::requested_ids::{
-    RequestedIdGenerator, RequestedIds,
-};
 use betterlite_logging::langfuse_observations::sampler::TraceIdHashSampler;
 use betterlite_logging::langfuse_observations::span::parent_context;
 use betterlite_models::decisions::Json;
@@ -10,28 +7,6 @@ use serde_json::json;
 
 use super::values::{key_values, pairs, parse_span, parse_trace};
 use crate::helpers::HelperError;
-
-pub(crate) fn requested_ids_step(
-    trace_id: &str,
-    span_id: &str,
-) -> Result<serde_json::Value, Box<HelperError>> {
-    let requested_trace = parse_trace(trace_id)?;
-    let requested_span = parse_span(span_id)?;
-    let id_generator = RequestedIdGenerator::default();
-    let requested = {
-        let _scope = RequestedIds::enter(Some(requested_trace), Some(requested_span));
-        (id_generator.new_trace_id(), id_generator.new_span_id())
-    };
-    let after = (id_generator.new_trace_id(), id_generator.new_span_id());
-    Ok(json!({
-        "trace_id": requested.0.to_string(),
-        "span_id": requested.1.to_string(),
-        "after_trace_id_length": after.0.to_string().len(),
-        "after_span_id_length": after.1.to_string().len(),
-        "after_trace_id_nonzero": after.0 != TraceId::INVALID,
-        "after_span_id_nonzero": after.1 != SpanId::INVALID,
-    }))
-}
 
 pub(crate) fn sampler_step(
     rate: f64,

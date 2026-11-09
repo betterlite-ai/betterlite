@@ -6,10 +6,10 @@ use serde_json::json;
 
 use crate::helpers::{Helper, HelperResult};
 
-use identities::{parent_step, requested_ids_step, sampler_step};
+use identities::{parent_step, sampler_step};
 use inputs::{Input, Step};
 use projections::{nanos, observation_projection, trace_projection};
-use spans::{child_step, generation_step, observation_step};
+use spans::child_step;
 
 mod identities;
 mod inputs;
@@ -43,7 +43,6 @@ fn run_step(step: &Step) -> Result<serde_json::Value, Box<crate::helpers::Helper
         Step::ToUnixNanos { seconds, datetime } => nanos(*seconds, datetime.as_deref()),
         Step::TraceAttributes { fields } => Ok(trace_projection(fields)),
         Step::ObservationAttributes { fields } => observation_projection(fields),
-        Step::RequestedIds { trace_id, span_id } => requested_ids_step(trace_id, span_id),
         Step::Sampler {
             rate,
             trace_id,
@@ -60,13 +59,6 @@ fn run_step(step: &Step) -> Result<serde_json::Value, Box<crate::helpers::Helper
             *existing_trace,
             fallback_span_id,
         ),
-        Step::Observation {
-            span_id,
-            public,
-            seconds,
-            datetime,
-        } => observation_step(span_id, *public, *seconds, datetime.as_deref()),
-        Step::StartGeneration { .. } => generation_step(step),
         Step::StartChildSpan { .. } => child_step(step),
     }
 }

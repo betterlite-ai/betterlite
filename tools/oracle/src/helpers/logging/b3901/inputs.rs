@@ -27,10 +27,6 @@ pub(crate) enum Step {
     ObservationAttributes {
         fields: ObservationFields,
     },
-    RequestedIds {
-        trace_id: String,
-        span_id: String,
-    },
     Sampler {
         rate: f64,
         trace_id: String,
@@ -41,24 +37,6 @@ pub(crate) enum Step {
         parent_observation_id: Option<String>,
         existing_trace: bool,
         fallback_span_id: String,
-    },
-    Observation {
-        span_id: String,
-        public: Option<bool>,
-        seconds: Option<Decimal>,
-        datetime: Option<String>,
-    },
-    StartGeneration {
-        trace_id: String,
-        observation_id: Option<String>,
-        parent_observation_id: Option<String>,
-        existing_trace: bool,
-        name: String,
-        seconds: Option<Decimal>,
-        datetime: Option<String>,
-        public: Option<bool>,
-        attributes: Vec<(String, Json)>,
-        span_id: String,
     },
     StartChildSpan {
         parent_trace_id: String,

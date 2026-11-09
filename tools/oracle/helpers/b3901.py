@@ -137,13 +137,9 @@ class _FakeSpanContext:
 class _FakeSpan:
     def __init__(self, span_id: int, trace_id: int = 0) -> None:
         self._context = _FakeSpanContext(trace_id=trace_id, span_id=span_id)
-        self.end_time: int | None = None
 
     def get_span_context(self) -> _FakeSpanContext:
         return self._context
-
-    def end(self, end_time: int | None = None) -> None:
-        self.end_time = end_time
 
 
 class _FixedIdGenerator(_BaseIdGenerator):
@@ -214,9 +210,6 @@ def _trace_flags(*, sampled: bool) -> TraceFlags:
 
 class _Observation(Protocol):
     public: bool | None
-    span: object
-
-    def end(self, end_time: datetime | float | None = None) -> None: ...
 
     @property
     def id(self) -> str: ...
@@ -239,17 +232,10 @@ class _TraceSampler(Protocol):
     ) -> _SamplerResult: ...
 
 
-class _RequestedGenerator(Protocol):
-    def generate_trace_id(self) -> int: ...
-
-    def generate_span_id(self) -> int: ...
-
-
 class _Sdk(Protocol):
     RandomIdGenerator: Callable[[], _BaseIdGenerator]
     LangfuseObservation: Callable[..., _Observation]
     TraceIdHashSampler: Callable[..., _TraceSampler]
-    _RequestedIdGenerator: Callable[[], _RequestedGenerator]
     _requested_trace_id: ContextVar[int | None]
     _requested_span_id: ContextVar[int | None]
 
@@ -291,20 +277,6 @@ class _Sdk(Protocol):
         completion_start_time: datetime | float | None = None,
         prompt: object = None,
     ) -> Mapping[str, object]: ...
-
-    def start_generation(  # noqa: PLR0913 - mirrors LiteLLM's keyword-only signature
-        self,
-        *,
-        tracing: object,
-        trace_id: str,
-        parent_observation_id: str | None,
-        existing_trace: bool,
-        observation_id: str | None,
-        name: str,
-        start_time: datetime | float | None,
-        public: bool | None,
-        attributes: Mapping[str, object],
-    ) -> _Observation: ...
 
     def start_child_span(
         self,
@@ -516,31 +488,6 @@ def _observation_attributes(step: dict[str, Json]) -> Json:
     )
 
 
-def _requested_ids(step: dict[str, Json]) -> Json:
-    sdk = _sdk()
-    trace_id = int(_required_text(step.get("trace_id"), "trace_id"), 16)
-    span_id = int(_required_text(step.get("span_id"), "span_id"), 16)
-    generator = sdk._RequestedIdGenerator()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    trace_token = sdk._requested_trace_id.set(trace_id)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    span_token = sdk._requested_span_id.set(span_id)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    try:
-        requested_trace = generator.generate_trace_id()
-        requested_span = generator.generate_span_id()
-    finally:
-        sdk._requested_span_id.reset(span_token)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-        sdk._requested_trace_id.reset(trace_token)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    after_trace = generator.generate_trace_id()
-    after_span = generator.generate_span_id()
-    return {
-        "trace_id": format(requested_trace, "032x"),
-        "span_id": format(requested_span, "016x"),
-        "after_trace_id_length": len(format(after_trace, "032x")),
-        "after_span_id_length": len(format(after_span, "016x")),
-        "after_trace_id_nonzero": after_trace != 0,
-        "after_span_id_nonzero": after_span != 0,
-    }
-
-
 def _sampler(step: dict[str, Json]) -> Json:
     rate = _optional_number(step.get("rate"), "rate")
     if rate is None:
@@ -578,38 +525,6 @@ def _parent_context(step: dict[str, Json]) -> Json:
     }
 
 
-def _observation(step: dict[str, Json]) -> Json:
-    span_id = int(_required_text(step.get("span_id"), "span_id"), 16)
-    observation = _sdk().LangfuseObservation(
-        span=_FakeSpan(span_id),
-        public=_optional_bool(step.get("public"), "public"),
-    )
-    end_time = _timestamp(step)
-    if end_time is not None:
-        observation.end(end_time)
-    span = cast("_FakeSpan", observation.span)
-    return {"id": observation.id, "public": observation.public, "end_time": span.end_time}
-
-
-def _generation(step: dict[str, Json]) -> Json:
-    sdk = _sdk()
-    tracer = _FakeTracer(int(_required_text(step.get("span_id"), "span_id"), 16))
-    observation = sdk.start_generation(
-        tracing=_Tracing(tracer),
-        trace_id=_required_text(step.get("trace_id"), "trace_id"),
-        parent_observation_id=_optional_text(
-            step.get("parent_observation_id"), "parent_observation_id"
-        ),
-        existing_trace=_optional_bool(step.get("existing_trace"), "existing_trace") is True,
-        observation_id=_optional_text(step.get("observation_id"), "observation_id"),
-        name=_required_text(step.get("name"), "name"),
-        start_time=_timestamp(step),
-        public=_optional_bool(step.get("public"), "public"),
-        attributes=_pairs_from_input(step.get("attributes", {}), "attributes"),
-    )
-    return {**tracer.recorded, "observation_id": observation.id, "public": observation.public}
-
-
 def _child_span(step: dict[str, Json]) -> Json:
     sdk = _sdk()
     tracer = _FakeTracer(int(_required_text(step.get("child_span_id"), "child_span_id"), 16))
@@ -641,11 +556,8 @@ _STEPS: _Handlers = {
     "to_unix_nanos": _to_unix_nanos,
     "trace_attributes": _trace_attributes,
     "observation_attributes": _observation_attributes,
-    "requested_ids": _requested_ids,
     "sampler": _sampler,
     "parent_context": _parent_context,
-    "observation": _observation,
-    "start_generation": _generation,
     "start_child_span": _child_span,
 }
 
