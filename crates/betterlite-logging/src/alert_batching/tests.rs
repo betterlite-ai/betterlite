@@ -1,9 +1,12 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::future::{Future, poll_fn};
 use std::io::{Result as IoResult, Write};
 use std::mem;
+use std::pin::pin;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::task::Poll;
 use std::time::Duration;
 
 use betterlite_config::sections::alert_settings::types::AlertType;
@@ -11,7 +14,7 @@ use http::HeaderMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::de::DeserializeOwned;
-use tokio::sync::Barrier;
+use tokio::sync::{Barrier, oneshot};
 use tokio::time::timeout;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
@@ -134,6 +137,7 @@ pub(super) struct FakeDelivery {
     replies: Mutex<VecDeque<Reply>>,
     requests: Mutex<Vec<RecordedPost>>,
     barrier: Mutex<Option<Arc<Barrier>>>,
+    release: Mutex<Option<oneshot::Receiver<()>>>,
 }
 
 impl FakeDelivery {
@@ -145,6 +149,7 @@ impl FakeDelivery {
             replies: Mutex::new(replies.into_iter().collect()),
             requests: Mutex::new(Vec::new()),
             barrier: Mutex::new(None),
+            release: Mutex::new(None),
         }
     }
 
@@ -153,6 +158,16 @@ impl FakeDelivery {
             replies: Mutex::new(VecDeque::new()),
             requests: Mutex::new(Vec::new()),
             barrier: Mutex::new(Some(Arc::new(Barrier::new(requests)))),
+            release: Mutex::new(None),
+        }
+    }
+
+    pub(super) fn with_release(release: oneshot::Receiver<()>) -> Self {
+        Self {
+            replies: Mutex::new(VecDeque::new()),
+            requests: Mutex::new(Vec::new()),
+            barrier: Mutex::new(None),
+            release: Mutex::new(Some(release)),
         }
     }
 
@@ -178,6 +193,10 @@ impl Delivery for FakeDelivery {
         let gated = self.barrier.lock().unwrap().clone();
         if let Some(barrier) = gated {
             barrier.wait().await;
+        }
+        let release = self.release.lock().unwrap().take();
+        if let Some(receiver) = release {
+            let _released = receiver.await;
         }
         let reply = self
             .replies
@@ -325,6 +344,7 @@ fn teams_and_slack_alerts_squash_together_because_format_is_not_in_the_key() {
 #[case::ok(200, true)]
 #[case::created(201, false)]
 #[case::no_content(204, false)]
+#[case::redirect(302, false)]
 #[case::bad_request(400, false)]
 #[case::server_error(500, false)]
 #[tokio::test]
@@ -348,6 +368,7 @@ async fn a_rejected_status_is_logged_at_debug_with_the_response_body() {
     assert!(contents.contains("DEBUG"));
     assert!(contents.contains("the webhook answered with a status other than 200"));
     assert!(contents.contains("rejected"));
+    assert!(!contents.contains("https://hooks/a"));
 }
 
 #[tokio::test]
@@ -585,4 +606,36 @@ async fn async_send_batch_clears_the_queue_when_delivery_fails() {
     assert_eq!(report.delivered, 1);
     assert_eq!(report.requeued, 0);
     assert!(queue.pending().is_empty());
+}
+
+#[tokio::test]
+async fn an_alert_enqueued_during_a_flush_stays_queued() {
+    let (release, released) = oneshot::channel();
+    let delivery = FakeDelivery::with_release(released);
+    let queue = queue();
+    let _first = queue.enqueue(alert(
+        "https://hooks/a",
+        AlertType::BudgetAlerts,
+        "one",
+        None,
+    ));
+    let batch = super::WebhookBatch {
+        delivery: &delivery,
+        log_to_console: false,
+    };
+    let mut flush = pin!(queue.flush(&batch));
+    let pending_post = poll_fn(|context| Poll::Ready(Future::poll(flush.as_mut(), context))).await;
+    assert!(pending_post.is_pending());
+    let _second = queue.enqueue(alert(
+        "https://hooks/a",
+        AlertType::BudgetAlerts,
+        "two",
+        None,
+    ));
+    release.send(()).unwrap();
+    let report = flush.await;
+    assert_eq!(report.delivered, 1);
+    let pending = queue.pending();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].payload.text, "two");
 }

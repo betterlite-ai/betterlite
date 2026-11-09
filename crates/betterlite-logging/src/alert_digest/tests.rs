@@ -11,7 +11,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{
-    Clock, DigestAlert, DigestBuckets, DigestState, ExpiredDigest, digest_queue_items,
+    Clock, DigestAlert, DigestBuckets, DigestState, ExpiredDigest, SystemClock, digest_queue_items,
     render_summary,
 };
 use crate::alert_settings::records::DigestEntry;
@@ -133,6 +133,12 @@ fn expired_digest(webhook_url: WebhookUrl) -> ExpiredDigest {
             webhook_url,
         },
     }
+}
+
+#[test]
+fn the_system_clock_reports_utc() {
+    let now = SystemClock.now();
+    assert_eq!(now.offset().local_minus_utc(), 0_i32);
 }
 
 #[test]
