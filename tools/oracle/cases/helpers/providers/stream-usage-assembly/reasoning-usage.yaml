@@ -1,0 +1,78 @@
+kind: helper
+name: stream-usage-assembly-reasoning-usage
+call:
+  stream_usage_assembly:
+    function: batch
+    cases:
+    - function: count_reasoning_tokens
+      choices:
+      - message: {reasoning_content: abc}
+      - message: {reasoning_content: ""}
+      - message: {reasoning_content: def}
+      counter: {text: 3}
+    - function: count_reasoning_tokens
+      choices:
+      - message: {content: plain}
+      - message: {reasoning_content: ""}
+      counter: {text: 3}
+    - function: count_reasoning_tokens
+      choices:
+      - message: {reasoning_content: abc}
+      counter: {text: 3, fail_text: true}
+    - function: calculate_usage
+      chunks:
+      - usage: {prompt_tokens: 1, completion_tokens: 10}
+      model: gpt-4o
+      completion_output: hi
+      reasoning_tokens: 4
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - usage:
+          prompt_tokens: 1
+          completion_tokens: 10
+          completion_tokens_details: {reasoning_tokens: 2, text_tokens: 3}
+      model: gpt-4o
+      completion_output: hi
+      reasoning_tokens: 4
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - usage:
+          prompt_tokens: 1
+          completion_tokens: 10
+          completion_tokens_details: {text_tokens: 3}
+      model: gpt-4o
+      completion_output: hi
+      reasoning_tokens: 4
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - usage: {prompt_tokens: 1, completion_tokens: 2}
+      model: gpt-4o
+      completion_output: hi
+      reasoning_tokens: 5
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - usage: {prompt_tokens: 1, completion_tokens: 10}
+      model: gpt-4o
+      completion_output: hi
+      reasoning_tokens: -3
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - usage: {prompt_tokens: 1, completion_tokens: -2}
+      model: gpt-4o
+      completion_output: hi
+      reasoning_tokens: 5
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - usage: {prompt_tokens: 1, completion_tokens: 10}
+      model: gpt-4o
+      completion_output: hi
+      reasoning_tokens: 0
+      counter: {text: 7, messages: 4}
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

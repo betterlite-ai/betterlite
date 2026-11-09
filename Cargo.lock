@@ -2630,12 +2630,20 @@ dependencies = [
 name = "betterlite-streaming"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "base64 0.23.1",
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-logging",
+ "betterlite-models",
+ "betterlite-redact",
+ "betterlite-tokenizer",
  "rstest",
  "rust_decimal",
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
