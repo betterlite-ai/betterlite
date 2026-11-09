@@ -238,11 +238,8 @@ pub(super) fn run_pre(extra: &str, call: &str, knobs: &[Knob]) -> PreRun {
 
 pub(super) fn run_post(extra: &str, call: &str, knobs: &[Knob]) -> Run<()> {
     run(extra, knobs, |logging, env| {
-        post_call(
-            logging,
-            &serde_json::from_str(call).expect("the call fixture is valid"),
-            env,
-        );
+        let parsed = serde_json::from_str(call).expect("the call fixture is valid");
+        post_call(logging, &parsed, env);
     })
 }
 
