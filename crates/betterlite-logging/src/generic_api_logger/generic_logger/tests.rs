@@ -16,7 +16,7 @@ use crate::callback_logger::CallbackLogger as _;
 use crate::callback_logger::event::LoggerEvent;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::generic_api_logger::generic_settings::{GenericApiArgs, GenericApiSettings, resolve};
-use crate::generic_api_logger::tests::args;
+use crate::generic_api_logger::tests::{args, capture_logs};
 
 const PAYLOAD: &str = r#"{"id":"chatcmpl-1","trace_id":"trace-1","session_id":"session-1","call_type":"completion","response_cost":0.5,
 "status":"success","status_fields":{"llm_api_status":"success","guardrail_status":"not_run"},"total_tokens":5,"prompt_tokens":2,
@@ -143,6 +143,12 @@ fn event() -> Arc<LoggerEvent> {
     })
 }
 
+#[test]
+fn callback_logger_does_not_log_the_endpoint_or_headers() {
+    let (logs, _guard) = capture_logs();
+    let _fixture = Fixture::new(settings(args()), false, 10);
+    assert!(!logs.contents().contains("hook.test"));
+}
 #[tokio::test]
 async fn callback_logger_queues_the_standard_payload_on_success() {
     let fixture = Fixture::new(settings(args()), false, 10);
