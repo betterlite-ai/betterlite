@@ -1,0 +1,11 @@
+kind: helper
+name: secret-lookup-bool-from-text
+env: {}
+compare: {ignore: []}
+call:
+  b8500:
+    function: get_secret_bool
+    secret_name: ENV_FLAG
+    environment:
+      ENV_FLAG: " false "
+    default_value: null

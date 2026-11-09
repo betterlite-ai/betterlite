@@ -13,3 +13,4 @@ pub mod redis_connection_settings;
 pub mod redis_counters;
 pub mod redis_live_client;
 pub mod request_batch;
+pub mod valkey;

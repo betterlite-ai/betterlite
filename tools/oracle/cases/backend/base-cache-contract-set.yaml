@@ -1,0 +1,8 @@
+kind: helper
+name: base-cache-contract-set
+call:
+  b4290:
+    base_cache_contract_set: null
+env: {}
+compare:
+  ignore: []

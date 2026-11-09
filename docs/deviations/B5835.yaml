@@ -1,0 +1,5 @@
+task: B5835
+deviations:
+  - what: A model list reply with a non-200 status or a body of the wrong shape returns a typed ModelsError, not a bare Python Exception or a KeyError.
+    why: Rust has no untyped exception. The message text for a non-200 reply is LiteLLM's, so a user sees the same failure; the typed error also carries that reply's status, where LiteLLM's bare exception carries none, and a 200 reply of the wrong shape becomes a 502 bad-gateway error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vercel_ai_gateway/chat/transformation.py#L91-L95
