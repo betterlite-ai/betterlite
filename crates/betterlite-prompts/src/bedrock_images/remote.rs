@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use betterlite_http::error::HttpError;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::user_url::fetch::UserUrlFetcher;
@@ -12,7 +13,7 @@ use tokio::time::timeout;
 
 use crate::bedrock_images::error::BedrockImageError;
 use crate::bedrock_images::parse::parse_content_type;
-use crate::media_fetch::response::read_limited_body;
+use crate::media_fetch::response::{BodyReadError, read_limited_body};
 use crate::media_metadata::url_mime::infer_content_type;
 
 const CONNECT_SECONDS: u64 = 5;
@@ -59,8 +60,19 @@ where
             return Err(status_error(status.as_u16(), &final_url));
         }
         let headers = fetched.response.headers().clone();
-        let body =
-            read_limited_body(fetched.body_stream(), image_url, self.max_download_size_mb).await?;
+        let body = read_limited_body(fetched.body_stream(), image_url, self.max_download_size_mb)
+            .await
+            .map_err(|error| match error {
+                // The request carries the same deadline as the outer timeout, so its clock can fire first
+                BodyReadError::Read(HttpError::Request(source)) if source.is_timeout() => {
+                    BedrockImageError::Deadline
+                }
+                BodyReadError::Read(HttpError::Timeout) => BedrockImageError::Deadline,
+                other @ (BodyReadError::TooLarge(_)
+                | BodyReadError::UncountableLimit { .. }
+                | BodyReadError::Read(_)
+                | BodyReadError::UncountableBody) => BedrockImageError::Body(other),
+            })?;
         post_call_image_processing(image_url, &headers, &body)
     }
 }

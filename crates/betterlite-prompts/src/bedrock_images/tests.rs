@@ -248,6 +248,9 @@ fn headers_of(pairs: &[(&str, &str)]) -> HeaderMap {
     "remote_fetch_returns_base64_and_content_type"
 )]
 #[case::remote_fetch_fails_with_httpx_status_text("remote_fetch_fails_with_httpx_status_text")]
+#[case::remote_fetch_fails_with_informational_status_text(
+    "remote_fetch_fails_with_informational_status_text"
+)]
 #[case::remote_fetch_fails_with_server_error_text("remote_fetch_fails_with_server_error_text")]
 #[case::remote_fetch_fails_with_invalid_status_text("remote_fetch_fails_with_invalid_status_text")]
 #[case::remote_fetch_fails_with_redirect_status_text(
@@ -512,6 +515,20 @@ async fn bedrock_images_behavior_tests_behavior(#[case] scenario: &str) {
                 )
             );
             assert_eq!(server.request_count(), 1);
+        }
+        "remote_fetch_fails_with_informational_status_text" => {
+            let server = Server::start(vec![route("/image.png", Reply::status(101))]).await;
+            let url = server.url("/image.png");
+            let error = remote(&["127.0.0.1"], 50.0)
+                .image_details(&url)
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "Informational response '101 Switching Protocols' for url '{url}'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/101"
+                )
+            );
         }
         "remote_fetch_fails_with_server_error_text" => {
             let server = Server::start(vec![route("/image.png", Reply::status(503))]).await;
