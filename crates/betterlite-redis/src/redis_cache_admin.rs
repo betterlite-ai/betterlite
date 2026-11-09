@@ -91,13 +91,7 @@ impl RedisCacheAdmin {
             Ok(client) => ping_commands(&client, self.hooks.as_ref(), caller).await,
             Err(source) => {
                 let error = RedisAdminError::from(source);
-                let event = ServiceEvent {
-                    call_type: ASYNC_PING,
-                    duration: started.elapsed(),
-                    key: caller.map(str::to_owned),
-                };
-                self.hooks.failure(&event, &error);
-                tracing::error!("LiteLLM Redis Cache PING: - Got exception from REDIS : {error}");
+                self.record_ping_failure(ASYNC_PING, started, caller, &error);
                 Err(error)
             }
         }
@@ -106,23 +100,29 @@ impl RedisCacheAdmin {
     pub fn sync_ping(&self, caller: Option<&str>) -> Result<bool, RedisAdminError> {
         let started = Instant::now();
         let reply = self.transport.sync_client.query::<String>(&cmd("PING"));
-        let event = ServiceEvent {
-            call_type: SYNC_PING,
-            duration: started.elapsed(),
-            key: caller.map(str::to_owned),
-        };
-        match reply {
-            Ok(answer) => {
-                self.hooks.success(&event);
-                Ok(answer == "PONG")
-            }
+        let answer = match reply {
+            Ok(answer) => answer,
             Err(source) => {
                 let error = RedisAdminError::from(source);
-                self.hooks.failure(&event, &error);
-                tracing::error!("LiteLLM Redis Cache PING: - Got exception from REDIS : {error}");
-                Err(error)
+                self.record_ping_failure(SYNC_PING, started, caller, &error);
+                return Err(error);
             }
-        }
+        };
+        let event = ping_event(SYNC_PING, started, caller);
+        self.hooks.success(&event);
+        Ok(answer == "PONG")
+    }
+
+    fn record_ping_failure(
+        &self,
+        call_type: &'static str,
+        started: Instant,
+        caller: Option<&str>,
+        error: &RedisAdminError,
+    ) {
+        let event = ping_event(call_type, started, caller);
+        self.hooks.failure(&event, error);
+        tracing::error!("LiteLLM Redis Cache PING: - Got exception from REDIS : {error}");
     }
 
     pub async fn setup_health_pings(self: &Arc<Self>) {
@@ -157,33 +157,30 @@ impl RedisCacheAdmin {
     }
 
     pub async fn delete_cache_keys(&self, keys: &[String]) -> Result<(), RedisAdminError> {
+        let namespaced: Vec<String> = keys.iter().map(|key| self.namespace_key(key)).collect();
         self.guarded("delete_cache_keys", async {
-            let client = self.transport.async_client().await?;
-            let namespaced: Vec<String> = keys
-                .iter()
-                .map(|key| {
-                    check_and_fix_namespace(self.namespace.as_deref(), Some(key))
-                        .unwrap_or_else(|| key.clone())
-                })
-                .collect();
-            // redis-py's cluster delete sends nothing for an empty list, where a plain client sends a bare DEL
-            if namespaced.is_empty() && matches!(&client, LiveAsyncClient::Cluster(_)) {
-                return Ok(());
-            }
             let names: Vec<&str> = namespaced.iter().map(String::as_str).collect();
-            client.delete(&names).await?;
+            self.delete_through(&names).await?;
             Ok(())
         })
         .await
     }
 
     pub async fn async_delete_cache(&self, key: &str) -> Result<i64, RedisAdminError> {
+        let namespaced = self.namespace_key(key);
         self.guarded("async_delete_cache", async {
-            let client = self.transport.async_client().await?;
-            let namespaced = self.namespace_key(key);
-            Ok(client.delete(&[namespaced.as_str()]).await?)
+            self.delete_through(&[namespaced.as_str()]).await
         })
         .await
+    }
+
+    // redis-py's cluster delete sends nothing for an empty list, where a plain client sends a bare DEL
+    async fn delete_through(&self, names: &[&str]) -> Result<i64, RedisAdminError> {
+        let client = self.transport.async_client().await?;
+        if names.is_empty() && matches!(&client, LiveAsyncClient::Cluster(_)) {
+            return Ok(0);
+        }
+        Ok(client.delete(names).await?)
     }
 
     pub fn delete_cache(&self, key: &str) -> Result<(), RedisAdminError> {
@@ -259,6 +256,14 @@ impl RedisCacheAdmin {
             self.store.remove(&self.transport.cache_key);
         }
         self.transport.close_pubsub_client().await;
+    }
+}
+
+fn ping_event(call_type: &'static str, started: Instant, caller: Option<&str>) -> ServiceEvent {
+    ServiceEvent {
+        call_type,
+        duration: started.elapsed(),
+        key: caller.map(str::to_owned),
     }
 }
 

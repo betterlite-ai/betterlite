@@ -19,10 +19,11 @@ use crate::redis_client_reuse::service_event::ServiceEvent;
 use crate::redis_client_reuse::service_hooks::ServiceHooks;
 use crate::redis_client_reuse::store::RedisClientStore;
 use crate::redis_client_reuse::transport::{RedisCacheFamily, RedisTransport};
-use crate::redis_connection_settings::model::nodes::ClusterNodeConfig;
 use crate::redis_connection_settings::model::settings::RedisConnectionSettings;
 use crate::redis_live_client::tests::fake_server::FakeServer;
 use crate::redis_live_client::{LiveClientError, LiveClientFactory};
+
+pub(crate) mod cluster;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Recorded {
@@ -223,32 +224,6 @@ pub(crate) fn direct_settings(host: &str, port: u16) -> RedisConnectionSettings 
     settings.host = Some(host.to_owned());
     settings.port = Some(i64::from(port));
     settings
-}
-
-pub(crate) fn cluster_settings(nodes: &[(String, u16)]) -> RedisConnectionSettings {
-    let mut settings = empty_settings();
-    settings.startup_nodes = Some(
-        nodes
-            .iter()
-            .map(|(host, port)| ClusterNodeConfig {
-                host: host.clone(),
-                port: i64::from(*port),
-            })
-            .collect(),
-    );
-    settings
-}
-
-pub(crate) async fn cluster_pair() -> (FakeServer, FakeServer) {
-    let first = FakeServer::start().await;
-    let second = FakeServer::start().await;
-    let slots = vec![
-        (0, 8191, vec![(first.host(), first.port())]),
-        (8192, 16383, vec![(second.host(), second.port())]),
-    ];
-    first.set_cluster_slots(slots.clone());
-    second.set_cluster_slots(slots);
-    (first, second)
 }
 
 pub(crate) enum ScriptedAnswer {

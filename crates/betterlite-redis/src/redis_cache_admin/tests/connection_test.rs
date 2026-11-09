@@ -2,9 +2,8 @@ use std::io;
 
 use rstest::rstest;
 
-use super::support::{
-    Logs, Probe, cluster_pair, cluster_settings, direct_settings, empty_settings, probe,
-};
+use super::support::cluster::{cluster_pair, cluster_settings};
+use super::support::{Logs, Probe, direct_settings, empty_settings, probe};
 use crate::redis_cache_admin::RedisAdminError;
 use crate::redis_cache_admin::connection_test::{ConnectionStatus, connection_test_result};
 use crate::redis_client_reuse::transport::RedisCacheFamily;

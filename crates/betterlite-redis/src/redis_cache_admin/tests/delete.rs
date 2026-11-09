@@ -1,4 +1,5 @@
-use super::support::{Probe, cluster_pair, cluster_settings, direct_settings, probe};
+use super::support::cluster::{cluster_pair, cluster_settings};
+use super::support::{Probe, direct_settings, probe};
 use crate::redis_cache_admin::RedisAdminError;
 use crate::redis_client_reuse::transport::RedisCacheFamily;
 use crate::redis_live_client::tests::fake_server::{FakeServer, Reply};
