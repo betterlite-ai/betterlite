@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -20,12 +21,13 @@ use betterlite_redis::redis_connection_settings::model::settings::{
 };
 use betterlite_redis::redis_connection_settings::resolve::resolve_redis_kwargs;
 use betterlite_redis::redis_live_client::LiveClientFactory;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
+
+use betterlite_redis::list_operations::results::{LpopPipelineEntry, LpopResult};
 
 use super::fake_server::FakeServer;
 use super::helper_error;
 use super::input::{Call, ListValue, Operation, PipelineOperation};
-use super::projection;
 use crate::helpers::HelperError;
 
 const DEFAULT_MAJOR_VERSION: u32 = 7;
@@ -139,15 +141,13 @@ pub(crate) async fn run(
         Operation::Lpop => {
             let key = required_key(call)?;
             let result = lists.async_lpop(key, call.count).await?;
-            Ok(projection::lpop_result(&result))
+            Ok(lpop_result(&result))
         }
         Operation::LpopPipeline => {
             let operations: Vec<RedisPipelineLpopOperation> =
                 call.operations.iter().map(lpop_operation).collect();
             let entries = lists.async_lpop_pipeline(&operations).await?;
-            Ok(Value::Array(
-                entries.iter().map(projection::lpop_entry).collect(),
-            ))
+            Ok(Value::Array(entries.iter().map(lpop_entry).collect()))
         }
     }
 }
@@ -186,10 +186,41 @@ fn connection_settings(addr: SocketAddr) -> Result<RedisConnectionSettings, Box<
         "socket_connect_timeout": 2.0_f64,
     }))
     .map_err(|error| helper_error("InvalidInput", error))?;
-    resolve_redis_kwargs(
-        overrides,
-        ClientKind::Async,
-        &std::collections::BTreeMap::new(),
+    resolve_redis_kwargs(overrides, ClientKind::Async, &BTreeMap::new())
+        .map_err(|error| helper_error("RedisError", error))
+}
+
+pub(crate) fn lpop_result(result: &LpopResult) -> Value {
+    match result {
+        LpopResult::Missing => Value::Null,
+        LpopResult::Item(text) => json!(text),
+        LpopResult::ItemBytes(bytes) => json!({ "bytes": bytes }),
+        LpopResult::Items(items) => json!(items),
+        LpopResult::ItemsBytes(items) => json!(items),
+    }
+}
+
+pub(crate) fn lists(lists: &BTreeMap<String, Vec<Vec<u8>>>) -> Value {
+    let mut object = Map::new();
+    for (key, rows) in lists {
+        object.insert(key.clone(), json!(rows));
+    }
+    Value::Object(object)
+}
+
+pub(crate) fn events(events: &[RecordedEvent]) -> Value {
+    Value::Array(
+        events
+            .iter()
+            .map(|event| json!({ "call_type": event.call_type, "outcome": event.outcome }))
+            .collect(),
     )
-    .map_err(|error| helper_error("RedisError", error))
+}
+
+pub(crate) fn lpop_entry(entry: &LpopPipelineEntry) -> Value {
+    match entry {
+        LpopPipelineEntry::Missing => Value::Null,
+        LpopPipelineEntry::Items(items) => json!(items),
+        LpopPipelineEntry::ItemsBytes(items) => json!(items),
+    }
 }

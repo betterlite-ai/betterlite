@@ -1,7 +1,6 @@
 mod fake_server;
 mod input;
 mod operations;
-mod projection;
 
 use std::collections::BTreeMap;
 use std::fmt::Display;
@@ -12,8 +11,7 @@ use tokio::runtime::Builder;
 
 use self::fake_server::FakeServer;
 use self::input::{Call, ListValue};
-use self::operations::{RecordingHooks, build, run};
-use self::projection::{events, lists};
+use self::operations::{RecordingHooks, build, events, lists, run};
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 pub(crate) struct Op;
