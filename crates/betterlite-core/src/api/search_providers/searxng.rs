@@ -213,12 +213,7 @@ pub fn decode_searxng_reply(bytes: &[u8]) -> Result<SearchResponse, SearxngSearc
     let reply: SearxngReply =
         serde_json::from_slice(bytes).map_err(|source| SearxngSearchError::ReplyJson { source })?;
     Ok(SearchResponse {
-        results: reply
-            .results
-            .unwrap_or_default()
-            .into_iter()
-            .map(project_item)
-            .collect(),
+        results: reply.results.into_iter().map(project_item).collect(),
         object: SearchObject::default(),
         extra: Object::new(),
         hidden_params: Object::new(),
@@ -228,17 +223,17 @@ pub fn decode_searxng_reply(bytes: &[u8]) -> Result<SearchResponse, SearxngSearc
 #[derive(Debug, Deserialize)]
 struct SearxngReply {
     #[serde(default)]
-    results: Option<Vec<SearxngItem>>,
+    results: Vec<SearxngItem>,
 }
 
 #[derive(Debug, Deserialize)]
 struct SearxngItem {
     #[serde(default)]
-    title: Option<String>,
+    title: String,
     #[serde(default)]
-    url: Option<String>,
+    url: String,
     #[serde(default)]
-    content: Option<String>,
+    content: String,
     #[serde(default, rename = "publishedDate")]
     published_date: Option<String>,
     #[serde(default)]
@@ -247,9 +242,9 @@ struct SearxngItem {
 
 fn project_item(item: SearxngItem) -> SearchResult {
     SearchResult {
-        title: item.title.unwrap_or_default(),
-        url: item.url.unwrap_or_default(),
-        snippet: item.content.unwrap_or_default(),
+        title: item.title,
+        url: item.url,
+        snippet: item.content,
         date: item.published_date.or(item.pubdate),
         last_updated: None,
         extra: Object::new(),

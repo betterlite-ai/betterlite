@@ -250,12 +250,7 @@ pub fn decode_linkup_reply(bytes: &[u8]) -> Result<SearchResponse, LinkupSearchE
     let reply: LinkupReply =
         serde_json::from_slice(bytes).map_err(|source| LinkupSearchError::ReplyJson { source })?;
     Ok(SearchResponse {
-        results: reply
-            .results
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(project_item)
-            .collect(),
+        results: reply.results.into_iter().filter_map(project_item).collect(),
         object: SearchObject::default(),
         extra: Object::new(),
         hidden_params: Object::new(),
@@ -265,7 +260,7 @@ pub fn decode_linkup_reply(bytes: &[u8]) -> Result<SearchResponse, LinkupSearchE
 #[derive(Debug, Deserialize)]
 struct LinkupReply {
     #[serde(default)]
-    results: Option<Vec<LinkupItem>>,
+    results: Vec<LinkupItem>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -275,22 +270,21 @@ struct LinkupItem {
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
-    url: Option<String>,
+    url: String,
     #[serde(default)]
-    content: Option<String>,
+    content: String,
 }
 
 fn project_item(item: LinkupItem) -> Option<SearchResult> {
-    let url = item.url.unwrap_or_default();
     let title = match item.kind.as_deref().unwrap_or("text") {
         "text" => item.name.unwrap_or_default(),
-        "image" => item.name.unwrap_or_else(|| url.clone()),
+        "image" => item.name.unwrap_or_else(|| item.url.clone()),
         _ => return None,
     };
     Some(SearchResult {
         title,
-        url,
-        snippet: item.content.unwrap_or_default(),
+        url: item.url,
+        snippet: item.content,
         date: None,
         last_updated: None,
         extra: Object::new(),

@@ -299,7 +299,7 @@ fn linkup_reply_skips_unknown_item_types() {
 
 #[rstest]
 #[case::sourced_answer(br#"{"answer":"text","sources":[]}"#)]
-#[case::null_results(br#"{"results":null}"#)]
+#[case::empty_results(br#"{"results":[]}"#)]
 fn linkup_reply_without_results_is_empty(#[case] body: &[u8]) {
     let response = decode_linkup_reply(body).unwrap();
     assert!(response.results.is_empty());

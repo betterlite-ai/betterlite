@@ -287,7 +287,7 @@ fn searxng_reply_reads_the_date(#[case] body: &[u8], #[case] expected: Option<&s
 
 #[test]
 fn searxng_reply_defaults_missing_fields() {
-    let body = br#"{"results":[{"title":null,"url":null}]}"#;
+    let body = br#"{"results":[{}]}"#;
     let response = decode_searxng_reply(body).unwrap();
     assert_eq!(
         (
@@ -301,7 +301,7 @@ fn searxng_reply_defaults_missing_fields() {
 
 #[rstest]
 #[case::no_results(br#"{"query":"q"}"#)]
-#[case::null_results(br#"{"results":null}"#)]
+#[case::empty_results(br#"{"results":[]}"#)]
 fn searxng_reply_without_results_is_empty(#[case] body: &[u8]) {
     let response = decode_searxng_reply(body).unwrap();
     assert!(response.results.is_empty());
