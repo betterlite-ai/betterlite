@@ -1,0 +1,11 @@
+kind: helper
+name: a2a-send-params-v10-part-without-content
+call:
+  b6950:
+    params:
+      message:
+        messageId: m1
+        parts:
+          - mediaType: text/plain
+env: {}
+compare: {ignore: []}
