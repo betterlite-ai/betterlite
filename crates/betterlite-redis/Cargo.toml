@@ -10,10 +10,11 @@ betterlite-env = { path = "../betterlite-env" }
 betterlite-redact = { path = "../betterlite-redact" }
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 hex.workspace = true
+indexmap = { version = "2.14.2", features = ["serde"] }
 num-traits = "0.2.19"
 prometheus-client = "0.25.1"
 py_literal = "0.4.0"
-redis = { workspace = true, features = ["cluster-async", "connection-manager", "tls-rustls-insecure", "tokio-rustls-comp", "token-based-authentication"] }
+redis = { workspace = true, features = ["cluster-async", "connection-manager", "script", "tls-rustls-insecure", "tokio-rustls-comp", "token-based-authentication"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
