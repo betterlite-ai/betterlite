@@ -1,0 +1,7 @@
+kind: helper
+name: bedrock-config-selection-seed-legacy
+call:
+  bedrock_config_selection:
+    function: legacy_anthropic_names
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,34 @@
+kind: probe
+name: strict-tags-block-regex
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - {id: tagged, tags: [team-a], tag_regex: ["^User-Agent: internal-tool"]}
+          - {id: header-only, tag_regex: ["^User-Agent: claude-code/"]}
+        tags: [team-b]
+        header_strings: ["User-Agent: internal-tool"]
+        match_any: false
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - {id: tagged, tags: [team-a], tag_regex: ["^User-Agent: internal-tool"]}
+          - {id: header-only, tag_regex: ["^User-Agent: claude-code/"]}
+        tags: []
+        header_strings: ["User-Agent: claude-code/1.0"]
+        match_any: false
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - {id: tagged, tags: [team-a], tag_regex: ["^User-Agent: internal-tool"]}
+          - {id: header-only, tag_regex: ["^User-Agent: claude-code/"]}
+        tags: [team-b]
+        header_strings: ["User-Agent: internal-tool"]
+        match_any: true
+compare: {ignore: []}

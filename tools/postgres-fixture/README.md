@@ -3,6 +3,7 @@ An explicit server URL takes precedence over testcontainers; database mode needs
 `PostgresFixture::provision_schema` instead creates an empty schema in that database.
 Its connection options set search_path; it shares ProvisionTask cancellation and close semantics.
 Use database mode for the pinned baseline, whose constraint guards are database-wide.
+TLS tests generate their certificates at test time and front the configured server, so no certificate or key is checked in.
 
 Async callers retain the `ProvisionTask` returned by `provision_with_name_generator`
 and await `resolve()` to claim the fixture. If that future is cancelled, await

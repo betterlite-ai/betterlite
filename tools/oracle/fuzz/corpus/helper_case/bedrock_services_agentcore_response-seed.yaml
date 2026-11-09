@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-services-agentcore-response-seed
+call:
+  bedrock_services_agentcore_response:
+    status: 200
+    headers: [[content-type, application/json]]
+    body: '{"result": {"content": [{"text": "hi"}]}}'
+    model: gpt-4
+    messages: [{role: user, content: hi}]
+    content: hi
+    tokens: {prompt: 1, completion: 1}
+    response:
+      id: chatcmpl-seed
+      object: chat.completion
+      created: 1
+      model: supplied
+      choices: []
+      usage: {prompt_tokens: 0, completion_tokens: 0, total_tokens: 0}
+env: {}
+compare: {ignore: []}
