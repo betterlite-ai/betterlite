@@ -135,6 +135,19 @@ async fn write_reports_the_target_and_stderr() {
 }
 
 #[tokio::test]
+async fn write_keeps_the_container_error_when_docker_exits_before_reading_stdin() {
+    let dir = tempdir();
+    let program = docker_script(&dir, "printf 'no space left\\n' >&2\nexit 2");
+    let sandbox = sandbox(program);
+    let payload = vec![b'x'; 0x0002_0000];
+    let error = sandbox.write("big", &payload).await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "the sandbox failed: could not write /workspace/big: no space left"
+    );
+}
+
+#[tokio::test]
 async fn which_returns_the_trimmed_path_on_success() {
     let dir = tempdir();
     let program = docker_script(&dir, "printf '  /usr/bin/python3  \\n'");

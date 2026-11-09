@@ -172,10 +172,12 @@ pub(super) async fn finish(
     operation: CappedOperation,
 ) -> Result<(i32, Vec<u8>, Vec<u8>), HarnessError> {
     if let (Some(stdin), Some(data)) = (process.stdin.as_mut(), input) {
-        stdin
-            .write_all(data)
-            .await
-            .map_err(|source| HarnessError::Sandbox { source })?;
+        // a client that exits before reading all of stdin leaves its exit code and stderr as the error
+        if let Err(error) = stdin.write_all(data).await
+            && error.kind() != io::ErrorKind::BrokenPipe
+        {
+            return Err(HarnessError::Sandbox { source: error });
+        }
     }
     drop(process.stdin.take());
     let (stdout, stderr) = tokio::try_join!(

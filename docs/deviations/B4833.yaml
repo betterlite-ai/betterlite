@@ -9,6 +9,9 @@ deviations:
   - what: The docker client is started in its own process group and killed when its handle or the sandbox is dropped.
     why: The processes-die-with-owner rule; LiteLLM leaves the client to the event loop.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L88-L100
+  - what: A docker client that exits before reading all of its stdin is treated as end of input, so write reports the container's stderr and exit code instead of a broken pipe.
+    why: LiteLLM awaits the stdin write and loses the container's error when the client closes the pipe first; no working setup relies on a broken-pipe failure, and the caller needs the container's reason.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L275-L276
   - what: The container id read from docker run is decoded with U+FFFD replacement instead of LiteLLM's strict decode.
     why: LiteLLM raises an unhandled UnicodeDecodeError when docker writes a non-UTF-8 id; no working setup can rely on that crash, and the replacement keeps the failure in the sandbox error path.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L178
