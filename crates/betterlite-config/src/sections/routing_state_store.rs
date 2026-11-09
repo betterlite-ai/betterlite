@@ -71,40 +71,89 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let settings = self.router_settings;
-        let host = optional_string(settings.host, "router_settings.redis_host", lookup)?;
-        let explicit_url = resolve_secret(settings.url, "router_settings.redis_url", lookup)?;
-        let explicit_port = resolve_number::<i64, _>(
-            settings.port,
-            "router_settings.redis_port",
-            lookup,
-            parse_i64,
-        )?;
-        let explicit_password =
-            resolve_secret(settings.password, "router_settings.redis_password", lookup)?;
-        let namespace = optional_string(
-            settings.kwargs.namespace,
-            "router_settings.redis_kwargs.namespace",
-            lookup,
-        )?;
+        let raw = self.router_settings;
+        let target = resolve_target(raw.host, raw.url, raw.port, raw.password, lookup)?;
         Ok(Settings {
-            redis_url: configured_url(explicit_url, host.as_deref(), lookup),
-            redis_host: host.or_else(|| lookup.lookup("REDIS_HOST")),
-            redis_port: configured_port(explicit_port, lookup)?,
-            redis_password: explicit_password
-                .or_else(|| lookup.lookup("REDIS_PASSWORD").map(SecretString::from)),
-            namespace,
-            socket_timeout: configured_socket_timeout(settings.kwargs.socket_timeout, lookup)?,
-            pool_timeout_seconds: environment_number(
+            redis_url: target.url,
+            redis_host: target.host,
+            redis_port: target.port,
+            redis_password: target.password,
+            namespace: optional_text(
+                raw.kwargs.namespace,
+                "router_settings.redis_kwargs.namespace",
                 lookup,
-                "REDIS_CONNECTION_POOL_TIMEOUT",
-                DEFAULT_POOL_TIMEOUT,
             )?,
+            socket_timeout: socket_timeout(raw.kwargs.socket_timeout, lookup)?,
+            pool_timeout_seconds: number::<u32, _>(lookup, "REDIS_CONNECTION_POOL_TIMEOUT")?
+                .unwrap_or(DEFAULT_POOL_TIMEOUT),
         })
     }
 }
 
-fn optional_string<L>(
+struct Target {
+    url: Option<SecretString>,
+    host: Option<String>,
+    port: Option<i64>,
+    password: Option<SecretString>,
+}
+
+fn resolve_target<L>(
+    explicit_host: Option<String>,
+    explicit_url: Option<String>,
+    explicit_port: Option<RawNumber>,
+    explicit_password: Option<SecretString>,
+    lookup: &L,
+) -> Result<Target, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let host = optional_text(explicit_host, "router_settings.redis_host", lookup)?
+        .or_else(|| lookup.lookup("REDIS_HOST"));
+    let url = resolve_secret(explicit_url, "router_settings.redis_url", lookup)?.or_else(|| {
+        if host.is_some() {
+            None
+        } else {
+            lookup.lookup("REDIS_URL").map(SecretString::from)
+        }
+    });
+    let port = match resolve_number::<i64, _>(
+        explicit_port,
+        "router_settings.redis_port",
+        lookup,
+        parse_i64,
+    )? {
+        Some(port) => Some(port),
+        None => number::<i64, _>(lookup, "REDIS_PORT")?,
+    };
+    let password = resolve_secret(explicit_password, "router_settings.redis_password", lookup)?
+        .or_else(|| lookup.lookup("REDIS_PASSWORD").map(SecretString::from));
+    Ok(Target {
+        url,
+        host,
+        port,
+        password,
+    })
+}
+
+fn socket_timeout<L>(raw: Option<RawNumber>, lookup: &L) -> Result<f64, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    match raw {
+        Some(value) => Ok(resolve_number::<f64, _>(
+            Some(value),
+            "router_settings.redis_kwargs.socket_timeout",
+            lookup,
+            parse_float,
+        )?
+        .unwrap_or(DEFAULT_SOCKET_TIMEOUT)),
+        None => {
+            Ok(number::<f64, _>(lookup, "REDIS_SOCKET_TIMEOUT")?.unwrap_or(DEFAULT_SOCKET_TIMEOUT))
+        }
+    }
+}
+
+fn optional_text<L>(
     raw: Option<String>,
     path: &str,
     lookup: &L,
@@ -116,47 +165,14 @@ where
         .transpose()
 }
 
-fn configured_url<L>(
-    explicit: Option<SecretString>,
-    host: Option<&str>,
-    lookup: &L,
-) -> Option<SecretString>
+fn number<T, L>(lookup: &L, name: &str) -> Result<Option<T>, ConfigError>
 where
     L: EnvironmentLookup,
+    T: FromStr,
 {
-    match explicit {
-        Some(url) => Some(url),
-        None if host.is_some() => None,
-        None => lookup.lookup("REDIS_URL").map(SecretString::from),
-    }
-}
-
-fn configured_port<L>(explicit: Option<i64>, lookup: &L) -> Result<Option<i64>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    match explicit {
-        Some(port) => Ok(Some(port)),
-        None => match lookup.lookup("REDIS_PORT") {
-            None => Ok(None),
-            Some(text) => Ok(betterlite_env::number::<i64>("REDIS_PORT", &text)?),
-        },
-    }
-}
-
-fn configured_socket_timeout<L>(raw: Option<RawNumber>, lookup: &L) -> Result<f64, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    match raw {
-        Some(value) => Ok(resolve_number::<f64, _>(
-            Some(value),
-            "redis_kwargs.socket_timeout",
-            lookup,
-            parse_float,
-        )?
-        .unwrap_or(DEFAULT_SOCKET_TIMEOUT)),
-        None => environment_number(lookup, "REDIS_SOCKET_TIMEOUT", DEFAULT_SOCKET_TIMEOUT),
+    match lookup.lookup(name) {
+        None => Ok(None),
+        Some(text) => Ok(betterlite_env::number::<T>(name, &text)?),
     }
 }
 
@@ -167,17 +183,6 @@ fn parse_i64(text: &str, path: &str) -> Result<i64, ConfigError> {
             path: path.to_owned(),
             source,
         })
-}
-
-fn environment_number<L, T>(lookup: &L, name: &str, fallback: T) -> Result<T, ConfigError>
-where
-    L: EnvironmentLookup,
-    T: FromStr,
-{
-    match lookup.lookup(name) {
-        None => Ok(fallback),
-        Some(text) => Ok(betterlite_env::number::<T>(name, &text)?.unwrap_or(fallback)),
-    }
 }
 
 mod tests;

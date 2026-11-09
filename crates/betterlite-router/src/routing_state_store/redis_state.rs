@@ -34,6 +34,8 @@ use crate::redis_failure_policy::run::{CallError, run_async};
 use crate::redis_failure_policy::{RedisFailurePolicy, Settings as BreakerSettings};
 use crate::routing_value_store::RouteKey;
 
+const DEFAULT_REDIS_TTL: i64 = 60;
+
 pub(crate) struct RedisState {
     pub(crate) transport: Arc<RedisTransport>,
     pub(crate) counters: RedisCounters,
@@ -69,7 +71,7 @@ pub(crate) fn open(
     let counters = RedisCounters::new(
         Arc::clone(&transport),
         None,
-        settings.default_ttl,
+        DEFAULT_REDIS_TTL,
         Arc::new(NoopHooks),
         Arc::new(NoopGate),
     );
@@ -77,7 +79,7 @@ pub(crate) fn open(
         transport,
         counters,
         namespace: settings.namespace.clone(),
-        default_ttl: settings.default_ttl,
+        default_ttl: DEFAULT_REDIS_TTL,
         policy: Mutex::new(RedisFailurePolicy::new(breaker, BreakerMetrics::new(None))),
         clock,
         cas: CasConnection {

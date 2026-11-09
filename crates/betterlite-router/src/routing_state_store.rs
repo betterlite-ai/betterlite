@@ -18,8 +18,6 @@ use crate::routing_value_store::{CompareOutcome, RouteIncrement, RouteKey, Route
 
 pub type BreakerClock = Arc<dyn Fn() -> Duration + Send + Sync>;
 
-const DEFAULT_REDIS_TTL: i64 = 60;
-
 #[derive(Debug, Clone)]
 pub struct RedisSettings {
     pub url: Option<SecretString>,
@@ -29,7 +27,6 @@ pub struct RedisSettings {
     pub namespace: Option<String>,
     pub socket_timeout: Option<f64>,
     pub pool_timeout_seconds: u32,
-    pub default_ttl: i64,
 }
 
 impl TryFrom<&config::Settings> for RedisSettings {
@@ -47,7 +44,6 @@ impl TryFrom<&config::Settings> for RedisSettings {
             namespace: section.namespace.clone(),
             socket_timeout: Some(section.socket_timeout),
             pool_timeout_seconds: section.pool_timeout_seconds,
-            default_ttl: DEFAULT_REDIS_TTL,
         })
     }
 }
@@ -56,13 +52,6 @@ impl TryFrom<&config::Settings> for RedisSettings {
 pub struct Settings {
     pub redis: RedisSettings,
     pub breaker: redis_failure_policy::Settings,
-}
-
-#[derive(Clone, Debug)]
-pub struct FloatIncrement {
-    pub key: RouteKey,
-    pub value: f64,
-    pub ttl_seconds: Option<f64>,
 }
 
 pub struct RoutingStateStore {
@@ -181,7 +170,7 @@ impl RoutingStateStore {
 
     pub async fn increment_float_pipeline(
         &self,
-        entries: &[FloatIncrement],
+        entries: &[(RouteKey, f64, Option<f64>)],
     ) -> Result<Observed<Option<Vec<f64>>>, StateStoreError> {
         if entries.is_empty() {
             return Ok(Observed {
@@ -190,17 +179,17 @@ impl RoutingStateStore {
             });
         }
         let mut operations = Vec::with_capacity(entries.len());
-        for entry in entries {
-            let ttl = match entry.ttl_seconds {
+        for (key, value, ttl_seconds) in entries {
+            let ttl = match ttl_seconds {
                 None => None,
                 Some(seconds) => Some(
-                    redis_state::truncate_seconds(seconds)
-                        .ok_or(StateStoreError::InvalidTtl { seconds })?,
+                    redis_state::truncate_seconds(*seconds)
+                        .ok_or(StateStoreError::InvalidTtl { seconds: *seconds })?,
                 ),
             };
             operations.push(IncrementOperation {
-                key: redis_state::namespaced(&self.redis, &entry.key),
-                increment_value: entry.value,
+                key: redis_state::namespaced(&self.redis, key),
+                increment_value: *value,
                 ttl,
             });
         }
@@ -251,15 +240,4 @@ impl RoutingStateStore {
         })
         .await
     }
-}
-
-pub fn attach_if_missing(
-    slot: &mut Option<RoutingStateStore>,
-    settings: &Settings,
-    clock: BreakerClock,
-) -> Result<(), StateStoreError> {
-    if slot.is_none() {
-        *slot = Some(RoutingStateStore::new(settings, clock)?);
-    }
-    Ok(())
 }

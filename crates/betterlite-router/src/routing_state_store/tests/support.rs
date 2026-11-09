@@ -49,7 +49,6 @@ pub(crate) fn redis_settings(server: &FakeRedis, namespace: Option<&str>) -> Red
         namespace: namespace.map(str::to_owned),
         socket_timeout: Some(1.0_f64),
         pool_timeout_seconds: 5,
-        default_ttl: 60,
     }
 }
 

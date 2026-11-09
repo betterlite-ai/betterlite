@@ -50,8 +50,6 @@ pub enum StateStoreError {
     CircuitOpen { operation: String },
     #[error(transparent)]
     Store(#[from] StoreError),
-    #[error("the redis reply for {operation} was not a value this store understands")]
-    UnexpectedReply { operation: &'static str },
     #[error("the redis reply for {operation} could not be decoded")]
     Reply {
         operation: &'static str,
@@ -94,7 +92,6 @@ fn failure_class(error: &StateStoreError) -> Option<FailureClass> {
         | StateStoreError::Factory(_)
         | StateStoreError::CircuitOpen { .. }
         | StateStoreError::Store(_)
-        | StateStoreError::UnexpectedReply { .. }
         | StateStoreError::Reply { .. }
         | StateStoreError::InvalidTtl { .. }
         | StateStoreError::Encoding { .. }
@@ -149,8 +146,5 @@ fn redis_class(error: &redis::RedisError) -> Option<FailureClass> {
     if error.kind() == ErrorKind::Server(ServerErrorKind::ClusterDown) {
         return Some(FailureClass::ClusterDown);
     }
-    if error.is_connection_dropped() || error.is_io_error() {
-        return Some(FailureClass::Connection);
-    }
-    None
+    (error.is_connection_dropped() || error.is_io_error()).then_some(FailureClass::Connection)
 }

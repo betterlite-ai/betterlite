@@ -2,13 +2,13 @@ use std::collections::BTreeSet;
 
 use rust_decimal::Decimal;
 
-use super::super::error::{StateStoreError, StoreWarning};
 use betterlite_config::sections::routing_state_store::Settings as ConfigSettings;
 
-use super::super::{FloatIncrement, RedisSettings, RoutingStateStore, Settings, attach_if_missing};
+use super::super::error::{StateStoreError, StoreWarning};
+use super::super::{RedisSettings, RoutingStateStore, Settings};
 use super::fake_redis::FakeRedis;
 use super::support::{
-    TestClock, breaker, redis_settings, route_key, same_f64, secret, seed, settings, store,
+    TestClock, breaker, redis_settings, route_key, same_f64, secret, seed, store,
 };
 use crate::redis_failure_policy::BreakerEvent;
 use crate::routing_value_store::{
@@ -53,9 +53,6 @@ async fn failure_cases(name: &str) -> bool {
             breaker_rejects_after_a_swallowed_failure().await;
         }
         "breaker_recovers_after_the_timeout" => breaker_recovers_after_the_timeout().await,
-        "attach_if_missing_keeps_the_first_store" => {
-            attach_if_missing_keeps_the_first_store().await;
-        }
         "config_mapping_defaults" => config_mapping_defaults(),
         "credentials_stay_out_of_errors" => credentials_stay_out_of_errors().await,
         _ => return false,
@@ -188,16 +185,8 @@ async fn float_increments_and_pipeline() {
     assert!(same_f64(single.value, 1.5_f64));
     assert_eq!(server.raw("float").map(|entry| entry.1), Some(60));
     let entries = [
-        FloatIncrement {
-            key: route_key("first"),
-            value: 1.5_f64,
-            ttl_seconds: Some(30.0_f64),
-        },
-        FloatIncrement {
-            key: route_key("second"),
-            value: 2.25_f64,
-            ttl_seconds: None,
-        },
+        (route_key("first"), 1.5_f64, Some(30.0_f64)),
+        (route_key("second"), 2.25_f64, None),
     ];
     let pipeline = store
         .increment_float_pipeline(&entries)
@@ -409,40 +398,6 @@ async fn breaker_recovers_after_the_timeout() {
     ));
 }
 
-async fn attach_if_missing_keeps_the_first_store() {
-    let server = FakeRedis::start().await;
-    let clock = TestClock::new();
-    let mut slot: Option<RoutingStateStore> = None;
-    attach_if_missing(
-        &mut slot,
-        &settings(&server, Some("first"), breaker(5, 60_000)),
-        clock.breaker_clock(),
-    )
-    .unwrap();
-    let store = slot.as_ref().unwrap();
-    seed(&server, "first:counter", &RouteValue::Counter(1), -1);
-    assert_eq!(
-        store.get(&route_key("counter")).await.unwrap().value,
-        StoreRead::Value(RouteValue::Counter(1))
-    );
-    attach_if_missing(
-        &mut slot,
-        &settings(&server, Some("second"), breaker(5, 60_000)),
-        clock.breaker_clock(),
-    )
-    .unwrap();
-    assert_eq!(
-        slot.as_ref()
-            .unwrap()
-            .get(&route_key("counter"))
-            .await
-            .unwrap()
-            .value,
-        StoreRead::Value(RouteValue::Counter(1))
-    );
-    assert!(server.raw("second:counter").is_none());
-}
-
 fn config_mapping_defaults() {
     let section = ConfigSettings {
         redis_url: None,
@@ -459,7 +414,6 @@ fn config_mapping_defaults() {
     assert_eq!(mapped.namespace.as_deref(), Some("router"));
     assert!(same_f64(mapped.socket_timeout.unwrap(), 1.5_f64));
     assert_eq!(mapped.pool_timeout_seconds, 9);
-    assert_eq!(mapped.default_ttl, 60);
     let empty = ConfigSettings::default();
     assert!(matches!(
         RedisSettings::try_from(&empty),

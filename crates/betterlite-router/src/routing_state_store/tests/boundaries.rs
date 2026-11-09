@@ -3,7 +3,6 @@ use std::time::Duration;
 use rust_decimal::Decimal;
 use tokio::time::timeout;
 
-use super::super::FloatIncrement;
 use super::super::error::{StateStoreError, StoreWarning};
 use super::fake_redis::FakeRedis;
 use super::support::{TestClock, breaker, route_key, same_f64, seed, store};
@@ -368,11 +367,7 @@ async fn float_pipeline_invalid_ttl_is_an_error() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
-    let entries = [FloatIncrement {
-        key: route_key("counter"),
-        value: 1.0_f64,
-        ttl_seconds: Some(f64::INFINITY),
-    }];
+    let entries = [(route_key("counter"), 1.0_f64, Some(f64::INFINITY))];
     let error = store.increment_float_pipeline(&entries).await.unwrap_err();
     assert!(matches!(
         error,
@@ -384,11 +379,7 @@ async fn float_pipeline_zero_ttl_is_sent() {
     let server = FakeRedis::start().await;
     let clock = TestClock::new();
     let store = store(&server, None, breaker(5, 60_000), &clock);
-    let entries = [FloatIncrement {
-        key: route_key("counter"),
-        value: 2.0_f64,
-        ttl_seconds: Some(0.0_f64),
-    }];
+    let entries = [(route_key("counter"), 2.0_f64, Some(0.0_f64))];
     let values = store
         .increment_float_pipeline(&entries)
         .await

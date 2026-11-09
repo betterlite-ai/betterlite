@@ -28,7 +28,6 @@ fn runtime() -> Runtime {
 #[case::transport_failure_fails_increments("transport_failure_fails_increments")]
 #[case::breaker_rejects_after_a_swallowed_failure("breaker_rejects_after_a_swallowed_failure")]
 #[case::breaker_recovers_after_the_timeout("breaker_recovers_after_the_timeout")]
-#[case::attach_if_missing_keeps_the_first_store("attach_if_missing_keeps_the_first_store")]
 #[case::config_mapping_defaults("config_mapping_defaults")]
 #[case::credentials_stay_out_of_errors("credentials_stay_out_of_errors")]
 fn routing_state_store_behaviors(#[case] name: &str) {
