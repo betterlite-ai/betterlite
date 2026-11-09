@@ -413,6 +413,14 @@ async fn a_null_error_is_still_an_error() {
     500
 )]
 #[case::sequence_without_tokens(r#"{"generated_text":"x","details":{"finish_reason":"stop","best_of_sequences":[{"generated_text":"b","finish_reason":"stop"}]}}"#, 500)]
+#[case::integer_sum_too_large(
+    r#"{"generated_text":"x","details":{"finish_reason":"stop","tokens":[{"logprob":9223372036854775807},{"logprob":9223372036854775807},{"logprob":9223372036854775807}]}}"#,
+    500
+)]
+#[case::float_sum_not_finite(
+    r#"{"generated_text":"x","details":{"finish_reason":"stop","tokens":[{"logprob":1e308},{"logprob":1e308}]}}"#,
+    500
+)]
 #[tokio::test]
 async fn bad_replies_give_a_predibase_error(#[case] body: &str, #[case] status: u16) {
     let fixture = reply_fixture(body);
