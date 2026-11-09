@@ -172,20 +172,14 @@ fn team_budget_gauges(
     ])
 }
 
-fn team_budget_metrics(
-    records: &[NewRelicMetricRecord],
-) -> Result<Vec<NewRelicMetric>, NewRelicMetricsError> {
+fn latest_records_by_team(records: &[NewRelicMetricRecord]) -> Vec<&NewRelicMetricRecord> {
     let mut latest_by_team: IndexMap<&str, &NewRelicMetricRecord> = IndexMap::new();
     for record in records {
         if !record.team_id.is_empty() {
             latest_by_team.insert(record.team_id.as_str(), record);
         }
     }
-    let mut metrics = Vec::new();
-    for record in latest_by_team.values() {
-        metrics.extend(team_budget_gauges(record)?);
-    }
-    Ok(metrics)
+    latest_by_team.into_values().collect()
 }
 
 pub fn build_metric_payload(
@@ -216,7 +210,9 @@ pub fn build_metric_payload(
     for bucket in buckets.values() {
         metrics.extend(bucket_metrics(bucket)?);
     }
-    metrics.extend(team_budget_metrics(records)?);
+    for record in latest_records_by_team(records) {
+        metrics.extend(team_budget_gauges(record)?);
+    }
     Ok(NewRelicMetricEnvelope {
         common: NewRelicMetricCommon {
             timestamp,

@@ -54,7 +54,7 @@ fn a_single_record_bucket_emits_one_metric_per_counter_and_a_summary() {
         float_count(&envelope, METRIC_TOTAL_TOKENS).to_bits(),
         5.0_f64.to_bits()
     );
-    let durations = summary(&envelope, METRIC_REQUEST_DURATION_MS);
+    let durations = summary(metric(&envelope, METRIC_REQUEST_DURATION_MS));
     assert_eq!(durations.count, 1);
     assert_eq!(durations.sum.to_bits(), 500.0_f64.to_bits());
     assert_eq!(durations.min.to_bits(), 500.0_f64.to_bits());
@@ -92,7 +92,7 @@ fn counts_and_sums_cover_every_record_in_the_bucket() {
         float_count(&envelope, METRIC_TOTAL_TOKENS).to_bits(),
         15.0_f64.to_bits()
     );
-    let durations = summary(&envelope, METRIC_REQUEST_DURATION_MS);
+    let durations = summary(metric(&envelope, METRIC_REQUEST_DURATION_MS));
     assert_eq!(durations.count, 2);
     assert_eq!(durations.sum.to_bits(), 1250.0_f64.to_bits());
     assert_eq!(durations.min.to_bits(), 500.0_f64.to_bits());

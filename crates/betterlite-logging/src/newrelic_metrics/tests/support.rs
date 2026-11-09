@@ -108,40 +108,32 @@ pub(super) fn attributes(metric: &NewRelicMetric) -> &MetricAttributes {
     }
 }
 
-pub(super) fn float_count(envelope: &NewRelicMetricEnvelope, name: &str) -> f64 {
-    match metric(envelope, name) {
-        NewRelicMetric::Count {
-            value: CountValue::Float(value),
-            ..
-        } => *value,
-        NewRelicMetric::Count { .. }
-        | NewRelicMetric::Gauge { .. }
-        | NewRelicMetric::Summary { .. } => panic!("a float count metric"),
+pub(super) fn count_value(metric: &NewRelicMetric) -> &CountValue {
+    match metric {
+        NewRelicMetric::Count { value, .. } => value,
+        NewRelicMetric::Gauge { .. } | NewRelicMetric::Summary { .. } => panic!("a count"),
     }
+}
+
+pub(super) fn float_count(envelope: &NewRelicMetricEnvelope, name: &str) -> f64 {
+    let CountValue::Float(value) = count_value(metric(envelope, name)) else {
+        panic!("a float count metric");
+    };
+    *value
 }
 
 pub(super) fn decimal_count(envelope: &NewRelicMetricEnvelope, name: &str) -> Decimal {
-    match metric(envelope, name) {
-        NewRelicMetric::Count {
-            value: CountValue::Decimal(value),
-            ..
-        } => *value,
-        NewRelicMetric::Count { .. }
-        | NewRelicMetric::Gauge { .. }
-        | NewRelicMetric::Summary { .. } => panic!("a decimal count metric"),
-    }
+    let CountValue::Decimal(value) = count_value(metric(envelope, name)) else {
+        panic!("a decimal count metric");
+    };
+    *value
 }
 
-pub(super) fn summary<'envelope>(
-    envelope: &'envelope NewRelicMetricEnvelope,
-    name: &str,
-) -> &'envelope NewRelicSummaryValue {
-    match metric(envelope, name) {
-        NewRelicMetric::Summary { value, .. } => value,
-        NewRelicMetric::Count { .. } | NewRelicMetric::Gauge { .. } => {
-            panic!("a summary metric")
-        }
-    }
+pub(super) fn summary(metric: &NewRelicMetric) -> &NewRelicSummaryValue {
+    let NewRelicMetric::Summary { value, .. } = metric else {
+        panic!("a summary metric");
+    };
+    value
 }
 
 pub(super) fn metric_names(envelope: &NewRelicMetricEnvelope) -> Vec<&'static str> {
