@@ -1,0 +1,11 @@
+task: B7740
+deviations:
+  - what: The Swagger page has no LazyLoadPlugin and POST /lazy/warm/<tag> does not exist. The page keeps only the tagsSorter "alpha" edit.
+    why: LiteLLM loads some route groups on first use and the plugin warms them from the browser. betterlite registers every route at startup, so there is nothing to warm and no "(expand to load routes)" hint to show.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2493-L2555
+  - what: Responses for /swagger files carry content-type and content-length but no last-modified, etag or accept-ranges headers, and a conditional request always gets the full body.
+    why: The files are embedded in the binary, so there is no file time to report. The oracle cases ignore those three headers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2484
+  - what: The OpenAPI url, asset urls and OAuth2 redirect url use the scalar SERVER_ROOT_PATH, not the per-request prefix that SERVER_ROOT_PATHS picks.
+    why: FastAPI reads scope root_path, which the per-request middleware rewrites. This task has no access to that value; the scalar value is used until a later task wires the request prefix in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1731-L1742
