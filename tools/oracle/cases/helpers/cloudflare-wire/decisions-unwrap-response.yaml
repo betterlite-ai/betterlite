@@ -1,0 +1,21 @@
+kind: helper
+name: cloudflare-wire-decisions-unwrap-response
+call:
+  b5836:
+    unwrap:
+      - {answers: {q: {type: noul, noul: 1}}, result: {answers: {}}}
+      - {result: {answers: {q: {type: noul, noul: 1}}}, id: reply-1}
+      - {result: {}}
+      - {result: null}
+      - {result: [1, 2, 3]}
+      - {result: text}
+      - {result: 7}
+      - {id: 1}
+      - [{result: {}}]
+      - text
+      - null
+      - 7
+      - true
+      - {result: {answers: {q: {type: noul, noul: 1}}}, answers: null}
+env: {}
+compare: {ignore: []}

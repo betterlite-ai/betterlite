@@ -42,7 +42,7 @@ multipart-rs = "0.2.3"
 percent-encoding.workspace = true
 rand = { version = "0.10.3", default-features = false, features = ["std_rng"] }
 regex.workspace = true
-rmcp = { version = "=3.4.1", default-features = false, features = ["server"] }
+rmcp = { version = "=3.9.0", default-features = false, features = ["server"] }
 rust_decimal.workspace = true
 scrypt = { version = "0.11.0", default-features = false }
 secrecy.workspace = true
@@ -67,6 +67,7 @@ uuid.workspace = true
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 deadpool-postgres.workspace = true
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 rquickjs = "0.14.0"
 rstest = "=0.27.0"
 rustls = { workspace = true, features = ["std", "tls12"] }
