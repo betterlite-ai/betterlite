@@ -74,7 +74,7 @@ pub(super) fn header_map(
     Ok(headers)
 }
 
-pub(super) fn headers_output(headers: &HeaderMap) -> Result<Value, Box<HelperError>> {
+pub(crate) fn header_map_output(headers: &HeaderMap) -> Result<Map<String, Value>, Box<HelperError>> {
     let mut found = Map::new();
     for (name, value) in headers {
         let text = value
@@ -82,7 +82,7 @@ pub(super) fn headers_output(headers: &HeaderMap) -> Result<Value, Box<HelperErr
             .map_err(|error| helper_error("HeaderEncoding", error))?;
         found.insert(name.as_str().to_owned(), Value::String(text.to_owned()));
     }
-    Ok(Value::Object(found))
+    Ok(found)
 }
 
 #[derive(Clone)]
@@ -137,13 +137,6 @@ impl ReplicateTransport for ScriptedTransport {
 }
 
 fn request_output(request: &ReplicateRequest) -> Result<Value, Box<HelperError>> {
-    let mut headers = Map::new();
-    for (name, value) in &request.headers {
-        let text = value
-            .to_str()
-            .map_err(|error| helper_error("HeaderEncoding", error))?;
-        headers.insert(name.as_str().to_owned(), Value::String(text.to_owned()));
-    }
     let body = match &request.body {
         Some(bytes) => serde_json::from_slice::<Value>(bytes)
             .map_err(|error| helper_error("RequestBodyEncoding", error))?,
@@ -152,7 +145,7 @@ fn request_output(request: &ReplicateRequest) -> Result<Value, Box<HelperError>>
     Ok(serde_json::json!({
         "method": request.method.as_str(),
         "url": request.url,
-        "headers": headers,
+        "headers": header_map_output(&request.headers)?,
         "body": body,
     }))
 }

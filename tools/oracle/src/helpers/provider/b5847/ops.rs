@@ -12,7 +12,7 @@ use chrono::DateTime;
 use serde_json::{Value, json};
 
 use super::script::{
-    FIXED_NOW, SilentLogger, StandInCounter, factory, header_map, headers_output, helper_error,
+    FIXED_NOW, SilentLogger, StandInCounter, factory, header_map, header_map_output, helper_error,
     runtime,
 };
 use super::{HeaderRequest, MapCase, ReplyCase, RequestCase};
@@ -84,7 +84,7 @@ pub(super) fn headers(requests: &[HeaderRequest]) -> HelperResult {
         let incoming = header_map(&request.headers)?;
         let headers = validate_environment(&incoming, request.api_key.as_deref())
             .map_err(|failure| helper_error("ReplicateError", failure))?;
-        found.push(headers_output(&headers)?);
+        found.push(Value::Object(header_map_output(&headers)?));
     }
     Ok(json!({"headers": found}))
 }
@@ -167,9 +167,9 @@ pub(super) fn replies(cases: &[ReplyCase]) -> HelperResult {
     let runtime = runtime()?;
     let counter = StandInCounter;
     let logger = SilentLogger;
-    let mut results = Vec::with_capacity(cases.len());
-    for case in cases {
-        results.push(reply_outcome(&runtime, &counter, &logger, case)?);
-    }
-    Ok(json!({"replies": results}))
+    let replies: Vec<Value> = cases
+        .iter()
+        .map(|case| reply_outcome(&runtime, &counter, &logger, case))
+        .collect::<Result<_, _>>()?;
+    Ok(json!({"replies": replies}))
 }

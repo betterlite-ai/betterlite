@@ -83,6 +83,16 @@ const fn created_at(policy: OutputPolicy, now: DateTime<Utc>) -> Option<i64> {
     }
 }
 
+fn poll_request(url: &str, headers: &HeaderMap) -> ReplicateRequest {
+    ReplicateRequest {
+        method: Method::GET,
+        url: url.to_owned(),
+        headers: headers.clone(),
+        body: None,
+        timeout: REQUEST_TIMEOUT,
+    }
+}
+
 fn is_processing(response: &ReplicateResponse) -> Result<bool, ReplicateFailure> {
     if response.status != 200 {
         return Ok(false);
@@ -126,13 +136,7 @@ impl Replicate<'_> {
         let delay = f64::from(retry).mul_add(2.0, self.polling.retry_delay_seconds);
         self.sleeper.sleep(delay).await;
         self.transport
-            .send(ReplicateRequest {
-                method: Method::GET,
-                url: request.prediction_url.clone(),
-                headers: request.headers.clone(),
-                body: None,
-                timeout: REQUEST_TIMEOUT,
-            })
+            .send(poll_request(&request.prediction_url, &request.headers))
             .await
             .map_err(|source| ReplicateFailure::Transport { source })
     }

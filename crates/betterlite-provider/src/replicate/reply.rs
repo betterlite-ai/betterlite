@@ -77,27 +77,35 @@ fn unparsable_output(value: &Json, headers: &HeaderMap) -> ReplicateFailure {
     }))
 }
 
+fn join_list(
+    items: &[Json],
+    output: &Json,
+    headers: &HeaderMap,
+) -> Result<String, ReplicateFailure> {
+    let mut joined = String::new();
+    for item in items {
+        let Json::Text(part) = item else {
+            return Err(unparsable_output(output, headers));
+        };
+        joined.push_str(part);
+    }
+    Ok(joined)
+}
+
 pub(crate) fn join_output(
     output: &Json,
     policy: OutputPolicy,
     headers: &HeaderMap,
 ) -> Result<String, ReplicateFailure> {
-    match output {
-        Json::List(items) => {
-            let mut joined = String::new();
-            for item in items {
-                let Json::Text(part) = item else {
-                    return Err(unparsable_output(output, headers));
-                };
-                joined.push_str(part);
-            }
-            Ok(joined)
-        }
-        Json::Text(text) => Ok(text.clone()),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => match policy {
-            OutputPolicy::Strict => Err(unparsable_output(output, headers)),
-            OutputPolicy::Lenient => json_display(output),
-        },
+    if let Json::List(items) = output {
+        return join_list(items, output, headers);
+    }
+    if let Json::Text(text) = output {
+        return Ok(text.clone());
+    }
+    match policy {
+        OutputPolicy::Strict => Err(unparsable_output(output, headers)),
+        OutputPolicy::Lenient => json_display(output),
     }
 }
 
