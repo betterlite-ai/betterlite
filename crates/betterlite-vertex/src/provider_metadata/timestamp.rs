@@ -8,7 +8,7 @@ const MAX_TIMESTAMP_BYTES: usize = 64;
 
 #[derive(Clone, Debug)]
 pub struct LocalTimeContext {
-    zone: TimeZone,
+    pub zone: TimeZone,
 }
 
 impl From<TimeZone> for LocalTimeContext {
