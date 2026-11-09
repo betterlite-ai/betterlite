@@ -146,18 +146,23 @@ impl Parser<'_> {
         let mut fields = IndexMap::new();
         let mut key = first;
         loop {
-            self.position = self.position.saturating_add(1);
             let name = as_text(&key).unwrap_or(PLACEHOLDER_LITERAL).to_owned();
-            fields.insert(name, self.value()?);
+            fields.insert(name, self.colon_value()?);
             if !matches!(self.separator(b'}')?, Next::Element) {
                 return Some(fields);
             }
             key = self.value()?;
-            self.skip(true);
-            if self.bytes.get(self.position).copied()? != b':' {
-                return None;
-            }
         }
+    }
+
+    // The value after a dict key: the colon itself, then the value.
+    fn colon_value(&mut self) -> Option<Json> {
+        self.skip(true);
+        if self.bytes.get(self.position).copied()? != b':' {
+            return None;
+        }
+        self.position = self.position.saturating_add(1);
+        self.value()
     }
 
     fn set_tail(&mut self, first: Json) -> Option<Vec<Json>> {
