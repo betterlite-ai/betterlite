@@ -260,11 +260,42 @@ fn alerting_threshold_defaults_to_300_seconds() {
     );
 }
 
+#[test]
+fn an_enabled_alerting_defaults_to_600_seconds() {
+    let loaded = settings("general_settings:\n  alerting:\n    - slack", &[]);
+    assert_eq!(
+        loaded.alerting_threshold_seconds.to_bits(),
+        600.0_f64.to_bits()
+    );
+}
+
+#[test]
+fn a_null_alerting_threshold_keeps_300_seconds() {
+    let loaded = settings(
+        "general_settings:\n  alerting:\n    - slack\n  alerting_threshold: null",
+        &[],
+    );
+    assert_eq!(
+        loaded.alerting_threshold_seconds.to_bits(),
+        300.0_f64.to_bits()
+    );
+}
+
+#[test]
+fn a_threshold_without_alerting_stays_at_300_seconds() {
+    let loaded = settings("general_settings:\n  alerting_threshold: 900", &[]);
+    assert_eq!(
+        loaded.alerting_threshold_seconds.to_bits(),
+        300.0_f64.to_bits()
+    );
+}
+
 #[rstest]
 #[case::fractional("600.5", 600.5_f64)]
 #[case::zero("0", 0.0_f64)]
 fn an_explicit_alerting_threshold_is_used_as_given(#[case] text: &str, #[case] expected: f64) {
-    let source = format!("general_settings:\n  alerting_threshold: {text}");
+    let source =
+        format!("general_settings:\n  alerting:\n    - slack\n  alerting_threshold: {text}");
     let loaded = settings(&source, &[]);
     assert_eq!(
         loaded.alerting_threshold_seconds.to_bits(),
