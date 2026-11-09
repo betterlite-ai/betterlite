@@ -587,6 +587,63 @@ fn gemini_unsupported_modes() {
 }
 
 #[test]
+fn image_generation_keeps_its_version_rules() {
+    let catalog = catalog();
+    let numeric = get_vertex_url(
+        &catalog,
+        &vertex_input(
+            UrlMode::ImageGeneration,
+            "1234567890",
+            None,
+            "us-central1",
+            ApiVersion::V1Beta1,
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        numeric.url,
+        "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/proj/locations/us-central1/endpoints/1234567890:predict"
+    );
+    assert_eq!(numeric.endpoint, "predict");
+    let publisher = get_vertex_url(
+        &catalog,
+        &vertex_input(
+            UrlMode::ImageGeneration,
+            "imagen-3.0-generate-001",
+            None,
+            "us",
+            ApiVersion::V1Beta1,
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        publisher.url,
+        "https://aiplatform.us.rep.googleapis.com/v1/projects/proj/locations/us/publishers/google/models/imagen-3.0-generate-001:predict"
+    );
+}
+
+#[test]
+fn count_tokens_always_uses_the_publisher_path() {
+    let catalog = catalog();
+    let count = get_vertex_url(
+        &catalog,
+        &vertex_input(
+            UrlMode::CountTokens,
+            "gemini/1234",
+            None,
+            "us",
+            ApiVersion::V1,
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        count.url,
+        "https://aiplatform.us.rep.googleapis.com/v1/projects/proj/locations/us/publishers/google/models/1234:countTokens"
+    );
+    assert_eq!(count.endpoint, "countTokens");
+}
+
+#[test]
 fn non_ascii_digits_are_not_endpoint_ids() {
     assert_eq!(get_fine_tuned_endpoint_id("\u{661}\u{662}\u{663}"), None);
     assert!(is_gemini_3_or_newer("\u{661}\u{662}\u{663}"));
