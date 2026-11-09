@@ -167,17 +167,50 @@ fn a_negative_expires_in_puts_the_expiry_in_the_past() {
 }
 
 #[rstest]
-#[case::missing_access_token(r#"{"expires_in": 60}"#)]
-#[case::not_json("not json")]
-#[case::json_list("[]")]
-#[case::json_null("null")]
-#[case::text_access_token(r#"{"access_token": 7}"#)]
-#[case::string_expires_in(r#"{"access_token": "a", "expires_in": "3600"}"#)]
-#[case::float_expires_in(r#"{"access_token": "a", "expires_in": 3600.5}"#)]
-#[case::null_expires_in(r#"{"access_token": "a", "expires_in": null}"#)]
-#[case::bool_expires_in(r#"{"access_token": "a", "expires_in": true}"#)]
-#[case::huge_expires_in(r#"{"access_token": "a", "expires_in": 9223372036854775807}"#)]
-fn a_bad_token_response_fails_with_its_body(#[case] body: &str) {
+#[case::missing_access_token(r#"{"expires_in": 60}"#, r#"{"expires_in": 60}"#)]
+#[case::not_json("not json", "not json")]
+#[case::json_list("[]", "[]")]
+#[case::json_null("null", "null")]
+#[case::text_access_token(r#"{"access_token": 7}"#, r#"{"access_token": 7}"#)]
+#[case::string_expires_in(
+    r#"{"access_token": "a", "expires_in": "3600"}"#,
+    r#"{"access_token": "<redacted>", "expires_in": "3600"}"#
+)]
+#[case::float_expires_in(
+    r#"{"access_token": "a", "expires_in": 3600.5}"#,
+    r#"{"access_token": "<redacted>", "expires_in": 3600.5}"#
+)]
+#[case::null_expires_in(
+    r#"{"access_token": "a", "expires_in": null}"#,
+    r#"{"access_token": "<redacted>", "expires_in": null}"#
+)]
+#[case::bool_expires_in(
+    r#"{"access_token": "a", "expires_in": true}"#,
+    r#"{"access_token": "<redacted>", "expires_in": true}"#
+)]
+#[case::huge_expires_in(
+    r#"{"access_token": "a", "expires_in": 9223372036854775807}"#,
+    r#"{"access_token": "<redacted>", "expires_in": 9223372036854775807}"#
+)]
+fn a_bad_token_response_fails_with_its_body(#[case] body: &str, #[case] text: &str) {
+    let error = parse_token_response(body, at(1_700_000_000)).unwrap_err();
+    assert_eq!(error.to_string(), format!("Token request failed: {text}"));
+}
+
+#[test]
+fn an_overflowing_expiry_does_not_carry_the_access_token_into_the_text() {
+    let body = r#"{"access_token": "tok", "expires_in": 99999999999999}"#;
+    let error = parse_token_response(body, at(1_700_000_000)).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Token request failed: {\"access_token\": \"<redacted>\", \"expires_in\": 99999999999999}"
+    );
+    assert!(!error.to_string().contains("\"tok\""));
+}
+
+#[test]
+fn a_bad_token_response_without_an_access_token_keeps_its_text() {
+    let body = r#"{"expires_in": 99999999999999}"#;
     let error = parse_token_response(body, at(1_700_000_000)).unwrap_err();
     assert_eq!(error.to_string(), format!("Token request failed: {body}"));
 }

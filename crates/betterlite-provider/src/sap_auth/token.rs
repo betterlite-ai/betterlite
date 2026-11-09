@@ -1,6 +1,7 @@
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_prompts::arguments::json::Json;
 use chrono::{DateTime, Duration, Utc};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
@@ -117,12 +118,26 @@ fn choose_cert_identity(credentials: &Credentials) -> Result<ClientIdentity, Sap
     }
 }
 
+// LiteLLM puts the whole response in the error text, so a parseable token must not reach it
+fn error_text(body: &str) -> String {
+    let Ok(Json::Object(fields)) = serde_json::from_str::<Json>(body) else {
+        return body.to_owned();
+    };
+    let Some(Json::Text(token)) = fields.get("access_token") else {
+        return body.to_owned();
+    };
+    let Ok(literal) = serde_json::to_string(token) else {
+        return body.to_owned();
+    };
+    body.replace(&literal, "\"<redacted>\"")
+}
+
 pub fn parse_token_response(body: &str, now: DateTime<Utc>) -> Result<BearerToken, SapAuthError> {
     let parsed = match serde_json::from_str::<TokenBody>(body) {
         Ok(parsed) => parsed,
         Err(source) => {
             return Err(SapAuthError::TokenRequest {
-                text: body.to_owned(),
+                text: error_text(body),
                 source: Box::new(TokenFailure::Response(source)),
             });
         }
@@ -131,7 +146,7 @@ pub fn parse_token_response(body: &str, now: DateTime<Utc>) -> Result<BearerToke
         .and_then(|duration| now.checked_add_signed(duration))
     else {
         return Err(SapAuthError::TokenRequest {
-            text: body.to_owned(),
+            text: error_text(body),
             source: Box::new(TokenFailure::Expiry(parsed.expires_in)),
         });
     };
