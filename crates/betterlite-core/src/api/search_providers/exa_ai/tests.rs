@@ -228,7 +228,7 @@ fn exa_ai_url_appends_search_without_trimming(
 
 #[rstest]
 #[case::plain(
-    "search text",
+    "\"search text\"",
     "{}",
     r#"{"query": "search text", "contents": {"text": true}}"#
 )]
