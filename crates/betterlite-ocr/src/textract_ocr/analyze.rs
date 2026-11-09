@@ -24,9 +24,25 @@ use crate::textract_ocr::wire::{Block, FeatureType, TextractDocument, TextractRe
 const DEFAULT_FEATURE_TYPES: [FeatureType; 2] = [FeatureType::Layout, FeatureType::Tables];
 const SUPPORTED_PARAMS: [&str; 1] = ["feature_types"];
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
+#[serde(from = "RawAnalyzeDocumentOptions")]
 pub struct AnalyzeDocumentOptions {
-    pub(crate) feature_types: Option<Vec<FeatureType>>,
+    pub(crate) feature_types: Vec<FeatureType>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawAnalyzeDocumentOptions {
+    feature_types: Option<Vec<FeatureType>>,
+}
+
+impl From<RawAnalyzeDocumentOptions> for AnalyzeDocumentOptions {
+    fn from(raw: RawAnalyzeDocumentOptions) -> Self {
+        Self {
+            feature_types: raw
+                .feature_types
+                .unwrap_or_else(|| DEFAULT_FEATURE_TYPES.to_vec()),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -95,14 +111,9 @@ impl OcrProviderConfig for TextractAnalyzeDocumentConfig {
         document: OcrDocument,
         transform: OcrTransform<'_, Self::OcrParams>,
     ) -> Result<Self::ProviderRequest, OcrError> {
-        let feature_types = transform
-            .optional_params
-            .feature_types
-            .clone()
-            .unwrap_or_else(|| DEFAULT_FEATURE_TYPES.to_vec());
         Ok(AnalyzeDocumentRequest {
             document: document_bytes(&document)?,
-            feature_types,
+            feature_types: transform.optional_params.feature_types.clone(),
         })
     }
 
