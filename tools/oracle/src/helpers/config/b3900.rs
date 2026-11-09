@@ -1,6 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt::Debug;
-use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_config::sections::langfuse_settings::Settings;
@@ -14,12 +12,13 @@ use betterlite_logging::langfuse_settings::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tracing::field::{Field, Visit};
 use tracing::subscriber::with_default;
-use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
+use tracing_subscriber::layer::SubscriberExt as _;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
+use logs::Logs;
+
+mod logs;
 
 pub(crate) struct Op;
 
@@ -72,6 +71,40 @@ pub(crate) struct FlushIntervalStep {
     environment: BTreeMap<String, String>,
 }
 
+trait StepEnvironment {
+    fn environment(&self) -> &BTreeMap<String, String>;
+}
+
+impl StepEnvironment for EnvironmentStep {
+    fn environment(&self) -> &BTreeMap<String, String> {
+        &self.environment
+    }
+}
+
+impl StepEnvironment for CredentialStep {
+    fn environment(&self) -> &BTreeMap<String, String> {
+        &self.environment
+    }
+}
+
+impl StepEnvironment for HostStep {
+    fn environment(&self) -> &BTreeMap<String, String> {
+        &self.environment
+    }
+}
+
+impl StepEnvironment for EnvironmentValueStep {
+    fn environment(&self) -> &BTreeMap<String, String> {
+        &self.environment
+    }
+}
+
+impl StepEnvironment for FlushIntervalStep {
+    fn environment(&self) -> &BTreeMap<String, String> {
+        &self.environment
+    }
+}
+
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Reading {
@@ -112,11 +145,21 @@ impl Helper for Op {
         let logs = Logs::default();
         let subscriber = tracing_subscriber::registry().with(logs.clone());
         with_default(subscriber, || match input {
-            Input::Credentials { steps } => credentials(steps, &logs),
-            Input::Host { steps } => hosts(steps, &logs),
-            Input::Environment { steps } => environments(steps, &logs),
-            Input::FlushInterval { steps } => intervals(steps, &logs),
-            Input::Read { reading, steps } => readings(*reading, steps, &logs),
+            Input::Credentials { steps } => collect(steps, &logs, credentials_value),
+            Input::Host { steps } => collect(
+                steps,
+                &logs,
+                |settings, step| json!({"ok": true, "value": resolve_host(settings, step.host.as_deref())}),
+            ),
+            Input::Environment { steps } => collect(steps, &logs, environment_value),
+            Input::FlushInterval { steps } => collect(
+                steps,
+                &logs,
+                |settings, step| json!({"ok": true, "value": flush_interval(settings, step.default)}),
+            ),
+            Input::Read { reading, steps } => collect(steps, &logs, |settings, _step| {
+                read_value(*reading, settings)
+            }),
         })
     }
 }
@@ -152,159 +195,70 @@ fn observed(logs: &Logs, value: Value) -> Value {
     Value::Object(fields)
 }
 
-fn credentials(steps: &[CredentialStep], logs: &Logs) -> HelperResult {
+fn collect<Step, F>(steps: &[Step], logs: &Logs, value: F) -> HelperResult
+where
+    Step: StepEnvironment,
+    F: Fn(&Settings, &Step) -> Value,
+{
     let mut results = Vec::with_capacity(steps.len());
     for step in steps {
-        let settings = load_settings(&step.environment)?;
-        let resolved = resolve_credentials(
-            &settings,
-            CredentialRequest {
-                public_key: step.public_key.as_deref(),
-                secret: step.secret.as_deref(),
-                secret_key: step.secret_key.as_deref(),
-                host: step.host.as_deref(),
-                allow_env_credentials: step.allow_env_credentials,
-            },
-        );
-        results.push(observed(
-            logs,
-            json!({
-                "ok": true,
-                "value": {
-                    "public_key": resolved.public_key,
-                    "secret_key": resolved.secret_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
-                    "host": resolved.host,
-                },
-            }),
-        ));
+        let settings = load_settings(step.environment())?;
+        results.push(observed(logs, value(&settings, step)));
     }
     Ok(Value::Array(results))
 }
 
-fn hosts(steps: &[HostStep], logs: &Logs) -> HelperResult {
-    let mut results = Vec::with_capacity(steps.len());
-    for step in steps {
-        let settings = load_settings(&step.environment)?;
-        results.push(observed(
-            logs,
-            json!({"ok": true, "value": resolve_host(&settings, step.host.as_deref())}),
-        ));
-    }
-    Ok(Value::Array(results))
+fn credentials_value(settings: &Settings, step: &CredentialStep) -> Value {
+    let resolved = resolve_credentials(
+        settings,
+        CredentialRequest {
+            public_key: step.public_key.as_deref(),
+            secret: step.secret.as_deref(),
+            secret_key: step.secret_key.as_deref(),
+            host: step.host.as_deref(),
+            allow_env_credentials: step.allow_env_credentials,
+        },
+    );
+    json!({
+        "ok": true,
+        "value": {
+            "public_key": resolved.public_key,
+            "secret_key": resolved.secret_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
+            "host": resolved.host,
+        },
+    })
 }
 
-fn environments(steps: &[EnvironmentValueStep], logs: &Logs) -> HelperResult {
-    let mut results = Vec::with_capacity(steps.len());
-    for step in steps {
-        let settings = load_settings(&step.environment)?;
-        let value = resolve_environment(&settings, step.explicit.as_deref()).map_or_else(
-            |_| json!({"ok": false}),
-            |value| json!({"ok": true, "value": value}),
-        );
-        results.push(observed(logs, value));
-    }
-    Ok(Value::Array(results))
+fn environment_value(settings: &Settings, step: &EnvironmentValueStep) -> Value {
+    resolve_environment(settings, step.explicit.as_deref()).map_or_else(
+        |_| json!({"ok": false}),
+        |value| json!({"ok": true, "value": value}),
+    )
 }
 
-fn intervals(steps: &[FlushIntervalStep], logs: &Logs) -> HelperResult {
-    let mut results = Vec::with_capacity(steps.len());
-    for step in steps {
-        let settings = load_settings(&step.environment)?;
-        let value = flush_interval(&settings, step.default);
-        results.push(observed(logs, json!({"ok": true, "value": value})));
-    }
-    Ok(Value::Array(results))
-}
-
-fn readings(reading: Reading, steps: &[EnvironmentStep], logs: &Logs) -> HelperResult {
-    let mut results = Vec::with_capacity(steps.len());
-    for step in steps {
-        let settings = load_settings(&step.environment)?;
-        let value = read(reading, &settings).map_or_else(
-            |_| json!({"ok": false}),
-            |value| json!({"ok": true, "value": value}),
-        );
-        results.push(observed(logs, value));
-    }
-    Ok(Value::Array(results))
-}
-
-fn read(reading: Reading, settings: &Settings) -> Result<Value, LangfuseSettingsError> {
-    match reading {
+fn read_value(reading: Reading, settings: &Settings) -> Value {
+    let read = match reading {
         Reading::FlushAt => Ok(json!(flush_at(settings))),
         Reading::SampleRate => Ok(json!(sample_rate(settings))),
         Reading::MaxRetries => Ok(json!(max_retries(settings))),
-        Reading::Timeout => Ok(json!(timeout_seconds(settings)?)),
+        Reading::Timeout => timeout_seconds(settings).map(|seconds| json!(seconds)),
         Reading::PromptCacheTtl => {
-            check_prompt_cache_ttl(settings)?;
-            Ok(json!(prompt_cache_ttl_seconds(settings)))
+            check_prompt_cache_ttl(settings).map(|()| json!(prompt_cache_ttl_seconds(settings)))
         }
         Reading::Release => Ok(json!(release(settings))),
-        Reading::DebugAndMock => {
-            let debug = debug(settings)?;
-            let mock = mock_mode(settings)?;
-            warn_if_upstream_configured(settings);
-            Ok(json!({"debug": debug, "mock": mock}))
-        }
-    }
+        Reading::DebugAndMock => debug_and_mock(settings),
+    };
+    read.map_or_else(
+        |_| json!({"ok": false}),
+        |value| json!({"ok": true, "value": value}),
+    )
 }
 
-#[derive(Clone, Default)]
-struct Logs {
-    warnings: Arc<Mutex<Vec<String>>>,
-    infos: Arc<Mutex<Vec<String>>>,
-}
-
-#[derive(Default)]
-struct Message(String);
-
-impl Visit for Message {
-    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
-        if field.name() == "message" {
-            self.0 = format!("{value:?}");
-        }
-    }
-}
-
-impl<Inner: Subscriber> Layer<Inner> for Logs {
-    fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
-        let level = *event.metadata().level();
-        if level != Level::WARN && level != Level::INFO {
-            return;
-        }
-        let mut message = Message::default();
-        event.record(&mut message);
-        let target = if level == Level::WARN {
-            &self.warnings
-        } else {
-            &self.infos
-        };
-        target
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(message.0);
-    }
-}
-
-impl Logs {
-    fn take(&self) -> (Vec<String>, Vec<String>, Vec<String>) {
-        let warnings = {
-            let mut guard = self.warnings.lock().unwrap_or_else(PoisonError::into_inner);
-            std::mem::take(&mut *guard)
-        };
-        let infos = {
-            let mut guard = self.infos.lock().unwrap_or_else(PoisonError::into_inner);
-            std::mem::take(&mut *guard)
-        };
-        let mut fixed = Vec::with_capacity(warnings.len());
-        let mut details = Vec::with_capacity(warnings.len());
-        for warning in warnings {
-            let (message, detail) = warning.split_once(": ").unwrap_or((&warning, ""));
-            fixed.push(message.to_owned());
-            details.push(detail.to_owned());
-        }
-        (fixed, details, infos)
-    }
+fn debug_and_mock(settings: &Settings) -> Result<Value, LangfuseSettingsError> {
+    let debug = debug(settings)?;
+    let mock = mock_mode(settings)?;
+    warn_if_upstream_configured(settings);
+    Ok(json!({"debug": debug, "mock": mock}))
 }
 
 mod tests;

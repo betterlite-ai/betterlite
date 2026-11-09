@@ -108,76 +108,59 @@ fn resolved_secret(credentials: &Credentials) -> Option<&str> {
 #[case::the_arguments_win(
     &[("LANGFUSE_PUBLIC_KEY", "env-public"), ("LANGFUSE_SECRET_KEY", "env-secret")],
     CredentialRequest { public_key: Some("arg-public"), secret: Some("arg-secret"), secret_key: None, host: None, allow_env_credentials: true },
-    Some("arg-public"), Some("arg-secret")
+    (Some("arg-public"), Some("arg-secret"), CLOUD_HOST)
 )]
 #[case::missing_arguments_come_from_the_environment(
     &[("LANGFUSE_PUBLIC_KEY", "env-public"), ("LANGFUSE_SECRET_KEY", "env-secret")],
     CredentialRequest { public_key: None, secret: None, secret_key: None, host: None, allow_env_credentials: true },
-    Some("env-public"), Some("env-secret")
+    (Some("env-public"), Some("env-secret"), CLOUD_HOST)
 )]
 #[case::secret_key_comes_before_the_environment(
     &[("LANGFUSE_SECRET_KEY", "env-secret")],
     CredentialRequest { public_key: None, secret: None, secret_key: Some("arg-key"), host: None, allow_env_credentials: true },
-    None, Some("arg-key")
+    (None, Some("arg-key"), CLOUD_HOST)
 )]
 #[case::the_secret_argument_comes_before_secret_key(
     &[],
     CredentialRequest { public_key: None, secret: Some("arg-secret"), secret_key: Some("arg-key"), host: None, allow_env_credentials: true },
-    None, Some("arg-secret")
+    (None, Some("arg-secret"), CLOUD_HOST)
 )]
 #[case::an_empty_argument_falls_through(
     &[("LANGFUSE_PUBLIC_KEY", "env-public"), ("LANGFUSE_SECRET_KEY", "env-secret")],
     CredentialRequest { public_key: Some(""), secret: Some(""), secret_key: Some(""), host: None, allow_env_credentials: true },
-    Some("env-public"), Some("env-secret")
+    (Some("env-public"), Some("env-secret"), CLOUD_HOST)
 )]
 #[case::an_empty_environment_credential_is_kept(
     &[("LANGFUSE_PUBLIC_KEY", ""), ("LANGFUSE_SECRET_KEY", "")],
     CredentialRequest { public_key: None, secret: None, secret_key: None, host: None, allow_env_credentials: true },
-    Some(""), Some("")
+    (Some(""), Some(""), CLOUD_HOST)
 )]
-fn credentials_use_the_arguments_first(
-    #[case] variables: &[(&str, &str)],
-    #[case] request: CredentialRequest<'_>,
-    #[case] expected_public: Option<&str>,
-    #[case] expected_secret: Option<&str>,
-) {
-    let settings = load(variables);
-    let credentials = resolve_credentials(&settings, request);
-
-    assert_eq!(credentials.public_key.as_deref(), expected_public);
-    assert_eq!(resolved_secret(&credentials), expected_secret);
-    assert_eq!(credentials.host, CLOUD_HOST);
-}
-
-#[rstest]
-#[case::arguments_still_win(
+#[case::arguments_still_win_when_a_host_blocks_the_environment(
     &[("LANGFUSE_PUBLIC_KEY", "env-public"), ("LANGFUSE_SECRET_KEY", "env-secret"), ("LANGFUSE_HOST", "env-host")],
     CredentialRequest { public_key: Some("arg-public"), secret: Some("arg-secret"), secret_key: None, host: Some("https://given"), allow_env_credentials: false },
-    Some("arg-public"), Some("arg-secret"), "https://given"
+    (Some("arg-public"), Some("arg-secret"), "https://given")
 )]
 #[case::the_environment_is_not_read(
     &[("LANGFUSE_PUBLIC_KEY", "env-public"), ("LANGFUSE_SECRET_KEY", "env-secret"), ("LANGFUSE_HOST", "env-host")],
     CredentialRequest { public_key: None, secret: None, secret_key: None, host: Some("https://given"), allow_env_credentials: false },
-    None, None, "https://given"
+    (None, None, "https://given")
 )]
 #[case::an_empty_host_still_blocks_the_environment(
     &[("LANGFUSE_PUBLIC_KEY", "env-public"), ("LANGFUSE_SECRET_KEY", "env-secret"), ("LANGFUSE_HOST", "env-host")],
     CredentialRequest { public_key: None, secret: None, secret_key: None, host: Some(""), allow_env_credentials: false },
-    None, None, "http://env-host"
+    (None, None, "http://env-host")
 )]
-fn credentials_skip_the_environment_when_a_host_blocks_it(
+fn credentials_resolve_from_the_arguments_then_the_environment(
     #[case] variables: &[(&str, &str)],
     #[case] request: CredentialRequest<'_>,
-    #[case] expected_public: Option<&str>,
-    #[case] expected_secret: Option<&str>,
-    #[case] expected_host: &str,
+    #[case] expected: (Option<&str>, Option<&str>, &str),
 ) {
     let settings = load(variables);
     let credentials = resolve_credentials(&settings, request);
 
-    assert_eq!(credentials.public_key.as_deref(), expected_public);
-    assert_eq!(resolved_secret(&credentials), expected_secret);
-    assert_eq!(credentials.host, expected_host);
+    assert_eq!(credentials.public_key.as_deref(), expected.0);
+    assert_eq!(resolved_secret(&credentials), expected.1);
+    assert_eq!(credentials.host, expected.2);
 }
 
 #[test]
@@ -427,89 +410,89 @@ fn release_walks_the_variables_in_order(
     assert_eq!(release(&settings).as_deref(), expected);
 }
 
-#[rstest]
-#[case::whole_seconds(&[("LANGFUSE_FLUSH_INTERVAL", "5")], 5_u64, &[])]
-#[case::spaces_are_trimmed(&[("LANGFUSE_FLUSH_INTERVAL", " 5 ")], 5_u64, &[])]
-#[case::zero_falls_back(&[("LANGFUSE_FLUSH_INTERVAL", "0")], 7_u64, &["LANGFUSE_FLUSH_INTERVAL='0' is not a whole number of seconds above 0; flushing every 7 s"])]
-#[case::a_negative_falls_back(&[("LANGFUSE_FLUSH_INTERVAL", "-5")], 7_u64, &["LANGFUSE_FLUSH_INTERVAL='-5' is not a whole number of seconds above 0; flushing every 7 s"])]
-#[case::a_fraction_falls_back(&[("LANGFUSE_FLUSH_INTERVAL", "1.5")], 7_u64, &["LANGFUSE_FLUSH_INTERVAL='1.5' is not a whole number of seconds above 0; flushing every 7 s"])]
-#[case::text_falls_back(&[("LANGFUSE_FLUSH_INTERVAL", "soon")], 7_u64, &["LANGFUSE_FLUSH_INTERVAL='soon' is not a whole number of seconds above 0; flushing every 7 s"])]
-#[case::spaces_fall_back(&[("LANGFUSE_FLUSH_INTERVAL", "   ")], 7_u64, &["LANGFUSE_FLUSH_INTERVAL='   ' is not a whole number of seconds above 0; flushing every 7 s"])]
-#[case::an_empty_value_is_silent(&[("LANGFUSE_FLUSH_INTERVAL", "")], 7_u64, &[])]
-#[case::an_unset_value_is_silent(&[], 7_u64, &[])]
-#[case::an_overflow_saturates(&[("LANGFUSE_FLUSH_INTERVAL", "18446744073709551616")], u64::MAX, &[])]
-fn flush_interval_reads_whole_seconds_above_zero(
-    #[case] variables: &[(&str, &str)],
-    #[case] expected: u64,
-    #[case] expected_warnings: &[&str],
-) {
-    let settings = load(variables);
-    let (seconds, logs) = capture(|| flush_interval(&settings, 7));
+#[derive(Clone, Copy)]
+enum Reading {
+    FlushInterval,
+    FlushAt,
+    SampleRate,
+    MaxRetries,
+    PromptCacheTtl,
+}
 
-    assert_eq!(seconds, expected);
-    assert_eq!(warnings(&logs), texts(expected_warnings));
+#[derive(Debug, PartialEq)]
+enum Expected {
+    Whole(u64),
+    Batch(usize),
+    Retries(u32),
+    Rate(u64),
+}
+
+impl Expected {
+    fn rate(value: f64) -> Self {
+        Self::Rate(value.to_bits())
+    }
+}
+
+fn read(reading: Reading, settings: &Settings) -> Expected {
+    match reading {
+        Reading::FlushInterval => Expected::Whole(flush_interval(settings, 7)),
+        Reading::FlushAt => Expected::Batch(flush_at(settings)),
+        Reading::SampleRate => Expected::rate(sample_rate(settings)),
+        Reading::MaxRetries => Expected::Retries(max_retries(settings)),
+        Reading::PromptCacheTtl => Expected::rate(prompt_cache_ttl_seconds(settings)),
+    }
 }
 
 #[rstest]
-#[case::the_default(&[], 512_usize, &[])]
-#[case::one(&[("LANGFUSE_FLUSH_AT", "1")], 1_usize, &[])]
-#[case::the_maximum(&[("LANGFUSE_FLUSH_AT", "100000")], 100_000_usize, &[])]
-#[case::spaces_are_trimmed(&[("LANGFUSE_FLUSH_AT", " 64 ")], 64_usize, &[])]
-#[case::above_the_maximum_falls_back(&[("LANGFUSE_FLUSH_AT", "100001")], 512_usize, &["LANGFUSE_FLUSH_AT='100001' is not a whole number between 1 and 100000; exporting batches of 512"])]
-#[case::zero_falls_back(&[("LANGFUSE_FLUSH_AT", "0")], 512_usize, &["LANGFUSE_FLUSH_AT='0' is not a whole number between 1 and 100000; exporting batches of 512"])]
-#[case::an_empty_value_warns(&[("LANGFUSE_FLUSH_AT", "")], 512_usize, &["LANGFUSE_FLUSH_AT='' is not a whole number between 1 and 100000; exporting batches of 512"])]
-#[case::text_falls_back(&[("LANGFUSE_FLUSH_AT", "many")], 512_usize, &["LANGFUSE_FLUSH_AT='many' is not a whole number between 1 and 100000; exporting batches of 512"])]
-fn flush_at_reads_batches_between_one_and_the_queue_size(
+#[case::flush_interval_whole_seconds(Reading::FlushInterval, &[("LANGFUSE_FLUSH_INTERVAL", "5")], Expected::Whole(5_u64), &[])]
+#[case::flush_interval_spaces_are_trimmed(Reading::FlushInterval, &[("LANGFUSE_FLUSH_INTERVAL", " 5 ")], Expected::Whole(5_u64), &[])]
+#[case::flush_interval_zero_falls_back(Reading::FlushInterval, &[("LANGFUSE_FLUSH_INTERVAL", "0")], Expected::Whole(7_u64), &["LANGFUSE_FLUSH_INTERVAL='0' is not a whole number of seconds above 0; flushing every 7 s"])]
+#[case::flush_interval_negative_falls_back(Reading::FlushInterval, &[("LANGFUSE_FLUSH_INTERVAL", "-5")], Expected::Whole(7_u64), &["LANGFUSE_FLUSH_INTERVAL='-5' is not a whole number of seconds above 0; flushing every 7 s"])]
+#[case::flush_interval_fraction_falls_back(Reading::FlushInterval, &[("LANGFUSE_FLUSH_INTERVAL", "1.5")], Expected::Whole(7_u64), &["LANGFUSE_FLUSH_INTERVAL='1.5' is not a whole number of seconds above 0; flushing every 7 s"])]
+#[case::flush_interval_text_falls_back(Reading::FlushInterval, &[("LANGFUSE_FLUSH_INTERVAL", "soon")], Expected::Whole(7_u64), &["LANGFUSE_FLUSH_INTERVAL='soon' is not a whole number of seconds above 0; flushing every 7 s"])]
+#[case::flush_interval_spaces_fall_back(Reading::FlushInterval, &[("LANGFUSE_FLUSH_INTERVAL", "   ")], Expected::Whole(7_u64), &["LANGFUSE_FLUSH_INTERVAL='   ' is not a whole number of seconds above 0; flushing every 7 s"])]
+#[case::flush_interval_empty_is_silent(Reading::FlushInterval, &[("LANGFUSE_FLUSH_INTERVAL", "")], Expected::Whole(7_u64), &[])]
+#[case::flush_interval_unset_is_silent(Reading::FlushInterval, &[], Expected::Whole(7_u64), &[])]
+#[case::flush_interval_overflow_saturates(Reading::FlushInterval, &[("LANGFUSE_FLUSH_INTERVAL", "18446744073709551616")], Expected::Whole(u64::MAX), &[])]
+#[case::flush_at_default(Reading::FlushAt, &[], Expected::Batch(512_usize), &[])]
+#[case::flush_at_one(Reading::FlushAt, &[("LANGFUSE_FLUSH_AT", "1")], Expected::Batch(1_usize), &[])]
+#[case::flush_at_maximum(Reading::FlushAt, &[("LANGFUSE_FLUSH_AT", "100000")], Expected::Batch(100_000_usize), &[])]
+#[case::flush_at_spaces_are_trimmed(Reading::FlushAt, &[("LANGFUSE_FLUSH_AT", " 64 ")], Expected::Batch(64_usize), &[])]
+#[case::flush_at_above_the_maximum_falls_back(Reading::FlushAt, &[("LANGFUSE_FLUSH_AT", "100001")], Expected::Batch(512_usize), &["LANGFUSE_FLUSH_AT='100001' is not a whole number between 1 and 100000; exporting batches of 512"])]
+#[case::flush_at_zero_falls_back(Reading::FlushAt, &[("LANGFUSE_FLUSH_AT", "0")], Expected::Batch(512_usize), &["LANGFUSE_FLUSH_AT='0' is not a whole number between 1 and 100000; exporting batches of 512"])]
+#[case::flush_at_empty_value_warns(Reading::FlushAt, &[("LANGFUSE_FLUSH_AT", "")], Expected::Batch(512_usize), &["LANGFUSE_FLUSH_AT='' is not a whole number between 1 and 100000; exporting batches of 512"])]
+#[case::flush_at_text_falls_back(Reading::FlushAt, &[("LANGFUSE_FLUSH_AT", "many")], Expected::Batch(512_usize), &["LANGFUSE_FLUSH_AT='many' is not a whole number between 1 and 100000; exporting batches of 512"])]
+#[case::sample_rate_default(Reading::SampleRate, &[], Expected::rate(1.0), &[])]
+#[case::sample_rate_fraction(Reading::SampleRate, &[("LANGFUSE_SAMPLE_RATE", "0.5")], Expected::rate(0.5), &[])]
+#[case::sample_rate_zero(Reading::SampleRate, &[("LANGFUSE_SAMPLE_RATE", "0")], Expected::rate(0.0), &[])]
+#[case::sample_rate_one(Reading::SampleRate, &[("LANGFUSE_SAMPLE_RATE", "1")], Expected::rate(1.0), &[])]
+#[case::sample_rate_above_one_warns(Reading::SampleRate, &[("LANGFUSE_SAMPLE_RATE", "1.5")], Expected::rate(1.0), &["LANGFUSE_SAMPLE_RATE='1.5' is not a number between 0.0 and 1.0; ignoring it and exporting every trace"])]
+#[case::sample_rate_nan_warns(Reading::SampleRate, &[("LANGFUSE_SAMPLE_RATE", "nan")], Expected::rate(1.0), &["LANGFUSE_SAMPLE_RATE='nan' is not a number between 0.0 and 1.0; ignoring it and exporting every trace"])]
+#[case::sample_rate_text_warns(Reading::SampleRate, &[("LANGFUSE_SAMPLE_RATE", "half")], Expected::rate(1.0), &["LANGFUSE_SAMPLE_RATE='half' is not a number between 0.0 and 1.0; ignoring it and exporting every trace"])]
+#[case::sample_rate_empty_value_warns(Reading::SampleRate, &[("LANGFUSE_SAMPLE_RATE", "")], Expected::rate(1.0), &["LANGFUSE_SAMPLE_RATE='' is not a number between 0.0 and 1.0; ignoring it and exporting every trace"])]
+#[case::max_retries_default(Reading::MaxRetries, &[], Expected::Retries(3_u32), &[])]
+#[case::max_retries_five(Reading::MaxRetries, &[("LANGFUSE_MAX_RETRIES", "5")], Expected::Retries(5_u32), &[])]
+#[case::max_retries_zero_is_allowed(Reading::MaxRetries, &[("LANGFUSE_MAX_RETRIES", "0")], Expected::Retries(0_u32), &[])]
+#[case::max_retries_ceiling(Reading::MaxRetries, &[("LANGFUSE_MAX_RETRIES", "1000")], Expected::Retries(1000_u32), &[])]
+#[case::max_retries_above_the_ceiling_is_capped(Reading::MaxRetries, &[("LANGFUSE_MAX_RETRIES", "1001")], Expected::Retries(1000_u32), &["LANGFUSE_MAX_RETRIES=1001 is above the ceiling; retrying 1000 times"])]
+#[case::max_retries_text_warns(Reading::MaxRetries, &[("LANGFUSE_MAX_RETRIES", "lots")], Expected::Retries(3_u32), &["LANGFUSE_MAX_RETRIES='lots' is not a whole number; retrying 3 times"])]
+#[case::max_retries_empty_value_warns(Reading::MaxRetries, &[("LANGFUSE_MAX_RETRIES", "")], Expected::Retries(3_u32), &["LANGFUSE_MAX_RETRIES='' is not a whole number; retrying 3 times"])]
+#[case::max_retries_spaces_are_trimmed(Reading::MaxRetries, &[("LANGFUSE_MAX_RETRIES", " 7 ")], Expected::Retries(7_u32), &[])]
+#[case::prompt_cache_ttl_unset(Reading::PromptCacheTtl, &[], Expected::rate(60.0), &[])]
+#[case::prompt_cache_ttl_zero(Reading::PromptCacheTtl, &[("LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS", "0")], Expected::rate(0.0), &[])]
+#[case::prompt_cache_ttl_whole_seconds(Reading::PromptCacheTtl, &[("LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS", "90")], Expected::rate(90.0), &[])]
+#[case::prompt_cache_ttl_negative_falls_back(Reading::PromptCacheTtl, &[("LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS", "-1")], Expected::rate(60.0), &["LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS='-1' is not a whole number of seconds at or above 0; caching prompts for 60 s"])]
+#[case::prompt_cache_ttl_fraction_falls_back(Reading::PromptCacheTtl, &[("LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS", "60.0")], Expected::rate(60.0), &["LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS='60.0' is not a whole number of seconds at or above 0; caching prompts for 60 s"])]
+fn the_number_readers_apply_their_ranges(
+    #[case] reading: Reading,
     #[case] variables: &[(&str, &str)],
-    #[case] expected: usize,
+    #[case] expected: Expected,
     #[case] expected_warnings: &[&str],
 ) {
     let settings = load(variables);
-    let (batch, logs) = capture(|| flush_at(&settings));
+    let (value, logs) = capture(|| read(reading, &settings));
 
-    assert_eq!(batch, expected);
-    assert_eq!(warnings(&logs), texts(expected_warnings));
-}
-
-#[rstest]
-#[case::the_default(&[], 1.0_f64, &[])]
-#[case::a_fraction(&[("LANGFUSE_SAMPLE_RATE", "0.5")], 0.5_f64, &[])]
-#[case::zero(&[("LANGFUSE_SAMPLE_RATE", "0")], 0.0_f64, &[])]
-#[case::one(&[("LANGFUSE_SAMPLE_RATE", "1")], 1.0_f64, &[])]
-#[case::above_one_warns(&[("LANGFUSE_SAMPLE_RATE", "1.5")], 1.0_f64, &["LANGFUSE_SAMPLE_RATE='1.5' is not a number between 0.0 and 1.0; ignoring it and exporting every trace"])]
-#[case::nan_warns(&[("LANGFUSE_SAMPLE_RATE", "nan")], 1.0_f64, &["LANGFUSE_SAMPLE_RATE='nan' is not a number between 0.0 and 1.0; ignoring it and exporting every trace"])]
-#[case::text_warns(&[("LANGFUSE_SAMPLE_RATE", "half")], 1.0_f64, &["LANGFUSE_SAMPLE_RATE='half' is not a number between 0.0 and 1.0; ignoring it and exporting every trace"])]
-#[case::an_empty_value_warns(&[("LANGFUSE_SAMPLE_RATE", "")], 1.0_f64, &["LANGFUSE_SAMPLE_RATE='' is not a number between 0.0 and 1.0; ignoring it and exporting every trace"])]
-fn sample_rate_reads_a_fraction_between_zero_and_one(
-    #[case] variables: &[(&str, &str)],
-    #[case] expected: f64,
-    #[case] expected_warnings: &[&str],
-) {
-    let settings = load(variables);
-    let (rate, logs) = capture(|| sample_rate(&settings));
-
-    assert_eq!(rate.to_bits(), expected.to_bits());
-    assert_eq!(warnings(&logs), texts(expected_warnings));
-}
-
-#[rstest]
-#[case::the_default(&[], 3_u32, &[])]
-#[case::five(&[("LANGFUSE_MAX_RETRIES", "5")], 5_u32, &[])]
-#[case::zero_is_allowed(&[("LANGFUSE_MAX_RETRIES", "0")], 0_u32, &[])]
-#[case::the_ceiling(&[("LANGFUSE_MAX_RETRIES", "1000")], 1000_u32, &[])]
-#[case::above_the_ceiling_is_capped(&[("LANGFUSE_MAX_RETRIES", "1001")], 1000_u32, &["LANGFUSE_MAX_RETRIES=1001 is above the ceiling; retrying 1000 times"])]
-#[case::text_warns(&[("LANGFUSE_MAX_RETRIES", "lots")], 3_u32, &["LANGFUSE_MAX_RETRIES='lots' is not a whole number; retrying 3 times"])]
-#[case::an_empty_value_warns(&[("LANGFUSE_MAX_RETRIES", "")], 3_u32, &["LANGFUSE_MAX_RETRIES='' is not a whole number; retrying 3 times"])]
-#[case::spaces_are_trimmed(&[("LANGFUSE_MAX_RETRIES", " 7 ")], 7_u32, &[])]
-fn max_retries_reads_digits_and_caps_at_the_ceiling(
-    #[case] variables: &[(&str, &str)],
-    #[case] expected: u32,
-    #[case] expected_warnings: &[&str],
-) {
-    let settings = load(variables);
-    let (retries, logs) = capture(|| max_retries(&settings));
-
-    assert_eq!(retries, expected);
+    assert_eq!(value, expected);
     assert_eq!(warnings(&logs), texts(expected_warnings));
 }
 
@@ -577,30 +560,4 @@ fn an_unusable_prompt_cache_ttl_fails_naming_the_variable_and_value(
             "LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS='{raw}' must be a whole number of seconds"
         )
     );
-}
-
-#[rstest]
-#[case::unset(&[], 60.0_f64, &[])]
-#[case::zero(&[("LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS", "0")], 0.0_f64, &[])]
-#[case::whole_seconds(&[("LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS", "90")], 90.0_f64, &[])]
-#[case::a_negative_falls_back(
-    &[("LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS", "-1")],
-    60.0_f64,
-    &["LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS='-1' is not a whole number of seconds at or above 0; caching prompts for 60 s"]
-)]
-#[case::a_fraction_falls_back(
-    &[("LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS", "60.0")],
-    60.0_f64,
-    &["LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS='60.0' is not a whole number of seconds at or above 0; caching prompts for 60 s"]
-)]
-fn prompt_cache_ttl_seconds_reads_seconds(
-    #[case] variables: &[(&str, &str)],
-    #[case] expected: f64,
-    #[case] expected_warnings: &[&str],
-) {
-    let settings = load(variables);
-    let (seconds, logs) = capture(|| prompt_cache_ttl_seconds(&settings));
-
-    assert_eq!(seconds.to_bits(), expected.to_bits());
-    assert_eq!(warnings(&logs), texts(expected_warnings));
 }

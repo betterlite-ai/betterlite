@@ -103,14 +103,13 @@ pub fn max_retries(settings: &Settings) -> u32 {
 }
 
 pub fn check_prompt_cache_ttl(settings: &Settings) -> Result<(), LangfuseSettingsError> {
-    let Some(raw) = settings.prompt_cache_ttl.as_deref() else {
-        return Ok(());
-    };
-    match whole_number_seconds(raw) {
-        Some(_) => Ok(()),
-        None => Err(LangfuseSettingsError::UnusablePromptCacheTtl {
-            raw: raw.to_owned(),
-        }),
+    match settings.prompt_cache_ttl.as_deref() {
+        Some(raw) if whole_number_seconds(raw).is_none() => {
+            Err(LangfuseSettingsError::UnusablePromptCacheTtl {
+                raw: raw.to_owned(),
+            })
+        }
+        Some(_) | None => Ok(()),
     }
 }
 
