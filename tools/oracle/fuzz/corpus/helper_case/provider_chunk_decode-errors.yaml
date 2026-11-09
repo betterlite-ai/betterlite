@@ -1,0 +1,12 @@
+kind: helper
+name: provider-chunk-decode-errors-seed
+call:
+  b5653:
+    state: {model: seed-model, provider: nlp_cloud}
+    steps:
+      - op: decode
+        chunk: {kind: text, value: seeded-error}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/0/raised/message, why: the seed only checks that the reader fails}

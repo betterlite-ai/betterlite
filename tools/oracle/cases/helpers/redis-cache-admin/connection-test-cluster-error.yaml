@@ -1,0 +1,10 @@
+kind: helper
+name: redis-cache-admin-connection-test-cluster-error
+call:
+  b4326:
+    function: connection_test
+    family: cluster
+    ping: error
+    error_text: redis is down
+env: {}
+compare: {ignore: []}

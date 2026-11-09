@@ -62,6 +62,12 @@ if [ -d "$worktree" ]; then
     git -C "$worktree" stash apply -q "$stashed" || { park "the worker's uncommitted work conflicts with main after the merge (git stash $stashed)"; exit 3; }
     flock "$L/locks/stash.lock" sh -c 'n=$(git -C "$1" stash list --format=%H | grep -n -x -F "$2" | cut -d: -f1) && [ -n "$n" ] && git -C "$1" stash drop -q "stash@{$((n - 1))}"' sh "$worktree" "$stashed"
   fi
+  # a crate loop with main or a running branch goes back to the worker with the report and the scope to move the code, three rounds at most
+  if ! bash "$P/crate-cycles.sh" "$worktree" > /dev/null; then
+    note=$(bash "$P/unblock.sh" "$id" "$worktree" "crate cycle") || { park "crate cycle no rule could break: $(bash "$P/crate-cycles.sh" "$worktree" | head -n 1)"; exit 3; }
+    grant=1
+    say "crate cycle, back to the worker: $(head -n 1 <<< "$note")"
+  fi
 fi
 GRANT=$grant bash "$P/next-slot.sh" "$id" "$run" "$note" > /dev/null
 code=$?
@@ -75,25 +81,25 @@ if [ "$code" -ne 0 ]; then
   rm -rf "$main/.git/betterlite/$id"/mutants-work*
   if [ -z "$RETRIED" ] && grep -q -E 'does not match its format|merge conflict|behind main' "$log"; then
     bash "$P/merge-main.sh" "$worktree" | grep -q -E '^merged' || { park "main does not merge cleanly"; exit 3; }
-    RETRIED=1 exec bash "$0" "$id" "${run}b" "main is merged into your branch now; continue where the last run stopped."
+    RETRIED=1 exec bash "$P/dispatch-flow.sh" "$id" "${run}b" "main is merged into your branch now; continue where the last run stopped."
   fi
   if grep -q -E 'at its usage limit|ladder is unavailable|every worker vendor is unavailable' "$log"; then
     why=$(grep -o -E "[a-z]+ (can't reach its API|is logged out|is at its usage limit)" "$log" | sort -u | paste -sd, -)
     say "paused: ${why:-vendor unavailable}; waiting for its reset or recovery before preparing another checkout"
     sleep 60
     maintenance
-    LIMITS=$(( ${LIMITS:-0} + 1 )) BASE=${BASE:-$run} exec bash "$0" "$id" "${BASE:-$run}l$(( ${LIMITS:-0} + 1 ))" "$note"
+    LIMITS=$(( ${LIMITS:-0} + 1 )) BASE=${BASE:-$run} exec bash "$P/dispatch-flow.sh" "$id" "${BASE:-$run}l$(( ${LIMITS:-0} + 1 ))" "$note"
   fi
   if grep -q -E 'ended without an answer|ended without a final answer' "$log" && ! grep -q "ladder ran out of attempts" "$log" && [ "${PAUSES:-0}" -lt 4 ]; then
     say "paused: an agent ended without an answer, retrying after a short recovery pause"
     sleep 60
     maintenance
-    PAUSES=$(( ${PAUSES:-0} + 1 )) exec bash "$0" "$id" "${run}p" "$note"
+    PAUSES=$(( ${PAUSES:-0} + 1 )) exec bash "$P/dispatch-flow.sh" "$id" "${run}p" "$note"
   fi
   reason=$(grep -m1 -o -E 'cannot dispatch [^:]+: .*' "$log")
   if [ -n "$reason" ] && [ -d "$worktree" ] && unblock_note=$(bash "$P/unblock.sh" "$id" "$worktree" "$reason"); then
     say "unblocked by a rule: $unblock_note"
-    GRANT=1 exec bash "$0" "$id" "${run}u" "$unblock_note"
+    GRANT=1 exec bash "$P/dispatch-flow.sh" "$id" "${run}u" "$unblock_note"
   fi
   park "${reason:0:300}"
   # Preserve the build target and task temp files for a later explicit resume.
@@ -102,6 +108,7 @@ fi
 fi
 sed -i 's/^land_only=.*/land_only=1/' "$args"
 bash "$P/merge-main.sh" "$worktree" | grep -q -E '^merged' || { say "ready, but main does not merge cleanly"; exit 3; }
+if ! bash "$P/crate-cycles.sh" "$worktree" > /dev/null; then LAND_ONLY= exec bash "$P/dispatch-flow.sh" "$id" "${run}d" ""; fi
 cd "$worktree" || exit 3
 exec >>"$L/land-$id.log" 2>&1
 branch=$(git branch --show-current)
@@ -115,8 +122,8 @@ if ! pushed=$(git push -q origin "HEAD:refs/heads/$branch" 2>&1); then
 fi
 body=$L/pr-body-$id.md
 printf 'Builds %s, from [its task file](https://github.com/betterlite-ai/betterlite/blob/%s/.development/%s). %s, Cargo.lock aside. The lint checks pass locally and the review approved it. CI runs the tests, the oracle cases and mutants. The PR also marks %s done in the backlog.\n' "$title" "$branch" "$file" "$size" "$id" > "$body"
-old=$(git show "origin/main:.development/$file" | sed -n "s/^  max_changed_lines: //p")
-new=$(sed -n "s/^  max_changed_lines: //p" ".development/$file")
+old=$(git show "origin/main:.development/$file" | grep -o -E 'max_changed_lines: [0-9]+' | cut -d' ' -f2)
+new=$(grep -o -E 'max_changed_lines: [0-9]+' ".development/$file" | cut -d' ' -f2)
 if [ "$old" != "$new" ]; then
   printf "\nThe architect raised its line budget from %s to %s: %s\n" "$old" "$new" "$(git log -1 --format=%b --grep="^docs(tasks): $id budget " origin/main..HEAD | head -n 1)" >> "$body"
 fi
@@ -182,7 +189,7 @@ case "$result" in
     missed=$(find "$logs" -path '*/mutants.out/missed.txt' -exec cat {} + 2>/dev/null | sort -u | head -n 40)
     timed_out=$(find "$logs" -path '*/mutants.out/timeout.txt' -exec cat {} + 2>/dev/null | sort -u | head -n 20)
     say "CI failed on PR #$pr (run $run_id); fix round $(( ${CI_ROUNDS:-0} + 1 ))"
-    LAND_ONLY= CI_ROUNDS=$(( ${CI_ROUNDS:-0} + 1 )) exec bash "$0" "$id" "${run}c" "CI run https://github.com/betterlite-ai/betterlite/actions/runs/$run_id failed on PR #$pr.
+    LAND_ONLY= CI_ROUNDS=$(( ${CI_ROUNDS:-0} + 1 )) exec bash "$P/dispatch-flow.sh" "$id" "${run}c" "CI run https://github.com/betterlite-ai/betterlite/actions/runs/$run_id failed on PR #$pr.
 $lines${missed:+
 Mutants CI missed:
 $missed}${timed_out:+
@@ -193,6 +200,6 @@ The gate logs of that run are in target/ci-logs/$run_id/ in your worktree. Fix t
   *" conflicts with main"*)
     [ "${CONFLICTS:-0}" -lt 3 ] || { park "PR #$pr conflicts with main after 3 merges of main"; exit 5; }
     say "PR #$pr conflicts with main; merging main and landing again"
-    LAND_ONLY=1 CONFLICTS=$(( ${CONFLICTS:-0} + 1 )) exec bash "$0" "$id" "${run}m" "" ;;
+    LAND_ONLY=1 CONFLICTS=$(( ${CONFLICTS:-0} + 1 )) exec bash "$P/dispatch-flow.sh" "$id" "${run}m" "" ;;
   *) exit 5 ;;
 esac

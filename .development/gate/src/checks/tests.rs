@@ -158,7 +158,7 @@ fn the_local_gate_keeps_lint_checks_and_leaves_tests_to_ci() {
         command("helper-python", "true"),
     ]);
     let selection = selection::builtins_and(&development, &task, selection::lint).unwrap();
-    assert_eq!(selection.only, ["fmt", "clippy", "deny", "helper-python"]);
+    assert_eq!(selection.only, ["fmt", "clippy", "deny"]);
 }
 
 fn count_runs(root: &Path) -> usize {
