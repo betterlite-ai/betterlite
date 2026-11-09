@@ -15,8 +15,10 @@ use crate::ocr_config::OcrProviderConfig as _;
 use crate::ocr_config::connection::{OcrConnection, OcrTransportConfig, ResolvedOcrCredentials};
 use crate::ocr_config::{OcrRequestContext, OcrTransform, PreparedOcrRequest, Secrets};
 use crate::ocr_document::OcrDocument;
-use crate::ocr_error::{OcrError, OcrTransportError};
-use crate::ocr_http::tests::support::{MockServer, object, ocr_client, prepared_request, reply};
+use crate::ocr_error::{OcrError, OcrHeaderError, OcrTransportError};
+use crate::ocr_http::tests::support::{
+    MockServer, delayed, object, ocr_client, prepared_request, reply,
+};
 use crate::ocr_http::{CallHooks, OcrWireRequest, ocr};
 use crate::ocr_settings::OcrSettings;
 use crate::request_format::RequestFormat;
@@ -263,17 +265,47 @@ async fn a_source_that_is_neither_an_id_nor_a_data_uri_fails_before_a_request(
     assert!(server.requests().await.is_empty());
 }
 
+#[rstest]
+#[case::no_comma("data:application/pdf")]
+#[case::invalid_base64("data:application/pdf;base64,INVALID!")]
+#[case::refused_mime_parameter(r#"data:application/pdf;x="";base64,YWJj"#)]
 #[tokio::test]
-async fn a_malformed_data_uri_is_invalid_data_uri() {
+async fn a_data_uri_the_parsers_refuse_is_invalid_data_uri(#[case] source: &str) {
     let server = MockServer::start(Vec::new()).await;
     let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
     let mut request = v3_request(server.base.clone(), Object::new());
-    request.document = document("data:application/pdf");
+    request.document = document(source);
     let error = ocr(&v3(), &client, &request, &NoHooks)
         .await
-        .expect_err("a data URI without a comma fails");
+        .expect_err("the data URI is refused");
     assert!(matches!(error, OcrError::InvalidDataUri), "{error:?}");
     assert!(server.requests().await.is_empty());
+}
+
+#[tokio::test]
+async fn a_data_uri_without_a_mime_type_sends_the_default_type() {
+    let upload = br#"{"file_id":"reducto://uploaded.pdf"}"#;
+    let parsed = br#"{"chunks":[{"content":"kept"}]}"#;
+    let server = MockServer::start(vec![
+        reply("200 OK", &[], upload),
+        reply("200 OK", &[], parsed),
+    ])
+    .await;
+    let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
+    let mut request = v3_request(server.base.clone(), Object::new());
+    request.document = document("data:;base64,YWJj");
+    ocr(&v3(), &client, &request, &NoHooks)
+        .await
+        .expect("the call succeeds");
+    let requests = server.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests[0]
+            .to_ascii_lowercase()
+            .contains("content-type: text/plain;charset=us-ascii"),
+        "{}",
+        requests[0]
+    );
 }
 
 #[tokio::test]
@@ -407,16 +439,10 @@ impl CallHooks for RecordingHook {
         request
             .headers
             .push(("x-hook".to_owned(), "seen".to_owned()));
-        let Json::Object(body) = &mut request.body else {
-            return Err(OcrError::RequestField {
-                path: "guardrail.body".to_owned(),
-            });
-        };
-        let hooked = object(&[
+        request.body = Json::Object(object(&[
             ("type", text("document_url")),
             ("document_url", text("reducto://hooked.pdf")),
-        ]);
-        let _previous = body.insert("document".to_owned(), Json::Object(hooked));
+        ]));
         Ok(request)
     }
 
@@ -463,6 +489,115 @@ async fn the_guardrail_sees_the_source_document_and_its_headers_reach_the_parse_
     );
 }
 
+struct HeaderHook;
+
+#[async_trait]
+impl CallHooks for HeaderHook {
+    async fn before_provider_request(
+        &self,
+        mut request: OcrWireRequest,
+    ) -> Result<OcrWireRequest, OcrError> {
+        for (name, value) in &mut request.headers {
+            if name.eq_ignore_ascii_case("authorization") {
+                *value = "Bearer hook-key".to_owned();
+            }
+        }
+        Ok(request)
+    }
+
+    async fn response_received(&self, _body: &[u8]) -> Result<(), OcrError> {
+        Ok(())
+    }
+}
+
+#[rstest]
+#[case::v3("parse-v3")]
+#[case::legacy("parse-legacy")]
+#[tokio::test]
+async fn the_guardrail_headers_reach_both_the_upload_and_the_parse_call(#[case] model: &str) {
+    let upload = br#"{"file_id":"reducto://uploaded.pdf"}"#;
+    let parsed = br#"{"chunks":[{"content":"kept"}]}"#;
+    let server = MockServer::start(vec![
+        reply("200 OK", &[], upload),
+        reply("200 OK", &[], parsed),
+    ])
+    .await;
+    let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
+    let mut request = v3_request(server.base.clone(), Object::new());
+    request.model = model.to_owned();
+    let response = if model == "parse-legacy" {
+        ocr(&legacy(), &client, &request, &HeaderHook).await
+    } else {
+        ocr(&v3(), &client, &request, &HeaderHook).await
+    }
+    .expect("the call succeeds");
+    assert_eq!(response.pages[0].markdown, "kept");
+    let requests = server.requests().await;
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests[0]
+            .to_ascii_lowercase()
+            .contains("authorization: bearer hook-key"),
+        "{}",
+        requests[0]
+    );
+    assert!(
+        requests[1]
+            .to_ascii_lowercase()
+            .contains("authorization: bearer hook-key"),
+        "{}",
+        requests[1]
+    );
+}
+
+struct ResponseHook {
+    seen: Arc<Mutex<Vec<Vec<u8>>>>,
+}
+
+#[async_trait]
+impl CallHooks for ResponseHook {
+    async fn before_provider_request(
+        &self,
+        request: OcrWireRequest,
+    ) -> Result<OcrWireRequest, OcrError> {
+        Ok(request)
+    }
+
+    async fn response_received(&self, body: &[u8]) -> Result<(), OcrError> {
+        self.seen
+            .lock()
+            .expect("the hook records")
+            .push(body.to_vec());
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn the_response_hook_sees_the_parse_answer_once() {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let hook = ResponseHook {
+        seen: Arc::clone(&seen),
+    };
+    let upload = br#"{"file_id":"reducto://uploaded.pdf"}"#;
+    let parsed = br#"{"chunks":[{"content":"kept"}]}"#;
+    let server = MockServer::start(vec![
+        reply("200 OK", &[], upload),
+        reply("200 OK", &[], parsed),
+    ])
+    .await;
+    let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
+    let request = v3_request(server.base.clone(), Object::new());
+    ocr(&v3(), &client, &request, &hook)
+        .await
+        .expect("the call succeeds");
+    {
+        let bodies = seen.lock().expect("the hook recorded");
+        assert_eq!(bodies.len(), 1);
+        assert_eq!(bodies[0], parsed.to_vec());
+    };
+    assert_eq!(server.requests().await.len(), 2);
+}
+
 #[tokio::test]
 async fn upload_keeps_auth_headers_and_drops_content_type_and_content_length() {
     let upload = br#"{"file_id":"reducto://uploaded.pdf"}"#;
@@ -501,6 +636,42 @@ async fn upload_keeps_auth_headers_and_drops_content_type_and_content_length() {
         lowered.contains("content-type: multipart/form-data"),
         "{upload_request}"
     );
+}
+
+#[tokio::test]
+async fn an_upload_timeout_is_a_status_less_transport_failure() {
+    let server = MockServer::start(vec![delayed(
+        reply("200 OK", &[], br#"{"file_id":"reducto://uploaded.pdf"}"#),
+        Duration::from_millis(300),
+    )])
+    .await;
+    let client = ocr_client(OcrSettings::default(), Duration::from_millis(50));
+    let request = v3_request(server.base.clone(), Object::new());
+    let error = ocr(&v3(), &client, &request, &NoHooks)
+        .await
+        .expect_err("the stalled upload times out");
+    assert!(
+        matches!(error, OcrError::Transport(OcrTransportError::Failed(_))),
+        "{error:?}"
+    );
+    assert_eq!(error.http_status_code(), None);
+}
+
+#[tokio::test]
+async fn an_invalid_upload_header_is_a_request_field_error() {
+    let server = MockServer::start(Vec::new()).await;
+    let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
+    let mut request = v3_request(server.base.clone(), Object::new());
+    request.connection.extra_headers = vec![("bad header".to_owned(), "x".to_owned())];
+    let error = ocr(&v3(), &client, &request, &NoHooks)
+        .await
+        .expect_err("the header is refused");
+    assert!(
+        matches!(error, OcrError::Headers(OcrHeaderError::Name { .. })),
+        "{error:?}"
+    );
+    assert_eq!(error.http_status_code(), Some(400));
+    assert!(server.requests().await.is_empty());
 }
 
 #[tokio::test]
@@ -578,6 +749,25 @@ async fn the_environment_key_is_used_when_the_request_has_none() {
     assert_eq!(
         headers,
         vec![("Authorization".to_owned(), "Bearer env-key".to_owned())]
+    );
+}
+
+#[tokio::test]
+async fn the_request_key_precedes_the_environment_key() {
+    let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
+    let mut request = prepared_request("https://platform.reducto.ai".to_owned(), Object::new());
+    request.connection.api_key = Some(SecretString::from("request-key"));
+    let _previous = request
+        .connection
+        .secrets
+        .insert("REDUCTO_API_KEY".to_owned(), SecretString::from("env-key"));
+    let headers = v3()
+        .validate_environment(&request, &client)
+        .await
+        .expect("the request key resolves");
+    assert_eq!(
+        headers,
+        vec![("Authorization".to_owned(), "Bearer request-key".to_owned())]
     );
 }
 
@@ -728,10 +918,65 @@ fn a_block_page_number_at_two_pow_63_saturates_at_i64_max() {
 }
 
 #[rstest]
+#[case::integral_float(r#"{"usage":{"num_pages":2.0}}"#, Some(2))]
+#[case::numeric_string_with_fraction(r#"{"usage":{"num_pages":"2.0"}}"#, Some(2))]
+#[case::numeric_string_with_underscore(r#"{"usage":{"num_pages":"1_000"}}"#, Some(1000))]
+#[case::boolean(r#"{"usage":{"num_pages":true}}"#, Some(1))]
+fn usage_page_counts_accept_the_forms_litellm_accepts(
+    #[case] raw: &str,
+    #[case] expected: Option<i64>,
+) {
+    let response = v3()
+        .transform_ocr_response("parse-v3", raw.as_bytes(), RequestFormat::Litellm)
+        .expect("the page count parses");
+    assert_eq!(
+        response
+            .usage_info
+            .expect("usage is reported")
+            .pages_processed,
+        expected
+    );
+}
+
+#[rstest]
+#[case::numeric_string(r#"{"usage":{"credits":"3"}}"#, Some(3.0_f64))]
+#[case::boolean(r#"{"usage":{"credits":true}}"#, Some(1.0_f64))]
+fn usage_credits_accept_the_forms_litellm_accepts(
+    #[case] raw: &str,
+    #[case] expected: Option<f64>,
+) {
+    let response = v3()
+        .transform_ocr_response("parse-v3", raw.as_bytes(), RequestFormat::Litellm)
+        .expect("the credits parse");
+    assert_eq!(
+        response.usage_info.expect("usage is reported").credits,
+        expected
+    );
+}
+
+#[rstest]
+#[case::trimmed_string(
+    r#"{"chunks":[{"blocks":[{"content":"a","bbox":{"page":" 3 "}}]}]}"#,
+    2
+)]
+#[case::boolean(r#"{"chunks":[{"blocks":[{"content":"a","bbox":{"page":true}}]}]}"#, 0)]
+#[case::zero(r#"{"chunks":[{"blocks":[{"content":"a","bbox":{"page":0}}]}]}"#, 0)]
+#[case::negative(r#"{"chunks":[{"blocks":[{"content":"a","bbox":{"page":-1}}]}]}"#, 0)]
+fn block_page_numbers_coerce_and_clamp(#[case] raw: &str, #[case] expected: i64) {
+    let response = v3()
+        .transform_ocr_response("parse-v3", raw.as_bytes(), RequestFormat::Litellm)
+        .expect("the page parses");
+    assert_eq!(response.pages.len(), 1);
+    assert_eq!(response.pages[0].index, expected);
+    assert_eq!(response.pages[0].markdown, "a");
+}
+
+#[rstest]
 #[case::fractional_pages(r#"{"usage":{"num_pages":1.5}}"#)]
 #[case::array_pages(r#"{"usage":{"num_pages":[]}}"#)]
 #[case::object_credits(r#"{"usage":{"credits":{}}}"#)]
 #[case::pages_over_i64(r#"{"usage":{"num_pages":9223372036854775808}}"#)]
+#[case::infinite_credits(r#"{"usage":{"credits":"inf"}}"#)]
 #[case::pages_exactly_two_pow_63(r#"{"usage":{"num_pages":9223372036854775808.0}}"#)]
 #[case::text_credits(r#"{"usage":{"credits":"much"}}"#)]
 fn a_usage_value_of_the_wrong_type_fails_with_a_response_field(#[case] raw: &str) {

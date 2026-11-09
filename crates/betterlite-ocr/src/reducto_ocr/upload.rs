@@ -1,7 +1,7 @@
 use betterlite_http::proxy::multipart::MultipartPart;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use betterlite_http::proxy::transport_error::TransportError;
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
+use mime::Mime;
 use serde::Deserialize;
 use url::Url;
 use uuid::Uuid;
@@ -36,7 +36,8 @@ pub(super) async fn ensure_file_id(
     let inline = InlineDocument::parse(source)?.ok_or(OcrError::ReductoSource)?;
     let mime = inline.0.mime_type().to_string();
     let bytes = inline.decode(OCR_INLINE_MAX_BYTES)?;
-    upload_bytes(bytes, &mime, headers, context, boundaries).await
+    let content_type: Mime = mime.parse().map_err(|_source| OcrError::InvalidDataUri)?;
+    upload_bytes(bytes, content_type.as_ref(), headers, context, boundaries).await
 }
 
 async fn upload_bytes(
@@ -60,7 +61,7 @@ async fn upload_bytes(
         .provider_http
         .send(outbound)
         .await
-        .map_err(transport_failure)?;
+        .map_err(|error| OcrError::Transport(OcrTransportError::Failed(error)))?;
     let body = read_response_bytes(response, context.connection.max_response_bytes).await?;
     let upload: ReductoUploadResponse = decode_response(&body, false)?.data;
     upload
@@ -129,14 +130,4 @@ fn upload_headers(headers: &[(String, String)]) -> Result<HeaderMap, OcrError> {
         map.append(header_name, header_value);
     }
     Ok(map)
-}
-
-fn transport_failure(error: TransportError) -> OcrError {
-    if matches!(
-        error,
-        TransportError::Deadline(_) | TransportError::ConnectTimeout(_)
-    ) {
-        return OcrError::Transport(OcrTransportError::Timeout);
-    }
-    OcrError::Transport(OcrTransportError::Failed(error))
 }
