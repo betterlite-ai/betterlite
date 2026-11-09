@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
+use aws_lc_rs::digest::{SHA256, digest};
 use betterlite_openai::chat::response::{
     AssistantMessage, ChatChoice, ChatResponse, ChatUsage, MessageProviderFields,
 };
 use betterlite_openai::chat::{ChatMessage, Tool};
 use betterlite_prompts::arguments::json::Json;
 use serde::Serialize;
-use sha2::{Digest as _, Sha256};
 
 pub(super) fn body(text: &str) -> Json {
     serde_json::from_str(text).unwrap()
@@ -57,7 +57,8 @@ pub(super) fn base_response() -> ChatResponse {
 }
 
 pub(super) fn expected_call_id(position: usize, name: &str, sorted: &str) -> String {
-    let mut digest = hex::encode(Sha256::digest(format!("{position}|{name}|{sorted}")));
+    let text = format!("{position}|{name}|{sorted}");
+    let mut digest = hex::encode(digest(&SHA256, text.as_bytes()));
     digest.truncate(24);
     format!("call_{digest}")
 }
