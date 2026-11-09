@@ -2382,6 +2382,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-error",
  "betterlite-redis",
+ "fancy-regex 0.19.2",
  "indexmap 2.14.2",
  "prometheus-client",
  "rand 0.10.3",
