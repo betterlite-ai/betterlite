@@ -1,3 +1,5 @@
+use std::iter::repeat_n;
+
 use rstest::rstest;
 
 use crate::ocr_config::OcrProviderConfig as _;
@@ -242,6 +244,54 @@ fn table_columns_are_limited(#[case] column: usize, #[case] allowed: bool) {
             "{response:?}"
         );
     }
+}
+
+#[rstest]
+#[case::at_the_limit(999_999, true)]
+#[case::over_the_limit(1_000_000, false)]
+fn the_block_visit_budget_is_enforced(#[case] children: usize, #[case] allowed: bool) {
+    let response = analyze(&wide_blocks(children));
+
+    assert_eq!(response.is_ok(), allowed, "children {children}");
+    if !allowed {
+        assert!(
+            matches!(&response, Err(OcrError::InvalidResponse(message)) if message.contains("budget")),
+            "children {children}"
+        );
+    }
+}
+
+fn wide_blocks(children: usize) -> String {
+    let ids = repeat_n("\"leaf\"", children)
+        .collect::<Vec<&str>>()
+        .join(",");
+    format!(
+        r#"[{{"Id":"root","BlockType":"LAYOUT_TEXT","Relationships":[{{"Type":"CHILD","Ids":[{ids}]}}]}},{{"Id":"leaf","BlockType":"LINE","Text":"x"}}]"#
+    )
+}
+
+#[test]
+fn a_fan_out_block_graph_is_refused_within_the_budget() {
+    let response = analyze(&fan_out_blocks(40));
+
+    assert!(
+        matches!(&response, Err(OcrError::InvalidResponse(message)) if message.contains("budget")),
+        "the fan out graph hits the visit budget"
+    );
+}
+
+fn fan_out_blocks(levels: usize) -> String {
+    let mut blocks = Vec::new();
+    for level in 0..levels {
+        let next = level.saturating_add(1);
+        blocks.push(format!(
+            r#"{{"Id":"b{level}","BlockType":"LAYOUT_TEXT","Relationships":[{{"Type":"CHILD","Ids":["b{next}","b{next}"]}}]}}"#
+        ));
+    }
+    blocks.push(format!(
+        r#"{{"Id":"b{levels}","BlockType":"LINE","Text":"x"}}"#
+    ));
+    format!("[{}]", blocks.join(","))
 }
 
 #[rstest]

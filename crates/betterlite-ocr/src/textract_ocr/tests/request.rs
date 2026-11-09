@@ -220,6 +220,56 @@ async fn a_request_without_a_region_is_refused() {
     assert!(log.calls().is_empty());
 }
 
+#[rstest]
+#[case::a_region_name("us-east-1", true)]
+#[case::a_host_injection("x@evil.example/#", false)]
+#[case::an_empty_region("", false)]
+#[case::an_uppercase_region("US-EAST-1", false)]
+#[tokio::test]
+async fn the_default_endpoint_host_needs_a_valid_region(
+    #[case] region: &str,
+    #[case] allowed: bool,
+) {
+    let (log, client) = signing_client();
+    let request = request("detect-document-text", None, region_params(region));
+
+    let result = TextractDetectTextConfig
+        .prepare_request(&request, &client, &NoHooks)
+        .await;
+
+    assert_eq!(result.is_ok(), allowed, "region {region:?}");
+    if allowed {
+        assert_eq!(
+            result.expect("the request prepares").url.as_str(),
+            format!("https://textract.{region}.amazonaws.com/")
+        );
+    } else {
+        assert!(
+            matches!(&result, Err(OcrError::InvalidRequest(_))),
+            "region {region:?}"
+        );
+        assert_eq!(result.unwrap_err().http_status_code(), Some(400));
+        assert!(log.calls().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn the_api_base_does_not_validate_the_region() {
+    let (_log, client) = signing_client();
+    let request = request(
+        "detect-document-text",
+        Some("https://example.test/"),
+        region_params("x@evil.example/#"),
+    );
+
+    let outbound = TextractDetectTextConfig
+        .prepare_request(&request, &client, &NoHooks)
+        .await
+        .expect("the api_base request prepares");
+
+    assert_eq!(outbound.url.as_str(), "https://example.test/");
+}
+
 #[tokio::test]
 async fn a_caller_copy_of_an_operation_header_is_replaced() {
     let (log, client) = signing_client();

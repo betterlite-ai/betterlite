@@ -103,7 +103,7 @@ impl OcrProviderConfig for TextractAnalyzeDocumentConfig {
         _optional_params: &Self::OcrParams,
         environment: &TextractEnvironment,
     ) -> Result<String, OcrError> {
-        Ok(endpoint(request, environment))
+        endpoint(request, environment)
     }
 
     fn transform_ocr_request(
@@ -155,8 +155,9 @@ fn analyze_response(model: &str, response: TextractResponse) -> Result<OCRRespon
             .collect();
         let pages: BTreeSet<i64> = blocks.iter().map(|block| block.page).collect();
         let mut page_markdown = Vec::new();
+        let mut visited = 0_usize;
         for page in pages {
-            let markdown = layout_markdown(blocks, page, &by_id)?;
+            let markdown = layout_markdown(blocks, page, &by_id, &mut visited)?;
             if !markdown.is_empty() {
                 page_markdown.push((page, markdown));
             }

@@ -1,5 +1,11 @@
 task: B6807
 deviations:
+  - what: A region that would change the default endpoint host, such as x@evil.example/#, fails as an invalid request instead of being interpolated into https://textract.{region}.amazonaws.com/.
+    why: LiteLLM takes the region from the request options or the environment and puts it straight into the URL, so a crafted value sends the document and the SigV4 headers to another host. The pattern LiteLLM already applies to Bedrock regions applies here (valid characters are lowercase letters, digits and hyphens, and the value is non-empty); a request with its own api_base is unaffected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/aws_textract/ocr/common_utils.rs#L287-L293
+  - what: A Textract block graph that needs more than 1,000,000 block visits, including a fan-out that repeats a child, fails with an invalid-response error instead of walking every path.
+    why: LiteLLM walks every path of the child graph with no visit budget, so a small graph whose blocks each list the next one twice costs 2^40 visits and hangs the response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/aws_textract/ocr/analyze_transformation.rs#L217-L228
   - what: A Textract block graph that nests deeper than 64 levels, including a cycle, fails with an invalid-response error instead of recursing without bound.
     why: LiteLLM's text_of recurses through child blocks with no depth limit, so a cyclic or pathologically nested provider answer overflows the stack. No working Textract answer nests that deep, and betterlite never panics on provider data.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/aws_textract/ocr/analyze_transformation.rs#L217-L228

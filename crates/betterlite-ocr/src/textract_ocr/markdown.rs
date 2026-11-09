@@ -4,14 +4,21 @@ use crate::ocr_error::OcrError;
 use crate::textract_ocr::wire::{Block, BlockType, LayoutType};
 
 const MAX_BLOCK_DEPTH: usize = 64;
+const MAX_BLOCK_VISITS: usize = 1_000_000;
 const MAX_TABLE_COLUMNS: usize = 1000;
 const BULLETS: [char; 4] = ['-', '*', '\u{2022}', '\u{00b7}'];
+
+struct PageTables<'page> {
+    blocks: Vec<&'page Block>,
+    ordinal: HashMap<&'page str, usize>,
+}
 
 // Layout blocks arrive in reading order; a list's items are repeated as top-level LAYOUT_TEXT blocks
 pub(crate) fn layout_markdown(
     blocks: &[Block],
     page: i64,
     by_id: &HashMap<&str, &Block>,
+    visited: &mut usize,
 ) -> Result<String, OcrError> {
     let on_page: Vec<&Block> = blocks.iter().filter(|block| block.page == page).collect();
     let list_items: BTreeSet<&str> = on_page
@@ -19,17 +26,19 @@ pub(crate) fn layout_markdown(
         .filter(|block| block.kind == BlockType::LayoutList)
         .flat_map(|block| block.children())
         .collect();
-    let tables: Vec<&Block> = on_page
-        .iter()
-        .filter(|block| block.kind == BlockType::Table)
-        .copied()
-        .collect();
-    let table_ordinal: HashMap<&str, usize> = on_page
-        .iter()
-        .filter(|block| block.kind == BlockType::LayoutTable)
-        .enumerate()
-        .map(|(ordinal, block)| (block.id.as_str(), ordinal))
-        .collect();
+    let tables = PageTables {
+        blocks: on_page
+            .iter()
+            .filter(|block| block.kind == BlockType::Table)
+            .copied()
+            .collect(),
+        ordinal: on_page
+            .iter()
+            .filter(|block| block.kind == BlockType::LayoutTable)
+            .enumerate()
+            .map(|(ordinal, block)| (block.id.as_str(), ordinal))
+            .collect(),
+    };
     let mut sections = Vec::new();
     for block in on_page
         .iter()
@@ -38,7 +47,7 @@ pub(crate) fn layout_markdown(
         let Some(layout) = block.kind.layout() else {
             continue;
         };
-        let section = section_markdown(block, layout, by_id, &tables, &table_ordinal)?;
+        let section = section_markdown(block, layout, by_id, &tables, visited)?;
         if !section.trim().is_empty() {
             sections.push(section);
         }
@@ -50,38 +59,43 @@ fn section_markdown(
     block: &Block,
     layout: LayoutType,
     by_id: &HashMap<&str, &Block>,
-    tables: &[&Block],
-    table_ordinal: &HashMap<&str, usize>,
+    tables: &PageTables<'_>,
+    visited: &mut usize,
 ) -> Result<String, OcrError> {
     match layout {
-        LayoutType::Title => Ok(format!("# {}", text_of(block, by_id, " ", 0)?)),
-        LayoutType::SectionHeader => Ok(format!("## {}", text_of(block, by_id, " ", 0)?)),
-        LayoutType::List => list_markdown(block, by_id),
+        LayoutType::Title => Ok(format!("# {}", text_of(block, by_id, " ", 0, visited)?)),
+        LayoutType::SectionHeader => Ok(format!("## {}", text_of(block, by_id, " ", 0, visited)?)),
+        LayoutType::List => list_markdown(block, by_id, visited),
         LayoutType::Table => {
             let linked = block
                 .children()
                 .filter_map(|id| by_id.get(id).copied())
                 .find(|child| child.kind == BlockType::Table);
-            let positioned = table_ordinal
+            let positioned = tables
+                .ordinal
                 .get(block.id.as_str())
-                .and_then(|ordinal| tables.get(*ordinal).copied());
-            linked.or(positioned).map_or_else(
-                || text_of(block, by_id, "\n", 0),
-                |table| table_markdown(table, by_id),
-            )
+                .and_then(|ordinal| tables.blocks.get(*ordinal).copied());
+            let Some(table) = linked.or(positioned) else {
+                return text_of(block, by_id, "\n", 0, visited);
+            };
+            table_markdown(table, by_id, visited)
         }
-        LayoutType::KeyValue => text_of(block, by_id, "\n", 0),
+        LayoutType::KeyValue => text_of(block, by_id, "\n", 0, visited),
         LayoutType::Figure => Ok(String::new()),
         LayoutType::Text | LayoutType::Header | LayoutType::Footer | LayoutType::PageNumber => {
-            text_of(block, by_id, " ", 0)
+            text_of(block, by_id, " ", 0, visited)
         }
     }
 }
 
-fn list_markdown(block: &Block, by_id: &HashMap<&str, &Block>) -> Result<String, OcrError> {
+fn list_markdown(
+    block: &Block,
+    by_id: &HashMap<&str, &Block>,
+    visited: &mut usize,
+) -> Result<String, OcrError> {
     let mut items = Vec::new();
     for item in block.children().filter_map(|id| by_id.get(id).copied()) {
-        let text = text_of(item, by_id, " ", 0)?;
+        let text = text_of(item, by_id, " ", 0, visited)?;
         items.push(format!(
             "- {}",
             text.trim_start_matches(BULLETS).trim_start()
@@ -95,7 +109,14 @@ fn text_of(
     by_id: &HashMap<&str, &Block>,
     separator: &str,
     depth: usize,
+    visited: &mut usize,
 ) -> Result<String, OcrError> {
+    if *visited >= MAX_BLOCK_VISITS {
+        return Err(OcrError::InvalidResponse(
+            "the Textract blocks need more visits than the allowed budget".to_owned(),
+        ));
+    }
+    *visited = visited.saturating_add(1);
     if let Some(text) = &block.text {
         return Ok(text.clone());
     }
@@ -106,7 +127,7 @@ fn text_of(
     }
     let mut texts = Vec::new();
     for child in block.children().filter_map(|id| by_id.get(id).copied()) {
-        let text = text_of(child, by_id, separator, depth.saturating_add(1))?;
+        let text = text_of(child, by_id, separator, depth.saturating_add(1), visited)?;
         if !text.is_empty() {
             texts.push(text);
         }
@@ -114,7 +135,11 @@ fn text_of(
     Ok(texts.join(separator))
 }
 
-fn table_markdown(table: &Block, by_id: &HashMap<&str, &Block>) -> Result<String, OcrError> {
+fn table_markdown(
+    table: &Block,
+    by_id: &HashMap<&str, &Block>,
+    visited: &mut usize,
+) -> Result<String, OcrError> {
     let mut cells: BTreeMap<(usize, usize), String> = BTreeMap::new();
     for cell in table.children().filter_map(|id| by_id.get(id).copied()) {
         if cell.kind != BlockType::Cell {
@@ -123,7 +148,7 @@ fn table_markdown(table: &Block, by_id: &HashMap<&str, &Block>) -> Result<String
         let (Some(row), Some(column)) = (cell.row_index, cell.column_index) else {
             continue;
         };
-        let text = text_of(cell, by_id, " ", 0)?.replace('|', "\\|");
+        let text = text_of(cell, by_id, " ", 0, visited)?.replace('|', "\\|");
         let _previous = cells.insert((row, column), text);
     }
     let columns = cells.keys().map(|(_, column)| *column).max().unwrap_or(0);

@@ -107,11 +107,26 @@ pub(crate) fn operation_headers(
         .collect()
 }
 
-pub(crate) fn endpoint(request: &PreparedOcrRequest, environment: &TextractEnvironment) -> String {
-    let region = environment.region.as_str();
-    request
-        .connection
-        .api_base
-        .clone()
-        .unwrap_or_else(|| format!("https://textract.{region}.amazonaws.com/"))
+pub(crate) fn endpoint(
+    request: &PreparedOcrRequest,
+    environment: &TextractEnvironment,
+) -> Result<String, OcrError> {
+    let Some(api_base) = request.connection.api_base.clone() else {
+        let region = environment.region.as_str();
+        if !valid_region(region) {
+            return Err(OcrError::InvalidRequest(format!(
+                "the AWS region {region:?} must use only lowercase letters, digits and hyphens"
+            )));
+        }
+        return Ok(format!("https://textract.{region}.amazonaws.com/"));
+    };
+    Ok(api_base)
+}
+
+// LiteLLM's _VALID_AWS_REGION_PATTERN is \A[a-z0-9-]+\Z, the rule betterlite-bedrock applies too
+fn valid_region(region: &str) -> bool {
+    !region.is_empty()
+        && region
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }

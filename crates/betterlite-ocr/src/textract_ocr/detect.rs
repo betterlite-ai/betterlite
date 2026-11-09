@@ -67,7 +67,7 @@ impl OcrProviderConfig for TextractDetectTextConfig {
         _optional_params: &Self::OcrParams,
         environment: &TextractEnvironment,
     ) -> Result<String, OcrError> {
-        Ok(endpoint(request, environment))
+        endpoint(request, environment)
     }
 
     fn transform_ocr_request(
