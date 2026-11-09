@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_secret_managers::secret_lookup::SecretValue;
+use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
 use betterlite_secret_managers::secret_lookup::ports::{
     AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
     OidcTokenCache,
@@ -89,6 +90,16 @@ impl OidcClock for FixedClock {
     }
 }
 
+fn output(result: Result<Option<SecretValue>, SecretLookupError>) -> Value {
+    let (value, error) = match result {
+        Ok(Some(SecretValue::Text(text))) => (Value::from(text.expose_secret()), None),
+        Ok(Some(SecretValue::Bool(value))) => (Value::from(value), None),
+        Ok(None) => (Value::Null, None),
+        Err(error) => (Value::Null, Some(error.to_string())),
+    };
+    serde_json::json!({"value": value, "error": error})
+}
+
 pub(crate) struct Op;
 
 impl Helper for Op {
@@ -102,39 +113,28 @@ impl Helper for Op {
             clock: Arc::new(FixedClock(Instant::now())),
             oidc_cache: OidcTokenCache::default(),
         };
+        let fallback = input.default_value.as_ref();
         let result = match input.function {
             Function::GetSecret => lookup.get_secret(
                 &input.environment,
                 &input.secret_name,
-                input
-                    .default_value
-                    .as_ref()
-                    .map(DefaultValue::to_secret_value),
+                fallback.map(DefaultValue::to_secret_value),
             ),
             Function::Str => lookup
                 .get_secret_str(
                     &input.environment,
                     &input.secret_name,
-                    input
-                        .default_value
-                        .as_ref()
-                        .map(DefaultValue::to_secret_value),
+                    fallback.map(DefaultValue::to_secret_value),
                 )
                 .map(|value| value.map(SecretValue::Text)),
             Function::Bool => lookup
                 .get_secret_bool(
                     &input.environment,
                     &input.secret_name,
-                    input.default_value.as_ref().and_then(DefaultValue::as_bool),
+                    fallback.and_then(DefaultValue::as_bool),
                 )
                 .map(|value| value.map(SecretValue::Bool)),
         };
-        let (value, error) = match result {
-            Ok(Some(SecretValue::Text(text))) => (Value::from(text.expose_secret()), None),
-            Ok(Some(SecretValue::Bool(value))) => (Value::from(value), None),
-            Ok(None) => (Value::Null, None),
-            Err(error) => (Value::Null, Some(error.to_string())),
-        };
-        Ok(serde_json::json!({"value": value, "error": error}))
+        Ok(output(result))
     }
 }
