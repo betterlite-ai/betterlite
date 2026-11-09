@@ -64,43 +64,29 @@ impl Helper for Op {
     }
 }
 
+type Outcome<T> = Result<T, Box<HelperError>>;
+
 trait SearchRequest {
     type Body: serde::Serialize;
 
-    fn validate(&self, headers: Headers) -> Result<Headers, Box<HelperError>>;
-    fn transform(
-        &self,
-        query: &SearchQuery,
-        params: &Object,
-    ) -> Result<Self::Body, Box<HelperError>>;
-    fn complete(
-        &self,
-        api_base: Option<&str>,
-        body: &Self::Body,
-    ) -> Result<String, Box<HelperError>>;
+    fn validate(&self, headers: Headers) -> Outcome<Headers>;
+    fn transform(&self, query: &SearchQuery, options: &Object) -> Outcome<Self::Body>;
+    fn complete(&self, api_base: Option<&str>, body: &Self::Body) -> Outcome<String>;
 }
 
 impl SearchRequest for GooglePseSearch<'_> {
     type Body = GooglePseBody;
 
-    fn validate(&self, headers: Headers) -> Result<Headers, Box<HelperError>> {
+    fn validate(&self, headers: Headers) -> Outcome<Headers> {
         self.validate_environment(headers).map_err(value_error)
     }
 
-    fn transform(
-        &self,
-        query: &SearchQuery,
-        params: &Object,
-    ) -> Result<Self::Body, Box<HelperError>> {
-        self.transform_search_request(query, params)
+    fn transform(&self, query: &SearchQuery, options: &Object) -> Outcome<Self::Body> {
+        self.transform_search_request(query, options)
             .map_err(value_error)
     }
 
-    fn complete(
-        &self,
-        api_base: Option<&str>,
-        body: &Self::Body,
-    ) -> Result<String, Box<HelperError>> {
+    fn complete(&self, api_base: Option<&str>, body: &Self::Body) -> Outcome<String> {
         self.complete_url(api_base, Some(body)).map_err(value_error)
     }
 }
@@ -108,24 +94,16 @@ impl SearchRequest for GooglePseSearch<'_> {
 impl SearchRequest for SearchApiSearch<'_> {
     type Body = SearchApiBody;
 
-    fn validate(&self, headers: Headers) -> Result<Headers, Box<HelperError>> {
+    fn validate(&self, headers: Headers) -> Outcome<Headers> {
         self.validate_environment(headers).map_err(value_error)
     }
 
-    fn transform(
-        &self,
-        query: &SearchQuery,
-        params: &Object,
-    ) -> Result<Self::Body, Box<HelperError>> {
-        self.transform_search_request(query, params)
+    fn transform(&self, query: &SearchQuery, options: &Object) -> Outcome<Self::Body> {
+        self.transform_search_request(query, options)
             .map_err(value_error)
     }
 
-    fn complete(
-        &self,
-        api_base: Option<&str>,
-        body: &Self::Body,
-    ) -> Result<String, Box<HelperError>> {
+    fn complete(&self, api_base: Option<&str>, body: &Self::Body) -> Outcome<String> {
         self.complete_url(api_base, Some(body)).map_err(value_error)
     }
 }
