@@ -1,0 +1,37 @@
+kind: helper
+name: ragflow-missing-dataset-id
+call:
+  b7814:
+    calls:
+      - call: create_response
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"code":0,"data":{"name":"notes"}}'
+      - call: create_response
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"code":0,"data":{"id":""}}'
+      - call: create_response
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"code":0,"data":{"id":0}}'
+      - call: create_response
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"code":0}'
+      - call: create_response
+        input:
+          status_code: 200
+          headers: {x-request-id: req_1, content-length: "13"}
+          body: '{"code":0,"data":[]}'
+      - call: create_response
+        input:
+          status_code: 200
+          headers: {x-request-id: req_2, content-length: "61"}
+          body: '{"code":0,"data":{"id":"ds_1","create_time":"yesterday"}}'
+env: {}
+compare: {ignore: []}
