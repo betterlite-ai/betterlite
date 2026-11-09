@@ -108,9 +108,9 @@ base:
       run: cargo fmt --all --check
       turn: now
     - id: clippy
-      why: the lint table is the code standard and warnings are errors in every package the change can affect, and a push to main lints the whole workspace
+      why: the lint table is the code standard and warnings are errors, on this machine in the packages the change edits and in CI in every package it can affect, and a push to main lints the whole workspace
       run: |-
-        packages=$(cargo gate affected) || exit 1
+        if [ "$GITHUB_ACTIONS" = true ]; then packages=$(cargo gate affected) || exit 1; else packages=$(cargo gate affected --edited) || exit 1; fi
         if [ -z "$packages" ]; then echo "the change affects no package"; else cargo clippy --all-targets --locked $packages -- -D warnings; fi
     - id: deny
       why: licenses, advisories, bans, crate layering and sources follow deny.toml

@@ -1,0 +1,9 @@
+kind: helper
+name: vercel-ai-gateway-seed-provider-info
+call:
+  b5835:
+    steps:
+      - {kind: provider_info_and_supported_params, model: vercel-model, api_key: seed-key, chat_models: [], text_models: []}
+      - {kind: provider_info_and_supported_params, model: gpt-4o, environment: {VERCEL_OIDC_TOKEN: seed-oidc}, chat_models: [gpt-4o]}
+env: {}
+compare: {ignore: []}
