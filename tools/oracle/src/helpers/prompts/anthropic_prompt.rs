@@ -119,39 +119,24 @@ fn failure(status: Option<u16>, error: &dyn Display) -> Box<HelperError> {
     })
 }
 
+// LiteLLM's no-message, unsupported-role, image and missing-file failures are BadRequestErrors; its other errors escape without a status
 const fn status_of<FileFailure>(error: &AnthropicPromptError<FileFailure>) -> Option<u16>
 where
     FileFailure: StdError + Send + Sync + 'static,
 {
     match error {
         AnthropicPromptError::Prepare(PrepareError::NoUserMessages)
-        | AnthropicPromptError::Assembly(AssemblyError::UnsupportedRole { .. }) => Some(400),
+        | AnthropicPromptError::Assembly(AssemblyError::UnsupportedRole { .. })
+        | AnthropicPromptError::UserBlocks(
+            UserBlocksError::Image(ImageError::Fetch(_))
+            | UserBlocksError::ToolResult(ToolResultError::Image(ImageError::Fetch(_)))
+            | UserBlocksError::File(
+                FileMessageError::MissingFile | FileMessageError::Image(ImageError::Fetch(_)),
+            ),
+        ) => Some(400),
         AnthropicPromptError::Prepare(_)
         | AnthropicPromptError::Assistant(_)
-        | AnthropicPromptError::Assembly(_) => None,
-        AnthropicPromptError::UserBlocks(user_blocks) => user_blocks_status(user_blocks),
-    }
-}
-
-// LiteLLM's image and missing-file failures are BadRequestErrors; its other conversion errors escape without a status
-const fn user_blocks_status<FileFailure>(error: &UserBlocksError<FileFailure>) -> Option<u16>
-where
-    FileFailure: StdError + Send + Sync + 'static,
-{
-    match error {
-        UserBlocksError::Image(ImageError::Fetch(_))
-        | UserBlocksError::ToolResult(ToolResultError::Image(ImageError::Fetch(_)))
-        | UserBlocksError::File(
-            FileMessageError::MissingFile | FileMessageError::Image(ImageError::Fetch(_)),
-        ) => Some(400),
-        UserBlocksError::Image(_)
-        | UserBlocksError::File(_)
-        | UserBlocksError::ToolResult(_)
-        | UserBlocksError::MessageNotObject { .. }
-        | UserBlocksError::MissingRole { .. }
-        | UserBlocksError::BlockNotObject { .. }
-        | UserBlocksError::Field { .. }
-        | UserBlocksError::TooManyParts { .. }
-        | UserBlocksError::MessageDecode { .. } => None,
+        | AnthropicPromptError::Assembly(_)
+        | AnthropicPromptError::UserBlocks(_) => None,
     }
 }

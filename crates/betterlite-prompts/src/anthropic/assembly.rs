@@ -38,6 +38,7 @@ pub enum AssemblyError {
 }
 
 struct RoleAt<'input> {
+    index: usize,
     message: &'input Json,
     fields: &'input Object,
     name: &'input str,
@@ -62,48 +63,65 @@ where
     Ids: Fn() -> String + Sync,
 {
     let prepared = prepare(messages, model, llm_provider, modify_params)?;
-    let builder = UserBlockBuilder {
-        force_base64: prepared.force_base64,
-        fetcher: deps.fetcher,
-        blocks: deps.blocks,
-        new_id: deps.new_id,
-    };
-    let mut assembled = assemble(&prepared.messages, &builder, deps.new_id).await?;
+    let mut assembled = deps
+        .assemble(&prepared.messages, prepared.force_base64)
+        .await?;
     strip_trailing_whitespace(&mut assembled)?;
     Ok(assembled)
 }
 
-async fn assemble<Source, Blocks, Ids>(
-    messages: &[Json],
-    builder: &UserBlockBuilder<'_, Source, Blocks, Ids>,
-    new_id: &Ids,
-) -> Result<Vec<Json>, AnthropicPromptError<Blocks::Failure>>
+impl<Source, Blocks, Ids> PromptDeps<'_, Source, Blocks, Ids>
 where
     Source: RemoteMediaFetcher + Sync,
     Blocks: FileBlocks + Sync,
     Ids: Fn() -> String + Sync,
 {
-    let mut assembled = Vec::new();
-    let mut index = 0;
-    while let Some(role) = role_at(messages, index)? {
-        let start = index;
-        let user = builder.convert(messages, index).await?;
+    async fn assemble(
+        &self,
+        messages: &[Json],
+        force_base64: bool,
+    ) -> Result<Vec<Json>, AnthropicPromptError<Blocks::Failure>> {
+        let builder = UserBlockBuilder {
+            force_base64,
+            fetcher: self.fetcher,
+            blocks: self.blocks,
+            new_id: self.new_id,
+        };
+        let mut assembled = Vec::new();
+        let mut index = 0;
+        while let Some(role) = role_at(messages, index)? {
+            index = self
+                .convert_turn(messages, role, &builder, &mut assembled)
+                .await?;
+        }
+        Ok(assembled)
+    }
+
+    async fn convert_turn(
+        &self,
+        messages: &[Json],
+        role: RoleAt<'_>,
+        builder: &UserBlockBuilder<'_, Source, Blocks, Ids>,
+        assembled: &mut Vec<Json>,
+    ) -> Result<usize, AnthropicPromptError<Blocks::Failure>> {
+        let start = role.index;
+        let user = builder.convert(messages, start).await?;
         if let Some(message) = user.message() {
             assembled.push(message);
         }
-        index = user.next;
+        let mut index = user.next;
         let mut assistant = AssistantRun::default();
         while let Some(next) = role_at(messages, index)? {
             if next.name != ASSISTANT {
                 break;
             }
-            assistant.append(next.fields, index, new_id)?;
+            assistant.append(next.fields, index, self.new_id)?;
             index = index.saturating_add(1);
         }
         if let Some(message) = assistant.message() {
             assembled.push(message);
         }
-        index = append_system_messages(messages, index, &mut assembled)?;
+        index = append_system_messages(messages, index, assembled)?;
         if index == start {
             return Err(AnthropicPromptError::Assembly(
                 AssemblyError::UnsupportedRole {
@@ -112,8 +130,8 @@ where
                 },
             ));
         }
+        Ok(index)
     }
-    Ok(assembled)
 }
 
 fn append_system_messages(
@@ -157,6 +175,7 @@ fn role_at(messages: &[Json], index: usize) -> Result<Option<RoleAt<'_>>, Assemb
     match fields.get(ROLE) {
         None => Err(AssemblyError::MissingRole { index }),
         Some(Json::Text(name)) => Ok(Some(RoleAt {
+            index,
             message,
             fields,
             name,
