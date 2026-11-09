@@ -1,0 +1,57 @@
+kind: helper
+name: oci-embed-input-type-map-and-truncate
+call:
+  b5941:
+    steps:
+      - method: request
+        model: cohere.embed-v4.0
+        input: hello
+        optional_params:
+          input_type: search_document
+          truncate: START
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+      - method: request
+        model: cohere.embed-v4.0
+        input: hello
+        optional_params:
+          input_type: SEARCH_QUERY
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+      - method: request
+        model: cohere.embed-v4.0
+        input: hello
+        optional_params:
+          input_type: Classification
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+      - method: request
+        model: cohere.embed-v4.0
+        input: hello
+        optional_params:
+          input_type: clustering
+          truncate: NONE
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+      - method: request
+        model: cohere.embed-v4.0
+        input: hello
+        optional_params:
+          input_type: image
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+      - method: request
+        model: cohere.embed-v4.0
+        input: hello
+        optional_params:
+          input_type: search-image
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+      - method: request
+        model: cohere.embed-v4.0
+        input: hello
+        optional_params: {}
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+env: {}
+compare: {ignore: []}

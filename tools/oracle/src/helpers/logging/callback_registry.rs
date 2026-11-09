@@ -185,6 +185,7 @@ fn registration_outcome(outcome: Registration) -> Value {
         Registration::Registered => json!({"outcome": "registered"}),
         Registration::AlreadyRegistered => json!({"outcome": "already_registered"}),
         Registration::SkippedCapacity => json!({"outcome": "skipped_capacity"}),
+        Registration::NotBuilt => json!({"outcome": "not_built"}),
     }
 }
 

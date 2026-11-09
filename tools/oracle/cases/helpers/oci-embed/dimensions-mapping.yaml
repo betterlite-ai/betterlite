@@ -1,0 +1,43 @@
+kind: helper
+name: oci-embed-dimensions-mapping
+call:
+  b5941:
+    steps:
+      - method: supported_params
+        model: cohere.embed-v4.0
+      - method: map_params
+        non_default_params:
+          dimensions: 1024
+          user: ignored
+        optional_params: {}
+      - method: map_params
+        non_default_params:
+          user: ignored
+        optional_params:
+          oci_serving_mode: ON_DEMAND
+      - method: request
+        model: cohere.embed-v4.0
+        input: hello
+        non_default_params:
+          dimensions: 256
+        optional_params: {}
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+      - method: request
+        model: cohere.embed-v4.0
+        input: hello
+        optional_params:
+          outputDimensions: 512
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+      - method: request
+        model: cohere.embed-v4.0
+        input: hello
+        non_default_params:
+          dimensions: 1024
+        optional_params:
+          outputDimensions: 512
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+env: {}
+compare: {ignore: []}

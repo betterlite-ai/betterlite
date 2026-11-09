@@ -1,0 +1,18 @@
+kind: probe
+name: parser-byte-bound
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments: []
+        tags: []
+        parse: {bytes: 1048577}
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /output/tag_matchers/parse
+      reference: {kind: valid, deployments: 0}
+      rust: {kind: invalid, bytes: 1048577, limit: 1048576}
+      why: betterlite refuses a tag match document past 1 MiB before decoding, while the LiteLLM reference reads it
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L87-L277

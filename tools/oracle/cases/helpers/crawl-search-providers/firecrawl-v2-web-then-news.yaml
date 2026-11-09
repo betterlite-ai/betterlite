@@ -1,0 +1,15 @@
+kind: helper
+name: crawl-search-providers-firecrawl-v2-web-then-news
+call:
+  b8022:
+    provider: firecrawl
+    function: transform_search_response
+    replies:
+      - data:
+          news:
+            - {title: "N", url: "https://n.test", snippet: "news snippet", date: "2024-06-01", last_updated: "2024-06-02"}
+          web:
+            - {title: "W", url: "https://w.test", markdown: "web markdown", date: "2024-03-04", last_updated: "2024-04-05"}
+env: {}
+compare:
+  ignore: []
