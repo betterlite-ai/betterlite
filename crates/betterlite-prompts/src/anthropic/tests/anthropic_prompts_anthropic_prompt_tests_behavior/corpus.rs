@@ -57,6 +57,18 @@ fn anthropic_prompts_anthropic_prompt_tests_behavior_rejects_json_of_the_wrong_s
     assert!(matches!(error, PromptInputError::Decode { .. }));
 }
 
+#[test]
+fn anthropic_prompts_anthropic_prompt_tests_behavior_rejects_deeply_nested_input() {
+    let mut raw = String::from(
+        r#"{"messages":[{"role":"user","content":"hi","provider_specific_fields":{"deep":"#,
+    );
+    raw.push_str(&"[".repeat(200));
+    raw.push_str(&"]".repeat(200));
+    raw.push_str("}}],\"model\":\"m\",\"llm_provider\":\"p\"}");
+    let error = parse_prompt_anthropic_input(raw.as_bytes()).expect_err("deep input is refused");
+    assert!(matches!(error, PromptInputError::Decode { .. }));
+}
+
 #[rstest]
 fn replays_the_prompt_anthropic_corpus(#[files("fuzz/corpus/prompt_anthropic/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
