@@ -51,6 +51,7 @@ Once the checks pass, read your whole branch the way the parity review will, and
 
 1. Try to break each test. For every branch, guard, default, limit and constant you wrote, name the test or oracle case that fails when it is wrong. Cover both sides of each condition and the values just inside and just outside each limit. If you can't tell, change the line in the working tree, run that test, and undo the change. A test that still passes is a gap, and so is a fixture that never reaches the line.
 2. Walk the LiteLLM code your references own, branch by branch. For each field, check what LiteLLM does when it is absent, null, empty or zero. Check each default, each header, each env var both unset and empty, and the status, type, param and code of each error. Build and test what differs, or add it to docs/deviations/<ID>.yaml. docs/compatibility.md lists the Python habits we don't copy.
+3. List the mutants of your diff: `git diff origin/main -- '*.rs' ':(exclude)tools/oracle' ':(exclude,glob)**/fuzz/**' > target/mutants-list.diff && cargo mutants --list --in-diff target/mutants-list.diff`. It builds nothing, so it's fine in a dispatched run. For each line it prints, name the test that fails on that change, and write one where you can't. A missed mutant costs a full CI round.
 
 ## Blocked
 

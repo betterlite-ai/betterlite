@@ -1,0 +1,33 @@
+kind: probe
+name: parser-byte-bound
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.0"}
+        reply:
+          kind: padded
+          content: '{"crux":"x","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":0.5}'
+          pad: " "
+          pad_len: 1048494
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.0"}
+        reply:
+          kind: padded
+          content: '{"crux":"x","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":0.5}'
+          pad: " "
+          pad_len: 1100000
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /output/capability_forecast/route
+      reference: {kind: routed, tier: SIMPLE, threshold: "0.500000", crux: x, p_solve: "0.500000", meets: true, primary_rule: SUP-1, capability_boundary: supported, calibration_version: null}
+      rust: {kind: rejected}
+      why: betterlite refuses a reply past 1048576 bytes before decoding it, a bound LiteLLM's str parser has no equivalent for
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/capability_classifier.py#L208-L227

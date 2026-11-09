@@ -6,7 +6,11 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+async-trait = "0.1.92"
 base64 = "0.23.1"
+betterlite-logging = { path = "../betterlite-logging" }
+betterlite-redact = { path = "../betterlite-redact" }
+betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 rust_decimal.workspace = true
 serde.workspace = true
 serde_json = "1.0.154"
@@ -15,7 +19,11 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+betterlite-config = { path = "../betterlite-config" }
+betterlite-http = { path = "../betterlite-http" }
+betterlite-models = { path = "../betterlite-models" }
 rstest = "=0.27.0"
+tokio.workspace = true
 tracing-subscriber.workspace = true
 
 [lints]
