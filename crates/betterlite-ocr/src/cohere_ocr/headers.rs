@@ -21,8 +21,8 @@ pub(crate) fn resolve(request: &PreparedOcrRequest) -> Result<Vec<(String, Strin
                 .connection
                 .secrets
                 .get(COHERE_API_KEY_ENV)
-                .map(|key| key.expose_secret().trim().to_owned())
-                .filter(|key| !key.is_empty())
+                .map(|key| key.expose_secret().to_owned())
+                .filter(|key| !key.trim().is_empty())
         })
         .ok_or_else(|| {
             OcrError::Auth(OcrAuthError::MissingApiKey {

@@ -13,7 +13,8 @@ use crate::ocr_config::connection::{
     OcrConnection, OcrInputSource, OcrSourced, OcrTransportConfig, ResolvedOcrCredentials,
 };
 use crate::ocr_config::{
-    OCR_RESPONSE_MAX_BYTES, OcrProviderConfig as _, OcrTransform, PreparedOcrRequest, Secrets,
+    OCR_INLINE_MAX_BYTES, OCR_RESPONSE_MAX_BYTES, OcrProviderConfig as _, OcrTransform,
+    PreparedOcrRequest, Secrets,
 };
 use crate::ocr_document::OcrDocument;
 use crate::ocr_error::{OcrAuthError, OcrError};
@@ -24,10 +25,7 @@ use crate::request_format::RequestFormat;
 use crate::response::OCRResponse;
 
 use super::options::{CohereOptions, OutputFormat};
-use super::{
-    COHERE_API_KEY_ENV, COHERE_HEALTH_CHECK_DATA_URI, COHERE_PARSE_API_BASE, CohereParseConfig,
-    validate_document,
-};
+use super::{COHERE_API_KEY_ENV, CohereParseConfig, validate_document};
 
 fn image_document(source: &str) -> OcrDocument {
     OcrDocument::ImageUrl {
@@ -253,6 +251,43 @@ async fn a_blank_request_key_falls_back_to_the_environment_key() {
 }
 
 #[tokio::test]
+async fn extra_headers_are_sent_after_the_generated_authorization() {
+    let extra = vec![("X-Tenant".to_owned(), "tenant-a".to_owned())];
+    let headers = environment(connection(Some("request-key"), None, extra, None))
+        .await
+        .expect("the key resolves");
+    assert_eq!(
+        headers,
+        vec![
+            ("Authorization".to_owned(), "Bearer request-key".to_owned()),
+            ("X-Tenant".to_owned(), "tenant-a".to_owned()),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn the_environment_key_keeps_the_spaces_it_was_read_with() {
+    let headers = environment(connection(None, Some(" env-key "), Vec::new(), None))
+        .await
+        .expect("the key resolves");
+    assert_eq!(
+        headers,
+        vec![("Authorization".to_owned(), "Bearer  env-key ".to_owned())]
+    );
+}
+
+#[tokio::test]
+async fn a_blank_environment_key_is_the_missing_key_error() {
+    let error = environment(connection(None, Some("  "), Vec::new(), None))
+        .await
+        .expect_err("a blank environment key fails");
+    assert!(matches!(
+        error,
+        OcrError::Auth(OcrAuthError::MissingApiKey { .. })
+    ));
+}
+
+#[tokio::test]
 async fn a_missing_key_is_the_cohere_authentication_error() {
     let error = environment(connection(None, None, Vec::new(), None))
         .await
@@ -303,12 +338,34 @@ fn a_malformed_data_uri_is_not_an_image_only_error() {
 }
 
 #[test]
+fn an_image_data_uri_with_invalid_base64_is_rejected() {
+    assert!(matches!(
+        validate_document(&image_document("data:image/png;base64,@@@")),
+        Err(OcrError::InvalidDataUri)
+    ));
+}
+
+#[test]
+fn an_image_data_uri_over_the_inline_cap_is_rejected() {
+    let groups = OCR_INLINE_MAX_BYTES.saturating_add(1).div_ceil(3);
+    let encoded = "A".repeat(groups.saturating_mul(4));
+    let source = format!("data:image/png;base64,{encoded}");
+    assert!(matches!(
+        validate_document(&image_document(&source)),
+        Err(OcrError::InlineDocumentTooLarge)
+    ));
+}
+
+#[test]
 fn the_health_check_document_is_the_png_data_uri() {
     let OcrDocument::ImageUrl { image_url, extra } = CohereParseConfig.get_health_check_document()
     else {
         panic!("the health check document is an image");
     };
-    assert_eq!(image_url, COHERE_HEALTH_CHECK_DATA_URI);
+    assert_eq!(
+        image_url,
+        "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC"
+    );
     assert!(extra.is_empty());
     validate_document(&OcrDocument::ImageUrl { image_url, extra })
         .expect("the health check document is valid");
@@ -343,7 +400,7 @@ fn the_default_base_is_the_cohere_api() {
     let url = CohereParseConfig
         .get_complete_url(&request, &CohereOptions::default(), &Vec::new())
         .expect("the default base completes");
-    assert_eq!(url, format!("{COHERE_PARSE_API_BASE}/v2/parse"));
+    assert_eq!(url, "https://api.cohere.com/v2/parse");
 }
 
 #[rstest]
@@ -578,6 +635,32 @@ fn an_image_without_a_bounding_box_has_no_bbox() {
         .expect("the image is kept")[0];
     assert_eq!(image.image_base64.as_deref(), Some("aGVsbG8="));
     assert_eq!(image.bbox, None);
+}
+
+#[test]
+fn a_non_object_bounding_box_is_not_copied_to_bbox() {
+    let response = normalize(r#"{"pages":[{"markdown":{"images":[{"bounding_box":[1,2]}]}}]}"#)
+        .expect("the image decodes");
+    let image = &response.pages[0]
+        .images
+        .as_ref()
+        .expect("the image is kept")[0];
+    assert_eq!(image.bbox, None);
+    let expected = serde_json::from_str::<Json>("[1,2]").expect("the bounding box parses");
+    assert_eq!(image.extra.get("bounding_box"), Some(&expected));
+}
+
+#[test]
+fn a_provider_bbox_is_replaced_by_the_bounding_box() {
+    let response =
+        normalize(r#"{"pages":[{"markdown":{"images":[{"bounding_box":{"x":1},"bbox":"old"}]}}]}"#)
+            .expect("the image decodes");
+    let image = &response.pages[0]
+        .images
+        .as_ref()
+        .expect("the image is kept")[0];
+    let expected = serde_json::from_str::<Object>(r#"{"x":1}"#).expect("the box parses");
+    assert_eq!(image.bbox, Some(expected));
 }
 
 #[test]

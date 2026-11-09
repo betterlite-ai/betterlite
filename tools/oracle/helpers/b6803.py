@@ -117,7 +117,7 @@ def run(input_value: dict[str, Json]) -> Json:
         "request": {
             "method": "POST",
             "path": capture.path,
-            "authorization_present": capture.authorization is not None,
+            "authorization": capture.authorization,
             "content_type": capture.content_type,
             "body": _decode(capture.body),
         },

@@ -18,7 +18,9 @@ use betterlite_ocr::ocr_auth::{
 use betterlite_ocr::ocr_config::connection::{
     OcrConnection, OcrInputSource, OcrSourced, OcrTransportConfig, ResolvedOcrCredentials,
 };
-use betterlite_ocr::ocr_config::{OCR_RESPONSE_MAX_BYTES, PreparedOcrRequest, Secrets};
+use betterlite_ocr::ocr_config::{
+    OCR_RESPONSE_MAX_BYTES, OcrProviderConfig as _, PreparedOcrRequest, Secrets,
+};
 use betterlite_ocr::ocr_document::OcrDocument;
 use betterlite_ocr::ocr_error::{OcrError, OcrSecretError};
 use betterlite_ocr::ocr_http::{CallHooks, OcrClient, OcrWireRequest, SecretSource, ocr};
@@ -64,6 +66,7 @@ async fn call(input: &Input) -> HelperResult {
         .map_err(|error| failure("Mock", error.to_string()))?;
     let request = prepared_request(input, mock.base_url.clone())?;
     let client = client()?;
+    let authorization = authorization_header(&request, &client).await?;
     let answer = ocr(&CohereParseConfig, &client, &request, &NoHooks)
         .await
         .map_err(|error| failure("Provider", error.to_string()))?;
@@ -76,7 +79,21 @@ async fn call(input: &Input) -> HelperResult {
             "the Cohere provider sent no request".to_owned(),
         ));
     };
-    output(call, &answer)
+    output(call, &answer, authorization.as_deref())
+}
+
+async fn authorization_header(
+    request: &PreparedOcrRequest,
+    client: &OcrClient,
+) -> Result<Option<String>, Box<HelperError>> {
+    let headers = CohereParseConfig
+        .validate_environment(request, client)
+        .await
+        .map_err(|error| failure("Headers", error.to_string()))?;
+    Ok(headers
+        .into_iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+        .map(|(_, value)| value))
 }
 
 fn prepared_request(
@@ -128,7 +145,7 @@ fn connection(input: &Input, api_base: String) -> OcrConnection {
     )
 }
 
-fn output(call: ProviderCall, answer: &OCRResponse) -> HelperResult {
+fn output(call: ProviderCall, answer: &OCRResponse, authorization: Option<&str>) -> HelperResult {
     let ProviderRequest {
         method,
         path,
@@ -143,7 +160,7 @@ fn output(call: ProviderCall, answer: &OCRResponse) -> HelperResult {
         "request": {
             "method": method,
             "path": path,
-            "authorization_present": headers.contains_key("authorization"),
+            "authorization": authorization,
             "content_type": headers.get("content-type"),
             "body": body,
         },
