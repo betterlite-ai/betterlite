@@ -191,6 +191,7 @@ enum Scenario {
     AddKeepsOneCopy,
     WithDynamicCallbackAppendsOnce,
     ProcessInputResolvesNamesOnly,
+    ProcessDropsAnUnavailableName,
     ProcessKeepsNoneAndEmptyLists,
     SuccessMirrorsIntoAsyncSuccess,
     SuccessDuplicatesAnAlreadyListedAsyncEntry,
@@ -221,6 +222,7 @@ enum Scenario {
 #[case::add_keeps_one_copy(Scenario::AddKeepsOneCopy)]
 #[case::with_dynamic_callback_appends_once(Scenario::WithDynamicCallbackAppendsOnce)]
 #[case::process_input_resolves_names_only(Scenario::ProcessInputResolvesNamesOnly)]
+#[case::process_drops_an_unavailable_name(Scenario::ProcessDropsAnUnavailableName)]
 #[case::process_keeps_none_and_empty_lists(Scenario::ProcessKeepsNoneAndEmptyLists)]
 #[case::success_mirrors_into_async_success(Scenario::SuccessMirrorsIntoAsyncSuccess)]
 #[case::success_duplicates_an_already_listed_async_entry(
@@ -316,6 +318,19 @@ fn dynamic_callbacks_behavior_tests_behavior(#[case] scenario: Scenario) {
             );
             assert_eq!(resolver.calls().len(), 1);
             assert!(resolver.calls().first().unwrap().params.is_empty());
+        }
+        Scenario::ProcessDropsAnUnavailableName => {
+            let mut lists = lists();
+            lists.input = Some(vec![name("gitlab"), name("langfuse")]);
+            let resolver = FakeResolver::new(vec![
+                ("gitlab", Outcome::Missing),
+                ("langfuse", Outcome::Logger(marker("langfuse"))),
+            ]);
+            lists
+                .process_dynamic_callbacks(&resolver, &TrustedCallbacks::default())
+                .unwrap();
+            assert_eq!(labels(lists.input.as_deref().unwrap()), ["langfuse"]);
+            assert_eq!(resolver.calls().len(), 2);
         }
         Scenario::ProcessKeepsNoneAndEmptyLists => {
             let mut lists = lists();
