@@ -38,7 +38,7 @@ fn object(text: &str) -> Object {
 }
 
 #[test]
-fn settings_default_to_unset() {
+fn you_com_search_settings_default_to_unset() {
     let search = load(&[]);
     assert!(search.api_key.is_none());
     assert!(search.api_base.is_none());
@@ -53,7 +53,7 @@ fn settings_default_to_unset() {
 #[case::empty_key_is_unset(&[("YOUCOM_API_KEY", "")], None, None)]
 #[case::empty_base_is_unset(&[("YOUCOM_API_BASE", "")], None, None)]
 #[case::unrelated_variables_are_ignored(&[("OTHER", "x")], None, None)]
-fn settings_read_the_environment(
+fn you_com_search_settings_read_the_environment(
     #[case] environment: &[(&str, &str)],
     #[case] expected_key: Option<&str>,
     #[case] expected_base: Option<&str>,
@@ -189,79 +189,69 @@ fn headers_carry_the_resolved_key() {
 }
 
 #[rstest]
-#[case::keyless_free_url(None, None, &[], "https://api.you.com/v1/agents/search")]
-#[case::caller_key_selects_the_keyed_default(
-    None,
-    Some("sk-caller"),
-    &[],
-    "https://ydc-index.io/v1/search"
-)]
+#[case::keyless_free_url(None, &[], "https://api.you.com/v1/agents/search")]
 #[case::environment_key_selects_the_keyed_default(
-    None,
     None,
     &[("YOUCOM_API_KEY", "sk-env")],
     "https://ydc-index.io/v1/search"
 )]
 #[case::environment_base_wins_over_the_keyed_default(
     None,
-    Some("sk-caller"),
     &[("YOUCOM_API_BASE", "https://env.test")],
     "https://env.test/v1/search"
 )]
 #[case::caller_base_wins_over_the_environment_base(
     Some("https://caller.test"),
-    None,
     &[("YOUCOM_API_BASE", "https://env.test")],
     "https://caller.test/v1/search"
 )]
 #[case::trailing_slashes_are_trimmed(
     Some("https://caller.test///"),
-    None,
     &[],
     "https://caller.test/v1/search"
 )]
 #[case::search_suffix_is_kept(
     Some("https://caller.test/v1/search"),
-    None,
     &[],
     "https://caller.test/v1/search"
 )]
 #[case::agents_suffix_is_kept(
     Some("https://caller.test/v1/agents/search"),
-    None,
     &[],
     "https://caller.test/v1/agents/search"
 )]
 #[case::other_path_gets_the_suffix(
     Some("https://caller.test/v1"),
-    None,
     &[],
     "https://caller.test/v1/v1/search"
 )]
-#[case::empty_caller_base_is_used_as_given(Some(""), None, &[], "/v1/search")]
-fn endpoint_picks_the_keyed_or_free_base(
+#[case::empty_caller_base_is_used_as_given(Some(""), &[], "/v1/search")]
+fn complete_url_picks_the_keyed_or_free_base(
     #[case] api_base: Option<&str>,
-    #[case] api_key: Option<&str>,
     #[case] environment: &[(&str, &str)],
     #[case] expected: &str,
 ) {
-    let caller_key = api_key.map(key);
     assert_eq!(
-        load(environment).endpoint(api_base, caller_key.as_ref()),
+        load(environment)
+            .complete_url(api_base, &Object::new(), None)
+            .unwrap(),
         expected
     );
 }
 
 #[test]
-fn trait_complete_url_uses_the_environment_key() {
-    let search = load(&[("YOUCOM_API_KEY", "sk-env")]);
+fn caller_key_does_not_reach_the_url_choice() {
+    // B3270's complete_url takes no api_key, so a caller key shapes headers only (docs/deviations/B8021.yaml)
+    let search = load(&[]);
+    let prepared = search
+        .prepare_headers(Headers::new(), Some(&key("sk-caller")), None)
+        .unwrap();
+    assert_eq!(
+        prepared.get("X-API-Key").map(String::as_str),
+        Some("sk-caller")
+    );
     assert_eq!(
         search.complete_url(None, &Object::new(), None).unwrap(),
-        "https://ydc-index.io/v1/search"
-    );
-    let keyless = load(&[]);
-    assert_eq!(
-        keyless.complete_url(None, &Object::new(), None).unwrap(),
         YOU_COM_FREE_API_BASE
     );
 }

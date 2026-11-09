@@ -42,8 +42,6 @@ enum Call {
         #[serde(default)]
         api_base: Option<String>,
         #[serde(default)]
-        api_key: Option<String>,
-        #[serde(default)]
         environment: BTreeMap<String, String>,
     },
     TransformSearchRequest {
@@ -97,10 +95,14 @@ impl ProviderSearch {
         }
     }
 
-    fn endpoint(&self, api_base: Option<&str>, api_key: Option<&SecretString>) -> String {
+    fn complete_url(&self, api_base: Option<&str>) -> Result<String, Box<HelperError>> {
         match self {
-            Self::Tavily(search) => search.endpoint(api_base),
-            Self::YouCom(search) => search.endpoint(api_base, api_key),
+            Self::Tavily(search) => search
+                .complete_url(api_base, &Object::new(), None)
+                .map_err(failure),
+            Self::YouCom(search) => search
+                .complete_url(api_base, &Object::new(), None)
+                .map_err(failure),
         }
     }
 
@@ -179,14 +181,11 @@ fn call_outcome(provider: Provider, call: &Call) -> Result<Value, Box<HelperErro
         ),
         Call::CompleteUrl {
             api_base,
-            api_key,
             environment,
         } => {
-            let key = api_key.as_deref().map(SecretString::from);
-            let search = ProviderSearch::load(provider, environment);
-            Ok(Value::String(
-                search.endpoint(api_base.as_deref(), key.as_ref()),
-            ))
+            let url = ProviderSearch::load(provider, environment)
+                .complete_url(api_base.as_deref())?;
+            Ok(Value::String(url))
         }
         Call::TransformSearchRequest {
             query,

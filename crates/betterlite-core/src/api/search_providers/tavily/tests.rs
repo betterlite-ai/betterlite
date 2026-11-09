@@ -38,7 +38,7 @@ fn object(text: &str) -> Object {
 }
 
 #[test]
-fn settings_default_to_the_published_base() {
+fn tavily_search_settings_default_to_the_published_base() {
     let search = load(&[]);
     assert!(search.api_key.is_none());
     assert_eq!(search.api_base, TAVILY_API_BASE);
@@ -54,7 +54,7 @@ fn settings_default_to_the_published_base() {
 #[case::empty_base_is_the_default(&[("TAVILY_API_BASE", "")], None, TAVILY_API_BASE)]
 #[case::whitespace_key_is_a_value(&[("TAVILY_API_KEY", " ")], Some(" "), TAVILY_API_BASE)]
 #[case::unrelated_variables_are_ignored(&[("OTHER", "x")], None, TAVILY_API_BASE)]
-fn settings_read_the_environment(
+fn tavily_search_settings_read_the_environment(
     #[case] environment: &[(&str, &str)],
     #[case] expected_key: Option<&str>,
     #[case] expected_base: &str,

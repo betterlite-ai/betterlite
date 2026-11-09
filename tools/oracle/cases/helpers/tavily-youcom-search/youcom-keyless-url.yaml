@@ -6,17 +6,15 @@ call:
     calls:
       - operation: complete_url
         api_base: null
-        api_key: null
         environment: {}
       - operation: complete_url
         api_base: null
-        api_key: null
         environment:
           YOUCOM_API_KEY: ""
       - operation: complete_url
         api_base: null
-        api_key: ""
-        environment: {}
+        environment:
+          YOUCOM_API_BASE: ""
 env: {}
 compare:
   ignore: []

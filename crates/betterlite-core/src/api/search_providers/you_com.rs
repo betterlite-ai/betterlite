@@ -42,19 +42,6 @@ impl YouComSearch {
         }
     }
 
-    #[must_use]
-    pub fn endpoint(&self, api_base: Option<&str>, api_key: Option<&SecretString>) -> String {
-        let configured = api_base.or(self.api_base.as_deref()).map(finish);
-        if let Some(url) = configured {
-            return url;
-        }
-        let caller_key = api_key.filter(|key| !key.expose_secret().is_empty());
-        if caller_key.is_some() || self.api_key.is_some() {
-            return finish(YOU_COM_API_BASE);
-        }
-        YOU_COM_FREE_API_BASE.to_owned()
-    }
-
     pub fn resolve_api_key(
         &self,
         api_key: Option<&SecretString>,
@@ -86,7 +73,7 @@ impl YouComSearch {
     }
 }
 
-fn finish(base: &str) -> String {
+fn with_search_path(base: &str) -> String {
     let trimmed = base.trim_end_matches('/');
     if trimmed.ends_with("/v1/search") || trimmed.ends_with("/v1/agents/search") {
         trimmed.to_owned()
@@ -131,7 +118,15 @@ impl SearchProvider for YouComSearch {
         _optional_params: &Object,
         _body: Option<&Object>,
     ) -> Result<String, YouComError> {
-        Ok(self.endpoint(api_base, None))
+        let configured = api_base.or(self.api_base.as_deref()).map(with_search_path);
+        if let Some(url) = configured {
+            return Ok(url);
+        }
+        // the hook has no api_key argument, so the keyed host comes from YOUCOM_API_KEY only (docs/deviations/B8021.yaml)
+        if self.api_key.is_some() {
+            return Ok(with_search_path(YOU_COM_API_BASE));
+        }
+        Ok(YOU_COM_FREE_API_BASE.to_owned())
     }
 
     fn transform_search_request(

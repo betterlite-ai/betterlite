@@ -27,7 +27,6 @@ class ValidateEnvironment(TypedDict):
 class CompleteUrl(TypedDict):
     operation: Literal["complete_url"]
     api_base: NotRequired[str | None]
-    api_key: NotRequired[str | None]
     environment: NotRequired[dict[str, str]]
 
 
@@ -78,7 +77,6 @@ def _complete_url(config: Config, call: CompleteUrl) -> Json:
     return config.get_complete_url(  # pyright: ignore[reportUnknownMemberType]
         api_base=call.get("api_base"),
         optional_params={},
-        api_key=call.get("api_key"),
     )
 
 
