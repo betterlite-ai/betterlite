@@ -1,0 +1,11 @@
+kind: helper
+name: a2a-send-params-v10-raw-trailing-bits
+call:
+  b6950:
+    params:
+      message:
+        messageId: m1
+        parts:
+          - raw: "aGl="
+env: {}
+compare: {ignore: []}

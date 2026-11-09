@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-images-inline-image
+call:
+  bedrock_images:
+    call: process
+    image_url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+env: {}
+compare:
+  ignore: []

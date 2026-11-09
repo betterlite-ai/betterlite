@@ -1,0 +1,23 @@
+kind: helper
+name: provider-chunk-decode-custom-provider
+call:
+  b5653:
+    state:
+      model: custom-model
+      provider: custom-provider
+      custom_provider: true
+      response_id: chatcmpl-fixed
+      created: 1700000000
+      repeated_chunk_limit: 100
+    steps:
+      - op: creator
+        chunk:
+          kind: json
+          value: {id: chatcmpl-custom, model: custom-model, created: 1700000001, choices: [{index: 0, delta: {tool_calls: [{id: a, function: {name: f, arguments: null}}]}}]}
+      - op: decode
+        chunk:
+          kind: json
+          value: {id: chatcmpl-custom, choices: [{index: 0, delta: {}, finish_reason: max_tokens}]}
+env: {}
+compare:
+  ignore: []

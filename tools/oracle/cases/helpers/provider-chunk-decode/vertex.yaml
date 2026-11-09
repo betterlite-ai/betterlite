@@ -1,0 +1,39 @@
+kind: helper
+name: provider-chunk-decode-vertex
+call:
+  b5653:
+    state:
+      model: gemini-pro
+      provider: vertex_ai
+      response_id: chatcmpl-fixed
+      created: 1700000000
+      base_hidden_params: {model_id: m1, api_base: "https://example.test", additional_headers: {}, response_cost: null}
+      repeated_chunk_limit: 100
+    steps:
+      - op: decode
+        chunk:
+          kind: json
+          value: {candidates: [{content: {parts: [{text: hi}]}, finish_reason: FINISH_REASON_UNSPECIFIED}]}
+      - op: decode
+        chunk:
+          kind: json
+          value: {candidates: [{content: {parts: [{text: done}]}, finish_reason: MAX_TOKENS}]}
+      - op: decode
+        chunk:
+          kind: json
+          value: {candidates: [{content: {parts: [{function_call: {name: lookup, args: {}}}]}, finish_reason: STOP}]}
+      - op: decode
+        chunk:
+          kind: json
+          value: {candidates: [{content: {parts: [{inline_data: x}]}, finish_reason: STOP}]}
+      - op: decode
+        chunk: {kind: text, value: plain}
+      - op: creator
+        chunk:
+          kind: json
+          value: {candidates: [{content: {parts: [{function_call: {name: lookup, args: {}}}]}, finish_reason: FINISH_REASON_UNSPECIFIED}]}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/5/0/0, why: "The tool-call chunk id is a fresh uuid on each side"}
+    - {pointer: /value/5/0/8/0/0, why: "The tool call id is a fresh uuid on each side"}
