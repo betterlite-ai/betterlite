@@ -139,6 +139,13 @@ fn a_token_response_defaults_the_expiry_to_one_hour() {
 }
 
 #[test]
+fn a_bearer_token_does_not_print_itself() {
+    let token =
+        parse_token_response(r#"{"access_token": "very-hidden"}"#, at(1_700_000_000)).unwrap();
+    assert!(!format!("{token:?}").contains("very-hidden"));
+}
+
+#[test]
 fn a_token_response_uses_expires_in() {
     let token = parse_token_response(
         r#"{"access_token": "abc", "expires_in": 120}"#,
