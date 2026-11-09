@@ -140,12 +140,10 @@ fn header_patterns() {
     assert_eq!(selection.matches.len(), 1);
     assert_eq!(selection.matches[0].value, "^User-Agent: claude-code/");
     let invalid = TagMatcher::new(vec![deployment(None, Some(&["(", "^User-Agent:"]))]);
+    assert_eq!(invalid.warnings[0].kind, WarningKind::InvalidPattern);
+    assert_eq!(invalid.warnings[0].pattern, "(");
     let invalid_selection = invalid.select(&query(&[], None, &["User-Agent: x"], true, ""));
-    assert_eq!(
-        invalid_selection.warnings[0].kind,
-        WarningKind::InvalidPattern
-    );
-    assert_eq!(invalid_selection.warnings[0].pattern, "(");
+    assert!(invalid_selection.warnings.is_empty());
     assert_eq!(invalid_selection.matches.len(), 1);
     assert_eq!(invalid_selection.matches[0].value, "^User-Agent:");
 }

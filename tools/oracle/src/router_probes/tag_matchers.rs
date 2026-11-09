@@ -100,8 +100,11 @@ pub(crate) fn run(
 ) -> Result<ProbeOutput, OperationError> {
     let matcher = build_matcher(input);
     let selection = matcher.select(&query(input));
+    // build warnings are reported once per pattern, match warnings per attempted pattern
+    let mut warnings = matcher.warnings;
+    warnings.extend(selection.warnings.iter().cloned());
     let parse = input.parse.as_ref().map(parse_step).transpose()?;
-    let fields = fields(input, selection, parse);
+    let fields = fields(input, selection, warnings, parse);
     Ok(ProbeOutput::TagMatchers(Output(Box::new(fields))))
 }
 
@@ -129,7 +132,12 @@ fn query(input: &Input) -> TagQuery {
     }
 }
 
-fn fields(input: &Input, selection: TagSelection, parse: Option<ParseOutput>) -> Fields {
+fn fields(
+    input: &Input,
+    selection: TagSelection,
+    warnings: Vec<TagWarning>,
+    parse: Option<ParseOutput>,
+) -> Fields {
     Fields {
         tags: TagsOutput {
             rewritten: selection.rewritten,
@@ -150,7 +158,7 @@ fn fields(input: &Input, selection: TagSelection, parse: Option<ParseOutput>) ->
         defaults: ids(&input.deployments, &selection.defaults),
         known_tags: selection.known_tags.into_iter().collect(),
         unknown_required_hides_answer: selection.unknown_required_hides_answer,
-        warnings: selection.warnings,
+        warnings,
         parse,
     }
 }

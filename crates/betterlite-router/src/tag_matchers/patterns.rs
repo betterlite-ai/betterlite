@@ -13,6 +13,18 @@ pub enum WarningKind {
     MatchLimitExceeded,
 }
 
+impl WarningKind {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::InvalidPattern => "invalid_pattern",
+            Self::UnsupportedPattern => "unsupported_pattern",
+            Self::PatternTooLarge => "pattern_too_large",
+            Self::MatchLimitExceeded => "match_limit_exceeded",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TagWarning {
@@ -58,13 +70,20 @@ impl Patterns {
                 });
                 continue;
             }
+            if unsupported_syntax(source) {
+                warnings.push(TagWarning {
+                    kind: WarningKind::UnsupportedPattern,
+                    pattern: source.clone(),
+                });
+                continue;
+            }
             match build(source) {
                 Ok(regex) => compiled.push(CompiledPattern {
                     source: source.clone(),
                     regex,
                 }),
                 Err(error) => warnings.push(TagWarning {
-                    kind: classify(source, &error),
+                    kind: classify(&error),
                     pattern: source.clone(),
                 }),
             }
@@ -112,26 +131,98 @@ fn build(source: &str) -> Result<Regex, Error> {
         .build()
 }
 
-fn classify(source: &str, error: &Error) -> WarningKind {
-    if uses_named_escape(source) || !matches!(error, Error::ParseError(..)) {
-        return WarningKind::UnsupportedPattern;
+const fn classify(error: &Error) -> WarningKind {
+    if matches!(error, Error::ParseError(..)) {
+        return WarningKind::InvalidPattern;
     }
-    WarningKind::InvalidPattern
+    WarningKind::UnsupportedPattern
 }
 
-// Python's \N{NAME} is a valid escape fancy-regex's parser refuses; an escaped backslash before it is not one
-fn uses_named_escape(source: &str) -> bool {
+// Python and the engine read these constructs differently, so the pattern is skipped instead of reinterpreted
+fn unsupported_syntax(source: &str) -> bool {
     let mut characters = source.chars().peekable();
     let mut escaped = false;
+    let mut in_class = false;
+    let mut class_start = false;
     while let Some(character) = characters.next() {
-        if character == '\\' {
-            escaped = !escaped;
+        if escaped {
+            escaped = false;
+            if unsupported_escape(character, characters.peek(), in_class) {
+                return true;
+            }
             continue;
         }
-        if character == 'N' && escaped && characters.peek() == Some(&'{') {
-            return true;
+        if character == '\\' {
+            escaped = true;
+            continue;
         }
-        escaped = false;
+        if in_class {
+            match class_step(character, characters.peek(), class_start) {
+                ClassStep::Unsupported => return true,
+                ClassStep::Start => {}
+                ClassStep::Close => in_class = false,
+                ClassStep::Literal => class_start = false,
+            }
+            continue;
+        }
+        if character == '[' {
+            in_class = true;
+            class_start = true;
+            continue;
+        }
+        if character == '(' && characters.peek() == Some(&'?') {
+            characters.next();
+            if characters.peek() == Some(&'(') {
+                return true;
+            }
+        }
     }
     false
+}
+
+fn unsupported_escape(character: char, next: Option<&char>, in_class: bool) -> bool {
+    if character == 'N' && next == Some(&'{') {
+        return true;
+    }
+    if in_class {
+        return false;
+    }
+    if character == '<' || character == '>' {
+        return true;
+    }
+    character == '0' && next.is_some_and(|digit| ('0'..='7').contains(digit))
+}
+
+enum ClassStep {
+    Unsupported,
+    Start,
+    Close,
+    Literal,
+}
+
+fn class_step(character: char, next: Option<&char>, class_start: bool) -> ClassStep {
+    if character == '[' {
+        if next == Some(&':') || !class_start {
+            return ClassStep::Unsupported;
+        }
+        return ClassStep::Literal;
+    }
+    if character == ']' {
+        if class_start {
+            return ClassStep::Literal;
+        }
+        return ClassStep::Close;
+    }
+    if class_start && character == '^' {
+        return ClassStep::Start;
+    }
+    let doubled = next.is_some_and(|following| {
+        (*following == '&' && character == '&')
+            || (*following == '~' && character == '~')
+            || (*following == '-' && character == '-')
+    });
+    if doubled {
+        return ClassStep::Unsupported;
+    }
+    ClassStep::Literal
 }

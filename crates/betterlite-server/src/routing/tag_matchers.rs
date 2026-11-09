@@ -14,5 +14,13 @@ pub fn resolve(section: &config::Settings) -> TagMatcher {
             tag_regex: deployment.tag_regex.clone(),
         })
         .collect();
-    TagMatcher::new(deployments)
+    let matcher = TagMatcher::new(deployments);
+    for warning in &matcher.warnings {
+        tracing::warn!(
+            kind = warning.kind.label(),
+            pattern = %warning.pattern,
+            "tag matcher skipped a configured pattern"
+        );
+    }
+    matcher
 }

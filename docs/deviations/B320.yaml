@@ -7,12 +7,16 @@ deviations:
     why: The pinned code has no byte bound at this parser boundary, and bounded-inputs requires a finite limit.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L87-L277
   - what: >-
-      Tag patterns run on fancy-regex with seek disabled instead of Python's re. Python's \N{...} named
-      escapes and any construct fancy-regex's compiler refuses are warned about as unsupported_pattern and
-      skipped; other patterns its parser rejects, such as the lone a{ that Python 3.13 reads as a literal,
-      are warned about as invalid_pattern and skipped. The engine also accepts constructs Python 3.13
-      rejects, such as \G and stacked repeats, and without MULTILINE $ matches only at the very end rather
-      than before one trailing newline. Invalid or oversized patterns are warned once when the matcher is
-      built instead of once per matching request.
-    why: Python's re is not available in Rust; fancy-regex is the maintained engine already in the lock that runs lookahead, backreferences and named groups with an explicit backtrack limit. A pattern the engine cannot run is skipped with a named warning rather than reinterpreted.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L87-L107
+      Tag patterns run on fancy-regex with seek disabled instead of Python's re. Constructs Python and the
+      engine read differently are warned about as unsupported_pattern and skipped: \N{...} named escapes,
+      \< and \> (literal brackets in Python, word boundaries here), POSIX classes such as [[:digit:]],
+      nested classes such as [a[bc]], the &&, ~~ and -- set operators inside a class, leading-zero octal
+      escapes such as \01, conditional groups such as (?(name)yes|no), and any pattern fancy-regex's
+      compiler refuses. Other patterns the engine's parser rejects are warned about as invalid_pattern and
+      skipped. The engine accepts constructs Python 3.13 rejects, such as \G and stacked repeats, and
+      without MULTILINE $ matches only at the very end rather than before one trailing newline; character
+      classes, case folding and word boundaries follow the engine's Unicode tables, which can differ from
+      Python's for a few characters. Build warnings are logged once when the server builds the matcher,
+      and a selection carries only match-time warnings.
+    why: Python's re is not available in Rust; fancy-regex is the maintained engine already in the lock that runs lookahead, backreferences and named groups with an explicit backtrack limit. A construct the engine reads differently is skipped with a named warning rather than selecting different traffic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L100-L105

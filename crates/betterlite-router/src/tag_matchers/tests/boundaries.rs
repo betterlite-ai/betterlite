@@ -16,7 +16,8 @@ enum Boundary {
     InvalidDocument,
     MatchSteps,
     FancyMatch,
-    UnsupportedConstruct,
+    Unsupported(&'static str),
+    Supported(&'static str),
     EmptyPrefix,
     DefaultMatchAny,
     PooledKnown,
@@ -31,7 +32,23 @@ enum Boundary {
 #[case::invalid_document(Boundary::InvalidDocument)]
 #[case::match_steps(Boundary::MatchSteps)]
 #[case::fancy_match(Boundary::FancyMatch)]
-#[case::unsupported_construct(Boundary::UnsupportedConstruct)]
+#[case::named_escape(Boundary::Unsupported(r"\N{LATIN SMALL LETTER A}"))]
+#[case::word_start(Boundary::Unsupported(r"\<tag"))]
+#[case::word_end(Boundary::Unsupported(r"tag\>"))]
+#[case::posix_class(Boundary::Unsupported("[[:digit:]]+"))]
+#[case::set_intersection(Boundary::Unsupported("[a&&b]"))]
+#[case::set_symmetric_difference(Boundary::Unsupported("[a~~b]"))]
+#[case::set_difference(Boundary::Unsupported("[a--b]"))]
+#[case::nested_class(Boundary::Unsupported("[a[bc]]"))]
+#[case::octal_escape(Boundary::Unsupported(r"(a)\012"))]
+#[case::conditional(Boundary::Unsupported("(?P<a>x)(?(a)y|z)"))]
+#[case::engine_refused(Boundary::Unsupported("(?~|abc|def)"))]
+#[case::escaped_backslash_escape(Boundary::Supported(r"\\N\{"))]
+#[case::escaped_backslash_bracket(Boundary::Supported(r"\\<tag"))]
+#[case::literal_brace(Boundary::Supported(r"\t{"))]
+#[case::escaped_digit(Boundary::Supported(r"\t0"))]
+#[case::set_operator_outside_class(Boundary::Supported("[a]&&"))]
+#[case::named_group(Boundary::Supported("(?P<a>x)"))]
 #[case::empty_prefix(Boundary::EmptyPrefix)]
 #[case::default_match_any(Boundary::DefaultMatchAny)]
 #[case::pooled_known(Boundary::PooledKnown)]
@@ -43,7 +60,8 @@ fn tag_matchers_boundaries(#[case] boundary: Boundary) {
         Boundary::InvalidDocument => invalid_document_boundary(),
         Boundary::MatchSteps => match_steps_boundary(),
         Boundary::FancyMatch => fancy_match_boundary(),
-        Boundary::UnsupportedConstruct => unsupported_construct_boundary(),
+        Boundary::Unsupported(pattern) => unsupported_construct_boundary(pattern),
+        Boundary::Supported(pattern) => supported_construct_boundary(pattern),
         Boundary::EmptyPrefix => empty_prefix_boundary(),
         Boundary::DefaultMatchAny => default_match_any_boundary(),
         Boundary::PooledKnown => pooled_known_boundary(),
@@ -140,26 +158,23 @@ fn pooled_known_boundary() {
     ));
 }
 
-fn unsupported_construct_boundary() {
-    let named = TagMatcher::new(vec![deployment(None, Some(&[r"\N{LATIN SMALL LETTER A}"]))]);
-    assert_eq!(named.warnings.len(), 1);
-    assert_eq!(named.warnings[0].kind, WarningKind::UnsupportedPattern);
-    assert_eq!(named.warnings[0].pattern, r"\N{LATIN SMALL LETTER A}");
-    let selection = named.select(&query(&[], None, &["a"], true, ""));
+fn unsupported_construct_boundary(pattern: &str) {
+    let matcher = TagMatcher::new(vec![deployment(None, Some(&[pattern]))]);
+    assert_eq!(matcher.warnings.len(), 1);
+    assert_eq!(matcher.warnings[0].kind, WarningKind::UnsupportedPattern);
+    assert_eq!(matcher.warnings[0].pattern, pattern);
+    let selection = matcher.select(&query(&[], None, &["anything"], true, ""));
     assert!(selection.matches.is_empty());
-    let after_tab = TagMatcher::new(vec![deployment(
-        None,
-        Some(&[r"\t\N{LATIN SMALL LETTER A}"]),
-    )]);
-    assert_eq!(after_tab.warnings[0].kind, WarningKind::UnsupportedPattern);
-    let escaped = TagMatcher::new(vec![deployment(None, Some(&[r"\\N\{"]))]);
-    assert!(escaped.warnings.is_empty());
-    let tab_brace = TagMatcher::new(vec![deployment(None, Some(&[r"\t{"]))]);
-    assert_eq!(tab_brace.warnings[0].kind, WarningKind::InvalidPattern);
+    assert!(selection.warnings.is_empty());
+}
+
+fn supported_construct_boundary(pattern: &str) {
+    let matcher = TagMatcher::new(vec![deployment(None, Some(&[pattern]))]);
+    assert!(matcher.warnings.is_empty());
 }
 
 fn match_steps_boundary() {
-    let header = "ab".repeat(28);
+    let header = "ab".repeat(12);
     let matcher = TagMatcher::new(vec![deployment(None, Some(&["(?i)(a|b|ab)*(?>c)"]))]);
     assert!(matcher.warnings.is_empty());
     let selection = matcher.select(&query(&[], None, &[header.as_str()], true, ""));

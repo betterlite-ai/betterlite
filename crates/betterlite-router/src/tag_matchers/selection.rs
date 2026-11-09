@@ -70,8 +70,6 @@ impl TagMatcher {
         let allowed = exclude(&self.deployments, &pool, &excluded);
         let candidates = require_all(&self.deployments, &allowed, &required);
         let matched = self.match_pool(&candidates, &tags.positive, &query.headers, query.match_any);
-        let mut warnings = self.warnings.clone();
-        warnings.extend(matched.warnings);
         TagSelection {
             rewritten,
             routing_confirmed: routing_confirmed.clone(),
@@ -89,7 +87,7 @@ impl TagMatcher {
             matches: matched.matches,
             defaults: default_tagged(&self.deployments, &pool),
             known_tags: known_tag_values(&self.deployments, &pool),
-            warnings,
+            warnings: matched.warnings,
         }
     }
 

@@ -67,7 +67,7 @@ fn an_explicit_empty_list_is_not_none() {
 }
 
 #[test]
-fn environment_references_resolve_once() {
+fn environment_references_stay_literal() {
     let resolved = settings(
         &config("      tags: [os.environ/TEAM_TAG, kept]\n      tag_regex: [os.environ/PATTERN]"),
         &[("TEAM_TAG", "team-a"), ("PATTERN", "^User-Agent:")],
@@ -76,19 +76,18 @@ fn environment_references_resolve_once() {
     assert_eq!(
         resolved.deployments,
         vec![DeploymentTags {
-            tags: Some(vec!["team-a".to_owned(), "kept".to_owned()]),
-            tag_regex: Some(vec!["^User-Agent:".to_owned()]),
+            tags: Some(vec!["os.environ/TEAM_TAG".to_owned(), "kept".to_owned()]),
+            tag_regex: Some(vec!["os.environ/PATTERN".to_owned()]),
         }]
     );
 }
 
 #[test]
-fn a_missing_environment_reference_names_the_entry() {
-    let error = settings(&config("      tags: [os.environ/ABSENT_TAG]"), &[]).unwrap_err();
-    assert!(error.contains("ABSENT_TAG"), "{error}");
-    assert!(
-        error.contains("model_list.0.litellm_params.tags.0"),
-        "{error}"
+fn an_unset_environment_reference_stays_literal() {
+    let resolved = settings(&config("      tags: [os.environ/ABSENT_TAG]"), &[]).unwrap();
+    assert_eq!(
+        resolved.deployments[0].tags,
+        Some(vec!["os.environ/ABSENT_TAG".to_owned()])
     );
 }
 
