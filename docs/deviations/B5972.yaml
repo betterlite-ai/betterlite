@@ -1,0 +1,8 @@
+task: B5972
+deviations:
+  - what: A created_at without a UTC offset is read as UTC.
+    why: Python's datetime.fromisoformat gives a naive value and timestamp() then uses the server's local time zone, which a Rust service cannot copy without reading the machine zone. watsonx.ai sends a Z suffix, so real replies are unaffected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/completion/transformation.py#L307-L313
+  - what: prompt_factory's watsonx branch answers an unsupported error instead of applying apply_prompt_template.
+    why: This task changes only the hf_chat_template visibility in crates/betterlite-prompts/src/factory.rs, so that branch keeps its unsupported answer; the message-to-prompt function applies the same lowercased template call the branch would make, so the conversion result matches.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5320-L5324
