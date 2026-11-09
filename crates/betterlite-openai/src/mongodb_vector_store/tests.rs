@@ -700,15 +700,16 @@ fn request_body_custom() {
         built.url,
         "http://127.0.0.1:8080/v1/vector_stores/vs%2Fa%20b/search"
     );
-    assert_eq!(
-        serde_json::to_value(&built.body).expect("body"),
-        json_value(
-            r#"{"query":"one two","query_vector":[0.5],"mongodb_database":"db",
-                "mongodb_collection":"c","mongodb_embedding_field":"vector",
-                "mongodb_text_field":"body","mongodb_num_candidates":10000,
-                "max_num_results":50,"timeout_ms":2500}"#
-        )
-    );
+    let body = serde_json::to_value(&built.body).expect("body");
+    assert_eq!(body["query"], json_value(r#""one two""#));
+    assert_eq!(body["query_vector"], json_value("[0.5]"));
+    assert_eq!(body["mongodb_database"], json_value(r#""db""#));
+    assert_eq!(body["mongodb_collection"], json_value(r#""c""#));
+    assert_eq!(body["mongodb_embedding_field"], json_value(r#""vector""#));
+    assert_eq!(body["mongodb_text_field"], json_value(r#""body""#));
+    assert_eq!(body["mongodb_num_candidates"], json_value("10000"));
+    assert_eq!(body["max_num_results"], json_value("50"));
+    assert_eq!(body["timeout_ms"], json_value("2500"));
 }
 
 fn request_encoding() {

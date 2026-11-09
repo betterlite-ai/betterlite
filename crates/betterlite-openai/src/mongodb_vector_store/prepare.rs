@@ -3,6 +3,7 @@ use serde::Serialize;
 
 use super::Params;
 use super::error::MongoDbError;
+use super::query::query_text;
 use crate::batches::sdk::Timeout;
 use crate::vector_stores::store::{Query, SearchParams};
 
@@ -15,7 +16,6 @@ const MAX_MAX_NUM_RESULTS: i64 = 50;
 const NUM_CANDIDATES_MULTIPLIER: i64 = 10;
 const MIN_NUM_CANDIDATES: i64 = 100;
 const MAX_NUM_CANDIDATES: i64 = 10_000;
-const MAX_QUERY_CHARACTERS: usize = 32_000;
 const KNOWN_MONGODB_PARAMS: [&str; 5] = [
     "mongodb_collection",
     "mongodb_database",
@@ -29,7 +29,6 @@ const INVALID_CONFIG: &str = "Invalid MongoDB vector-store configuration. Check 
 const MISSING_DATABASE: &str = "mongodb_database is required in litellm_params for the MongoDB vector store. Example: mongodb_database: sample_mflix";
 const MISSING_COLLECTION: &str = "mongodb_collection is required in litellm_params for the MongoDB vector store. Example: mongodb_collection: embedded_movies";
 const MISSING_EMBEDDING_MODEL: &str = "litellm_embedding_model is required in litellm_params for the MongoDB vector store. It must be the same model that produced the vectors stored in";
-const QUERY_EMPTY: &str = "query must not be empty";
 const TIMEOUT: &str = "MongoDB search timeout must be a positive finite number.";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -141,9 +140,23 @@ fn reject_unsupported(options: &SearchParams) -> Result<(), MongoDbError> {
 }
 
 fn typed_params(params: &Params) -> Result<TypedParams, MongoDbError> {
+    let embedding_config = match params.get("litellm_embedding_config") {
+        None | Some(Json::Null) => None,
+        Some(Json::Object(values)) => Some(
+            values
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect(),
+        ),
+        Some(_) => {
+            return Err(MongoDbError::BadRequest {
+                message: INVALID_CONFIG.to_owned(),
+            });
+        }
+    };
     Ok(TypedParams {
         embedding_model: text(params, "litellm_embedding_model")?,
-        embedding_config: config(params)?,
+        embedding_config,
         database: text(params, "mongodb_database")?,
         collection: text(params, "mongodb_collection")?,
         text_field: text(params, "mongodb_text_field")?,
@@ -153,43 +166,38 @@ fn typed_params(params: &Params) -> Result<TypedParams, MongoDbError> {
 }
 
 fn text(params: &Params, field: &str) -> Result<Option<String>, MongoDbError> {
-    match params.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(value)) => Ok(Some(value.clone())),
-        Some(_) => Err(MongoDbError::BadRequest {
-            message: INVALID_CONFIG.to_owned(),
-        }),
-    }
-}
-
-fn config(params: &Params) -> Result<Option<Params>, MongoDbError> {
-    match params.get("litellm_embedding_config") {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(values)) => Ok(Some(
-            values
-                .iter()
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect(),
-        )),
-        Some(_) => Err(MongoDbError::BadRequest {
-            message: INVALID_CONFIG.to_owned(),
-        }),
+    let Some(value) = params.get(field) else {
+        return Ok(None);
+    };
+    match value {
+        Json::Null => Ok(None),
+        Json::Text(text) => Ok(Some(text.clone())),
+        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            Err(MongoDbError::BadRequest {
+                message: INVALID_CONFIG.to_owned(),
+            })
+        }
     }
 }
 
 fn integer(params: &Params, field: &str) -> Result<Option<i64>, MongoDbError> {
-    match params.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => number
+    let Some(value) = params.get(field) else {
+        return Ok(None);
+    };
+    if let Json::Number(number) = value {
+        return number
             .as_i64()
+            .map(Some)
             .ok_or_else(|| MongoDbError::BadRequest {
                 message: INVALID_CONFIG.to_owned(),
-            })
-            .map(Some),
-        Some(_) => Err(MongoDbError::BadRequest {
-            message: INVALID_CONFIG.to_owned(),
-        }),
+            });
     }
+    if matches!(value, Json::Null) {
+        return Ok(None);
+    }
+    Err(MongoDbError::BadRequest {
+        message: INVALID_CONFIG.to_owned(),
+    })
 }
 
 fn require(value: Option<String>, message: &str) -> Result<String, MongoDbError> {
@@ -280,25 +288,4 @@ fn read_timeout(params: &Params) -> Result<Option<f64>, MongoDbError> {
         Some(Timeout::Seconds(seconds)) => Ok(Some(seconds)),
         Some(Timeout::Phases(phases)) => Ok(phases.read),
     }
-}
-
-fn query_text(query: &Query) -> Result<String, MongoDbError> {
-    let text = match query {
-        Query::One(text) => text.clone(),
-        Query::Many(parts) => parts.join(" "),
-    };
-    if text.trim().is_empty() {
-        return Err(MongoDbError::BadRequest {
-            message: QUERY_EMPTY.to_owned(),
-        });
-    }
-    let length = text.chars().count();
-    if length > MAX_QUERY_CHARACTERS {
-        return Err(MongoDbError::BadRequest {
-            message: format!(
-                "query must be at most {MAX_QUERY_CHARACTERS} characters, got {length}"
-            ),
-        });
-    }
-    Ok(text)
 }

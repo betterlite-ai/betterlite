@@ -7,6 +7,7 @@ pub mod decode;
 pub mod environment;
 pub mod error;
 pub mod prepare;
+mod query;
 pub mod search;
 mod tests;
 
