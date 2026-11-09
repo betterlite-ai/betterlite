@@ -271,6 +271,12 @@ fn json(text: &str) -> AgentJson {
         r#"{"message": {"kind": "message", "messageId": "m1", "role": "user", "parts": [{"kind": "text", "text": "hi"}]}}"#
     )
 )]
+#[case::v03_part_with_file_array(
+    r#"{"message": {"messageId": "m1", "role": "user", "parts": [{"text": "hi", "file": ["aGk=", "text/plain"]}]}}"#,
+    Some(
+        r#"{"message": {"kind": "message", "messageId": "m1", "role": "user", "parts": [{"kind": "text", "text": "hi"}]}}"#
+    )
+)]
 #[case::v03_configuration_ignores_task_push_config(
     r#"{"message": {"messageId": "m1", "role": "user", "parts": [{"text": "hi"}]}, "configuration": {"taskPushNotificationConfig": "x"}}"#,
     Some(

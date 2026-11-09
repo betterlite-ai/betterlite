@@ -117,10 +117,11 @@ fn children(value: &mut AgentJson, kind: Record) -> Result<(), SendParamsError> 
         }
         Record::Part => {
             // a non-object file only makes the 0.3 File variant fail, as the pydantic union does
-            if let Some(file) = child_mut(value, &["file"])
-                && file.is_object()
-            {
-                record(file, Record::File)?;
+            if let Some(file) = child_mut(value, &["file"]) {
+                reject_array(file);
+                if file.is_object() {
+                    record(file, Record::File)?;
+                }
             }
             Ok(())
         }
